@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Round 10 (final audit): a whole skill, agent or command folder copied, moved, linked or extracted into place needs the user's `plugin` yes like a single new file; `fm sync` never reads a FIFO or device node from the mirror; `fm doctor`'s core integrity check works in a git worktree.
 - Round 9: `fm audit prep` seeds each lens brief with this project's past findings for that lens (up to six CRITICAL/HIGH/MEDIUM headlines from reviews saved as `<task>-<lens>`, newest first, raw transcripts included), so a reviewer starts from the weak spots earlier reviews found.
 - Round 8: `fm run` waits out a usage limit instead of stopping: Claude Code's limit message triggers a logged wait (5 min doubling to 1 h) and a retry of the same task, up to `--wait` hours in total (default 6; `0` stops at once as before).
 - Round 7: `fm doctor` warns when protected core differs from the last commit (a half-applied edit or an unreviewed change) and budgets skill/agent/command descriptions (≤ 6000 chars, now 4.2k); the two large follow-ups (headless audits, eval capture) are deferred with revisit triggers.

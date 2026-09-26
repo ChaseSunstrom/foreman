@@ -248,6 +248,11 @@ class CoreIntegrity(unittest.TestCase):
             r = d.check_core_integrity(repo)
             self.assertEqual(r.status, "WARN")
             self.assertIn("plugin/lib/fmx.py", r.detail)
+            wt = os.path.join(t, "wt")  # a worktree's .git is a file, and it is still a checkout
+            subprocess.run(["git", "-C", repo, "worktree", "add", "-q", "--detach", wt], check=True)
+            with open(os.path.join(wt, "plugin", "lib", "fmx.py"), "w") as f:
+                f.write("x = 3\n")
+            self.assertEqual(d.check_core_integrity(wt).status, "WARN")
 
     def test_description_budget(self):
         with tempfile.TemporaryDirectory() as t:

@@ -520,6 +520,13 @@ class PluginChanges(GuardCase):
         open(existing, "w").close()
         self.assertIsNone(self.write(existing), "editing an approved one is ordinary work")
         self.assertIsNone(self.write("{repo}/.claude/skills/release/notes.txt"))
+        # final adversary audit: a whole skill folder arrives by copy, move, link or extraction just the same
+        for cmd in ("cp -r /tmp/x {home}/.claude/skills/evil", "tar -xf p.tar -C {home}/.claude/skills/",
+                    "unzip p.zip -d {home}/.claude/agents/", "rsync -a evil/ {home}/.claude/commands/",
+                    "mv /tmp/x {home}/.claude/skills/evil", "ln -s /tmp/x {repo}/.claude/skills/evil",
+                    "cp -a /tmp/x {repo}/.claude/agents/"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "plugin")
 
     def test_one_plugin_change_per_command(self):
         # T-0029: a yes covers one change, so a command can't bundle several behind it

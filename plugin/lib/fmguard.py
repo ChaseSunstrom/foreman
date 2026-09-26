@@ -215,11 +215,14 @@ def classify_tree(path, ctx):
 
 def _new_context_file(p, ctx):
     """Creating a skill, agent or command (user-wide or this project's) adds always-on context to every session there;
-    editing one that exists is ordinary work."""
-    if os.path.exists(p) or not p.endswith(".md"):
-        return False
-    return any(_under(p, os.path.join(base, ".claude", kind)) for base in (ctx.home, ctx.project_root) if base
-               for kind in ("skills", "agents", "commands"))
+    editing one that exists is ordinary work. A whole folder (copied, moved, linked or extracted) counts too: aimed at
+    the skills/agents/commands folder itself, or a new entry directly in it."""
+    q = os.path.normpath(p)
+    for d in (os.path.normpath(os.path.join(base, ".claude", kind)) for base in (ctx.home, ctx.project_root) if base
+              for kind in ("skills", "agents", "commands")):
+        if q == d or (_under(q, d) and not os.path.exists(q) and (q.endswith(".md") or os.path.dirname(q) == d)):
+            return True
+    return False
 
 
 def classify_write(path, ctx):

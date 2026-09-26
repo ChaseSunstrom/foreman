@@ -233,7 +233,7 @@ CORE_PATHS = ("plugin/lib", "plugin/bin", "plugin/hooks", "plugin/evals", "plugi
 
 def check_core_integrity(home):
     """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed."""
-    if not os.path.isdir(os.path.join(home, ".git")):
+    if not os.path.exists(os.path.join(home, ".git")):  # a worktree's .git is a file
         return Result("core integrity", "PASS", "not a git checkout: nothing to compare")
     out = _run(["git", "-C", home, "status", "--porcelain", "--", *CORE_PATHS]).stdout
     changed = [l[3:] for l in out.splitlines() if len(l) > 3]

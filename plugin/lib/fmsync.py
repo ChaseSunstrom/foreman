@@ -55,13 +55,15 @@ def _write(path, text):
 
 
 def _walk(base):
-    """Markdown under base, as relative paths; symlinks are never followed (a pulled one could point anywhere)."""
+    """Regular markdown files under base, as relative paths; symlinks are never followed (a pulled one could point
+    anywhere)."""
     if os.path.islink(base) or not os.path.isdir(base):
         return
     for d, dirs, files in os.walk(base):
         dirs[:] = sorted(x for x in dirs if not os.path.islink(os.path.join(d, x)))
         for f in sorted(files):
-            if f.endswith(".md") and not os.path.islink(os.path.join(d, f)):
+            path = os.path.join(d, f)
+            if f.endswith(".md") and not os.path.islink(path) and os.path.isfile(path):  # no FIFO or device reads
                 yield os.path.relpath(os.path.join(d, f), base).replace(os.sep, "/")
 
 

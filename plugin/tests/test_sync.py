@@ -133,6 +133,9 @@ class Sync(ForemanTestCase):
         with open(os.path.join(p.dir, "tasks", "notes.md"), "w") as f:
             f.write("not a brief\n")
         self.fm("task", "log", self.tid, "still works")  # export skips names that aren't briefs
+        os.mkfifo(os.path.join(self.mirror, "research", "pipe.md"))  # a reader would block on it forever
+        self.fm("sync", "import")
+        self.fm("task", "log", self.tid, "no hang")
 
     def test_code_in_the_mirror_folder_still_counts_for_audits(self):
         self.fm("sync", "on")
