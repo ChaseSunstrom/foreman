@@ -24,7 +24,7 @@ HOME_TAG = "# foreman-home: "  # which Foreman install owns the unit (another in
 SESSIONS_PER_TASK = 3  # fresh sessions fm run gives one task before it stops
 RESTART = {"burst": 5, "window_s": 600, "delay_s": 30}  # a login/usage failure stops after 5 tries, not forever
 RUN_LOG_MAX = 1_000_000  # bytes; the run log rotates to .1 past this
-# Claude Code's own usage-limit message openings (its print mode says one of these on stderr and exits 1)
+# Claude Code's own usage-limit wording, matched on the last line a failed session printed
 USAGE_LIMIT = re.compile(r"You've hit your|You've reached your|You're out of usage|out of usage|usage limit reached", re.I)
 WAIT_FIRST, WAIT_STEP_MAX = 300, 3600  # seconds; a usage-limit wait doubles per hit in a row, capped per wait
 
@@ -289,6 +289,8 @@ def cmd_run(args):
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
         sys.exit(1)
 
+    if not 0 <= args.wait < float("inf"):
+        raise fmcli.UsageError(f"--wait takes hours from 0 up, got {args.wait}")
     finished, skip, told, sessions = 0, set(), set(), {}
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     while finished < args.max:
@@ -301,7 +303,8 @@ def cmd_run(args):
         try:
             r = subprocess.run(cmd, cwd=p.root, env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), capture_output=True,
                                text=True, timeout=args.timeout * 60)
-            output, code = r.stdout + r.stderr, r.returncode
+            streams, code = (r.stdout, r.stderr), r.returncode
+            output = r.stdout + r.stderr
         except FileNotFoundError:
             raise fmcli.UsageError("claude isn't on PATH")
         except subprocess.TimeoutExpired as e:  # its output may be bytes even with text=True
@@ -312,7 +315,8 @@ def cmd_run(args):
             f.write(f"== {c.now()} {b.id} exit {code}\n{c.redact(output)}\n")
         if code is None:
             fail(f"{b.id}: the session hit the {args.timeout}-minute limit; stopping")
-        if code != 0 and USAGE_LIMIT.search(output):
+        last = (streams[1].strip() or streams[0].strip()).splitlines()[-1:]  # a crash's own error wins over model text
+        if code and last and USAGE_LIMIT.search(last[0]):
             if budget <= 0:
                 fail(f"{b.id}: usage limit still in effect after waiting {args.wait:g} h (--wait); stopping")
             pause, step = min(step, budget), min(step * 2, WAIT_STEP_MAX)

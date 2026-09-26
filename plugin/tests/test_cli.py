@@ -536,6 +536,25 @@ class AuditPrep(ForemanTestCase):
             f.write(b"\xff\xfe binary \x00\n")  # a diff that isn't UTF-8
         self.assertIn("trying to break", self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout)
 
+    def test_lens_briefs_carry_this_projects_past_findings_for_that_lens(self):
+        # round 9 (T-0018): a reviewer starts from the weak spots earlier reviews of this project found
+        self.fm("init")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "works", "--step", "fix", "--focus")
+        self.fm("research", "add", "t0005-adversary", input=(
+            "## Verdict: changes needed\n**HIGH — fmguard.py:10 — tree writes bypass the core check**\n"
+            "**LOW — a nit**\n- **MEDIUM — fmsync.py:3** — imported titles reach the terminal \x1b[31munsanitized\n"))
+        report = json.dumps({"message": {"role": "assistant", "content": [
+            {"type": "text", "text": "Verdict: changes needed\n1 MED stale grants survive a restart\n"}]}})
+        self.fm("research", "add", "wave2-edge-adversary", input='"slug":"x"}\n' + report + "\n")  # a raw transcript
+        self.fm("research", "add", "t0007-edge", input="**HIGH — clock skew breaks the lock**\n")
+        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        for seen in ("tree writes bypass the core check", "imported titles reach the terminal",
+                     "stale grants survive a restart"):
+            self.assertIn(seen, out)
+        for unseen in ("a nit", "clock skew", "\x1b"):
+            self.assertNotIn(unseen, out)
+        self.assertNotIn("Past findings", self.fm("audit", "prep", "T-0001", "--lens", "operator").stdout)
+
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
         import fmcli

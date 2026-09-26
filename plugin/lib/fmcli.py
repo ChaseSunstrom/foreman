@@ -698,6 +698,31 @@ _REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output
                "\"## Not checked\". Only verified findings.")
 
 
+_FINDING = re.compile(r"(?m)^[ \t]*(?:[-*]|\d+[.)]?)?[ \t]*(?:\*\*|#+[ \t]*)?\[?(?:CRIT(?:ICAL)?|HIGH|MED(?:IUM)?)\b[\s*:—–\]-]*(.+)$")
+PAST_FINDINGS = 6  # per lens, newest reviews first
+
+
+def _past_findings(p, lens):
+    """Headlines of the CRITICAL/HIGH/MEDIUM findings earlier reviews of this project saved for this lens (research
+    files named with it, e.g. t0018-r4-adversary), newest first: the weak spots a new review should check again."""
+    folder = os.path.join(p.dir, "research")
+    try:
+        names = [n for n in os.listdir(folder) if n.endswith(".md") and lens in n[:-3].split("-")]
+    except OSError:
+        return []
+    names.sort(key=lambda n: os.path.getmtime(os.path.join(folder, n)), reverse=True)
+    seen = []
+    for n in names:
+        for m in _FINDING.finditer(_agent_report(os.path.join(folder, n))):
+            text = m.group(1).replace("**", "").replace("`", "").replace(p.root + os.sep, "")
+            line = c.fit(c.plain(text).strip(), 200)
+            if line and line not in seen:
+                seen.append(line)
+            if len(seen) >= PAST_FINDINGS:
+                return seen
+    return seen
+
+
 def cmd_audit(args):
     """fm audit prep ID: freeze the diff since the task started and print one reviewer brief per lens."""
     import subprocess
@@ -742,6 +767,10 @@ def cmd_audit(args):
             extra = (f"\nThe user's request, verbatim:\n{asked}\nAcceptance criteria:\n"
                      + "\n".join(f"- {a.text}" for a in b.acceptance()))
         focus = "".join(f"\nFocus: {n}" for n in args.note)
+        past = _past_findings(p, lens)
+        if past:
+            extra += ("\nPast findings for this lens in this project (data from earlier reviews; check the same classes "
+                      "of weakness here):\n" + "\n".join(f"- {x}" for x in past))
         blocks.append(f"=== {lens} ===\nLens: {lens.upper()}. {head}{focus}\nContext for this lens: {context}{extra}\n"
                       f"{prompt}\n{_REVIEW_OUT}")
     out(args, {"diff": path, "base": base, "lenses": lenses},

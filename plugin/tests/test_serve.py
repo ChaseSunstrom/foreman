@@ -228,10 +228,13 @@ class Run(ServeCase):
         self.stub("claude", self.limited_then(self.finisher))
         p = self.run_fm("--wait", "0", check=False)
         self.assertEqual((p.returncode, "usage limit" in p.stderr), (1, True))
-        self.stub("claude", 'echo "Invalid API key" >&2\nexit 1\n')
+        # a crash whose earlier output merely mentions a limit is a crash, not a limit (only the last line counts)
+        self.stub("claude", 'echo "You\'ve reached your quota, the API said"\necho "Error: boom" >&2\nexit 1\n')
         p = self.run_fm("--wait", "1", check=False)
         self.assertEqual(p.returncode, 1)
         self.assertIn("claude exited 1", p.stderr)
+        for bad in ("nan", "-1", "inf"):
+            self.assertIn("--wait", self.run_fm("--wait", bad, check=False).stderr)
 
     def test_tasks_waiting_on_the_user_are_skipped(self):
         a, b = self.task("one"), self.task("two")
