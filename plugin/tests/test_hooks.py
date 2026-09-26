@@ -29,6 +29,10 @@ class HookCase(ForemanTestCase):
         tid = json.loads(self.fm(*args, "--json").stdout)["id"]
         for s in steps:
             self.fm("task", "step", tid, "add", s)
+        self.fm("task", "ac", tid, "add", "works", "--verify", "pytest")
+        if tier in ("M", "L"):
+            for sec in ("Interpretation", "Approach (options → choice → why)"):
+                self.fm("task", "set", tid, "--section", sec, "--text", "planned")
         if focus:
             self.fm("focus", tid)
         return tid
@@ -372,7 +376,7 @@ class Stop(HookCase):
 
     def test_drive_allows_stop_when_approval_needed(self):
         self.fm("init")
-        tid = self.task(tier="L")
+        tid = self.task(tier="L", focus=False)  # unapproved L can't be focused in standard autonomy
         self.assertIsNone(self.decision(self.stop("Here is the plan for the L-tier change.")))
         self.fm("task", "set", tid, "approved=true")
         self.assertEqual(self.decision(self.stop("Plan approved, starting.")), "block")

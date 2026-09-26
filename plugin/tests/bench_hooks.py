@@ -32,6 +32,7 @@ def _scratch_project(tmp):
     fm("task", "new", "Benchmark task", "--type", "FIX", "--tier", "S", "--scope", "src/**")
     fm("task", "step", "T-0001", "add", "reproduce")
     fm("task", "step", "T-0001", "add", "fix")
+    fm("task", "ac", "T-0001", "add", "works")
     fm("focus", "T-0001")
     for i in range(10):
         fm("task", "new", f"queued {i}", "--type", "CLEAN", "--tier", "S")

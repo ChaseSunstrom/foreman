@@ -19,6 +19,7 @@ class VisibilityCase(ForemanTestCase):
         self.fm("task", "new", "Fix login", "--type", "FIX", "--tier", "S")
         self.fm("task", "step", "T-0001", "add", "reproduce")
         self.fm("task", "step", "T-0001", "add", "fix")
+        self.fm("task", "ac", "T-0001", "add", "works")
         self.fm("focus", "T-0001")
 
     def manifest(self, **kw):

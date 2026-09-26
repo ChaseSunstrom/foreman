@@ -138,8 +138,33 @@ class TaskLifecycle(ForemanTestCase):
         self.assertIn("after the last change", p.stderr)
         self.assertEqual(self.fm("task", "audit", "T-0001", "vibes", "x", "y", check=False).returncode, 1)
 
+    def test_focus_requires_a_plan(self):
+        p = self.fm("focus", "T-0001", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("acceptance criterion", p.stderr)
+        self.assertIn("step", p.stderr)
+        self.fm("task", "ac", "T-0001", "add", "login works on 3G")
+        self.fm("task", "step", "T-0001", "add", "reproduce")
+        self.fm("focus", "T-0001")
+        self.assertEqual(self.brief().status, "active")
+
+    def test_unapproved_L_focus_depends_on_autonomy(self):
+        self.fm("task", "new", "Big one", "--type", "FEATURE", "--tier", "L")
+        for sec, text in (("Interpretation", "x"), ("Approach (options → choice → why)", "y")):
+            self.fm("task", "set", "T-0002", "--section", sec, "--text", text)
+        self.fm("task", "ac", "T-0002", "add", "works", "--verify", "pytest")
+        self.fm("task", "step", "T-0002", "add", "build")
+        p = self.fm("focus", "T-0002", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("approval", p.stderr)
+        self.fm("autonomy", "full")
+        self.fm("focus", "T-0002")
+
     def test_focus_is_exclusive(self):
         self.fm("task", "new", "Second", "--type", "CLEAN", "--tier", "S")
+        for tid in ("T-0001", "T-0002"):
+            self.fm("task", "ac", tid, "add", "works")
+            self.fm("task", "step", tid, "add", "do it")
         self.fm("focus", "T-0001")
         self.fm("focus", "T-0002")
         self.assertEqual((self.brief("T-0001").status, self.brief("T-0002").status), ("planned", "active"))
@@ -218,6 +243,7 @@ class TaskLifecycle(ForemanTestCase):
 
     def test_checkpoint_and_resume(self):
         self.fm("task", "step", "T-0001", "add", "reproduce")
+        self.fm("task", "ac", "T-0001", "add", "works")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "x.py"), "w") as f:
             f.write("x = 1\n")
@@ -248,6 +274,7 @@ class StateViews(ForemanTestCase):
         self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S")
         self.fm("task", "step", "T-0001", "add", "one")
         self.fm("task", "step", "T-0001", "add", "two")
+        self.fm("task", "ac", "T-0001", "add", "works")
         self.fm("focus", "T-0001")
         line = self.fm("state", "--line").stdout.strip()
         self.assertIn("T-0001 FIX 1/2", line)

@@ -351,6 +351,11 @@ def cmd_focus(args):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
             raise UsageError(f"{target.id} is {target.status}")
+        gaps = [] if target.status in ("active", "verifying") else \
+            c.plan_gaps(target, c.read_meta(p).get("autonomy", "standard"))
+        if gaps:
+            raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
+                                f"(fm task set/ac/step, or /foreman:intake; fm next says what's next)")
         for b in c.load_briefs(p):
             if b.status in ("active", "verifying") and b.id != target.id:
                 b.meta["status"] = "planned"

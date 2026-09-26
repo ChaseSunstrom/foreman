@@ -101,6 +101,7 @@ class Env:
         tid = self.fmj(*args)["id"]
         for s in steps:
             self.fm("task", "step", tid, "add", s)
+        self.fm("task", "ac", tid, "add", "the scenario's fix works", "--verify", "python3 -m pytest -q")
         self.fm("focus", tid)
         return tid
 
