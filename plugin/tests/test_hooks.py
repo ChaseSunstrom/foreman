@@ -367,6 +367,10 @@ class PromptApprovals(HookCase):
                 out = parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]
                 self.assertEqual(out["permissionDecision"], "deny")
 
+    def test_help_flags_never_corrupt_the_hook_output(self):
+        p = self.call("PreToolUse", cmd=f"fm ask {self.tid} core --why x -h")
+        self.assertEqual(json.loads(p.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_no_prompt_where_nobody_can_answer_it(self):
         # fm run's claude -p sessions: the task waits on the user instead
         p = self.hook("PreToolUse", {"tool_name": "Bash", "tool_use_id": "t9",

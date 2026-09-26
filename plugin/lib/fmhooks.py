@@ -404,7 +404,7 @@ def _ask_target(args):
     import io
     import fmcli
     try:
-        with contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):  # -h prints
             ns = fmcli.build_parser().parse_args(args)
     except SystemExit:
         return "", [], "", ["arguments fm ask doesn't accept"]
