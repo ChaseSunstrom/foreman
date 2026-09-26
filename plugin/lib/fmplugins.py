@@ -17,7 +17,7 @@ FOREMAN_OWNS = {
     "brainstorming": ("brainstorm", "ideation"),
     "planning and intake": ("writing-plans", "executing-plans", "plan-mode", "planner", "feature-dev", "prd"),
     "verification gates": ("verification-before-completion", "verify-before", "quality-gate"),
-    "task tracking and drive": ("todo", "task-tracker", "ralph", "loop"),
+    "task tracking and drive": ("todo", "task-tracker", "ralph"),
 }
 # Measured conflicts, by plugin name; setup-plugins.sh warns about the same ones (test_docs keeps the lists equal).
 KNOWN_CONFLICTS = {
@@ -64,13 +64,15 @@ def _frontmatter(path):
 def profile(path):
     """What a plugin directory brings: skills, commands, agents (name, description), hook events, MCP servers and an
     always-on token estimate."""
-    out = {"skills": [], "commands": [], "agents": [], "hooks": set(), "mcp": {}, "tokens": 0}
+    out = {"skills": [], "commands": [], "agents": [], "hooks": set(), "mcp": {}, "tokens": 0, "sync_stop": False}
     if not path or not os.path.isdir(path):
         return out
     for kind, pattern in (("skills", "skills/*/SKILL.md"), ("commands", "commands/*.md"), ("agents", "agents/*.md")):
         for f in sorted(glob.glob(os.path.join(path, pattern))):
             fm = _frontmatter(f)
-            name = fm.get("name") or os.path.basename(os.path.dirname(f) if kind == "skills" else f)[:-3 if kind != "skills" else None]
+            # unnamed: a skill is its folder's name, a command or agent its file's name without .md
+            name = fm.get("name") or (os.path.basename(os.path.dirname(f)) if kind == "skills" else
+                                      os.path.basename(f)[:-3])
             out[kind].append((name, fm.get("description", "")))
             out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
     manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {}) or {}
@@ -80,6 +82,10 @@ def profile(path):
         data = data.get(key, data) if isinstance(data, dict) else {}
         if key == "hooks":
             out["hooks"] |= set(data or {})
+            stops = [h for e in (data or {}).get("Stop") or [] if isinstance(e, dict)
+                     for h in e.get("hooks") or [] if isinstance(h, dict)]
+            # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
+            out["sync_stop"] |= any(not (h.get("async") or h.get("asyncRewake")) for h in stops)
         else:
             out["mcp"].update(data or {})
     return out
@@ -140,8 +146,8 @@ def find(need, n=10):
 def _own_findings(pid, prof):
     """Conflicts a plugin brings on its own: a Stop hook, process skills that duplicate Foreman."""
     found = []
-    if "Stop" in prof["hooks"]:
-        found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook: it competes with Foreman's "
+    if prof["sync_stop"]:
+        found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook that can hold the turn open: it competes with Foreman's "
                       "evidence gate and drive for when a turn may end",
                       "action": f"fm plugins disable {pid} (after fm ask ID plugin)"})
     for name, _ in prof["skills"] + prof["commands"]:

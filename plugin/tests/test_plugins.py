@@ -130,6 +130,18 @@ class Install(PluginsCase):
         self.assertNotIn("Traceback", p.stderr)
         self.assertIn("claude", p.stderr)
 
+    def test_a_failed_removal_keeps_its_record_for_a_retry(self):
+        self.fm("plugins", "install", "rust-analyzer-lsp@official", env=self.env)
+        write(os.path.join(self.bin, "claude"), f'#!/usr/bin/env bash\necho "claude $*" >> {self.calls}\nexit 1\n')
+        out = self.fm("uninstall-user", env=self.env).stdout
+        self.assertIn("Could not remove plugin rust-analyzer-lsp@official", out)
+        self.assertEqual(self.manifest(), {"plugins_installed": ["rust-analyzer-lsp@official"]})
+        self.fm("plugins", "forget", "rust-analyzer-lsp@official", env=self.env)
+        open(self.calls, "w").close()
+        self.fm("uninstall-user", env=self.env)
+        self.assertNotIn("uninstall", read_text(self.calls))
+        self.assertFalse(os.path.exists(os.path.join(self.home, "state", "install-manifest.json")))
+
     def test_install_shows_conflicts_first_and_refuses_unknown_ids(self):
         p = self.fm("plugins", "install", "nope@nowhere", env=self.env, check=False)
         self.assertEqual(p.returncode, 1)
@@ -146,6 +158,17 @@ class Check(PluginsCase):
         self.assertEqual(len({p for p, k in found if k == "duplicate-mcp"} & {"db-tools@official", "postgres-mcp@official"}), 1)
         self.assertIn(("ideas-kit@official", "overlaps-foreman"), found)
         self.assertTrue(all(f["action"] for f in fmplugins.check()), "every finding says what to do")
+
+    def test_a_background_stop_hook_is_not_a_conflict(self):
+        # asyncRewake/async Stop hooks run after the turn and can't hold it open: no contest with Foreman's gate
+        write(os.path.join(self.paths["ralph-loop"], "hooks", "hooks.json"),
+              {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "review.sh", "asyncRewake": True}]}]}})
+        self.assertNotIn(("ralph-loop@official", "stop-hook"), self.kinds())
+
+    def test_foreman_overlap_matches_process_names_only(self):
+        d = os.path.join(self.tmp, "q")
+        write(os.path.join(d, "skills", "event-loop-debugging", "SKILL.md"), "---\nname: event-loop-debugging\n---\n")
+        self.assertEqual(fmplugins._own_findings("q@m", fmplugins.profile(d)), [])
 
     def test_curated_conflicts_are_reported(self):
         ecc = os.path.join(self.cc, "plugins", "cache", "ecc", "ecc", "1.0")

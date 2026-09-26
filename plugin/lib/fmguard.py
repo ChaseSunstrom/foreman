@@ -315,22 +315,28 @@ _WRITE_API = re.compile(
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin")
-# Interpreter code that runs claude's plugin/mcp/config subcommands (argv list or command string) or sends /plugin in
-# a prompt. Both an exec API and the command shape must appear, so code that merely mentions them isn't blocked.
-_CLAUDE_IN_CODE = re.compile(r"""['"]claude['"]\s*,\s*['"](?:plugins?|mcp|config)['"]|['"]claude\s+(?:plugins?|mcp|"""
-                             r"""config)\b|['"]\s*/(?:plugins?|mcp|config)\s""")
+# A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
+_SLASH_BODY = (r"/(?:plugins?\s+(?:install|i|enable|disable|uninstall|remove|update|marketplace)|"
+               r"mcp\s+(?:add|remove|enable|disable)|config\s+(?:set|add|remove))\b")
+_SLASH_CHANGE = re.compile(r"(?:^|[\s'\"])" + _SLASH_BODY)
+# Interpreter code that runs claude's plugin/mcp/config subcommands (argv list, split argv array or command string) or
+# sends such a slash command. Both an exec API and the command shape must appear, so code that merely mentions them
+# isn't blocked.
+_CLAUDE_IN_CODE = re.compile(r"""['"]claude['"][^;\n]{0,40}?['"](?:plugins?|mcp|config)['"]|"""
+                             r"""['"]claude\s+(?:plugins?|mcp|config)\b|['"]\s*""" + _SLASH_BODY)
 _EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
                        r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(|`")
 
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
 # point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
-_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b")
+_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
 _FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
-                          r"restore_default_state)\s*\(|"
-                          rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b")
+                          r"restore_default_state|getattr)\s*\(|"
+                          rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b|"
+                          rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}")
 
 
 def _interpreter_writes(cmd, ctx):
@@ -432,7 +438,7 @@ def check_bash(cmd, ctx, depth=0):
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)
-        found += _check_claude_config(name, args)
+        found += _check_claude_config(name, args, cmd)
         found += _check_publish(name, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
     return found
@@ -468,6 +474,10 @@ def _tar_targets(args):
     return out
 
 
+_GIT_WORKTREE_WRITES = {"pull", "fetch", "checkout", "switch", "reset", "merge", "rebase", "restore", "stash", "apply",
+                        "am", "cherry-pick", "revert", "clean", "rm", "mv"}
+
+
 def _write_targets(name, args):
     """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
     the guard can't see an archive's members, so the destination itself is what's checked."""
@@ -487,12 +497,16 @@ def _write_targets(name, args):
     if name in ("7z", "7za", "7zz") and pos and pos[0] in ("x", "e"):
         return _opt_values(args, "-o") or ["."]
     if name == "git":
-        i = 0
+        i, where = 0, []
         while i < len(args) and args[i].startswith("-"):  # global options before the subcommand
+            if args[i] == "-C" and i + 1 < len(args):
+                where.append(args[i + 1])
             i += 2 if args[i] in ("-C", "-c") else 1
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
             return [rest[-1]] if len(rest) >= 2 else ["."]
+        if i < len(args) and args[i] in _GIT_WORKTREE_WRITES:  # rewrites the checkout it runs in
+            return [os.path.join(*where) if where else "."]
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
     if name == "dd":
@@ -650,16 +664,21 @@ _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", 
                    "mcp": {"add", "add-json", "add-from-claude-desktop", "remove"}, "config": {"set", "add", "remove"}}
 
 
-_SLASH_CHANGE = re.compile(r"(?:^|\s)/(?:plugins?|mcp|config)\b")
+_SESSION_CONFIG = ("--settings", "--mcp-config", "--plugin-dir")
 
 
-def _check_claude_config(name, args):
+def _check_claude_config(name, args, cmd=""):
     """Installing or toggling plugins, marketplaces and MCP servers, or changing Claude Code's config: new code and
-    always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it."""
+    always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it. A session started
+    with its own settings, MCP servers or plugins counts too (its settings can switch Foreman's hooks off)."""
     if name != "claude":
         return []
-    if any(_SLASH_CHANGE.search(a) for a in args):  # a prompt's slash command isn't a tool call the guard sees
-        return [("plugin", "a /plugin, /mcp or /config command in a claude prompt")]
+    # a prompt's slash command isn't a tool call the guard sees; `cmd` holds stdin text (echo … |, heredocs) too
+    if _SLASH_CHANGE.search(cmd) or any(_SLASH_CHANGE.search(a) for a in args):
+        return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt")]
+    flags = [a.split("=", 1)[0] for a in args if a.split("=", 1)[0] in _SESSION_CONFIG]
+    if flags:
+        return [("plugin", f"claude {flags[0]} starts a session with its own settings, MCP servers or plugins")]
     # every adjacent pair, not just the first two words: global options and their values can come first
     pos = ["plugin" if a == "plugins" else a for a in args if not a.startswith("-")]
     for a, b, c3 in zip(pos, pos[1:], pos[2:] + [""]):

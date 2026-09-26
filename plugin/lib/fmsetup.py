@@ -192,9 +192,12 @@ def cmd_uninstall(args):
         print("No Foreman install manifest; nothing to undo.")
         return
     # added by `fm plugins install` / `add-marketplace` after the user's yes; plugins go before their marketplaces
-    removals = [("plugin", pid, ["uninstall", pid, "--scope", "user"]) for pid in m.get("plugins_installed") or []] + \
-               [("marketplace", mk, ["marketplace", "remove", mk]) for mk in m.get("marketplaces_added") or []]
-    for what, name, cmd in removals:
+    removals = [("plugin", "plugins_installed", pid, ["uninstall", pid, "--scope", "user"])
+                for pid in m.get("plugins_installed") or []] + \
+               [("marketplace", "marketplaces_added", mk, ["marketplace", "remove", mk])
+                for mk in m.get("marketplaces_added") or []]
+    kept = {}  # what couldn't be removed stays in the manifest, so a later uninstall-user retries it
+    for what, key, name, cmd in removals:
         if args.dry_run:
             print(f"Would remove {what} {name}")
             continue
@@ -203,6 +206,8 @@ def cmd_uninstall(args):
             err = "" if r.returncode == 0 else (r.stderr or r.stdout).strip()[:200] or f"exit {r.returncode}"
         except (OSError, subprocess.TimeoutExpired) as e:
             err = str(e)
+        if err:
+            kept.setdefault(key, []).append(name)
         print(f"Could not remove {what} {name}: {err}" if err else f"Removed {what} {name}")
     s = _load(P["settings"], {})
     new_s, actions = copy.deepcopy(s), []
@@ -263,7 +268,12 @@ def cmd_uninstall(args):
     if _link_state(P) == "ours":
         os.unlink(P["rules_link"])
         actions.append("rules symlink removed")
-    os.remove(P["manifest"])
+    if kept:
+        c.write_atomic(P["manifest"], json.dumps(kept, indent=2) + "\n")
+        actions.append("manifest kept for what couldn't be removed: fm uninstall-user retries it, "
+                       "fm plugins forget ID leaves one in place")
+    else:
+        os.remove(P["manifest"])
     print("Removed Foreman's wiring from ~/.claude:\n  - " + "\n  - ".join(actions))
 
 
