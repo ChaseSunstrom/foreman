@@ -223,6 +223,10 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, done, "task_done")
         return out(args, dict(c.brief_summary(b), doc_drift=notes), f"{b.id} done." + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
+    if sub == "drop" and getattr(args, "done_in", None):
+        return task_done_in(p, args)
+    if sub == "drop" and not args.reason:
+        raise UsageError("fm task drop needs a reason (or --done-in ID when another task did the work)")
     if sub in ("block", "drop", "defer"):
         status = {"block": "blocked", "drop": "dropped", "defer": "deferred"}[sub]
         reason = getattr(args, "reason", None) or ""
@@ -233,6 +237,26 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
     raise UsageError(f"unknown task subcommand {sub}")
+
+
+def task_done_in(p, args):
+    """A request that another task did as part of its work: closed as done there, linked both ways."""
+    host = args.done_in.upper()
+    if host == args.id.upper():
+        raise UsageError("a task can't be done inside itself")
+    with c.lock(p.dir):
+        b, h = need_brief(p, args.id), need_brief(p, host)
+        if b.status not in ("captured", "planned") or b.evidence():
+            raise c.PolicyError(f"{b.id} was started ({b.status}, {len(b.evidence())} evidence line(s)): finish it "
+                                f"through its own gates (fm task done) rather than --done-in")
+        b.meta["status"], b.meta["done_in"] = "done", h.id
+        b.append_log(f"done in {h.id}" + (f": {args.reason}" if args.reason else ""))
+        h.append_log(f"includes {b.id}: {b.title}")
+        c.save_brief(p, b)
+        c.save_brief(p, h)
+        c.log_event(p, "task_done_in", task=b.id, data={"host": h.id, "reason": args.reason or ""}, session=session())
+        c.regen_views(p)
+    out(args, c.brief_summary(b), f"{b.id} done in {h.id}.")
 
 
 def task_new(p, args):
@@ -251,7 +275,7 @@ def task_new(p, args):
                 b.meta["scope"] = args.scope
             if args.depends:
                 b.meta["depends_on"] = args.depends
-            b.preamble = f"# {args.title}\n"
+            b.preamble = f"# {c.plain(args.title).strip() or 'untitled'}\n"
             b.append_log("planned from capture")
             c.save_brief(p, b)
         else:
@@ -577,12 +601,31 @@ def cmd_decide(args):
     out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
 
 
+def _agent_report(path):
+    """The final report from a subagent's output file (a JSONL transcript: its last assistant text), or the file's text
+    when it isn't a transcript."""
+    with open(path, encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+    report = None
+    for line in raw.splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        m = e.get("message") if isinstance(e, dict) else None
+        if isinstance(m, dict) and m.get("role") == "assistant" and isinstance(m.get("content"), list):
+            text = "\n".join(x.get("text", "") for x in m["content"] if isinstance(x, dict) and x.get("type") == "text")
+            report = text.strip() or report
+    return (report or raw).rstrip("\n") + "\n"
+
+
 def cmd_research(args):
     p = resolve(args)
     name = args.name[:-3] if args.name.endswith(".md") else args.name
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", name):
         raise UsageError(f"research name must be a plain file name, got {args.name!r}")
-    text = open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read()
+    text = (_agent_report(args.from_agent) if args.from_agent else
+            open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read())
     path = os.path.join(p.dir, "research", name + ".md")
     with c.lock(p.dir):
         c.write_atomic(path, c.redact(text))
@@ -695,7 +738,8 @@ def cmd_audit(args):
             asked = re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip() or b.title
             extra = (f"\nThe user's request, verbatim:\n{asked}\nAcceptance criteria:\n"
                      + "\n".join(f"- {a.text}" for a in b.acceptance()))
-        blocks.append(f"=== {lens} ===\nLens: {lens.upper()}. {head}\nContext for this lens: {context}{extra}\n"
+        focus = "".join(f"\nFocus: {n}" for n in args.note)
+        blocks.append(f"=== {lens} ===\nLens: {lens.upper()}. {head}{focus}\nContext for this lens: {context}{extra}\n"
                       f"{prompt}\n{_REVIEW_OUT}")
     out(args, {"diff": path, "base": base, "lenses": lenses},
         "\n\n".join(blocks) + f"\n\nDiff: {path}\nRun each non-self brief as a foreman:fm-reviewer subagent (≤3 at "
@@ -802,6 +846,8 @@ def build_parser():
     r = rsp.add_parser("add")
     r.add_argument("name")
     r.add_argument("--file")
+    r.add_argument("--from-agent", metavar="FILE", help="a subagent's output file: keeps its final report, not the "
+                                                           "transcript")
     r.add_argument("--task")
     r.add_argument("--json", action="store_true")
 
@@ -864,10 +910,13 @@ def build_parser():
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
     t = tadd("done")
     t.add_argument("id")
-    for name in ("block", "drop"):
-        t = tadd(name)
-        t.add_argument("id")
-        t.add_argument("reason")
+    t = tadd("block")
+    t.add_argument("id")
+    t.add_argument("reason")
+    t = tadd("drop")
+    t.add_argument("id")
+    t.add_argument("reason", nargs="?")
+    t.add_argument("--done-in", metavar="ID", help="it was done as part of this other task (closed as done there)")
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
@@ -922,6 +971,8 @@ def build_parser():
     s.add_argument("id")
     s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")
     s.add_argument("--base", help="diff from this revision (default: the commit the task was focused at)")
+    s.add_argument("--note", action="append", default=[], help="focus for every lens brief: this round's change, "
+                                                               "threat model, what to ignore (repeatable)")
 
     s = add("autonomy", cmd_autonomy, help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
     s.add_argument("level", nargs="?", choices=["standard", "full"])

@@ -574,7 +574,7 @@ class Brief:
     def new(cls, id, title, type, tier, raw=None, scope=(), depends=(), source="user", priority="normal",
             status="planned", now=None, explore=False):
         ts = now or globals()["now"]()
-        title = plain(title)  # printed by the statusline, dashboard and terminal title
+        title = plain(title).strip() or "untitled"  # printed by the statusline, dashboard and terminal title
         raw_text = "\n".join("> " + line for line in (raw or title).splitlines()) or "> " + title
         with open(os.path.join(PLUGIN_ROOT, "templates", "brief.md"), encoding="utf-8") as f:
             tpl = string.Template(f.read())
@@ -597,7 +597,7 @@ class Brief:
     def title(self):
         for line in self.preamble.splitlines():
             if line.startswith("# "):
-                return line[2:].strip()
+                return plain(line[2:]).strip()  # printed by fm queue, the dashboard, the terminal title
         return ""
 
     # --- sections
@@ -1207,6 +1207,11 @@ def plain(s):
     return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
 
 
+def plain_lines(text):
+    """plain() for each line of a multi-line text (newlines and tabs kept)."""
+    return "\n".join(plain(l.replace("\t", "    ")) for l in (text or "").split("\n"))
+
+
 def fit(text, width):
     """One line cut to width with an ellipsis."""
     return text if len(text) <= width else text[:max(1, width - 1)] + "…"
@@ -1408,7 +1413,9 @@ def progress_line(sd, width=120):
     if a:
         done, total = a["steps_done"], a["steps_total"]
         k = round(10 * done / total) if total else 0
-        parts.append(f"▸ {a['id']} {a['type']} {a['tier']} {'█' * k}{'░' * (10 - k)} {done}/{total} · {a['stage']}")
+        step = f" {plain(a['step']['text'])[:28]}" if a.get("step") else ""  # which round of an umbrella task
+        parts.append(f"▸ {a['id']} {a['type']} {a['tier']} {'█' * k}{'░' * (10 - k)} {done}/{total}{step} · "
+                     f"{a['stage']}")
         if a["audits"]["required"]:
             parts.append(f"audits {a['audits']['done']}/{a['audits']['required']}")
     parts += [f"q{len(sd['queue'])} in{len(sd['inbox'])}", "full auto" if sd["autonomy"] == "full" else "standard"]

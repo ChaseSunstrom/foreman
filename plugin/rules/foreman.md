@@ -54,7 +54,7 @@ Dependencies override it. A FIX that breaks the baseline and any critical securi
 - Guard blocks name a category. Authorize only for a brief that genuinely needs it: `fm task set ID --allow <category>`, or `fm ask` where the user must consent. `core`, `remote` and `plugin` only ever come from the user's answer to `fm ask`.
 
 ## Subagents
-Default none. Only read-only recon, research, audits or L-tier review, via `foreman:fm-recon` / `foreman:fm-reviewer`, with a self-contained brief. ≤3 in parallel on disjoint scopes. Save each summary with `fm research add NAME` and spot-check two claims. Brainstorm sub-agents run tool-less through `fm ideas`.
+Default none. Only read-only recon, research, audits or L-tier review, via `foreman:fm-recon` / `foreman:fm-reviewer`, with a self-contained brief. ≤3 in parallel on disjoint scopes. Save each summary with `fm research add NAME --from-agent <its output file>` and spot-check two claims. Brainstorm sub-agents run tool-less through `fm ideas`.
 
 ## Precedence
 The user's current message > project CLAUDE.md and rules > these rules > skill defaults. Safety guards are never overridden.

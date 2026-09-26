@@ -173,7 +173,8 @@ def _is_core(path, ctx):
 
 _SHELL_RC = {".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",
              ".zlogin", ".zlogout", ".xprofile", ".xinitrc", ".xsessionrc", ".config/fish/config.fish"}
-_LATER_DIRS = (".config/systemd", ".config/autostart", ".config/environment.d", ".config/fish/conf.d")
+_LATER_DIRS = (".config/systemd", ".config/autostart", ".config/environment.d", ".config/fish/conf.d",
+               ".config/fish/functions", ".bashrc.d", ".local/share/applications")
 
 
 def _runs_later(p, ctx):
@@ -182,6 +183,28 @@ def _runs_later(p, ctx):
     return (any(p == os.path.join(home, f) for f in _SHELL_RC) or any(_under(p, os.path.join(home, d))
                                                                       for d in _LATER_DIRS)
             or "/.git/hooks/" in p)
+
+
+def _protected_roots(ctx):
+    """(path, category) of everything the guard protects, for writes that cover a whole tree."""
+    fh, cl = ctx.foreman_home, os.path.join(ctx.home, ".claude")
+    roots = [(os.path.join(fh, "plugin", d), "core") for d in ("lib", "bin", "hooks", "evals")]
+    roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
+              (os.path.join(cl, "settings.json"), "core"), (os.path.join(ctx.home, ".claude.json"), "core"),
+              (os.path.join(cl, "plugins"), "plugin")]
+    # Foreman state inside a tree write: the user may approve it (core); a direct write never is (state-direct)
+    roots += [(d, "core") for d in [os.path.join(fh, "state"), ctx.state_dir, *ctx.state_fallbacks] if d]
+    roots += [(os.path.join(ctx.home, d), "credentials") for d in _CRED_DIRS]
+    return roots
+
+
+def classify_tree(path, ctx):
+    """A checkout, extraction or recursive copy at `path` can rewrite anything under it: the protected paths it
+    contains, as categories (classify_write covers what `path` itself is under)."""
+    cats = []
+    for p in _variants(path):
+        cats += [cat for root, cat in _protected_roots(ctx) if _under(os.path.normpath(root), p)]
+    return list(dict.fromkeys(cats))
 
 
 def _new_context_file(p, ctx):
@@ -455,9 +478,15 @@ def check_bash(cmd, ctx, depth=0):
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
                 found.append(("pipe-shell", f"{name} <(download)"))
         git_env = [a.split("=", 1)[1] for a in c.argv if name == "git" and a.startswith(("GIT_DIR=", "GIT_WORK_TREE="))]
+        if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
+            found.append(("system", "git with core.hooksPath set through the environment"))
         for target in c.redirs + _write_targets(name, args) + git_env:
             if not _unresolvable(target):
                 found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
+        for target in _tree_targets(name, args) + git_env:
+            if not _unresolvable(target):
+                found += [(cat, f"{target} (a tree write over it)")
+                          for cat in classify_tree(_resolve(_expand(target, ctx), cwd), ctx)]
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
@@ -516,6 +545,17 @@ def _tar_targets(args):
 
 _GIT_WORKTREE_WRITES = {"pull", "fetch", "checkout", "switch", "reset", "merge", "rebase", "restore", "stash", "apply",
                         "am", "cherry-pick", "revert", "clean", "rm", "mv"}
+
+
+def _tree_targets(name, args):
+    """Directories a command rewrites as a whole (checkouts, extractions, recursive copies, rsync): whatever they
+    contain can change, so classify_tree checks what lies under them."""
+    recursive = any(a in ("-r", "-R", "-a", "--recursive", "--archive") or re.fullmatch(r"-[a-zA-Z]*[rRa][a-zA-Z]*", a)
+                    for a in args)
+    if name in ("git", "tar", "gtar", "bsdtar", "unzip", "cpio", "7z", "7za", "7zz", "rsync") or \
+            (name in ("cp", "install") and recursive):
+        return _write_targets(name, args)
+    return []
 
 
 def _write_targets(name, args):
@@ -747,10 +787,16 @@ def _check_system(name, args):
         return [("system", "crontab change (code that runs on a schedule)")]
     if name in ("at", "batch"):
         return [("system", f"{name} schedules a command to run later")]
+    if name == "direnv" and pos[:1] in (["allow"], ["permit"], ["grant"]):
+        return [("system", "direnv allow (.envrc runs on every cd into the folder)")]
     if name == "git":
+        # hooks from another folder, set for one command (-c, --config-env) or persistently (git config)
+        if any(re.match(r"(?i)(--config-env=)?core\.hookspath=", a) for a in args):
+            return [("system", "git with core.hooksPath (hooks from another folder)")]
         sub, rest = _fm_subcommand(args, takes_value=("-C", "-c"))
         values = [a for a in rest if not a.startswith("-")]
-        if sub == "config" and values[:1] == ["core.hooksPath"] and len(values) > 1 and "--get" not in rest:
+        if sub == "config" and [v.lower() for v in values[:1]] == ["core.hookspath"] and len(values) > 1 \
+                and not set(rest) & {"--get", "--get-all", "--list", "-l", "--unset", "--unset-all"}:
             return [("system", "git core.hooksPath (hooks that run on every git command)")]
     if name.startswith("mkfs") or name in _DISK:
         return [("system", f"{name} (disk/partition change)")]

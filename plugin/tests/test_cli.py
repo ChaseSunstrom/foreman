@@ -69,8 +69,11 @@ class CaptureAndIntake(ForemanTestCase):
         # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
         self.fm("capture", "evil\x1b]0;pwned\x07 title‮ here")
         self.fm("task", "new", "also\x1b[2J bad", "--type", "FIX", "--tier", "S")
+        self.fm("task", "new", "planned\x1b]0;again\x07 one", "--type", "FIX", "--tier", "S", "--from", "T-0001")
+        self.fm("capture", "\x1b[2J")
         for b in c.load_briefs(c.find_project(self.repo)):
             self.assertNotRegex(b.title, r"[\x00-\x1f\x7f‮]")
+            self.assertTrue(b.title, "a title of only control characters falls back to 'untitled'")
         self.assertNotIn("\x1b]0;pwned", self.fm("watch", "--once").stdout)
 
     def test_parallel_captures_get_unique_ids(self):
@@ -539,6 +542,61 @@ class AuditPrep(ForemanTestCase):
         with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md")) as f:
             found = {m.group(1) for m in fmcli._LENS_TPL.finditer(f.read())}
         self.assertEqual(found, set(c.AUDIT_LENSES) - {"self"})
+
+
+class RoundFiveWorkflow(ForemanTestCase):
+    """Round 5 (T-0018): cleaner review notes, focused audit briefs, requests finished inside another task."""
+
+    def test_research_keeps_a_subagents_final_report_not_its_transcript(self):
+        self.fm("init")
+        transcript = os.path.join(self.tmp, "agent.output")
+        lines = [{"type": "user", "message": {"role": "user", "content": "review this"}},
+                 {"type": "assistant", "message": {"role": "assistant", "content": [
+                     {"type": "tool_use", "name": "Read", "input": {"file_path": "x"}}]}},
+                 {"type": "assistant", "message": {"role": "assistant", "content": [
+                     {"type": "text", "text": "## Verdict: changes needed\n\n**HIGH** — x.py:3 — broken"}]}}]
+        with open(transcript, "w") as f:
+            f.write("\n".join(json.dumps(l) for l in lines) + "\n")
+        path = self.fm_json("research", "add", "r1-edge", "--from-agent", transcript)["path"]
+        text = read_text(path)
+        self.assertTrue(text.startswith("## Verdict: changes needed"), text[:80])
+        self.assertNotIn("tool_use", text)
+        plain = os.path.join(self.tmp, "report.md")
+        with open(plain, "w") as f:
+            f.write("## Verdict: ok\n")
+        self.assertIn("## Verdict: ok", read_text(self.fm_json("research", "add", "r2", "--from-agent", plain)["path"]))
+
+    def test_audit_prep_note_reaches_every_lens_brief(self):
+        self.fm("init")
+        self.fm("task", "new", "Add sync", "--type", "FEATURE", "--tier", "L", "--step", "build it")
+        self.fm("task", "ac", "T-0001", "add", "syncs", "--verify", "pytest")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("focus", "T-0001")
+        out = self.fm("audit", "prep", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
+                      "--note", "round 3 only").stdout
+        self.assertEqual(out.count("threat: a pulled .foreman/ is untrusted"), 5)
+        self.assertEqual(out.count("round 3 only"), 5)
+
+    def test_a_request_done_inside_another_task_is_done_there(self):
+        self.fm("init")
+        self.fm("task", "new", "Umbrella", "--type", "FEATURE", "--tier", "S", "--step", "all of it", "--ac", "works")
+        self.fm("capture", "export as CSV")
+        out = self.fm("task", "drop", "T-0002", "--done-in", "T-0001").stdout
+        self.assertIn("done in T-0001", out)
+        p = c.find_project(self.repo)
+        folded, host = c.find_brief(p, "T-0002"), c.find_brief(p, "T-0001")
+        self.assertEqual((folded.status, folded.meta.get("done_in")), ("done", "T-0001"))
+        self.assertIn("includes T-0002", host.section("Log"))
+        self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0999", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0001", check=False).returncode, 0)
+        # work that was started keeps its own gates: --done-in isn't a way around evidence and audits
+        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", "ok")
+        self.fm("capture", "another")
+        p2 = self.fm("task", "drop", "T-0001", "--done-in", "T-0003", check=False)
+        self.assertEqual(p2.returncode, 2)
+        self.assertIn("started", p2.stderr)
 
 
 class NextAction(ForemanTestCase):

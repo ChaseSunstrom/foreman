@@ -208,3 +208,18 @@ class Command(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HookErrors(ForemanTestCase):
+    def test_the_latest_error_is_named(self):
+        # round 5 (brainstorm, reliability): "2 hook errors" alone sends the user digging through the log
+        log = os.path.join(self.home, "state", "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "w") as f:
+            f.write(f"{c.now()} Stop Traceback (most recent call last):\n  File \"x\", line 1\nKeyError: 'drive'\n"
+                    f"{c.now()} PreToolUse Traceback (most recent call last):\n  File \"y\", line 2\n"
+                    "NameError: name '_new_context_file' is not defined\n")
+        r = d.check_hook_errors()
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("2 hook error(s)", r.detail)
+        self.assertIn("PreToolUse NameError: name '_new_context_file' is not defined", r.detail)

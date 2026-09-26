@@ -115,6 +115,13 @@ class Progress(VisibilityCase):
             self.assertIn(needle, line)
         self.assertLessEqual(len(line), 120)
 
+    def test_the_current_step_is_named(self):
+        # round 5: an umbrella task's "3/6" says nothing about which round is running
+        line = c.progress_line(self.sd())
+        step = c.find_brief(c.find_project(self.repo), "T-0001").current_step().text
+        self.assertIn(step[:12], line)
+        self.assertLessEqual(len(line), 120)
+
     def test_a_zero_width_terminal_still_gets_a_short_line(self):
         self.fm_ask("T-0001", "publish")
         line = self.statusline(env={"COLUMNS": "0"}).stdout.rstrip("\n").split("\n")[-1]

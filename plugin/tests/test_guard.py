@@ -472,6 +472,37 @@ class PluginChanges(GuardCase):
             ("at now + 1 minute", "system"), ("cp x {repo}/.git/hooks/post-merge", "system"),
         ], self.bash)
 
+    def test_git_hook_redirection_in_any_spelling_is_system(self):
+        # round-4 adversary audit: -c swallowed the value before the check ran
+        self.run_table([
+            ("git -c core.hooksPath=/tmp/evil commit --allow-empty -m x", "system"),
+            ("git -c CORE.HOOKSPATH=/tmp/evil merge x", "system"),
+            ("git --config-env=core.hooksPath=EVIL commit -m x", "system"),
+            ("GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/e git commit -m x", "system"),
+            ("git config --global core.hooksPath /tmp/evil", "system"),
+            ("direnv allow .", "system"),
+            ("git -c user.name=x commit -m y", None),
+        ], self.bash)
+        self.run_table([
+            ("{home}/.bashrc.d/evil.sh", "system"), ("{home}/.config/fish/functions/ls.fish", "system"),
+            ("{home}/.local/share/applications/x.desktop", "system"),
+        ], self.write)
+
+    def test_tree_writes_that_contain_protected_paths_are_caught(self):
+        # round-4 adversary audit: a checkout or extraction at an ancestor rewrites what's inside it
+        fh = self.fhome
+        self.run_table([
+            (f"git -C {fh} checkout evil-branch", "core"),
+            (f"cd {fh} && git reset --hard HEAD~3", "core"),
+            (f"cd {fh} && git checkout HEAD~1 -- plugin/lib/fmguard.py", "core"),
+            (f"tar -xf evil.tar -C {fh}", "core"),
+            (f"cp -r evil/. {fh}", "core"),
+            (f"rsync -a evil/ {fh}/", "core"),
+            ("tar -xzf dump.tgz -C {home}", "core"),  # ~/.claude/settings.json, Foreman and its state are under it
+            (f"cp notes.txt {fh}", None),
+            ("git -C {repo} checkout -b feature", None),
+        ], self.bash)
+
     def test_a_new_skill_agent_or_command_needs_the_users_yes(self):
         # round-2 intent audit: a new project or user skill/agent/command is always-on context in every session there
         for d in ("{repo}/.claude/skills/release/SKILL.md", "{repo}/.claude/agents/fixtures.md",

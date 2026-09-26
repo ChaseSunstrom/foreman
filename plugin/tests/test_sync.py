@@ -167,6 +167,14 @@ class Sync(ForemanTestCase):
             f.write(".*\n")
         self.assertIn("ignored", self.fm("sync", "on").stdout)
 
+    def test_pulled_titles_cannot_carry_terminal_sequences(self):
+        # round-4 adversary audit: fm queue printed titles straight from disk
+        self.fm("sync", "on")
+        self.pulled(lambda t: t.replace("# Add export", "# Add\x1b]0;pwned\x07 export‮", 1))
+        self.fm("sync", "import")
+        self.assertNotIn("\x1b", c.find_brief(c.find_project(self.repo), self.tid).title)
+        self.assertNotIn("\x1b]0;pwned", self.fm("queue").stdout)
+
     def test_exports_are_redacted_and_huge_imports_skipped(self):
         # round 4 (brainstorm, security): the mirror is committed, so no secret may reach it from any older note
         p = c.find_project(self.repo)

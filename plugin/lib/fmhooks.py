@@ -354,11 +354,14 @@ def _committed_guard():
     import types
     lib = os.path.join(c.PLUGIN_ROOT, "lib")
     root = c.git_root(lib)
-    if not root:
+    # only Foreman's own repo (plugin/ at its top), never some other repository the plugin copy happens to sit in
+    if not root or os.path.normpath(os.path.join(root, "plugin")) != os.path.normpath(c.PLUGIN_ROOT):
         return None
     rel = os.path.relpath(os.path.join(lib, "fmguard.py"), root).replace(os.sep, "/")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR etc. would pick another repo
     try:
-        r = subprocess.run(["git", "-C", root, "show", f"HEAD:{rel}"], capture_output=True, text=True, timeout=5)
+        r = subprocess.run(["git", "-C", root, "show", f"HEAD:{rel}"], capture_output=True, text=True, timeout=5,
+                           env=env)
     except (OSError, subprocess.SubprocessError):
         return None
     if r.returncode or not r.stdout:
