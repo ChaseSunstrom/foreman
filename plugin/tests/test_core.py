@@ -284,8 +284,10 @@ class Briefs(unittest.TestCase):
         self.assertTrue(any("step 2" in r for r in reasons))
         self.assertTrue(any("criterion 1" in r for r in reasons))
 
-    def _finished(self, tier):
+    def _finished(self, tier, docs=True):
         b = c.Brief.new("T-0001", "Do a thing", "FEATURE", tier, now="2026-01-01T00:00:00Z")
+        if docs and tier in ("M", "L"):
+            b.set_section("Docs impact", "none: test fixture")
         b.add_step("work")
         b.add_evidence("make test", "ok", step=1, ts="2026-01-01T10:00:00Z")
         b.mark_step(1)
@@ -309,6 +311,17 @@ class Briefs(unittest.TestCase):
         self.assertEqual([r for r in big.done_blockers() if "audit" in r], ["audit missing: maintainer"])
         big.add_audit("maintainer", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
         self.assertEqual(big.done_blockers(), [])
+
+    def test_m_and_l_need_a_docs_impact_before_done(self):
+        m = self._finished("M", docs=False)
+        m.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        m.add_audit("edge", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertIn("docs impact", " ".join(m.done_blockers()))
+        m.set_section("Docs impact", "none: internal refactor, no user-visible change")
+        self.assertEqual(m.done_blockers(), [])
+        s = self._finished("S")
+        s.add_audit("self", "checklist", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(s.done_blockers(), [], "S tasks don't need it")
 
     def test_audit_must_postdate_the_last_change(self):
         b = self._finished("S")
@@ -393,6 +406,9 @@ class Stages(unittest.TestCase):
         self.assertIn("fm task ac T-0001 check 1", c.next_action(b))
         b.add_evidence("pytest -k slow", "1 passed", ac=1)
         b.check_ac(1)
+        self.assertEqual(c.stage(b), "documenting")
+        self.assertIn("Docs impact", c.next_action(b))
+        b.set_section("Docs impact", "README usage updated")
         self.assertEqual(c.stage(b), "auditing")
         self.assertIn("audit.md", c.next_action(b))
         b.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")

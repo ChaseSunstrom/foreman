@@ -681,7 +681,14 @@ class Brief:
                 reasons.append(f"acceptance criterion {a.n} not checked: {a.text}")
         if not self.has_evidence():
             reasons.append("no verification evidence recorded")
+        if self.docs_gap():
+            reasons.append(f"docs impact not recorded (fm task set {self.id} --section \"Docs impact\" --text "
+                           f"\"<docs updated | none: why>\")")
         return reasons + self.audit_blockers(since, tree)
+
+    def docs_gap(self):
+        """M/L changes say which docs they updated (or why none): out-of-date docs are the drift T-0013 targets."""
+        return self.tier in ("M", "L") and not self.section("Docs impact").strip()
 
     # --- resume
     def set_resume_auto(self, text):
@@ -1037,6 +1044,8 @@ def stage(b, autonomy="standard", since=None):
         return "executing"
     if any(not a.checked for a in b.acceptance()):
         return "verifying"
+    if b.docs_gap():
+        return "documenting"
     return "auditing" if b.audit_blockers(since) else "closing"
 
 
@@ -1057,6 +1066,9 @@ def next_action(b, autonomy="standard", since=None):
     if st == "verifying":
         a = next(a for a in b.acceptance() if not a.checked)
         return f"{tid}: fm task ac {tid} check {a.n} --evidence \"<cmd>\" \"<result>\" ({a.text[:80]})"
+    if st == "documenting":
+        return (f"{tid}: record the Docs impact — the docs this change updated, or 'none: <why>' "
+                f"(fm task set {tid} --section \"Docs impact\" --text \"…\")")
     if st == "auditing":
         return f"{tid}: {'; '.join(b.audit_blockers(since))} (skills/intake/references/audit.md; fm task audit)"
     if st == "closing":

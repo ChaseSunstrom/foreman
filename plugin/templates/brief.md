@@ -23,6 +23,7 @@ $raw
 ## Execution prompt
 ## Steps
 ## Resume here
+## Docs impact
 ## Verification evidence
 ## Log
 - $created created
