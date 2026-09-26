@@ -450,6 +450,21 @@ class Stop(HookCase):
         self.task()
         self.assertIsNone(self.decision(self.stop("Should I use the existing logger or add a new one?")))
 
+    def test_drive_holds_when_the_user_asked_for_planning_only(self):
+        self.fm("init")
+        self.task()
+        self.hook("UserPromptSubmit", {"prompt": "FIX: a\nCLEAN: b\n\nCapture and plan these; don't implement anything yet."})
+        self.assertIsNone(self.decision(self.stop("All five are planned.")))
+        self.hook("UserPromptSubmit", {"prompt": "ok go ahead"})  # the next prompt lifts the hold
+        self.assertEqual(self.decision(self.stop("Starting.")), "block")
+
+    def test_questions_anywhere_in_the_reply_end_the_turn_in_standard_autonomy(self):
+        self.fm("init")
+        self.task()
+        msg = ("Plan ready.\n\nQuestions:\n1. Should aliases stay?\n2. What should div(0) do?\n\n"
+               + "Details of the plan follow. " * 30)
+        self.assertIsNone(self.decision(self.stop(msg)))
+
     def test_drive_allows_stop_when_paused_off_or_idle(self):
         self.fm("init")
         self.assertIsNone(self.decision(self.stop("Nothing to do.")))

@@ -901,6 +901,15 @@ _WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?
                         r"speed up|clean up|handle|allow|prevent|convert|move|split|merge|extract|upgrade)\b", re.I)
 
 
+_PLAN_ONLY = re.compile(r"\b(?:don'?t|do not|no need to)\s+(?:implement|code|build|start|change|write|execute)\b|"
+                        r"\b(?:plan|capture)[\w\s]{0,20}\b(?:only|first)\b|\bjust (?:plan|capture)\b|\bnothing yet\b", re.I)
+
+
+def is_plan_only(text):
+    """The user asked to plan/capture without implementing ("don't implement anything yet"): drive must hold."""
+    return bool(_PLAN_ONLY.search(text or ""))
+
+
 def is_work_request(text):
     """A plain, untagged request with a concrete target ("add a --verbose flag"): intake classifies it first."""
     t = (text or "").strip()

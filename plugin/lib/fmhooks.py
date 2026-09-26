@@ -246,8 +246,9 @@ def user_prompt_submit(pl):
                 meta["autonomy"] = "standard"
             c.write_meta(p, meta)
             g = _read_gate(p)
-            if sid in g["drive"]:
-                g["drive"][sid]["count"] = 0
+            hold = c.is_plan_only(text)
+            if sid in g["drive"] or hold:
+                g["drive"].setdefault(sid, {}).update(count=0, hold=hold)  # a plan-only prompt holds drive this turn
                 _write_gate(p, g)
             sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
@@ -261,6 +262,8 @@ def user_prompt_submit(pl):
         parts.append(f"Message has {n} intake item{'s' if n > 1 else ''} ({tags})"
                      + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip else "")
                      + "; canonical order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE (fm intake prints it)")
+    if c.is_plan_only(text):
+        parts.append("Plan-only request: drive won't start implementation until the next message")
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
     elif not r.items and c.is_open_ended(text):
@@ -489,8 +492,13 @@ def claims_done(msg):
     return False
 
 
+_QUESTION_LINE = re.compile(r"\?\**\s*$", re.M)
+
+
 def needs_user(msg):
-    return bool(_ASK.search((msg or "").strip()[-400:]))
+    """The reply ends with, or lists, questions for the user (numbered questions often sit above a summary)."""
+    tail = (msg or "").strip()
+    return bool(_ASK.search(tail[-400:]) or _QUESTION_LINE.search(tail[-2500:]))
 
 
 def _marks(p):
@@ -575,6 +583,8 @@ def _drive(p, sd, briefs, pl, g):
     if c.needs_approval(wb, "full" if full else "standard"):
         return None  # waiting on the user's approval (AUTONOMY standard)
     d = g["drive"].setdefault(sid, {"count": 0})
+    if d.get("hold"):
+        return None  # the user asked for planning only this turn
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
