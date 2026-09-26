@@ -69,7 +69,7 @@ def stale_commands(text, root):
                 scripts = set((json.load(f).get("scripts") or {}).keys())
         except (OSError, ValueError):
             scripts = None
-    if scripts is not None:
+    if scripts is not None:  # without a package.json, npm lines are generic guidance, not this repo's commands
         for m in re.finditer(r"\b(?:npm run|pnpm run|yarn run|bun run)\s+([\w:.-]+)", text):
             if m.group(1) not in scripts:
                 out.append(m.group(0))
@@ -104,6 +104,10 @@ def memory_dir(root):
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
+    import fmdocs  # fmdocs reuses this module's detectors
+    for f in fmdocs.scan(p.root):
+        out.append(finding(slug, "docs_drift", "warn", f"{f['file']}: {f['kind']} `{f['detail']}` doesn't exist",
+                           "update the doc (fm docs lists every drift)"))
     for b in briefs:
         age = c.age_days(b.meta.get("updated")) or 0
         if b.status in c.CLOSED and age > ARCHIVE_AFTER_DAYS:

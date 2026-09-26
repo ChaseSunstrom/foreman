@@ -747,6 +747,10 @@ def build_parser():
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=300)
 
+    s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")
+    s.add_argument("path", nargs="?")
+    s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
+
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)

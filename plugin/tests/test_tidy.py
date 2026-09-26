@@ -70,6 +70,14 @@ class DryRun(TidyCase):
         self.assertEqual(read_text(os.path.join(self.mem, "MEMORY.md")), mem_before)
         self.assertFalse(report["applied"])
 
+    def test_reports_doc_drift_in_project_docs(self):
+        os.makedirs(os.path.join(self.repo, "src"))
+        with open(os.path.join(self.repo, "README.md"), "w") as f:
+            f.write("Entry point: `src/gone.py`\n")
+        drift = [f for f in self.tidy()["findings"] if f["kind"] == "docs_drift"]
+        self.assertEqual(len(drift), 1)
+        self.assertIn("src/gone.py", drift[0]["detail"])
+
     def test_clean_project_has_no_findings_that_need_action(self):
         report = self.tidy()
         self.assertFalse([f for f in report["findings"] if f["severity"] != "info"])
