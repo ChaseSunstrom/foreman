@@ -179,6 +179,9 @@ def cmd_task(args):
         return task_step(p, args)
     if sub == "ac":
         return task_ac(p, args)
+    if sub == "log":
+        b, _ = mutate(p, args.id, lambda b: b.append_log(args.text), "note", {"text": args.text[:300]})
+        return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "evidence":
         b, _ = mutate(p, args.id, lambda b: b.add_evidence(args.cmd, args.result, step=args.step, ac=args.ac),
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": args.cmd, "result": args.result[:300]})
@@ -570,6 +573,9 @@ def build_parser():
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
+    t = tadd("log")
+    t.add_argument("id")
+    t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
     t = tadd("done")
     t.add_argument("id")
     for name in ("block", "drop"):

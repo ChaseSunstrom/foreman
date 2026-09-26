@@ -152,6 +152,15 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "drop", "T-0001", "not needed")
         self.assertEqual(self.brief().status, "dropped")
 
+    def test_log_appends_a_note_without_replacing_the_section(self):
+        self.fm("task", "log", "T-0001", "steer: use the existing logger instead of print")
+        self.fm("task", "log", "T-0001", "second note")
+        log = self.brief().section("Log")
+        self.assertIn("steer: use the existing logger instead of print", log)
+        self.assertIn("second note", log)
+        self.assertIn("created", log, "earlier lines are kept")
+        self.assertIn("note", [e["event"] for e in c.ledger_tail(self.p)])
+
     def test_unknown_task_exit_1(self):
         self.assertEqual(self.fm("task", "show", "T-0404", check=False).returncode, 1)
 

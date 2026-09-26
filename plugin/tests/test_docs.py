@@ -111,6 +111,20 @@ class PluginFiles(unittest.TestCase):
             self.assertEqual(len(handlers), 1, event)
             self.assertEqual(handlers[0]["args"], [event])
 
+    def test_eval_cases_embed_the_current_rules(self):
+        """Eval runs use a temp HOME where ~/.claude/rules/foreman.md isn't installed; each case carries the rules instead."""
+        rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))
+        root = os.path.join(PLUGIN, "evals")
+        cases = [d for d in os.listdir(root) if os.path.isfile(os.path.join(root, d, "prompt.md"))]
+        self.assertGreaterEqual(len(cases), 5)
+        for case in cases:
+            with self.subTest(case=case):
+                text = read_text(os.path.join(root, case, "prompt.md"))
+                m = re.search(r"^append_system_prompt: \|\n((?:  .*\n|\n)*)", text, re.M)
+                self.assertIsNotNone(m, "append_system_prompt block missing (run tests/e2e/sync_evals.py)")
+                embedded = "\n".join(l[2:] for l in m.group(1).rstrip("\n").split("\n"))
+                self.assertEqual(embedded.strip(), rules.strip())
+
     def test_build_command_still_present(self):
         self.assertTrue(os.path.exists(os.path.join(PLUGIN, "commands", "build.md")))
 
