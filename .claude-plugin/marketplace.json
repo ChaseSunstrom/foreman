@@ -1,16 +1,18 @@
 {
   "name": "foreman",
-  "owner": { "name": "ChaseSunstrom" },
+  "owner": {
+    "name": "ChaseSunstrom"
+  },
   "metadata": {
-    "description": "Foreman: a self-orchestration layer for Claude Code (intake, planning, focus, memory hygiene).",
-    "version": "0.1.0"
+    "description": "Foreman: a discipline layer for Claude Code (intake, planning, focus, evidence, guard, memory hygiene).",
+    "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "foreman",
       "source": "./plugin",
-      "description": "Plans, sequences, tracks, and verifies work from terse prompts. Starts as a bootstrap: run /foreman:build to build the full system from BUILD_PROMPT.md.",
-      "version": "0.1.0"
+      "description": "Plans, sequences, tracks and verifies work from terse prompts: evidence-gated briefs, focus lock, exact resume, a bypass-mode guard, drive mode and memory hygiene.",
+      "version": "1.0.0"
     }
   ]
 }

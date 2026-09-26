@@ -1,69 +1,49 @@
 # Foreman
 
-A self-orchestration layer for Claude Code. Give it a terse request (`FIX: login times out on slow wifi`) and it plans, sequences, executes, verifies, and records the work in one central place. It stays focused on the current task, captures new requests instead of jumping to them, and resumes exactly where it left off after `/compact` or a new session.
+A discipline layer for Claude Code. Give it a terse request (`FIX: login times out on slow wifi`, or just "fix the login timeout") and it classifies, plans, sequences, executes, verifies with recorded evidence, and records the work in one central place. It stays on the current task, captures new requests instead of chasing them, resumes at the exact step after `/compact` or a new session, blocks dangerous commands in bypass mode, and keeps going through the queue until it's done or needs you.
 
-This repo starts as a **bootstrap**: `BUILD_PROMPT.md` is the spec, and Claude Code builds the full system on your machine from it, dogfooding as it goes.
+Everything is documented in [`MASTER.md`](MASTER.md): how to prompt it, every file, how the parts interact, operations and limitations.
 
 ## Install (one line)
 
 Public repo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --build
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
 ```
 
 Private repo (uses your `gh` login):
 
 ```bash
-gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
+gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-Leave off `--build` to set up without starting; later, run `/foreman:build` in any Claude Code session. Extra flags pass through to the plugin setup: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode).
-
-## Starting from a clean slate (optional)
-
-If you already have plugins and config, you don't need to wipe `~/.claude`: a full wipe loses your login, MCP servers, session history, and memory. `reset-claude.sh` resets only the parts that change Claude's behavior:
-
-```bash
-./reset-claude.sh            # dry run: shows exactly what would change
-./reset-claude.sh --apply    # close Claude Code first
-```
-
-It backs up `~/.claude` and `~/.claude.json` to `~/.claude-reset/<timestamp>/`, uninstalls every plugin except the ones Foreman keeps (`--all-plugins` removes those too, `--keep id,id` spares more), strips user-level hooks, permissions, and ECC env vars from `settings.json`, and moves your global CLAUDE.md, rules, skills, agents, commands, and hook scripts into the archive. Login, MCP servers, history, memory, themes, claude-hud's statusline, and per-repo `.claude/` folders are untouched. The build later offers to port anything useful back from the archive. Undo with the `tar` command it prints.
-
-## First-time publish
-
-```bash
-./configure-repo.sh <your-github-user>          # rewrites the placeholders above and commits
-gh repo create foreman --private --source . --push
-```
+Flags: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode), `--no-wiring` (don't touch `~/.claude`), `--build` (open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`).
 
 ## What `install.sh` does
 
 1. Clones this repo to `~/.claude/foreman` (or fast-forwards it if it's clean and on `main`).
-2. Runs `setup-plugins.sh`: installs the curated plugins that are missing, installs language-server plugins only when the server is on your PATH, and reports conflicting or heavy plugins. It never uninstalls anything.
-3. Registers this repo as a local plugin marketplace and installs `foreman@foreman`. Local marketplaces load in place, so edits under `plugin/` apply on `/reload-plugins`.
-4. Sets `bypassPermissions` as your default permission mode (backing up `settings.json` first and recording the original) unless you pass `--no-bypass`.
+2. Runs `setup-plugins.sh`: installs the curated plugins that are missing, installs language-server plugins only when the server is on your PATH, reports conflicting or heavy plugins. It never uninstalls anything.
+3. Registers this repo as a local plugin marketplace and installs `foreman@foreman` (loads in place: edits under `plugin/` apply on `/reload-plugins`).
+4. Sets `bypassPermissions` as your default permission mode (backing up `settings.json` and recording the original) unless you pass `--no-bypass`.
 5. Wires Foreman into `~/.claude` with `fm install-user` unless you pass `--no-wiring`: a statusLine wrapper (your original line and claude-hud still render above the Foreman line), catastrophic-command deny rules, a raised Stop-hook continuation cap for drive mode, a marked block in `~/.claude/CLAUDE.md`, and the `~/.claude/rules/foreman.md` symlink. Every change is recorded in `state/install-manifest.json` so it can be undone exactly.
-6. With `--build`, opens Claude Code and starts (or resumes) the build.
 
-## What the build does
-
-Recon and backup, then a plan that pauses once for your approval, then the build itself: the `fm` state CLI, hooks, skills, rules, read-only recon agents, memory hygiene, a self-check (`fm doctor`), and end-to-end tests. It commits to the `foreman/build` branch and never pushes. When it's done, `MASTER.md` explains every file and how the parts interact.
-
-## Using it (after the build)
+## Using it
 
 ```
+fix the login timeout on slow wifi                    # plain request: classified, planned, done with evidence
 FIX: login times out after 30s on slow networks
 FEATURE: export report as CSV @src/reports
 CLEAN: collapse the three date helpers into one
+CONTEXT: Django app; don't touch migrations
+DONE-WHEN: all tests pass and the CSV opens in Excel
 ```
 
-Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Plain one-line requests get the same treatment. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `/foreman:status` shows where things stand.
+Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `STATUS` or `/foreman:status` shows where things stand, `/foreman:next` moves on. `fm watch` in a tmux split shows the live dashboard; `fm --help` lists the state commands.
 
 ## Permissions
 
-Foreman runs in bypass mode by default: no tool-call prompts in any Claude Code session. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes to main, credential files, `curl | sh`, disk/firewall/system-service changes, deploys), plus a short list of deny rules the build proposes. Bypass only affects tool prompts; Foreman still pauses for plan approval where its autonomy setting says to.
+Foreman runs in bypass mode by default: no tool-call prompts. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes and hard resets on default branches, credential files, `curl | sh`, disk/firewall/system-service changes, publish/deploy commands, direct writes to Foreman state, and edits to Foreman's own protected core), plus 20 deny rules for the truly catastrophic cases. A blocked command says how to authorize it for the current task. Only you can grant `core` (`! fm task set <ID> --allow core`).
 
 To opt a repo out (client code, anything with production credentials), run `fm sensitive on` inside it. That writes this to the repo's `.claude/settings.local.json` (kept out of commits via `.git/info/exclude`), and Foreman shows the repo as sensitive at session start:
 
@@ -77,30 +57,51 @@ To turn bypass off everywhere, set `defaultMode` back to `"auto"` (or delete it)
 
 ## Seeing what's going on
 
-The build adds a visibility layer on supported surfaces (it never patches Claude Code itself): a Foreman line under claude-hud's statusline, per-subagent rows, a `[T-0012 FIX · 3/5]` badge on each reply that costs no tokens, terminal title and desktop notifications, a live `fm watch` dashboard for a tmux split, and optional OpenTelemetry export into Grafana. Today, without the build, try `/tui fullscreen` (mouse, click-to-expand tool output, a live `/diff` panel), `/focus`, and `Ctrl+O` for transcript search.
+A Foreman line under your statusline (`foreman · T-0012 FIX 3/5 · q2 · in1 · guard on · bypass`), per-subagent rows, a `[T-0012 FIX · 3/5 · 14:02]` badge on each reply (screen only, zero tokens), terminal titles and desktop notifications, `fm watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
 
 ## Does it improve itself?
 
-Yes, within limits. Foreman improves its own skills, rules, hooks, and scripts (not the model). Ideas come from its retros, your corrections, and its own metrics. `/foreman:improve` builds candidate changes in a separate git worktree, runs its `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own guard hook, permission settings, or eval suite.
+Within limits. Ideas come from retros, your corrections and its own metrics, and land in Foreman's own inbox. `/foreman:improve` builds candidates in a separate git worktree, runs the `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own guard, permission settings, rules or eval suite without your authorization.
 
 ## Layout
 
 ```
-BUILD_PROMPT.md       the spec Claude Code builds from
+BUILD_PROMPT.md       the spec Foreman was built from
+MASTER.md             system map (start here)
+CHANGELOG.md          release notes
 install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
-configure-repo.sh     one-time: point everything at your GitHub repo
+configure-repo.sh     one-time for forks: point everything at your GitHub repo
 reset-claude.sh       optional: reset Claude Code's behavior layer before installing
 .claude-plugin/       local marketplace "foreman"
-plugin/               the Foreman plugin (bootstrap: /foreman:build)
+plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
 local/ state/ backups/   machine-specific, gitignored
 ```
 
-## Plugin choices
+## Tests
 
-The reasoning, measured context costs, and conflicts are in `BUILD_PROMPT.md` (§4.6 and Appendix A). Preview what `setup-plugins.sh` would change with `./setup-plugins.sh --dry-run`.
+```bash
+python3 -m unittest discover -s plugin/tests -t plugin/tests   # unit + behaviour
+python3 plugin/tests/bench_hooks.py --runs 50                   # hook latency
+python3 plugin/tests/e2e/roundtrip.py                           # install/uninstall/reinstall in a sandbox HOME
+python3 plugin/tests/e2e/scenarios.py                           # live §12 scenarios (uses claude -p; costs tokens)
+```
+
+## Starting from a clean slate (optional)
+
+`reset-claude.sh` resets only the parts that change Claude's behavior (plugins except the ones Foreman keeps, user hooks and permissions, global CLAUDE.md, rules, skills, agents, commands), after backing up `~/.claude` and `~/.claude.json` to `~/.claude-reset/<timestamp>/`. Login, MCP servers, history, memory, themes and per-repo `.claude/` folders are untouched. Undo with the `tar` command it prints.
+
+```bash
+./reset-claude.sh            # dry run
+./reset-claude.sh --apply    # close Claude Code first
+```
 
 ## Updating and removing
 
-- Update: rerun `~/.claude/foreman/install.sh`, or `git pull` in `~/.claude/foreman`.
+- Update: `git pull` in `~/.claude/foreman` (then `/reload-plugins`), or rerun `install.sh`.
+- Health check: `fm doctor`. Hygiene: `fm tidy`.
 - Remove: `~/.claude/foreman/plugin/uninstall.sh` (undoes the wiring, uninstalls the plugin and marketplace, keeps `state/` unless you pass `--purge-state`; `--dry-run` previews).
+
+## Plugin choices
+
+The reasoning, measured context costs and conflicts are in `BUILD_PROMPT.md` (§4.6 and Appendix A) and `MASTER.md`. Preview what `setup-plugins.sh` would change with `./setup-plugins.sh --dry-run`.

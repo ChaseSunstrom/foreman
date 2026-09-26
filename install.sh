@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Foreman bootstrap. Public repo:
-#   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --build
+#   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
 # Private repo (uses your gh login):
-#   gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
+#   gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 #
 # Options:
-#   --build          start Claude Code and begin (or resume) the Foreman build when setup finishes
+#   --build          open Claude Code on the Foreman build (rebuild or resume from BUILD_PROMPT.md)
 #   --no-plugins     skip setup-plugins.sh
 #   --no-bypass      don't set bypassPermissions as the default permission mode
 #   --no-wiring      don't wire Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
@@ -111,4 +111,4 @@ if [ "$BUILD" = 1 ] && [ -r /dev/tty ]; then
   cd "$FOREMAN_HOME"
   exec claude "Run the Foreman build: read $FOREMAN_HOME/BUILD_PROMPT.md in full and execute it. If $FOREMAN_HOME/local/PLAN.md exists, resume from it instead of starting over." </dev/tty
 fi
-printf '\nNext: start Claude Code anywhere and run  /foreman:build\n'
+printf '\nNext: start Claude Code in any repo and give it a request (e.g. FIX: ...).\n      /foreman:status shows where things stand; %s/MASTER.md explains everything.\n' "$FOREMAN_HOME"
