@@ -426,6 +426,16 @@ def check_hook_events(registered=None):
     return Result("hook events", "PASS", f"{len(registered)} events registered (after changes: /reload-plugins)")
 
 
+def check_plugins():
+    import fmplugins
+    found = fmplugins.check()
+    if found:
+        names = sorted({f["plugin"] for f in found})
+        return Result("plugins", "WARN", f"{len(found)} conflict(s) in {', '.join(names[:4])}"
+                      + (" …" if len(names) > 4 else "") + " (fm plugins check)")
+    return Result("plugins", "PASS", "no conflicts among enabled plugins")
+
+
 def check_serve(states):
     """fm serve units that aren't running (a dead one leaves its project in full autonomy with drive on)."""
     down = [f"{slug} {state}" for slug, state in states.items() if state != "active"]
@@ -456,7 +466,7 @@ def run_all(full=False):
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
-               check_serve(fmserve.states()), check_hook_events()]
+               check_serve(fmserve.states()), check_hook_events(), check_plugins()]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]

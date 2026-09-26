@@ -787,6 +787,11 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
 
+    s = add("plugins", lazy("fmplugins", "cmd_plugins"),
+            help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")
+    s.add_argument("action", choices=["find", "check"])
+    s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled)")
+
     s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
