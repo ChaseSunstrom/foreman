@@ -183,8 +183,9 @@ def _new_context_file(p, ctx):
 def classify_write(path, ctx):
     cats = []
     for p in _variants(path):
+        mirror = os.path.join(ctx.project_root, ".foreman") if ctx.project_root else None  # fm sync writes it
         if any(d and _under(p, d) for d in [os.path.join(ctx.foreman_home, "state"), ctx.state_dir,
-                                            *ctx.state_fallbacks]):
+                                            *ctx.state_fallbacks, mirror]):
             cats.append("state-direct")
         if _is_core(p, ctx):
             cats.append("core")

@@ -195,7 +195,9 @@ def worktree_tree(root):
                                   capture_output=True, text=True, timeout=10).stdout.strip()
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
-            subprocess.run(["git", "-C", root, "add", "-A"], env=env, capture_output=True, timeout=120, check=True)
+            # .foreman/ (fm sync's mirror of Foreman state) changes with every fm call: not the work being audited
+            subprocess.run(["git", "-C", root, "add", "-A", "--", ".", ":(exclude).foreman"], env=env,
+                           capture_output=True, timeout=120, check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
                                   timeout=60, check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
@@ -886,6 +888,9 @@ def next_id(p):
     """Allocate the next T-id. Caller must hold the project lock."""
     meta = read_meta(p)
     highest = max([id_num(_BRIEF_FILE.match(os.path.basename(x)).group(1)) for x in brief_paths(p, True)] or [0])
+    if meta.get("sync"):  # ids another clone already used (fm sync's mirror)
+        import fmsync
+        highest = max([highest] + [id_num(i) for i in fmsync.mirrored_ids(p)])
     n = max(int(meta.get("next_id", 1)), highest + 1)
     meta["next_id"] = n + 1
     write_meta(p, meta)
@@ -1367,6 +1372,12 @@ def regen_views(p, briefs=None):
     write_atomic(os.path.join(p.dir, "state.line"), state_line(sd) + "\n")
     write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
     write_atomic(os.path.join(p.dir, "progress.line"), progress_line(sd) + "\n")
+    if read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
+        import fmsync
+        try:
+            fmsync.export(p)
+        except (OSError, ValueError):
+            pass  # a read-only checkout or a bad brief costs the mirror update, never the fm command
     return sd
 
 

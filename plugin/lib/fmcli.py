@@ -587,6 +587,7 @@ def cmd_research(args):
     with c.lock(p.dir):
         c.write_atomic(path, c.redact(text))
         c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text)}, session=session())
+        c.regen_views(p)  # (and fm sync's mirror)
     out(args, {"path": path}, f"Saved {path}")
 
 
@@ -892,6 +893,11 @@ def build_parser():
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+
+    s = add("sync", lazy("fmsync", "cmd_sync"),
+            help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
+    s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
+    s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
     s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and print one reviewer brief per lens")
     s.add_argument("action", choices=["prep"])
