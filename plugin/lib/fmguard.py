@@ -445,7 +445,7 @@ def _write_targets(name, args):
     if name in ("cp", "mv", "install", "ln", "rsync"):
         tdir = _opt_values(args, "-t", "--target-directory") if name != "rsync" else []  # rsync -t: keep times
         return tdir + ([pos[-1]] if len(pos) >= 2 else [])
-    if name == "tar":
+    if name in ("tar", "gtar", "bsdtar"):
         return _tar_targets(args)
     if name == "unzip":
         return [] if set(args) & {"-l", "-t", "-v", "-Z", "-p", "-c"} else _opt_values(args, "-d") or ["."]

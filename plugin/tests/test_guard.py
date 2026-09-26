@@ -228,6 +228,7 @@ class StateDirect(GuardCase):
         self.run_table([
             ("tar -xf forged.tar -C {fhome}/state", "state-direct"),
             ("tar xzf forged.tgz --directory={fhome}/state/projects", "state-direct"),
+            ("bsdtar -xf forged.tar -C {fhome}/state", "state-direct"),
             ("cd {fhome}/state && tar -xf /tmp/forged.tar", "state-direct"),
             ("tar -cf {fhome}/state/x.tar notes", "state-direct"),
             ("unzip -o forged.zip -d {fhome}/state", "state-direct"),
