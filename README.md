@@ -39,13 +39,17 @@ CONTEXT: Django app; don't touch migrations
 DONE-WHEN: all tests pass and the CSV opens in Excel
 ```
 
-Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `STATUS` or `/foreman:status` shows where things stand, `/foreman:next` moves on. `fm watch` in a tmux split shows the live dashboard; `fm --help` lists the state commands.
+Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `STATUS` shows where things stand. You never have to run a command: say it in plain words ("is foreman ok?", "clean up", "this repo is sensitive") and Claude does it.
+
+- **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first: several tool-less sub-agents, each with a different lens, then Claude checks every idea against the real code and queues the best.
+- **Audits before done**: finished work is checked through independent lenses (intent, adversary, edge cases, operations, maintainability) with different prompts and context; small tasks get a self-check, large ones all five.
+- **Full auto**: say `FULL AUTO` (or "don't ask me anything") and Claude works through the whole queue without questions, recording its decisions; anything only you can approve waits for one summary at the end. `STANDARD AUTONOMY` switches back.
 
 ## Permissions
 
-Foreman runs in bypass mode by default: no tool-call prompts. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes and hard resets on default branches, credential files, `curl | sh`, disk/firewall/system-service changes, publish/deploy commands, direct writes to Foreman state, and edits to Foreman's own protected core), plus 20 deny rules for the truly catastrophic cases. A blocked command says how to authorize it for the current task. Only you can grant `core` (`! fm task set <ID> --allow core`).
+Foreman runs in bypass mode by default: no tool-call prompts. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes and hard resets on default branches, credential files, `curl | sh`, disk/firewall/system-service changes, publish/deploy commands, direct writes to Foreman state, and edits to Foreman's own protected core), plus 20 deny rules for the truly catastrophic cases. A blocked command says how to authorize it for the current task. For anything that needs you (Foreman's own code, destructive categories) Claude asks one yes/no question; your reply starting with yes grants it, and nothing else can.
 
-To opt a repo out (client code, anything with production credentials), run `fm sensitive on` inside it. That writes this to the repo's `.claude/settings.local.json` (kept out of commits via `.git/info/exclude`), and Foreman shows the repo as sensitive at session start:
+To opt a repo out (client code, anything with production credentials), tell Claude "this repo is sensitive" (it runs `fm sensitive on`). That writes this to the repo's `.claude/settings.local.json` (kept out of commits via `.git/info/exclude`), and Foreman shows the repo as sensitive at session start:
 
 ```json
 { "permissions": { "defaultMode": "default" } }
@@ -99,7 +103,7 @@ python3 plugin/tests/e2e/scenarios.py                           # live §12 scen
 ## Updating and removing
 
 - Update: `git pull` in `~/.claude/foreman` (then `/reload-plugins`), or rerun `install.sh`.
-- Health check: `fm doctor`. Hygiene: `fm tidy`.
+- Health check: ask "is foreman ok?" (`fm doctor`). Hygiene: "clean up" (`fm tidy`).
 - Remove: `~/.claude/foreman/plugin/uninstall.sh` (undoes the wiring, uninstalls the plugin and marketplace, keeps `state/` unless you pass `--purge-state`; `--dry-run` previews).
 
 ## Plugin choices

@@ -8,7 +8,7 @@ Foreman is a local Claude Code plugin (hooks, a small state CLI `fm`, skills, al
 
 **capture → expand → ground → plan → execute → verify → reflect → record**
 
-It keeps one central, current record per project (what's active, what's queued, what was decided, what was learned), refuses "done" without recorded evidence, captures new ideas instead of chasing them, resumes at the exact step after `/compact`, `/clear` or a new session, blocks dangerous commands in bypass mode, and keeps working through the queue ("drive") until it's empty or it needs you. It's cheap: ~55 always-on instruction lines and ~1.3k tokens of skill/agent descriptions; hooks run at p95 ≤ 38 ms.
+It keeps one central, current record per project (what's active, what's queued, what was decided, what was learned), refuses "done" without recorded evidence, captures new ideas instead of chasing them, resumes at the exact step after `/compact`, `/clear` or a new session, blocks dangerous commands in bypass mode, audits finished work through independent lenses before it counts as done, asks for consent in plain chat (never by making you run a command), brainstorms open-ended requests, and keeps working through the queue ("drive", optionally in full autonomy) until it's empty or it needs you. It's cheap: ~62 always-on instruction lines and ~1.3k tokens of skill/agent descriptions; hooks run at p95 ≤ 38 ms.
 
 ## 2. How to prompt it
 
@@ -30,11 +30,13 @@ Tags: CLEAN (REFACTOR, TIDY) · PERFORMANCE (PERF) · SECURITY (SEC) · FIX (BUG
 
 Order: BASELINE → RESEARCH → CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE → FINAL VERIFY → REFLECT. Dependencies override it; a baseline-breaking FIX and critical security findings are hoisted.
 
-Override words: `NOW:` (checkpoint, switch, offer to resume) · `PAUSE` / stop / hold on (checkpoint; drive pauses) · `RESUME` · `STATUS` · "that's for the current task" (your last message was a steer, not new work). Anything new while a task is active is captured, not started.
+Override words: `NOW:` (checkpoint, switch, offer to resume) · `PAUSE` / stop / hold on (checkpoint; drive pauses) · `RESUME` · `STATUS` · `FULL AUTO` / `STANDARD AUTONOMY` (whole message) · "that's for the current task" (your last message was a steer, not new work). Anything new while a task is active is captured, not started.
 
-Slash commands: `/foreman:intake` · `/foreman:next` · `/foreman:resume` · `/foreman:status` · `/foreman:capture <text>` · `/foreman:tidy` · `/foreman:doctor` · `/foreman:reflect` · `/foreman:improve` · `/foreman:playbooks` · `/foreman:build`.
+Plain words work too: Claude runs every command itself ("is foreman ok?" → doctor, "clean up" → tidy, "this repo is sensitive" → `fm sensitive on`). Open-ended requests ("super improve it") go to `/foreman:brainstorm`. When Claude needs your consent for a guard category it runs `fm ask` and asks one yes/no question; a reply starting with yes grants it (only your own reply can), anything else cancels it. In full autonomy nothing is asked mid-run; what only you can grant waits for one summary at the end.
 
-CLI (on the Bash tool PATH): `fm state|queue|resume|watch|intake|capture|task …|focus|checkpoint|log|decide|research add|sensitive on|off|drive on|off|tidy|doctor|install-user|uninstall-user` — see `fm --help`.
+Slash commands (Claude can start all but capture itself): `/foreman:intake` · `/foreman:brainstorm` · `/foreman:next` · `/foreman:resume` · `/foreman:status` · `/foreman:capture <text>` · `/foreman:tidy` · `/foreman:doctor` · `/foreman:reflect` · `/foreman:improve` · `/foreman:playbooks` · `/foreman:build`.
+
+CLI (on the Bash tool PATH): `fm state|queue|resume|watch|intake|capture|task new|show|set|step|ac|evidence|audit|log|done|block|drop|defer|focus|checkpoint|log|ask|decide|research add|sensitive on|off|drive on|off|autonomy [standard|full]|ideas|tidy|doctor|install-user|uninstall-user` — see `fm --help`.
 
 ## 3. File map
 
@@ -51,15 +53,15 @@ CLI (on the Bash tool PATH): `fm state|queue|resume|watch|intake|capture|task �
 | `.claude-plugin/marketplace.json` | local marketplace `foreman` → `./plugin` | Claude | by Claude Code | — |
 | `plugin/.claude-plugin/plugin.json` | plugin manifest (name, version) | Claude | by Claude Code | — |
 | `plugin/settings.json` | plugin default `subagentStatusLine` | Claude | by Claude Code | only `agent`/`subagentStatusLine` honored |
-| `plugin/bin/fm` | CLI entry (on the Bash tool PATH) | Claude | on call | — |
-| `plugin/lib/` | `fmcore` (state, briefs, queue, intake, ledger, locks), `fmcli`, `fmguard` (protected), `fmhooks`, `fmtidy`, `fmdoctor`, `fmwatch`, `fmsetup` | Claude | on call | stdlib only |
+| `plugin/bin/fm` | CLI entry (on the Bash tool PATH; protected) | Claude | on call | — |
+| `plugin/lib/` | `fmcore` (state, briefs, queue, intake, ledger, locks, audits), `fmcli`, `fmguard`, `fmhooks` (incl. chat approvals), `fmtidy`, `fmdoctor`, `fmwatch`, `fmsetup`, `fmideas` (tool-less brainstorm children) — all protected core | Claude | on call | stdlib only |
 | `plugin/hooks/hooks.json` | one handler per event (13 events), exec form (protected) | Claude | by Claude Code | p95 ≤ 150 ms |
 | `plugin/hooks/hook` | dispatcher `hook <Event>`; guard fails closed (protected) | Claude | per event | — |
-| `plugin/hooks/statusline` | statusLine wrapper: original + claude-hud + Foreman line; session snapshots | Claude | per statusline refresh | < 100 ms own work |
+| `plugin/hooks/statusline` | statusLine wrapper: original + claude-hud + Foreman line; session snapshots (protected) | Claude | per statusline refresh | < 100 ms own work |
 | `plugin/hooks/subagent-statusline` | per-subagent rows (task, tokens vs window, elapsed) | Claude | per refresh | — |
-| `plugin/rules/foreman.md` | always-on operating rules (protected; symlinked into `~/.claude/rules/`) | Claude | every session | ≤ 80 lines (51) |
-| `plugin/skills/` | intake (+ references and ported superpowers procedures), next, resume, status, capture, tidy, doctor, reflect, improve, playbooks (40 ported ECC references) | Claude | descriptions always-on; bodies on invoke | SKILL.md < 500 lines |
-| `plugin/agents/` | `fm-recon`, `fm-reviewer` (read-only tool allowlists) | Claude | on delegation | output ≤ 400 words |
+| `plugin/rules/foreman.md` | always-on operating rules (protected; symlinked into `~/.claude/rules/`) | Claude | every session | ≤ 80 lines (58) |
+| `plugin/skills/` | intake (+ references: planning, execute, audit lenses, delegate, ported superpowers procedures), brainstorm (+ `references/ideas-prompt.md` for `fm ideas`), next, resume, status, capture, tidy, doctor, reflect, improve, playbooks (40 ported ECC references) | Claude | descriptions always-on; bodies on invoke | SKILL.md < 500 lines |
+| `plugin/agents/` | `fm-recon`, `fm-reviewer` (read-only tool allowlists; the reviewer runs one audit lens per brief). No tool-less agent: Claude Code gives an empty `tools:` list every tool | Claude | on delegation | output ≤ 400 words |
 | `plugin/commands/build.md` | `/foreman:build` (the bootstrap) | Claude | on invoke | — |
 | `plugin/templates/` | `brief.md` template | Claude | by fm | — |
 | `plugin/themes/` | optional Foreman color theme (`/theme`) | Claude | on selection | — |
@@ -78,7 +80,7 @@ CLI (on the Bash tool PATH): `fm state|queue|resume|watch|intake|capture|task �
 | `state/events.jsonl` | hook/tool timeline for `fm watch` (runtime; rotated by tidy) | hooks | by fm watch | rotate > 5 MB |
 | `state/sessions/<id>.json` | statusline snapshots (runtime; cleaned after 7 days) | statusline | by fm watch | — |
 | `state/logs/hooks.log` | hook errors (runtime; rotated by tidy) | hooks | by fm doctor | rotate > 1 MB |
-| `state/projects/<slug>/meta.json` | project metadata: path, sensitive, drive, paused, session, last tidy (runtime) | fm | by hooks | — |
+| `state/projects/<slug>/meta.json` | project metadata: path, sensitive, drive, paused, autonomy, pending approvals, session, last tidy (runtime) | fm, UserPromptSubmit | by hooks | — |
 | `state/projects/<slug>/STATE.md` | focus + queue + inbox, generated from briefs (runtime) | fm | summary injected at SessionStart | ≤ 60 lines |
 | `state/projects/<slug>/INBOX.md` | captured items, generated (runtime) | fm | count + titles injected | — |
 | `state/projects/<slug>/tasks/T-NNNN-*.md` | briefs: spec, steps, evidence, log (runtime) | fm | on demand | S ≤ 10 content lines |
@@ -120,7 +122,7 @@ flowchart TD
 4. `fm log baseline …`, then `fm focus T-0012` (status active). **PreToolUse** runs the guard on every Bash/Write/Edit (`lib/fmguard.py`) and notes out-of-scope edits; **PostToolUse** records `touched` files and the timeline (`state/events.jsonl`). The reply badge `[T-0012 FIX · 2/4 · 14:02]` comes from **MessageDisplay** (screen only).
 5. Each step: `fm task step T-0012 done N --evidence "<cmd>" "<result>"` (refused without evidence). Steers go in with `fm task log`. If Claude claims "done" without evidence, the **Stop** hook blocks once (`gate.json`); if work remains, **drive** continues it.
 6. `/compact` mid-task: **PreCompact** writes the auto resume block into the brief; **SessionStart(compact)** re-injects the focus and resume notes.
-7. `fm task ac T-0012 check N --evidence …`, `fm task done T-0012` (refused unless every step and criterion has evidence). `/foreman:reflect`: `fm decide …` → `decisions.md`; learnings → auto memory; Foreman ideas → `fm capture --self`.
+7. Audits (`references/audit.md`): tier M → `intent` plus the riskiest other lens, each a `foreman:fm-reviewer` run with its own context slice; findings are reproduced, fixed test-first or captured, then `fm task audit T-0012 <lens> …`. `fm task ac T-0012 check N --evidence …`, `fm task done T-0012` (refused unless every step and criterion has evidence and the tier's audits postdate the last edit). `/foreman:reflect`: `fm decide …` → `decisions.md`; learnings → auto memory; Foreman ideas → `fm capture --self`.
 8. 14 days later `fm tidy --apply` moves the brief to `archive/YYYY-MM/`, rolls old ledger months into `archive/ledger-YYYY-MM.jsonl`, and records `last_tidy`.
 
 ## 6. Source of truth and precedence
@@ -138,6 +140,7 @@ flowchart TD
 | Why things were decided | `decisions.md` | on demand |
 | Durable learnings and gotchas | native auto memory (`MEMORY.md` + topic files) | startup window, then on demand |
 | History | `ledger.jsonl` | never wholesale; via `fm` |
+| Pending consent | `meta.json` `pending_approvals` (written by `fm ask`, decided only by your next prompt) | reported by the prompt hook |
 | In-session checklist | the brief's Steps (built-in task tools are off on current models; the TaskCompleted gate is ready if enabled) | via `fm resume` |
 | Knowledge graph | none installed | — |
 
@@ -168,7 +171,7 @@ Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists
 
 ## 8. Relationship to BUILD_PROMPT.md and the repo
 
-`BUILD_PROMPT.md` is the origin spec; this repo is how Foreman travels between machines (`install.sh` one-liner). Changes to Foreman itself go through intake as tasks against `~/.claude/foreman/plugin` (Foreman's own project), and MASTER.md is updated in the same commit; `fm doctor` fails if the file map drifts from disk. Self-improvements are bounded and eval-gated (`/foreman:improve`): built in an `improve/<date>` worktree, compared with `claude plugin eval`, and merged only with your approval. The guard blocks agent writes to protected core (guard, hooks, rules, evals, BUILD_PROMPT.md, settings), and agents can't grant themselves the `core` authorization: you grant it with `! fm task set <ID> --allow core`.
+`BUILD_PROMPT.md` is the origin spec; this repo is how Foreman travels between machines (`install.sh` one-liner). Changes to Foreman itself go through intake as tasks against `~/.claude/foreman/plugin` (Foreman's own project), and MASTER.md is updated in the same commit; `fm doctor` fails if the file map drifts from disk. Self-improvements are bounded and eval-gated (`/foreman:improve`): built in an `improve/<date>` worktree, compared with `claude plugin eval`, and merged only with your approval. The guard blocks agent writes to protected core (all Foreman code in `plugin/lib`, `bin` and `hooks`, the rules, evals, BUILD_PROMPT.md, settings), including writes from interpreter code, and agents can't grant themselves `core`: Claude runs `fm ask <ID> core` and your yes grants it.
 
 ## 9. Operations
 
@@ -183,7 +186,9 @@ Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists
 
 ## 10. Known limitations
 
-- The guard is a speed bump, not a sandbox: shell text can be obfuscated (e.g. writes through a script). Deny rules and git are the other layers; nothing reaches `main` without you.
+- The guard is a speed bump, not a sandbox: shell text can be obfuscated (a script file that writes elsewhere, computed paths). Interpreter code that names a protected path and writes is caught; deny rules and git are the other layers.
+- Chat approval trusts that a reply starting with yes answers the question just asked; pasted text never counts, and requests expire after 24 h or at your next reply.
+- Subagents can't be tool-less (an empty `tools:` list means every tool), so brainstormers run as `claude -p` children via `fm ideas` (no tools, no MCP, no user plugins).
 - Built-in task tools are off on current models, so the TaskCompleted gate is dormant unless `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`.
 - `footerLinksRegexes` isn't used (only http(s)/editor URLs are allowed; T-ids can't reach brief files).
 - Evals run in a temp HOME, so each case embeds the rules (`tests/e2e/sync_evals.py`). Current score 0.7: guard and mid-task capture 1.0; one-liner classification and intake ordering need tuning (Foreman self-inbox T-0008).
@@ -193,4 +198,4 @@ Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists
 
 ## 11. Deviations from BUILD_PROMPT.md
 
-Python stdlib `fm` (jq absent) · captures are briefs with status `captured`; INBOX.md, STATE.md and registry.md are generated views · `fm intake`, `fm task log`, `fm decide`, `fm research add`, `fm sensitive`, `fm drive`, `fm install-user/uninstall-user` added · per-repo opt-out uses `default` · task-tool mirroring dormant · statusLine wraps your original line plus claude-hud · footerLinksRegexes skipped · RESEARCH ordered right after BASELINE · one Stop handler (evidence gate + drive + terminal sequences) · drive mode (your request) with `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=60` · ECC procedures ported (your request) into one on-demand playbooks skill · eval cases embed the rules · guard category `self-authorize` (found by live verification). Details and reasons: `local/PLAN.md` §1 (D1–D22).
+Python stdlib `fm` (jq absent) · captures are briefs with status `captured`; INBOX.md, STATE.md and registry.md are generated views · `fm intake`, `fm task log`, `fm decide`, `fm research add`, `fm sensitive`, `fm drive`, `fm install-user/uninstall-user` added · per-repo opt-out uses `default` · task-tool mirroring dormant · statusLine wraps your original line plus claude-hud · footerLinksRegexes skipped · RESEARCH ordered right after BASELINE · one Stop handler (evidence gate + drive + terminal sequences) · drive mode (your request) with `CLAUDE_CODE_STOP_HOOK_BLOCK_CAP=60` · ECC procedures ported (your request) into one on-demand playbooks skill · eval cases embed the rules · guard category `self-authorize` (found by live verification) · 1.1: chat approvals (`fm ask`), tiered audits gating done, full autonomy, brainstorm with tool-less children, all Foreman code protected. Details and reasons: `local/PLAN.md` §1 (D1–D22).
