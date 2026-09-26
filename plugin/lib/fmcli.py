@@ -313,7 +313,7 @@ def task_set(p, args):
                                 f"evidence; it sets which audits are required")
         for k, v in changes.items():
             if k == "title":
-                b.preamble = f"# {v}\n"
+                b.preamble = f"# {c.plain(v)}\n"
             else:
                 b.meta[k] = v
         for cat in args.allow or []:

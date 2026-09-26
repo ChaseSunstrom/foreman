@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Round 4: the guard falls back to the committed `fmguard.py` when the working copy fails (no more self-lockout); persistence (shell startup files, autostart, git hooks and `core.hooksPath`, `crontab`, `at`) is `system`; titles and dashboard text carry no terminal control sequences; `fm sync` redacts secrets on export and skips imports over 1 MB.
 - `fm sync`: opt-in mirror of briefs, decisions and research in the repo (`.foreman/`), imported by other clones at session start; grants never travel, exports don't stale audits, hand edits are `state-direct`.
 - `fm repeats`: commands and procedures a project keeps repeating, from its briefs, with what to turn each into (a gate, a script, a project skill or agent); `fm tidy` counts them; `fm repeats dismiss` retires handled ones; the end-of-task procedure turns them into project tools, and creating a new skill, agent or command file needs the user's yes (guard category `plugin`: always-on context).
 - `fm task evidence --run "<cmd>"` records the command's real exit code and output (failed runs block marking the step done); `fm check` runs the project's gates together and fails on any failure; `fm audit prep ID` freezes the task's diff and prints the lens briefs; a `plugin` yes covers one change; `fm next`/statusline audit state matches the done gate after evidence-only updates; the Stop evidence gate ignores claims about other steps or tasks; `fm docs` skips ignored markdown.

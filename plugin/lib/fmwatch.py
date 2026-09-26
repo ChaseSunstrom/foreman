@@ -143,7 +143,7 @@ def render(d, width=100):
                    + (f" · 5h {rl}%" if rl is not None else "") + (f" · cache {int(hit * 100)}%" if hit is not None else ""))
     else:
         out.append("Session: no statusline snapshot yet")
-    return [line[:width] for line in out]
+    return [c.plain(line)[:width] for line in out]  # titles and events are user text: no terminal sequences
 
 
 def cmd_watch(args):

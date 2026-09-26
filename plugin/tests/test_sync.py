@@ -167,6 +167,20 @@ class Sync(ForemanTestCase):
             f.write(".*\n")
         self.assertIn("ignored", self.fm("sync", "on").stdout)
 
+    def test_exports_are_redacted_and_huge_imports_skipped(self):
+        # round 4 (brainstorm, security): the mirror is committed, so no secret may reach it from any older note
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "research", "old-note.md"), "w") as f:
+            f.write("deploy with token ghp_abcdefghijklmnopqrstuvwxyz0123456789AB\n")
+        self.fm("sync", "on")
+        text = read_text(os.path.join(self.mirror, "research", "old-note.md"))
+        self.assertNotIn("ghp_", text)
+        self.assertIn("[REDACTED]", text)
+        with open(os.path.join(self.mirror, "research", "huge.md"), "w") as f:
+            f.write("x" * 2_000_001)
+        self.assertIn("too large", self.fm("sync", "import").stdout)
+        self.assertFalse(os.path.exists(os.path.join(p.dir, "research", "huge.md")))
+
     def test_the_mirror_does_not_change_the_worktree_id(self):
         before = c.worktree_id(self.repo)
         self.fm("sync", "on")

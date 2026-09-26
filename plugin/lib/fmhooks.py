@@ -347,20 +347,54 @@ def _use_plugin_grant(p, tid, detail, sid):
     return True
 
 
+def _committed_guard():
+    """The guard as last committed in Foreman's repo (git HEAD), for when the working copy fails to import or run: a
+    half-applied edit can't lock the session out, and protection stays on. None without a committed copy."""
+    import subprocess
+    import types
+    lib = os.path.join(c.PLUGIN_ROOT, "lib")
+    root = c.git_root(lib)
+    if not root:
+        return None
+    rel = os.path.relpath(os.path.join(lib, "fmguard.py"), root).replace(os.sep, "/")
+    try:
+        r = subprocess.run(["git", "-C", root, "show", f"HEAD:{rel}"], capture_output=True, text=True, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if r.returncode or not r.stdout:
+        return None
+    mod = types.ModuleType("fmguard_committed")  # registered, so dataclasses can resolve it
+    sys.modules[mod.__name__] = mod
+    exec(compile(r.stdout, f"HEAD:{rel}", "exec"), mod.__dict__)
+    return mod
+
+
+def _guard_decision(pl, guard):
+    ctx, p, act = _guard_ctx(pl, guard)
+    found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
+    return ctx, p, act, found, guard.check(pl.get("tool_name", ""), pl.get("tool_input"), ctx, found)
+
+
 def _pre_tool_use(raw):
     try:
-        import fmguard
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
         if tool not in GUARDED:
             return 0
-        ctx, p, act = _guard_ctx(pl, fmguard)
-        found = fmguard.findings(tool, pl.get("tool_input"), ctx)
-        block = fmguard.check(tool, pl.get("tool_input"), ctx, found)
+        try:
+            import fmguard as guard
+            ctx, p, act, found, block = _guard_decision(pl, guard)
+        except Exception:
+            log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard (fix "
+                                    "plugin/lib/fmguard.py):\n" + traceback.format_exc())
+            guard = _committed_guard()
+            if guard is None:
+                raise
+            ctx, p, act, found, block = _guard_decision(pl, guard)
         used = next((d for cat, d in found if cat == "plugin"), None) if not block and act else None
         if used is not None and "plugin" in ctx.allow and not _use_plugin_grant(p, act.id, used, pl.get("session_id")):
-            block = fmguard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
-                                            "change)")
+            block = guard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
+                                          "change)")
     except Exception as e:
         log_error("PreToolUse", traceback.format_exc())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
@@ -368,7 +402,7 @@ def _pre_tool_use(raw):
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
     if block:
-        reason = fmguard.message(block, ctx)
+        reason = guard.message(block, ctx)
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
                 "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None})
         try:
@@ -383,8 +417,8 @@ def _pre_tool_use(raw):
         print(reason, file=sys.stderr)
         return 2
     try:
-        _record_asks(pl, p, fmguard)
-        decision = _ask_prompt(pl, p, fmguard)
+        _record_asks(pl, p, guard)
+        decision = _ask_prompt(pl, p, guard)
     except Exception:
         log_error("PreToolUse", traceback.format_exc())
         decision = None
@@ -458,11 +492,7 @@ def _ask_target(args):
     return ns.id, sorted(set(ns.categories)), ns.why or "", []
 
 
-def _plain(s):
-    """Text safe to show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph separator
-    characters that could disguise it."""
-    import unicodedata
-    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
+_plain = c.plain  # dialog text (fm ask): see fmcore.plain
 
 
 def _grant(p, b, cats, sid, via, **data):

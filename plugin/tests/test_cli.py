@@ -65,6 +65,14 @@ class CaptureAndIntake(ForemanTestCase):
         b = c.find_brief(c.find_project(self.repo), res["created"][0]["id"])
         self.assertEqual(b.meta["depends_on"], ["T-0001"])
 
+    def test_titles_cannot_carry_terminal_control_sequences(self):
+        # round 4 (brainstorm, security): titles are printed by the dashboard, statusline and terminal title
+        self.fm("capture", "evil\x1b]0;pwned\x07 title‮ here")
+        self.fm("task", "new", "also\x1b[2J bad", "--type", "FIX", "--tier", "S")
+        for b in c.load_briefs(c.find_project(self.repo)):
+            self.assertNotRegex(b.title, r"[\x00-\x1f\x7f‮]")
+        self.assertNotIn("\x1b]0;pwned", self.fm("watch", "--once").stdout)
+
     def test_parallel_captures_get_unique_ids(self):
         outs = []
 

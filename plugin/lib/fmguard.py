@@ -171,6 +171,19 @@ def _is_core(path, ctx):
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
 
 
+_SHELL_RC = {".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",
+             ".zlogin", ".zlogout", ".xprofile", ".xinitrc", ".xsessionrc", ".config/fish/config.fish"}
+_LATER_DIRS = (".config/systemd", ".config/autostart", ".config/environment.d", ".config/fish/conf.d")
+
+
+def _runs_later(p, ctx):
+    """Code that runs later, outside the session: user units and autostart entries, shell startup files, git hooks."""
+    home = ctx.home
+    return (any(p == os.path.join(home, f) for f in _SHELL_RC) or any(_under(p, os.path.join(home, d))
+                                                                      for d in _LATER_DIRS)
+            or "/.git/hooks/" in p)
+
+
 def _new_context_file(p, ctx):
     """Creating a skill, agent or command (user-wide or this project's) adds always-on context to every session there;
     editing one that exists is ordinary work."""
@@ -191,8 +204,8 @@ def classify_write(path, ctx):
             cats.append("core")
         if _is_credential(p, ctx):
             cats.append("credentials")
-        if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _under(p, os.path.join(ctx.home, ".config", "systemd")):
-            cats.append("system")  # device files; user units (persistence that outlives the session)
+        if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _runs_later(p, ctx):
+            cats.append("system")  # device files; persistence that outlives the session
         if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
     return list(dict.fromkeys(cats))
@@ -729,6 +742,16 @@ _USER_UNIT_PERSIST = {"link", "enable", "reenable", "edit", "preset", "revert", 
 
 def _check_system(name, args):
     pos = _positionals(args)
+    # scheduled or hook code that runs later, outside the session (like a user systemd unit)
+    if name == "crontab" and not set(args) & {"-l", "--list"}:
+        return [("system", "crontab change (code that runs on a schedule)")]
+    if name in ("at", "batch"):
+        return [("system", f"{name} schedules a command to run later")]
+    if name == "git":
+        sub, rest = _fm_subcommand(args, takes_value=("-C", "-c"))
+        values = [a for a in rest if not a.startswith("-")]
+        if sub == "config" and values[:1] == ["core.hooksPath"] and len(values) > 1 and "--get" not in rest:
+            return [("system", "git core.hooksPath (hooks that run on every git command)")]
     if name.startswith("mkfs") or name in _DISK:
         return [("system", f"{name} (disk/partition change)")]
     if name == "dd" and any(a.startswith("of=/dev/") and not _SAFE_DEV.match(a[3:]) for a in args):

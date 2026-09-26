@@ -30,6 +30,7 @@ Foreman's task briefs, decisions and research for this repository, mirrored by `
 can pick the work up (`fm sync import`, or automatically at session start). fm writes this folder; change the work
 through fm, not by editing these files. Approvals, run marks, audits and focus never count on another machine.
 """
+MAX_IMPORT = 1_000_000  # bytes; a mirrored note bigger than this is left in the repo
 _ID = re.compile(r"^(T-\d{4,})")
 _CONFLICT = re.compile(r"(?m)^(<{7}|={7}|>{7})( |$)")
 _AUDIT_LINE = re.compile(r"(?m)^(-\s+\(audit\s+[a-z]+)\)")
@@ -113,6 +114,7 @@ def export(p):
             except ValueError:
                 continue
             here[m.group(1)] = rel
+        text = c.redact(text)  # the mirror is committed: no secret from any older note may reach it
         dest = os.path.join(root, rel)
         cur = _read(dest) if os.path.isfile(dest) and not os.path.islink(dest) else None
         if cur is not None and cur != text and _sha(cur) != base.get(rel):
@@ -145,6 +147,9 @@ def import_(p):
     active = {b.id for b in mine.values() if b.status in ("active", "verifying")}
     for rel in _walk(root):
         if not _travels(rel):
+            continue
+        if os.path.getsize(os.path.join(root, rel)) > MAX_IMPORT:
+            res["conflicts"].append(f"{rel}: too large to import (over {MAX_IMPORT // 1000} kB); left in the repo")
             continue
         cur = _read(os.path.join(root, rel))
         h = _sha(cur)
@@ -207,7 +212,8 @@ def import_(p):
 def incoming(p):
     """Has the repo changed any mirrored file since fm last wrote or read it?"""
     base, root = c.read_meta(p).get("sync_base") or {}, mirror(p)
-    return any(_travels(rel) and base.get(rel) != _sha(_read(os.path.join(root, rel))) for rel in _walk(root))
+    return any(_travels(rel) and os.path.getsize(os.path.join(root, rel)) <= MAX_IMPORT
+               and base.get(rel) != _sha(_read(os.path.join(root, rel))) for rel in _walk(root))
 
 
 def mirrored_ids(p):

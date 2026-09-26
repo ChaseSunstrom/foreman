@@ -457,6 +457,21 @@ class PluginChanges(GuardCase):
             ("python3 -c \"open('x.py', 'w').write('msg = \\\"claude plugin install x\\\"')\"", None),
         ], self.bash)
 
+    def test_persistence_outside_the_session_is_system(self):
+        # round 4 (brainstorm, security): code that runs later, outside Claude Code, like a user systemd unit
+        self.run_table([
+            ("{home}/.bashrc", "system"), ("{home}/.zshrc", "system"), ("{home}/.profile", "system"),
+            ("{home}/.config/fish/config.fish", "system"), ("{home}/.config/autostart/x.desktop", "system"),
+            ("{repo}/.git/hooks/pre-commit", "system"), ("{repo}/src/hooks/pre-commit", None),
+        ], self.write)
+        self.run_table([
+            ("echo 'export X=1' >> ~/.zshrc", "system"),
+            ("crontab /tmp/jobs", "system"), ("crontab -e", "system"), ("echo '* * * * * x' | crontab -", "system"),
+            ("crontab -l", None),
+            ("git config core.hooksPath .githooks", "system"), ("git config --get core.hooksPath", None),
+            ("at now + 1 minute", "system"), ("cp x {repo}/.git/hooks/post-merge", "system"),
+        ], self.bash)
+
     def test_a_new_skill_agent_or_command_needs_the_users_yes(self):
         # round-2 intent audit: a new project or user skill/agent/command is always-on context in every session there
         for d in ("{repo}/.claude/skills/release/SKILL.md", "{repo}/.claude/agents/fixtures.md",

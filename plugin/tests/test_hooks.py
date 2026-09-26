@@ -453,6 +453,39 @@ class PreToolUse(HookCase):
         self.assertTrue(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install a@m", "s"))
         self.assertFalse(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install b@m", "s"))
 
+    def test_a_broken_working_copy_of_the_guard_falls_back_to_the_committed_one(self):
+        # round 4 (T-0033): a half-applied guard edit locked every write; the committed guard keeps protection on
+        import shutil
+        import subprocess
+        import sys
+        self.fm("init")
+        self.task()
+        copy = os.path.join(self.tmp, "fcopy")
+        shutil.copytree(os.path.dirname(c.PLUGIN_ROOT) + "/plugin", os.path.join(copy, "plugin"),
+                        ignore=shutil.ignore_patterns("__pycache__", "tests"))
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
+        guard = os.path.join(copy, "plugin", "lib", "fmguard.py")
+        hook = os.path.join(copy, "plugin", "hooks", "hook")
+
+        def pre(path):
+            payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "PreToolUse", "tool_name": "Write",
+                       "tool_input": {"file_path": path, "content": "x"}}
+            return subprocess.run([sys.executable, hook, "PreToolUse"], input=json.dumps(payload), capture_output=True,
+                                  text=True, env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=20)
+        for broken in ("def classify_write(path, ctx):\n    return undefined_helper(path)\n\n\ndef _was(path, ctx):",
+                       "def classify_write(path, ctx:"):
+            with self.subTest(broken=broken[:30]):
+                with open(guard) as f:
+                    text = f.read()
+                with open(guard, "w") as f:
+                    f.write(text.replace("def classify_write(path, ctx):", broken, 1))
+                self.assertEqual(pre(os.path.join(self.repo, "src", "ok.py")).returncode, 0, "ordinary work goes on")
+                self.assertEqual(pre(os.path.join(self.home, "plugin", "lib", "fmcore.py")).returncode, 2,
+                                 "protection stays on")
+                self.assertIn("committed guard", self.hooks_log())
+                subprocess.run(["git", "-C", copy, "checkout", "--", "."], check=True)
+
     def test_core_stays_granted_for_the_task(self):
         self.fm("init")
         tid = self.task()

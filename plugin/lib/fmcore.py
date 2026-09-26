@@ -574,6 +574,7 @@ class Brief:
     def new(cls, id, title, type, tier, raw=None, scope=(), depends=(), source="user", priority="normal",
             status="planned", now=None, explore=False):
         ts = now or globals()["now"]()
+        title = plain(title)  # printed by the statusline, dashboard and terminal title
         raw_text = "\n".join("> " + line for line in (raw or title).splitlines()) or "> " + title
         with open(os.path.join(PLUGIN_ROOT, "templates", "brief.md"), encoding="utf-8") as f:
             tpl = string.Template(f.read())
@@ -1197,6 +1198,13 @@ def plan_gaps(b, autonomy="standard"):
 
 
 STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditing", "closing")  # stage()'s order
+
+
+def plain(s):
+    """Text safe to print or show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph
+    separator characters that could move the cursor, retitle the terminal or disguise the text."""
+    import unicodedata
+    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
 
 
 def fit(text, width):
