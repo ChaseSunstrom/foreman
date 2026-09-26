@@ -457,6 +457,19 @@ class PluginChanges(GuardCase):
             ("python3 -c \"open('x.py', 'w').write('msg = \\\"claude plugin install x\\\"')\"", None),
         ], self.bash)
 
+    def test_a_new_skill_agent_or_command_needs_the_users_yes(self):
+        # round-2 intent audit: a new project or user skill/agent/command is always-on context in every session there
+        for d in ("{repo}/.claude/skills/release/SKILL.md", "{repo}/.claude/agents/fixtures.md",
+                  "{repo}/.claude/commands/ship.md", "{home}/.claude/skills/x/SKILL.md"):
+            with self.subTest(path=d):
+                self.assertBlocked(self.write(d), "plugin")
+        self.assertBlocked(self.bash("cat > {repo}/.claude/skills/release/SKILL.md <<'EOF'\nx\nEOF"), "plugin")
+        existing = os.path.join(self.repo, ".claude", "skills", "have", "SKILL.md")
+        os.makedirs(os.path.dirname(existing), exist_ok=True)
+        open(existing, "w").close()
+        self.assertIsNone(self.write(existing), "editing an approved one is ordinary work")
+        self.assertIsNone(self.write("{repo}/.claude/skills/release/notes.txt"))
+
     def test_one_plugin_change_per_command(self):
         # T-0029: a yes covers one change, so a command can't bundle several behind it
         r = self.bash("fm plugins install a@m && fm plugins install b@m", allow=["plugin"])

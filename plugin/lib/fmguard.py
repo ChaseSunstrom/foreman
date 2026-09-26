@@ -171,6 +171,15 @@ def _is_core(path, ctx):
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
 
 
+def _new_context_file(p, ctx):
+    """Creating a skill, agent or command (user-wide or this project's) adds always-on context to every session there;
+    editing one that exists is ordinary work."""
+    if os.path.exists(p) or not p.endswith(".md"):
+        return False
+    return any(_under(p, os.path.join(base, ".claude", kind)) for base in (ctx.home, ctx.project_root) if base
+               for kind in ("skills", "agents", "commands"))
+
+
 def classify_write(path, ctx):
     cats = []
     for p in _variants(path):
@@ -183,8 +192,8 @@ def classify_write(path, ctx):
             cats.append("credentials")
         if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _under(p, os.path.join(ctx.home, ".config", "systemd")):
             cats.append("system")  # device files; user units (persistence that outlives the session)
-        if _under(p, os.path.join(ctx.home, ".claude", "plugins")):
-            cats.append("plugin")  # installed plugins' code and registries: what runs in every session
+        if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
+            cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
     return list(dict.fromkeys(cats))
 
 

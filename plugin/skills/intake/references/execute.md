@@ -28,7 +28,7 @@
 7. Show the queue in ≤ 10 lines and continue per autonomy (`/foreman:next`).
 
 ## Project tools (for work that repeats)
-`fm repeats` reports commands run 3+ times in 2+ tasks and steps that recur in 3+ tasks, each with a suggestion. Make the smallest tool that removes the repetition, in the project repo, as its own S task:
+`fm repeats` reports commands run 3+ times in 2+ tasks and steps that recur in 3+ tasks, each with a suggestion. Make the smallest tool that removes the repetition, in the project repo, as its own S task, then `fm repeats dismiss "<shape or step>"` (also for one that isn't worth a tool). A new skill, agent or command file is always-on context, so creating one needs the user's yes (`fm ask ID plugin`; editing an existing one doesn't):
 - A gate (tests, lint, build, a benchmark with a budget) → `fm check add "<cmd>"`; `fm check` then runs every gate at once.
 - A multi-command sequence → a script in the repo (`scripts/<name>`), then use it in evidence (`--run`) or as a gate.
 - A procedure with judgement (how this repo does releases, migrations, fixture updates) → a project skill, `.claude/skills/<name>/SKILL.md`: frontmatter `name` and a one-line `description` saying when to use it (it is always-on context in this repo, so keep it short), then the steps, commands and pitfalls. Sessions and subagents in the repo load it when it applies.

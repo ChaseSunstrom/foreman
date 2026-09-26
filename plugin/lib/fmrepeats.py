@@ -5,6 +5,7 @@ in 2+ tasks, or a step that recurs in 3+ tasks, is a candidate for a project too
 or a project skill (.claude/skills/<name>/SKILL.md) that Claude and its subagents load when the procedure applies.
 Report-only; turning a candidate into a tool is an ordinary task.
 """
+import os
 import re
 
 import fmcore as c
@@ -12,8 +13,11 @@ import fmcore as c
 MIN_RUNS, MIN_TASKS, MIN_STEP_TASKS = 3, 2, 3
 _EVIDENCE_CMD = re.compile(r"^-\s+(?:\((?:step|ac)\s+\d+\)\s+)?`([^`]*)` →")
 _RECORD = re.compile(r"git\s+(?:-C\s+\S+\s+)?(?:log|status|diff|show|rev-parse|branch)\b")
-_GATE = re.compile(r"\b(test|tests|unittest|pytest|jest|vitest|lint|eslint|ruff|mypy|tsc|check|build|fmt|vet|"
-                   r"doctor|bench|clippy|roundtrip)\b", re.I)
+# a gate word as a whole word (letters around it end it, `_` and `.` don't), in a command's words or file names, not
+# its directories: `bench_hooks.py` and `unittest` are gates, `dist/build/app.js` and `git checkout` aren't
+_GATE = re.compile(r"(?<![a-z])(test|tests|unittest|pytest|jest|vitest|lint|eslint|ruff|mypy|tsc|check|build|fmt|"
+                   r"vet|doctor|bench|clippy|roundtrip)(?![a-z])", re.I)
+_SEQUENCE = re.compile(r"&&|;|\|")
 
 
 def shape(cmd):
@@ -22,7 +26,7 @@ def shape(cmd):
     cmd = re.sub(r"^(?:cd\s+\S+\s*&&\s*)?(?:[A-Za-z_][A-Za-z0-9_]*=\S+\s+)*", "", cmd.strip())
     cmd = re.sub(r"^(python[0-9.]*)((?:\s+-[WX]\s*\S+|\s+-[uBOqsSIE]+)+)", r"\1", cmd)  # interpreter flags
     cmd = re.sub(r"'[^']*'|\"[^\"]*\"", "'…'", re.sub(r"\bT-\d{4,}\b", "T-ID", cmd))
-    if re.search(r"&&|;|\|", cmd):
+    if _SEQUENCE.search(cmd):
         return re.sub(r"\b\d+\b", "N", re.sub(r"\s+", " ", cmd))
     words = cmd.split()
     return " ".join(re.sub(r"^\d+$", "N", w) for w in words[:3]) + (" …" if len(words) > 3 else "")
@@ -41,29 +45,48 @@ def scan(p):
             if not m or m.group(1).split()[:1] in ([], ["fm"]) or m.group(1).startswith(("fm-", "fm check:")) \
                     or _RECORD.match(m.group(1)):
                 continue  # Foreman's own commands, reviewer notes and git reads record state; they aren't habits
-            r = runs.setdefault(shape(m.group(1)), {"count": 0, "tasks": set(), "example": m.group(1)})
+            sh = shape(m.group(1))
+            if not sh:
+                continue
+            r = runs.setdefault(sh, {"count": 0, "tasks": set(), "example": m.group(1)})
             r["count"] += 1
             r["tasks"].add(b.id)
         for s in b.steps():
             steps.setdefault(_step_key(s.text), set()).add(b.id)
-    gates = {shape(x) for x in c.read_meta(p).get("checks") or []}
+    meta = c.read_meta(p)
+    gates = {shape(x) for x in meta.get("checks") or [] if isinstance(x, str)}
+    keys = [k for k in meta.get("repeats_dismissed") or [] if isinstance(k, str)]
+    dismissed = set(keys) | {_step_key(k) for k in keys}
     commands = []
     for sh, r in runs.items():
-        if r["count"] < MIN_RUNS or len(r["tasks"]) < MIN_TASKS:
+        if r["count"] < MIN_RUNS or len(r["tasks"]) < MIN_TASKS or sh in dismissed:
             continue
         covered = sh in gates
-        suggest = ("covered by fm check" if covered else
-                   "a project script (one command for the sequence); fm check add it if it's a gate"
-                   if re.search(r"&&|;|\|", sh) else
-                   f"fm check add \"{r['example']}\" (a gate for every task)" if _GATE.search(sh) else
-                   "a project script or alias")
         commands.append({"shape": sh, "count": r["count"], "tasks": len(r["tasks"]), "example": r["example"],
-                         "covered": covered, "suggest": suggest})
+                         "covered": covered, "suggest": "covered by fm check" if covered else suggest(sh, r["example"])})
     procedures = [{"step": k, "tasks": len(ids), "suggest": "a project skill (.claude/skills/<name>/SKILL.md) holding "
                    "the procedure, so every session and subagent follows it the same way"}
-                  for k, ids in steps.items() if k and len(ids) >= MIN_STEP_TASKS]
+                  for k, ids in steps.items() if k and len(ids) >= MIN_STEP_TASKS and k not in dismissed]
     return {"commands": sorted(commands, key=lambda x: (-x["count"], x["shape"])),
             "steps": sorted(procedures, key=lambda x: (-x["tasks"], x["step"]))}
+
+
+def suggest(sh, example):
+    if _SEQUENCE.search(sh):
+        return "a project script (one command for the sequence); fm check add it if it's a gate"
+    if any(_GATE.search(os.path.basename(w)) for w in sh.split()):
+        return f"fm check add \"{example}\" (a gate for every task)"
+    return "a project script or alias"
+
+
+def dismiss(p, key):
+    """Stop reporting a shape or step: it became a project tool, or isn't worth one."""
+    key = key.strip()
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        meta["repeats_dismissed"] = sorted(set(meta.get("repeats_dismissed") or []) | {key})
+        c.write_meta(p, meta)
+        c.log_event(p, "repeats_dismissed", data={"key": key[:200]})
 
 
 def open_candidates(report):
@@ -72,7 +95,13 @@ def open_candidates(report):
 
 def cmd_repeats(args):
     import fmcli
-    r = scan(fmcli.resolve(args))
+    p = fmcli.resolve(args)
+    if args.action == "dismiss":
+        if not args.words:
+            raise fmcli.UsageError("fm repeats dismiss needs the shape or step, as fm repeats prints it")
+        dismiss(p, " ".join(args.words))
+        return print("Dismissed; fm repeats won't list it again.")
+    r = scan(p)
     lines = []
     if r["commands"]:
         lines.append(f"Repeated commands ({MIN_RUNS}+ runs in {MIN_TASKS}+ tasks):")
@@ -80,5 +109,6 @@ def cmd_repeats(args):
     if r["steps"]:
         lines.append(f"Repeated steps (in {MIN_STEP_TASKS}+ tasks):")
         lines += [f"  {x['tasks']} tasks  {x['step']}  → {x['suggest']}" for x in r["steps"]]
-    fmcli.out(args, r, "\n".join(lines) or f"Nothing repeated yet (commands {MIN_RUNS}+ times in {MIN_TASKS}+ tasks, "
-                                             f"steps in {MIN_STEP_TASKS}+ tasks).")
+    n = len(c.read_meta(p).get("repeats_dismissed") or [])
+    fmcli.out(args, r, ("\n".join(lines) or f"Nothing repeated yet (commands {MIN_RUNS}+ times in {MIN_TASKS}+ tasks, "
+                                              f"steps in {MIN_STEP_TASKS}+ tasks).") + (f" ({n} dismissed)" if n else ""))

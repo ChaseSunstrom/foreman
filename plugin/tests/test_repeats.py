@@ -3,6 +3,8 @@ import json
 
 from helpers import ForemanTestCase, git_repo
 
+import fmcore as c
+
 
 class Repeats(ForemanTestCase):
     def setUp(self):
@@ -40,6 +42,26 @@ class Repeats(ForemanTestCase):
         for i in range(1, 4):
             self.fm("task", "evidence", f"T-000{i}", "--step", "2", "git log --oneline -1", "abc123 fix")
         self.assertFalse(any(x["shape"].startswith("git log") for x in self.report()["commands"]))
+
+    def test_gate_words_count_in_the_command_not_in_directory_names(self):
+        import fmrepeats
+        self.assertIn("fm check add", fmrepeats.suggest("python3 plugin/tests/bench_hooks.py --runs …", "x"))
+        self.assertNotIn("fm check add", fmrepeats.suggest("cp dist/build/app.js …", "x"))
+        self.assertNotIn("fm check add", fmrepeats.suggest("git checkout main", "x"))
+        self.assertEqual(fmrepeats.shape("cd sub &&"), "")
+
+    def test_handled_items_can_be_dismissed_and_bad_meta_is_ignored(self):
+        # round-2 audits: a repeat turned into a script or skill stops being reported; a stray non-string gate is skipped
+        self.fm("repeats", "dismiss", "npm run build && npm run lint")
+        self.fm("repeats", "dismiss", "Write a failing test.")
+        r = self.report()
+        self.assertNotIn("npm run build && npm run lint", {x["shape"] for x in r["commands"]})
+        self.assertEqual({x["step"] for x in r["steps"]}, {"update the changelog"})
+        self.assertIn("2 dismissed", self.fm("repeats").stdout)
+        p = c.find_project(self.repo)
+        c.update_meta(p, checks=[None, 3, "python3 -m unittest discover -s tests"])
+        self.assertTrue({x["shape"]: x for x in self.report()["commands"]}["python3 -m unittest …"]["covered"])
+        self.assertEqual(self.fm("tidy", check=False).returncode, 0)
 
     def test_commands_fm_check_already_runs_are_marked_covered(self):
         self.fm("check", "add", "python3 -m unittest discover -s tests")
