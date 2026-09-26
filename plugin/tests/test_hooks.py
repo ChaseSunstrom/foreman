@@ -124,6 +124,74 @@ class UserPromptSubmit(HookCase):
         self.assertFalse(c.read_meta(self.project())["paused"])
 
 
+class Approvals(HookCase):
+    """fm ask records a request; only the user's next prompt (a hook, never a command) decides it."""
+
+    def ask(self, tid, *cats, session="sess-1"):
+        self.fm("ask", tid, *cats, "--why", "needs it", env={"FOREMAN_SESSION_ID": session})
+
+    def allow(self, tid):
+        return c.find_brief(self.project(), tid).meta.get("allow") or []
+
+    def pending(self):
+        return c.read_meta(self.project()).get("pending_approvals") or []
+
+    def test_yes_grants_and_is_recorded(self):
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "Yes, go ahead"}))
+        self.assertEqual(self.allow(tid), ["core"])
+        self.assertIn(f"approved core for {tid}", ctx)
+        self.assertEqual(self.pending(), [])
+        granted = [e for e in c.ledger_tail(self.project()) if e["event"] == "approval_granted"]
+        self.assertEqual((len(granted), granted[0]["task"]), (1, tid))
+
+    def test_other_replies_clear_without_granting(self):
+        self.fm("init")
+        tid = self.task()
+        for reply in ("what would that change?", "no", "yesterday it worked", "not yet"):
+            self.ask(tid, "core")
+            ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": reply}))
+            self.assertEqual(self.allow(tid), [], reply)
+            self.assertEqual(self.pending(), [], reply)
+            self.assertIn("not granted", ctx)
+
+    def test_reply_in_another_session_does_not_decide(self):
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core", session="sess-1")
+        self.hook("UserPromptSubmit", {"prompt": "yes", "session_id": "sess-2"})
+        self.assertEqual((self.allow(tid), len(self.pending())), ([], 1))
+
+    def test_pasted_yes_does_not_count(self):
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        self.hook("UserPromptSubmit", {"prompt": "<pasted_content id=a>yes</pasted_content> what is this?"})
+        self.assertEqual(self.allow(tid), [])
+
+    def test_one_yes_grants_every_pending_request(self):
+        self.fm("init")
+        t1 = self.task()
+        t2 = self.task("Other", focus=False)
+        self.ask(t1, "core")
+        self.ask(t2, "publish", "git-destructive")
+        self.hook("UserPromptSubmit", {"prompt": "ok"})
+        self.assertEqual((self.allow(t1), self.allow(t2)), (["core"], ["publish", "git-destructive"]))
+
+    def test_expired_request_is_dropped(self):
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        p = self.project()
+        meta = c.read_meta(p)
+        meta["pending_approvals"][0]["at"] = "2020-01-01T00:00:00Z"
+        c.write_meta(p, meta)
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual((self.allow(tid), self.pending()), ([], []))
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})

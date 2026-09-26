@@ -20,7 +20,8 @@ class UsageError(Exception):
 
 
 def session():
-    return os.environ.get("FOREMAN_SESSION_ID")
+    # Claude Code sets its own id for Bash; the CLAUDE_ENV_FILE export can be a stale id after a resume.
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID")
 
 
 def out(args, data, text):
@@ -51,6 +52,12 @@ def need_brief(p, tid):
     if not b:
         raise UsageError(f"no task {tid} in {p.slug}")
     return b
+
+
+def last_change(p, tid):
+    """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
+    return max((e.get("ts", "") for e in c.ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
+               default="")
 
 
 def mutate(p, tid, fn, event, data=None):
@@ -186,9 +193,17 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, lambda b: b.add_evidence(args.cmd, args.result, step=args.step, ac=args.ac),
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": args.cmd, "result": args.result[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: evidence recorded.")
+    if sub == "audit":
+        if args.lens not in c.AUDIT_LENSES:
+            raise UsageError(f"unknown lens {args.lens!r}; one of {', '.join(c.AUDIT_LENSES)}")
+        b, _ = mutate(p, args.id, lambda b: b.add_audit(args.lens, args.how, args.result),
+                      "audit", {"lens": args.lens, "how": args.how[:200], "result": args.result[:300]})
+        return out(args, c.brief_summary(b), f"{b.id}: audit ({args.lens}) recorded.")
     if sub == "done":
+        since = last_change(p, args.id)
+
         def done(b):
-            reasons = b.done_blockers()
+            reasons = b.done_blockers(since)
             if reasons:
                 raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
             b.meta["status"] = "done"
@@ -436,6 +451,29 @@ def _git_exclude(root, rel):
         pass
 
 
+def cmd_ask(args):
+    """Record a request only. The grant happens in the UserPromptSubmit hook, on the user's own reply."""
+    import fmguard
+    p = resolve(args)
+    cats = list(dict.fromkeys(args.categories))
+    bad = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
+    if bad:
+        ok = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE]
+        raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
+    why = c.redact(args.why)
+    with c.lock(p.dir):
+        b = need_brief(p, args.id)
+        meta = c.read_meta(p)
+        pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
+        pend.append({"task": b.id, "allow": cats, "why": why, "session": session(), "at": c.now()})
+        meta["pending_approvals"] = pend
+        c.write_meta(p, meta)
+        c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=session())
+    out(args, {"task": b.id, "allow": cats, "why": why},
+        f"Pending: {b.id} {', '.join(cats)} ({why}). Ask the user one yes/no question for it now; their next "
+        f"message decides: a reply starting with yes grants it, anything else cancels it.")
+
+
 def cmd_decide(args):
     p = resolve(args)
 
@@ -523,6 +561,11 @@ def build_parser():
     s.add_argument("--urgent", action="store_true")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
+    s = add("ask", cmd_ask, help="ask the user to authorize guard categories for a task; their next message decides")
+    s.add_argument("id")
+    s.add_argument("categories", nargs="+")
+    s.add_argument("--why", default="")
+
     s = add("decide", cmd_decide, help="record a decision in decisions.md")
     s.add_argument("decision")
     s.add_argument("--why", default="")
@@ -581,6 +624,11 @@ def build_parser():
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
+    t = tadd("audit")
+    t.add_argument("id")
+    t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
+    t.add_argument("how")
+    t.add_argument("result")
     t = tadd("log")
     t.add_argument("id")
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")

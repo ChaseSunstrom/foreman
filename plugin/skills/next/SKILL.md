@@ -11,7 +11,7 @@ description: Use when the current Foreman task is finished, blocked or dropped, 
 4. Show the queue in ≤ 10 lines (`fm queue`).
 5. Next task = the first runnable item. If it needs approval (L tier, `?`, destructive) and isn't `approved`, present the plan and stop. Otherwise `fm focus ID` and follow its Execution prompt.
 6. Queue empty:
-   - **FINAL VERIFY:** run the project's full verification (build, all tests, lint) fresh; `fm log final_verify '{"cmd":"…","result":"…"}'`.
+   - **FINAL VERIFY:** run the project's full verification (build, all tests, lint) fresh; `fm log final_verify '{"cmd":"…","result":"…"}'`. Then the session audit (`operator` + `adversary` over the whole session diff, `../intake/references/audit.md`); fix or capture what it finds.
    - **REFLECT:** `/foreman:reflect`.
    - Suggest `/foreman:tidy` if STATE says tidy is overdue.
    - Report what was done with evidence, in a few lines.

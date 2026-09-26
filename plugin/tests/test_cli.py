@@ -117,10 +117,26 @@ class TaskLifecycle(ForemanTestCase):
         self.assertIn("criterion 1", p.stderr)
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
         self.fm("task", "ac", "T-0001", "check", "1", "--evidence", "pytest -k slow", "1 passed")
+        p = self.fm("task", "done", "T-0001", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("audit missing: self", p.stderr)
+        self.fm("task", "audit", "T-0001", "self", "lens checklist", "no findings")
         self.fm("task", "done", "T-0001")
         self.assertEqual(self.brief().status, "done")
         events = [e["event"] for e in c.ledger_tail(self.p)]
         self.assertIn("task_done", events)
+
+    def test_audit_older_than_the_last_edit_is_stale(self):
+        self.fm("task", "step", "T-0001", "add", "a")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "audit", "T-0001", "self", "checklist", "ok")
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:  # an Edit recorded by the hook later on
+            f.write(json.dumps({"ts": "2999-01-01T00:00:00Z", "task": "T-0001", "event": "touched",
+                                "data": {"file": "x.py", "tool": "Edit"}}) + "\n")
+        p = self.fm("task", "done", "T-0001", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("after the last change", p.stderr)
+        self.assertEqual(self.fm("task", "audit", "T-0001", "vibes", "x", "y", check=False).returncode, 1)
 
     def test_focus_is_exclusive(self):
         self.fm("task", "new", "Second", "--type", "CLEAN", "--tier", "S")
@@ -143,6 +159,26 @@ class TaskLifecycle(ForemanTestCase):
             self.assertEqual(p.returncode, 2, spelling)
         self.assertEqual(self.brief().meta.get("allow") or [], [])
         self.assertEqual(self.fm("capture", "x", "--sour", "self", check=False).returncode, 2)
+
+    def test_ask_records_a_pending_approval_without_granting(self):
+        p = self.fm("ask", "T-0001", "core", "publish", "--why", "edit the guard", env={"FOREMAN_SESSION_ID": "s1"})
+        self.assertIn("yes", p.stdout.lower())
+        pend = c.read_meta(self.p)["pending_approvals"]
+        self.assertEqual([(a["task"], a["allow"], a["why"], a["session"]) for a in pend],
+                         [("T-0001", ["core", "publish"], "edit the guard", "s1")])
+        self.assertEqual(self.brief().meta.get("allow") or [], [])
+        self.fm("ask", "T-0001", "core", "--why", "again")
+        self.assertEqual(len(c.read_meta(self.p)["pending_approvals"]), 1, "one pending request per task")
+
+    def test_session_comes_from_claude_code_first(self):
+        # FOREMAN_SESSION_ID (CLAUDE_ENV_FILE) goes stale on resume; Claude Code's own variable doesn't.
+        self.fm("ask", "T-0001", "core", env={"CLAUDE_CODE_SESSION_ID": "cc-1", "FOREMAN_SESSION_ID": "stale"})
+        self.assertEqual(c.read_meta(self.p)["pending_approvals"][0]["session"], "cc-1")
+
+    def test_ask_rejects_unknown_and_unauthorizable_categories(self):
+        for cat in ("bogus", "state-direct", "self-authorize"):
+            self.assertEqual(self.fm("ask", "T-0001", cat, check=False).returncode, 1, cat)
+        self.assertEqual(self.fm("ask", "T-0099", "core", check=False).returncode, 1)
 
     def test_set_rejects_unknown_status_and_protected_fields(self):
         self.assertEqual(self.fm("task", "set", "T-0001", "status=weird", check=False).returncode, 1)

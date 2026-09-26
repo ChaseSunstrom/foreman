@@ -241,6 +241,42 @@ class Briefs(unittest.TestCase):
         self.assertTrue(any("step 2" in r for r in reasons))
         self.assertTrue(any("criterion 1" in r for r in reasons))
 
+    def _finished(self, tier):
+        b = c.Brief.new("T-0001", "Do a thing", "FEATURE", tier, now="2026-01-01T00:00:00Z")
+        b.add_step("work")
+        b.add_evidence("make test", "ok", step=1, ts="2026-01-01T10:00:00Z")
+        b.mark_step(1)
+        return b
+
+    def test_audits_required_by_tier(self):
+        s = self._finished("S")
+        self.assertTrue(any("audit" in r for r in s.done_blockers()))
+        s.add_audit("self", "lens checklist", "no findings", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(s.done_blockers(), [])
+        m = self._finished("M")
+        m.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertTrue(any("audit" in r for r in m.done_blockers()))
+        m.add_audit("edge", "fm-reviewer", "1 finding fixed", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(m.done_blockers(), [])
+        big = self._finished("L")
+        for lens in ("intent", "adversary", "edge", "operator"):
+            big.add_audit(lens, "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertEqual([r for r in big.done_blockers() if "audit" in r], ["audit missing: maintainer"])
+        big.add_audit("maintainer", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(big.done_blockers(), [])
+
+    def test_audit_must_postdate_the_last_change(self):
+        b = self._finished("S")
+        b.add_audit("self", "checklist", "ok", ts="2026-01-01T09:00:00Z")  # before the step evidence
+        self.assertTrue(any("audit" in r for r in b.done_blockers()))
+        b.add_audit("self", "checklist", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(b.done_blockers(), [])
+        self.assertTrue(any("audit" in r for r in b.done_blockers(since="2026-01-01T12:00:00Z")), "edited after audit")
+
+    def test_unknown_lens_is_rejected(self):
+        with self.assertRaises(ValueError):
+            self._finished("S").add_audit("vibes", "x", "y")
+
     def test_new_brief_has_frontmatter_and_raw_request(self):
         b = c.Brief.new("T-0007", "Export CSV", "FEATURE", "M", raw="FEATURE: export report as CSV @src/reports",
                         scope=["src/reports"], now="2026-01-01T00:00:00Z")

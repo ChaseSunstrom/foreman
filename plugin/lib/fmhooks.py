@@ -17,6 +17,7 @@ CTX_BUDGET = 2000       # SessionStart additionalContext
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
+APPROVAL_TTL = 24 * 3600  # seconds a pending `fm ask` stays answerable
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
 # async events (latency irrelevant) and per-batch MessageDisplay are not timed
@@ -184,14 +185,47 @@ def session_context(p, sd, other_note=None):
 _PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
 
+_YES = re.compile(r"^\W*(yes|y|yep|yeah|yup|sure|ok|okay|approved?|confirm(ed)?|lgtm|go|do it)\b(?!\s*\?)", re.I)
+
+
+def _resolve_approvals(p, meta, sid, text):
+    """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session.
+
+    A reply starting with yes grants every pending request of the session; anything else cancels them."""
+    pend = meta.get("pending_approvals") or []
+    mine = [a for a in pend if a.get("session") in (None, sid)]
+    if not mine:
+        return []
+    meta["pending_approvals"] = [a for a in pend if a not in mine]
+    yes, notes = bool(_YES.match(text)), []
+    for a in mine:
+        cats, at = ", ".join(a["allow"]), c.parse_ts(a.get("at"))
+        fresh = bool(at) and time.time() - at.timestamp() < APPROVAL_TTL
+        b = c.find_brief(p, a["task"]) if yes and fresh else None
+        if b:
+            b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + a["allow"]))
+            b.append_log(f"user approved {cats} in chat")
+            c.save_brief(p, b)
+            c.log_event(p, "approval_granted", task=b.id, data={"allow": a["allow"], "reply": c.redact(text[:80])},
+                        session=sid)
+            notes.append(f"User approved {cats} for {b.id}")
+        else:
+            c.log_event(p, "approval_declined", task=a["task"], data={"allow": a["allow"], "expired": not fresh},
+                        session=sid)
+            notes.append(f"Pending {cats} for {a['task']} not granted ({'expired' if not fresh else 'reply was not a yes'})")
+    return notes
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
-    r = c.parse_intake(_PASTED.sub("", pl.get("prompt") or ""))
+    text = _PASTED.sub("", pl.get("prompt") or "").strip()
+    r = c.parse_intake(text)
     with c.lock(p.dir, timeout=1):
         meta = c.read_meta(p)
+        approvals = _resolve_approvals(p, meta, sid, text)
         meta["session"] = {"id": sid, "seen": c.now()}
         if "PAUSE" in r.overrides:
             meta["paused"] = True
@@ -202,8 +236,8 @@ def user_prompt_submit(pl):
         if sid in g["drive"]:
             g["drive"][sid]["count"] = 0
             _write_gate(p, g)
-        sd = c.regen_views(p) if r.overrides else c.state_dict(p)
-    parts = []
+        sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
+    parts = list(approvals)
     if r.items:
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)

@@ -263,7 +263,7 @@ def redact_obj(obj):
 # ---------------------------------------------------------------- ledger
 
 def log_event(p, event, task=None, data=None, session=None):
-    rec = {"ts": now(), "session_id": session or os.environ.get("FOREMAN_SESSION_ID"), "project": p.slug,
+    rec = {"ts": now(), "session_id": session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID"), "project": p.slug,
            "task": task, "event": event, "data": redact_obj(data or {})}
     os.makedirs(p.dir, exist_ok=True)
     # One short O_APPEND write per event: atomic for concurrent writers on a local filesystem.
@@ -312,6 +312,15 @@ def _parse_value(raw):
 _STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+(.*?)(\s+<- CURRENT)?\s*$")
 _AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+(.*?)\s*$")
 _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
+_AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
+_TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
+AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
+# Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
+REQUIRED_AUDITS = {
+    "S": [set(AUDIT_LENSES)],
+    "M": [{"intent"}, {"adversary", "edge", "operator", "maintainer"}],
+    "L": [{"intent"}, {"adversary"}, {"edge"}, {"operator"}, {"maintainer"}],
+}
 
 
 @dataclass
@@ -504,6 +513,38 @@ class Brief:
         result = redact(str(result)).replace("\n", " ").strip()
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result} ({ts or now()})")
 
+    # --- audits (evidence lines tagged "(audit <lens>)")
+    def add_audit(self, lens, how, result, ts=None):
+        if lens not in AUDIT_LENSES:
+            raise ValueError(f"unknown audit lens {lens!r}; one of {', '.join(AUDIT_LENSES)}")
+        how = redact(str(how)).replace("`", "'").strip()
+        result = redact(str(result)).replace("\n", " ").strip()
+        self._append_line("Verification evidence", f"- (audit {lens}) `{how}` → {result} ({ts or now()})")
+
+    def audits(self):
+        out = []
+        for line in self.evidence():
+            m, t = _AUDIT_RE.match(line), _TS_TAIL.search(line)
+            if m:
+                out.append((m.group(1), t.group(1) if t else ""))
+        return out
+
+    def last_work_ts(self):
+        stamps = [_TS_TAIL.search(l) for l in self.evidence() if (m := _EV_RE.match(l)) and m.group(1) == "step"]
+        return max((t.group(1) for t in stamps if t), default="")
+
+    def audit_blockers(self, since=None):
+        cutoff = max(self.last_work_ts(), since or "")
+        fresh = {lens for lens, ts in self.audits() if ts >= cutoff}
+        stale = {lens for lens, ts in self.audits()} - fresh
+        reasons = []
+        for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]):
+            if not group & fresh:
+                name = "self" if group == set(AUDIT_LENSES) else " or ".join(sorted(group))
+                reasons.append(f"audit missing: {name}" + (" (recorded audits predate the last change; "
+                                                          "re-audit after the last change)" if group & stale else ""))
+        return reasons
+
     # --- acceptance criteria
     def acceptance(self):
         out = []
@@ -533,7 +574,7 @@ class Brief:
             raise KeyError(f"no acceptance criterion {n}")
         self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
 
-    def done_blockers(self):
+    def done_blockers(self, since=None):
         reasons = []
         for s in self.steps():
             if not s.done:
@@ -545,7 +586,7 @@ class Brief:
                 reasons.append(f"acceptance criterion {a.n} not checked: {a.text}")
         if not self.has_evidence():
             reasons.append("no verification evidence recorded")
-        return reasons
+        return reasons + self.audit_blockers(since)
 
     # --- resume
     def set_resume_auto(self, text):

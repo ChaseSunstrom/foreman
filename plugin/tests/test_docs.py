@@ -11,7 +11,7 @@ USER_ONLY = {"status", "capture", "tidy", "doctor", "improve"}
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PreCompact",
                "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd"}
-OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md"}
+OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md", "audit.md"}
 
 
 def frontmatter(path):
@@ -53,6 +53,16 @@ class Skills(unittest.TestCase):
             for ref in re.findall(r"`(references/[\w./-]+\.md)`", body):
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
+
+    def test_audit_reference_defines_every_lens_fm_requires(self):
+        import fmcore as c
+        body = read_text(os.path.join(PLUGIN, "skills", "intake", "references", "audit.md"))
+        for lens in c.AUDIT_LENSES:
+            with self.subTest(lens=lens):
+                self.assertIn(f"**{lens}**", body)
+        for tier in ("S", "M", "L"):
+            self.assertIn(f"| {tier} |", body)
+        self.assertIn("references/audit.md", read_text(os.path.join(PLUGIN, "skills", "intake", "SKILL.md")))
 
     def test_playbook_index_covers_every_reference(self):
         body = read_text(os.path.join(PLUGIN, "skills", "playbooks", "SKILL.md"))

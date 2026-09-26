@@ -20,11 +20,12 @@
 
 ## End of task
 1. FINAL checks for this task: full test suite / build, not just the new test. Record evidence.
-2. `fm task done ID` (fm lists anything missing).
-3. `/foreman:reflect` for M/L tasks or anything that caused back-and-forth.
-4. Triage the inbox: expand captured items into briefs (intake §2), fold them into the queue.
-5. Re-plan checkpoint after each phase group or structural change: re-read remaining briefs, update scope, approach and Execution prompts, re-order if dependencies changed (`fm queue --replan`), log what changed in each brief.
-6. Show the queue in ≤ 10 lines and continue per autonomy (`/foreman:next`).
+2. Audit (`audit.md`): S = self checklist; M = intent + the riskiest other lens; L = all five lenses via `foreman:fm-reviewer`. Verify every finding, fix or capture it, `fm task audit ID <lens> "<how>" "<result>"`.
+3. `fm task done ID` (fm lists anything missing, including audits older than the last edit).
+4. `/foreman:reflect` for M/L tasks or anything that caused back-and-forth.
+5. Triage the inbox: expand captured items into briefs (intake §2), fold them into the queue.
+6. Re-plan checkpoint after each phase group or structural change: re-read remaining briefs, update scope, approach and Execution prompts, re-order if dependencies changed (`fm queue --replan`), log what changed in each brief.
+7. Show the queue in ≤ 10 lines and continue per autonomy (`/foreman:next`).
 
 ## Evidence quality
 Evidence is a command plus its actual result. "Tests pass" needs the test command's output with 0 failures; "bug fixed" needs the original reproduction passing; "regression test works" needs the red-green cycle. See `verification.md`.

@@ -61,6 +61,7 @@ class ForemanTestCase(unittest.TestCase):
 
     def fm(self, *args, cwd=None, check=True, env=None, input=None):
         e = dict(os.environ, FOREMAN_HOME=self.home)
+        e.pop("CLAUDE_CODE_SESSION_ID", None)  # tests may run inside a live Claude Code session
         e.update(env or {})
         p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,
                            capture_output=True, text=True, input=input, timeout=30)

@@ -32,4 +32,4 @@ Every criterion has a verification command? Could a fresh session run the Execut
 Confirm the build and tests run; record baseline metrics for PERF items; note git state. `fm log baseline '{"tests":"<result>","commit":"<sha>"}'`. A FIX that breaks the baseline is hoisted first.
 
 ## 6. Execute
-`fm focus ID`, then follow `references/execute.md` — one step at a time, fresh evidence per step, checkpoints, commits, the 3-attempt loop cap and end-of-task triage. Stage procedures: `/foreman:playbooks`. FIX work: `references/debugging.md` then `references/regression-test.md`. Before any completion claim: `references/verification.md`.
+`fm focus ID`, then follow `references/execute.md` — one step at a time, fresh evidence per step, checkpoints, commits, the 3-attempt loop cap and end-of-task triage. Stage procedures: `/foreman:playbooks`. FIX work: `references/debugging.md` then `references/regression-test.md`. Before any completion claim: `references/verification.md`; before `fm task done`: the audits in `references/audit.md`.
