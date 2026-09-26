@@ -7,6 +7,7 @@
 # Options:
 #   --build          start Claude Code and begin (or resume) the Foreman build when setup finishes
 #   --no-plugins     skip setup-plugins.sh
+#   --no-bypass      don't set bypassPermissions as the default permission mode
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
 # Environment:
 #   FOREMAN_REPO     git URL to clone (default below)
@@ -16,11 +17,12 @@ set -euo pipefail
 FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/YOUR_GITHUB_USER/foreman.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 
-BUILD=0 PLUGINS=1 PASS=()
+BUILD=0 PLUGINS=1 BYPASS=1 PASS=()
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
     --no-plugins) PLUGINS=0 ;;
+    --no-bypass) BYPASS=0 ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASS+=("$arg") ;;
   esac
@@ -63,6 +65,29 @@ fi
 say "Installing the Foreman plugin"
 claude plugin marketplace add "$FOREMAN_HOME" >/dev/null 2>&1 || true
 claude plugin install foreman@foreman --scope user >/dev/null 2>&1 || die "couldn't install foreman@foreman (run: claude plugin validate $FOREMAN_HOME)"
+
+# 4. Permission mode: bypass by default (Foreman's guard hook + deny rules are the brakes; see BUILD_PROMPT.md §4.7)
+if [ "$BYPASS" = 1 ]; then
+  settings="$HOME/.claude/settings.json"
+  mkdir -p "$HOME/.claude"
+  [ -f "$settings" ] && cp "$settings" "$FOREMAN_HOME/backups/settings.json.$(date +%Y%m%d-%H%M%S)"
+  if command -v python3 >/dev/null 2>&1 && python3 - "$settings" <<'PY'
+import json, os, sys
+path = sys.argv[1]
+data = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
+data.setdefault("permissions", {})["defaultMode"] = "bypassPermissions"
+tmp = path + ".foreman-tmp"
+with open(tmp, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+os.replace(tmp, path)
+PY
+  then
+    say "Default permission mode: bypassPermissions (Claude Code asks you to confirm once on next launch)"
+  else
+    say "Couldn't update $settings; add  \"permissions\": {\"defaultMode\": \"bypassPermissions\"}  yourself"
+  fi
+fi
 
 say "Foreman is installed at $FOREMAN_HOME"
 if [ "$BUILD" = 1 ] && [ -r /dev/tty ]; then

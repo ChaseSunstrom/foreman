@@ -13,6 +13,7 @@ FOREMAN_HOME: ~/.claude/foreman   # the user's git repo AND the one central loca
 AUTONOMY: standard                # guarded | standard | autopilot  (see §6.6)
 BUILD_GATE: on                    # on = stop once after the Phase 1 plan for approval; off = proceed
 GIT: commit-only                  # commit to branch foreman/build; never push (see §2.11)
+PERMISSIONS: bypass               # install.sh sets permissions.defaultMode=bypassPermissions (see §4.7)
 ```
 
 ---
@@ -46,7 +47,7 @@ The target is not "AGI." It is a senior engineer with a good project manager's d
 6. **Proportionality.** Planning depth scales with task size (§6.2). A typo does not get a design doc; nothing gets zero thought.
 7. **Instructions vs. context.** Imperative instructions live in rules and skills. Anything a hook injects (`additionalContext` / stdout) is short *factual state* ("Active task: T-0012 [FIX] step 3/5. Inbox: 2."), never commands; imperative hook text can trip prompt-injection defenses.
 8. **Budgets.** Always-on instruction footprint added by Foreman ≤ ~120 lines. SessionStart injection ≤ 2,000 chars. Per-prompt injection ≤ 400 chars. Per-tool-call hooks p95 ≤ 150 ms. SessionEnd work must fit its ~1.5 s budget. No `prompt`/`agent` hook types on hot paths.
-9. **Fail safe.** Non-guard hooks fail open (exit 0, error logged to `FOREMAN_HOME/state/logs/hooks.log`). Guard hooks block deliberately (exit 2 or JSON deny; exit 1 never blocks). Hooks are not a security boundary: for hard denies, *propose* permission rules in `PLAN.md` rather than relying on hooks.
+9. **Fail safe.** Non-guard hooks fail open (exit 0, error logged to `FOREMAN_HOME/state/logs/hooks.log`). Guard hooks block deliberately (exit 2 or JSON deny; exit 1 never blocks) and fail *closed*. With bypass as the default permission mode (§4.7), the guard hook and deny rules are the only automatic brakes left, so they are mandatory and tested, not optional.
 10. **No secrets in state.** Redact tokens, keys, and passwords from anything written to the ledger, briefs, or logs. No network calls from hooks.
 11. **Git hygiene.** `FOREMAN_HOME` is the user's repo, and they push it to GitHub. Work on branch `foreman/build` in small conventional commits. Never push, never rewrite history, and never commit `state/`, `local/`, `backups/`, logs, machine inventories, or secrets (all gitignored; doctor verifies nothing ignored is tracked and scans staged files for secrets). Machine-specific outputs (`recon.md`, `PLAN.md`, `verification.md`) go in `local/`. Don't edit `BUILD_PROMPT.md` unless asked; record deviations in `local/PLAN.md` and `MASTER.md`. Keep `install.sh`, `setup-plugins.sh`, and `configure-repo.sh` working; extend them rather than replacing them.
 12. **Third-party plugins are untrusted code.** In Phase 0, read the hook definitions and scripts of every non-Anthropic plugin and flag network calls, writes outside their own directories, settings edits, or transcript access. Report findings; never modify another plugin's files.
@@ -74,9 +75,9 @@ Self-critique the plan against §6.5 and revise (at most twice). If `BUILD_GATE:
 
 **Phase 3: Hooks.** One dispatcher per event, fixture-payload tests, latency measurements. The Foreman plugin is installed from this repo as a local-directory marketplace, which loads in place: edits under `plugin/` take effect on `/reload-plugins` or the next session. Use `claude --plugin-dir <path>` for isolated tests (e.g. scratch repos with `claude -p`), and `claude plugin validate --strict` after every manifest change.
 
-**Phase 4: Skills, commands, rules, agents.** `rules/foreman.md`, the skills in §4.5, and the read-only agents in §8.
+**Phase 4: Skills, commands, rules, agents, visibility.** `rules/foreman.md`, the skills in §4.5, the read-only agents in §8, and the visibility layer in §4.8.
 
-**Phase 5: Integration.** Apply the approved §4.6 decisions: wire plugins into the lifecycle, disable conflicts (never uninstall without asking), port the procedures listed in §4.6 with attribution, apply the CLAUDE.md changes from §10. Foreman is already installed as `foreman@foreman` (the bootstrap); extend `plugin/`, keeping `commands/build.md` working.
+**Phase 5: Integration.** Apply the approved §4.6 decisions: wire plugins into the lifecycle, disable conflicts (never uninstall without asking), port the procedures listed in §4.6 with attribution, apply the CLAUDE.md changes from §10, finish the permission safety net in §4.7. Foreman is already installed as `foreman@foreman` (the bootstrap); extend `plugin/`, keeping `commands/build.md` working.
 
 **Phase 6: Hygiene and doctor.** `fm tidy` (§9) and `fm doctor` (§12).
 
@@ -156,9 +157,11 @@ If a fact would live in two places, pick one and link from the other. Prefer nat
 | Stop | completion gate: if the active step claims done without evidence, block **once** with a factual reason; honor `stop_hook_active`; never loop | once |
 | TaskCompleted | refuse to complete a mirrored built-in task whose brief step lacks evidence | yes |
 | SubagentStop | ledger pointer to the subagent's summary | no |
+| MessageDisplay | display-only per-reply badge and timestamp (§4.8); zero tokens, transcript untouched | no |
+| Notification, Stop (async) | terminal title, taskbar progress, desktop notifications via `terminalSequence` (§4.8) | no |
 | SessionEnd | trivial bookkeeping only (last-active); never tidy here | no |
 
-Use handler `if` filters to avoid spawning processes needlessly. Heuristics run in the scripts; judgment happens in you, guided by the rules. **Don't touch `statusLine`**: claude-hud owns it. Provide `fm state --line` (e.g. `T-0012 FIX · 3/5 · inbox 2`) so a statusline could show it later. Check every other plugin's hooks on the same events (especially security-guidance's Stop, SubagentStop, and UserPromptSubmit hooks, and ponytail's SessionStart/UserPromptSubmit/SubagentStart hooks) and document how they coexist.
+Use handler `if` filters to avoid spawning processes needlessly. Heuristics run in the scripts; judgment happens in you, guided by the rules. **Don't replace claude-hud's statusline**; compose with it as §4.8 describes. Check every other plugin's hooks on the same events (especially security-guidance's Stop, SubagentStop, and UserPromptSubmit hooks, and ponytail's SessionStart/UserPromptSubmit/SubagentStart hooks) and document how they coexist.
 
 ### 4.4 The `fm` CLI
 
@@ -205,6 +208,32 @@ These are defaults, not orders. Confirm them against recon in Phase 1 and get ap
 | `document-skills` (if installed with `--docs`) | keep | Only when a task produces Office/PDF files. |
 
 Any plugin installed later gets the same treatment: map it to a lifecycle stage, scope it to the projects that need it, or flag it as a conflict.
+
+### 4.7 Permissions: bypass by default
+
+- `install.sh` sets `permissions.defaultMode: "bypassPermissions"` in `~/.claude/settings.json` (backup in `backups/`; `--no-bypass` skips it). That applies to every Claude Code session for this user, not only Foreman work. Claude Code shows its one-time warning on the next launch; the user accepts it themselves. Never set `skipDangerousModePermissionPrompt` on their behalf.
+- Tool permissions and AUTONOMY are different things. Bypass removes tool-call prompts; AUTONOMY (§6.6) still decides which *plans* need approval, and BUILD_GATE still stops once after Phase 1.
+- In bypass mode only deny rules, ask rules, and blocking PreToolUse hooks still stop a tool call. So:
+  - **The guard hook is mandatory**, fails closed, and is tested in bypass mode (§12 scenario 13). Unless the active brief explicitly authorizes it, it blocks: recursive deletes of home, root, or anything outside the project and scratch dirs; force-push, `reset --hard`, or branch deletion on default branches; writes to credential material (`.env*`, `~/.ssh`, cloud/kube credentials, token files); piping downloaded scripts into a shell; disk, partition, firewall, and system-service changes (`mkfs`, `dd of=/dev/*`, `iptables`/`nft`, `systemctl` on system units); and publish/deploy/release commands. Every block message says how to authorize (add it to the brief's scope, then retry).
+  - **Deny rules** for the truly catastrophic cases: propose a short list in `local/PLAN.md`, verify the rule syntax against the current permissions docs, test each one, and apply with approval.
+  - **Per-repo opt-out:** `.claude/settings.local.json` with `"permissions": {"defaultMode": "auto"}` for repos with production credentials or client data. Foreman marks those projects `sensitive` and shows that at SessionStart.
+  - **Recovery first:** commit or stash before any destructive-but-authorized step, so git and Claude Code's rewind both cover it.
+- Expect these quirks and verify them on the installed version: writes under `~/.claude/` can still prompt in bypass mode, and subagents have not always inherited it. During the build, batch edits to `~/.claude/` so the user approves them once.
+
+### 4.8 Visibility layer
+
+The Claude Code binary is closed-source and replaced on every update, so never patch it. Everything here uses supported surfaces, is display-only (zero added model context unless stated), and keeps each render path under ~100 ms.
+
+1. **Renderer.** Recommend fullscreen rendering (`/tui fullscreen`): mouse support, click-to-expand tool output, the live `/diff` side panel, `/focus`, and transcript search with `Ctrl+O`. Document it in MASTER.md; don't force it.
+2. **Composed statusline.** Keep claude-hud. With approval, point `statusLine` at a Foreman wrapper (saving the original value for uninstall) that reads stdin once, runs the original claude-hud command with the same JSON, then prints one Foreman line from `fm state --line` (task, type, step n/m, queue, inbox, guard status, a bypass indicator). The wrapper also writes that JSON snapshot atomically to `state/sessions/<session_id>.json` for the dashboard (context %, cost, rate limits, cache hit ratio).
+3. **Subagent rows.** Ship a default `subagentStatusLine` in the plugin's settings: each recon agent row shows task ID, scope, tokens vs. its context window, and elapsed time.
+4. **Per-reply badge.** A `MessageDisplay` hook prefixes the first batch of each assistant message with `[T-0012 FIX · 3/5 · 14:02]`. It changes only what's on screen (the transcript and the model's view keep the original) and costs zero tokens. It may also mask secrets on screen. Fail open: on any error, the original text shows.
+5. **Terminal integration** through `terminalSequence` (never `/dev/tty`): window/tab title (`foreman · T-0012 FIX 3/5`), taskbar progress (OSC 9;4) where supported, and desktop notifications when Foreman is blocked, needs an answer, or empties the queue.
+6. **Clickable IDs.** Use `footerLinksRegexes` so task IDs like `T-0012` become footer badges that open the brief (verify the setting's format).
+7. **Live dashboard: `fm watch`.** A stdlib-only curses TUI for a tmux split or second terminal showing: the active task with its step checklist and evidence; the queue in canonical order; the inbox; a live tool timeline (tool, target, duration, ok/fail) fed by async PostToolUse/PostToolUseFailure/SubagentStart/SubagentStop events; running subagents; files touched; guard blocks; hook latency percentiles; and the session snapshot from item 2. `fm watch --once` prints the same as plain text. `fm tidy` rotates the event file.
+8. **History in Grafana.** The user already runs Grafana with InfluxDB and telegraf. Enable Claude Code's OpenTelemetry export into it (telegraf's OpenTelemetry input, or its Prometheus input scraping Claude Code's Prometheus exporter): cost and tokens by type, model, skill, plugin, and agent; tool results and durations; lines changed; commits; permission decisions. Keep prompt, response, and tool-content logging off (the defaults). Put the telegraf snippet and a dashboard JSON in `plugin/observability/`, and ask before touching their telegraf config.
+9. **Theme (optional).** Ship one Foreman color theme in the plugin; the user picks it with `/theme`.
+10. **Beyond the terminal (document only).** Agent view (`claude agents`) for many sessions at once, the Desktop app's Code tab for visual diffs and panes, and the Agent SDK if the user ever wants a fully custom UI.
 
 ---
 
@@ -471,7 +500,9 @@ Create `FOREMAN_HOME/MASTER.md`: the single document that explains the whole sys
 9. Seeded rot (dead path in CLAUDE.md, duplicate memory lines, 40-day-old inbox item, dependency cycle) → tidy dry-run finds all of it; apply archives, nothing lost.
 10. Corrupted state file → non-guard hooks fail open and log; guards still work.
 11. Plugin disabled → Claude Code works normally with zero Foreman errors.
-12. Uninstall → reinstall → identical behavior; uninstall leaves nothing behind except `state/` (and asks about that).
+12. Uninstall → reinstall → identical behavior; uninstall leaves nothing behind except `state/` (and asks about that), and the original `statusLine` and permission mode are restored.
+13. In bypass mode, each guard category from §4.7 is blocked with an actionable message, the same command succeeds once the brief authorizes it, and a sensitive repo's opt-out takes effect.
+14. Visibility: the statusline shows claude-hud's lines plus the Foreman line; the MessageDisplay badge appears while the transcript stays unchanged; `fm watch` shows a new tool call within 2 seconds; telemetry reaches the collector (or the snippet is ready and approval is pending).
 
 ---
 
