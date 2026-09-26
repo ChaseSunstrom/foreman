@@ -432,6 +432,26 @@ class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})
 
+    def test_a_plugin_yes_covers_one_change(self):
+        # T-0029: plugins are new code in every session; each one gets its own yes (core stays per task)
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "plugin")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.pre("Bash", {"command": "claude plugin install a@m"}).returncode, 0)
+        self.assertNotIn("plugin", c.find_brief(self.project(), tid).meta.get("allow") or [])
+        self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
+        self.assertEqual(self.pre("Bash", {"command": "claude plugin install b@m"}).returncode, 2)
+
+    def test_core_stays_granted_for_the_task(self):
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "core")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        guard = os.path.join(self.home, "plugin", "lib", "fmguard.py")
+        for _ in range(2):
+            self.assertEqual(self.pre("Write", {"file_path": guard, "content": "x"}).returncode, 0)
+
     def test_dangerous_command_is_denied_with_reason(self):
         self.fm("init")
         tid = self.task()
@@ -545,6 +565,18 @@ class Stop(HookCase):
         self.assertEqual(self.decision(p), "block")
         self.assertIn(f"{tid} step 1/2 has no recorded verification evidence", parse(p)["reason"])
         self.assertIsNone(self.decision(self.stop("Done.")))
+
+    def test_claims_about_other_steps_or_tasks_do_not_trip_the_gate(self):
+        # T-0027: "steps 1–3 are done" is about finished steps, not the current one
+        self.fm("init")
+        tid = self.task(steps=("a", "b", "c", "d"))
+        self.fm("drive", "off")
+        for n in ("1", "2", "3"):
+            self.fm("task", "step", tid, "done", n, "--evidence", "pytest", "ok")
+        for msg in ("Steps 1–3 are done; now on step 4.", "Step 2 is done, moving on.",
+                    "T-0999 is done; back to this one."):
+            self.assertIsNone(self.decision(self.stop(msg)), msg)
+        self.assertEqual(self.decision(self.stop("Step 4 is done.")), "block")
 
     def test_stop_hook_active_never_evidence_blocks(self):
         self.fm("init")

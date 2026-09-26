@@ -180,6 +180,42 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual(self.brief().status, "done")
         self.assertEqual(self.fm("task", "audit", "T-0001", "vibes", "x", "y", check=False).returncode, 1)
 
+    def test_next_agrees_with_the_done_gate_after_evidence_only_updates(self):
+        # T-0028: fm next / the statusline can't afford a worktree id; evidence carries the one it was recorded at
+        self.fm("task", "step", "T-0001", "add", "a")
+        self.fm("task", "ac", "T-0001", "add", "works")
+        self.fm("focus", "T-0001")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "ac", "T-0001", "check", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "audit", "T-0001", "self", "checklist", "ok")
+        time.sleep(1.1)
+        self.fm("task", "evidence", "T-0001", "--step", "1", "git push origin main", "pushed")
+        self.assertEqual(self.fm_json("next")["stage"], "closing")
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("x = 2\n")
+        time.sleep(1.1)
+        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", "ok")  # files changed since the audit
+        self.assertEqual(self.fm_json("next")["stage"], "auditing")
+
+    def test_evidence_run_records_the_real_exit_and_output(self):
+        # T-0024: typed results went wrong ("272 tests" for 267); run the command and record what it printed
+        self.fm("task", "step", "T-0001", "add", "a")
+        out = self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "echo '3 passed'").stdout
+        self.assertIn("3 passed", out)
+        line = self.brief().evidence()[-1]
+        for needle in ("echo '3 passed'", "exit 0", "3 passed"):
+            self.assertIn(needle, line)
+        p = self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "echo '1 failed'; exit 3", check=False)
+        self.assertEqual(p.returncode, 3)
+        self.assertIn("exit 3", self.brief().evidence()[-1])
+        p = self.fm("task", "step", "T-0001", "done", "1", check=False)
+        self.assertNotEqual(p.returncode, 0, "the newest evidence for the step is a failed run")
+        self.assertIn("failed", p.stderr)
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
+        self.fm("task", "step", "T-0001", "done", "1")
+        self.assertEqual(self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", check=False).returncode, 1,
+                         "a typed result is still required without --run")
+
     def test_focus_requires_a_plan(self):
         p = self.fm("focus", "T-0001", check=False)
         self.assertEqual(p.returncode, 2)
@@ -400,6 +436,58 @@ class OneCommandTask(ForemanTestCase):
                 "--ac", "typo gone", "--step", "fix it", "--focus")
         b = c.find_brief(c.find_project(self.repo), "T-0001")
         self.assertEqual((b.status, len(b.acceptance()), len(b.steps())), ("active", 1, 1))
+
+
+class Checks(ForemanTestCase):
+    """T-0025: the project's gates in one command that can't be masked by a pipe."""
+
+    def test_gates_run_together_and_any_failure_fails(self):
+        self.fm("init")
+        self.assertNotEqual(self.fm("check", check=False).returncode, 0, "no gates configured is not a pass")
+        self.fm("check", "add", "echo suite ok")
+        self.fm("check", "add", "echo 'lint: 2 errors'; exit 1")
+        self.assertIn("echo suite ok", self.fm("check", "list").stdout)
+        p = self.fm("check", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("✓ echo suite ok", p.stdout)
+        self.assertIn("✗", p.stdout)
+        self.assertIn("lint: 2 errors", p.stdout)
+        self.fm("check", "rm", "2")
+        self.assertIn("✓ echo suite ok", self.fm("check").stdout)
+
+    def test_results_become_evidence(self):
+        self.fm("init")
+        self.fm("check", "add", "echo suite ok")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--step", "fix", "--ac", "works")
+        self.fm("check", "--evidence", "T-0001", "--step", "1")
+        line = c.find_brief(c.find_project(self.repo), "T-0001").evidence()[-1]
+        self.assertIn("echo suite ok", line)
+        self.assertIn("exit 0", line)
+        self.fm("task", "step", "T-0001", "done", "1")
+
+
+class AuditPrep(ForemanTestCase):
+    """T-0026: the diff since the task started, frozen, plus one ready reviewer brief per lens."""
+
+    def test_prep_freezes_the_diff_and_prints_lens_briefs(self):
+        self.fm("init")
+        self.fm("task", "new", "Add --verbose", "--type", "FEATURE", "--tier", "L", "--step", "add it")
+        self.fm("task", "ac", "T-0001", "add", "prints more with --verbose", "--verify", "pytest")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "cli.py"), "w") as f:
+            f.write("VERBOSE = True\n")  # new, uncommitted and untracked
+        out = self.fm("audit", "prep", "T-0001").stdout
+        diff = next(w for w in out.split() if w.endswith("T-0001.diff"))
+        self.assertIn("VERBOSE = True", read_text(diff))
+        for lens, needle in (("intent", "prints more with --verbose"), ("adversary", "trying to break"),
+                             ("edge", "environment"), ("operator", "real machine"), ("maintainer", "next year")):
+            self.assertIn(needle, out, lens)
+        only = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        self.assertIn("trying to break", only)
+        self.assertNotIn("next year", only)
 
 
 class NextAction(ForemanTestCase):

@@ -14,6 +14,19 @@ _FENCE = re.compile(r"```.*?```", re.S)
 
 
 def _markdown(root):
+    """The repo's markdown: tracked, or untracked and not ignored (ignored notes, like Foreman's state/, are
+    point-in-time records, not docs). Outside git, every .md not in a skipped or hidden folder."""
+    try:
+        r = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard", "--",
+                            "*.md"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        r = None
+    if r and r.returncode == 0:
+        rels = sorted({f for f in r.stdout.split("\0") if f})
+        yield from (os.path.join(root, f) for f in rels
+                    if not any(part in SKIP_DIRS or part.startswith(".") for part in f.split("/")[:-1])
+                    and os.path.isfile(os.path.join(root, f)))
+        return
     for d, dirs, files in os.walk(root):
         dirs[:] = sorted(x for x in dirs if x not in SKIP_DIRS and not x.startswith("."))
         yield from (os.path.join(d, f) for f in sorted(files) if f.endswith(".md"))

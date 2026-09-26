@@ -39,11 +39,11 @@ Dependencies override it. A FIX that breaks the baseline and any critical securi
 - Edits outside the brief's scope → widen scope with a logged reason (`fm task set ID scope=…`) or capture a new task.
 
 ## Evidence and state
-- Nothing is done without fresh, recorded evidence: `fm task evidence ID --step N "<cmd>" "<real result>"`. fm refuses done steps, criteria and tasks without it.
+- Nothing is done without fresh, recorded evidence: `fm task evidence ID --step N --run "<cmd>"` runs it and records the real exit code and output (typed `"<cmd>" "<result>"` only for what can't be run here). fm refuses done steps, criteria and tasks without it, and while the newest run failed. The project's gates in one call: `fm check` (set them once with `fm check add "<cmd>"`; `--evidence ID --step N` records them); commit only after it exits 0.
 - All Foreman state goes through `fm`. Never write files under ~/.claude/foreman/state (the guard blocks it).
 - Checkpoint before switching, before risky steps and at natural pauses: `fm checkpoint --note "<exact resume point>"`.
 - 3 failed verification attempts on one step → stop, write a diagnosis in the brief, `fm task block ID "<why>"`, move on, report.
-- Before `fm task done`: audits (`/foreman:intake` → `references/audit.md`). S: `self` checklist · M: `intent` + the riskiest other lens · L: all five via `foreman:fm-reviewer`. Verify every finding; fix it test-first or capture it; `fm task audit ID <lens> "<how>" "<result>"`.
+- Before `fm task done`: audits (`/foreman:intake` → `references/audit.md`). S: `self` checklist · M: `intent` + the riskiest other lens · L: all five via `foreman:fm-reviewer`; `fm audit prep ID` freezes the task's diff and prints each lens brief. Verify every finding; fix it test-first or capture it; `fm task audit ID <lens> "<how>" "<result>"`.
 - M/L tasks record their Docs impact (`fm task set ID --section "Docs impact" --text "<docs updated | none: why>"`); `fm docs` lists docs that drifted from the code.
 - End of each task: `fm task done ID`, triage the inbox, show the queue (≤10 lines), continue per autonomy (`/foreman:next`).
 

@@ -457,6 +457,23 @@ class PluginChanges(GuardCase):
             ("python3 -c \"open('x.py', 'w').write('msg = \\\"claude plugin install x\\\"')\"", None),
         ], self.bash)
 
+    def test_one_plugin_change_per_command(self):
+        # T-0029: a yes covers one change, so a command can't bundle several behind it
+        r = self.bash("fm plugins install a@m && fm plugins install b@m", allow=["plugin"])
+        self.assertBlocked(r, "plugin")
+        self.assertIn("one", r.detail)
+        self.assertIsNone(self.bash("fm plugins install a@m", allow=["plugin"]))
+
+    def test_commands_fm_runs_for_claude_are_checked_too(self):
+        # T-0024/T-0025: fm task evidence --run and fm check run commands the Bash guard would otherwise never see
+        self.run_table([
+            ("fm task evidence T-0001 --step 1 --run 'rm -rf ~'", "rm-outside"),
+            ("fm task evidence T-0001 --step 1 --run='npm publish'", "publish"),
+            ("fm check add 'npm publish'", "publish"),
+            ("fm task evidence T-0001 --step 1 --run 'python3 -m unittest'", None),
+            ("fm check add 'python3 -m unittest discover -s tests'", None),
+        ], self.bash)
+
     def test_installed_plugin_files_are_the_users(self):
         # editing an enabled plugin's hooks or skills changes what runs in every session, like installing one
         self.run_table([

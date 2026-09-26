@@ -307,6 +307,17 @@ def user_prompt_submit(pl):
 
 # ---------------------------------------------------------------- PreToolUse (guard: fail closed)
 
+def _use_plugin_grant(p, tid, detail, sid):
+    """A plugin yes covers one change (new code in every session): the call it lets through uses it up. Inside the
+    guard's fail-closed try: if the grant can't be removed, the call is blocked rather than left re-usable."""
+    with c.lock(p.dir, timeout=LOCK_QUICK):
+        b = c.find_brief(p, tid)
+        b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "plugin"]
+        b.append_log(f"plugin grant used for: {str(detail)[:120]}")
+        c.save_brief(p, b)
+        c.log_event(p, "approval_used", task=tid, data={"allow": ["plugin"], "detail": str(detail)[:200]}, session=sid)
+
+
 def _pre_tool_use(raw):
     try:
         import fmguard
@@ -315,7 +326,11 @@ def _pre_tool_use(raw):
         if tool not in GUARDED:
             return 0
         ctx, p, act = _guard_ctx(pl, fmguard)
-        block = fmguard.check(tool, pl.get("tool_input"), ctx)
+        found = fmguard.findings(tool, pl.get("tool_input"), ctx)
+        block = fmguard.check(tool, pl.get("tool_input"), ctx, found)
+        used = next((d for cat, d in found if cat == "plugin"), None) if not block and act else None
+        if used is not None and "plugin" in ctx.allow:
+            _use_plugin_grant(p, act.id, used, pl.get("session_id"))
     except Exception as e:
         log_error("PreToolUse", traceback.format_exc())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
@@ -612,10 +627,23 @@ _ASK = re.compile(r"(\?\s*$)|\b(should i|shall i|do you want|would you like|want
                   r"|need your (input|approval|decision|answer)|which (option|approach) do you)\b", re.I)
 
 
-def claims_done(msg):
+# what a claim is about, just before it in the same sentence: "steps 1–3 are done", "T-0012 done"
+_ABOUT = re.compile(r"\b(?:steps?\s+(\d+)(?:\s*(?:[–-]|to|and|,)\s*(\d+))?|(T-\d{4,}))\b[^.;\n]{0,40}$", re.I)
+
+
+def claims_done(msg, step=None, task=None):
+    """A completion claim, unless negated or about other steps or another task than `step` / `task`."""
     for m in _CLAIM.finditer(msg or ""):
-        if not _NEG.search(msg[max(0, m.start() - 30):m.start()]):
-            return True
+        before = msg[max(0, m.start() - 60):m.start()]
+        if _NEG.search(before[-30:]):
+            continue
+        about = _ABOUT.search(before)
+        if about and about.group(3):
+            if task and about.group(3).upper() != task:
+                continue
+        elif about and step is not None and not int(about.group(1)) <= step <= int(about.group(2) or about.group(1)):
+            continue
+        return True
     return False
 
 
@@ -691,9 +719,11 @@ def _question_nudge(pl):
 
 
 def _evidence_gate(p, act, pl, g):
-    if not act or pl.get("stop_hook_active") or not claims_done(pl.get("last_assistant_message")):
+    if not act or pl.get("stop_hook_active"):
         return None
     steps, cur = act.steps(), act.current_step()
+    if not claims_done(pl.get("last_assistant_message"), step=cur.n if cur else None, task=act.id):
+        return None
     if cur:
         missing, label, flag = not act.has_evidence(step=cur.n), f"step {cur.n}/{len(steps)}", f"--step {cur.n} "
     else:

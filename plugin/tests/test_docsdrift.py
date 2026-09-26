@@ -52,6 +52,13 @@ class DocsDrift(ForemanTestCase):
         found = [f["detail"] for f in fmdocs.scan(self.repo) if f["file"] == "SETUP.md"]
         self.assertEqual(found, ["src/old.py"])
 
+    def test_ignored_markdown_is_not_scanned(self):
+        # T-0030: point-in-time notes in ignored folders (Foreman's state/, local/) aren't the repo's docs
+        os.makedirs(os.path.join(self.repo, "local"), exist_ok=True)
+        with open(os.path.join(self.repo, "local", "notes.md"), "w") as f:
+            f.write("Audit note: `src/gone-long-ago.py:12` was the bug.\n")
+        self.assertNotIn("local/notes.md", {f["file"] for f in fmdocs.scan(self.repo)})
+
     def test_cli(self):
         p = self.fm("docs", "--json", cwd=self.repo)
         self.assertEqual(len(json.loads(p.stdout)["findings"]), 5)

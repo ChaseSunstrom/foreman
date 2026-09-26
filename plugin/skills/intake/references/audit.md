@@ -11,8 +11,8 @@ what counts as correct. `fm task done` refuses until the tier's audits are recor
 | L | all five: `intent`, `adversary`, `edge`, `operator`, `maintainer`, via `foreman:fm-reviewer` (≤ 3 in parallel) |
 
 ## Protocol
-1. **Freeze the change.** All steps done with evidence, tests green. Save the diff: `git diff <base>..HEAD > <scratchpad>/<ID>.diff` (plus `git diff` for uncommitted work).
-2. **Build each lens brief** from the template below: the lens prompt, its context slice and nothing else. Leave out your plan, rationale and conversation; the point is a fresh view.
+1. **Freeze the change.** All steps done with evidence, tests green (`fm check`). `fm audit prep ID` saves the diff since the task was focused (untracked files included) and prints step 2's briefs.
+2. **Build each lens brief** from the template below (`fm audit prep ID` does this): the lens prompt, its context slice and nothing else. Leave out your plan, rationale and conversation; the point is a fresh view.
 3. **Run** each lens as a separate `foreman:fm-reviewer` subagent (read-only). ≤ 3 at a time.
 4. **Verify every finding yourself**: reproduce it (run the input, read the line, write the failing test). Auditors can be wrong; unverified findings are neither fixed nor dismissed silently.
 5. **Resolve**: real finding in scope → fix it test-first (regression test), re-run the full suite. Real but out of scope → `fm capture --source discovered`. False positive → say why in one line.

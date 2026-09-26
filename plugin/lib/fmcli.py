@@ -183,9 +183,23 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, lambda b: b.append_log(args.text), "note", {"text": args.text[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "evidence":
-        b, _ = mutate(p, args.id, lambda b: b.add_evidence(args.cmd, args.result, step=args.step, ac=args.ac),
-                      "evidence", {"step": args.step, "ac": args.ac, "cmd": args.cmd, "result": args.result[:300]})
-        return out(args, c.brief_summary(b), f"{b.id}: evidence recorded.")
+        code, shown = 0, ""
+        if args.run is not None:  # run it: the real exit code and output, never a typed summary
+            if args.cmd is not None:
+                raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
+            need_brief(p, args.id)
+            code, output = c.run_command(p.root, args.run, args.timeout)
+            cmd, result, shown = args.run, c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
+        elif args.cmd is None or args.result is None:
+            raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
+        else:
+            cmd, result = args.cmd, args.result
+        tree = c.worktree_id(p.root)
+        b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree),
+                      "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300]})
+        out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
+            + (f" ({result})." if args.run is not None else "."))
+        return code
     if sub == "audit":
         if args.lens not in c.AUDIT_LENSES:
             raise UsageError(f"unknown lens {args.lens!r}; one of {', '.join(c.AUDIT_LENSES)}")
@@ -374,6 +388,8 @@ def cmd_focus(args):
                 b.append_log(f"paused: focus moved to {target.id}")
                 c.save_brief(p, b)
         target.meta["status"] = "active"
+        if not target.meta.get("base") and (head := c.git_head(p.root)):
+            target.meta["base"] = head  # where the task's diff starts (fm audit prep)
         target.append_log("focused")
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
@@ -582,6 +598,97 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def cmd_check(args):
+    """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
+    p = resolve(args)
+    checks = list(c.read_meta(p).get("checks") or [])
+    if args.action in ("add", "rm"):
+        if args.action == "add":
+            if not args.words:
+                raise UsageError("fm check add needs a command")
+            checks.append(" ".join(args.words))
+        else:
+            try:
+                checks.pop(int(args.words[0]) - 1)
+            except (IndexError, ValueError):
+                raise UsageError(f"no check {' '.join(args.words)!r}; fm check list numbers them")
+        c.update_meta(p, checks=checks)
+        with c.lock(p.dir):
+            c.log_event(p, "checks", data={"checks": checks}, session=session())
+        return out(args, {"checks": checks}, f"{p.slug}: {len(checks)} check(s).")
+    if args.action == "list":
+        return out(args, {"checks": checks},
+                   "\n".join(f"{i}. {x}" for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
+    if not checks:
+        raise UsageError("no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…)")
+    results = [(cmd, *c.run_command(p.root, cmd, args.timeout)) for cmd in checks]
+    if args.evidence:
+        tree = c.worktree_id(p.root)
+
+        def record(b):
+            for cmd, code, output in results:
+                b.add_evidence(cmd, c.run_result(code, output), step=args.step, ac=args.ac, tree=tree)
+        mutate(p, args.evidence, record, "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check",
+                                                      "result": f"{sum(1 for r in results if r[1])} failed"})
+    lines = []
+    for cmd, code, output in results:
+        lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)}")
+        lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
+    failed = sum(1 for _, code, _ in results if code)
+    out(args, {"results": [{"cmd": cmd, "exit": code} for cmd, code, _ in results], "failed": failed},
+        "\n".join(lines))
+    return 1 if failed else 0
+
+
+_LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)
+_REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output \"## Verdict: ok | changes needed\", "
+               "then findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario and a fix, then "
+               "\"## Not checked\". Only verified findings.")
+
+
+def cmd_audit(args):
+    """fm audit prep ID: freeze the diff since the task started and print one reviewer brief per lens."""
+    import subprocess
+    p = resolve(args)
+    b = need_brief(p, args.id)
+    base = args.base or b.meta.get("base")
+    if not base:
+        raise UsageError(f"{b.id} has no start commit on record (focused before fm kept one): "
+                         f"fm audit prep {b.id} --base <rev>")
+    tree = c.worktree_tree(p.root)
+    if not tree:
+        raise UsageError("fm audit prep needs a git repository")
+    r = subprocess.run(["git", "-C", p.root, "diff", base, tree], capture_output=True, text=True, timeout=120)
+    if r.returncode:
+        raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
+    path = os.path.join(p.dir, "audits", f"{b.id}.diff")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, r.stdout)
+    with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md"), encoding="utf-8") as f:
+        ref = f.read()
+    templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
+    lenses = args.lens or (["self"] if b.tier == "S" else [x for x in c.AUDIT_LENSES if x != "self"])
+    head = (f"Read-only audit of task {b.id} \"{b.title}\" ({b.type} {b.tier}) in {p.root}.\n"
+            f"Diff to review: {path} (git diff {base[:12]} → working tree, untracked files included; "
+            f"{r.stdout.count(chr(10))} lines).")
+    blocks = []
+    for lens in lenses:
+        if lens == "self":
+            blocks.append("=== self (main thread) ===\n" + ref[ref.index("**self**"):].strip())
+            continue
+        context, prompt = templates[lens]
+        extra = ""
+        if lens == "intent":
+            asked = re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip() or b.title
+            extra = (f"\nThe user's request, verbatim:\n{asked}\nAcceptance criteria:\n"
+                     + "\n".join(f"- {a.text}" for a in b.acceptance()))
+        blocks.append(f"=== {lens} ===\nLens: {lens.upper()}. {head}\nContext for this lens: {context}{extra}\n"
+                      f"{prompt}\n{_REVIEW_OUT}")
+    out(args, {"diff": path, "base": base, "lenses": lenses},
+        "\n\n".join(blocks) + f"\n\nDiff: {path}\nRun each non-self brief as a foreman:fm-reviewer subagent (≤3 at "
+        f"once); save each reply with fm research add {b.id}-<lens>; record with fm task audit {b.id} <lens> …")
+
+
 def cmd_next(args):
     b, st, action = c.next_for(resolve(args))
     out(args, {"task": b.id if b else None, "stage": st, "action": action}, f"Next: {action}")
@@ -709,8 +816,10 @@ def build_parser():
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("evidence")
     t.add_argument("id")
-    t.add_argument("cmd")
-    t.add_argument("result")
+    t.add_argument("cmd", nargs="?", help="what was run (with RESULT), when --run can't run it")
+    t.add_argument("result", nargs="?")
+    t.add_argument("--run", metavar="CMD", help="run CMD (bash, repo root) and record its real exit code and output")
+    t.add_argument("--timeout", type=float, default=600, help="--run limit in seconds")
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
@@ -757,6 +866,21 @@ def build_parser():
     s.add_argument("state", choices=["on", "off"])
 
     add("next", cmd_next, help="the one next required action (derived from the briefs)")
+
+    s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
+    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list"])
+    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list)")
+    s.add_argument("--timeout", type=float, default=600, help="seconds per command")
+    s.add_argument("--evidence", metavar="ID", help="record each result as evidence on this task")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--step", type=int)
+    g.add_argument("--ac", type=int)
+
+    s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and print one reviewer brief per lens")
+    s.add_argument("action", choices=["prep"])
+    s.add_argument("id")
+    s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")
+    s.add_argument("--base", help="diff from this revision (default: the commit the task was focused at)")
 
     s = add("autonomy", cmd_autonomy, help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
     s.add_argument("level", nargs="?", choices=["standard", "full"])
@@ -814,8 +938,8 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        args.fn(args)
-        return 0
+        rc = args.fn(args)
+        return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
     except c.PolicyError as e:
         print(f"fm: refused: {e}", file=sys.stderr)
         return 2

@@ -177,9 +177,15 @@ def slug_for(root):
 
 def worktree_id(root):
     """Content id of a repo's working files (tracked and untracked, not ignored), the same before and after a commit.
-    Built with a throwaway index, so edits made any way (Bash, editors, other tools) change it. None outside git.
-    The throwaway index starts as a copy of the real one (mtimes kept, so git's racy-entry checks still hold): git then
-    re-hashes only files whose stat data changed instead of the whole tree."""
+    Built with a throwaway index, so edits made any way (Bash, editors, other tools) change it. None outside git."""
+    tree = worktree_tree(root)
+    return tree[:12] if tree else None
+
+
+def worktree_tree(root):
+    """The full git tree object of the working files (see worktree_id); `git diff <rev> <tree>` shows every change
+    since <rev>, untracked files included. The throwaway index starts as a copy of the real one (mtimes kept, so git's
+    racy-entry checks still hold): git then re-hashes only files whose stat data changed instead of the whole tree."""
     if not root or not git_root(root):
         return None
     with tempfile.TemporaryDirectory() as t:
@@ -194,7 +200,33 @@ def worktree_id(root):
                                   timeout=60, check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
-    return tree[:12] or None
+    return tree or None
+
+
+def git_head(root):
+    try:
+        r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "-q", "HEAD"], capture_output=True, text=True,
+                           timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return r.stdout.strip() or None
+
+
+def run_command(root, cmd, timeout=600):
+    """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
+    try:
+        r = subprocess.run(["bash", "-c", cmd], cwd=root, capture_output=True, text=True, timeout=timeout)
+        return r.returncode, redact(r.stdout + r.stderr)
+    except subprocess.TimeoutExpired as e:
+        partial = (e.stdout or b"") + (e.stderr or b"")
+        partial = partial.decode(errors="replace") if isinstance(partial, bytes) else partial
+        return 124, redact(partial + f"\ntimed out after {timeout:g}s")
+
+
+def run_result(code, output):
+    """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed."""
+    lines = [l.strip() for l in output.splitlines() if l.strip()]
+    return f"{'✗ ' if code else ''}exit {code} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
 
 
 def git_root(path):
@@ -627,7 +659,8 @@ class Brief:
             raise KeyError(f"no step {n}")
         if not self.has_evidence(step=n):
             raise PolicyError(f"{self.id} step {n} has no verification evidence; record it with "
-                              f"`fm task evidence {self.id} --step {n} \"<cmd>\" \"<result>\"`")
+                              f"`fm task evidence {self.id} --step {n} --run \"<cmd>\"`")
+        self._refuse_failed_run(step=n)
         was_current, s.done, s.current = s.current, True, False
         if was_current:
             nxt = next((x for x in steps if x.n > n and not x.done), None) or next((x for x in steps if not x.done), None)
@@ -650,11 +683,19 @@ class Brief:
                 return True
         return False
 
-    def add_evidence(self, cmd, result, step=None, ac=None, ts=None):
+    def add_evidence(self, cmd, result, step=None, ac=None, ts=None, tree=None):
         tag = f"(step {step}) " if step is not None else f"(ac {ac}) " if ac is not None else ""
         cmd = redact(str(cmd)).replace("`", "'").strip()
         result = redact(str(result)).replace("\n", " ").strip()
-        self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result} ({ts or now()})")
+        mark = f" [tree {tree}]" if tree else ""  # the files it was recorded against (see audit_blockers)
+        self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result}{mark} ({ts or now()})")
+
+    def _refuse_failed_run(self, step=None, ac=None):
+        want = ("step", step) if step is not None else ("ac", ac)
+        mine = [l for l in self.evidence() if (m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == want]
+        if mine and "` → ✗ exit" in mine[-1]:
+            raise PolicyError(f"{self.id} {want[0]} {want[1]}: the newest evidence is a failed run "
+                              f"({mine[-1].split('` → ✗ ', 1)[1][:80]}); fix it and record a passing run")
 
     # --- audits (evidence lines tagged "(audit <lens>)")
     def add_audit(self, lens, how, result, ts=None, tree=None):
@@ -678,10 +719,24 @@ class Brief:
         stamps = [_TS_TAIL.search(l) for l in self.evidence() if (m := _EV_RE.match(l)) and m.group(1) == "step"]
         return max((t.group(1) for t in stamps if t), default="")
 
+    def last_work_tree(self):
+        """(timestamp, worktree id or None) of the newest step evidence."""
+        newest = ("", None)
+        for line in self.evidence():
+            m, t, w = _EV_RE.match(line), _TS_TAIL.search(line), _TREE_MARK.search(line)
+            if m and m.group(1) == "step" and t and t.group(1) >= newest[0]:
+                newest = (t.group(1), w.group(1) if w else None)
+        return newest
+
     def audit_blockers(self, since=None, tree=None):
         """Required audits missing or stale. An audit recorded against the current worktree id covers exactly these
         files, so later evidence (test runs, a push) doesn't stale it; without ids (outside git, older audits) it must
-        postdate the last step evidence / attributed edit."""
+        postdate the last step evidence / attributed edit. Callers that can't afford a worktree id (fm next, hooks)
+        use the one the newest step evidence was recorded at, unless an attributed edit came after it."""
+        if not tree:
+            ts, t = self.last_work_tree()
+            if t and (since or "") <= ts:
+                tree = t
         cutoff = max(self.last_work_ts(), since or "")
         audits = self.audits()
         fresh = {lens for lens, ts, t in audits if (tree and t == tree) or (ts >= cutoff and (not tree or not t))}
@@ -712,7 +767,8 @@ class Brief:
     def check_ac(self, n):
         if not self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} acceptance criterion {n} has no evidence; record it with "
-                              f"`fm task evidence {self.id} --ac {n} \"<cmd>\" \"<result>\"`")
+                              f"`fm task evidence {self.id} --ac {n} --run \"<cmd>\"`")
+        self._refuse_failed_run(ac=n)
         lines, k = [], 0
         for line in self.section("Acceptance criteria").splitlines():
             m = _AC_RE.match(line)

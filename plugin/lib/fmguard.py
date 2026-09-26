@@ -38,19 +38,26 @@ class Block:
     detail: str
 
 
-def check(tool_name, tool_input, ctx):
+def findings(tool_name, tool_input, ctx):
+    """Every (category, detail) a tool call touches, allowed or not."""
     if tool_name in FILE_TOOLS:
         raw = tool_input.get("file_path") or tool_input.get("notebook_path") or ""
         path = _resolve(_expand(raw, ctx), ctx.cwd)
-        found = [(cat, path) for cat in classify_write(path, ctx)]
-    elif tool_name == "Bash":
-        found = check_bash(tool_input["command"], ctx)
-    else:
-        return None
+        return [(cat, path) for cat in classify_write(path, ctx)]
+    if tool_name == "Bash":
+        return check_bash(tool_input["command"], ctx)
+    return []
+
+
+def check(tool_name, tool_input, ctx, found=None):
+    found = findings(tool_name, tool_input, ctx) if found is None else found
     for cat in CATEGORIES:
         for got, detail in found:
             if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
                 return Block(got, detail)
+    if sum(1 for got, _ in found if got == "plugin") > 1:  # a plugin yes is used up by one change (fmhooks)
+        return Block("plugin", "more than one plugin change in one command; one yes covers one change: run each as "
+                               "its own command, after its own fm ask")
     return None
 
 
@@ -433,6 +440,13 @@ def check_bash(cmd, ctx, depth=0):
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
             sub, rest = _fm_subcommand(fm_args)
+            # commands fm runs on Claude's behalf (evidence --run, stored gates) get the checks a typed one would
+            for a, b in zip(fm_args, fm_args[1:] + [""]):
+                flag, eq, val = a.partition("=")
+                if flag.startswith("--r") and "--run".startswith(flag):
+                    found += check_bash(val if eq else b, ctx, depth + 1)
+            if sub == "check" and rest[:1] == ["add"]:
+                found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
