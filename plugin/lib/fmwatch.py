@@ -70,9 +70,6 @@ def gather(p):
             "recent": [line for line in map(_recent, ledger) if line][-8:]}
 
 
-STAGES = ["planning", "ready", "executing", "verifying", "documenting", "auditing", "closing"]
-
-
 def _recent(e):
     """One line for a ledger event worth seeing (evidence, audits, captures, decisions, approvals, done)."""
     d, t, ts = e.get("data") or {}, e.get("task") or "", (e.get("ts") or "")[11:16]
@@ -109,7 +106,7 @@ def render(d, width=100):
         a = sd["active"]
         out.append(f"Active: {a['id']} [{a['type']} {a['tier']}] {a['title']}")
         st = a.get("stage")
-        out.append("  " + " → ".join(f"[{x}]" if x == st else x for x in STAGES)
+        out.append("  " + " → ".join(f"[{x}]" if x == st else x for x in c.STAGES)
                    + f" · audits {a['audits']['done']}/{a['audits']['required']}")
         out += [f"  [{'x' if s.done else ' '}] {s.n}. {s.text}{'  <-' if s.current else ''}" for s in act.steps()]
         out.append(f"  evidence: {len(act.evidence())} line(s)")

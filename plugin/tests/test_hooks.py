@@ -351,6 +351,15 @@ class PromptApprovals(HookCase):
         self.assertNotIn("\x1b", reason)
         self.assertNotIn("\u202e", reason)
         self.assertIn("grant core", reason)
+        for cmd in (f"fm ask '{self.tid}\u202e' core --why x", f"fm -p {self.project().slug} ask {self.tid} core --why x",
+                    f"fm ask -p {self.project().slug} {self.tid} core --why x"):
+            with self.subTest(cmd=cmd):  # the id itself, or a project flag the hook can't follow
+                self.assertEqual(parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]["permissionDecision"], "deny")
+        b = c.find_brief(self.project(), self.tid)
+        b.preamble = b.preamble.replace(f"# {b.title}", "# ok" + "\u2028" * 30 + "nothing granted here")
+        c.save_brief(self.project(), b)
+        reason = parse(self.call("PreToolUse"))["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertNotIn("\u2028", reason)
 
     def test_unknown_options_or_categories_are_refused(self):
         for cmd in (f"fm ask {self.tid} core --wh 'x'", f"fm ask {self.tid} rootkit --why 'x'"):
@@ -366,6 +375,20 @@ class PromptApprovals(HookCase):
         out = parse(p)["hookSpecificOutput"]
         self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("fm task block", out["permissionDecisionReason"])
+
+    def test_a_dialog_approved_before_reload_says_so_and_leaves_a_trace(self):
+        # after updating Foreman, the PermissionRequest hook isn't loaded until /reload-plugins
+        self.call("PreToolUse", tuid="toolu_7")
+        out = self.fm("ask", self.tid, "core", "--why", "fix the guard").stdout
+        self.assertIn("/reload-plugins", out)
+        self.call("PostToolUse", tuid="toolu_7")
+        self.assertNotIn("core", self.allow())
+        self.assertIn("no permission dialog was recorded", self.hooks_log())
+
+    def test_no_question_nudge_where_nobody_can_answer(self):
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Which parser should I keep?"},
+                      env={"FOREMAN_DRIVE_TASK": self.tid})
+        self.assertNotIn("AskUserQuestion", (parse(p) or {}).get("reason", ""))
 
     def test_chained_fm_ask_is_refused(self):
         cmd = self.CMD.format(tid=self.tid) + " && echo done"

@@ -77,6 +77,7 @@ def _writable(path):
 _STATE_MARKER = ".foreman-state.json"
 PERMISSION_MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"]  # claude 2.1.280 --help
 ASK_TTL = 300  # seconds an `fm ask` the PreToolUse hook saw stays claimable by fm (it runs right after)
+APPROVAL_TTL = 24 * 3600  # seconds a pending request, or an open permission dialog's record, stays answerable
 
 
 def state_fallbacks():
@@ -1114,6 +1115,14 @@ def plan_gaps(b, autonomy="standard"):
     return gaps
 
 
+STAGES = ("planning", "ready", "executing", "verifying", "documenting", "auditing", "closing")  # stage()'s order
+
+
+def fit(text, width):
+    """One line cut to width with an ellipsis."""
+    return text if len(text) <= width else text[:max(1, width - 1)] + "…"
+
+
 def stage(b, autonomy="standard", since=None):
     if b.status in CLOSED or b.status in ("blocked", "deferred"):
         return b.status
@@ -1310,8 +1319,7 @@ def progress_line(sd, width=120):
     parts += [f"q{len(sd['queue'])} in{len(sd['inbox'])}", "full auto" if sd["autonomy"] == "full" else "standard"]
     if asks:
         parts.append("⚠ reply yes = " + "; ".join(f"{'+'.join(x['allow'])} for {x['task']}" for x in asks))
-    line = " · ".join(parts)
-    return line if len(line) <= width else line[:width - 1] + "…"
+    return fit(" · ".join(parts), width)
 
 
 def glob_match(rel, pattern):

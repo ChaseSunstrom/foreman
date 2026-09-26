@@ -110,8 +110,7 @@ def progress(c, p):
             line = f.read().strip()
     except OSError:
         line = c.progress_line(c.state_dict(p))
-    width = max(20, int(os.environ.get("COLUMNS") or 120))
-    return [line if len(line) <= width else line[:width - 1] + "…"] if line else []
+    return [c.fit(line, max(20, int(os.environ.get("COLUMNS") or 120)))] if line else []
 
 
 def snapshot(c, data, p):

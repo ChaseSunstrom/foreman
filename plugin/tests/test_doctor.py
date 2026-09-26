@@ -77,6 +77,11 @@ class Checks(unittest.TestCase):
         self.assertIn("fallback", r.detail)
         self.assertIn("fm doctor --restore-state", r.detail)
 
+    def test_hooks_json_registers_every_handler(self):
+        self.assertEqual(d.check_hook_events().status, "PASS")
+        self.assertEqual(d.check_hook_events(registered={"PreToolUse", "Stop"}).status, "FAIL")
+        self.assertIn("PermissionRequest", d.check_hook_events(registered={"PreToolUse", "Stop"}).detail)
+
     def test_serve_units(self):
         self.assertEqual(d.check_serve({}).status, "PASS")
         self.assertEqual(d.check_serve({"app-1": "active"}).status, "PASS")

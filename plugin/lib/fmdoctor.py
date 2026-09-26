@@ -415,6 +415,17 @@ def check_state_dir(home, state):
                   f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
 
 
+def check_hook_events(registered=None):
+    """Every event fmhooks handles is registered in hooks.json (a new hook needs /reload-plugins to take effect)."""
+    import fmhooks
+    if registered is None:
+        registered = set(_load_json(os.path.join(PLUGIN, "hooks", "hooks.json")).get("hooks") or {})
+    missing = sorted((set(fmhooks.HANDLERS) | {"PreToolUse"}) - set(registered))
+    if missing:
+        return Result("hook events", "FAIL", "handled but not registered in hooks.json: " + ", ".join(missing))
+    return Result("hook events", "PASS", f"{len(registered)} events registered (after changes: /reload-plugins)")
+
+
 def check_serve(states):
     """fm serve units that aren't running (a dead one leaves its project in full autonomy with drive on)."""
     down = [f"{slug} {state}" for slug, state in states.items() if state != "active"]
@@ -445,7 +456,7 @@ def run_all(full=False):
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
-               check_serve(fmserve.states())]
+               check_serve(fmserve.states()), check_hook_events()]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]

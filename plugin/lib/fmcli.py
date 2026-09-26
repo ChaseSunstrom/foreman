@@ -477,7 +477,8 @@ def _git_exclude(root, rel):
 
 
 def _take_seen_ask(p, tid, cats):
-    """The session id the PreToolUse hook recorded for this exact `fm ask` (consumed), or None."""
+    """The record the PreToolUse hook made for this exact `fm ask` (consumed): session, and whether a dialog was
+    raised for it. None when the hook didn't see it."""
     import time
     path = os.path.join(p.dir, "asks.json")
     try:
@@ -491,7 +492,7 @@ def _take_seen_ask(p, tid, cats):
     if match:
         seen.remove(match)
         c.write_atomic(path, json.dumps(seen))
-    return match.get("session") if match else None
+    return match
 
 
 def _prompted(p, tid, cats):
@@ -503,7 +504,7 @@ def _prompted(p, tid, cats):
         return False
     import time
     return any(isinstance(a, dict) and a.get("task") == tid and a.get("allow") == sorted(set(cats))
-               and time.time() - a.get("at", 0) < 24 * 3600 for a in seen)
+               and time.time() - a.get("at", 0) < c.APPROVAL_TTL for a in seen)
 
 
 def cmd_ask(args):
@@ -522,7 +523,8 @@ def cmd_ask(args):
             return out(args, {"task": b.id, "allow": cats, "via": "prompt"},
                        f"Approved in Claude Code's permission prompt: the hook records the grant of {', '.join(cats)} "
                        f"for {b.id}.")
-        sid = _take_seen_ask(p, b.id, cats)
+        seen = _take_seen_ask(p, b.id, cats)
+        sid = seen and seen.get("session")
         if not sid:
             raise UsageError("fm ask must run as its own Bash command in the Claude Code session that asks: the hook "
                              "ties the request to that session (it saw no matching call, so nothing was recorded). "
@@ -534,8 +536,11 @@ def cmd_ask(args):
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
         c.regen_views(p)  # the statusline shows what a yes would grant
+    reload = (" The user approved Claude Code's permission dialog, but this session hasn't loaded Foreman's "
+              "PermissionRequest hook, so the dialog can't grant it: they should run /reload-plugins.") \
+        if seen.get("dialog") else ""
     out(args, {"task": b.id, "allow": cats, "why": why},
-        f"Pending: {b.id} {', '.join(cats)} ({why}). Ask the user one yes/no question for it now; their next "
+        f"Pending: {b.id} {', '.join(cats)} ({why}).{reload} Ask the user one yes/no question for it now; their next "
         f"message decides: a reply starting with yes grants it, anything else cancels it.")
 
 

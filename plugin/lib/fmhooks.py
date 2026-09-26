@@ -17,7 +17,6 @@ CTX_BUDGET = 2000       # SessionStart additionalContext
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
-APPROVAL_TTL = 24 * 3600  # seconds a pending `fm ask` stays answerable
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
@@ -219,14 +218,10 @@ def _resolve_approvals(p, meta, sid, text):
     yes, notes = bool(_YES.match(text)), []
     for a in mine:
         cats, at = ", ".join(a["allow"]), c.parse_ts(a.get("at"))
-        fresh = bool(at) and time.time() - at.timestamp() < APPROVAL_TTL
+        fresh = bool(at) and time.time() - at.timestamp() < c.APPROVAL_TTL
         b = c.find_brief(p, a["task"]) if yes and fresh else None
         if b:
-            b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + a["allow"]))
-            b.append_log(f"user approved {cats} in chat")
-            c.save_brief(p, b)
-            c.log_event(p, "approval_granted", task=b.id, data={"allow": a["allow"], "reply": c.redact(text[:80])},
-                        session=sid)
+            _grant(p, b, a["allow"], sid, "chat", reply=c.redact(text[:80]))
             notes.append(f"User approved {cats} for {b.id}")
         else:
             c.log_event(p, "approval_declined", task=a["task"], data={"allow": a["allow"], "expired": not fresh},
@@ -387,15 +382,12 @@ def _record_asks(pl, p, fmguard):
     fm ask binds the request to the session that really asked instead of trusting its own environment."""
     if not p or pl.get("tool_name") != "Bash" or not pl.get("session_id"):
         return
-    asks = []
-    for args in fmguard.fm_calls((pl.get("tool_input") or {}).get("command") or ""):
+    cmd, asks = (pl.get("tool_input") or {}).get("command") or "", []
+    dialog = bool(fmguard.lone_fm_ask(cmd)) and not os.environ.get("FOREMAN_DRIVE_TASK")  # PreToolUse asks for one
+    for args in fmguard.fm_calls(cmd):
         if len(args) > 2 and args[0] == "ask":
-            cats = []
-            for a in args[2:]:
-                if a.startswith("-"):
-                    break
-                cats.append(a)
-            asks.append({"task": args[1], "allow": sorted(set(cats)), "session": pl["session_id"], "at": time.time()})
+            task, cats, _, _ = _ask_target(args)
+            asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
     path = os.path.join(p.dir, "asks.json")
@@ -406,45 +398,51 @@ def _record_asks(pl, p, fmguard):
 
 
 def _ask_target(args):
-    """(task, sorted categories, why, unknown options) from `fm ask` arguments."""
-    cats, why, bad, i = [], "", [], 2
-    while i < len(args):
-        a = args[i]
-        if a in ("--why", "-p", "--project"):
-            why = args[i + 1] if a == "--why" and i + 1 < len(args) else why
-            i += 2
-            continue
-        if a.startswith("--why="):
-            why = a[6:]
-        elif a.startswith("-") and a != "--json" and not a.startswith("--project="):
-            bad.append(a)
-        elif not a.startswith("-"):
-            cats.append(a)
-        i += 1
-    return (args[1] if len(args) > 1 else ""), sorted(set(cats)), why, bad
-
-
-_HIDDEN = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+    """(task, sorted categories, why, problems) from `fm ask` arguments, read by fm's own parser so the dialog and
+    the grant can't drift from what the command means."""
+    import contextlib
+    import io
+    import fmcli
+    try:
+        with contextlib.redirect_stderr(io.StringIO()):
+            ns = fmcli.build_parser().parse_args(args)
+    except SystemExit:
+        return "", [], "", ["arguments fm ask doesn't accept"]
+    return ns.id, sorted(set(ns.categories)), ns.why or "", []
 
 
 def _plain(s):
-    """Text safe to show in a dialog: no control, escape or bidi-override characters that could disguise it."""
-    return _HIDDEN.sub("", s or "")
+    """Text safe to show in a dialog: no control, format (bidi overrides, zero-width) or line/paragraph separator
+    characters that could disguise it."""
+    import unicodedata
+    return "".join(ch for ch in (s or "") if unicodedata.category(ch) not in ("Cc", "Cf", "Zl", "Zp"))
+
+
+def _grant(p, b, cats, sid, via, **data):
+    """The one place a user's approval becomes an authorization (chat reply or permission dialog)."""
+    b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + list(cats)))
+    b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
+    c.save_brief(p, b)
+    c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": list(cats), "via": via}, **data), session=sid)
 
 
 def _ask_prompt(pl, p, fmguard):
     if not p or pl.get("tool_name") != "Bash":
         return None
     cmd = (pl.get("tool_input") or {}).get("command") or ""
-    if not any(a[:1] == ["ask"] for a in fmguard.fm_calls(cmd)):
+    if not any(fmguard._fm_subcommand(a)[0] == "ask" for a in fmguard.fm_calls(cmd)):
         return None
+    if not any(a[:1] == ["ask"] and not any(x in ("-p", "--project") or x.startswith("--project=") for x in a)
+               for a in fmguard.fm_calls(cmd)):
+        return ("deny", "Foreman: run fm ask from the project's directory, without -p, so the dialog and the grant "
+                        "refer to the same task")
     args = fmguard.lone_fm_ask(cmd)
     if not args:
         return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
                         "permission prompt approves exactly that request")
     task, cats, why, bad = _ask_target(args)
     unknown = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
-    if bad or unknown or not cats:
+    if bad or unknown or not cats or not re.fullmatch(r"T-\d{4,}", task):
         return ("deny", f"Foreman: fm ask takes an id, categories ({', '.join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE)}) "
                         f"and --why; not {', '.join(bad + unknown) or 'this'}")
     if os.environ.get("FOREMAN_DRIVE_TASK"):  # fm run's claude -p: no one can answer a dialog here
@@ -452,7 +450,7 @@ def _ask_prompt(pl, p, fmguard):
                         f"fm task block {task} \"needs {', '.join(cats)} from the user\" and stop.")
     b = c.find_brief(p, task)
     return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
-                   + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {_plain(why)[:200]}" if why else "")
+                   + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {c.redact(_plain(why))[:200]}" if why else "")
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 
@@ -469,7 +467,7 @@ def permission_request(pl):
         return None
     task, cats, _, _ = _ask_target(args)
     with c.lock(p.dir, timeout=LOCK_SLOW):
-        seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < APPROVAL_TTL]
+        seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < c.APPROVAL_TTL]
         seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
                      "at": time.time()})
         c.write_atomic(_prompts_path(p), json.dumps(seen[-20:]))
@@ -488,22 +486,20 @@ def _grant_prompted(pl, p):
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(_prompts_path(p))
         hit = next((a for a in seen if a.get("session") == sid and a.get("task") == task and a.get("allow") == cats
-                    and time.time() - a.get("at", 0) < APPROVAL_TTL
+                    and time.time() - a.get("at", 0) < c.APPROVAL_TTL
                     and (not tuid or not a.get("tool_use_id") or a["tool_use_id"] == tuid)), None)
         b = c.find_brief(p, task)
         if not hit or not b or ok != cats:
+            log_error("PostToolUse", f"fm ask for {task} ({', '.join(cats)}) ran but no permission dialog was recorded "
+                                     f"for it: nothing granted (PermissionRequest hook not loaded? /reload-plugins)")
             return
         seen.remove(hit)
         c.write_atomic(_prompts_path(p), json.dumps(seen))
-        b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
-        b.append_log(f"user approved {', '.join(cats)} in Claude Code's permission prompt")
-        c.save_brief(p, b)
+        _grant(p, b, cats, sid, "prompt", bound=bool(tuid and hit.get("tool_use_id")))
         meta = c.read_meta(p)
         meta["pending_approvals"] = [a for a in meta.get("pending_approvals") or []
                                      if not (isinstance(a, dict) and a.get("task") == task)]
         c.write_meta(p, meta)
-        c.log_event(p, "approval_granted", task=task, session=sid,
-                    data={"allow": cats, "via": "prompt", "bound": bool(tuid and hit.get("tool_use_id"))})
         c.regen_views(p)
 
 
@@ -680,8 +676,9 @@ def stop(pl):
 def _question_nudge(pl):
     """A question for the user left in the reply text gets lost when they type something else; the user asked for
     such blockers as Claude Code prompts. Sent back once per stop chain."""
-    if pl.get("stop_hook_active") or not needs_user(pl.get("last_assistant_message")):
-        return None
+    if pl.get("stop_hook_active") or os.environ.get("FOREMAN_DRIVE_TASK") or \
+            not needs_user(pl.get("last_assistant_message")):
+        return None  # (fm run's headless sessions have nobody to ask)
     return ("Foreman: the reply asks the user something in text. If it's yours to decide, decide it and record it "
             "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
             "fm ask for a guard category, so the answer can't be lost in chat.")
