@@ -793,7 +793,9 @@ def _question_nudge(pl):
         return None  # (fm run's headless sessions have nobody to ask)
     return ("Foreman: the reply asks the user something in text. If it's yours to decide, decide it and record it "
             "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
-            "fm ask for a guard category, so the answer can't be lost in chat.")
+            "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
+            "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
+            "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):

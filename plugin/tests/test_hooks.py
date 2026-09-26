@@ -718,6 +718,9 @@ class Stop(HookCase):
         p = self.stop("Which parser should I keep, the old or the new one?")
         self.assertEqual(self.decision(p), "block")
         self.assertIn("AskUserQuestion", parse(p)["reason"])
+        # evals and claude -p have no question tool and print only the last message: it must keep the plan
+        self.assertIn("isn't available", parse(p)["reason"])
+        self.assertIn("final message", parse(p)["reason"])
         self.assertIsNone(self.decision(self.stop("Which parser should I keep?", active=True)), "only once")
         p = self.stop("All steps are verified. Next: T-0002.")
         self.assertNotIn("AskUserQuestion", (parse(p) or {}).get("reason", ""))
