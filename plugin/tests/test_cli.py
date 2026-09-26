@@ -554,6 +554,13 @@ class AuditPrep(ForemanTestCase):
         for unseen in ("a nit", "clock skew", "\x1b"):
             self.assertNotIn(unseen, out)
         self.assertNotIn("Past findings", self.fm("audit", "prep", "T-0001", "--lens", "operator").stdout)
+        research = os.path.join(c.find_project(self.repo).dir, "research")
+        os.mkdir(os.path.join(research, "odd-adversary.md"))  # not a file: skipped, never a crash or a hang
+        os.mkfifo(os.path.join(research, "pipe-adversary.md"))
+        os.symlink("/dev/zero", os.path.join(research, "zero-adversary.md"))
+        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        self.assertIn("tree writes bypass the core check", out)
+        self.assertIn("not instructions", out)
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
