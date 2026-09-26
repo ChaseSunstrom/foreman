@@ -346,6 +346,59 @@ def _bench_and_injection():
     return bench, sizes
 
 
+def _fm_commands():
+    """{top-level fm command: {its subcommands}} straight from the parser, so the check can't drift from the code."""
+    import argparse
+    import fmcli
+    out = {}
+    for a in fmcli.build_parser()._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            for name, sp in a.choices.items():
+                out[name] = {n for b in sp._actions if isinstance(b, argparse._SubParsersAction) for n in b.choices}
+    return out
+
+
+_FM_MENTION = re.compile(r"(?:^|[\s;|&(])fm\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
+
+
+def check_self_docs(home=None, plugin=PLUGIN):
+    """Foreman's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
+    agent, and README's install flags match install.sh --help."""
+    home = home or os.path.dirname(os.path.abspath(plugin))
+    cmds, bad = _fm_commands(), []
+    master = _read(os.path.join(home, "MASTER.md")) or ""
+    docs = [os.path.join(home, f) for f in ("README.md", "MASTER.md")] + [os.path.join(plugin, "rules", "foreman.md")]
+    for d, _, files in os.walk(os.path.join(plugin, "skills")):
+        if "playbooks" not in d:  # ported third-party procedures don't talk about fm
+            docs += [os.path.join(d, f) for f in files if f.endswith(".md")]
+    for path in docs:
+        text = re.sub(r"```.*?```", "", _read(path) or "", flags=re.S)  # fences would shift backtick pairing
+        for span in re.findall(r"`([^`\n]+)`", text):
+            for m in _FM_MENTION.finditer(span):
+                top, sub = m.group(1), m.group(2)
+                if top not in cmds:
+                    bad.append(f"{os.path.relpath(path, home)}: `fm {top}` isn't an fm command")
+                elif cmds[top] and sub and sub not in cmds[top]:
+                    bad.append(f"{os.path.relpath(path, home)}: `fm {top} {sub}` isn't an fm command")
+    missing = [n for n in sorted(cmds) if not re.search(rf"\b{re.escape(n)}\b", master)]
+    if missing:
+        bad.append("MASTER.md lacks fm " + ", ".join(missing))
+    for kind, folder, strip in (("skill", "skills", ""), ("agent", "agents", ".md")):
+        for name in sorted(os.listdir(os.path.join(plugin, folder))) if os.path.isdir(os.path.join(plugin, folder)) else []:
+            name = name[:-len(strip)] if strip and name.endswith(strip) else name
+            if name not in master:
+                bad.append(f"MASTER.md doesn't mention the {kind} {name}")
+    readme, install = _read(os.path.join(home, "README.md")) or "", _read(os.path.join(home, "install.sh")) or ""
+    header = "\n".join(l for l in install.splitlines()[:20] if l.startswith("#"))  # the --help text
+    help_flags = set(re.findall(r"(--[\w-]+)", header))
+    readme_flags = {f for line in readme.splitlines() if line.startswith("Flags:") for f in re.findall(r"`(--[\w-]+)`", line)}
+    bad += [f"README.md doesn't document install.sh {f}" for f in sorted(help_flags - readme_flags)]
+    bad += [f"README.md lists {f}, which install.sh doesn't have" for f in sorted(readme_flags - help_flags)]
+    bad = list(dict.fromkeys(bad))
+    return Result("self docs", "FAIL" if bad else "PASS", "; ".join(bad[:12]) + (f" (+{len(bad) - 12} more)" if len(bad) > 12
+                                                                                  else "") if bad else "docs match the code")
+
+
 def check_state_dir(home, state):
     default = os.path.join(home, "state")
     if state == default:
@@ -377,7 +430,7 @@ def run_all(full=False):
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
                           or f"{len(projects)} project(s) OK"))
-    results += [check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
+    results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full)]
     return results

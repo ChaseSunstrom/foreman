@@ -52,6 +52,22 @@ class Checks(unittest.TestCase):
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
 
+    def test_self_docs_match_the_code(self):
+        self.assertEqual(d.check_self_docs().status, "PASS", d.check_self_docs().detail)
+
+    def test_self_docs_flags_drift(self):
+        home = os.path.join(self.t, "fh")
+        self.write("fh/MASTER.md", "CLI: `fm state|queue`\nSkills: intake\n")
+        self.write("fh/README.md", "Flags: `--no-plugins`, `--frobnicate`.\n")
+        self.write("fh/install.sh", "#!/bin/bash\n#   --no-plugins     skip\n#   --no-wiring      skip wiring\nset -e\n")
+        self.write("fh/plugin/rules/foreman.md", "Run `fm teleport now` then `fm task set T-1 x=y`.\n")
+        self.write("fh/plugin/skills/intake/SKILL.md", "---\nname: intake\ndescription: x\n---\n")
+        self.write("fh/plugin/skills/extra/SKILL.md", "---\nname: extra\ndescription: x\n---\n")
+        r = d.check_self_docs(home, os.path.join(home, "plugin"))
+        self.assertEqual(r.status, "FAIL")
+        for needle in ("fm teleport", "MASTER.md lacks fm ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
+            self.assertIn(needle, r.detail)
+
     def test_state_location(self):
         home = os.path.join(self.t, "fh")
         self.assertEqual(d.check_state_dir(home, os.path.join(home, "state")).status, "PASS")
