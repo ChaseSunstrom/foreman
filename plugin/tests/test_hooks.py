@@ -241,6 +241,45 @@ class Approvals(HookCase):
         self.assertEqual((self.allow(tid), self.pending()), ([], []))
 
 
+class NoTaskGate(HookCase):
+    """No edits in a Foreman project without an active task (T-0012): the harness enforces the loop."""
+
+    def pre(self, path, tool="Write"):
+        return self.hook("PreToolUse", {"tool_name": tool, "tool_input": {"file_path": path, "content": "x"},
+                                        "scratchpad_dir": os.path.join(self.tmp, "scratch")})
+
+    def test_edit_without_an_active_task_is_denied_with_a_one_command_fix(self):
+        self.fm("init")
+        p = self.pre(os.path.join(self.repo, "app.py"))
+        self.assertEqual(p.returncode, 2)
+        out = parse(p)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("no active task", out["permissionDecisionReason"])
+        self.assertIn("--focus", out["permissionDecisionReason"])
+
+    def test_active_task_scratch_memory_and_outside_paths_are_allowed(self):
+        self.fm("init")
+        for path in (os.path.join(self.tmp, "scratch", "notes.md"), "/tmp/fm-probe.txt",
+                     os.path.join(self.tmp, "home", ".claude", "projects", "x", "memory", "m.md")):
+            with self.subTest(path=path):
+                self.assertEqual(self.pre(path).returncode, 0)
+        self.task()
+        self.assertEqual(self.pre(os.path.join(self.repo, "app.py")).returncode, 0)
+
+    def test_unregistered_directory_is_not_gated(self):
+        plain = os.path.join(self.tmp, "plain")
+        os.makedirs(plain)
+        p = self.hook("PreToolUse", {"tool_name": "Write", "cwd": plain,
+                                     "tool_input": {"file_path": os.path.join(plain, "a.txt"), "content": "x"}})
+        self.assertEqual(p.returncode, 0)
+
+    def test_scope_note_ignores_files_outside_the_project(self):
+        self.fm("init")
+        self.task(scope=["src/**"])
+        p = self.pre(os.path.join(self.tmp, "home", ".claude", "projects", "x", "memory", "m.md"))
+        self.assertNotIn("outside", p.stdout)
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})

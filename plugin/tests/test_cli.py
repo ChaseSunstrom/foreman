@@ -337,6 +337,15 @@ class SensitiveAndDrive(ForemanTestCase):
         self.assertTrue(c.read_meta(c.find_project(self.repo))["drive"])
 
 
+class OneCommandTask(ForemanTestCase):
+    def test_task_new_with_ac_step_and_focus(self):
+        self.fm("init")
+        self.fm("task", "new", "Fix typo in README", "--type", "FIX", "--tier", "S",
+                "--ac", "typo gone", "--step", "fix it", "--focus")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual((b.status, len(b.acceptance()), len(b.steps())), ("active", 1, 1))
+
+
 class NextAction(ForemanTestCase):
     def test_next_names_the_one_required_action(self):
         self.fm("init")

@@ -247,7 +247,16 @@ def task_new(p, args):
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
         c.regen_views(p)
+    if args.ac or args.step:
+        def plan(b):
+            for text in args.ac or []:
+                b.add_ac(text)
+            for text in args.step or []:
+                b.add_step(text)
+        b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
     out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})")
+    if args.focus:
+        cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
 
 
 def task_set(p, args):
@@ -647,6 +656,9 @@ def build_parser():
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
+    t.add_argument("--ac", action="append", help="acceptance criterion (repeatable)")
+    t.add_argument("--step", action="append", help="step (repeatable)")
+    t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t = tadd("show")
     t.add_argument("id")
     t = tadd("set")

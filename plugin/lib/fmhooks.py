@@ -310,6 +310,12 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    gate = _no_task_gate(pl, p, act, ctx)
+    if gate:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                 "permissionDecisionReason": gate}}))
+        print(gate, file=sys.stderr)
+        return 2
     try:
         note = _scope_note(pl, p, act)
         if note:
@@ -334,13 +340,37 @@ def _guard_ctx(pl, fmguard):
     return ctx, p, act
 
 
+def _edit_path(pl):
+    ti = pl.get("tool_input") or {}
+    target = ti.get("file_path") or ti.get("notebook_path") if isinstance(ti, dict) else None
+    return os.path.normpath(os.path.join(_cwd(pl), target)) if target else None
+
+
+def _in_project(path, p):
+    return bool(path) and path.startswith(p.root.rstrip("/") + "/")
+
+
+def _no_task_gate(pl, p, act, ctx):
+    """File edits inside a Foreman project need an active task (rules: never edit without a brief)."""
+    if not p or act or pl.get("tool_name") not in FILE_TOOLS:
+        return None
+    path = _edit_path(pl)
+    exempt = [pl.get("scratchpad_dir"), os.path.join(ctx.home, ".claude", "projects")]  # session scratch, auto memory
+    if not _in_project(path, p) or any(e and path.startswith(e.rstrip("/") + "/") for e in exempt):
+        return None
+    return (f"Foreman: no active task in {p.slug}, so {os.path.relpath(path, p.root)} can't be edited yet. One "
+            f"command starts a small task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" "
+            f"--step \"<step>\" --focus (bigger work: /foreman:intake; fm next says what's next).")
+
+
 def _scope_note(pl, p, act):
     if not (p and act and pl.get("tool_name") in FILE_TOOLS):
         return None
     scope = act.meta.get("scope") or []
-    ti = pl.get("tool_input") or {}
-    path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
-    rel = os.path.relpath(path, p.root) if path.startswith(p.root.rstrip("/") + "/") else path
+    path = _edit_path(pl)
+    if not _in_project(path, p):
+        return None  # not a project edit (auto memory, scratch, other repos)
+    rel = os.path.relpath(path, p.root)
     if not scope or any(c.glob_match(rel, s) for s in scope):
         return None
     for e in c.ledger_tail(p, 300):
