@@ -259,11 +259,15 @@ def user_prompt_submit(pl):
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)
         parts.append(f"Message has {n} intake item{'s' if n > 1 else ''} ({tags})"
-                     + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip else ""))
+                     + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip else "")
+                     + "; canonical order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE (fm intake prints it)")
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
     elif not r.items and c.is_open_ended(text):
         parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
+    elif not r.items and c.is_work_request(text):
+        parts.append("Untagged work request; Foreman intake classifies it first (type and tier on the reply's first "
+                     "line), then briefs it (fm task new … --focus)")
     a = sd["active"]
     if a:
         parts.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]

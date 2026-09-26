@@ -138,6 +138,17 @@ class UserPromptSubmit(HookCase):
         self.assertIn("debugging.md", ctx, "the harness names the FIX procedure")
         self.assertLessEqual(len(ctx), 400)
 
+    def test_untagged_work_request_names_classification(self):
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "add a --verbose flag to the CLI"}))
+        self.assertIn("classif", ctx)
+        self.assertLessEqual(len(ctx), 400)
+
+    def test_intake_block_note_names_the_canonical_order(self):
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nCLEAN: b"}))
+        self.assertIn("CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE", ctx)
+
     def test_open_ended_request_points_at_brainstorm(self):
         self.fm("init")
         self.assertIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))

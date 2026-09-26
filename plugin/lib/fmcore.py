@@ -854,6 +854,19 @@ _OPEN_ENDED = re.compile("|".join([
 ]), re.I)
 
 
+_WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?(?:add|fix|make|implement|create|"
+                        r"remove|delete|update|refactor|rename|change|build|write|support|migrate|replace|optimi[sz]e|"
+                        r"speed up|clean up|handle|allow|prevent|convert|move|split|merge|extract|upgrade)\b", re.I)
+
+
+def is_work_request(text):
+    """A plain, untagged request with a concrete target ("add a --verbose flag"): intake classifies it first."""
+    t = (text or "").strip()
+    tag = _TAG_LINE.match(t)
+    return bool(t) and len(t.split()) <= 60 and not (tag and tag.group("tag").upper() in WORK_TAGS) \
+        and not is_open_ended(t) and bool(_WORK_VERB.match(t))
+
+
 def is_open_ended(text):
     """A short request with no concrete target ("super improve it"): Foreman brainstorms before planning."""
     t = (text or "").strip()

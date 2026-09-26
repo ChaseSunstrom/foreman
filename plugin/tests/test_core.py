@@ -383,6 +383,17 @@ class Stages(unittest.TestCase):
         self.assertIn("fm task done T-0001", c.next_action(b))
 
 
+class WorkRequests(unittest.TestCase):
+    def test_plain_work_requests(self):
+        for text in ("add a --verbose flag to the CLI", "fix the login timeout on slow wifi",
+                     "Please refactor the date helpers", "can you rename add to add_numbers?"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_work_request(text))
+        for text in ("what does this function do?", "yes", "FIX: login", "super improve it", "thanks!", ""):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_work_request(text))
+
+
 class OpenEnded(unittest.TestCase):
     def test_vague_requests_are_open_ended(self):
         for text in ("Just get it done", "super improve it", "make it better!", "improve everything",
