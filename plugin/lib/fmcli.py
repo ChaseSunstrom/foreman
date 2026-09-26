@@ -54,12 +54,6 @@ def need_brief(p, tid):
     return b
 
 
-def last_change(p, tid):
-    """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
-    return max((e.get("ts", "") for e in c.ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
-               default="")
-
-
 def mutate(p, tid, fn, event, data=None):
     """Load a brief under the project lock, apply fn(brief), save, log, regenerate views."""
     with c.lock(p.dir):
@@ -200,7 +194,7 @@ def cmd_task(args):
                       "audit", {"lens": args.lens, "how": args.how[:200], "result": args.result[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: audit ({args.lens}) recorded.")
     if sub == "done":
-        since = last_change(p, args.id)
+        since = c.last_change(p, args.id)
 
         def done(b):
             reasons = b.done_blockers(since)
@@ -542,20 +536,8 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
-def next_for(p):
-    """(brief or None, stage, action): the active task, else the first queued, else the oldest captured item."""
-    briefs = c.load_briefs(p)
-    autonomy = c.read_meta(p).get("autonomy", "standard")
-    b = c.active_brief(briefs) or next(iter(c.order_queue(briefs)[0]), None) or \
-        next((x for x in briefs if x.status == "captured"), None)
-    if not b:
-        return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
-    since = last_change(p, b.id)
-    return b, c.stage(b, autonomy, since), c.next_action(b, autonomy, since)
-
-
 def cmd_next(args):
-    b, st, action = next_for(resolve(args))
+    b, st, action = c.next_for(resolve(args))
     out(args, {"task": b.id if b else None, "stage": st, "action": action}, f"Next: {action}")
 
 

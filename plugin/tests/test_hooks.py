@@ -75,6 +75,11 @@ class SessionStart(HookCase):
         self.assertIn(f"FOREMAN_PROJECT={c.slug_for(self.repo)}", env)
         self.assertIsNotNone(self.project(), "git repo auto-registered")
 
+    def test_next_action_at_session_start(self):
+        self.fm("init")
+        tid = self.task()
+        self.assertIn(f"Next: {tid} step 1/2", self.ctx_of(self.run_ss()))
+
     def test_full_autonomy_is_reported(self):
         self.fm("init")
         self.fm("autonomy", "full")
@@ -124,6 +129,14 @@ class UserPromptSubmit(HookCase):
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "NOW: prod is down"}))
         self.assertIn("NOW", ctx)
         self.assertIn(f"{tid} FIX step 1/2", ctx)
+
+    def test_next_action_is_injected_every_turn(self):
+        self.fm("init")
+        tid = self.task()
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"}))
+        self.assertIn(f"Next: {tid} step 1/2", ctx)
+        self.assertIn("debugging.md", ctx, "the harness names the FIX procedure")
+        self.assertLessEqual(len(ctx), 400)
 
     def test_open_ended_request_points_at_brainstorm(self):
         self.fm("init")
@@ -410,6 +423,7 @@ class Stop(HookCase):
         p = self.stop("Continuing with the retry helper next.")
         self.assertEqual(self.decision(p), "block")
         self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
+        self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
 
     def test_drive_allows_stop_when_asking_the_user(self):
         self.fm("init")

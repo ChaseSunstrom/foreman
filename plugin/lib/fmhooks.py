@@ -158,6 +158,7 @@ def session_context(p, sd, other_note=None):
         focus.append(f"Brief: {a['path']}")
     else:
         focus.append("Active: none.")
+    focus.append("Next: " + c.next_for(p)[2])
     q = sd["queue"]
     queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:50]}" for x in q[:5])
               + (f" (+{len(q) - 5} more)" if len(q) > 5 else "") + ".") if q else "Queue: empty."]
@@ -267,6 +268,10 @@ def user_prompt_submit(pl):
                                                         else f"{a['steps_done']}/{a['steps_total']} steps done"))
     else:
         parts.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
+    try:
+        parts.append("Next: " + c.next_for(p)[2])
+    except Exception:
+        log_error("UserPromptSubmit", traceback.format_exc())
     if sd["inbox"]:
         parts.append(f"Inbox: {len(sd['inbox'])}")
     if sd["paused"]:
@@ -540,6 +545,10 @@ def _drive(p, sd, briefs, pl, g):
                  if full else
                  ". No question to the user or approval is pending. Drive ends when the queue is empty, "
                  "when a question or approval is needed, or with `fm drive off`."))
+    try:
+        reason += " Next: " + c.next_for(p, briefs)[2]
+    except Exception:
+        log_error("Stop", traceback.format_exc())
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason

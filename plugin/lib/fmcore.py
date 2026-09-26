@@ -981,6 +981,24 @@ def next_action(b, autonomy="standard", since=None):
     return f"{tid} is {st}"
 
 
+def last_change(p, tid):
+    """Timestamp of the latest file edit the hooks attributed to this task (audits must come after it)."""
+    return max((e.get("ts", "") for e in ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
+               default="")
+
+
+def next_for(p, briefs=None):
+    """(brief or None, stage, action): the active task, else the first queued, else the oldest captured item."""
+    briefs = load_briefs(p) if briefs is None else briefs
+    autonomy = read_meta(p).get("autonomy", "standard")
+    b = active_brief(briefs) or next(iter(order_queue(briefs)[0]), None) or \
+        next((x for x in briefs if x.status == "captured"), None)
+    if not b:
+        return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
+    since = last_change(p, b.id)
+    return b, stage(b, autonomy, since), next_action(b, autonomy, since)
+
+
 def active_brief(briefs):
     return next((b for b in briefs if b.status in ("active", "verifying")), None)
 
