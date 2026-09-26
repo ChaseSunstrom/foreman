@@ -6,6 +6,7 @@ import sys
 from helpers import FM, ForemanTestCase, read_text
 
 import fmcore as c
+import fmserve
 
 
 class ServeCase(ForemanTestCase):
@@ -17,8 +18,9 @@ class ServeCase(ForemanTestCase):
         os.makedirs(self.uhome)
         os.makedirs(self.bin)
         self.stub("systemctl", 'if [ "$2" = is-active ]; then echo active; fi\n')
-        self.stub("journalctl", 'echo "Error: Workspace not trusted."\n')
+        self.stub("journalctl", 'echo "Error: Workspace not trusted."\necho "session https://claude.ai/code/x?t=1"\n')
         self.stub("claude", "")
+        self.stub("loginctl", 'if [ "$1" = show-user ]; then echo yes; fi\n')
         self.trust(self.repo)
         self.fm("init")
         self.slug = c.find_project(self.repo).slug
@@ -55,7 +57,7 @@ class Serve(ServeCase):
         self.serve()
         unit = read_text(self.unit)
         for needle in ("Managed by Foreman", f"WorkingDirectory={self.repo}", "Type=simple", "Restart=always",
-                       "StartLimitBurst=", "remote-control", "--spawn same-dir", "StandardOutput=null"):
+                       "StartLimitBurst=", "env claude remote-control", "--spawn same-dir", "StandardOutput=null"):
             self.assertIn(needle, unit)
         self.assertNotIn("--permission-mode", unit, "the user's own default mode applies unless one is given")
         self.assertIn(f"systemctl --user enable --now foreman-serve-{self.slug}.service", self.called())
@@ -63,6 +65,15 @@ class Serve(ServeCase):
         m = self.meta()
         self.assertEqual((m["autonomy"], m["drive"]), ("full", True))
         self.assertEqual((m["serve"]["prev_autonomy"], m["serve"]["prev_drive"]), ("standard", False))
+
+    def test_linger_is_enabled_so_the_unit_outlives_the_login(self):
+        # without linger, systemd --user (and the unit) stops when the SSH session that ran fm serve ends
+        self.serve()
+        self.assertNotIn("enable-linger", self.called())
+        self.stub("loginctl", 'if [ "$1" = show-user ]; then echo no; fi\n')
+        out = self.serve().stdout
+        self.assertIn("loginctl enable-linger", self.called())
+        self.assertIn("linger is off", out)
 
     def test_stop_reverses_everything(self):
         self.fm("autonomy", "standard")
@@ -101,7 +112,43 @@ class Serve(ServeCase):
             self.assertIn(needle, out)
         self.assertNotIn("Workspace not trusted", out)
         self.stub("systemctl", 'if [ "$2" = is-active ]; then echo failed; fi\n')
-        self.assertIn("Workspace not trusted", self.serve("status").stdout)
+        out = self.serve("status").stdout
+        self.assertIn("Workspace not trusted", out)
+        self.assertNotIn("https://", out, "the session URL is never shown")
+        self.assertIn("still full autonomy with drive on", out, "a dead unit leaves the project in serve mode")
+
+    def test_control_characters_never_reach_the_unit_file(self):
+        # a newline in the repo path or PATH would end its line and start a new unit directive
+        bad = type("P", (), {"root": "/srv/app\nExecStartPre=/bin/evil", "slug": "app-1"})()
+        with self.assertRaises(c.PolicyError):
+            fmserve.unit_text(bad, None)
+        p = c.find_project(self.repo)
+        old = os.environ["PATH"]
+        os.environ["PATH"] = old + ":/x\nExecStartPre=/bin/evil"
+        try:
+            text = fmserve.unit_text(p, None)
+        finally:
+            os.environ["PATH"] = old
+        self.assertNotIn("\nExecStartPre", text)
+
+    def test_units_of_another_foreman_install_are_left_alone(self):
+        self.serve()
+        other = self.unit.replace(self.slug, "elsewhere-123456")
+        with open(self.unit) as f:
+            text = f.read().replace(self.home, "/other/foreman")
+        with open(other, "w") as f:
+            f.write(text)
+        self.fm("uninstall-user", env=self.env())
+        self.assertFalse(os.path.exists(self.unit))
+        self.assertTrue(os.path.exists(other))
+
+    def test_refuses_while_fm_run_works_here(self):
+        import fcntl
+        with open(os.path.join(c.find_project(self.repo).dir, "run.lock"), "w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            p = self.serve(check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("fm run", p.stderr)
 
     def test_uninstall_user_stops_serve_units(self):
         self.serve()
@@ -138,6 +185,14 @@ class Run(ServeCase):
         self.assertTrue(all(" -p " in s for s in sessions))
         self.assertIn(f"{a} done", out)
         self.assertIn(f"session for {a}", read_text(os.path.join(c.state_dir(), "logs", f"run-{self.slug}.log")))
+
+    def test_a_timed_out_session_is_logged_with_its_errors(self):
+        self.task("one")
+        self.stub("claude", 'echo "stuck on the login" >&2\nsleep 5\n')
+        p = self.run_fm("--timeout", "0.02", check=False)  # minutes
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("limit", p.stderr)
+        self.assertIn("stuck on the login", read_text(os.path.join(c.state_dir(), "logs", f"run-{self.slug}.log")))
 
     def test_a_session_without_progress_stops_the_run(self):
         self.task("one")

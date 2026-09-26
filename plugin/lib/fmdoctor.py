@@ -8,6 +8,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 
 import fmcore as c
+import fmserve
 import fmsetup
 
 PLUGIN = c.PLUGIN_ROOT
@@ -414,6 +415,14 @@ def check_state_dir(home, state):
                   f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
 
 
+def check_serve(states):
+    """fm serve units that aren't running (a dead one leaves its project in full autonomy with drive on)."""
+    down = [f"{slug} {state}" for slug, state in states.items() if state != "active"]
+    if down:
+        return Result("fm serve", "WARN", "not running: " + ", ".join(down) + " (fm serve status shows why)")
+    return Result("fm serve", "PASS", f"{len(states)} unit(s) active" if states else "no fm serve units")
+
+
 def check_env(settings, manifest):
     """The env values fm install-user sets (drive continuation cap, earlier compaction), unless Foreman isn't wired."""
     if manifest is None:
@@ -435,7 +444,8 @@ def run_all(full=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest)]
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
+               check_serve(fmserve.states())]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]

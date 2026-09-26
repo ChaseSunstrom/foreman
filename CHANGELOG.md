@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- Headless: `fm serve` runs Claude Code Remote Control in a repo as a systemd user unit (restart with a crash-loop breaker, survives logout and reboot, output discarded) with the project in full autonomy + drive; `fm serve status|stop [--all]`, uninstall stops every unit. Untrusted folders are refused with the reason. `fm run` works the queue in fresh `claude -p` sessions, one task each (drive scoped by `FOREMAN_DRIVE_TASK`), skipping tasks waiting on you and stopping on no progress, a failed session or the timeout.
+- Headless: `fm serve` runs Claude Code Remote Control in a repo as a systemd user unit (restart with a crash-loop breaker, survives logout and reboot, output discarded) with the project in full autonomy + drive; `fm serve status|stop [--all]`, uninstall stops every unit. Starting it needs the user's yes (new user-only guard category `remote`); it turns on linger, finds `claude` on the saved PATH at each start, and refuses untrusted repos or a running `fm run`; `fm doctor` warns on a dead unit. `~/.claude.json` is now protected core and user unit files count as `system`. `fm run` works the queue in fresh `claude -p` sessions, one task each (drive scoped by `FOREMAN_DRIVE_TASK`), skipping tasks waiting on you and stopping on no progress, a failed session or the timeout.
 
 ## 1.1.0 — 2026-09-26
 Claude works autonomously and checks its own work.

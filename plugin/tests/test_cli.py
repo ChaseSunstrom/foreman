@@ -126,6 +126,13 @@ class TaskLifecycle(ForemanTestCase):
         events = [e["event"] for e in c.ledger_tail(self.p)]
         self.assertIn("task_done", events)
 
+    def test_remote_is_granted_only_through_fm_ask(self):
+        p = self.fm("task", "set", "T-0001", "--allow", "remote", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("fm ask", p.stderr)
+        self.fm_ask("T-0001", "remote")
+        self.assertEqual(c.read_meta(self.p)["pending_approvals"][0]["allow"], ["remote"])
+
     def test_docs_named_in_docs_impact_must_exist_and_be_current(self):
         self.fm("task", "new", "Add a flag", "--type", "FEATURE", "--tier", "M")
         self.fm("task", "step", "T-0002", "add", "a")

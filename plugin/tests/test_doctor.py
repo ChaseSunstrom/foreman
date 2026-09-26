@@ -77,6 +77,14 @@ class Checks(unittest.TestCase):
         self.assertIn("fallback", r.detail)
         self.assertIn("fm doctor --restore-state", r.detail)
 
+    def test_serve_units(self):
+        self.assertEqual(d.check_serve({}).status, "PASS")
+        self.assertEqual(d.check_serve({"app-1": "active"}).status, "PASS")
+        r = d.check_serve({"app-1": "active", "api-2": "failed"})
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("api-2 failed", r.detail)
+        self.assertIn("fm serve status", r.detail)
+
     def test_env(self):
         both = dict(fmsetup.ENV)
         self.assertEqual(d.check_env({"env": both}, {}).status, "PASS")

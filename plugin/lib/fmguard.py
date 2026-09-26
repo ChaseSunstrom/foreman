@@ -11,8 +11,10 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 
-CATEGORIES = ["self-authorize", "state-direct", "core", "credentials", "system", "rm-outside", "git-destructive", "pipe-shell", "publish"]
+CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "credentials", "system", "rm-outside", "git-destructive",
+              "pipe-shell", "publish"]
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
+USER_ONLY = {"core", "remote"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
@@ -58,7 +60,7 @@ def _is_allow(arg):
     return len(flag) > 3 and "--allow".startswith(flag)
 
 
-_ASK = "fm ask {id} core --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
+_ASK = "fm ask {id} {cat} --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
 
 
 def message(block, ctx):
@@ -66,8 +68,8 @@ def message(block, ctx):
     tid = ctx.task_id or "<ID>"
     if cat == "self-authorize":
         return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (Foreman code, rules, evals, "
-                f"BUILD_PROMPT.md, settings) needs the user's approval, which an agent can't grant: "
-                + _ASK.format(id=tid) + ".")
+                f"BUILD_PROMPT.md, settings) and remote sessions need the user's approval, which an agent can't grant: "
+                + _ASK.format(id=tid, cat="<core|remote>") + ".")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -77,7 +79,9 @@ def message(block, ctx):
         how = (f"create or focus a task first (fm task new \"…\" --type T --tier S, or fm focus ID), "
                f"then fm task set <ID> --allow {cat}, then retry")
     if cat == "core":
-        return f"Foreman guard: blocked core: {detail} is protected core. To authorize: " + _ASK.format(id=tid) + "."
+        return f"Foreman guard: blocked core: {detail} is protected core. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
+    if cat == "remote":
+        return f"Foreman guard: blocked remote: {detail}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
     return f"Foreman guard: blocked {cat}: {detail}. To authorize: {how}."
 
 
@@ -157,7 +161,7 @@ def _is_core(path, ctx):
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")}
     dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
-    return path in files or any(_under(path, d) for d in dirs) or \
+    return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
 
 
@@ -171,8 +175,8 @@ def classify_write(path, ctx):
             cats.append("core")
         if _is_credential(p, ctx):
             cats.append("credentials")
-        if p.startswith("/dev/") and not _SAFE_DEV.match(p):
-            cats.append("system")
+        if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _under(p, os.path.join(ctx.home, ".config", "systemd")):
+            cats.append("system")  # device files; user units (persistence that outlives the session)
     return list(dict.fromkeys(cats))
 
 
@@ -315,7 +319,7 @@ _GUARDED_BY_PATH = ("core", "state-direct", "credentials")
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
 # point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
 _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b")
-_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas)"
+_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
                           r"restore_default_state)\s*\(|"
@@ -396,8 +400,11 @@ def check_bash(cmd, ctx, depth=0):
                 found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
-            if any(_is_allow(a) and (a.partition("=")[2] or b) == "core" for a, b in zip(fm_args, fm_args[1:] + [""])):
-                found.append(("self-authorize", "an agent may not grant the core authorization"))
+            if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
+                found.append(("self-authorize", "an agent may not grant core or remote"))
+            if fm_args[:1] == ["serve"] and fm_args[1:2] not in (["status"], ["stop"]):
+                found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
+                                        "user's claude.ai account"))
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)

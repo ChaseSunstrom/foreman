@@ -260,12 +260,12 @@ def task_new(p, args):
 def task_set(p, args):
     import fmguard
     for cat in args.allow or []:
-        if cat == "core":
-            raise c.PolicyError("core can't be granted from the command line (whoever runs it); request it with "
-                                "`fm ask ID core --why \"…\"` and the user's yes grants it")
+        if cat in fmguard.USER_ONLY:
+            raise c.PolicyError(f"{cat} can't be granted from the command line (whoever runs it); request it with "
+                                f"`fm ask ID {cat} --why \"…\"` and the user's yes grants it")
         if cat not in fmguard.CATEGORIES or cat in fmguard.NOT_AUTHORIZABLE:
-            raise UsageError(f"can't allow {cat!r}; authorizable: "
-                             + ", ".join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x != "core"))
+            raise UsageError(f"can't allow {cat!r}; authorizable: " + ", ".join(
+                x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE | fmguard.USER_ONLY))
     changes = {}
     for kv in args.assignments:
         if "=" not in kv:
@@ -762,7 +762,7 @@ def build_parser():
 
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
-    s.add_argument("--timeout", type=int, default=60, help="minutes per session")
+    s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
 
     s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")

@@ -173,7 +173,11 @@ def cmd_install(args):
 
 def cmd_uninstall(args):
     import fmserve
-    if not args.dry_run:
+    if args.dry_run:
+        units = list(fmserve.units())
+        if units:
+            print("Would stop and remove fm serve units (their Remote Control sessions end): " + ", ".join(units))
+    else:
         for line in fmserve.stop_all():  # fm serve units live outside the manifest: found by their marker
             print(line)
     P = paths()

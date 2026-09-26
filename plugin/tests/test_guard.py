@@ -362,6 +362,30 @@ class InterpreterWrites(GuardCase):
         self.assertIsNone(self.bash(cmd, cwd=os.path.join(self.fhome, "plugin"), allow=["core"]))
 
 
+class Remote(GuardCase):
+    def test_starting_fm_serve_needs_the_users_yes(self):
+        # a persistent session reachable from the user's claude.ai account: only their reply to fm ask grants it
+        self.run_table([
+            ("fm serve", "remote"),
+            ("fm serve {repo} --permission-mode acceptEdits", "remote"),
+            ("fm serve start", "remote"),
+            ("python3 /x/plugin/bin/fm serve", "remote"),
+            ("fm serve status", None),
+            ("fm serve stop --all", None),
+            ("python3 -c \"import fmserve; fmserve.start(p)\"", "core"),
+        ], self.bash)
+        self.assertIsNone(self.bash("fm serve", allow=["remote"]))
+        self.assertIn("fm ask T-0007 remote", g.message(self.bash("fm serve"), self.ctx()))
+
+    def test_agents_cannot_grant_remote(self):
+        self.assertBlocked(self.bash("fm task set T-0002 --allow remote"), "self-authorize")
+
+    def test_claude_code_config_and_user_units_are_protected(self):
+        self.assertBlocked(self.write("{home}/.claude.json"), "core")  # workspace trust, MCP servers
+        self.assertBlocked(self.bash("echo '{{}}' > {home}/.claude.json"), "core")
+        self.assertBlocked(self.write("{home}/.config/systemd/user/x.service"), "system")
+
+
 class SelfAuthorize(GuardCase):
     def test_agent_cannot_grant_core(self):
         for cmd in ("fm task set T-0002 --allow core", "fm task set T-0002 --allow=core",
