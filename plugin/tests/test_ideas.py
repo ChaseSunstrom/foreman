@@ -11,8 +11,10 @@ STUB = r'''#!/usr/bin/env python3
 import json, os, sys, time
 args = sys.argv[1:]
 lens = next(l for l in args if l.startswith("Lens: ")).split("\n")[0][6:] if any(a.startswith("Lens: ") for a in args) else "?"
+stdin = sys.stdin.read()
+lens = next((l for l in stdin.splitlines() if l.startswith("Lens: ")), "Lens: ?")[6:]
 with open(os.environ["STUB_LOG"], "a") as f:
-    f.write(json.dumps({"args": args, "cwd": os.getcwd(), "t": time.time()}) + "\n")
+    f.write(json.dumps({"args": args, "stdin": stdin, "cwd": os.getcwd(), "t": time.time()}) + "\n")
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
 if lens == os.environ.get("STUB_FAIL_LENS"):
     sys.exit(3)
@@ -57,7 +59,22 @@ class Ideas(ForemanTestCase):
         self.assertEqual(sorted(r["lens"] for r in res["results"]), ["bold bets", "reliability"])
         for r in res["results"]:
             self.assertIn(f"Idea for {r['lens']}", read_text(r["file"]))
-        self.assertIn("super improve it", " ".join(calls[0]["args"]), "context pack is in the prompt")
+        self.assertIn("super improve it", calls[0]["stdin"], "context pack goes in on stdin (no argv size limit)")
+        self.assertNotIn("super improve it", " ".join(calls[0]["args"]))
+
+    def test_missing_claude_is_a_clear_error(self):
+        empty = os.path.join(self.tmp, "empty-bin")
+        os.makedirs(empty)
+        env = dict(self.env, PATH=empty)  # fm itself runs via sys.executable; no `claude` anywhere on PATH
+        p = self.fm("ideas", "--pack", self.pack, "--lens", "reliability", env=env, check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("claude", p.stderr)
+        self.assertNotIn("Traceback", p.stderr)
+
+    def test_lenses_with_the_same_slug_get_separate_files(self):
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "ünïcode", "--lens", "日本",
+                                 "--json", env=self.env).stdout)
+        self.assertEqual(len({r["file"] for r in res["results"]}), 2)
 
     def test_failed_lens_is_reported_and_others_kept(self):
         env = dict(self.env, STUB_FAIL_LENS="performance")

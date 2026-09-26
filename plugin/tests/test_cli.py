@@ -200,8 +200,25 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual([(a["task"], a["allow"], a["why"], a["session"]) for a in pend],
                          [("T-0001", ["core", "publish"], "edit the guard", "s1")])
         self.assertEqual(self.brief().meta.get("allow") or [], [])
-        self.fm("ask", "T-0001", "core", "--why", "again")
+        self.fm("ask", "T-0001", "core", "--why", "again", env={"FOREMAN_SESSION_ID": "s1"})
         self.assertEqual(len(c.read_meta(self.p)["pending_approvals"]), 1, "one pending request per task")
+
+    def test_ask_without_a_session_is_refused(self):
+        # A request no session owns could be granted by any session's "ok" (T-0009 adversary audit).
+        p = self.fm("ask", "T-0001", "core", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("session", p.stderr)
+        self.assertNotIn("pending_approvals", c.read_meta(self.p))
+
+    def test_tier_cannot_be_lowered_once_work_has_evidence(self):
+        self.fm("task", "set", "T-0001", "tier=M")
+        self.fm("task", "step", "T-0001", "add", "a")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", "red")
+        p = self.fm("task", "set", "T-0001", "tier=S", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("tier", p.stderr)
+        self.fm("task", "set", "T-0001", "tier=L")
+        self.assertEqual(self.brief().tier, "L")
 
     def test_session_comes_from_claude_code_first(self):
         # FOREMAN_SESSION_ID (CLAUDE_ENV_FILE) goes stale on resume; Claude Code's own variable doesn't.

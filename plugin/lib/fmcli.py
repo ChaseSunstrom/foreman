@@ -284,6 +284,11 @@ def task_set(p, args):
             raise UsageError("--section needs --text or --file")
 
     def apply(b):
+        tiers = "SML"
+        if "tier" in changes and changes["tier"] in tiers and b.tier in tiers and \
+                tiers.index(changes["tier"]) < tiers.index(b.tier) and b.evidence():
+            raise c.PolicyError(f"{b.id}: tier can't be lowered ({b.tier} → {changes['tier']}) once work has "
+                                f"evidence; it sets which audits are required")
         for k, v in changes.items():
             if k == "title":
                 b.preamble = f"# {v}\n"
@@ -474,6 +479,9 @@ def cmd_ask(args):
         ok = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE]
         raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
     why = c.redact(args.why)
+    if not session():
+        raise UsageError("fm ask needs the Claude Code session id (CLAUDE_CODE_SESSION_ID) so that only that "
+                         "session's next reply can decide the request")
     with c.lock(p.dir):
         b = need_brief(p, args.id)
         meta = c.read_meta(p)

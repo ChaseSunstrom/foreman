@@ -216,6 +216,19 @@ class Approvals(HookCase):
         self.assertIn("not recorded", self.ctx_of(p))
         self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), "nothing granted, request still pending")
 
+    def test_requests_without_a_session_or_malformed_never_grant_and_never_wedge_the_hook(self):
+        self.fm("init")
+        tid = self.task()
+        p = self.project()
+        meta = c.read_meta(p)
+        meta["pending_approvals"] = [{"task": tid, "allow": ["core"], "session": None, "at": c.now()},
+                                     {"allow": ["core"]}, {"task": tid}, "junk"]
+        c.write_meta(p, meta)
+        proc = self.hook("UserPromptSubmit", {"prompt": "ok"})
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("Active", self.ctx_of(proc), "the hook still reports state")
+        self.assertEqual((self.allow(tid), self.pending()), ([], []))
+
     def test_expired_request_is_dropped(self):
         self.fm("init")
         tid = self.task()

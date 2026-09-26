@@ -194,10 +194,14 @@ def _resolve_approvals(p, meta, sid, text):
 
     A reply starting with yes grants every pending request of the session; anything else cancels them."""
     pend = meta.get("pending_approvals") or []
-    mine = [a for a in pend if a.get("session") in (None, sid)]
+    valid = [a for a in pend if isinstance(a, dict) and a.get("task") and isinstance(a.get("allow"), list)
+             and a.get("session")]  # a request no session owns is never answerable
+    mine = [a for a in valid if sid and a["session"] == sid]
+    if len(valid) != len(pend):
+        meta["pending_approvals"] = valid
     if not mine:
         return []
-    meta["pending_approvals"] = [a for a in pend if a not in mine]
+    meta["pending_approvals"] = [a for a in valid if a not in mine]
     yes, notes = bool(_YES.match(text)), []
     for a in mine:
         cats, at = ", ".join(a["allow"]), c.parse_ts(a.get("at"))

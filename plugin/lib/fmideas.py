@@ -21,9 +21,13 @@ NO_TOOLS = ["--setting-sources", "project,local", "--tools", "", "--strict-mcp-c
             "--mcp-config", json.dumps({"mcpServers": {}})]
 
 
-def child_cmd(lens, pack, model, system):
-    return ["claude", "-p", "--model", model, "--no-session-persistence", *NO_TOOLS, "--append-system-prompt", system,
-            f"Lens: {lens}\n\nContext pack:\n{pack}\n\nReturn 5-8 ideas in the required format."]
+def child_cmd(model, system):
+    """The prompt (lens + pack) goes in on stdin: packs can exceed the per-argument size limit."""
+    return ["claude", "-p", "--model", model, "--no-session-persistence", *NO_TOOLS, "--append-system-prompt", system]
+
+
+def child_prompt(lens, pack):
+    return f"Lens: {lens}\n\nContext pack:\n{pack}\n\nReturn 5-8 ideas in the required format."
 
 
 def cmd_ideas(args):
@@ -37,10 +41,21 @@ def cmd_ideas(args):
     os.makedirs(out_dir, exist_ok=True)
     results = []
     with tempfile.TemporaryDirectory(prefix="fm-ideas-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
-        procs = [(lens, subprocess.Popen(child_cmd(lens, pack, args.model, system), cwd=cwd, text=True,
-                                         stdout=subprocess.PIPE, stderr=subprocess.PIPE)) for lens in lenses]
+        procs = []
+        try:
+            for lens in lenses:
+                pr = subprocess.Popen(child_cmd(args.model, system), cwd=cwd, text=True, stdin=subprocess.PIPE,
+                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                procs.append((lens, pr))
+                pr.stdin.write(child_prompt(lens, pack))
+                pr.stdin.close()
+        except OSError as e:
+            for _, pr in procs:
+                pr.kill()
+                pr.communicate()
+            raise fmcli.UsageError(f"can't start the brainstorm children: {e} (is `claude` on PATH and logged in?)")
         deadline = time.time() + args.timeout
-        for lens, pr in procs:
+        for i, (lens, pr) in enumerate(procs, 1):
             try:
                 out, err = pr.communicate(timeout=max(1, deadline - time.time()))
                 ok = pr.returncode == 0 and bool(out.strip())
@@ -49,7 +64,8 @@ def cmd_ideas(args):
                 pr.kill()
                 out, _ = pr.communicate()
                 ok, why = False, f"timed out after {args.timeout}s"
-            path = os.path.join(out_dir, re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") + ".md")
+            slug = re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
+            path = os.path.join(out_dir, f"{i:02d}-{slug}.md")
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"# Brainstorm — lens: {lens}\n\n" + (c.redact(out.strip()) if ok else f"FAILED: {why}") + "\n")
             results.append({"lens": lens, "file": path, "ok": ok, "error": why})

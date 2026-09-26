@@ -301,7 +301,7 @@ _SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
-_INTERP = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|perl|ruby|node|deno|bun|php)(?:\s|$)")
+_INTERP = re.compile(r"(?:^|[\s;&|(/])(?:python[0-9.]*|py|perl|ruby|node|deno|bun|php)(?:\s|$)")
 _WRITE_API = re.compile(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
