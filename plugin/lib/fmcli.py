@@ -512,6 +512,18 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def cmd_autonomy(args):
+    p = resolve(args)
+    if not args.level:
+        level = c.read_meta(p).get("autonomy", "standard")
+        return out(args, {"autonomy": level}, f"{p.slug}: autonomy {level}.")
+    c.update_meta(p, autonomy=args.level)
+    with c.lock(p.dir):
+        c.log_event(p, "autonomy", data={"level": args.level}, session=session())
+        c.regen_views(p)
+    out(args, {"autonomy": args.level}, f"{p.slug}: autonomy {args.level}.")
+
+
 def lazy(module, func):
     def run(args):
         return getattr(__import__(module), func)(args)
@@ -665,6 +677,9 @@ def build_parser():
 
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
+
+    s = add("autonomy", cmd_autonomy, help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
+    s.add_argument("level", nargs="?", choices=["standard", "full"])
 
     s = add("tidy", lazy("fmtidy", "cmd_tidy"), help="hygiene (dry-run by default)")
     s.add_argument("--apply", action="store_true")

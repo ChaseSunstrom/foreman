@@ -71,6 +71,11 @@ class SessionStart(HookCase):
         self.assertIn(f"FOREMAN_PROJECT={c.slug_for(self.repo)}", env)
         self.assertIsNotNone(self.project(), "git repo auto-registered")
 
+    def test_full_autonomy_is_reported(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.assertIn("Autonomy: full", self.ctx_of(self.run_ss()))
+
     def test_budget_holds_with_large_queue(self):
         self.fm("init")
         for i in range(40):
@@ -122,6 +127,18 @@ class UserPromptSubmit(HookCase):
         self.assertTrue(c.read_meta(self.project())["paused"])
         self.hook("UserPromptSubmit", {"prompt": "resume"})
         self.assertFalse(c.read_meta(self.project())["paused"])
+
+
+class AutonomyWords(HookCase):
+    def test_full_auto_and_standard_words_switch_autonomy(self):
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "full auto"}))
+        self.assertEqual(c.read_meta(self.project())["autonomy"], "full")
+        self.assertIn("Autonomy: full", ctx)
+        self.hook("UserPromptSubmit", {"prompt": "Standard autonomy."})
+        self.assertEqual(c.read_meta(self.project())["autonomy"], "standard")
+        self.hook("UserPromptSubmit", {"prompt": "use the standard library for the full auto-save"})
+        self.assertEqual(c.read_meta(self.project())["autonomy"], "standard", "only the whole message switches")
 
 
 class Approvals(HookCase):
@@ -357,6 +374,32 @@ class Stop(HookCase):
         self.assertEqual(self.decision(self.stop("working")), "block")
         self.fm("task", "evidence", tid, "--step", "1", "pytest", "red as expected")
         self.assertEqual(self.decision(self.stop("working more", active=True)), "block")
+
+    def test_full_autonomy_keeps_going_past_questions_and_unapproved_plans(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.task(tier="L")
+        p = self.stop("Should I use the existing logger or add a new one?")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("fm decide", parse(p)["reason"])
+
+    def test_full_autonomy_skips_work_waiting_on_the_user_and_stops_when_only_that_is_left(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        t1 = self.task()
+        self.fm("ask", t1, "core", env={"FOREMAN_SESSION_ID": "sess-1"})
+        self.assertIsNone(self.decision(self.stop("T-0001 needs your approval for core.")))
+        t2 = self.task("Other", focus=False)
+        p = self.stop("Waiting on core for T-0001.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn(t2, parse(p)["reason"])
+        self.assertIn(f"waiting on the user: {t1}", parse(p)["reason"])
+
+    def test_standard_autonomy_yields_while_an_approval_is_pending(self):
+        self.fm("init")
+        tid = self.task()
+        self.fm("ask", tid, "publish", env={"FOREMAN_SESSION_ID": "sess-1"})
+        self.assertIsNone(self.decision(self.stop("Continuing with the release notes.")))
 
     def test_stop_sets_terminal_title(self):
         self.fm("init")

@@ -778,6 +778,10 @@ class IntakeResult:
     overrides: list = field(default_factory=list)
 
 
+_FULL_AUTO = {"full auto", "full autonomy", "autonomy full", "go full auto"}
+_STANDARD = {"standard autonomy", "autonomy standard", "full auto off", "stop full auto"}
+
+
 def parse_intake(text):
     r = IntakeResult()
     whole = re.sub(r"[.!]+$", "", text.strip().lower())
@@ -787,6 +791,10 @@ def parse_intake(text):
         r.overrides.append("RESUME")
     elif whole == "status":
         r.overrides.append("STATUS")
+    elif whole in _FULL_AUTO:
+        r.overrides.append("FULL AUTO")
+    elif whole in _STANDARD:
+        r.overrides.append("STANDARD")
     elif re.match(r"^that(?:'s| is) for the current task\b", whole):
         r.overrides.append("STEER")
     untagged, current = [], None
@@ -881,6 +889,8 @@ def state_dict(p, briefs=None):
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
+        "autonomy": meta.get("autonomy", "standard"),
+        "pending": [a.get("task") for a in meta.get("pending_approvals") or []],
         "last_tidy": meta.get("last_tidy"),
         "tidy_overdue_days": int(days) if days is not None and days > TIDY_EVERY_DAYS else None,
         "session": meta.get("session") or {},

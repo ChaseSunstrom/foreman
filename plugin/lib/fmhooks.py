@@ -144,7 +144,8 @@ def session_start(pl):
 def session_context(p, sd, other_note=None):
     a = sd["active"]
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
-            + (", paused" if sd["paused"] else "") + "."]
+            + (", paused" if sd["paused"] else "") + "."
+            + (" Autonomy: full." if sd.get("autonomy") == "full" else "")]
     focus, resume = [], []
     if a:
         step = f"step {a['step']['n']}/{a['step']['of']}: {a['step']['text']}" if a["step"] else \
@@ -231,6 +232,10 @@ def user_prompt_submit(pl):
             meta["paused"] = True
         elif "RESUME" in r.overrides:
             meta["paused"] = False
+        elif "FULL AUTO" in r.overrides:
+            meta["autonomy"] = "full"
+        elif "STANDARD" in r.overrides:
+            meta["autonomy"] = "standard"
         c.write_meta(p, meta)
         g = _read_gate(p)
         if sid in g["drive"]:
@@ -255,6 +260,8 @@ def user_prompt_submit(pl):
         parts.append(f"Inbox: {len(sd['inbox'])}")
     if sd["paused"]:
         parts.append("Drive paused")
+    if sd.get("autonomy") == "full":
+        parts.append("Autonomy: full")
     note = ("Foreman: " + ". ".join(parts) + ".")[:PROMPT_BUDGET]
     return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": note},
             "terminalSequence": _title_seq(sd)}
@@ -464,13 +471,17 @@ def _evidence_gate(p, act, pl, g):
 
 def _drive(p, sd, briefs, pl, g):
     sid = pl.get("session_id")
-    if not sd["drive"] or sd["paused"] or needs_user(pl.get("last_assistant_message")):
+    full = sd.get("autonomy") == "full"
+    if not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
         return None
-    work = sd["active"] or (sd["queue"][0] if sd["queue"] else None)
+    waiting = [t for t in sd.get("pending") or [] if t]
+    if waiting and not full:
+        return None  # an `fm ask` is open: the user's reply decides it
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"] if w["id"] not in waiting), None)
     if not work:
-        return None
+        return None  # nothing left that doesn't need the user
     wb = next(b for b in briefs if b.id == work["id"])
-    if (wb.meta.get("explore") or wb.tier == "L") and not wb.meta.get("approved"):
+    if (wb.meta.get("explore") or wb.tier == "L") and not wb.meta.get("approved") and not full:
         return None  # waiting on the user's approval (AUTONOMY standard)
     d = g["drive"].setdefault(sid, {"count": 0})
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
@@ -478,12 +489,16 @@ def _drive(p, sd, briefs, pl, g):
     if d.get("count", 0) >= DRIVE_MAX:
         return None
     more = [x["id"] for x in sd["queue"] if x["id"] != work["id"]]
-    what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work["step"]
-            else "is open" if sd["active"] else "is next in the queue (not focused)")
+    what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
+            else "is open" if sd["active"] and work["id"] == sd["active"]["id"] else "is next in the queue (not focused)")
     reason = (f"Foreman drive: {work['id']} {work['type']} {what}"
               + (f"; {len(more)} more queued ({', '.join(more[:4])})" if more else "")
-              + ". No question to the user or approval is pending. Drive ends when the queue is empty, "
-                "when a question or approval is needed, or with `fm drive off`.")
+              + (". Autonomy full: the user is not asked mid-run; decide with your default and record it (fm decide), "
+                 "self-approve L/? plans after the self-critique, keep what needs the user (fm ask) for the final report"
+                 + (f"; waiting on the user: {', '.join(waiting)}" if waiting else "") + "."
+                 if full else
+                 ". No question to the user or approval is pending. Drive ends when the queue is empty, "
+                 "when a question or approval is needed, or with `fm drive off`."))
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason

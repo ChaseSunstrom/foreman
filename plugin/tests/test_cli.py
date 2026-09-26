@@ -285,6 +285,16 @@ class SensitiveAndDrive(ForemanTestCase):
         self.assertTrue(c.read_meta(c.find_project(self.repo))["drive"])
 
 
+class Autonomy(ForemanTestCase):
+    def test_autonomy_defaults_to_standard_and_switches(self):
+        self.fm("init")
+        self.assertEqual(self.fm_json("state")["autonomy"], "standard")
+        self.assertIn("standard", self.fm("autonomy").stdout)
+        self.fm("autonomy", "full")
+        self.assertEqual(self.fm_json("state")["autonomy"], "full")
+        self.assertEqual(self.fm("autonomy", "reckless", check=False).returncode, 2)
+
+
 class DecisionsResearchSelf(ForemanTestCase):
     def test_decide_appends_a_table_row_and_logs(self):
         self.fm("init")
