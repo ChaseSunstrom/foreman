@@ -27,7 +27,7 @@ Dependencies override it. A FIX that breaks the baseline and any critical securi
 
 ## Focus lock: one active task; finishing beats starting
 | Message while a task is active | Do |
-|---|---|
+|:-|:-|
 | answer / steer about the active task | apply it, record it (`fm task log ID "steer: …"`; `fm task set` if scope or steps change), continue |
 | new request, "also, can you…" | `fm capture` it, reply in one line with its id, continue the current task; do not implement it |
 | question | answer briefly without edits, continue |

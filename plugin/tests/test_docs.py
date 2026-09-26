@@ -123,6 +123,11 @@ class PluginFiles(unittest.TestCase):
             self.assertEqual(len(handlers), 1, event)
             self.assertEqual(handlers[0]["args"], [event])
 
+    def test_rules_never_contain_a_frontmatter_delimiter(self):
+        # Eval cases embed the rules in YAML frontmatter; `claude plugin eval` ends the frontmatter at any "---",
+        # which left every case prompt starting mid-rules (found in the 1.1 eval run).
+        self.assertNotIn("---", read_text(os.path.join(PLUGIN, "rules", "foreman.md")))
+
     def test_eval_cases_embed_the_current_rules(self):
         """Eval runs use a temp HOME where ~/.claude/rules/foreman.md isn't installed; each case carries the rules instead."""
         rules = read_text(os.path.join(PLUGIN, "rules", "foreman.md"))

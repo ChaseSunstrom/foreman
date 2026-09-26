@@ -44,9 +44,9 @@ def check(tool_name, tool_input, ctx):
     else:
         return None
     for cat in CATEGORIES:
-        for c, detail in found:
-            if c == cat and (c in NOT_AUTHORIZABLE or c not in ctx.allow):
-                return Block(c, detail)
+        for got, detail in found:
+            if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
+                return Block(got, detail)
     return None
 
 
@@ -154,7 +154,6 @@ def _is_core(path, ctx):
     """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")}
-    files.add(os.path.join(ctx.home, ".claude", "settings.json"))
     dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
     return path in files or any(_under(path, d) for d in dirs) or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))

@@ -25,7 +25,9 @@ Tier depth, the brief layout and the rubric: `references/planning.md`.
 Every criterion has a verification command? Could a fresh session run the Execution prompt without asking? Anything in scope the user didn't ask for and wouldn't expect → INBOX. Anything obviously expected missing → add. Simplest adequate approach? Rollback clear? Revise at most twice.
 
 ## 4. Autonomy gate
-- L tier, `?` items, and anything destructive or irreversible (data deletion, force-push, migrations on real data, major dependency bumps, public API changes): present a ≤ 15-line plan summary plus batched questions, each with your default, then stop. After approval: `fm task set ID approved=true`.
+Check the level with `fm autonomy`.
+- **Standard** — L tier, `?` items, and anything destructive or irreversible (data deletion, force-push, migrations on real data, major dependency bumps, public API changes): present a ≤ 15-line plan summary plus batched questions, each with your default, then stop. After approval: `fm task set ID approved=true`.
+- **Full** — ask nothing. After the self-critique, record the plan choice with `fm decide`, `fm task set ID approved=true` with a log line "self-approved (full autonomy)", and continue. What only the user can grant (`core`, destructive guard categories, merging Foreman changes): `fm ask`, then carry on with other work and list it in the final report.
 - S/M: proceed after self-review.
 
 ## 5. Baseline (once per queue)
