@@ -42,8 +42,9 @@ if [ -d "$FOREMAN_HOME/.git" ]; then
 elif [ -e "$FOREMAN_HOME" ]; then
   die "$FOREMAN_HOME exists but isn't a git repo; move it aside first"
 else
+  placeholder="YOUR_GITHUB""_USER"   # split so configure-repo.sh doesn't rewrite this check
   case "$FOREMAN_REPO" in
-    *YOUR_GITHUB_USER*) die "set FOREMAN_REPO=<git url>, or run ./configure-repo.sh <github-user> before pushing" ;;
+    *"$placeholder"*) die "set FOREMAN_REPO=<git url>, or run ./configure-repo.sh <github-user> before pushing" ;;
   esac
   say "Cloning $FOREMAN_REPO -> $FOREMAN_HOME"
   mkdir -p "$(dirname "$FOREMAN_HOME")"
