@@ -9,7 +9,6 @@ import os
 import re
 import sys
 import time
-import traceback
 
 import fmcore as c
 
@@ -22,6 +21,12 @@ FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
 # async events (latency irrelevant) and per-batch MessageDisplay are not timed
 UNTIMED = {"MessageDisplay", "PostToolUse", "PostToolUseFailure", "SubagentStart", "SubagentStop"}
+
+
+def _tb():
+    """The current exception's traceback; imported only when something failed (traceback costs ~15 ms per hook)."""
+    import traceback
+    return traceback.format_exc()
 
 
 class HookBlock(Exception):
@@ -46,7 +51,7 @@ def run(event, raw):
             print(str(e), file=sys.stderr)
             code = 2
         except Exception:
-            log_error(event, traceback.format_exc())
+            log_error(event, _tb())
     if event not in UNTIMED:
         _event({"kind": "hook_ms", "event": event, "ms": round((time.monotonic() - t0) * 1000, 1)})
     return code
@@ -156,7 +161,7 @@ def _sync_import(p):
     try:
         res = fmsync.import_(p)
     except (OSError, ValueError):
-        log_error("SessionStart", traceback.format_exc())
+        log_error("SessionStart", _tb())
         return None
     meta = c.read_meta(p)
     meta["sync"] = True
@@ -188,7 +193,7 @@ def session_context(p, sd, other_note=None):
     try:
         focus.append("Next: " + c.next_for(p)[2])
     except Exception:  # a malformed brief costs the Next line, not the whole session context
-        log_error("SessionStart", traceback.format_exc())
+        log_error("SessionStart", _tb())
     q = sd["queue"]
     queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:50]}" for x in q[:5])
               + (f" (+{len(q) - 5} more)" if len(q) > 5 else "") + ".") if q else "Queue: empty."]
@@ -319,7 +324,7 @@ def user_prompt_submit(pl):
     try:
         parts.append("Next: " + c.next_for(p)[2])
     except Exception:
-        log_error("UserPromptSubmit", traceback.format_exc())
+        log_error("UserPromptSubmit", _tb())
     if sd["inbox"]:
         parts.append(f"Inbox: {len(sd['inbox'])}")
     if sd["paused"]:
@@ -389,7 +394,7 @@ def _pre_tool_use(raw):
             ctx, p, act, found, block = _guard_decision(pl, guard)
         except Exception:
             log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard (fix "
-                                    "plugin/lib/fmguard.py):\n" + traceback.format_exc())
+                                    "plugin/lib/fmguard.py):\n" + _tb())
             guard = _committed_guard()
             if guard is None:
                 raise
@@ -399,7 +404,7 @@ def _pre_tool_use(raw):
             block = guard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
                                           "change)")
     except Exception as e:
-        log_error("PreToolUse", traceback.format_exc())
+        log_error("PreToolUse", _tb())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
@@ -414,7 +419,7 @@ def _pre_tool_use(raw):
                             data={"category": block.category, "detail": str(block.detail)[:200]},
                             session=pl.get("session_id"))
         except Exception:
-            log_error("PreToolUse", traceback.format_exc())
+            log_error("PreToolUse", _tb())
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
@@ -423,7 +428,7 @@ def _pre_tool_use(raw):
         _record_asks(pl, p, guard)
         decision = _ask_prompt(pl, p, guard)
     except Exception:
-        log_error("PreToolUse", traceback.format_exc())
+        log_error("PreToolUse", _tb())
         decision = None
     if decision:  # fm ask: Claude Code's own permission prompt carries the request to the user
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
@@ -440,7 +445,7 @@ def _pre_tool_use(raw):
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
     except Exception:
-        log_error("PreToolUse", traceback.format_exc())
+        log_error("PreToolUse", _tb())
     return 0
 
 
@@ -451,7 +456,7 @@ def _guard_ctx(pl, fmguard):
         p = c.find_project(cwd)
         act = c.active_brief(c.load_briefs(p)) if p else None
     except Exception:
-        log_error("PreToolUse", traceback.format_exc())  # unreadable state: no authorizations, guard still runs
+        log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(),
@@ -874,7 +879,7 @@ def _drive(p, sd, briefs, pl, g):
             reason += (f" Context {pct}% used at a task boundary; Foreman state is saved, so this is a good point for "
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
     except Exception:
-        log_error("Stop", traceback.format_exc())
+        log_error("Stop", _tb())
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason

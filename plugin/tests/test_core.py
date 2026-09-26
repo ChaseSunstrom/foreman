@@ -627,3 +627,32 @@ class Queue(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HookImportCost(unittest.TestCase):
+    """Round 6: every tool call starts a hook process; traceback (~15 ms) and dataclasses (~9 ms) stay off its path."""
+
+    def test_hook_modules_do_not_import_the_slow_ones(self):
+        import subprocess
+        import sys
+        code = ("import sys; sys.path.insert(0, %r); import fmhooks, fmguard; "
+                "print(sorted(m for m in ('traceback', 'dataclasses', 'inspect') if m in sys.modules))") % os.path.join(c.PLUGIN_ROOT, "lib")
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=True).stdout.strip()
+        self.assertEqual(out, "[]")
+
+    def test_record_behaves_like_the_dataclasses_it_replaced(self):
+        @c.record
+        class R:
+            a: int
+            b: list = []
+            c_: str = "x"
+        r1, r2 = R(1), R(a=1)
+        self.assertEqual(r1, r2)
+        r1.b.append(5)
+        self.assertEqual(r2.b, [], "list defaults are per instance")
+        self.assertEqual(repr(R(2, [3], "y")), "R(a=2, b=[3], c_='y')")
+        with self.assertRaises(TypeError):
+            R()
+        with self.assertRaises(TypeError):
+            R(1, nope=2)
+        self.assertNotEqual(R(1), R(2))

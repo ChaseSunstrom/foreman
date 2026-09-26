@@ -9,7 +9,8 @@ import os
 import re
 import shlex
 import subprocess
-from dataclasses import dataclass, field
+
+from fmcore import record  # @dataclass stand-in (import cost on every hook)
 
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
               "git-destructive", "pipe-shell", "publish"]
@@ -19,20 +20,20 @@ FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
 
-@dataclass
+@record
 class Ctx:
     cwd: str
     project_root: str
     home: str
     foreman_home: str
-    scratch: list = field(default_factory=list)
-    allow: set = field(default_factory=set)
+    scratch: list = []
+    allow: set = set()
     task_id: str = None
     state_dir: str = None  # when Foreman state lives outside foreman_home (read-only home fallback)
-    state_fallbacks: list = field(default_factory=list)  # where a fallback could live: state even before it's used
+    state_fallbacks: list = []  # where a fallback could live: state even before it's used
 
 
-@dataclass
+@record
 class Block:
     category: str
     detail: str
@@ -243,7 +244,7 @@ def classify_write(path, ctx):
 
 # ---------------------------------------------------------------- shell parsing
 
-@dataclass
+@record
 class Cmd:
     argv: list
     redirs: list

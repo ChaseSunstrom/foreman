@@ -16,7 +16,6 @@ import subprocess
 import tempfile
 import time
 from collections import defaultdict
-from dataclasses import dataclass, field
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -246,7 +245,37 @@ def git_root(path):
         d = parent
 
 
-@dataclass
+def record(cls):
+    """A small stand-in for @dataclass (importing dataclasses costs ~9 ms, paid by every hook process): __init__ from
+    the class annotations in order, defaults from class attributes (a list/set/dict default is copied per instance),
+    __repr__ and __eq__ (and so unhashable, like a dataclass)."""
+    names = list(getattr(cls, "__annotations__", {}))  # evaluated on access since Python 3.14 (not in __dict__)
+    defaults = {n: cls.__dict__[n] for n in names if n in cls.__dict__}
+
+    def __init__(self, *args, **kw):
+        if len(args) > len(names):
+            raise TypeError(f"{cls.__name__} takes {len(names)} arguments, got {len(args)}")
+        vals = dict(zip(names, args))
+        for k, v in kw.items():
+            if k not in names or k in vals:
+                raise TypeError(f"{cls.__name__}: unexpected or repeated argument {k!r}")
+            vals[k] = v
+        for n in names:
+            if n not in vals:
+                if n not in defaults:
+                    raise TypeError(f"{cls.__name__} is missing {n!r}")
+                d = defaults[n]
+                vals[n] = type(d)(d) if isinstance(d, (list, set, dict)) else d
+            setattr(self, n, vals[n])
+    cls.__init__ = __init__
+    cls.__repr__ = lambda self: f"{cls.__name__}(" + ", ".join(f"{n}={getattr(self, n)!r}" for n in names) + ")"
+    cls.__eq__ = lambda self, other: type(other) is type(self) and all(getattr(self, n) == getattr(other, n)
+                                                                       for n in names)
+    cls.__hash__ = None
+    return cls
+
+
+@record
 class Project:
     slug: str
     root: str
@@ -510,7 +539,7 @@ REQUIRED_AUDITS = {
 }
 
 
-@dataclass
+@record
 class Step:
     n: int
     done: bool
@@ -518,7 +547,7 @@ class Step:
     current: bool
 
 
-@dataclass
+@record
 class Criterion:
     n: int
     checked: bool
@@ -988,27 +1017,27 @@ _REF_RE = re.compile(r"#(T-\d{4,})\b")
 _PAUSE = {"pause", "stop", "hold on", "hold", "wait"}
 
 
-@dataclass
+@record
 class IntakeItem:
     type: str
     text: str
     urgent: bool = False
     explore: bool = False
     now: bool = False
-    scopes: list = field(default_factory=list)
-    refs: list = field(default_factory=list)
+    scopes: list = []
+    refs: list = []
     raw: str = ""
 
 
-@dataclass
+@record
 class IntakeResult:
-    items: list = field(default_factory=list)
-    context: list = field(default_factory=list)
-    constraints: list = field(default_factory=list)
-    done_when: list = field(default_factory=list)
-    skip: list = field(default_factory=list)
+    items: list = []
+    context: list = []
+    constraints: list = []
+    done_when: list = []
+    skip: list = []
     untagged: str = ""
-    overrides: list = field(default_factory=list)
+    overrides: list = []
 
 
 _FULL_AUTO = {"full auto", "full autonomy", "autonomy full", "go full auto"}
