@@ -497,6 +497,65 @@ class PluginPins(HookCase):
         self.assertIn("--pin a@m", p.stderr)
         self.assertEqual(self.pre("claude plugin marketplace add o/r").returncode, 0)
 
+    def test_the_pin_is_checked_again_under_the_lock_when_the_yes_is_spent(self):
+        # T-0036 edge audit: another session's newer yes (for b) mustn't be burned by a call validated against a
+        import fmhooks
+        self.approve("b@m")
+        why = fmhooks._use_plugin_grant(self.project(), self.tid, "claude plugin install … [plugin a@m]", "s")
+        self.assertIn("b@m", why)
+        self.assertEqual(self.brief().meta.get("plugin_pin", [])[:1], ["b@m"])
+        self.assertIn("plugin", self.brief().meta.get("allow"))
+
+    def test_a_pinned_yes_for_a_plugin_that_vanished_grants_nothing(self):
+        self.fm_ask(self.tid, "plugin", pin="a@m")
+        import shutil
+        shutil.rmtree(os.path.join(self.cc, "plugins", "marketplaces", "m"))
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertNotIn("plugin", self.brief().meta.get("allow") or [])
+
+    def test_a_malformed_pin_or_an_unreadable_file_is_refused_with_a_clear_reason(self):
+        self.approve("a@m")
+        b = self.brief()
+        b.meta["plugin_pin"] = "a@m"
+        c.save_brief(self.project(), b)
+        p = self.pre("claude plugin install a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertNotIn("internal error", p.stderr)
+        self.approve("a@m")
+        os.chmod(self.skill["a"], 0)
+        try:
+            p = self.pre("claude plugin install a@m")
+        finally:
+            os.chmod(self.skill["a"], 0o644)
+        self.assertEqual(p.returncode, 2)
+        self.assertNotIn("internal error", p.stderr)
+
+    def test_the_dialog_says_when_a_pin_covers_only_a_remote_entry(self):
+        # T-0036 intent audit: a remote source has no local code to hash before the install
+        mk = os.path.join(self.cc, "plugins", "marketplaces", "m", ".claude-plugin", "marketplace.json")
+        with open(mk) as f:
+            data = json.load(f)
+        data["plugins"].append({"name": "r", "source": {"source": "github", "repo": "o/r"}})
+        with open(mk, "w") as f:
+            json.dump(data, f)
+        for pid, remote in (("r@m", True), ("a@m", False)):
+            cmd = f"fm ask {self.tid} plugin --pin {pid} --why x"
+            reason = parse(self.hook("PreToolUse", {"tool_name": "Bash", "tool_use_id": "t2",
+                                                    "tool_input": {"command": cmd}}))["hookSpecificOutput"]
+            self.assertEqual("marketplace entry" in reason["permissionDecisionReason"], remote, pid)
+
+    def test_a_pinned_yes_is_spent_on_nothing_else_and_evasive_spellings_on_no_yes(self):
+        # T-0036 adversary audit: interpreter code, a prompt's /plugin and a marketplace add spent the pinned yes
+        self.approve("a@m")
+        for cmd in ("claude plugin marketplace add evil/repo", "claude -p '/plugin install evil@bad'",
+                    "python3 -c \"import subprocess; subprocess.run(['claude', 'plugin', 'install', 'evil@bad'])\""):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.pre(cmd).returncode, 2)
+                self.assertIn("plugin", self.brief().meta.get("allow"), "the pinned yes is still unspent")
+        self.fm_ask(self.tid, "plugin")  # an unpinned yes (say, for a marketplace) doesn't cover them either
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.pre("claude -p '/plugin install evil@bad'").returncode, 2)
+
     def test_fm_ask_refuses_a_pin_it_cannot_resolve(self):
         for args in (("plugin", "--pin", "nope@m"), ("core", "--pin", "a@m")):
             with self.subTest(args=args):
@@ -537,8 +596,9 @@ class PreToolUse(HookCase):
         tid = self.task()
         self.fm_ask(tid, "plugin")
         self.hook("UserPromptSubmit", {"prompt": "yes"})
-        self.assertTrue(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install a@m", "s"))
-        self.assertFalse(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install b@m", "s"))
+        self.assertIsNone(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/a", "s"))
+        self.assertIn("already used", fmhooks._use_plugin_grant(self.project(), tid, "claude plugin marketplace add o/b",
+                                                                 "s"))
 
     def test_a_broken_working_copy_of_the_guard_falls_back_to_the_committed_one(self):
         # round 4 (T-0033): a half-applied guard edit locked every write; the committed guard keeps protection on

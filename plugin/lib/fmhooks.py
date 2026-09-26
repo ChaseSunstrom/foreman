@@ -339,16 +339,21 @@ def user_prompt_submit(pl):
 # ---------------------------------------------------------------- PreToolUse (guard: fail closed)
 
 def _pin_problem(b, detail):
-    """Why a plugin yes can't be spent on this install or enable (T-0036): the yes must name this plugin, be under
-    24 h old, and its content must still hash as when the user said yes. None when fine, or not an install/enable."""
+    """Why the plugin yes can't be spent on this change (T-0036), or None. An install or enable ("[plugin ID]") needs
+    a yes pinned to that plugin, under 24 h old, whose content still hashes as when the user said yes; a change the
+    guard can't tie to one plugin ("[plugin ?]") is never covered; while a pin is in place, nothing else is either."""
     m = re.search(r"\[plugin (\S+)\]$", str(detail))
-    if not m:
-        return None
-    target, pin = m.group(1), b.meta.get("plugin_pin") or []
+    target, pin = (m.group(1) if m else None), b.meta.get("plugin_pin")
     if target == "?":
-        return "name exactly one plugin to install or enable (fm plugins install <id>), so it can match the user's yes"
+        return ("run the fm plugins or claude plugin command itself, naming exactly one plugin, so it can be checked "
+                "against the user's yes")
+    if pin is not None and not (isinstance(pin, list) and len(pin) == 3):
+        return f"{b.id}'s plugin_pin is malformed; ask again: fm ask {b.id} plugin --pin <plugin id> --why \"…\""
+    if target is None:
+        return (f"the user's plugin yes is pinned to installing or enabling {pin[0]}; ask separately for this change"
+                if pin else None)
     ask = f"ask again: fm ask {b.id} plugin --pin {target} --why \"<what it adds>\""
-    if len(pin) != 3 or pin[0] != target:
+    if not pin or pin[0] != target:
         return f"the user's plugin yes names {pin[0] if pin else 'no plugin'}, not {target}; {ask}"
     if not str(pin[2]).isdigit() or time.time() - int(pin[2]) >= c.APPROVAL_TTL:
         return f"the user's yes for {target} is over 24 h old; {ask}"
@@ -359,18 +364,22 @@ def _pin_problem(b, detail):
 
 
 def _use_plugin_grant(p, tid, detail, sid):
-    """A plugin yes covers one change (new code in every session): the call it lets through uses it up. Inside the
-    guard's fail-closed try: if the grant can't be removed, the call is blocked rather than left re-usable."""
-    with c.lock(p.dir, timeout=LOCK_QUICK):  # re-read under the lock: two calls that both saw the grant get one
+    """A plugin yes covers one change (new code in every session): the call it lets through uses it up. None when
+    spent, else why not. The pin is checked on the brief re-read under the lock, so a newer yes another session just
+    recorded is never burned by a call checked against the old one. Inside the guard's fail-closed try."""
+    with c.lock(p.dir, timeout=LOCK_QUICK):
         b = c.find_brief(p, tid)
         if "plugin" not in (b.meta.get("allow") or []):
-            return False
+            return "the plugin yes was already used by another call (one yes covers one change)"
+        problem = _pin_problem(b, detail)
+        if problem:
+            return problem
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "plugin"]
         b.meta.pop("plugin_pin", None)
         b.append_log(f"plugin grant used for: {str(detail)[:120]}")
         c.save_brief(p, b)
         c.log_event(p, "approval_used", task=tid, data={"allow": ["plugin"], "detail": str(detail)[:200]}, session=sid)
-    return True
+    return None
 
 
 def _committed(name):
@@ -423,12 +432,9 @@ def _pre_tool_use(raw):
             ctx, p, act, found, block = _guard_decision(pl, guard)
         used = next((d for cat, d in found if cat == "plugin"), None) if not block and act else None
         if used is not None and "plugin" in ctx.allow:
-            problem = _pin_problem(act, used)
+            problem = _use_plugin_grant(p, act.id, used, pl.get("session_id"))
             if problem:
                 block = guard.Block("plugin", problem)
-            elif not _use_plugin_grant(p, act.id, used, pl.get("session_id")):
-                block = guard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
-                                              "change)")
     except Exception as e:
         log_error("PreToolUse", _tb())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
@@ -539,7 +545,7 @@ _plain = c.plain  # dialog text (fm ask): see fmcore.plain
 def _grant(p, b, cats, sid, via, pin=None, **data):
     """The one place a user's approval becomes an authorization (chat reply or permission dialog). A plugin yes with
     a pin records the plugin and the hash of its content now: plugin_pin: [id, hash, epoch] (T-0036)."""
-    b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + list(cats)))
+    cats = list(cats)
     if "plugin" in cats:
         import fmplugins
         h = fmplugins.content_hash(pin) if pin else None
@@ -547,9 +553,15 @@ def _grant(p, b, cats, sid, via, pin=None, **data):
         if h:
             b.meta["plugin_pin"] = [pin, h, str(int(time.time()))]
             data["pin"] = pin
-    b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
+        elif pin:  # the plugin the yes named is gone: nothing to pin it to, so it grants nothing
+            cats.remove("plugin")
+            b.append_log(f"plugin yes for {pin} not granted: it is no longer installed or in a known marketplace")
+    b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
+    if cats:
+        b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
     c.save_brief(p, b)
-    c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": list(cats), "via": via}, **data), session=sid)
+    if cats:
+        c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": cats, "via": via}, **data), session=sid)
 
 
 def _ask_prompt(pl, p, fmguard):
@@ -581,7 +593,10 @@ def _ask_prompt(pl, p, fmguard):
     b = c.find_brief(p, task)
     return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
                    + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {c.redact(_plain(why))[:200]}" if why else "")
-                   + (f". The plugin yes holds only for installing or enabling {pin} as its content is now" if pin else "")
+                   + (f". The plugin yes holds only for installing or enabling {pin} as its content is now"
+                      + ("" if fmplugins.pin_covers_code(pin) else
+                         " (a remote source: the pin covers its marketplace entry, not the code it fetches)")
+                      if pin else "")
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 

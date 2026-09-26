@@ -411,7 +411,7 @@ def _interpreter_writes(cmd, ctx):
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     if _CLAUDE_IN_CODE.search(cmd) and _EXEC_API.search(cmd):
-        return [("plugin", "interpreter code running claude's plugin, MCP or config commands")]
+        return [("plugin", "interpreter code running claude's plugin, MCP or config commands [plugin ?]")]
     if not _WRITE_API.search(cmd):
         return []
     found = []
@@ -770,7 +770,7 @@ def _check_claude_config(name, args, stdin=""):
     # a prompt's slash command isn't a tool call the guard sees; `stdin` is the raw command text when claude reads a
     # pipe or heredoc (echo … | claude -p, claude -p <<EOF)
     if _SLASH_CHANGE.search(stdin) or any(_SLASH_CHANGE.search(a) for a in args):
-        return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt")]
+        return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt [plugin ?]")]
     flags = [a.split("=", 1)[0] for a in args if a.split("=", 1)[0] in _SESSION_CONFIG]
     if flags:
         return [("plugin", f"claude {flags[0]} starts a session with its own settings, MCP servers or plugins")]
@@ -789,7 +789,7 @@ _PLUGIN_ADDS = ("install", "i", "enable")  # the plugin changes that bring code 
 
 
 def _one_plugin(words):
-    """The plugin id when words name exactly one, else "?" (which no pinned yes matches)."""
+    """The plugin id when words name exactly one, else "?": no yes is spent on a change it can't check (T-0036)."""
     return words[0] if len(words) == 1 and re.fullmatch(r"[\w.-]+(?:@[\w.-]+)?", words[0]) else "?"
 
 

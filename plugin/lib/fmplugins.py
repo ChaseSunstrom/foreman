@@ -125,8 +125,11 @@ def _tree_hash(root):
             if os.path.islink(path):
                 h.update(b"link:" + os.readlink(path).encode())
             elif os.path.isfile(path):
-                with open(path, "rb") as fh:
-                    h.update(hashlib.sha256(fh.read()).digest())
+                try:
+                    with open(path, "rb") as fh:
+                        h.update(hashlib.sha256(fh.read()).digest())
+                except OSError:
+                    h.update(b"unreadable")  # can't vouch for it: differs from any readable content
     return h.hexdigest()[:16]
 
 
@@ -141,6 +144,13 @@ def content_hash(pid):
     if not known:
         return None
     return _digest((known["entry_hash"] + (_tree_hash(known["local"]) if known["local"] else "")).encode())
+
+
+def pin_covers_code(pid):
+    """Whether a pin on pid hashes code (an installed or local copy), not only a remote source's marketplace entry."""
+    if os.path.isdir((installed().get(pid) or {}).get("path") or ""):
+        return True
+    return any(p["id"] == pid and p["local"] for p in index())
 
 
 def installed():
