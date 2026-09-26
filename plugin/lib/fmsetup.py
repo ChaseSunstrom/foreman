@@ -21,7 +21,10 @@ DENY_RULES = [
     "Edit(~/.ssh/**)", "Edit(~/.gnupg/**)", "Edit(~/.aws/credentials)", "Edit(~/.claude/.credentials.json)",
 ]
 STOP_CAP = "60"  # drive mode: allow long queues past Claude Code's default 8 consecutive Stop-hook continuations
-ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP}
+COMPACT_PCT = "70"  # compact earlier than the default: PreCompact checkpoints and SessionStart re-injects the task
+ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": COMPACT_PCT}
+WHY = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "drive mode: long queues aren't cut at 8 continuations",
+       "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Foreman state survives compaction"}
 BEGIN, END = "<!-- foreman:begin -->", "<!-- foreman:end -->"
 BLOCK = (f"{BEGIN}\n# Foreman\nForeman is installed. Operating rules: ~/.claude/rules/foreman.md. "
          f"System map: ~/.claude/foreman/MASTER.md.\n{END}\n")
@@ -110,7 +113,7 @@ def plan_install(P):
         if k not in env:
             env[k] = v
             new_m.setdefault("env_added", {})[k] = v
-            actions.append(f"env.{k}={v} (drive mode: long queues aren't cut at 8 continuations)")
+            actions.append(f"env.{k}={v} ({WHY[k]})")
     if not env and not env_existed:
         new_s.pop("env")
 

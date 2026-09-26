@@ -60,6 +60,7 @@ class Install(SetupCase):
         self.assertIn("Bash(sudo *)", s["permissions"]["deny"])
         self.assertEqual(s["env"]["KEEP"], "1")
         self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], fmsetup.STOP_CAP)
+        self.assertEqual(s["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "70", "compact earlier: Foreman state makes it cheap")
         self.assertEqual((s["theme"], s["permissions"]["defaultMode"]), ("dark", "bypassPermissions"))
         md = read_text(self.claude_md)
         self.assertTrue(md.startswith("# graphify\n- keep me\n"))
@@ -133,6 +134,15 @@ class Uninstall(SetupCase):
         s = self.load()
         self.assertIn("Bash(curl *)", s["permissions"]["deny"])
         self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], "99", "a value the user changed is not ours to remove")
+
+    def test_users_own_compaction_threshold_is_kept(self):
+        s = dict(ORIGINAL, env={"KEEP": "1", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"})
+        with open(self.settings, "w") as f:
+            json.dump(s, f)
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "50")
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load()["env"]["CLAUDE_AUTOCOMPACT_PCT_OVERRIDE"], "50")
 
     def test_restores_recorded_default_mode(self):
         self.run_fm("install-user")

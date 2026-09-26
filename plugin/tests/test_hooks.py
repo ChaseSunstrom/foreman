@@ -495,6 +495,16 @@ class Stop(HookCase):
         self.fm("task", "evidence", tid, "--step", "1", "pytest", "red as expected")
         self.assertEqual(self.decision(self.stop("working more", active=True)), "block")
 
+    def test_high_context_use_at_a_task_boundary_is_noted(self):
+        self.fm("init")
+        self.task(focus=False)
+        sessions = os.path.join(self.home, "state", "sessions")
+        os.makedirs(sessions, exist_ok=True)
+        with open(os.path.join(sessions, "sess-1.json"), "w") as f:
+            json.dump({"context_pct": 72}, f)
+        reason = parse(self.stop("Finished the previous task."))["reason"]
+        self.assertIn("Context 72% used", reason)
+
     def test_full_autonomy_keeps_going_past_questions_and_unapproved_plans(self):
         self.fm("init")
         self.fm("autonomy", "full")

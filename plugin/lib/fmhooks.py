@@ -18,6 +18,7 @@ PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
 APPROVAL_TTL = 24 * 3600  # seconds a pending `fm ask` stays answerable
+CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
 # async events (latency irrelevant) and per-batch MessageDisplay are not timed
@@ -568,6 +569,16 @@ def _evidence_gate(p, act, pl, g):
             f"fm task evidence {act.id} {flag}\"<cmd>\" \"<result>\", or state why it can't be verified.")
 
 
+def _context_pct(sid):
+    """Context-window use for a session, from the statusline's snapshot (state/sessions/<id>.json)."""
+    try:
+        with open(os.path.join(c.state_dir(), "sessions", f"{sid}.json")) as f:
+            pct = json.load(f).get("context_pct")
+        return int(pct) if pct is not None else None
+    except (OSError, ValueError, TypeError):
+        return None
+
+
 def _drive(p, sd, briefs, pl, g):
     sid = pl.get("session_id")
     full = sd.get("autonomy") == "full"
@@ -602,6 +613,10 @@ def _drive(p, sd, briefs, pl, g):
                  "when a question or approval is needed, or with `fm drive off`."))
     try:
         reason += " Next: " + c.next_for(p, briefs)[2]
+        pct = _context_pct(sid)
+        if not sd["active"] and pct is not None and pct >= CONTEXT_NOTE_PCT:
+            reason += (f" Context {pct}% used at a task boundary; Foreman state is saved, so this is a good point for "
+                       f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
     except Exception:
         log_error("Stop", traceback.format_exc())
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
