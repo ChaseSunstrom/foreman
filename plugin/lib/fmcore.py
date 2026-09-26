@@ -673,11 +673,12 @@ class Brief:
         return max((t.group(1) for t in stamps if t), default="")
 
     def audit_blockers(self, since=None, tree=None):
-        """Required audits missing or stale: older than the last step evidence / attributed edit, or (when the
-        current worktree id is given) recorded against different file contents."""
+        """Required audits missing or stale. An audit recorded against the current worktree id covers exactly these
+        files, so later evidence (test runs, a push) doesn't stale it; without ids (outside git, older audits) it must
+        postdate the last step evidence / attributed edit."""
         cutoff = max(self.last_work_ts(), since or "")
         audits = self.audits()
-        fresh = {lens for lens, ts, t in audits if ts >= cutoff and (not tree or not t or t == tree)}
+        fresh = {lens for lens, ts, t in audits if (tree and t == tree) or (ts >= cutoff and (not tree or not t))}
         changed = {lens for lens, ts, t in audits if ts >= cutoff and tree and t and t != tree}
         stale = {lens for lens, _, _ in audits} - fresh - changed
         reasons = []

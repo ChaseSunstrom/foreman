@@ -2,6 +2,7 @@
 import json
 import os
 import threading
+import time
 import unittest
 
 from helpers import ForemanTestCase, read_text, read_json
@@ -159,12 +160,24 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "step", "T-0001", "add", "a")
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
         self.fm("task", "audit", "T-0001", "self", "checklist", "ok")
-        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:  # an Edit recorded by the hook later on
+        with open(os.path.join(self.repo, "x.py"), "w") as f:  # an edit after the audit…
+            f.write("x = 2\n")
+        with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:  # …as the hook records it
             f.write(json.dumps({"ts": "2999-01-01T00:00:00Z", "task": "T-0001", "event": "touched",
                                 "data": {"file": "x.py", "tool": "Edit"}}) + "\n")
         p = self.fm("task", "done", "T-0001", check=False)
         self.assertEqual(p.returncode, 2)
-        self.assertIn("after the last change", p.stderr)
+        self.assertIn("re-audit", p.stderr)
+
+    def test_evidence_recorded_after_the_audit_does_not_stale_it(self):
+        # T-0020: the audit covered these exact files; recording more evidence (merge/push results) changes nothing
+        self.fm("task", "step", "T-0001", "add", "a")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "audit", "T-0001", "self", "checklist", "ok")
+        time.sleep(1.1)  # timestamps have one-second resolution: the evidence must come later than the audit
+        self.fm("task", "evidence", "T-0001", "--step", "1", "git push origin main", "pushed")
+        self.fm("task", "done", "T-0001")
+        self.assertEqual(self.brief().status, "done")
         self.assertEqual(self.fm("task", "audit", "T-0001", "vibes", "x", "y", check=False).returncode, 1)
 
     def test_focus_requires_a_plan(self):
