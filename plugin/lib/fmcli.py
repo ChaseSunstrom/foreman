@@ -494,6 +494,16 @@ def _take_seen_ask(p, tid, cats):
     return match.get("session") if match else None
 
 
+def _prompted(p, tid, cats):
+    """A permission dialog was shown for this exact request (this command only runs once it was approved)."""
+    try:
+        with open(os.path.join(p.dir, "prompts.json")) as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        return False
+    return any(isinstance(a, dict) and a.get("task") == tid and a.get("allow") == sorted(set(cats)) for a in seen)
+
+
 def cmd_ask(args):
     """Record a request only. The grant happens in the UserPromptSubmit hook, on the user's own reply."""
     import fmguard
@@ -506,6 +516,10 @@ def cmd_ask(args):
     why = c.redact(args.why)
     with c.lock(p.dir):
         b = need_brief(p, args.id)
+        if _prompted(p, b.id, cats):
+            return out(args, {"task": b.id, "allow": cats, "via": "prompt"},
+                       f"Approved in Claude Code's permission prompt: the hook records the grant of {', '.join(cats)} "
+                       f"for {b.id}.")
         sid = _take_seen_ask(p, b.id, cats)
         if not sid:
             raise UsageError("fm ask must run as its own Bash command in the Claude Code session that asks: the hook "

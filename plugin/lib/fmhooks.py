@@ -248,6 +248,9 @@ def user_prompt_submit(pl):
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
             approvals = _resolve_approvals(p, meta, sid, text)
+            prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
+            if any(a.get("session") == sid for a in prompts):
+                c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
             meta["session"] = {"id": sid, "seen": c.now()}
             if "PAUSE" in r.overrides:
                 meta["paused"] = True
@@ -339,8 +342,14 @@ def _pre_tool_use(raw):
         return 2
     try:
         _record_asks(pl, p, fmguard)
+        decision = _ask_prompt(pl, p, fmguard)
     except Exception:
         log_error("PreToolUse", traceback.format_exc())
+        decision = None
+    if decision:  # fm ask: Claude Code's own permission prompt carries the request to the user
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
+                                                 "permissionDecisionReason": decision[1]}}))
+        return 2 if decision[0] == "deny" else 0
     gate = _no_task_gate(pl, p, act, ctx)
     if gate:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -394,6 +403,86 @@ def _record_asks(pl, p, fmguard):
         seen = _load_list(path)
         seen = [a for a in seen if time.time() - a.get("at", 0) < c.ASK_TTL] + asks
         c.write_atomic(path, json.dumps(seen[-20:]))
+
+
+def _ask_target(args):
+    """(task, sorted categories, why) from `fm ask` arguments."""
+    cats, why = [], ""
+    for i, a in enumerate(args[2:], 2):
+        if a.startswith("--why="):
+            why = a[6:]
+        elif a == "--why" and i + 1 < len(args):
+            why = args[i + 1]
+        elif not a.startswith("-") and (i == 2 or not args[i - 1].startswith("-")) and not why:
+            cats.append(a)
+    return (args[1] if len(args) > 1 else ""), sorted(set(cats)), why
+
+
+def _ask_prompt(pl, p, fmguard):
+    if not p or pl.get("tool_name") != "Bash":
+        return None
+    cmd = (pl.get("tool_input") or {}).get("command") or ""
+    if not any(a[:1] == ["ask"] for a in fmguard.fm_calls(cmd)):
+        return None
+    args = fmguard.lone_fm_ask(cmd)
+    if not args:
+        return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
+                        "permission prompt approves exactly that request")
+    task, cats, why = _ask_target(args)
+    b = c.find_brief(p, task)
+    return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
+                   + (f" ({b.title[:70]})" if b else "") + (f": {why[:200]}" if why else "")
+                   + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
+
+
+def _prompts_path(p):
+    return os.path.join(p.dir, "prompts.json")
+
+
+def permission_request(pl):
+    """Claude Code is about to show a permission dialog: note it for an `fm ask`, so only that approved call grants."""
+    import fmguard
+    args = fmguard.lone_fm_ask((pl.get("tool_input") or {}).get("command") or "") if pl.get("tool_name") == "Bash" else None
+    p = c.find_project(_cwd(pl)) if args else None
+    if not p or not pl.get("session_id"):
+        return None
+    task, cats, _ = _ask_target(args)
+    with c.lock(p.dir, timeout=LOCK_SLOW):
+        seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < APPROVAL_TTL]
+        seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
+                     "at": time.time()})
+        c.write_atomic(_prompts_path(p), json.dumps(seen[-20:]))
+    return None
+
+
+def _grant_prompted(pl, p):
+    """PostToolUse of an `fm ask` the user approved in its permission dialog: grant it."""
+    import fmguard
+    args = fmguard.lone_fm_ask((pl.get("tool_input") or {}).get("command") or "")
+    sid, tuid = pl.get("session_id"), pl.get("tool_use_id")
+    if not args or not sid:
+        return
+    task, cats, _ = _ask_target(args)
+    ok = [x for x in cats if x in fmguard.CATEGORIES and x not in fmguard.NOT_AUTHORIZABLE]
+    with c.lock(p.dir, timeout=LOCK_SLOW):
+        seen = _load_list(_prompts_path(p))
+        hit = next((a for a in seen if a.get("session") == sid and a.get("task") == task and a.get("allow") == cats
+                    and time.time() - a.get("at", 0) < APPROVAL_TTL
+                    and (not tuid or not a.get("tool_use_id") or a["tool_use_id"] == tuid)), None)
+        b = c.find_brief(p, task)
+        if not hit or not b or ok != cats:
+            return
+        seen.remove(hit)
+        c.write_atomic(_prompts_path(p), json.dumps(seen))
+        b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
+        b.append_log(f"user approved {', '.join(cats)} in Claude Code's permission prompt")
+        c.save_brief(p, b)
+        meta = c.read_meta(p)
+        meta["pending_approvals"] = [a for a in meta.get("pending_approvals") or []
+                                     if not (isinstance(a, dict) and a.get("task") == task)]
+        c.write_meta(p, meta)
+        c.log_event(p, "approval_granted", task=task, data={"allow": cats, "via": "prompt"}, session=sid)
+        c.regen_views(p)
 
 
 def _load_list(path):
@@ -466,6 +555,8 @@ def post_tool_use(pl, ok=True):
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
+    if ok and p and tool == "Bash":
+        _grant_prompted(pl, p)
     if ok and p and tool in FILE_TOOLS:
         act = c.active_brief(c.load_briefs(p))
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
@@ -712,4 +803,5 @@ HANDLERS = {
     "PostToolUseFailure": post_tool_use_failure, "PreCompact": pre_compact, "Stop": stop,
     "TaskCompleted": task_completed, "SubagentStart": subagent_start, "SubagentStop": subagent_stop,
     "MessageDisplay": message_display, "Notification": notification, "SessionEnd": session_end,
+    "PermissionRequest": permission_request,
 }

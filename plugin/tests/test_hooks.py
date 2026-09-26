@@ -322,6 +322,62 @@ class NoTaskGate(HookCase):
         self.assertNotIn("outside", p.stdout)
 
 
+class PromptApprovals(HookCase):
+    """fm ask raises Claude Code's own permission prompt; only an approved prompt for that very call grants."""
+    CMD = "fm ask {tid} core --why 'fix the guard'"
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.tid = self.task()
+
+    def call(self, event, tuid="toolu_1", cmd=None, **extra):
+        return self.hook(event, dict({"tool_name": "Bash", "tool_use_id": tuid,
+                                      "tool_input": {"command": cmd or self.CMD.format(tid=self.tid)}}, **extra))
+
+    def allow(self):
+        return c.find_brief(self.project(), self.tid).meta.get("allow") or []
+
+    def test_fm_ask_raises_a_permission_prompt_that_says_what_it_grants(self):
+        out = parse(self.call("PreToolUse"))["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "ask")
+        self.assertIn(f"grant core for {self.tid}", out["permissionDecisionReason"])
+        self.assertIn("fix the guard", out["permissionDecisionReason"])
+
+    def test_chained_fm_ask_is_refused(self):
+        cmd = self.CMD.format(tid=self.tid) + " && echo done"
+        self.assertEqual(parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_an_approved_prompt_grants_and_nothing_else_does(self):
+        self.call("PreToolUse")
+        self.call("PostToolUse")  # ran without a dialog (a mode that skips prompts): no grant
+        self.assertNotIn("core", self.allow())
+        self.call("PreToolUse", tuid="toolu_2")
+        self.call("PermissionRequest", tuid="toolu_2")
+        self.call("PostToolUse", tuid="toolu_3")  # a different call can't use that dialog
+        self.assertNotIn("core", self.allow())
+        self.call("PostToolUse", tuid="toolu_2")
+        self.assertIn("core", self.allow())
+        grants = [e for e in c.ledger_tail(self.project()) if e["event"] == "approval_granted"]
+        self.assertEqual(grants[-1]["data"]["via"], "prompt")
+
+    def test_a_refused_prompt_cannot_be_reused_after_the_user_speaks(self):
+        self.call("PreToolUse", tuid="toolu_4")
+        self.call("PermissionRequest", tuid="toolu_4")  # the user says No: the tool never runs
+        self.hook("UserPromptSubmit", {"prompt": "no, not now"})
+        self.call("PostToolUse", tuid="toolu_4")
+        self.assertNotIn("core", self.allow())
+
+    def test_chat_messages_no_longer_cancel_anything(self):
+        self.call("PreToolUse", tuid="toolu_5")
+        self.call("PermissionRequest", tuid="toolu_5")
+        p = self.fm("ask", self.tid, "core", "--why", "fix the guard")  # runs only after the user approved
+        self.assertIn("permission prompt", p.stdout)
+        self.assertEqual(c.read_meta(self.project()).get("pending_approvals") or [], [])
+        self.call("PostToolUse", tuid="toolu_5")
+        self.assertIn("core", self.allow())
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})

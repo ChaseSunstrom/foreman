@@ -358,6 +358,18 @@ def fm_calls(cmd):
     return calls
 
 
+def lone_fm_ask(cmd):
+    """The arguments of `fm ask …` when it is the whole command (nothing chained, piped, redirected or substituted):
+    a permission prompt then approves exactly that request."""
+    if "`" in cmd or "$(" in cmd or "\n" in cmd.strip():
+        return None
+    cmds = _split(_tokens(_strip_heredocs(cmd)))
+    if len(cmds) != 1 or cmds[0].redirs or cmds[0].procsub:
+        return None
+    calls = fm_calls(cmd)
+    return calls[0] if len(calls) == 1 and calls[0][:1] == ["ask"] else None
+
+
 def check_bash(cmd, ctx, depth=0):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:

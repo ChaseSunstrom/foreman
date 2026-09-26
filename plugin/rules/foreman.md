@@ -14,7 +14,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 ## You run everything
 - Never ask the user to run a command (fm, git, tests, scripts, installs): run it yourself. Only interactive logins, secrets and slash commands (`/reload-plugins`, `/compact`) need them.
 - Plain words map to Foreman: "status"/"where are we" → `/foreman:status` · "this repo is sensitive" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "full auto"/"don't ask me anything" → `fm autonomy full` · "clean up" → `/foreman:tidy` · "is foreman ok?" → `/foreman:doctor` · "improve foreman" → `/foreman:improve` · "serve this repo"/"keep it running on the server" → `fm ask ID remote`, then `fm serve` after the yes (`fm serve stop` ends it) · "work the queue headless" → `fm run`.
-- Consent is a yes/no question in chat. For a guard category: `fm ask ID <category> --why "…"` first; the user's next reply grants it (starts with yes) or cancels it. You can't grant it yourself.
+- Ask through Claude Code's prompts, not chat. A guard category: run `fm ask ID <category> --why "…"` as its own command; Claude Code shows the user a permission prompt and their answer grants or refuses it (you can't grant it yourself). Anything else: one AskUserQuestion prompt, your default first.
 
 ## Intake cheat sheet
 - Tags: `FIX:` `FEATURE:` `CLEAN:` `PERF:` `SECURITY:` `RESEARCH:`; block lines `CONTEXT:` `CONSTRAINT:`/`MUST:`/`NEVER:` `DONE-WHEN:` `SKIP:`.
@@ -48,10 +48,10 @@ Dependencies override it. A FIX that breaks the baseline and any critical securi
 - End of each task: `fm task done ID`, triage the inbox, show the queue (≤10 lines), continue per autonomy (`/foreman:next`).
 
 ## Autonomy and drive (`fm autonomy` shows the level)
-- standard: get approval for L-tier plans, `?` items, and anything destructive or irreversible; after the yes, `fm task set ID approved=true`. S/M tasks run after self-review. Batch questions into one message, each with your default.
-- full: never ask mid-run. Decide with your default and record it (`fm decide`), self-approve L/`?` plans after the self-critique, keep going through the queue. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` and one summary at the end.
+- standard: get approval for L-tier plans, `?` items, and anything destructive or irreversible; after the yes, `fm task set ID approved=true`. S/M tasks run after self-review. Batch questions into one AskUserQuestion prompt, each with your default.
+- full: never ask mid-run. Decide with your default and record it (`fm decide`), self-approve L/`?` plans after the self-critique, keep going through the queue. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` at the end (each raises a prompt), plus a short summary.
 - Drive is on: when the Stop hook reports open Foreman work, continue with it.
-- Guard blocks name a category. Authorize only for a brief that genuinely needs it: `fm task set ID --allow <category>`, or `fm ask` where the user must consent. `core` and `remote` only ever come from the user's reply to `fm ask`.
+- Guard blocks name a category. Authorize only for a brief that genuinely needs it: `fm task set ID --allow <category>`, or `fm ask` where the user must consent. `core` and `remote` only ever come from the user's answer to `fm ask`.
 
 ## Subagents
 Default none. Only read-only recon, research, audits or L-tier review, via `foreman:fm-recon` / `foreman:fm-reviewer`, with a self-contained brief. ≤3 in parallel on disjoint scopes. Save each summary with `fm research add NAME` and spot-check two claims. Brainstorm sub-agents run tool-less through `fm ideas`.

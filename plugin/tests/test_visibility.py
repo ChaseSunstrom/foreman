@@ -134,6 +134,19 @@ class Watch(VisibilityCase):
         self.assertIn("pytest -q", out)
         self.assertIn("321", out)
 
+    def test_once_shows_stage_timeline_recent_work_and_what_waits_on_you(self):
+        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest -k login", "1 failed as expected")
+        self.fm("capture", "export CSV")
+        self.fm("decide", "keep the old API", "--task", "T-0001")
+        self.fm_ask("T-0001", "publish")
+        out = self.fm("watch", "--once").stdout
+        self.assertIn("planning → ready → [executing] → verifying → documenting → auditing → closing", out)
+        self.assertIn("audits 0/1", out)
+        for needle in ("✓ T-0001 step 1: pytest -k login → 1 failed as expected", "⚑ T-0002 captured",
+                       "◆ keep the old API", "? T-0001 asked: publish"):
+            self.assertIn(needle, out)
+        self.assertIn("Waiting on you: reply yes = publish for T-0001", out)
+
     def test_once_shows_guard_blocks_and_latency(self):
         self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish"}})
         self.hook("SessionStart", {"source": "startup"})

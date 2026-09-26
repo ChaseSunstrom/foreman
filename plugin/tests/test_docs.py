@@ -10,7 +10,7 @@ SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "re
 USER_ONLY = {"capture"}  # everything else Claude may start itself when the user asks in plain words
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PreCompact",
-               "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd"}
+               "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd", "PermissionRequest"}
 OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md", "audit.md"}
 
 

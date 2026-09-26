@@ -57,16 +57,44 @@ def gather(p):
     for e in events[-2000:]:
         if e.get("kind") == "hook_ms" and isinstance(e.get("ms"), (int, float)):
             latency.setdefault(e.get("event"), []).append(e["ms"])
-    touched = []
+    touched, ledger = [], c.ledger_tail(p, 400)
     if act:
-        for e in c.ledger_tail(p, 400):
+        for e in ledger:
             f = (e.get("data") or {}).get("file")
             if e.get("event") == "touched" and e.get("task") == act.id and f and f not in touched:
                 touched.append(f)
     return {"sd": sd, "active": act, "project": p, "latency": latency, "touched": touched[-10:],
             "tools": [e for e in mine if e.get("kind") in ("tool", "tool_fail")][-12:],
             "subagents": list(running.values())[-5:], "guard": [e for e in mine if e.get("kind") == "guard_block"][-5:],
-            "session": _latest_session(p.slug)}
+            "session": _latest_session(p.slug),
+            "recent": [line for line in map(_recent, ledger) if line][-8:]}
+
+
+STAGES = ["planning", "ready", "executing", "verifying", "documenting", "auditing", "closing"]
+
+
+def _recent(e):
+    """One line for a ledger event worth seeing (evidence, audits, captures, decisions, approvals, done)."""
+    d, t, ts = e.get("data") or {}, e.get("task") or "", (e.get("ts") or "")[11:16]
+    kind = e.get("event")
+    if kind == "evidence":
+        what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
+        text = f"✓ {t} {what}: {d.get('cmd', '')} → {d.get('result', '')}"
+    elif kind == "audit":
+        text = f"◇ {t} audit {d.get('lens')}: {d.get('result', '')}"
+    elif kind in ("capture", "intake"):
+        text = f"⚑ {t} captured" if t else "⚑ intake"
+    elif kind == "decision":
+        text = f"◆ {d.get('decision', '')}"
+    elif kind == "approval_requested":
+        text = f"? {t} asked: {'+'.join(d.get('allow') or [])}"
+    elif kind in ("approval_granted", "approval_declined"):
+        text = f"{'✔' if kind == 'approval_granted' else '✖'} {t} {kind.split('_')[1]}"
+    elif kind == "task_done":
+        text = f"■ {t} done"
+    else:
+        return None
+    return f"  {ts}  {text}"
 
 
 def _pct(vals, q):
@@ -80,12 +108,19 @@ def render(d, width=100):
     if act:
         a = sd["active"]
         out.append(f"Active: {a['id']} [{a['type']} {a['tier']}] {a['title']}")
+        st = a.get("stage")
+        out.append("  " + " → ".join(f"[{x}]" if x == st else x for x in STAGES)
+                   + f" · audits {a['audits']['done']}/{a['audits']['required']}")
         out += [f"  [{'x' if s.done else ' '}] {s.n}. {s.text}{'  <-' if s.current else ''}" for s in act.steps()]
         out.append(f"  evidence: {len(act.evidence())} line(s)")
     else:
         out.append("Active: none")
     out.append(f"Queue ({len(sd['queue'])}): " + ("; ".join(f"{q['id']} {q['type']} {q['tier']}" for q in sd["queue"][:8]) or "empty"))
     out.append(f"Inbox ({len(sd['inbox'])}): " + ("; ".join(f"{q['id']} {q['title'][:30]}" for q in sd["inbox"][:5]) or "empty"))
+    if sd.get("asks"):
+        out.append("Waiting on you: reply yes = " + "; ".join(f"{'+'.join(x['allow'])} for {x['task']}"
+                                                                for x in sd["asks"]))
+    out += ["", "Recent:"] + (d["recent"] or ["  (nothing yet)"])
     out += ["", "Tool timeline:"]
     for e in d["tools"]:
         ms = f"{e['ms']}ms" if e.get("ms") is not None else "-"
