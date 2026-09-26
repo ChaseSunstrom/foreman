@@ -94,11 +94,12 @@ class Agents(unittest.TestCase):
         agents = sorted(os.listdir(os.path.join(PLUGIN, "agents")))
         self.assertIn("fm-recon.md", agents)
         self.assertIn("fm-reviewer.md", agents)
-        self.assertEqual(frontmatter(os.path.join(PLUGIN, "agents", "fm-ideas.md"))[0]["tools"], "[]", "brainstormers get no tools")
+        self.assertNotIn("fm-ideas.md", agents, "a subagent can't be tool-less; brainstormers run via fm ideas")
         for a in agents:
             with self.subTest(agent=a):
                 meta, body = frontmatter(os.path.join(PLUGIN, "agents", a))
-                tools = {t.strip() for t in meta["tools"].strip("[]").split(",") if t.strip()}
+                tools = {t.strip() for t in meta["tools"].split(",") if t.strip()}
+                self.assertTrue(tools, "an empty tools list means every tool")
                 self.assertTrue(tools <= READ_ONLY_TOOLS, tools - READ_ONLY_TOOLS)
                 self.assertIn("400 words", body)
 

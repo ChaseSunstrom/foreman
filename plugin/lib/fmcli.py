@@ -689,6 +689,12 @@ def build_parser():
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
 
+    s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
+    s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
+    s.add_argument("--lens", action="append", help="repeatable; default: all six lenses")
+    s.add_argument("--model", default="sonnet")
+    s.add_argument("--timeout", type=int, default=300)
+
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
