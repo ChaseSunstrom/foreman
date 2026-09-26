@@ -224,24 +224,29 @@ def user_prompt_submit(pl):
         return None
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     r = c.parse_intake(text)
-    with c.lock(p.dir, timeout=1):
-        meta = c.read_meta(p)
-        approvals = _resolve_approvals(p, meta, sid, text)
-        meta["session"] = {"id": sid, "seen": c.now()}
-        if "PAUSE" in r.overrides:
-            meta["paused"] = True
-        elif "RESUME" in r.overrides:
-            meta["paused"] = False
-        elif "FULL AUTO" in r.overrides:
-            meta["autonomy"] = "full"
-        elif "STANDARD" in r.overrides:
-            meta["autonomy"] = "standard"
-        c.write_meta(p, meta)
-        g = _read_gate(p)
-        if sid in g["drive"]:
-            g["drive"][sid]["count"] = 0
-            _write_gate(p, g)
-        sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
+    try:
+        with c.lock(p.dir, timeout=3):
+            meta = c.read_meta(p)
+            approvals = _resolve_approvals(p, meta, sid, text)
+            meta["session"] = {"id": sid, "seen": c.now()}
+            if "PAUSE" in r.overrides:
+                meta["paused"] = True
+            elif "RESUME" in r.overrides:
+                meta["paused"] = False
+            elif "FULL AUTO" in r.overrides:
+                meta["autonomy"] = "full"
+            elif "STANDARD" in r.overrides:
+                meta["autonomy"] = "standard"
+            c.write_meta(p, meta)
+            g = _read_gate(p)
+            if sid in g["drive"]:
+                g["drive"][sid]["count"] = 0
+                _write_gate(p, g)
+            sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
+    except c.LockTimeout:  # never drop a yes / PAUSE silently
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
+                "Foreman: state was busy (another session or fm held the lock), so this message was not recorded: "
+                "no approval, override word or heartbeat was applied. Pending approvals are unchanged."}}
     parts = list(approvals)
     if r.items:
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
@@ -379,7 +384,7 @@ def post_tool_use_failure(pl):
 def pre_compact(pl):
     p = c.find_project(_cwd(pl))
     if p:
-        with c.lock(p.dir, timeout=2):
+        with c.lock(p.dir, timeout=5):
             c.checkpoint(p, auto=True, session=pl.get("session_id"))
     return None
 

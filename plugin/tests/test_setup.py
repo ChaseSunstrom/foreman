@@ -189,6 +189,20 @@ class InstallScript(unittest.TestCase):
     def test_build_install_adds_build_tools(self):
         self.assertIn("--build-tools", self.setup_args("--build"))
 
+    def test_fresh_machine_round_trip_leaves_no_settings_file(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(FM)))
+        os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
+        settings = os.path.join(self.env["HOME"], ".claude", "settings.json")
+        self.assertFalse(os.path.exists(settings))
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins"], capture_output=True,
+                           text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(read_json(settings)["permissions"]["defaultMode"], "bypassPermissions")
+        p = subprocess.run([sys.executable, FM, "uninstall-user"], capture_output=True, text=True, env=self.env,
+                           timeout=60)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse(os.path.exists(settings), read_text(settings) if os.path.exists(settings) else "")
+
 
 if __name__ == "__main__":
     unittest.main()

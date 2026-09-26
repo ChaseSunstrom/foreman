@@ -251,6 +251,14 @@ def task_new(p, args):
 
 
 def task_set(p, args):
+    import fmguard
+    for cat in args.allow or []:
+        if cat == "core":
+            raise c.PolicyError("core can't be granted from the command line (whoever runs it); request it with "
+                                "`fm ask ID core --why \"…\"` and the user's yes grants it")
+        if cat not in fmguard.CATEGORIES or cat in fmguard.NOT_AUTHORIZABLE:
+            raise UsageError(f"can't allow {cat!r}; authorizable: "
+                             + ", ".join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x != "core"))
     changes = {}
     for kv in args.assignments:
         if "=" not in kv:

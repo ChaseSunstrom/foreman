@@ -82,6 +82,9 @@ data = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) e
 m = json.load(open(manifest)) if os.path.exists(manifest) else {}
 if "defaultMode_original" not in m:
     m["defaultMode_original"] = (data.get("permissions") or {}).get("defaultMode")
+    # What existed before Foreman touched anything, so uninstall can remove what we created (fm install-user keeps these).
+    m.setdefault("settings_created", not data)
+    m.setdefault("permissions_created", "permissions" not in data)
     os.makedirs(os.path.dirname(manifest), exist_ok=True)
     with open(manifest + ".tmp", "w") as f:
         json.dump(m, f, indent=2, sort_keys=True)

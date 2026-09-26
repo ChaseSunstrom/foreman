@@ -310,11 +310,21 @@ _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials")
 
 
+_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+(?:fmcore|fmcli|fmhooks|fmsetup|fmtidy)\b")
+_FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
+                          r"checkpoint|mutate|main|run|cmd_\w+|task_\w+|_resolve_approvals)\s*\(")
+
+
 def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
-    Coarse on purpose: a script that names a protected path and writes anything is treated as writing it."""
-    if not (_INTERP.search(cmd) and _WRITE_API.search(cmd)):
+    Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
+    imports Foreman's modules and calls their writers is a direct state write (fm is the only writer)."""
+    if not _INTERP.search(cmd):
+        return []
+    if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
+        return [("state-direct", "interpreter code driving Foreman's modules (use the fm CLI)")]
+    if not _WRITE_API.search(cmd):
         return []
     found = []
     for m in _QUOTED.finditer(cmd):

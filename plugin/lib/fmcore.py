@@ -273,12 +273,20 @@ def log_event(p, event, task=None, data=None, session=None):
 
 
 def ledger_tail(p, n=200):
+    """The last n events; reads backwards in growing chunks, so n is honoured however long the lines are."""
     try:
         with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
             f.seek(0, os.SEEK_END)
-            size = f.tell()
-            f.seek(max(0, size - 64 * 1024))
-            lines = f.read().decode("utf-8", "replace").splitlines()
+            size, chunk = f.tell(), 64 * 1024
+            while True:
+                start = max(0, size - chunk)
+                f.seek(start)
+                lines = f.read().decode("utf-8", "replace").splitlines()
+                if start == 0 or len(lines) > n:  # the first line of a partial read may be cut; > n leaves a spare
+                    break
+                chunk *= 4
+            if start > 0:
+                lines = lines[1:]
     except FileNotFoundError:
         return []
     out = []

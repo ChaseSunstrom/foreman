@@ -146,11 +146,19 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual(self.fm_json("state")["active"]["id"], "T-0002")
 
     def test_set_fields_and_allow(self):
-        self.fm("task", "set", "T-0001", "tier=M", "priority=urgent", "--allow", "core", "--allow", "publish")
+        self.fm("task", "set", "T-0001", "tier=M", "priority=urgent", "--allow", "publish")
         b = self.brief()
-        self.assertEqual((b.tier, b.priority, b.meta["allow"]), ("M", "urgent", ["core", "publish"]))
+        self.assertEqual((b.tier, b.priority, b.meta["allow"]), ("M", "urgent", ["publish"]))
         self.fm("task", "set", "T-0001", "--section", "Execution prompt", "--text", "Do X then Y.")
         self.assertIn("Do X then Y.", self.brief().section("Execution prompt"))
+
+    def test_cli_never_grants_core_or_unauthorizable_categories(self):
+        # However fm is reached (renamed binary, symlink, python -m), core only comes from the user's reply to fm ask.
+        for cat in ("core", "state-direct", "self-authorize", "bogus"):
+            p = self.fm("task", "set", "T-0001", "--allow", cat, check=False)
+            self.assertNotEqual(p.returncode, 0, cat)
+            self.assertIn("fm ask", p.stderr + p.stdout if cat == "core" else "fm ask")
+        self.assertEqual(self.brief().meta.get("allow") or [], [])
 
     def test_abbreviated_options_are_rejected(self):
         # The guard matches `--allow core` literally; an abbreviation must not reach the same code path (T-0010).

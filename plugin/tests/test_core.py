@@ -131,6 +131,16 @@ class Redaction(unittest.TestCase):
 
 
 class Ledger(ForemanTestCase):
+    def test_tail_returns_n_events_beyond_64k(self):
+        p = c.init_project(self.repo)
+        c.log_event(p, "touched", task="T-0001", data={"file": "x.py"})
+        for i in range(600):  # ~120 KB of later events
+            c.log_event(p, "tool", data={"pad": "y" * 150, "i": i})
+        events = c.ledger_tail(p, 1000)
+        self.assertEqual(len(events), 601)
+        self.assertEqual(events[0]["event"], "touched")
+        self.assertEqual(len(c.ledger_tail(p, 5)), 5)
+
     def test_log_event_appends_redacted_json_lines(self):
         p = c.init_project(self.repo)
         c.log_event(p, "note", task="T-0001", data={"cmd": "export API_KEY=abcdef123456"}, session="s1")

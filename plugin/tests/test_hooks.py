@@ -202,6 +202,16 @@ class Approvals(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "ok"})
         self.assertEqual((self.allow(t1), self.allow(t2)), (["core"], ["publish", "git-destructive"]))
 
+    def test_busy_state_says_the_reply_was_not_recorded(self):
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        with c.lock(self.project().dir):  # another writer holds the project lock the whole time
+            p = self.hook("UserPromptSubmit", {"prompt": "yes"}, timeout=20)
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("not recorded", self.ctx_of(p))
+        self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), "nothing granted, request still pending")
+
     def test_expired_request_is_dropped(self):
         self.fm("init")
         tid = self.task()
