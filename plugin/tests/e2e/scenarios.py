@@ -137,18 +137,22 @@ def s2_new_request_mid_task(e):
     out = e.claude("also, could you add a CSV export of results at some point?", max_turns=15)
     b = e.briefs()
     new = [b[i] for i in set(b) - before]
-    ok = len(new) == 1 and new[0].status == "captured" and b[tid].status == "active" and "csv" not in e.read("calc.py").lower()
-    return verdict(ok, f"new={[(x.id, x.type, x.status) for x in new]}; {tid} still {b[tid].status}; {cost(out)}; "
+    # the original task must carry on (drive may finish it); the new request is captured, not built
+    ok = len(new) == 1 and new[0].status == "captured" and b[tid].status in ("active", "verifying", "done") and \
+        "csv" not in e.read("calc.py").lower()
+    return verdict(ok, f"new={[(x.id, x.type, x.status) for x in new]}; {tid} {b[tid].status}; {cost(out)}; "
                    f"reply {out.get('result', '')[:140]!r}")
 
 
 def s3_steer(e):
     tid = e.active_task("Add logging to div", type_="FEATURE", steps=("add logging", "test"))
-    first = e.claude(f"Work on {tid}: add a log line in div using print. Keep it small.", max_turns=25)
+    e.fm("drive", "off")  # keep the task open so the steer arrives mid-task
+    first = e.claude(f"Work on {tid}: do only step 1 (add a log line in div using print), record it, then stop.",
+                     max_turns=25)
     n_before = len([x for x in e.ledger() if x.get("task") == tid])
     out = e.claude("use the standard logging module instead of print for that", resume=first.get("session_id"), max_turns=25)
     events = [x for x in e.ledger() if x.get("task") == tid][n_before:]
-    logged = any(x["event"] in ("task_set", "evidence", "step_done", "step_add", "checkpoint") for x in events)
+    logged = any(x["event"] in ("note", "task_set", "step_add") for x in events)
     uses_logging = "logging" in e.read("calc.py")
     return verdict(logged and uses_logging, f"brief events after steer {[x['event'] for x in events][:8]}; "
                    f"logging used={uses_logging}; {cost(out)}")
