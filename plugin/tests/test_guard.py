@@ -501,6 +501,11 @@ class PluginChanges(GuardCase):
             ("tar -xzf dump.tgz -C {home}", "core"),  # ~/.claude/settings.json, Foreman and its state are under it
             (f"cp notes.txt {fh}", None),
             ("git -C {repo} checkout -b feature", None),
+            # round-5 audits: credential files and the project's own Claude Code settings are roots too
+            ("cp -r payload/. {home}/.docker/", "credentials"),
+            ("tar -xf evil.tar -C {repo}/.claude", "core"),
+            ("cp -r evil/. {repo}/.claude/", "core"),
+            ("git -ccore.hooksPath=/tmp/e commit -m x", "system"),
         ], self.bash)
 
     def test_a_new_skill_agent_or_command_needs_the_users_yes(self):

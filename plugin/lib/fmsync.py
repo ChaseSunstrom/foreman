@@ -196,12 +196,12 @@ def import_(p):
                 res["updated"] += 1
         elif rel == "decisions.md":  # append-only: take the lines this copy lacks
             have = _read(dest) if os.path.exists(dest) else ""
-            extra = [l for l in cur.splitlines() if l.strip() and l not in have.splitlines()]
+            extra = [l for l in c.plain_lines(cur).splitlines() if l.strip() and l not in have.splitlines()]
             if extra:
                 _write(dest, have.rstrip("\n") + ("\n" if have else "") + "\n".join(extra) + "\n")
                 res["updated"] += 1
         elif not os.path.exists(dest):
-            _write(dest, cur)
+            _write(dest, c.plain_lines(cur))  # pulled text: no terminal sequences
             res["added"] += 1
         elif _read(dest) != cur:
             res["conflicts"].append(f"{rel}: differs here; kept this one, theirs is in {_set_aside(p, rel, cur)}")

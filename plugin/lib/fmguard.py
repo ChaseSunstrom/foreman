@@ -190,11 +190,12 @@ def _protected_roots(ctx):
     fh, cl = ctx.foreman_home, os.path.join(ctx.home, ".claude")
     roots = [(os.path.join(fh, "plugin", d), "core") for d in ("lib", "bin", "hooks", "evals")]
     roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
-              (os.path.join(cl, "settings.json"), "core"), (os.path.join(ctx.home, ".claude.json"), "core"),
-              (os.path.join(cl, "plugins"), "plugin")]
+              (os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
+    # user-wide Claude Code settings (a project's own are handled in classify_tree)
+    roots += [(os.path.join(ctx.home, ".claude", f), "core") for f in ("settings.json", "settings.local.json")]
     # Foreman state inside a tree write: the user may approve it (core); a direct write never is (state-direct)
     roots += [(d, "core") for d in [os.path.join(fh, "state"), ctx.state_dir, *ctx.state_fallbacks] if d]
-    roots += [(os.path.join(ctx.home, d), "credentials") for d in _CRED_DIRS]
+    roots += [(os.path.join(ctx.home, d), "credentials") for d in _CRED_DIRS + _CRED_FILES]
     return roots
 
 
@@ -204,6 +205,12 @@ def classify_tree(path, ctx):
     cats = []
     for p in _variants(path):
         cats += [cat for root, cat in _protected_roots(ctx) if _under(os.path.normpath(root), p)]
+        # this project's .claude/settings*.json, for writes aimed into the project (cp -r x .claude/), not a checkout
+        # at its root: branch work in the user's own repo is ordinary
+        pr = ctx.project_root
+        if pr and _strictly_under(p, pr) and any(_under(os.path.join(pr, ".claude", f), p)
+                                                  for f in ("settings.json", "settings.local.json")):
+            cats.append("core")
     return list(dict.fromkeys(cats))
 
 
@@ -791,7 +798,7 @@ def _check_system(name, args):
         return [("system", "direnv allow (.envrc runs on every cd into the folder)")]
     if name == "git":
         # hooks from another folder, set for one command (-c, --config-env) or persistently (git config)
-        if any(re.match(r"(?i)(--config-env=)?core\.hookspath=", a) for a in args):
+        if any(re.match(r"(?i)(--config-env=|-c)?core\.hookspath=", a) for a in args):
             return [("system", "git with core.hooksPath (hooks from another folder)")]
         sub, rest = _fm_subcommand(args, takes_value=("-C", "-c"))
         values = [a for a in rest if not a.startswith("-")]

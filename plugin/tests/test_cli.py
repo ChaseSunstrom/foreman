@@ -583,6 +583,9 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.fm("init")
         self.fm("task", "new", "Umbrella", "--type", "FEATURE", "--tier", "S", "--step", "all of it", "--ac", "works")
         self.fm("capture", "export as CSV")
+        p0 = self.fm("task", "drop", "T-0002", "--done-in", "T-0001", check=False)
+        self.assertEqual(p0.returncode, 2, "the host must have done work (evidence), or nothing was done anywhere")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
         out = self.fm("task", "drop", "T-0002", "--done-in", "T-0001").stdout
         self.assertIn("done in T-0001", out)
         p = c.find_project(self.repo)
@@ -592,7 +595,6 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0999", check=False).returncode, 0)
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0001", check=False).returncode, 0)
         # work that was started keeps its own gates: --done-in isn't a way around evidence and audits
-        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", "ok")
         self.fm("capture", "another")
         p2 = self.fm("task", "drop", "T-0001", "--done-in", "T-0003", check=False)
         self.assertEqual(p2.returncode, 2)

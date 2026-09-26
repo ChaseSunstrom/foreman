@@ -223,3 +223,6 @@ class HookErrors(ForemanTestCase):
         self.assertEqual(r.status, "WARN")
         self.assertIn("2 hook error(s)", r.detail)
         self.assertIn("PreToolUse NameError: name '_new_context_file' is not defined", r.detail)
+        with open(log, "a") as f:
+            f.write(f"{c.now()} Stop\x1b]0;x\x07 ValueError: bad \x1b[2Jtitle\n")
+        self.assertNotIn("\x1b", d.check_hook_errors().detail)

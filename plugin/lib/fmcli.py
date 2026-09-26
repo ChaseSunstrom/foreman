@@ -249,6 +249,9 @@ def task_done_in(p, args):
         if b.status not in ("captured", "planned") or b.evidence():
             raise c.PolicyError(f"{b.id} was started ({b.status}, {len(b.evidence())} evidence line(s)): finish it "
                                 f"through its own gates (fm task done) rather than --done-in")
+        if h.status in ("captured", "dropped") or not h.evidence():
+            raise c.PolicyError(f"{h.id} hasn't done any work yet ({h.status}, no evidence): --done-in points at the "
+                                f"task that really did it")
         b.meta["status"], b.meta["done_in"] = "done", h.id
         b.append_log(f"done in {h.id}" + (f": {args.reason}" if args.reason else ""))
         h.append_log(f"includes {b.id}: {b.title}")

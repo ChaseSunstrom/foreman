@@ -1208,7 +1208,7 @@ def plain(s):
 
 
 def plain_lines(text):
-    """plain() for each line of a multi-line text (newlines and tabs kept)."""
+    """plain() for each line of a multi-line text: newlines kept, tabs become spaces (plain() would drop them)."""
     return "\n".join(plain(l.replace("\t", "    ")) for l in (text or "").split("\n"))
 
 

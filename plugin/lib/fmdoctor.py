@@ -332,8 +332,8 @@ def check_hook_errors():
     if not recent:
         return Result("hook errors", "PASS", "no hook errors in the last 24h")
     last = recent[-1]
-    event = (last[0].split(" ") + ["", ""])[1]
-    cause = next((l.strip() for l in reversed(last) if l.strip()), "")
+    event = c.plain((last[0].split(" ") + ["", ""])[1])  # log text can carry anything an error message quoted
+    cause = c.plain(next((l.strip() for l in reversed(last) if l.strip()), ""))
     return Result("hook errors", "WARN", f"{len(recent)} hook error(s) in the last 24h; latest: {event} "
                                          f"{c.fit(cause, 120)} (state/logs/hooks.log)")
 
