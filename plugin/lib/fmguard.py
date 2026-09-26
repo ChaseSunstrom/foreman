@@ -27,6 +27,7 @@ class Ctx:
     allow: set = field(default_factory=set)
     task_id: str = None
     state_dir: str = None  # when Foreman state lives outside foreman_home (read-only home fallback)
+    state_fallbacks: list = field(default_factory=list)  # where a fallback could live: state even before it's used
 
 
 @dataclass
@@ -163,7 +164,8 @@ def _is_core(path, ctx):
 def classify_write(path, ctx):
     cats = []
     for p in _variants(path):
-        if _under(p, os.path.join(ctx.foreman_home, "state")) or (ctx.state_dir and _under(p, ctx.state_dir)):
+        if any(d and _under(p, d) for d in [os.path.join(ctx.foreman_home, "state"), ctx.state_dir,
+                                            *ctx.state_fallbacks]):
             cats.append("state-direct")
         if _is_core(p, ctx):
             cats.append("core")
@@ -310,10 +312,14 @@ _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials")
 
 
-_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+(?:fmcore|fmcli|fmhooks|fmsetup|fmtidy)\b")
+# Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
+# point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
+_FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b")
+_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
-                          r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals)\s*\(|"
-                          r"\b(?:fmcli|fmhooks|fmsetup|fmtidy)\s*\.\s*\w+\s*\(|\bfrom\s+(?:fmcli|fmhooks)\s+import\b")
+                          r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
+                          r"restore_default_state)\s*\(|"
+                          rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b")
 
 
 def _interpreter_writes(cmd, ctx):

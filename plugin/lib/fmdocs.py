@@ -57,6 +57,22 @@ def scan(root):
     return findings
 
 
+def task_docs(root, docs_impact):
+    """For fm task done (M/L): (blockers, notes). Docs the task says it updated must exist and show no drift; drift in
+    other docs is reported, not blocking, so an old problem elsewhere never holds up unrelated work."""
+    named = {os.path.normpath(n) for n in re.findall(r"[\w./-]+\.md\b", docs_impact or "")}
+    blockers = [f"docs impact names {n}, which doesn't exist" for n in sorted(named)
+                if not os.path.exists(os.path.join(root, n))]
+    notes = []
+    for f in scan(root):
+        line = f"{f['file']}: {f['kind']} {f['detail']}"
+        if os.path.normpath(f["file"]) in named:
+            blockers.append(f"doc drift in a doc this task updated: {line}")
+        else:
+            notes.append(line)
+    return blockers, notes
+
+
 def cmd_docs(args):
     import fmcli
     import fmcore as c

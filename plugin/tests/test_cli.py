@@ -126,6 +126,28 @@ class TaskLifecycle(ForemanTestCase):
         events = [e["event"] for e in c.ledger_tail(self.p)]
         self.assertIn("task_done", events)
 
+    def test_docs_named_in_docs_impact_must_exist_and_be_current(self):
+        self.fm("task", "new", "Add a flag", "--type", "FEATURE", "--tier", "M")
+        self.fm("task", "step", "T-0002", "add", "a")
+        self.fm("task", "step", "T-0002", "done", "1", "--evidence", "pytest", "ok")
+        for name, text in (("README.md", "# app\nRun `./cli.py` with --verbose.\n"), ("NOTES.md", "See `./gone.py`.\n")):
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write(text)
+        self.fm("task", "set", "T-0002", "--section", "Docs impact", "--text", "README.md: --verbose; docs/usage.md")
+
+        def audited_done(check):
+            for lens in ("intent", "edge"):
+                self.fm("task", "audit", "T-0002", lens, "lens prompt", "ok")
+            return self.fm("task", "done", "T-0002", check=check)
+        p = audited_done(False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("docs/usage.md, which doesn't exist", p.stderr)
+        self.assertIn("README.md: path ./cli.py", p.stderr)
+        self.assertNotIn("gone.py", p.stderr, "drift in docs the task didn't name is reported, not a blocker")
+        open(os.path.join(self.repo, "cli.py"), "w").close()
+        self.fm("task", "set", "T-0002", "--section", "Docs impact", "--text", "README.md: documents --verbose")
+        self.assertIn("NOTES.md: path ./gone.py", audited_done(True).stdout)
+
     def test_audit_older_than_the_last_edit_is_stale(self):
         self.fm("task", "step", "T-0001", "add", "a")
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")

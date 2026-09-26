@@ -194,16 +194,20 @@ def cmd_task(args):
                       "audit", {"lens": args.lens, "how": args.how[:200], "result": args.result[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: audit ({args.lens}) recorded.")
     if sub == "done":
+        import fmdocs
         since, tree = c.last_change(p, args.id), c.worktree_id(p.root)
+        pre = need_brief(p, args.id)
+        drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         def done(b):
-            reasons = b.done_blockers(since, tree)
+            reasons = b.done_blockers(since, tree) + drift
             if reasons:
                 raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
             b.meta["status"] = "done"
             b.append_log("done")
         b, _ = mutate(p, args.id, done, "task_done")
-        return out(args, c.brief_summary(b), f"{b.id} done.")
+        return out(args, dict(c.brief_summary(b), doc_drift=notes), f"{b.id} done." + (
+            "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub in ("block", "drop", "defer"):
         status = {"block": "blocked", "drop": "dropped", "defer": "deferred"}[sub]
         reason = getattr(args, "reason", None) or ""
@@ -482,7 +486,8 @@ def _take_seen_ask(p, tid, cats):
     except (OSError, ValueError):
         return None
     match = next((a for a in reversed(seen) if isinstance(a, dict) and a.get("task") == tid
-                  and sorted(set(a.get("allow") or [])) == sorted(set(cats)) and time.time() - a.get("at", 0) < 300), None)
+                  and sorted(set(a.get("allow") or [])) == sorted(set(cats))
+                  and time.time() - a.get("at", 0) < c.ASK_TTL), None)
     if match:
         seen.remove(match)
         c.write_atomic(path, json.dumps(seen))
@@ -504,7 +509,8 @@ def cmd_ask(args):
         sid = _take_seen_ask(p, b.id, cats)
         if not sid:
             raise UsageError("fm ask must run as its own Bash command in the Claude Code session that asks: the hook "
-                             "ties the request to that session (it saw no matching call, so nothing was recorded)")
+                             "ties the request to that session (it saw no matching call, so nothing was recorded). "
+                             "If it was its own command, state was busy: run the same fm ask again")
         meta = c.read_meta(p)
         pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
         pend.append({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now()})
@@ -740,6 +746,7 @@ def build_parser():
 
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
+    s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
 
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")

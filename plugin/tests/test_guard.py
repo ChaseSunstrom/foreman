@@ -296,6 +296,17 @@ class StateFallback(GuardCase):
         self.assertBlocked(g.check("Write", {"file_path": os.path.join(alt, "projects", "x", "meta.json")}, ctx),
                            "state-direct")
 
+    def test_every_fallback_location_is_state_direct_before_it_is_used(self):
+        # A marker (or forged state) planted in a fallback would redirect every hook and fm call to it.
+        alt, tmp_alt = os.path.join(self.home, ".local", "state", "foreman"), "/tmp/foreman-state-1000"
+        ctx = self.ctx()
+        ctx.state_fallbacks = [alt, tmp_alt]
+        for path in (os.path.join(alt, ".foreman-state.json"), os.path.join(tmp_alt, "projects", "x", "meta.json")):
+            with self.subTest(path=path):
+                self.assertBlocked(g.check("Write", {"file_path": path}, ctx), "state-direct")
+                self.assertBlocked(g.check("Bash", {"command": f"echo '{{}}' > {path}"}, ctx), "state-direct")
+                self.assertBlocked(g.check("Bash", {"command": f"cp /etc/hostname {path}"}, ctx), "state-direct")
+
 
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
@@ -319,6 +330,8 @@ class InterpreterWrites(GuardCase):
             ("python3 -c \"import sys; sys.path.insert(0, 'lib'); import fmguard; print(fmguard.CATEGORIES)\"", None),
             ("python3 - <<'EOF'\nimport fmcore as c\ndef run(x):\n    return c.read_meta(x)\nprint(run(p))\nEOF", None),
             ("python3 -c \"from fmcli import main; main(['capture', 'x'])\"", "core"),
+            ("python3 -c \"import fmideas; fmideas.run(['x'])\"", "core"),
+            ("python3 -c \"import fmdocs; print(fmdocs.scan('.'))\"", None),
         ], self.bash)
 
     def test_relative_paths_resolve_against_cwd(self):

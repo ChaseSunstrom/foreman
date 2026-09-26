@@ -48,8 +48,9 @@ class ForemanTestCase(unittest.TestCase):
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
                                                      "FOREMAN_STATE", "XDG_STATE_HOME")}
         os.environ["FOREMAN_HOME"] = self.home
-        for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE", "XDG_STATE_HOME"):
+        for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE"):
             os.environ.pop(k, None)
+        os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")  # a state fallback never reaches the real one
         self.repo = git_repo(self.tmp)
 
     def tearDown(self):

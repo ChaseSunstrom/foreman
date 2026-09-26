@@ -9,6 +9,7 @@ from helpers import PLUGIN, ForemanTestCase, git_repo
 
 import fmcore as c
 import fmdoctor as d
+import fmsetup
 
 
 class Checks(unittest.TestCase):
@@ -74,6 +75,18 @@ class Checks(unittest.TestCase):
         r = d.check_state_dir(home, os.path.join(self.t, "xdg", "foreman"))
         self.assertEqual(r.status, "WARN")
         self.assertIn("fallback", r.detail)
+        self.assertIn("fm doctor --restore-state", r.detail)
+
+    def test_env(self):
+        both = dict(fmsetup.ENV)
+        self.assertEqual(d.check_env({"env": both}, {}).status, "PASS")
+        self.assertEqual(d.check_env({"env": dict(both, CLAUDE_AUTOCOMPACT_PCT_OVERRIDE="50")}, {}).status, "PASS",
+                         "the user's own value counts")
+        self.assertEqual(d.check_env({}, None).status, "PASS", "not wired (--no-wiring): nothing expected")
+        r = d.check_env({"env": {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "60"}}, {})
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", r.detail)
+        self.assertIn("fm install-user", r.detail)
 
     def test_empty_tool_list_is_not_read_only(self):
         # Claude Code treats an empty or omitted tools list as "every tool" (sub-agents docs).
@@ -148,6 +161,24 @@ class Briefs(ForemanTestCase):
         r = d.check_briefs(p)
         self.assertEqual(r.status, "FAIL")
         self.assertIn("T-0009", r.detail)
+
+
+class RestoreState(ForemanTestCase):
+    def test_restore_state_moves_a_fallback_back_once_the_default_is_writable(self):
+        self.fm("init")
+        default = os.path.join(self.home, "state")
+        os.chmod(self.home, 0o500)
+        os.chmod(default, 0o500)
+        try:
+            self.assertNotEqual(c.state_dir(), default)
+            p = self.fm("doctor", "--restore-state", check=False)
+            self.assertEqual(p.returncode, 1)
+            self.assertIn("still isn't writable", p.stderr)
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(default, 0o700)
+        self.assertIn(default, self.fm("doctor", "--restore-state").stdout)
+        self.assertEqual(c.state_dir(), default)
 
 
 class Command(ForemanTestCase):

@@ -4,9 +4,11 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from dataclasses import asdict, dataclass
 
 import fmcore as c
+import fmsetup
 
 PLUGIN = c.PLUGIN_ROOT
 RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
@@ -405,7 +407,22 @@ def check_state_dir(home, state):
     default = os.path.join(home, "state")
     if state == default:
         return Result("state dir", "PASS", state)
-    return Result("state dir", "WARN", f"fallback in use: {state} ({default} isn't writable, or FOREMAN_STATE is set)")
+    if os.environ.get("FOREMAN_STATE"):
+        return Result("state dir", "WARN", f"FOREMAN_STATE is set: state is in {state}, not {default}")
+    tmp = " It's under the temp dir, so a reboot can clear it." if state.startswith(tempfile.gettempdir()) else ""
+    return Result("state dir", "WARN", f"fallback in use: {state} ({default} wasn't writable; the marker in it keeps "
+                  f"every process there).{tmp} fm doctor --restore-state moves it back once {default} is writable")
+
+
+def check_env(settings, manifest):
+    """The env values fm install-user sets (drive continuation cap, earlier compaction), unless Foreman isn't wired."""
+    if manifest is None:
+        return Result("env", "PASS", "not wired (fm install-user hasn't run)")
+    env = settings.get("env") or {}
+    missing = [f"{k} ({fmsetup.WHY[k]})" for k in fmsetup.ENV if k not in env]
+    if missing:
+        return Result("env", "WARN", "settings.json lacks " + "; ".join(missing) + ": fm install-user adds it")
+    return Result("env", "PASS", ", ".join(f"{k}={env[k]}" for k in fmsetup.ENV))
 
 
 def run_all(full=False):
@@ -418,7 +435,7 @@ def run_all(full=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts(), check_state_dir(home, c.state_dir())]
+               check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest)]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
@@ -439,6 +456,12 @@ def run_all(full=False):
 
 
 def cmd_doctor(args):
+    if args.restore_state:
+        try:
+            return print(f"Foreman state is in {c.restore_default_state()}")
+        except OSError as e:
+            print(f"fm doctor: {e}", file=sys.stderr)
+            sys.exit(1)
     results = run_all(full=args.full)
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:

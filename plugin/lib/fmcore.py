@@ -75,16 +75,30 @@ def _writable(path):
 
 
 _STATE_MARKER = ".foreman-state.json"
+ASK_TTL = 300  # seconds an `fm ask` the PreToolUse hook saw stays claimable by fm (it runs right after)
 
 
-def _state_fallbacks():
+def state_fallbacks():
     xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
     return [os.path.join(xdg, "foreman"), os.path.join(tempfile.gettempdir(), f"foreman-state-{os.getuid()}")]
 
 
-def _marker_default(alt):
+def _private(path):
+    """Owned by this user and not writable by anyone else: /tmp is shared, and a fallback (or marker) someone else
+    planted would redirect all of this user's Foreman state."""
     try:
-        with open(os.path.join(alt, _STATE_MARKER)) as f:
+        st = os.stat(path)
+    except OSError:
+        return False
+    return st.st_uid == os.getuid() and not st.st_mode & 0o022
+
+
+def _marker_default(alt):
+    marker = os.path.join(alt, _STATE_MARKER)
+    if not (_private(alt) and _private(marker)):
+        return None
+    try:
+        with open(marker) as f:
             return json.load(f).get("default")
     except (OSError, ValueError, AttributeError):
         return None
@@ -93,34 +107,61 @@ def _marker_default(alt):
 def state_dir():
     """FOREMAN_STATE, else <foreman home>/state. When that isn't writable (Claude Code's Bash sandbox, claude plugin
     eval, read-only containers) state moves to a per-user fallback, once: existing state is copied across and a marker
-    makes every process follow it, so a sandboxed fm and the unsandboxed hooks never split the state."""
+    makes every process follow it, so a sandboxed fm and the unsandboxed hooks never split the state. The guard treats
+    every fallback location as state; restore_default_state() moves it back."""
     if os.environ.get("FOREMAN_STATE"):
         return os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"]))
     default = os.path.join(foreman_home(), "state")
-    for alt in _state_fallbacks():
+    for alt in state_fallbacks():
         if _marker_default(alt) == default:
             return alt
     if _writable(default):
         return default
-    for alt in _state_fallbacks():
+    for alt in state_fallbacks():
         if _writable(alt) and _activate_fallback(alt, default):
             return alt
     return default
 
 
 def _activate_fallback(alt, default):
+    if os.path.exists(alt) and not _private(alt):
+        return False
     try:
-        if os.path.isdir(default) and not os.path.exists(os.path.join(alt, "projects")):
-            shutil.copytree(default, alt, ignore=shutil.ignore_patterns(".lock"), dirs_exist_ok=True)
+        os.makedirs(alt, mode=0o700, exist_ok=True)
+        if os.path.isdir(default):  # the default is the truth here: overwrite anything left from an earlier fallback
+            shutil.copytree(default, alt, ignore=shutil.ignore_patterns(".lock", _STATE_MARKER), dirs_exist_ok=True)
             for d, _, files in os.walk(alt):  # the copy keeps the source's read-only modes
                 for path in [d] + [os.path.join(d, f) for f in files]:
                     os.chmod(path, os.stat(path).st_mode | 0o200)
-        os.makedirs(alt, exist_ok=True)
         with open(os.path.join(alt, _STATE_MARKER), "w") as f:
             json.dump({"default": default, "reason": "default state dir not writable", "at": now()}, f)
         return True
     except OSError:
         return False
+
+
+def fallback_marker():
+    """(fallback dir, marker data) when state has moved to a fallback, else None."""
+    default = os.path.join(foreman_home(), "state")
+    for alt in state_fallbacks():
+        if _marker_default(alt) == default:
+            with open(os.path.join(alt, _STATE_MARKER)) as f:
+                return alt, json.load(f)
+    return None
+
+
+def restore_default_state():
+    """Move fallback state back to <foreman home>/state once that is writable again (the sandbox or read-only mount is
+    gone). Raises OSError while it still isn't, so a sandboxed call can't strand the state. Returns the dir in use."""
+    active = None if os.environ.get("FOREMAN_STATE") else fallback_marker()
+    if not active:
+        return state_dir()
+    alt, default = active[0], os.path.join(foreman_home(), "state")
+    if not _writable(default):
+        raise OSError(f"{default} still isn't writable; state stays in {alt}")
+    shutil.copytree(alt, default, ignore=shutil.ignore_patterns(".lock", _STATE_MARKER), dirs_exist_ok=True)
+    os.remove(os.path.join(alt, _STATE_MARKER))
+    return default
 
 
 def projects_dir():
@@ -134,12 +175,18 @@ def slug_for(root):
 
 def worktree_id(root):
     """Content id of a repo's working files (tracked and untracked, not ignored), the same before and after a commit.
-    Built with a throwaway index, so edits made any way (Bash, editors, other tools) change it. None outside git."""
+    Built with a throwaway index, so edits made any way (Bash, editors, other tools) change it. None outside git.
+    The throwaway index starts as a copy of the real one (mtimes kept, so git's racy-entry checks still hold): git then
+    re-hashes only files whose stat data changed instead of the whole tree."""
     if not root or not git_root(root):
         return None
     with tempfile.TemporaryDirectory() as t:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(t, "index"))
         try:
+            real = subprocess.run(["git", "-C", root, "rev-parse", "--path-format=absolute", "--git-path", "index"],
+                                  capture_output=True, text=True, timeout=10).stdout.strip()
+            if real and os.path.isfile(real):
+                shutil.copy2(real, env["GIT_INDEX_FILE"])
             subprocess.run(["git", "-C", root, "add", "-A"], env=env, capture_output=True, timeout=120, check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
                                   timeout=60, check=True).stdout.strip()
@@ -901,8 +948,14 @@ _WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?
                         r"speed up|clean up|handle|allow|prevent|convert|move|split|merge|extract|upgrade)\b", re.I)
 
 
-_PLAN_ONLY = re.compile(r"\b(?:don'?t|do not|no need to)\s+(?:implement|code|build|start|change|write|execute)\b|"
-                        r"\b(?:plan|capture)[\w\s]{0,20}\b(?:only|first)\b|\bjust (?:plan|capture)\b|\bnothing yet\b", re.I)
+# Plan-only means holding off on everything ("don't implement anything yet"), not a constraint on one thing ("don't
+# change the API") or a mention of a plan ("the plan only covers X"): clause-anchored, needs "anything"/"yet"/"now".
+_CLAUSE = r"(?:^|[.;:,!?\n]\s*)(?:please\s+)?"
+_PLAN_ONLY = re.compile(
+    r"\b(?:don'?t|do not|no need to)\s+(?:implement|code|build|start|change|write|execute|touch)\s+"
+    r"(?:anything(?!\s+else)|(?:it|this|these|them)\s+(?:yet|for now)|yet|for now)\b|"
+    r"\bjust\s+(?:plan|capture)\b|" + _CLAUSE + r"(?:plan|planning|capture)(?:\s+(?:it|this|these|them))?\s+only\b|"
+    + _CLAUSE + r"only\s+(?:plan|capture)\b|\bno\s+(?:code|changes|implementation|edits)\s+(?:yet|for now)\b", re.I)
 
 
 def is_plan_only(text):

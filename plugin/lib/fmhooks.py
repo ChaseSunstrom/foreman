@@ -128,7 +128,7 @@ def session_start(pl):
     if env_file and sid:
         with open(env_file, "a") as f:
             f.write(f"export FOREMAN_SESSION_ID={sid}\nexport FOREMAN_PROJECT={p.slug}\n")
-    with c.lock(p.dir, timeout=1):
+    with c.lock(p.dir, timeout=LOCK_QUICK):
         meta = c.read_meta(p)
         other, other_note = meta.get("session") or {}, None
         age = c.age_days(other.get("seen"))
@@ -159,7 +159,10 @@ def session_context(p, sd, other_note=None):
         focus.append(f"Brief: {a['path']}")
     else:
         focus.append("Active: none.")
-    focus.append("Next: " + c.next_for(p)[2])
+    try:
+        focus.append("Next: " + c.next_for(p)[2])
+    except Exception:  # a malformed brief costs the Next line, not the whole session context
+        log_error("SessionStart", traceback.format_exc())
     q = sd["queue"]
     queue = [("Queue: " + "; ".join(f"{x['id']} {x['type']} {x['tier']} {x['title'][:50]}" for x in q[:5])
               + (f" (+{len(q) - 5} more)" if len(q) > 5 else "") + ".") if q else "Queue: empty."]
@@ -184,6 +187,12 @@ def session_context(p, sd, other_note=None):
 
 
 # ---------------------------------------------------------------- UserPromptSubmit
+
+# Lock waits (seconds). Hooks run on every event, so most wait briefly; the ones carrying the user's words or an fm ask
+# wait longer, because dropping those costs more than a slow turn.
+LOCK_QUICK = 1  # SessionStart heartbeat, Stop drive counters: losing one is harmless
+LOCK_WORDS = 3  # UserPromptSubmit: on timeout it says the message wasn't recorded
+LOCK_SLOW = 5  # recording an fm ask (dropping it makes fm ask refuse), PreCompact checkpoint
 
 _PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
@@ -231,9 +240,11 @@ def user_prompt_submit(pl):
     if not p:
         return None
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
+    if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
+        return None
     r = c.parse_intake(text)
     try:
-        with c.lock(p.dir, timeout=3):
+        with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
             approvals = _resolve_approvals(p, meta, sid, text)
             meta["session"] = {"id": sid, "seen": c.now()}
@@ -354,12 +365,11 @@ def _guard_ctx(pl, fmguard):
         log_error("PreToolUse", traceback.format_exc())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
-                      foreman_home=c.foreman_home(), state_dir=c.state_dir(), scratch=scratch,
+                      foreman_home=c.foreman_home(), state_dir=c.state_dir(),
+                      state_fallbacks=c.state_fallbacks(), scratch=scratch,
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None)
     return ctx, p, act
 
-
-ASK_TTL = 300  # seconds between the hook seeing `fm ask` and fm recording it
 
 
 def _record_asks(pl, p, fmguard):
@@ -379,9 +389,9 @@ def _record_asks(pl, p, fmguard):
     if not asks:
         return
     path = os.path.join(p.dir, "asks.json")
-    with c.lock(p.dir, timeout=2):
+    with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(path)
-        seen = [a for a in seen if time.time() - a.get("at", 0) < ASK_TTL] + asks
+        seen = [a for a in seen if time.time() - a.get("at", 0) < c.ASK_TTL] + asks
         c.write_atomic(path, json.dumps(seen[-20:]))
 
 
@@ -472,7 +482,7 @@ def post_tool_use_failure(pl):
 def pre_compact(pl):
     p = c.find_project(_cwd(pl))
     if p:
-        with c.lock(p.dir, timeout=5):
+        with c.lock(p.dir, timeout=LOCK_SLOW):
             c.checkpoint(p, auto=True, session=pl.get("session_id"))
     return None
 
@@ -493,12 +503,13 @@ def claims_done(msg):
     return False
 
 
+_FENCE = re.compile(r"```.*?(?:```|$)", re.S)
 _QUESTION_LINE = re.compile(r"\?\**\s*$", re.M)
 
 
 def needs_user(msg):
     """The reply ends with, or lists, questions for the user (numbered questions often sit above a summary)."""
-    tail = (msg or "").strip()
+    tail = _FENCE.sub("", (msg or "").strip())  # a "?" inside a code block isn't put to the user
     return bool(_ASK.search(tail[-400:]) or _QUESTION_LINE.search(tail[-2500:]))
 
 
@@ -538,7 +549,7 @@ def stop(pl):
     sd = c.state_dict(p, briefs)
     act = c.active_brief(briefs)
     seq = _title_seq(sd) + _progress_seq(sd)
-    with c.lock(p.dir, timeout=1):
+    with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
         reason = _evidence_gate(p, act, pl, g) or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})

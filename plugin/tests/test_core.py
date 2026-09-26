@@ -2,6 +2,7 @@
 import json
 import multiprocessing
 import os
+import subprocess
 import time
 import unittest
 
@@ -43,6 +44,64 @@ class PathsAndProjects(ForemanTestCase):
         self.assertEqual(c.state_dir(), alt, "the unsandboxed side (hooks) follows the marker")
         self.assertTrue(any(e["event"] == "note" for e in c.ledger_tail(c.find_project(self.repo))),
                         "existing state was copied across")
+
+    def test_a_marker_others_could_have_planted_is_ignored(self):
+        # /tmp is shared: a marker in a dir other users can write would redirect all of this user's state.
+        alt = os.path.join(self.tmp, "xdg", "foreman")
+        os.makedirs(alt)
+        with open(os.path.join(alt, ".foreman-state.json"), "w") as f:
+            json.dump({"default": os.path.join(self.home, "state")}, f)
+        os.chmod(alt, 0o777)
+        self.assertEqual(c.state_dir(), os.path.join(self.home, "state"))
+        os.chmod(alt, 0o755)
+        self.assertEqual(c.state_dir(), alt)
+
+    def test_restore_moves_fallback_state_back_once_the_default_is_writable(self):
+        default = os.path.join(self.home, "state")
+        c.init_project(self.repo)
+        os.chmod(self.home, 0o500)
+        os.chmod(default, 0o500)
+        try:
+            alt = c.state_dir()
+            self.assertNotEqual(alt, default)
+            with self.assertRaises(OSError):  # still read-only (the sandbox is still there): nothing moves
+                c.restore_default_state()
+            self.assertEqual(c.state_dir(), alt)
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(default, 0o700)
+        c.log_event(c.find_project(self.repo), "note", data={"in": "fallback"})
+        self.assertEqual(c.restore_default_state(), default)
+        self.assertEqual(c.state_dir(), default)
+        self.assertTrue(any(e["event"] == "note" for e in c.ledger_tail(c.find_project(self.repo))))
+        c.log_event(c.find_project(self.repo), "note", data={"in": "default"})
+        os.chmod(self.home, 0o500)
+        os.chmod(default, 0o500)
+        try:  # a later fallback starts from the current default, not the stale copy left behind
+            self.assertEqual(c.state_dir(), alt)
+            self.assertIn({"in": "default"}, [e.get("data") for e in c.ledger_tail(c.find_project(self.repo))])
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(default, 0o700)
+
+    def test_worktree_id_tracks_edits_and_leaves_the_real_index_alone(self):
+        f = os.path.join(self.repo, "README.md")
+        index = os.path.join(self.repo, ".git", "index")
+        before = c.worktree_id(self.repo)
+        with open(index, "rb") as fh:
+            idx = fh.read()
+        with open(f, "w") as fh:  # same size, same second as the commit: stat data alone can't tell
+            fh.write("# APP\n")
+        after = c.worktree_id(self.repo)
+        self.assertNotEqual(before, after)
+        with open(os.path.join(self.repo, "new.py"), "w") as fh:
+            fh.write("x = 1\n")
+        self.assertNotEqual(after, c.worktree_id(self.repo), "untracked files count")
+        with open(index, "rb") as fh:
+            self.assertEqual(fh.read(), idx)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "x"], check=True)
+        self.assertEqual(c.worktree_id(self.repo), c.worktree_id(self.repo))
 
     def test_foreman_state_env_overrides(self):
         os.environ["FOREMAN_STATE"] = os.path.join(self.tmp, "elsewhere")
@@ -441,6 +500,22 @@ class OpenEnded(unittest.TestCase):
                      "add a --verbose flag to the CLI", "yes", "PAUSE", ""):
             with self.subTest(text=text):
                 self.assertFalse(c.is_open_ended(text))
+
+
+class PlanOnly(unittest.TestCase):
+    def test_plan_only_requests_hold_drive(self):
+        for text in ("FIX: a\n\nCapture and plan these; don't implement anything yet.", "Just plan it.",
+                     "Plan only, no code.", "don't implement yet", "Do not change anything for now.",
+                     "only plan this", "no code yet please", "capture only"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_plan_only(text))
+
+    def test_constraints_and_mentions_of_a_plan_do_not(self):
+        for text in ("fix the login bug; don't change the API", "the plan only covers X", "don't write to the db",
+                     "don't build a new parser, reuse the old one", "add retries, don't change anything else",
+                     "is the plan first-class?", "the only plan we have is this one"):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_plan_only(text))
 
 
 class Intake(unittest.TestCase):
