@@ -52,6 +52,13 @@ class Checks(unittest.TestCase):
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
 
+    def test_state_location(self):
+        home = os.path.join(self.t, "fh")
+        self.assertEqual(d.check_state_dir(home, os.path.join(home, "state")).status, "PASS")
+        r = d.check_state_dir(home, os.path.join(self.t, "xdg", "foreman"))
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("fallback", r.detail)
+
     def test_empty_tool_list_is_not_read_only(self):
         # Claude Code treats an empty or omitted tools list as "every tool" (sub-agents docs).
         for tools in ("[]", ""):

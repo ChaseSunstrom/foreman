@@ -346,6 +346,13 @@ def _bench_and_injection():
     return bench, sizes
 
 
+def check_state_dir(home, state):
+    default = os.path.join(home, "state")
+    if state == default:
+        return Result("state dir", "PASS", state)
+    return Result("state dir", "WARN", f"fallback in use: {state} ({default} isn't writable, or FOREMAN_STATE is set)")
+
+
 def run_all(full=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -356,7 +363,7 @@ def run_all(full=False):
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
-               check_hook_scripts()]
+               check_hook_scripts(), check_state_dir(home, c.state_dir())]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]

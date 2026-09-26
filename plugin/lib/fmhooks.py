@@ -325,7 +325,7 @@ def _guard_ctx(pl, fmguard):
         log_error("PreToolUse", traceback.format_exc())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
-                      foreman_home=c.foreman_home(), scratch=scratch,
+                      foreman_home=c.foreman_home(), state_dir=c.state_dir(), scratch=scratch,
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None)
     return ctx, p, act
 

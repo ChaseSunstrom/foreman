@@ -26,6 +26,7 @@ class Ctx:
     scratch: list = field(default_factory=list)
     allow: set = field(default_factory=set)
     task_id: str = None
+    state_dir: str = None  # when Foreman state lives outside foreman_home (read-only home fallback)
 
 
 @dataclass
@@ -162,7 +163,7 @@ def _is_core(path, ctx):
 def classify_write(path, ctx):
     cats = []
     for p in _variants(path):
-        if _under(p, os.path.join(ctx.foreman_home, "state")):
+        if _under(p, os.path.join(ctx.foreman_home, "state")) or (ctx.state_dir and _under(p, ctx.state_dir)):
             cats.append("state-direct")
         if _is_core(p, ctx):
             cats.append("core")

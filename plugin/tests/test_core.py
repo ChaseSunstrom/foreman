@@ -15,6 +15,21 @@ class PathsAndProjects(ForemanTestCase):
         self.assertEqual(c.foreman_home(), self.home)
         self.assertEqual(c.state_dir(), os.path.join(self.home, "state"))
 
+    def test_state_falls_back_when_foreman_home_is_read_only(self):
+        # Sandboxes (claude plugin eval) and containers can mount ~/.claude read-only; fm must keep working.
+        os.chmod(self.home, 0o500)
+        try:
+            os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")
+            self.assertEqual(c.state_dir(), os.path.join(self.tmp, "xdg", "foreman"))
+            p = c.init_project(self.repo)
+            self.assertTrue(p.dir.startswith(os.path.join(self.tmp, "xdg", "foreman")))
+        finally:
+            os.chmod(self.home, 0o700)
+
+    def test_foreman_state_env_overrides(self):
+        os.environ["FOREMAN_STATE"] = os.path.join(self.tmp, "elsewhere")
+        self.assertEqual(c.state_dir(), os.path.join(self.tmp, "elsewhere"))
+
     def test_foreman_home_defaults_under_user_home(self):
         del os.environ["FOREMAN_HOME"]
         os.environ["HOME"], old = self.tmp, os.environ["HOME"]
@@ -261,6 +276,8 @@ class Briefs(unittest.TestCase):
     def test_audits_required_by_tier(self):
         s = self._finished("S")
         self.assertTrue(any("audit" in r for r in s.done_blockers()))
+        s.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertIn("audit missing: self", s.done_blockers(), "one lens doesn't replace the five-lens self checklist")
         s.add_audit("self", "lens checklist", "no findings", ts="2026-01-01T11:00:00Z")
         self.assertEqual(s.done_blockers(), [])
         m = self._finished("M")

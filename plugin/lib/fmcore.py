@@ -11,6 +11,7 @@ import json
 import os
 import re
 import string
+import tempfile
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -61,8 +62,29 @@ def foreman_home():
     return os.path.join(os.path.expanduser("~"), ".claude", "foreman")
 
 
+def _writable(path):
+    """Whether path, or its nearest existing ancestor, can be written (EROFS and permissions both count)."""
+    while not os.path.exists(path):
+        parent = os.path.dirname(path)
+        if parent == path:
+            return False
+        path = parent
+    return os.access(path, os.W_OK)
+
+
 def state_dir():
-    return os.path.join(foreman_home(), "state")
+    """FOREMAN_STATE, else <foreman home>/state; when that isn't writable (sandboxes such as claude plugin eval,
+    read-only containers) a per-user fallback, so fm keeps working instead of failing on every write."""
+    if os.environ.get("FOREMAN_STATE"):
+        return os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"]))
+    default = os.path.join(foreman_home(), "state")
+    if _writable(default):
+        return default
+    xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    for alt in (os.path.join(xdg, "foreman"), os.path.join(tempfile.gettempdir(), f"foreman-state-{os.getuid()}")):
+        if _writable(alt):
+            return alt
+    return default
 
 
 def projects_dir():
@@ -325,7 +347,7 @@ _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
 # Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
 REQUIRED_AUDITS = {
-    "S": [set(AUDIT_LENSES)],
+    "S": [{"self"}],  # the five-lens checklist; a single other lens covers less
     "M": [{"intent"}, {"adversary", "edge", "operator", "maintainer"}],
     "L": [{"intent"}, {"adversary"}, {"edge"}, {"operator"}, {"maintainer"}],
 }
@@ -548,7 +570,7 @@ class Brief:
         reasons = []
         for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]):
             if not group & fresh:
-                name = "self" if group == set(AUDIT_LENSES) else " or ".join(sorted(group))
+                name = " or ".join(sorted(group))
                 reasons.append(f"audit missing: {name}" + (" (recorded audits predate the last change; "
                                                           "re-audit after the last change)" if group & stale else ""))
         return reasons

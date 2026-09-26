@@ -45,10 +45,11 @@ class ForemanTestCase(unittest.TestCase):
         self.tmp = os.path.realpath(self._tmp.name)
         self.home = os.path.join(self.tmp, "fhome")
         os.makedirs(self.home)
-        self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT")}
+        self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
+                                                     "FOREMAN_STATE", "XDG_STATE_HOME")}
         os.environ["FOREMAN_HOME"] = self.home
-        os.environ.pop("FOREMAN_SESSION_ID", None)
-        os.environ.pop("FOREMAN_PROJECT", None)
+        for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE", "XDG_STATE_HOME"):
+            os.environ.pop(k, None)
         self.repo = git_repo(self.tmp)
 
     def tearDown(self):

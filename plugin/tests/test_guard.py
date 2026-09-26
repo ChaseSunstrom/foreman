@@ -288,6 +288,15 @@ class Authorization(GuardCase):
         self.assertIn("state-direct", g.message(self.write("{fhome}/state/projects/x/a.md"), self.ctx()))
 
 
+class StateFallback(GuardCase):
+    def test_fallback_state_dir_is_state_direct(self):
+        alt = os.path.join(self.home, ".local", "state", "foreman")
+        ctx = self.ctx()
+        ctx.state_dir = alt
+        self.assertBlocked(g.check("Write", {"file_path": os.path.join(alt, "projects", "x", "meta.json")}, ctx),
+                           "state-direct")
+
+
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 
