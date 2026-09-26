@@ -1,0 +1,6 @@
+# Machine-specific; never committed (see BUILD_PROMPT.md §2.11)
+state/
+local/
+backups/
+*.bak
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "name": "foreman",
+  "owner": { "name": "YOUR_GITHUB_USER" },
+  "metadata": {
+    "description": "Foreman: a self-orchestration layer for Claude Code (intake, planning, focus, memory hygiene).",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "foreman",
+      "source": "./plugin",
+      "description": "Plans, sequences, tracks, and verifies work from terse prompts. Starts as a bootstrap: run /foreman:build to build the full system from BUILD_PROMPT.md.",
+      "version": "0.1.0"
+    }
+  ]
+}
