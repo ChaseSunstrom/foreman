@@ -224,6 +224,27 @@ class StateDirect(GuardCase):
             ("cat {fhome}/state/projects/x/STATE.md", None),
         ], self.bash)
 
+    def test_archives_clones_and_target_dirs_write_where_they_point(self):
+        self.run_table([
+            ("tar -xf forged.tar -C {fhome}/state", "state-direct"),
+            ("tar xzf forged.tgz --directory={fhome}/state/projects", "state-direct"),
+            ("cd {fhome}/state && tar -xf /tmp/forged.tar", "state-direct"),
+            ("tar -cf {fhome}/state/x.tar notes", "state-direct"),
+            ("unzip -o forged.zip -d {fhome}/state", "state-direct"),
+            ("cd {fhome}/state && cpio -idv < forged.cpio", "state-direct"),
+            ("7z x forged.7z -o{fhome}/state", "state-direct"),
+            ("git clone https://example.com/x.git {fhome}/state/projects/x", "state-direct"),
+            ("cp -t {fhome}/state/projects/x forged.md", "state-direct"),
+            ("mv --target-directory={fhome}/state forged.json", "state-direct"),
+            ("wget -P {fhome}/state https://example.com/meta.json", "state-direct"),
+            ("tar -xf release.tar -C {repo}/vendor", None),
+            ("tar -tf forged.tar", None),
+            ("cd {repo} && unzip -o assets.zip", None),
+            ("git clone https://example.com/x.git {repo}/deps/x", None),
+            ("cd {fhome}/state && git commit -m clone", None),
+            ("rsync -t {fhome}/state/projects/x/STATE.md /tmp/copy.md", None),
+        ], self.bash)
+
 
 class Core(GuardCase):
     def test_table(self):

@@ -406,12 +406,61 @@ def check_bash(cmd, ctx, depth=0):
     return found
 
 
+def _opt_values(args, *flags):
+    """Values of options given as `-X v`, `-Xv`, `--long v` or `--long=v`."""
+    out = []
+    for i, a in enumerate(args):
+        for f in flags:
+            if a == f and i + 1 < len(args):
+                out.append(args[i + 1])
+            elif f.startswith("--") and a.startswith(f + "="):
+                out.append(a[len(f) + 1:])
+            elif not f.startswith("--") and a.startswith(f) and len(a) > len(f):
+                out.append(a[len(f):])
+    return out
+
+
+def _tar_targets(args):
+    """Where tar writes: the -C dir (else the cwd) when extracting, the archive when creating."""
+    short = [a[1:] for a in args if a.startswith("-") and not a.startswith("--")]
+    if args and not args[0].startswith("-"):
+        short.append(args[0])  # old style: tar xzf archive
+    longs = {a.split("=")[0] for a in args if a.startswith("--")}
+    out = []
+    if any("x" in c for c in short) or longs & {"--extract", "--get"}:
+        out += _opt_values(args, "-C", "--directory") or ["."]
+    if any(set(c) & set("cruA") for c in short) or longs & {"--create", "--append", "--update"}:
+        out += _opt_values(args, "--file") + [args[i + 1] for i, a in enumerate(args[:-1])
+                                              if (a.startswith("-") and not a.startswith("--") or i == 0)
+                                              and a.endswith("f")]
+    return out
+
+
 def _write_targets(name, args):
+    """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
+    the guard can't see an archive's members, so the destination itself is what's checked."""
     pos = _positionals(args)
     if name == "tee":
         return pos
-    if name in ("cp", "mv", "install", "ln", "rsync") and len(pos) >= 2:
-        return [pos[-1]]
+    if name in ("cp", "mv", "install", "ln", "rsync"):
+        tdir = _opt_values(args, "-t", "--target-directory") if name != "rsync" else []  # rsync -t: keep times
+        return tdir + ([pos[-1]] if len(pos) >= 2 else [])
+    if name == "tar":
+        return _tar_targets(args)
+    if name == "unzip":
+        return [] if set(args) & {"-l", "-t", "-v", "-Z", "-p", "-c"} else _opt_values(args, "-d") or ["."]
+    if name == "cpio":
+        extract = any("i" in a[1:] for a in args if a.startswith("-") and not a.startswith("--")) or "--extract" in args
+        return (_opt_values(args, "-D", "--directory") or ["."]) if extract else []
+    if name in ("7z", "7za", "7zz") and pos and pos[0] in ("x", "e"):
+        return _opt_values(args, "-o") or ["."]
+    if name == "git":
+        i = 0
+        while i < len(args) and args[i].startswith("-"):  # global options before the subcommand
+            i += 2 if args[i] in ("-C", "-c") else 1
+        if i < len(args) and args[i] == "clone":
+            rest = _positionals(args[i + 1:])
+            return [rest[-1]] if len(rest) >= 2 else ["."]
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
     if name == "dd":
@@ -421,7 +470,8 @@ def _write_targets(name, args):
     if name == "curl":
         return [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-o", "--output")]
     if name == "wget":
-        return [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-O", "--output-document")]
+        return [args[i + 1] for i, a in enumerate(args[:-1]) if a in ("-O", "--output-document")] + \
+            _opt_values(args, "-P", "--directory-prefix")
     return []
 
 

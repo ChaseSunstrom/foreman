@@ -190,7 +190,7 @@ Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists
 
 ## 10. Known limitations
 
-- The guard is a speed bump, not a sandbox: shell text can be obfuscated (a script file that writes elsewhere, computed paths). Interpreter code that names a protected path and writes is caught; deny rules and git are the other layers.
+- The guard is a speed bump, not a sandbox: shell text can be obfuscated (a script file that writes elsewhere, computed paths). Interpreter code that names a protected path and writes is caught, and archives, clones and copies are checked by where they write (not by archive members); deny rules and git are the other layers.
 - Hints vs gates: the next action injected each turn is a hint the model can ignore; the gates are enforced by code (no edits without an active task, `fm focus` plan gate, `fm task done` blockers). Doc drift blocks done only in docs a task says it updated; elsewhere `fm docs` and done report it.
 - The state fallback is found through each process's `XDG_STATE_HOME` and temp dir; processes that disagree on those would split state.
 - Chat approval trusts that a reply starting with yes answers the question just asked; pasted text never counts, and requests expire after 24 h or at your next reply.

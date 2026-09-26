@@ -54,6 +54,15 @@ class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
 
+    def test_a_state_fallback_in_use_is_named(self):
+        self.fm("init")
+        self.assertNotIn("fallback", self.ctx_of(self.run_ss()))
+        alt = os.path.join(self.tmp, "xdg", "foreman")
+        os.makedirs(alt)
+        with open(os.path.join(alt, ".foreman-state.json"), "w") as f:
+            json.dump({"default": os.path.join(self.home, "state")}, f)
+        self.assertIn(f"State: fallback {alt}", self.ctx_of(self.run_ss()))
+
     def test_registers_project_and_injects_factual_state(self):
         self.fm("init")
         tid = self.task()

@@ -133,8 +133,8 @@ def _activate_fallback(alt, default):
             for d, _, files in os.walk(alt):  # the copy keeps the source's read-only modes
                 for path in [d] + [os.path.join(d, f) for f in files]:
                     os.chmod(path, os.stat(path).st_mode | 0o200)
-        with open(os.path.join(alt, _STATE_MARKER), "w") as f:
-            json.dump({"default": default, "reason": "default state dir not writable", "at": now()}, f)
+        write_atomic(os.path.join(alt, _STATE_MARKER),
+                     json.dumps({"default": default, "reason": "default state dir not writable", "at": now()}))
         return True
     except OSError:
         return False
@@ -949,7 +949,7 @@ _WORK_VERB = re.compile(r"^\W*(?:(?:please|can you|could you|would you|pls)\s+)?
 
 
 # Plan-only means holding off on everything ("don't implement anything yet"), not a constraint on one thing ("don't
-# change the API") or a mention of a plan ("the plan only covers X"): clause-anchored, needs "anything"/"yet"/"now".
+# change the API") or a mention of a plan ("the plan only covers X"): clause-anchored, or "anything"/"yet"/"for now".
 _CLAUSE = r"(?:^|[.;:,!?\n]\s*)(?:please\s+)?"
 _PLAN_ONLY = re.compile(
     r"\b(?:don'?t|do not|no need to)\s+(?:implement|code|build|start|change|write|execute|touch)\s+"

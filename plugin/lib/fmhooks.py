@@ -146,7 +146,8 @@ def session_context(p, sd, other_note=None):
     a = sd["active"]
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
-            + (" Autonomy: full." if sd.get("autonomy") == "full" else "")]
+            + (" Autonomy: full." if sd.get("autonomy") == "full" else "")
+            + (f" State: fallback {c.state_dir()} (fm doctor)." if c.fallback_marker() else "")]
     focus, resume = [], []
     if a:
         step = f"step {a['step']['n']}/{a['step']['of']}: {a['step']['text']}" if a["step"] else \
