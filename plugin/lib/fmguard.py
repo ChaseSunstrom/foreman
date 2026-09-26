@@ -316,7 +316,8 @@ _WRITE_API = re.compile(
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin")
 # A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
-_SLASH_BODY = (r"/(?:plugins?\s+(?:install|i|enable|disable|uninstall|remove|update|marketplace)|"
+_SLASH_BODY = (r"/(?:plugins?\s+(?:install|i|enable|disable|uninstall|remove|update|"
+               r"marketplace\s+(?:add|remove|rm|update))|"
                r"mcp\s+(?:add|remove|enable|disable)|config\s+(?:set|add|remove))\b")
 _SLASH_CHANGE = re.compile(r"(?:^|[\s'\"])" + _SLASH_BODY)
 # Interpreter code that runs claude's plugin/mcp/config subcommands (argv list, split argv array or command string) or
@@ -334,7 +335,8 @@ _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import
 _FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
-                          r"restore_default_state|getattr)\s*\(|"
+                          r"restore_default_state)\s*\(|"
+                          rf"\bgetattr\s*\(\s*{_FM_ENTRY}\b|"
                           rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b|"
                           rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}")
 
@@ -422,7 +424,8 @@ def check_bash(cmd, ctx, depth=0):
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
                 found.append(("pipe-shell", f"{name} <(download)"))
-        for target in c.redirs + _write_targets(name, args):
+        git_env = [a.split("=", 1)[1] for a in c.argv if name == "git" and a.startswith(("GIT_DIR=", "GIT_WORK_TREE="))]
+        for target in c.redirs + _write_targets(name, args) + git_env:
             if not _unresolvable(target):
                 found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
@@ -438,7 +441,7 @@ def check_bash(cmd, ctx, depth=0):
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)
-        found += _check_claude_config(name, args, cmd)
+        found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")
         found += _check_publish(name, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
     return found
@@ -497,16 +500,22 @@ def _write_targets(name, args):
     if name in ("7z", "7za", "7zz") and pos and pos[0] in ("x", "e"):
         return _opt_values(args, "-o") or ["."]
     if name == "git":
-        i, where = 0, []
+        i, where, trees = 0, [], []
         while i < len(args) and args[i].startswith("-"):  # global options before the subcommand
-            if args[i] == "-C" and i + 1 < len(args):
-                where.append(args[i + 1])
-            i += 2 if args[i] in ("-C", "-c") else 1
+            opt, eq, val = args[i].partition("=")
+            if opt in ("-C", "--git-dir", "--work-tree") and not eq:
+                val = args[i + 1] if i + 1 < len(args) else ""
+            if opt == "-C":
+                where.append(val)
+            elif opt in ("--git-dir", "--work-tree"):
+                trees.append(val)
+            i += 2 if args[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
             return [rest[-1]] if len(rest) >= 2 else ["."]
-        if i < len(args) and args[i] in _GIT_WORKTREE_WRITES:  # rewrites the checkout it runs in
-            return [os.path.join(*where) if where else "."]
+        if i < len(args) and args[i] in _GIT_WORKTREE_WRITES:  # rewrites its checkout (and repository)
+            base = os.path.join(*where) if where else "."
+            return [os.path.join(base, t) for t in trees] or [base]
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
     if name == "dd":
@@ -667,14 +676,15 @@ _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", 
 _SESSION_CONFIG = ("--settings", "--mcp-config", "--plugin-dir")
 
 
-def _check_claude_config(name, args, cmd=""):
+def _check_claude_config(name, args, stdin=""):
     """Installing or toggling plugins, marketplaces and MCP servers, or changing Claude Code's config: new code and
     always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it. A session started
     with its own settings, MCP servers or plugins counts too (its settings can switch Foreman's hooks off)."""
-    if name != "claude":
+    if not re.fullmatch(r"claude(?:-code)?(?:@[\w.-]+)?", name):  # also npx @anthropic-ai/claude-code[@version]
         return []
-    # a prompt's slash command isn't a tool call the guard sees; `cmd` holds stdin text (echo … |, heredocs) too
-    if _SLASH_CHANGE.search(cmd) or any(_SLASH_CHANGE.search(a) for a in args):
+    # a prompt's slash command isn't a tool call the guard sees; `stdin` is the raw command text when claude reads a
+    # pipe or heredoc (echo … | claude -p, claude -p <<EOF)
+    if _SLASH_CHANGE.search(stdin) or any(_SLASH_CHANGE.search(a) for a in args):
         return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt")]
     flags = [a.split("=", 1)[0] for a in args if a.split("=", 1)[0] in _SESSION_CONFIG]
     if flags:
