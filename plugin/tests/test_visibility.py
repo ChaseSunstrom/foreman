@@ -45,15 +45,16 @@ class Statusline(VisibilityCase):
         self.manifest(statusLine_original={"type": "command", "command": "echo ORIGINAL-LINE"}, statusline_hud=False)
         lines = self.statusline().stdout.rstrip("\n").split("\n")
         self.assertEqual(lines[0], "ORIGINAL-LINE")
-        self.assertIn("T-0001 FIX 1/2", lines[-1])
-        self.assertIn("foreman", lines[-1])
+        self.assertIn("T-0001 FIX 1/2", lines[-2])
+        self.assertIn("foreman", lines[-2])
+        self.assertTrue(lines[-1].startswith("▸ T-0001"), "the progress line follows the Foreman line")
 
     def test_blank_or_failing_original_still_prints_foreman_line(self):
         self.manifest(statusLine_original={"type": "command", "command": "echo; exit 3"}, statusline_hud=False)
         p = self.statusline()
         self.assertEqual(p.returncode, 0)
         lines = [l for l in p.stdout.split("\n") if l.strip()]
-        self.assertEqual(len(lines), 1)
+        self.assertEqual(len(lines), 2, "the Foreman line and its progress line only")
         self.assertIn("T-0001", lines[0])
 
     def test_original_receives_the_same_json(self):
@@ -94,6 +95,30 @@ class SubagentStatusline(VisibilityCase):
     def test_garbage_input_prints_nothing(self):
         p = subprocess.run([SUBAGENT_LINE], input="not json", capture_output=True, text=True, timeout=10)
         self.assertEqual((p.returncode, p.stdout), (0, ""))
+
+
+class Progress(VisibilityCase):
+    def sd(self):
+        return c.state_dict(c.find_project(self.repo))
+
+    def test_active_task_carries_its_stage_and_audit_progress(self):
+        a = self.sd()["active"]
+        self.assertEqual((a["stage"], a["audits"]), ("executing", {"done": 0, "required": 1}))
+        self.assertEqual(c.badge_text(self.sd()), "T-0001 FIX · executing 1/2")
+
+    def test_progress_line_shows_bar_audits_queue_autonomy_and_what_a_yes_grants(self):
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "1 failed as expected")
+        self.fm_ask("T-0001", "publish")
+        line = self.statusline().stdout.rstrip("\n").split("\n")[-1]
+        for needle in ("▸ T-0001 FIX S", "█████░░░░░ 1/2", "executing", "audits 0/1", "q0 in0", "standard",
+                       "⚠ reply yes = publish for T-0001"):
+            self.assertIn(needle, line)
+        self.assertLessEqual(len(line), 120)
+
+    def test_idle_without_asks_has_no_progress_line(self):
+        self.fm("task", "drop", "T-0001", "not needed")
+        self.assertEqual(c.progress_line(self.sd()), "")
+        self.assertNotIn("▸", self.statusline().stdout)
 
 
 class Watch(VisibilityCase):

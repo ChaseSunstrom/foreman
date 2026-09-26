@@ -622,7 +622,7 @@ class MessageDisplay(HookCase):
         self.fm("init")
         tid = self.task()
         first = parse(self.disp(0, "Here is the plan:\n"))["hookSpecificOutput"]["displayContent"]
-        self.assertRegex(first, rf"^\[{tid} FIX · 1/2 · \d\d:\d\d\] Here is the plan:")
+        self.assertRegex(first, rf"^\[{tid} FIX · executing 1/2 · \d\d:\d\d\] Here is the plan:")
         self.assertEqual(self.disp(1, "more text\n").stdout.strip(), "")
 
     def test_secrets_masked_on_screen(self):

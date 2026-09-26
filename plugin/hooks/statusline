@@ -2,7 +2,8 @@
 """Foreman statusLine wrapper: [original statusLine] + [claude-hud] + one Foreman line (display only).
 
 Reads the statusline JSON once, feeds it to the saved original command and to claude-hud (in parallel),
-drops blank lines, appends the Foreman line from the cached state.line, and snapshots the JSON to
+drops blank lines, appends the Foreman line from the cached state.line (plus progress.line: task progress, audits
+and what a pending yes grants, when there is one), and snapshots the JSON to
 state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a Foreman line.
 """
 import glob
@@ -81,6 +82,18 @@ def foreman_line(c, data):
     return f"foreman · {label} · guard on · {mode}", p
 
 
+def progress(c, p):
+    if not p:
+        return []
+    try:
+        with open(os.path.join(p.dir, "progress.line")) as f:
+            line = f.read().strip()
+    except OSError:
+        line = c.progress_line(c.state_dict(p))
+    width = int(os.environ.get("COLUMNS") or 120)
+    return [line if len(line) <= width else line[:width - 1] + "…"] if line else []
+
+
 def snapshot(c, data, p):
     sid = re.sub(r"[^\w-]", "", str(data.get("session_id") or ""))[:80]
     if not sid:
@@ -100,7 +113,7 @@ def main():
         data = json.loads(raw) if raw.strip() else {}
     except ValueError:
         data = {}
-    lines, tail = [], "foreman"
+    lines, tail, extra = [], "foreman", []
     try:
         import fmcore as c
         try:
@@ -110,10 +123,11 @@ def main():
             manifest = {}
         lines = run_children(raw, manifest)
         tail, p = foreman_line(c, data)
+        extra = progress(c, p)
         snapshot(c, data, p)
     except Exception:
         pass
-    print("\n".join(lines + [tail]))
+    print("\n".join(lines + [tail] + extra))
     return 0
 
 

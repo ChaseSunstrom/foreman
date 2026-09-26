@@ -517,6 +517,7 @@ def cmd_ask(args):
         meta["pending_approvals"] = pend
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
+        c.regen_views(p)  # the statusline shows what a yes would grant
     out(args, {"task": b.id, "allow": cats, "why": why},
         f"Pending: {b.id} {', '.join(cats)} ({why}). Ask the user one yes/no question for it now; their next "
         f"message decides: a reply starting with yes grants it, anything else cancels it.")

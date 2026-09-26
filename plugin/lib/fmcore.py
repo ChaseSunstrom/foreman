@@ -1078,6 +1078,12 @@ def needs_approval(b, autonomy="standard"):
     return (b.tier == "L" or bool(b.meta.get("explore"))) and not b.meta.get("approved") and autonomy != "full"
 
 
+def audit_progress(b, since=None):
+    """{"done", "required"}: the tier's audit groups satisfied by audits recorded after the last change."""
+    required = len(REQUIRED_AUDITS.get(b.tier, REQUIRED_AUDITS["S"]))
+    return {"done": required - len(b.audit_blockers(since)), "required": required}
+
+
 def pending_tasks(meta):
     """Task ids with an open `fm ask` (only the user's next reply settles it)."""
     return [a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")]
@@ -1185,17 +1191,24 @@ def state_dict(p, briefs=None):
     act = active_brief(briefs)
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)
+    autonomy = meta.get("autonomy", "standard")
+    active = None
+    if act:
+        changed = last_change(p, act.id)
+        active = dict(brief_summary(act), stage=stage(act, autonomy, changed), audits=audit_progress(act, changed))
     return {
         "project": p.slug, "root": p.root,
-        "active": brief_summary(act) if act else None,
+        "active": active,
         "queue": [brief_summary(b) for b in queue if b is not act],
         "inbox": [brief_summary(b) for b in briefs if b.status == "captured"],
         "blocked": [dict(brief_summary(b), reason=_last_log(b)) for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
-        "autonomy": meta.get("autonomy", "standard"),
+        "autonomy": autonomy,
         "pending": pending_tasks(meta),
+        "asks": [{"task": a.get("task"), "allow": list(a.get("allow") or [])}
+                 for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "last_tidy": meta.get("last_tidy"),
         "tidy_overdue_days": int(days) if days is not None and days > TIDY_EVERY_DAYS else None,
         "session": meta.get("session") or {},
@@ -1269,6 +1282,7 @@ def regen_views(p, briefs=None):
     write_atomic(os.path.join(p.dir, "INBOX.md"), render_inbox(sd, ts))
     write_atomic(os.path.join(p.dir, "state.line"), state_line(sd) + "\n")
     write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
+    write_atomic(os.path.join(p.dir, "progress.line"), progress_line(sd) + "\n")
     return sd
 
 
@@ -1277,7 +1291,27 @@ def badge_text(sd):
     a = sd["active"]
     if not a:
         return ""
-    return f"{a['id']} {a['type']} · " + (f"{a['step']['n']}/{a['step']['of']}" if a["step"] else f"{a['steps_done']}/{a['steps_total']}")
+    n = f"{a['step']['n']}/{a['step']['of']}" if a["step"] else f"{a['steps_done']}/{a['steps_total']}"
+    return f"{a['id']} {a['type']} · {a.get('stage') or 'executing'} {n}"
+
+
+def progress_line(sd, width=120):
+    """The statusline's second Foreman line: task progress, audits, queue, autonomy, and exactly what a yes grants.
+    Empty when there's nothing active and nothing waiting on the user."""
+    a, asks, parts = sd["active"], sd.get("asks") or [], []
+    if not a and not asks:
+        return ""
+    if a:
+        done, total = a["steps_done"], a["steps_total"]
+        k = round(10 * done / total) if total else 0
+        parts.append(f"▸ {a['id']} {a['type']} {a['tier']} {'█' * k}{'░' * (10 - k)} {done}/{total} · {a['stage']}")
+        if a["audits"]["required"]:
+            parts.append(f"audits {a['audits']['done']}/{a['audits']['required']}")
+    parts += [f"q{len(sd['queue'])} in{len(sd['inbox'])}", "full auto" if sd["autonomy"] == "full" else "standard"]
+    if asks:
+        parts.append("⚠ reply yes = " + "; ".join(f"{'+'.join(x['allow'])} for {x['task']}" for x in asks))
+    line = " · ".join(parts)
+    return line if len(line) <= width else line[:width - 1] + "…"
 
 
 def glob_match(rel, pattern):
