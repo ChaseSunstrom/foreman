@@ -226,3 +226,36 @@ class HookErrors(ForemanTestCase):
         with open(log, "a") as f:
             f.write(f"{c.now()} Stop\x1b]0;x\x07 ValueError: bad \x1b[2Jtitle\n")
         self.assertNotIn("\x1b", d.check_hook_errors().detail)
+
+
+class CoreIntegrity(unittest.TestCase):
+    """Round 7: protected core that differs from the last commit is named (a tamper and half-edit check)."""
+
+    def test_uncommitted_core_changes_are_named(self):
+        with tempfile.TemporaryDirectory() as t:
+            self.assertEqual(d.check_core_integrity(t).status, "PASS", "not a git checkout: nothing to compare")
+            repo = git_repo(t, "fh")
+            os.makedirs(os.path.join(repo, "plugin", "lib"))
+            path = os.path.join(repo, "plugin", "lib", "fmx.py")
+            with open(path, "w") as f:
+                f.write("x = 1\n")
+            subprocess.run(["git", "-C", repo, "add", "-A"], check=True)
+            subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+                           check=True)
+            self.assertEqual(d.check_core_integrity(repo).status, "PASS")
+            with open(path, "w") as f:
+                f.write("x = 2\n")
+            r = d.check_core_integrity(repo)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("plugin/lib/fmx.py", r.detail)
+
+    def test_description_budget(self):
+        with tempfile.TemporaryDirectory() as t:
+            os.makedirs(os.path.join(t, "skills", "big"))
+            with open(os.path.join(t, "skills", "big", "SKILL.md"), "w") as f:
+                f.write("---\nname: big\ndescription: " + "x" * 7000 + "\n---\n")
+            r = d.check_footprint(os.path.join(t, "none.md"), os.path.join(t, "none.md"), plugin=t)
+            self.assertEqual(r.status, "FAIL")
+            self.assertIn("descriptions", r.detail)
+        self.assertEqual(d.check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"),
+                                           os.path.join(PLUGIN, "none.md")).status, "PASS")

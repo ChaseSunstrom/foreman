@@ -1,4 +1,5 @@
 """fm doctor: Foreman self-check (BUILD_PROMPT §12). Each check returns a Result; FAIL makes the command exit 1."""
+import glob
 import json
 import os
 import re
@@ -13,6 +14,7 @@ import fmsetup
 
 PLUGIN = c.PLUGIN_ROOT
 RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
+DESCRIPTIONS_MAX = 6000  # chars (~1.5k tokens) of skill/agent/command descriptions, loaded in every session
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EXPECTED_EXIT = {"PreToolUse:Bash:block": [2], "TaskCompleted": [2]}  # fixtures that are designed to block
@@ -106,7 +108,7 @@ def check_injection_budgets(sizes):
                   f"SessionStart {sizes.get('SessionStart', 0)} chars, UserPromptSubmit {sizes.get('UserPromptSubmit', 0)} chars")
 
 
-def check_footprint(rules_path, claude_md_path):
+def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
     rules = (_read(rules_path) or "").splitlines()
     md = _read(claude_md_path) or ""
     m = re.search(r"<!-- foreman:begin -->.*?<!-- foreman:end -->", md, re.S)
@@ -119,8 +121,14 @@ def check_footprint(rules_path, claude_md_path):
         bad.append(f"CLAUDE.md block {len(block)} lines > {BLOCK_MAX}")
     if total > ALWAYS_ON_MAX:
         bad.append(f"always-on {total} lines > {ALWAYS_ON_MAX}")
+    # skill, agent and command descriptions are in every session's context too
+    desc = sum(len((_frontmatter(f) or {}).get("description", "")) for pattern in
+               ("skills/*/SKILL.md", "agents/*.md", "commands/*.md") for f in glob.glob(os.path.join(plugin, pattern)))
+    if desc > DESCRIPTIONS_MAX:
+        bad.append(f"skill/agent/command descriptions {desc} chars > {DESCRIPTIONS_MAX}")
     return Result("footprint", "FAIL" if bad else "PASS",
-                  "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines (≤ {ALWAYS_ON_MAX})")
+                  "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines "
+                                    f"(≤ {ALWAYS_ON_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
 
 
 def _frontmatter(path):
@@ -218,6 +226,22 @@ def check_validate(home):
             tail = (r.stdout + r.stderr).strip().splitlines()[-1:] or ["failed"]
             bad.append(f"{target}: {tail[0]}")
     return Result("plugin validate", "FAIL" if bad else "PASS", "; ".join(bad) or "marketplace and plugin pass --strict")
+
+
+CORE_PATHS = ("plugin/lib", "plugin/bin", "plugin/hooks", "plugin/evals", "plugin/rules/foreman.md", "BUILD_PROMPT.md")
+
+
+def check_core_integrity(home):
+    """Protected core that differs from the last commit: a half-applied edit, or a change nobody reviewed."""
+    if not os.path.isdir(os.path.join(home, ".git")):
+        return Result("core integrity", "PASS", "not a git checkout: nothing to compare")
+    out = _run(["git", "-C", home, "status", "--porcelain", "--", *CORE_PATHS]).stdout
+    changed = [l[3:] for l in out.splitlines() if len(l) > 3]
+    return Result("core integrity", "WARN" if changed else "PASS",
+                  f"protected core differs from the last commit: {', '.join(changed[:6])}"
+                  + (f" (+{len(changed) - 6} more)" if len(changed) > 6 else "")
+                  + " — commit it through a task, or git checkout it back" if changed
+                  else "protected core matches the last commit")
 
 
 def check_git_hygiene(repo):
@@ -492,7 +516,7 @@ def run_all(full=False):
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
                           or f"{len(projects)} project(s) OK"))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
-                check_git_hygiene(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
+                check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full)]
     return results
 

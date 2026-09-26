@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Round 7: `fm doctor` warns when protected core differs from the last commit (a half-applied edit or an unreviewed change) and budgets skill/agent/command descriptions (≤ 6000 chars, now 4.2k); the two large follow-ups (headless audits, eval capture) are deferred with revisit triggers.
 - Round 7: no self-lockout from a broken library (T-0037): the hook script falls back to the committed library when the working copy can't be imported, and reads the active task with the committed `fmcore` when the working one fails; `fmguard` is self-contained again.
 - Round 6: hooks p50 ≈ 29 ms (was ≈ 41): `traceback` loads only on errors and `fmcore.record` replaces `@dataclass` on the hook path; sync hashing measured at 3 ms for 300 briefs, so its stat cache was dropped.
 - Round 5: `fm research add --from-agent FILE` keeps a subagent's final report; `fm audit prep --note`; `fm task drop ID --done-in HOST` for never-started requests another task did; the progress line names the current step; `fm doctor` names the latest hook error. Round-4 audit fixes: checkouts, extractions and recursive copies over a folder that contains protected paths need that category (a checkout at Foreman's root can't swap the guard); `core.hooksPath` in every spelling, `direnv allow` and more startup paths are `system`; titles are control-free wherever they're read; pulled briefs are sanitized; the guard fallback only trusts Foreman's own repo and ignores `GIT_*` variables.
