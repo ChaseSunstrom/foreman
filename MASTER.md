@@ -36,7 +36,7 @@ Plain words work too: Claude runs every command itself ("is foreman ok?" → doc
 
 Slash commands (Claude can start all but capture itself): `/foreman:intake` · `/foreman:brainstorm` · `/foreman:next` · `/foreman:resume` · `/foreman:status` · `/foreman:capture <text>` · `/foreman:tidy` · `/foreman:doctor` · `/foreman:reflect` · `/foreman:improve` · `/foreman:playbooks` · `/foreman:build`.
 
-CLI (on the Bash tool PATH): `fm init|state|queue|next|resume|watch|intake|capture|task new|show|set|step|ac|evidence|audit|log|done|block|drop|defer|focus|checkpoint|log|ask|decide|research add|sensitive on|off|drive on|off|autonomy [standard|full]|ideas|serve [start|status|stop] [PATH]|run|docs [--strict]|tidy|doctor [--full|--restore-state]|install-user|uninstall-user` — see `fm --help`.
+CLI (on the Bash tool PATH): `fm init|state|queue|next|resume|watch|intake|capture|task new|show|set|step|ac|evidence|audit|log|done|block|drop|defer|focus|checkpoint|log|ask|decide|research add|sensitive on|off|drive on|off|autonomy [standard|full]|ideas|serve [start|status|stop] [PATH]|run|plugins find|check|docs [--strict]|tidy|doctor [--full|--restore-state]|install-user|uninstall-user` — see `fm --help`.
 
 The procedure is enforced by the harness, not recalled: each task's stage (captured → planning → ready → executing → verifying → auditing → closing) is derived from its brief; `fm next` and every prompt, session start and Stop note name the one next required action and its procedure; `fm focus` refuses a brief that isn't planned for its tier; file edits inside a Foreman project are refused while no task is active (`fm task new … --ac … --step … --focus` starts a small one in one command).
 
@@ -56,7 +56,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `plugin/.claude-plugin/plugin.json` | plugin manifest (name, version) | Claude | by Claude Code | — |
 | `plugin/settings.json` | plugin default `subagentStatusLine` | Claude | by Claude Code | only `agent`/`subagentStatusLine` honored |
 | `plugin/bin/fm` | CLI entry (on the Bash tool PATH; protected) | Claude | on call | — |
-| `plugin/lib/` | `fmcore` (state, briefs, queue, intake, ledger, locks, audits), `fmcli`, `fmguard`, `fmhooks` (incl. chat approvals), `fmtidy`, `fmdoctor`, `fmwatch`, `fmsetup`, `fmideas` (tool-less brainstorm children), `fmserve` (`fm serve` / `fm run`) — all protected core | Claude | on call | stdlib only |
+| `plugin/lib/` | `fmcore` (state, briefs, queue, intake, ledger, locks, audits), `fmcli`, `fmguard`, `fmhooks` (incl. chat approvals), `fmtidy`, `fmdoctor`, `fmwatch`, `fmsetup`, `fmideas` (tool-less brainstorm children), `fmserve` (`fm serve` / `fm run`), `fmplugins` (`fm plugins`: marketplace search, conflict check) — all protected core | Claude | on call | stdlib only |
 | `plugin/hooks/hooks.json` | one handler per event (13 events), exec form (protected) | Claude | by Claude Code | p95 ≤ 150 ms |
 | `plugin/hooks/hook` | dispatcher `hook <Event>`; guard fails closed (protected) | Claude | per event | — |
 | `plugin/hooks/statusline` | statusLine wrapper: original + claude-hud + Foreman line; session snapshots (protected) | Claude | per statusline refresh | < 100 ms own work |
