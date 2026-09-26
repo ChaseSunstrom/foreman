@@ -135,6 +135,25 @@ class Uninstall(SetupCase):
         self.assertIn("Bash(curl *)", s["permissions"]["deny"])
         self.assertEqual(s["env"]["CLAUDE_CODE_STOP_HOOK_BLOCK_CAP"], "99", "a value the user changed is not ours to remove")
 
+    def test_empty_plugin_maps_left_by_claude_plugin_uninstall_are_dropped(self):
+        # uninstall.sh removes the plugin and marketplace first; Claude Code leaves the emptied maps behind.
+        self.run_fm("install-user")
+        s = self.load()
+        s.update(enabledPlugins={}, extraKnownMarketplaces={})
+        with open(self.settings, "w") as f:
+            json.dump(s, f)
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load(), ORIGINAL)
+
+    def test_plugin_maps_with_entries_are_kept(self):
+        self.run_fm("install-user")
+        s = self.load()
+        s["enabledPlugins"] = {"other@x": True}
+        with open(self.settings, "w") as f:
+            json.dump(s, f)
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load()["enabledPlugins"], {"other@x": True})
+
     def test_users_own_compaction_threshold_is_kept(self):
         s = dict(ORIGINAL, env={"KEEP": "1", "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"})
         with open(self.settings, "w") as f:
