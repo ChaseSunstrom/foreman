@@ -133,24 +133,29 @@ def _tree_hash(root):
     return h.hexdigest()[:16]
 
 
+def _pin_source(pid):
+    """(the code a pin on pid hashes: its installed copy, else the marketplace's local copy, or None; its marketplace
+    row, None for an installed copy or an unknown plugin)."""
+    have = installed().get(pid) or {}
+    if have.get("path") and os.path.isdir(have["path"]):
+        return have["path"], None
+    known = next((p for p in index() if p["id"] == pid), None)
+    return (known or {}).get("local"), known
+
+
 def content_hash(pid):
     """What a yes to install or enable pid approves (T-0036): its installed copy when there is one (enable), else its
     marketplace entry plus the marketplace's local copy of it, or the entry alone for a remote source (which pins the
     code only as far as the entry names a ref or sha). None for an unknown plugin."""
-    have = installed().get(pid) or {}
-    if have.get("path") and os.path.isdir(have["path"]):
-        return _tree_hash(have["path"])
-    known = next((p for p in index() if p["id"] == pid), None)
+    code, known = _pin_source(pid)
     if not known:
-        return None
-    return _digest((known["entry_hash"] + (_tree_hash(known["local"]) if known["local"] else "")).encode())
+        return _tree_hash(code) if code else None
+    return _digest((known["entry_hash"] + (_tree_hash(code) if code else "")).encode())
 
 
 def pin_covers_code(pid):
-    """Whether a pin on pid hashes code (an installed or local copy), not only a remote source's marketplace entry."""
-    if os.path.isdir((installed().get(pid) or {}).get("path") or ""):
-        return True
-    return any(p["id"] == pid and p["local"] for p in index())
+    """Whether a pin on pid hashes code, not only a remote source's marketplace entry."""
+    return bool(_pin_source(pid)[0])
 
 
 def installed():

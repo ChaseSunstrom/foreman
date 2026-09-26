@@ -411,7 +411,7 @@ def _interpreter_writes(cmd, ctx):
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     if _CLAUDE_IN_CODE.search(cmd) and _EXEC_API.search(cmd):
-        return [("plugin", "interpreter code running claude's plugin, MCP or config commands [plugin ?]")]
+        return [("plugin", "interpreter code running claude's plugin, MCP or config commands" + plugin_mark("?"))]
     if not _WRITE_API.search(cmd):
         return []
     found = []
@@ -506,7 +506,7 @@ def check_bash(cmd, ctx, depth=0):
             if sub == "check" and rest[:1] == ["add"]:
                 found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
-                target = f" [plugin {_one_plugin([a for a in rest[1:] if not a.startswith('-')])}]" \
+                target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
@@ -770,7 +770,7 @@ def _check_claude_config(name, args, stdin=""):
     # a prompt's slash command isn't a tool call the guard sees; `stdin` is the raw command text when claude reads a
     # pipe or heredoc (echo … | claude -p, claude -p <<EOF)
     if _SLASH_CHANGE.search(stdin) or any(_SLASH_CHANGE.search(a) for a in args):
-        return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt [plugin ?]")]
+        return [("plugin", "a /plugin, /mcp or /config change sent to claude as a prompt" + plugin_mark("?"))]
     flags = [a.split("=", 1)[0] for a in args if a.split("=", 1)[0] in _SESSION_CONFIG]
     if flags:
         return [("plugin", f"claude {flags[0]} starts a session with its own settings, MCP servers or plugins")]
@@ -780,17 +780,29 @@ def _check_claude_config(name, args, stdin=""):
         if (a, b) == ("plugin", "marketplace") and c3 in ("add", "remove", "rm", "update"):
             return [("plugin", f"claude plugin marketplace {c3}")]
         if b in _CLAUDE_CHANGES.get(a, ()):
-            target = f" [plugin {_claude_plugin_target(args)}]" if a == "plugin" and b in _PLUGIN_ADDS else ""
+            target = plugin_mark(_claude_plugin_target(args)) if a == "plugin" and b in _PLUGIN_ADDS else ""
             return [("plugin", f"claude {a} {b} changes Claude Code's plugins, MCP servers or config{target}")]
     return []
 
 
 _PLUGIN_ADDS = ("install", "i", "enable")  # the plugin changes that bring code in: a yes for them is pinned (T-0036)
+PLUGIN_ID = re.compile(r"[\w.-]+(?:@[\w.-]+)?")  # name or name@marketplace; fm ask --pin takes the same
+
+
+def plugin_mark(target):
+    """The end of a plugin finding's detail naming the plugin it installs or enables ("?" when it can't tell); the
+    hook reads it back with plugin_target, the only other place that knows this format."""
+    return f" [plugin {target}]"
+
+
+def plugin_target(detail):
+    m = re.search(r" \[plugin (\S+)\]$", str(detail))
+    return m.group(1) if m else None
 
 
 def _one_plugin(words):
     """The plugin id when words name exactly one, else "?": no yes is spent on a change it can't check (T-0036)."""
-    return words[0] if len(words) == 1 and re.fullmatch(r"[\w.-]+(?:@[\w.-]+)?", words[0]) else "?"
+    return words[0] if len(words) == 1 and PLUGIN_ID.fullmatch(words[0]) else "?"
 
 
 def _claude_plugin_target(args):

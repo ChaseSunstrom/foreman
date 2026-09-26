@@ -537,10 +537,10 @@ class PluginChanges(GuardCase):
                             ("claude plugin install --scope user x@m", "x@m"), ("claude plugin enable -s user x@m", "x@m"),
                             ("claude plugin install a@m b@m", "?"), ("claude plugin install", "?")):
             with self.subTest(cmd=cmd):
-                self.assertTrue(plugin_detail(cmd).endswith(f"[plugin {target}]"), plugin_detail(cmd))
+                self.assertEqual(g.plugin_target(plugin_detail(cmd)), target, plugin_detail(cmd))
         for cmd in ("fm plugins disable x@m", "claude plugin disable x@m", "claude plugin marketplace add o/r"):
             with self.subTest(cmd=cmd):
-                self.assertNotIn("[plugin ", plugin_detail(cmd))
+                self.assertIsNone(g.plugin_target(plugin_detail(cmd)))
 
     def test_one_plugin_change_per_command(self):
         # T-0029: a yes covers one change, so a command can't bundle several behind it
