@@ -1,0 +1,590 @@
+"""fm — the only writer of Foreman state.
+
+Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
+"""
+import argparse
+import json
+import os
+import sys
+
+import fmcore as c
+
+EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "title"}
+LIST_FIELDS = {"scope", "depends_on"}
+SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
+
+
+class UsageError(Exception):
+    """Bad input or unknown object. Exit code 1."""
+
+
+def session():
+    return os.environ.get("FOREMAN_SESSION_ID")
+
+
+def out(args, data, text):
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2, ensure_ascii=False))
+    elif text is not None:
+        print(text)
+
+
+# ---------------------------------------------------------------- project resolution
+
+def resolve(args, create=True):
+    if getattr(args, "project", None):
+        p = c.project_by_slug(args.project)
+        if not p:
+            raise UsageError(f"unknown project {args.project!r} (see state/registry.md)")
+        return p
+    p = c.find_project(os.getcwd(), create=create)
+    if not p and os.environ.get("FOREMAN_PROJECT"):
+        p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
+    if not p:
+        raise UsageError("not in a Foreman project; run `fm init` here or pass -p SLUG")
+    return p
+
+
+def need_brief(p, tid):
+    b = c.find_brief(p, tid)
+    if not b:
+        raise UsageError(f"no task {tid} in {p.slug}")
+    return b
+
+
+def mutate(p, tid, fn, event, data=None):
+    """Load a brief under the project lock, apply fn(brief), save, log, regenerate views."""
+    with c.lock(p.dir):
+        b = need_brief(p, tid)
+        result = fn(b)
+        c.save_brief(p, b)
+        c.log_event(p, event, task=b.id, data=data or {}, session=session())
+        c.regen_views(p)
+    return b, result
+
+
+# ---------------------------------------------------------------- commands
+
+def cmd_init(args):
+    path = os.path.abspath(args.path or os.getcwd())
+    root = c.git_root(path) or path
+    p = c.init_project(root, sensitive=True if args.sensitive else None)
+    with c.lock(p.dir):
+        c.log_event(p, "init", data={"root": root}, session=session())
+        c.regen_views(p)
+    out(args, {"project": p.slug, "root": root}, p.slug)
+
+
+def cmd_state(args):
+    p = resolve(args)
+    sd = c.state_dict(p)
+    if args.line:
+        print(c.state_line(sd))
+    elif args.json:
+        print(json.dumps(sd, indent=2, ensure_ascii=False))
+    else:
+        text = c.render_state(sd)
+        if args.brief:
+            text = "\n".join(text.splitlines()[:15])
+        print(text.rstrip("\n"))
+
+
+def _raw_with_block(item, r):
+    lines = [item.raw.strip() or f"{item.type}: {item.text}"]
+    lines += [f"CONTEXT: {v}" for v in r.context]
+    lines += [v if v.startswith(("MUST:", "NEVER:")) else f"CONSTRAINT: {v}" for v in r.constraints]
+    lines += [f"DONE-WHEN: {v}" for v in r.done_when]
+    lines += [f"SKIP: {v}" for v in r.skip]
+    return "\n".join(lines)
+
+
+def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source="user", priority="normal", explore=False):
+    tid = c.next_id(p)
+    b = c.Brief.new(tid, title, type, tier, raw=raw, scope=scope, depends=depends, source=source,
+                    priority=priority, status=status, explore=explore)
+    c.save_brief(p, b, touch=False)
+    return b
+
+
+def _title(text):
+    first = text.strip().splitlines()[0] if text.strip() else "untitled"
+    first = c._SCOPE_RE.sub("", c._REF_RE.sub("", first)).strip()
+    return (first[:1].upper() + first[1:])[:90] or "untitled"
+
+
+def cmd_intake(args):
+    text = args.text if args.text is not None else (open(args.file).read() if args.file else sys.stdin.read())
+    r = c.parse_intake(text)
+    p = resolve(args)
+    created = []
+    with c.lock(p.dir):
+        for item in r.items:
+            b = _create(p, _title(item.text), item.type, c.guess_tier(item.type, item.text), "captured",
+                        raw=_raw_with_block(item, r), scope=item.scopes, depends=item.refs,
+                        priority="urgent" if item.urgent else "normal", explore=item.explore)
+            if r.skip:
+                b.set_section("Non-goals", "".join(f"- {s}\n" for s in r.skip))
+                c.save_brief(p, b, touch=False)
+            created.append(b)
+        c.log_event(p, "intake", data={"created": [b.id for b in created], "overrides": r.overrides,
+                                       "untagged": bool(r.untagged)}, session=session())
+        c.regen_views(p)
+    order = sorted(created, key=lambda b: (0 if b.priority == "urgent" else 1, c.RANK.get(b.type, 99), c.id_num(b.id)))
+    data = {"created": [c.brief_summary(b) for b in created], "order": [c.brief_summary(b) for b in order],
+            "context": r.context, "constraints": r.constraints, "done_when": r.done_when, "skip": r.skip,
+            "untagged": r.untagged, "overrides": r.overrides}
+    lines = [f"Captured {len(created)} item(s). Canonical order:"] + \
+            [f"  {b.id} [{b.type}{'!' if b.priority == 'urgent' else ''}{'?' if b.meta.get('explore') else ''} {b.tier}] {b.title}"
+             for b in order]
+    if r.untagged:
+        lines.append(f"Untagged text (classify it yourself): {r.untagged[:200]}")
+    out(args, data, "\n".join(lines))
+
+
+def cmd_capture(args):
+    p = resolve(args)
+    type_ = (args.type or "FEATURE").upper()
+    type_ = c.WORK_TAGS.get(type_, type_)
+    if type_ not in c.TYPES:
+        raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
+    with c.lock(p.dir):
+        b = _create(p, _title(args.text), type_, args.tier or c.guess_tier(type_, args.text), "captured",
+                    raw=args.text, scope=args.scope or (), source=args.source,
+                    priority="urgent" if args.urgent else "normal")
+        c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
+        c.regen_views(p)
+    out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source}).")
+
+
+def cmd_task(args):
+    p = resolve(args)
+    sub = args.task_cmd
+    if sub == "new":
+        return task_new(p, args)
+    if sub == "show":
+        b = need_brief(p, args.id)
+        if args.json:
+            return print(json.dumps(dict(c.brief_summary(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
+        return print(b.render(), end="")
+    if sub == "set":
+        return task_set(p, args)
+    if sub == "step":
+        return task_step(p, args)
+    if sub == "ac":
+        return task_ac(p, args)
+    if sub == "evidence":
+        b, _ = mutate(p, args.id, lambda b: b.add_evidence(args.cmd, args.result, step=args.step, ac=args.ac),
+                      "evidence", {"step": args.step, "ac": args.ac, "cmd": args.cmd, "result": args.result[:300]})
+        return out(args, c.brief_summary(b), f"{b.id}: evidence recorded.")
+    if sub == "done":
+        def done(b):
+            reasons = b.done_blockers()
+            if reasons:
+                raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
+            b.meta["status"] = "done"
+            b.append_log("done")
+        b, _ = mutate(p, args.id, done, "task_done")
+        return out(args, c.brief_summary(b), f"{b.id} done.")
+    if sub in ("block", "drop", "defer"):
+        status = {"block": "blocked", "drop": "dropped", "defer": "deferred"}[sub]
+        reason = getattr(args, "reason", None) or ""
+
+        def change(b):
+            b.meta["status"] = status
+            b.append_log(f"{status}: {reason}" if reason else status)
+        b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
+        return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
+    raise UsageError(f"unknown task subcommand {sub}")
+
+
+def task_new(p, args):
+    type_ = c.WORK_TAGS.get(args.type.upper(), args.type.upper())
+    if type_ not in c.TYPES:
+        raise UsageError(f"unknown type {args.type!r}")
+    if args.tier not in ("S", "M", "L"):
+        raise UsageError("tier must be S, M or L")
+    with c.lock(p.dir):
+        if args.from_id:
+            b = need_brief(p, args.from_id)
+            if b.status != "captured":
+                raise UsageError(f"{b.id} is {b.status}, not captured")
+            b.meta.update(type=type_, tier=args.tier, status="planned")
+            if args.scope:
+                b.meta["scope"] = args.scope
+            if args.depends:
+                b.meta["depends_on"] = args.depends
+            b.preamble = f"# {args.title}\n"
+            b.append_log("planned from capture")
+            c.save_brief(p, b)
+        else:
+            b = _create(p, args.title, type_, args.tier, "planned", raw=args.raw, scope=args.scope or (),
+                        depends=args.depends or (), source=args.source)
+        c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
+                    session=session())
+        c.regen_views(p)
+    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})")
+
+
+def task_set(p, args):
+    changes = {}
+    for kv in args.assignments:
+        if "=" not in kv:
+            raise UsageError(f"expected key=value, got {kv!r}")
+        k, v = kv.split("=", 1)
+        if k not in EDITABLE:
+            raise UsageError(f"can't set {k!r}; editable: {', '.join(sorted(EDITABLE))} (authorizations via --allow)")
+        if k == "status" and v not in SETTABLE_STATUS:
+            raise UsageError(f"status {v!r} not settable here (use fm task done/drop, or one of {sorted(SETTABLE_STATUS)})")
+        if k == "type":
+            v = c.WORK_TAGS.get(v.upper(), v.upper())
+            if v not in c.TYPES:
+                raise UsageError(f"unknown type {v!r}")
+        if k == "tier" and v not in ("S", "M", "L"):
+            raise UsageError("tier must be S, M or L")
+        if k == "priority" and v not in ("normal", "urgent"):
+            raise UsageError("priority must be normal or urgent")
+        changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k == "explore" else v)
+    section_text = None
+    if args.section:
+        section_text = args.text if args.text is not None else (open(args.file).read() if args.file else None)
+        if section_text is None:
+            raise UsageError("--section needs --text or --file")
+
+    def apply(b):
+        for k, v in changes.items():
+            if k == "title":
+                b.preamble = f"# {v}\n"
+            else:
+                b.meta[k] = v
+        for cat in args.allow or []:
+            allow = list(b.meta.get("allow") or [])
+            if cat not in allow:
+                allow.append(cat)
+            b.meta["allow"] = allow
+            b.append_log(f"guard authorization added: {cat}")
+        if args.section:
+            b.set_section(args.section, c.redact(section_text))
+        if changes:
+            b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
+    b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [], "section": args.section})
+    out(args, c.brief_summary(b), f"{b.id} updated.")
+
+
+def task_step(p, args):
+    if args.action == "add":
+        b, n = mutate(p, args.id, lambda b: b.add_step(args.arg), "step_add", {"text": args.arg})
+        return out(args, c.brief_summary(b), f"{b.id}: added step {n}.")
+    try:
+        n = int(args.arg)
+    except ValueError:
+        raise UsageError(f"step number expected, got {args.arg!r}")
+    if args.action == "current":
+        b, _ = mutate(p, args.id, lambda b: b.set_current(n), "step_current", {"step": n})
+        return out(args, c.brief_summary(b), f"{b.id}: current step {n}.")
+    ev = args.evidence
+
+    def done(b):
+        if ev:
+            b.add_evidence(ev[0], ev[1], step=n)
+        b.mark_step(n)
+    b, _ = mutate(p, args.id, done, "step_done", {"step": n, "evidence": ev})
+    s = c.brief_summary(b)
+    nxt = f" Next: step {s['step']['n']}/{s['step']['of']} {s['step']['text']}" if s["step"] else " All steps done."
+    out(args, s, f"{b.id}: step {n} done.{nxt}")
+
+
+def task_ac(p, args):
+    if args.action == "add":
+        b, _ = mutate(p, args.id, lambda b: b.add_ac(args.arg, args.verify), "ac_add", {"text": args.arg})
+        return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
+    try:
+        n = int(args.arg)
+    except ValueError:
+        raise UsageError(f"criterion number expected, got {args.arg!r}")
+    ev = args.evidence
+
+    def check(b):
+        if ev:
+            b.add_evidence(ev[0], ev[1], ac=n)
+        b.check_ac(n)
+    b, _ = mutate(p, args.id, check, "ac_check", {"ac": n})
+    out(args, c.brief_summary(b), f"{b.id}: criterion {n} checked.")
+
+
+def cmd_focus(args):
+    p = resolve(args)
+    warn = None
+    with c.lock(p.dir):
+        target = need_brief(p, args.id)
+        if target.status in c.CLOSED:
+            raise UsageError(f"{target.id} is {target.status}")
+        for b in c.load_briefs(p):
+            if b.status in ("active", "verifying") and b.id != target.id:
+                b.meta["status"] = "planned"
+                b.append_log(f"paused: focus moved to {target.id}")
+                c.save_brief(p, b)
+        target.meta["status"] = "active"
+        target.append_log("focused")
+        c.save_brief(p, target)
+        other = c.read_meta(p).get("session") or {}
+        age = c.age_days(other.get("seen"))
+        if other.get("id") and session() and other["id"] != session() and age is not None and age < 10 / 1440:
+            warn = f"note: another Claude Code session ({other['id'][:8]}) was active in this project within 10 minutes"
+        c.log_event(p, "focus", task=target.id, session=session())
+        c.regen_views(p)
+    if warn:
+        print(warn, file=sys.stderr)
+    out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}")
+
+
+def cmd_checkpoint(args):
+    p = resolve(args)
+    with c.lock(p.dir):
+        b = c.checkpoint(p, note=args.note, auto=args.auto, session=session())
+    out(args, {"task": b.id if b else None}, f"Checkpoint saved{' for ' + b.id if b else ' (no active task)'}.")
+
+
+def cmd_resume(args):
+    p = resolve(args)
+    r = c.resume_info(p)
+    if not r["id"]:
+        nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
+        return out(args, r, f"No active task. Next in queue: {nxt}")
+    step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
+    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}\nBrief: {r['path']}")
+
+
+def cmd_queue(args):
+    p = resolve(args)
+    briefs = c.load_briefs(p)
+    order, cycles, dangling = c.order_queue(briefs)
+    if args.replan:
+        with c.lock(p.dir):
+            c.log_event(p, "replan", data={"order": [b.id for b in order]}, session=session())
+            c.regen_views(p, briefs)
+    data = {"order": [c.brief_summary(b) for b in order], "cycles": cycles, "dangling": [list(d) for d in dangling]}
+    lines = [f"{i}. {b.id} {b.type} {b.tier} [{b.status}]{' !' if b.priority == 'urgent' else ''} — {b.title}"
+             for i, b in enumerate(order, 1)] or ["Queue empty."]
+    if cycles:
+        lines.append("Cycles: " + "; ".join(" ↔ ".join(x) for x in cycles))
+    if dangling:
+        lines.append("Dangling: " + ", ".join(f"{a}→{b}" for a, b in dangling))
+    out(args, data, "\n".join(lines))
+
+
+def cmd_log(args):
+    p = resolve(args)
+    try:
+        data = json.loads(args.data) if args.data else {}
+    except ValueError as e:
+        raise UsageError(f"data must be JSON: {e}")
+    if not isinstance(data, dict):
+        data = {"value": data}
+    rec = c.log_event(p, args.event, task=args.task, data=data, session=session())
+    out(args, rec, None)
+
+
+def cmd_sensitive(args):
+    if args.path:
+        root = c.git_root(args.path) or os.path.abspath(args.path)
+        p = c.find_project(root) or c.init_project(root)
+    else:
+        p = resolve(args)
+    path = os.path.join(p.root, ".claude", "settings.local.json")
+    data = {}
+    if os.path.exists(path):
+        with open(path) as f:
+            data = json.load(f)
+    perms = data.setdefault("permissions", {})
+    if args.state == "on":
+        perms["defaultMode"] = "default"
+    else:
+        perms.pop("defaultMode", None)
+        if not perms:
+            data.pop("permissions")
+    c.write_atomic(path, json.dumps(data, indent=2) + "\n")
+    _git_exclude(p.root, ".claude/settings.local.json")
+    c.update_meta(p, sensitive=args.state == "on")
+    with c.lock(p.dir):
+        c.log_event(p, "sensitive", data={"on": args.state == "on"}, session=session())
+        c.regen_views(p)
+    what = "new sessions here start in manual permission mode" if args.state == "on" else "user default mode applies again"
+    out(args, {"sensitive": args.state == "on"}, f"{p.slug}: sensitive {args.state} ({what}).")
+
+
+def _git_exclude(root, rel):
+    """Keep a machine-local settings file out of commits without touching the repo's .gitignore."""
+    excl = os.path.join(root, ".git", "info", "exclude")
+    if not os.path.isdir(os.path.dirname(excl)):
+        return
+    try:
+        cur = open(excl).read() if os.path.exists(excl) else ""
+        if rel not in cur.split("\n"):
+            with open(excl, "a") as f:
+                f.write(("" if cur.endswith("\n") or not cur else "\n") + rel + "\n")
+    except OSError:
+        pass
+
+
+def cmd_drive(args):
+    p = resolve(args)
+    c.update_meta(p, drive=args.state == "on")
+    with c.lock(p.dir):
+        c.log_event(p, "drive", data={"on": args.state == "on"}, session=session())
+        c.regen_views(p)
+    out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
+
+
+def lazy(module, func):
+    def run(args):
+        return getattr(__import__(module), func)(args)
+    return run
+
+
+# ---------------------------------------------------------------- parser
+
+def build_parser():
+    ap = argparse.ArgumentParser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
+    ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
+    sp = ap.add_subparsers(dest="cmd", required=True)
+
+    def add(name, fn, **kw):
+        s = sp.add_parser(name, **kw)
+        s.set_defaults(fn=fn)
+        s.add_argument("--json", action="store_true", help="machine-readable output")
+        s.add_argument("-p", "--project", default=argparse.SUPPRESS)
+        return s
+
+    s = add("init", cmd_init, help="register a project")
+    s.add_argument("path", nargs="?")
+    s.add_argument("--sensitive", action="store_true")
+
+    s = add("state", cmd_state, help="print STATE")
+    s.add_argument("--brief", action="store_true")
+    s.add_argument("--line", action="store_true")
+
+    s = add("intake", cmd_intake, help="parse an intake block into captured briefs")
+    s.add_argument("text", nargs="?")
+    s.add_argument("--file")
+
+    s = add("capture", cmd_capture, help="capture a request to the inbox")
+    s.add_argument("text")
+    s.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
+    s.add_argument("--type")
+    s.add_argument("--tier", choices=["S", "M", "L"])
+    s.add_argument("--scope", action="append")
+    s.add_argument("--urgent", action="store_true")
+
+    s = add("task", cmd_task, help="task operations")
+    tsp = s.add_subparsers(dest="task_cmd", required=True)
+
+    def tadd(name):
+        t = tsp.add_parser(name)
+        t.add_argument("--json", action="store_true")
+        return t
+
+    t = tadd("new")
+    t.add_argument("title")
+    t.add_argument("--type", required=True)
+    t.add_argument("--tier", required=True)
+    t.add_argument("--scope", action="append")
+    t.add_argument("--depends", action="append")
+    t.add_argument("--raw")
+    t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
+    t.add_argument("--from", dest="from_id")
+    t = tadd("show")
+    t.add_argument("id")
+    t = tadd("set")
+    t.add_argument("id")
+    t.add_argument("assignments", nargs="*")
+    t.add_argument("--allow", action="append")
+    t.add_argument("--section")
+    t.add_argument("--text")
+    t.add_argument("--file")
+    t = tadd("step")
+    t.add_argument("id")
+    t.add_argument("action", choices=["add", "current", "done"])
+    t.add_argument("arg")
+    t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
+    t = tadd("ac")
+    t.add_argument("id")
+    t.add_argument("action", choices=["add", "check"])
+    t.add_argument("arg")
+    t.add_argument("--verify")
+    t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
+    t = tadd("evidence")
+    t.add_argument("id")
+    t.add_argument("cmd")
+    t.add_argument("result")
+    g = t.add_mutually_exclusive_group()
+    g.add_argument("--step", type=int)
+    g.add_argument("--ac", type=int)
+    t = tadd("done")
+    t.add_argument("id")
+    for name in ("block", "drop"):
+        t = tadd(name)
+        t.add_argument("id")
+        t.add_argument("reason")
+    t = tadd("defer")
+    t.add_argument("id")
+    t.add_argument("reason", nargs="?")
+
+    s = add("focus", cmd_focus, help="make a task the single active task")
+    s.add_argument("id")
+
+    s = add("checkpoint", cmd_checkpoint, help="flush the resume point into the brief and STATE")
+    s.add_argument("--note")
+    s.add_argument("--auto", action="store_true")
+
+    add("resume", cmd_resume, help="print the resume point")
+
+    s = add("queue", cmd_queue, help="ordered queue")
+    s.add_argument("--replan", action="store_true")
+
+    s = add("log", cmd_log, help="append a ledger event")
+    s.add_argument("event")
+    s.add_argument("data", nargs="?")
+    s.add_argument("--task")
+
+    s = add("sensitive", cmd_sensitive, help="mark a repo sensitive (manual permission mode there)")
+    s.add_argument("state", choices=["on", "off"])
+    s.add_argument("path", nargs="?")
+
+    s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
+    s.add_argument("state", choices=["on", "off"])
+
+    s = add("tidy", lazy("fmtidy", "cmd_tidy"), help="hygiene (dry-run by default)")
+    s.add_argument("--apply", action="store_true")
+    s.add_argument("--all", action="store_true")
+
+    s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
+    s.add_argument("--full", action="store_true")
+
+    s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
+    s.add_argument("--once", action="store_true")
+    s.add_argument("--interval", type=float, default=1.0)
+
+    s = add("install-user", lazy("fmsetup", "cmd_install"), help="wire Foreman into ~/.claude (used by install.sh)")
+    s.add_argument("--dry-run", action="store_true")
+    s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
+    s.add_argument("--dry-run", action="store_true")
+    return ap
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    try:
+        args.fn(args)
+        return 0
+    except c.PolicyError as e:
+        print(f"fm: refused: {e}", file=sys.stderr)
+        return 2
+    except c.LockTimeout as e:
+        print(f"fm: {e} (another fm or hook is writing; retry)", file=sys.stderr)
+        return 3
+    except (UsageError, KeyError) as e:
+        print(f"fm: {e.args[0] if e.args else e}", file=sys.stderr)
+        return 1
+    except ValueError as e:
+        print(f"fm: state looks corrupt: {e} (run fm doctor)", file=sys.stderr)
+        return 4
