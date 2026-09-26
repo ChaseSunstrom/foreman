@@ -197,7 +197,7 @@ Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists
 - Subagents can't be tool-less (an empty `tools:` list means every tool), so brainstormers run as `claude -p` children via `fm ideas` (no tools, no MCP, no user plugins).
 - Built-in task tools are off on current models, so the TaskCompleted gate is dormant unless `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`.
 - `footerLinksRegexes` isn't used (only http(s)/editor URLs are allowed; T-ids can't reach brief files).
-- Evals run in a temp HOME, so each case embeds the rules (`tests/e2e/sync_evals.py`). Current score 0.7: guard and mid-task capture 1.0; one-liner classification and intake ordering need tuning (Foreman self-inbox T-0008).
+- Evals run in a temp HOME, so each case embeds the rules (`tests/e2e/sync_evals.py`). Score at 1.1.0: 1.0 (5/5 cases, one run each; single runs are noisy, so compare candidates over several).
 - Konsole may ignore OSC 777 notifications and OSC 9;4 progress; titles work.
 - Telemetry needs the collector endpoint before it can be enabled.
 - A per-repo opt-out must use `defaultMode: "default"` (Claude Code ignores `auto` and `bypassPermissions` in project/local settings).
