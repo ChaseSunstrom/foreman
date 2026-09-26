@@ -41,7 +41,7 @@ DONE-WHEN: all tests pass and the CSV opens in Excel
 
 Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `STATUS` shows where things stand. You never have to run a command: say it in plain words ("is foreman ok?", "clean up", "this repo is sensitive") and Claude does it.
 
-- **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first: several tool-less sub-agents, each with a different lens, then Claude checks every idea against the real code and queues the best.
+- **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first: several tool-less sub-agents, each with a different lens, then Claude checks every idea against the real code and queues the best. Each brainstorm runs up to six short `claude -p` (Sonnet) sessions, which count against your plan's usage.
 - **Audits before done**: finished work is checked through independent lenses (intent, adversary, edge cases, operations, maintainability) with different prompts and context; small tasks get a self-check, large ones all five.
 - **Full auto**: say `FULL AUTO` (or "don't ask me anything") and Claude works through the whole queue without questions, recording its decisions; anything only you can approve waits for one summary at the end. `STANDARD AUTONOMY` switches back.
 

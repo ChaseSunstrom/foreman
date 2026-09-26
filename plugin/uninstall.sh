@@ -24,7 +24,10 @@ done
 say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 run() { if [ "$DRY" = 1 ]; then echo "    (dry-run) $*"; else "$@"; fi; }
 
-manifest="$FOREMAN_HOME/state/install-manifest.json"
+# The state dir in use (FOREMAN_STATE, <home>/state, or the read-only-home fallback), as fm resolves it.
+state="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import fmcore; print(fmcore.state_dir())' "$HERE/lib" 2>/dev/null \
+  || echo "$FOREMAN_HOME/state")"
+manifest="$state/install-manifest.json"
 if [ -f "$manifest" ]; then
   disabled="$(python3 -c 'import json,sys; print(" ".join(json.load(open(sys.argv[1])).get("plugins_disabled", [])))' "$manifest" 2>/dev/null || true)"
 else
@@ -38,15 +41,15 @@ say "Uninstalling the plugin and the local marketplace"
 run claude plugin uninstall foreman@foreman --scope user >/dev/null 2>&1 || say "  (foreman@foreman was not installed)"
 run claude plugin marketplace remove foreman >/dev/null 2>&1 || say "  (marketplace 'foreman' was not registered)"
 
-if [ -d "$FOREMAN_HOME/state" ]; then
-  if [ "$PURGE" = 1 ] && { [ "$YES" = 1 ] || { [ -r /dev/tty ] && read -r -p "Delete $FOREMAN_HOME/state (archived to backups/ first)? [y/N] " ans </dev/tty && [ "$ans" = y ]; }; }; then
+if [ -d "$state" ]; then
+  if [ "$PURGE" = 1 ] && { [ "$YES" = 1 ] || { [ -r /dev/tty ] && read -r -p "Delete $state (archived to backups/ first)? [y/N] " ans </dev/tty && [ "$ans" = y ]; }; }; then
     archive="$FOREMAN_HOME/backups/state-$(date +%Y%m%d-%H%M%S).tgz"
     run mkdir -p "$FOREMAN_HOME/backups"
-    run tar -C "$FOREMAN_HOME" -czf "$archive" state
-    run rm -r "$FOREMAN_HOME/state"
-    say "State archived to $archive and removed"
+    run tar -C "$(dirname "$state")" -czf "$archive" "$(basename "$state")"
+    run rm -r "$state"
+    say "State archived to $archive and removed ($state)"
   else
-    say "Kept $FOREMAN_HOME/state (tasks, ledger, decisions). Remove it with --purge-state."
+    say "Kept $state (tasks, ledger, decisions). Remove it with --purge-state."
   fi
 fi
 

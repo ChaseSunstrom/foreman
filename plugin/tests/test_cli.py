@@ -194,21 +194,40 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual(self.fm("capture", "x", "--sour", "self", check=False).returncode, 2)
 
     def test_ask_records_a_pending_approval_without_granting(self):
-        p = self.fm("ask", "T-0001", "core", "publish", "--why", "edit the guard", env={"FOREMAN_SESSION_ID": "s1"})
+        p = self.fm_ask("T-0001", "core", "publish", why="edit the guard", session="s1")
         self.assertIn("yes", p.stdout.lower())
         pend = c.read_meta(self.p)["pending_approvals"]
         self.assertEqual([(a["task"], a["allow"], a["why"], a["session"]) for a in pend],
                          [("T-0001", ["core", "publish"], "edit the guard", "s1")])
         self.assertEqual(self.brief().meta.get("allow") or [], [])
-        self.fm("ask", "T-0001", "core", "--why", "again", env={"FOREMAN_SESSION_ID": "s1"})
+        self.fm_ask("T-0001", "core", why="again", session="s1")
         self.assertEqual(len(c.read_meta(self.p)["pending_approvals"]), 1, "one pending request per task")
 
-    def test_ask_without_a_session_is_refused(self):
-        # A request no session owns could be granted by any session's "ok" (T-0009 adversary audit).
-        p = self.fm("ask", "T-0001", "core", check=False)
+    def test_ask_not_seen_by_the_hook_is_refused(self):
+        # Obfuscated or scripted fm ask: no trusted session, so nothing may be recorded (T-0009 adversary audit).
+        p = self.fm("ask", "T-0001", "core", env={"CLAUDE_CODE_SESSION_ID": "victim"}, check=False)
         self.assertEqual(p.returncode, 1)
         self.assertIn("session", p.stderr)
         self.assertNotIn("pending_approvals", c.read_meta(self.p))
+
+    def test_ask_session_comes_from_the_hook_not_the_environment(self):
+        self.fm_ask("T-0001", "core", session="mine", env={"CLAUDE_CODE_SESSION_ID": "victim"})
+        self.assertEqual(c.read_meta(self.p)["pending_approvals"][0]["session"], "mine")
+
+    def test_audit_goes_stale_when_files_change_however_they_were_edited(self):
+        self.fm("task", "step", "T-0001", "add", "a")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "audit", "T-0001", "self", "checklist", "ok")
+        path = os.path.join(self.repo, "README.md")
+        original = read_text(path)
+        with open(path, "a") as f:  # e.g. sed -i through Bash: no touched event
+            f.write("changed after the audit\n")
+        p = self.fm("task", "done", "T-0001", check=False)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("changed since", p.stderr)
+        with open(path, "w") as f:
+            f.write(original)
+        self.fm("task", "done", "T-0001")
 
     def test_tier_cannot_be_lowered_once_work_has_evidence(self):
         self.fm("task", "set", "T-0001", "tier=M")
@@ -220,15 +239,10 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "set", "T-0001", "tier=L")
         self.assertEqual(self.brief().tier, "L")
 
-    def test_session_comes_from_claude_code_first(self):
-        # FOREMAN_SESSION_ID (CLAUDE_ENV_FILE) goes stale on resume; Claude Code's own variable doesn't.
-        self.fm("ask", "T-0001", "core", env={"CLAUDE_CODE_SESSION_ID": "cc-1", "FOREMAN_SESSION_ID": "stale"})
-        self.assertEqual(c.read_meta(self.p)["pending_approvals"][0]["session"], "cc-1")
-
     def test_ask_rejects_unknown_and_unauthorizable_categories(self):
         for cat in ("bogus", "state-direct", "self-authorize"):
-            self.assertEqual(self.fm("ask", "T-0001", cat, check=False).returncode, 1, cat)
-        self.assertEqual(self.fm("ask", "T-0099", "core", check=False).returncode, 1)
+            self.assertEqual(self.fm_ask("T-0001", cat, check=False).returncode, 1, cat)
+        self.assertEqual(self.fm_ask("T-0099", "core", check=False).returncode, 1)
 
     def test_set_rejects_unknown_status_and_protected_fields(self):
         self.assertEqual(self.fm("task", "set", "T-0001", "status=weird", check=False).returncode, 1)

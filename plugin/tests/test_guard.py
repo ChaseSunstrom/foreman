@@ -313,10 +313,12 @@ class InterpreterWrites(GuardCase):
             ("python3 -c \"print(open('{fhome}/plugin/lib/fmguard.py').read())\"", None),
             ("python3 - <<'EOF'\nopen('{repo}/src/app.py', 'w').write('x')\nEOF", None),
             ("python3 - <<'EOF'\nimport fmcore as c\nb = c.find_brief(p, 'T-0001'); b.meta['allow'] = ['core']; c.save_brief(p, b)\nEOF",
-             "state-direct"),
+             "core"),
             ("python3 -c \"import sys; sys.path.insert(0, 'lib'); import fmcli; fmcli.main(['task', 'set', 'T-1', '--allow', 'core'])\"",
-             "state-direct"),
+             "core"),
             ("python3 -c \"import sys; sys.path.insert(0, 'lib'); import fmguard; print(fmguard.CATEGORIES)\"", None),
+            ("python3 - <<'EOF'\nimport fmcore as c\ndef run(x):\n    return c.read_meta(x)\nprint(run(p))\nEOF", None),
+            ("python3 -c \"from fmcli import main; main(['capture', 'x'])\"", "core"),
         ], self.bash)
 
     def test_relative_paths_resolve_against_cwd(self):

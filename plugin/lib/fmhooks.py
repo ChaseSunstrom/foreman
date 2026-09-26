@@ -187,7 +187,9 @@ def session_context(p, sd, other_note=None):
 _PASTED = re.compile(r"<pasted_content[^>]*>.*?</pasted_content[^>]*>", re.S)
 
 
-_YES = re.compile(r"^\W*(yes|y|yep|yeah|yup|sure|ok|okay|approved?|confirm(ed)?|lgtm|go|do it)\b(?!\s*\?)", re.I)
+_YES = re.compile(r"^\W*(yes|y|yep|yeah|yup|sure|ok|okay|approved?|confirm(ed)?|lgtm|go(\s+ahead)?|do it)\b(?!\s*\?)"
+                  r"(?!\W*(?:but\s+)?(?:no\b(?!\s+(?:problem|worries))|not\b|don'?t\b|do\s+not\b|never\b|wait\b|"
+                  r"hold\b|cancel\b|stop\b|actually\b))", re.I)  # a negation right after the yes cancels it
 
 
 def _resolve_approvals(p, meta, sid, text):
@@ -315,6 +317,10 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    try:
+        _record_asks(pl, p, fmguard)
+    except Exception:
+        log_error("PreToolUse", traceback.format_exc())
     gate = _no_task_gate(pl, p, act, ctx)
     if gate:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
@@ -343,6 +349,41 @@ def _guard_ctx(pl, fmguard):
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(), scratch=scratch,
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None)
     return ctx, p, act
+
+
+ASK_TTL = 300  # seconds between the hook seeing `fm ask` and fm recording it
+
+
+def _record_asks(pl, p, fmguard):
+    """Note each `fm ask` about to run, with the session id from the hook payload (the agent can't set that), so
+    fm ask binds the request to the session that really asked instead of trusting its own environment."""
+    if not p or pl.get("tool_name") != "Bash" or not pl.get("session_id"):
+        return
+    asks = []
+    for args in fmguard.fm_calls((pl.get("tool_input") or {}).get("command") or ""):
+        if len(args) > 2 and args[0] == "ask":
+            cats = []
+            for a in args[2:]:
+                if a.startswith("-"):
+                    break
+                cats.append(a)
+            asks.append({"task": args[1], "allow": sorted(set(cats)), "session": pl["session_id"], "at": time.time()})
+    if not asks:
+        return
+    path = os.path.join(p.dir, "asks.json")
+    with c.lock(p.dir, timeout=2):
+        seen = _load_list(path)
+        seen = [a for a in seen if time.time() - a.get("at", 0) < ASK_TTL] + asks
+        c.write_atomic(path, json.dumps(seen[-20:]))
+
+
+def _load_list(path):
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return data if isinstance(data, list) else []
+    except (OSError, ValueError):
+        return []
 
 
 def _edit_path(pl):
@@ -527,7 +568,7 @@ def _drive(p, sd, briefs, pl, g):
     if not work:
         return None  # nothing left that doesn't need the user
     wb = next(b for b in briefs if b.id == work["id"])
-    if (wb.meta.get("explore") or wb.tier == "L") and not wb.meta.get("approved") and not full:
+    if c.needs_approval(wb, "full" if full else "standard"):
         return None  # waiting on the user's approval (AUTONOMY standard)
     d = g["drive"].setdefault(sid, {"count": 0})
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):

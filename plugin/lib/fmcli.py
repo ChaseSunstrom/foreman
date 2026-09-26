@@ -20,8 +20,7 @@ class UsageError(Exception):
 
 
 def session():
-    # Claude Code sets its own id for Bash; the CLAUDE_ENV_FILE export can be a stale id after a resume.
-    return os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID")
+    return c.session_id()
 
 
 def out(args, data, text):
@@ -190,14 +189,15 @@ def cmd_task(args):
     if sub == "audit":
         if args.lens not in c.AUDIT_LENSES:
             raise UsageError(f"unknown lens {args.lens!r}; one of {', '.join(c.AUDIT_LENSES)}")
-        b, _ = mutate(p, args.id, lambda b: b.add_audit(args.lens, args.how, args.result),
+        tree = c.worktree_id(p.root)
+        b, _ = mutate(p, args.id, lambda b: b.add_audit(args.lens, args.how, args.result, tree=tree),
                       "audit", {"lens": args.lens, "how": args.how[:200], "result": args.result[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: audit ({args.lens}) recorded.")
     if sub == "done":
-        since = c.last_change(p, args.id)
+        since, tree = c.last_change(p, args.id), c.worktree_id(p.root)
 
         def done(b):
-            reasons = b.done_blockers(since)
+            reasons = b.done_blockers(since, tree)
             if reasons:
                 raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
             b.meta["status"] = "done"
@@ -472,6 +472,23 @@ def _git_exclude(root, rel):
         pass
 
 
+def _take_seen_ask(p, tid, cats):
+    """The session id the PreToolUse hook recorded for this exact `fm ask` (consumed), or None."""
+    import time
+    path = os.path.join(p.dir, "asks.json")
+    try:
+        with open(path) as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        return None
+    match = next((a for a in reversed(seen) if isinstance(a, dict) and a.get("task") == tid
+                  and sorted(set(a.get("allow") or [])) == sorted(set(cats)) and time.time() - a.get("at", 0) < 300), None)
+    if match:
+        seen.remove(match)
+        c.write_atomic(path, json.dumps(seen))
+    return match.get("session") if match else None
+
+
 def cmd_ask(args):
     """Record a request only. The grant happens in the UserPromptSubmit hook, on the user's own reply."""
     import fmguard
@@ -482,17 +499,18 @@ def cmd_ask(args):
         ok = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE]
         raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
     why = c.redact(args.why)
-    if not session():
-        raise UsageError("fm ask needs the Claude Code session id (CLAUDE_CODE_SESSION_ID) so that only that "
-                         "session's next reply can decide the request")
     with c.lock(p.dir):
         b = need_brief(p, args.id)
+        sid = _take_seen_ask(p, b.id, cats)
+        if not sid:
+            raise UsageError("fm ask must run as its own Bash command in the Claude Code session that asks: the hook "
+                             "ties the request to that session (it saw no matching call, so nothing was recorded)")
         meta = c.read_meta(p)
         pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
-        pend.append({"task": b.id, "allow": cats, "why": why, "session": session(), "at": c.now()})
+        pend.append({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now()})
         meta["pending_approvals"] = pend
         c.write_meta(p, meta)
-        c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=session())
+        c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
     out(args, {"task": b.id, "allow": cats, "why": why},
         f"Pending: {b.id} {', '.join(cats)} ({why}). Ask the user one yes/no question for it now; their next "
         f"message decides: a reply starting with yes grants it, anything else cancels it.")

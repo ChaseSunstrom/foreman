@@ -8,6 +8,9 @@ Claude works autonomously and checks its own work.
 - `/foreman:brainstorm` for open-ended requests (detected by the prompt hook): context pack, `fm ideas` runs one tool-less `claude -p` per lens in parallel (a subagent can't be tool-less), then grounding, scoring and a queued slate.
 - Status, doctor, tidy and improve can be started by Claude; plain words map to Foreman actions.
 - Protected core widened to all Foreman code (`plugin/lib`, `bin`, `hooks`); interpreter-code writes to protected paths are caught.
+- Approval hardening from the audits: `fm ask` is bound to the session the PreToolUse hook saw running it (not the agent's environment), requests without a trusted session are refused, a negation right after the yes cancels it ("ok, don't…"), and a task's tier can't be lowered once it has evidence.
+- Audit freshness also compares a content id of the working tree (edits made any way, Bash included, make audits stale).
+- State falls back to `$XDG_STATE_HOME/foreman` (or a per-user temp dir) when `~/.claude` is read-only, as in `claude plugin eval`; `fm doctor` warns and `uninstall.sh` purges whichever is in use. Eval prompts no longer break on a `---` in the rules.
 - Fixes found by the audits: `fm` rejects abbreviated options (`--allo core`); session ids come from `CLAUDE_CODE_SESSION_ID` (the env-file export is stale after a resume); `ledger_tail` honours n beyond 64 KB; a busy lock no longer drops your yes silently; uninstall on a machine without `settings.json` leaves nothing behind.
 
 ## 1.0.0 — 2026-09-26

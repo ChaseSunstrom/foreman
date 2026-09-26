@@ -167,7 +167,7 @@ class Approvals(HookCase):
     """fm ask records a request; only the user's next prompt (a hook, never a command) decides it."""
 
     def ask(self, tid, *cats, session="sess-1"):
-        self.fm("ask", tid, *cats, "--why", "needs it", env={"FOREMAN_SESSION_ID": session})
+        self.fm_ask(tid, *cats, session=session)
 
     def allow(self, tid):
         return c.find_brief(self.project(), tid).meta.get("allow") or []
@@ -189,12 +189,21 @@ class Approvals(HookCase):
     def test_other_replies_clear_without_granting(self):
         self.fm("init")
         tid = self.task()
-        for reply in ("what would that change?", "no", "yesterday it worked", "not yet"):
+        for reply in ("what would that change?", "no", "yesterday it worked", "not yet", "ok, don't do it",
+                      "yes, but don't push", "sure? what does it do", "go wait"):
             self.ask(tid, "core")
             ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": reply}))
             self.assertEqual(self.allow(tid), [], reply)
             self.assertEqual(self.pending(), [], reply)
             self.assertIn("not granted", ctx)
+
+    def test_longer_yes_replies_still_grant(self):
+        self.fm("init")
+        tid = self.task()
+        for reply in ("yes, to all of your things, and no more questions", "sure, no problem", "Yes!"):
+            self.ask(tid, "publish")
+            self.hook("UserPromptSubmit", {"prompt": reply})
+            self.assertIn("publish", self.allow(tid), reply)
 
     def test_reply_in_another_session_does_not_decide(self):
         self.fm("init")
@@ -472,7 +481,7 @@ class Stop(HookCase):
         self.fm("init")
         self.fm("autonomy", "full")
         t1 = self.task()
-        self.fm("ask", t1, "core", env={"FOREMAN_SESSION_ID": "sess-1"})
+        self.fm_ask(t1, "core")
         self.assertIsNone(self.decision(self.stop("T-0001 needs your approval for core.")))
         t2 = self.task("Other", focus=False)
         p = self.stop("Waiting on core for T-0001.")
@@ -483,7 +492,7 @@ class Stop(HookCase):
     def test_standard_autonomy_yields_while_an_approval_is_pending(self):
         self.fm("init")
         tid = self.task()
-        self.fm("ask", tid, "publish", env={"FOREMAN_SESSION_ID": "sess-1"})
+        self.fm_ask(tid, "publish")
         self.assertIsNone(self.decision(self.stop("Continuing with the release notes.")))
 
     def test_stop_sets_terminal_title(self):

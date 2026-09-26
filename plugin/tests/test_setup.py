@@ -149,6 +149,19 @@ class Uninstall(SetupCase):
         self.assertEqual(self.load(), ORIGINAL)
 
 
+class UninstallScript(SetupCase):
+    def test_purge_uses_the_state_dir_in_use(self):
+        alt = os.path.join(self.home, "alt-state")
+        os.makedirs(os.path.join(alt, "projects"))
+        uninstall = os.path.join(os.path.dirname(os.path.dirname(FM)), "uninstall.sh")
+        env = dict(os.environ, HOME=self.home, FOREMAN_HOME=self.fhome, FOREMAN_STATE=alt)
+        p = subprocess.run(["bash", uninstall, "--dry-run", "--purge-state", "--yes"], capture_output=True, text=True,
+                           env=env, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn(alt, p.stdout)
+        self.assertTrue(os.path.isdir(alt), "dry run removes nothing")
+
+
 class InstallScript(unittest.TestCase):
     """install.sh with stub claude and setup-plugins.sh: plugin-dev (--build-tools) only when building."""
 

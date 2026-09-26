@@ -312,18 +312,20 @@ _GUARDED_BY_PATH = ("core", "state-direct", "credentials")
 
 _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+(?:fmcore|fmcli|fmhooks|fmsetup|fmtidy)\b")
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
-                          r"checkpoint|mutate|main|run|cmd_\w+|task_\w+|_resolve_approvals)\s*\(")
+                          r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals)\s*\(|"
+                          r"\b(?:fmcli|fmhooks|fmsetup|fmtidy)\s*\.\s*\w+\s*\(|\bfrom\s+(?:fmcli|fmhooks)\s+import\b")
 
 
 def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
     Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
-    imports Foreman's modules and calls their writers is a direct state write (fm is the only writer)."""
+    imports Foreman's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
+    user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(cmd):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
-        return [("state-direct", "interpreter code driving Foreman's modules (use the fm CLI)")]
+        return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     if not _WRITE_API.search(cmd):
         return []
     found = []
@@ -332,6 +334,19 @@ def _interpreter_writes(cmd, ctx):
         found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
                   if cat in _GUARDED_BY_PATH]
     return found
+
+
+def fm_calls(cmd):
+    """The argument lists of every direct `fm …` (or `python3 …/fm …`) call in a shell command."""
+    calls = []
+    for c in _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; "))):
+        argv, _ = _strip_wrappers(c.argv)
+        name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
+        if name == "fm":
+            calls.append(args)
+        elif re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):
+            calls.append(args[1:])
+    return calls
 
 
 def check_bash(cmd, ctx, depth=0):

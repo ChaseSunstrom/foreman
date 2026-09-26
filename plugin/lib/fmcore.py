@@ -11,6 +11,7 @@ import json
 import os
 import re
 import string
+import subprocess
 import tempfile
 import time
 from collections import defaultdict
@@ -94,6 +95,22 @@ def projects_dir():
 def slug_for(root):
     name = re.sub(r"[^a-z0-9]+", "-", os.path.basename(root.rstrip("/")).lower()).strip("-") or "root"
     return f"{name}-{hashlib.sha1(root.encode()).hexdigest()[:6]}"
+
+
+def worktree_id(root):
+    """Content id of a repo's working files (tracked and untracked, not ignored), the same before and after a commit.
+    Built with a throwaway index, so edits made any way (Bash, editors, other tools) change it. None outside git."""
+    if not root or not git_root(root):
+        return None
+    with tempfile.TemporaryDirectory() as t:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(t, "index"))
+        try:
+            subprocess.run(["git", "-C", root, "add", "-A"], env=env, capture_output=True, timeout=120, check=True)
+            tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
+                                  timeout=60, check=True).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            return None
+    return tree[:12] or None
 
 
 def git_root(path):
@@ -284,8 +301,13 @@ def redact_obj(obj):
 
 # ---------------------------------------------------------------- ledger
 
+def session_id():
+    """Claude Code's own id first: the CLAUDE_ENV_FILE export (FOREMAN_SESSION_ID) is stale after a resume."""
+    return os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID")
+
+
 def log_event(p, event, task=None, data=None, session=None):
-    rec = {"ts": now(), "session_id": session or os.environ.get("CLAUDE_CODE_SESSION_ID") or os.environ.get("FOREMAN_SESSION_ID"), "project": p.slug,
+    rec = {"ts": now(), "session_id": session or session_id(), "project": p.slug,
            "task": task, "event": event, "data": redact_obj(data or {})}
     os.makedirs(p.dir, exist_ok=True)
     # One short O_APPEND write per event: atomic for concurrent writers on a local filesystem.
@@ -343,6 +365,7 @@ _STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+(.*?)(\s+<- CURRENT)?\s*$")
 _AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+(.*?)\s*$")
 _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
 _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
+_TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
 _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
 # Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
@@ -544,35 +567,42 @@ class Brief:
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result} ({ts or now()})")
 
     # --- audits (evidence lines tagged "(audit <lens>)")
-    def add_audit(self, lens, how, result, ts=None):
+    def add_audit(self, lens, how, result, ts=None, tree=None):
         if lens not in AUDIT_LENSES:
             raise ValueError(f"unknown audit lens {lens!r}; one of {', '.join(AUDIT_LENSES)}")
         how = redact(str(how)).replace("`", "'").strip()
         result = redact(str(result)).replace("\n", " ").strip()
-        self._append_line("Verification evidence", f"- (audit {lens}) `{how}` → {result} ({ts or now()})")
+        mark = f" [tree {tree}]" if tree else ""
+        self._append_line("Verification evidence", f"- (audit {lens}) `{how}` → {result}{mark} ({ts or now()})")
 
     def audits(self):
+        """[(lens, timestamp, worktree id or None)]"""
         out = []
         for line in self.evidence():
-            m, t = _AUDIT_RE.match(line), _TS_TAIL.search(line)
+            m, t, w = _AUDIT_RE.match(line), _TS_TAIL.search(line), _TREE_MARK.search(line)
             if m:
-                out.append((m.group(1), t.group(1) if t else ""))
+                out.append((m.group(1), t.group(1) if t else "", w.group(1) if w else None))
         return out
 
     def last_work_ts(self):
         stamps = [_TS_TAIL.search(l) for l in self.evidence() if (m := _EV_RE.match(l)) and m.group(1) == "step"]
         return max((t.group(1) for t in stamps if t), default="")
 
-    def audit_blockers(self, since=None):
+    def audit_blockers(self, since=None, tree=None):
+        """Required audits missing or stale: older than the last step evidence / attributed edit, or (when the
+        current worktree id is given) recorded against different file contents."""
         cutoff = max(self.last_work_ts(), since or "")
-        fresh = {lens for lens, ts in self.audits() if ts >= cutoff}
-        stale = {lens for lens, ts in self.audits()} - fresh
+        audits = self.audits()
+        fresh = {lens for lens, ts, t in audits if ts >= cutoff and (not tree or not t or t == tree)}
+        changed = {lens for lens, ts, t in audits if ts >= cutoff and tree and t and t != tree}
+        stale = {lens for lens, _, _ in audits} - fresh - changed
         reasons = []
         for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]):
             if not group & fresh:
-                name = " or ".join(sorted(group))
-                reasons.append(f"audit missing: {name}" + (" (recorded audits predate the last change; "
-                                                          "re-audit after the last change)" if group & stale else ""))
+                why = (" (files changed since the audit; re-audit)" if group & changed else
+                       " (recorded audits predate the last change; re-audit after the last change)" if group & stale
+                       else "")
+                reasons.append(f"audit missing: {' or '.join(sorted(group))}{why}")
         return reasons
 
     # --- acceptance criteria
@@ -604,7 +634,7 @@ class Brief:
             raise KeyError(f"no acceptance criterion {n}")
         self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
 
-    def done_blockers(self, since=None):
+    def done_blockers(self, since=None, tree=None):
         reasons = []
         for s in self.steps():
             if not s.done:
@@ -616,7 +646,7 @@ class Brief:
                 reasons.append(f"acceptance criterion {a.n} not checked: {a.text}")
         if not self.has_evidence():
             reasons.append("no verification evidence recorded")
-        return reasons + self.audit_blockers(since)
+        return reasons + self.audit_blockers(since, tree)
 
     # --- resume
     def set_resume_auto(self, text):
@@ -925,6 +955,11 @@ STAGE_REFERENCE = {
 }
 
 
+def needs_approval(b, autonomy="standard"):
+    """L tier and explore items wait for the user's approval, except in full autonomy (self-approved)."""
+    return (b.tier == "L" or bool(b.meta.get("explore"))) and not b.meta.get("approved") and autonomy != "full"
+
+
 def plan_gaps(b, autonomy="standard"):
     """What a brief still needs before work may start (fm focus refuses until this is empty)."""
     gaps = []
@@ -938,7 +973,7 @@ def plan_gaps(b, autonomy="standard"):
         gaps += [f"verify command on criterion {a.n}" for a in acs if "verify with" not in a.text]
     if not b.steps():
         gaps.append("step")
-    if (b.tier == "L" or b.meta.get("explore")) and not b.meta.get("approved") and autonomy != "full":
+    if needs_approval(b, autonomy):
         gaps.append(f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
     return gaps
 
