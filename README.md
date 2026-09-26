@@ -43,6 +43,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE af
 
 - **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first: several tool-less sub-agents, each with a different lens, then Claude checks every idea against the real code and queues the best. Each brainstorm runs up to six short `claude -p` (Sonnet) sessions, which count against your plan's usage.
 - **Audits before done**: finished work is checked through independent lenses (intent, adversary, edge cases, operations, maintainability) with different prompts and context; small tasks get a self-check, large ones all five.
+- **Docs stay current**: bigger tasks record which docs they changed, `fm docs` finds docs that drifted from the code, and long sessions compact earlier (Foreman's state makes that cheap).
 - **Full auto**: say `FULL AUTO` (or "don't ask me anything") and Claude works through the whole queue without questions, recording its decisions; anything only you can approve waits for one summary at the end. `STANDARD AUTONOMY` switches back.
 
 ## Permissions

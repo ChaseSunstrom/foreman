@@ -380,7 +380,9 @@ def check_self_docs(home=None, plugin=PLUGIN):
                     bad.append(f"{os.path.relpath(path, home)}: `fm {top}` isn't an fm command")
                 elif cmds[top] and sub and sub not in cmds[top]:
                     bad.append(f"{os.path.relpath(path, home)}: `fm {top} {sub}` isn't an fm command")
-    missing = [n for n in sorted(cmds) if not re.search(rf"\b{re.escape(n)}\b", master)]
+    listed = {w for span in re.findall(r"`(fm [^`\n]+)`", re.sub(r"```.*?```", "", master, flags=re.S))
+              for w in re.split(r"[\s|\[\]]+", span)}  # only names inside `fm …` spans count
+    missing = [n for n in sorted(cmds) if n not in listed]
     if missing:
         bad.append("MASTER.md lacks fm " + ", ".join(missing))
     for kind, folder, strip in (("skill", "skills", ""), ("agent", "agents", ".md")):

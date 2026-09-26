@@ -57,7 +57,7 @@ class Checks(unittest.TestCase):
 
     def test_self_docs_flags_drift(self):
         home = os.path.join(self.t, "fh")
-        self.write("fh/MASTER.md", "CLI: `fm state|queue`\nSkills: intake\n")
+        self.write("fh/MASTER.md", "CLI: `fm state|queue`\nSkills: intake. Prose that says doctor and docs doesn't count.\n")
         self.write("fh/README.md", "Flags: `--no-plugins`, `--frobnicate`.\n")
         self.write("fh/install.sh", "#!/bin/bash\n#   --no-plugins     skip\n#   --no-wiring      skip wiring\nset -e\n")
         self.write("fh/plugin/rules/foreman.md", "Run `fm teleport now` then `fm task set T-1 x=y`.\n")

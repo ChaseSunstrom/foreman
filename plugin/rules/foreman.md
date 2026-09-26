@@ -5,7 +5,8 @@ Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). Sy
 ## The loop — every request, however terse
 capture → expand → ground → plan → execute → verify → reflect → record.
 - A plain request is intake. Classify it yourself and say so in one line ("Treating this as FIX, tier S.").
-- Never edit without at least an S-tier brief: `fm task new "<title>" --type T --tier S`, or `/foreman:intake` for anything bigger.
+- Never edit without at least an S-tier brief (the hooks refuse edits while no task is active): `fm task new "<title>" --type T --tier S --ac "<done when>" --step "<step>" --focus`, or `/foreman:intake` for anything bigger. `fm focus` refuses a brief that isn't planned for its tier.
+- `fm next` (also injected every turn as "Next: …") names the one next required action and its procedure; follow it rather than recalling the loop.
 - Tiers: S (≤~30 lines, 1–2 files, obvious approach) · M (several files or a real design choice; compare two approaches) · L (cross-cutting, schema/API/security-sensitive, large or uncertain; staged sub-tasks, self-critique). Unsure → one tier up.
 - Procedures: `/foreman:intake` (expand, ground, anticipate, compile the Execution prompt, order). Stage playbooks (CLEAN, PERF, SECURITY, FIX, TDD, review, verify): `/foreman:playbooks`.
 - Open-ended request with no concrete target ("super improve it", "just get it done") → `/foreman:brainstorm` first.
@@ -43,6 +44,7 @@ Dependencies override it. A FIX that breaks the baseline and any critical securi
 - Checkpoint before switching, before risky steps and at natural pauses: `fm checkpoint --note "<exact resume point>"`.
 - 3 failed verification attempts on one step → stop, write a diagnosis in the brief, `fm task block ID "<why>"`, move on, report.
 - Before `fm task done`: audits (`/foreman:intake` → `references/audit.md`). S: `self` checklist · M: `intent` + the riskiest other lens · L: all five via `foreman:fm-reviewer`. Verify every finding; fix it test-first or capture it; `fm task audit ID <lens> "<how>" "<result>"`.
+- M/L tasks record their Docs impact (`fm task set ID --section "Docs impact" --text "<docs updated | none: why>"`); `fm docs` lists docs that drifted from the code.
 - End of each task: `fm task done ID`, triage the inbox, show the queue (≤10 lines), continue per autonomy (`/foreman:next`).
 
 ## Autonomy and drive (`fm autonomy` shows the level)
