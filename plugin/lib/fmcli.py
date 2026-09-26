@@ -888,6 +888,9 @@ def build_parser():
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
 
+    add("repeats", lazy("fmrepeats", "cmd_repeats"),
+        help="commands and procedures this project keeps repeating, and what project tool each could become")
+
     s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and print one reviewer brief per lens")
     s.add_argument("action", choices=["prep"])
     s.add_argument("id")

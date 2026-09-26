@@ -22,10 +22,17 @@
 1. FINAL checks for this task: full test suite / build, not just the new test. Record evidence.
 2. Audit (`audit.md`): S = self checklist; M = intent + the riskiest other lens; L = all five lenses via `foreman:fm-reviewer`. Verify every finding, fix or capture it, `fm task audit ID <lens> "<how>" "<result>"`.
 3. `fm task done ID` (fm lists anything missing, including audits older than the last edit).
-4. `/foreman:reflect` for M/L tasks or anything that caused back-and-forth.
+4. `/foreman:reflect` for M/L tasks or anything that caused back-and-forth. Anything you did by hand again (`fm repeats` lists what recurs across tasks) → capture an S task to make it a project tool (below).
 5. Triage the inbox: expand captured items into briefs (intake §2), fold them into the queue.
 6. Re-plan checkpoint after each phase group or structural change: re-read remaining briefs, update scope, approach and Execution prompts, re-order if dependencies changed (`fm queue --replan`), log what changed in each brief.
 7. Show the queue in ≤ 10 lines and continue per autonomy (`/foreman:next`).
+
+## Project tools (for work that repeats)
+`fm repeats` reports commands run 3+ times in 2+ tasks and steps that recur in 3+ tasks, each with a suggestion. Make the smallest tool that removes the repetition, in the project repo, as its own S task:
+- A gate (tests, lint, build, a benchmark with a budget) → `fm check add "<cmd>"`; `fm check` then runs every gate at once.
+- A multi-command sequence → a script in the repo (`scripts/<name>`), then use it in evidence (`--run`) or as a gate.
+- A procedure with judgement (how this repo does releases, migrations, fixture updates) → a project skill, `.claude/skills/<name>/SKILL.md`: frontmatter `name` and a one-line `description` saying when to use it (it is always-on context in this repo, so keep it short), then the steps, commands and pitfalls. Sessions and subagents in the repo load it when it applies.
+- The same delegation brief sent again and again → a project agent, `.claude/agents/<name>.md`, with only the tools it needs.
 
 ## Evidence quality
 Evidence is a command plus its actual result. "Tests pass" needs the test command's output with 0 failures; "bug fixed" needs the original reproduction passing; "regression test works" needs the red-green cycle. See `verification.md`.
