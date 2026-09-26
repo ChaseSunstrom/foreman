@@ -20,6 +20,17 @@ gh repo clone YOUR_GITHUB_USER/foreman ~/.claude/foreman && ~/.claude/foreman/in
 
 Leave off `--build` to set up without starting; later, run `/foreman:build` in any Claude Code session. Extra flags pass through to the plugin setup: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode).
 
+## Starting from a clean slate (optional)
+
+If you already have plugins and config, you don't need to wipe `~/.claude`: a full wipe loses your login, MCP servers, session history, and memory. `reset-claude.sh` resets only the parts that change Claude's behavior:
+
+```bash
+./reset-claude.sh            # dry run: shows exactly what would change
+./reset-claude.sh --apply    # close Claude Code first
+```
+
+It backs up `~/.claude` and `~/.claude.json` to `~/.claude-reset/<timestamp>/`, uninstalls every plugin except the ones Foreman keeps (`--all-plugins` removes those too, `--keep id,id` spares more), strips user-level hooks, permissions, and ECC env vars from `settings.json`, and moves your global CLAUDE.md, rules, skills, agents, commands, and hook scripts into the archive. Login, MCP servers, history, memory, themes, claude-hud's statusline, and per-repo `.claude/` folders are untouched. The build later offers to port anything useful back from the archive. Undo with the `tar` command it prints.
+
 ## First-time publish
 
 ```bash
@@ -65,6 +76,10 @@ To turn bypass off everywhere, set `defaultMode` back to `"auto"` (or delete it)
 
 The build adds a visibility layer on supported surfaces (it never patches Claude Code itself): a Foreman line under claude-hud's statusline, per-subagent rows, a `[T-0012 FIX · 3/5]` badge on each reply that costs no tokens, terminal title and desktop notifications, a live `fm watch` dashboard for a tmux split, and optional OpenTelemetry export into Grafana. Today, without the build, try `/tui fullscreen` (mouse, click-to-expand tool output, a live `/diff` panel), `/focus`, and `Ctrl+O` for transcript search.
 
+## Does it improve itself?
+
+Yes, within limits. Foreman improves its own skills, rules, hooks, and scripts (not the model). Ideas come from its retros, your corrections, and its own metrics. `/foreman:improve` builds candidate changes in a separate git worktree, runs its `claude plugin eval` suite against the live version, and only proposes changes that score at least as well. You approve every merge, and it can't edit its own guard hook, permission settings, or eval suite.
+
 ## Layout
 
 ```
@@ -72,6 +87,7 @@ BUILD_PROMPT.md       the spec Claude Code builds from
 install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
 configure-repo.sh     one-time: point everything at your GitHub repo
+reset-claude.sh       optional: reset Claude Code's behavior layer before installing
 .claude-plugin/       local marketplace "foreman"
 plugin/               the Foreman plugin (bootstrap: /foreman:build)
 local/ state/ backups/   machine-specific, gitignored

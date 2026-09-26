@@ -54,6 +54,8 @@ install() { # install <plugin@marketplace> [required-binary]
   if has "$id"; then
     if [ -n "$bin" ] && ! command -v "$bin" >/dev/null 2>&1; then
       say "  ⚠ $id is installed but '$bin' is not on PATH, so it will error. Install $bin or disable the plugin."
+    elif ! enabled "$id"; then
+      if run claude plugin enable "$id" >/dev/null 2>&1; then say "  ↺ $id (re-enabled)"; else say "  ! $id is disabled and couldn't be re-enabled"; fi
     else
       say "  ✓ $id"
     fi

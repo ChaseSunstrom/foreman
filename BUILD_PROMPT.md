@@ -62,6 +62,7 @@ The target is not "AGI." It is a senior engineer with a good project manager's d
 - Read the docs listed in §2.1.
 - Inventory: `~/.claude/settings.json` (+ project/local settings if inside a repo), every CLAUDE.md and `rules/` file, skills, commands, agents, `claude plugin list`, `claude plugin details <plugin>` for each (always-on token cost), every enabled plugin's `hooks/hooks.json`, `claude mcp list`, statusLine, output style, permission mode and allow/deny rules, auto memory status and location.
 - Compare the installed set with §4.6 and Appendix A; `setup-plugins.sh --dry-run` gives a quick diff.
+- If `~/.claude-reset/` exists, the user ran `reset-claude.sh` before the build. Inventory the newest archive: its `moved/` folder (their old CLAUDE.md, rules, skills, agents, commands, hooks) and the removed plugins inside `claude-home.tgz` (under `.claude/plugins/cache/`, which is where the ECC and superpowers material to port in §4.6 now lives). Propose what to bring back; restore nothing without approval.
 - **Measure the always-on load** as the baseline Foreman must beat: CLAUDE.md files, `~/.claude/rules/`, each enabled plugin's always-on tokens (`claude plugin details`), and every hook that injects context at SessionStart/UserPromptSubmit (list them and estimate their size).
 - Audit third-party plugin hooks per §2.12.
 - Back up `~/.claude` to `FOREMAN_HOME/backups/<timestamp>.tgz`, excluding transcripts and caches (list exactly what was excluded; make sure auto-memory directories are included). Write and test the restore command.
@@ -81,7 +82,7 @@ Self-critique the plan against §6.5 and revise (at most twice). If `BUILD_GATE:
 
 **Phase 6: Hygiene and doctor.** `fm tidy` (§9) and `fm doctor` (§12).
 
-**Phase 7: Verification.** Doctor green; all §12 scenarios pass; evidence recorded in `FOREMAN_HOME/local/verification.md`.
+**Phase 7: Verification.** Doctor green; all §12 scenarios pass; evidence recorded in `FOREMAN_HOME/local/verification.md`. Encode the scenarios as `claude plugin eval` cases in `plugin/evals/`; they become the referee for §4.9.
 
 **Phase 8: Docs and handoff.** `MASTER.md` (§11, committed at the repo root), plugin README, `README.md` updated, uninstall tested (install → uninstall → reinstall leaves no residue), final commit on `foreman/build`, final report (§13) ending with the exact merge-and-push commands for the user.
 
@@ -181,7 +182,7 @@ Requirements: one implementation language chosen after recon (Python 3 stdlib-on
 
 ### 4.5 Skills and commands (namespaced, e.g. `/foreman:intake`)
 
-`intake` (parse §5, expand to briefs per §6, order the queue, apply AUTONOMY, start) · `next` / `resume` · `status` (≤ 25 lines) · `capture` · `tidy` · `doctor` · `reflect` (retro on last task/phase; writes learnings and decisions).
+`intake` (parse §5, expand to briefs per §6, order the queue, apply AUTONOMY, start) · `next` / `resume` · `status` (≤ 25 lines) · `capture` · `tidy` · `doctor` · `reflect` (retro on last task/phase; writes learnings and decisions) · `improve` (§4.9).
 Give skills specific, slightly "pushy" descriptions so they trigger reliably; keep each SKILL.md under ~500 lines with detail in `references/`. `rules/foreman.md` (always loaded, ≤ ~80 lines) contains only: the loop, the intake cheat sheet, the canonical order, the focus-lock table in compressed form, the subagent rule, the evidence rule, "state goes through fm," and pointers to the skills and `MASTER.md`.
 
 ### 4.6 Installed plugins on this machine: default decisions
@@ -234,6 +235,18 @@ The Claude Code binary is closed-source and replaced on every update, so never p
 8. **History in Grafana.** The user already runs Grafana with InfluxDB and telegraf. Enable Claude Code's OpenTelemetry export into it (telegraf's OpenTelemetry input, or its Prometheus input scraping Claude Code's Prometheus exporter): cost and tokens by type, model, skill, plugin, and agent; tool results and durations; lines changed; commits; permission decisions. Keep prompt, response, and tool-content logging off (the defaults). Put the telegraf snippet and a dashboard JSON in `plugin/observability/`, and ask before touching their telegraf config.
 9. **Theme (optional).** Ship one Foreman color theme in the plugin; the user picks it with `/theme`.
 10. **Beyond the terminal (document only).** Agent view (`claude agents`) for many sessions at once, the Desktop app's Code tab for visual diffs and panes, and the Agent SDK if the user ever wants a fully custom UI.
+
+### 4.9 Self-improvement (bounded and eval-gated)
+
+Foreman improves its own skills, rules, hooks, and scripts over time. It does not improve the model, and it never changes itself unreviewed: an agent that rewrites its own instructions without a referee drifts and bloats, and one running in bypass mode that can edit its own guard has no guard.
+
+- **Where ideas come from.** `reflect` after every task (what caused back-and-forth, what the user corrected, what the guard blocked that the user then allowed), repeated corrections in auto memory, doctor and tidy findings, hook latency and context-footprint trends, and recurring work (the same kind of task three or more times → propose a skill, built and evaluated with skill-creator). Each idea lands in Foreman's own INBOX as `source: self`, with its evidence. Nothing is applied directly.
+- **Cadence.** `/foreman:improve` (on request, or suggested weekly or every ~10 completed tasks) turns the self-inbox into a proposal of at most five changes, each with evidence and an expected effect.
+- **Isolation.** The live plugin loads in place from `FOREMAN_HOME/plugin` on `main`, so improvements are built in a git worktree on branch `improve/<date>` and tested with `--plugin-dir`, never in the live tree.
+- **Referee.** `plugin/evals/` holds `claude plugin eval` cases: the §12 scenarios plus sanitized replays of real past tasks. Run the suite against the live plugin and the candidate with a cost ceiling (`--max-cost-usd`). A candidate qualifies only if it scores at least as well in every category, regresses no scenario, stays within the §2.8 budgets, and doctor is green.
+- **Merging is the user's call.** Whatever AUTONOMY says, the user approves each self-improvement merge. Foreman then bumps the plugin version, updates MASTER.md and `CHANGELOG.md` in the same commit, and tags it (`claude plugin tag`). Rollback is `git revert` plus `/reload-plugins`.
+- **Protected core.** Foreman may propose, but never apply, changes to the guard hook and deny rules, permission settings, the evidence and approval rules, the eval suite and its graders, and `BUILD_PROMPT.md`. The guard hook blocks agent writes to those paths; the user applies approved core changes or explicitly authorizes that single brief. This is a speed bump, not a sandbox: the real boundary is that nothing reaches `main` without the user.
+- **Scope.** Improvements target Foreman itself. Lessons about a user's project go to that project's memory or CLAUDE.md through the normal flow.
 
 ---
 
@@ -503,6 +516,7 @@ Create `FOREMAN_HOME/MASTER.md`: the single document that explains the whole sys
 12. Uninstall → reinstall → identical behavior; uninstall leaves nothing behind except `state/` (and asks about that), and the original `statusLine` and permission mode are restored.
 13. In bypass mode, each guard category from §4.7 is blocked with an actionable message, the same command succeeds once the brief authorizes it, and a sensitive repo's opt-out takes effect.
 14. Visibility: the statusline shows claude-hud's lines plus the Foreman line; the MessageDisplay badge appears while the transcript stays unchanged; `fm watch` shows a new tool call within 2 seconds; telemetry reaches the collector (or the snippet is ready and approval is pending).
+15. Self-improvement: a seeded `source: self` inbox item produces a proposal, a candidate built in a worktree, and an eval comparison against the live plugin, then stops for approval; an agent write to the guard hook or eval suite is blocked.
 
 ---
 
