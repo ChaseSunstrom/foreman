@@ -9,7 +9,7 @@ import sys
 
 import fmcore as c
 
-EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "title"}
+EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title"}
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -68,7 +68,9 @@ def mutate(p, tid, fn, event, data=None):
 def cmd_init(args):
     path = os.path.abspath(args.path or os.getcwd())
     root = c.git_root(path) or path
-    p = c.init_project(root, sensitive=True if args.sensitive else None)
+    p = c.init_project(root)
+    if args.sensitive:
+        cmd_sensitive(argparse.Namespace(state="on", path=root, json=False, project=None))
     with c.lock(p.dir):
         c.log_event(p, "init", data={"root": root}, session=session())
         c.regen_views(p)
@@ -243,7 +245,7 @@ def task_set(p, args):
             raise UsageError("tier must be S, M or L")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
-        changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k == "explore" else v)
+        changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
     section_text = None
     if args.section:
         section_text = args.text if args.text is not None else (open(args.file).read() if args.file else None)

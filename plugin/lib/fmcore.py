@@ -912,7 +912,38 @@ def regen_views(p, briefs=None):
     write_atomic(os.path.join(p.dir, "STATE.md"), render_state(sd, ts))
     write_atomic(os.path.join(p.dir, "INBOX.md"), render_inbox(sd, ts))
     write_atomic(os.path.join(p.dir, "state.line"), state_line(sd) + "\n")
+    write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
     return sd
+
+
+def badge_text(sd):
+    """Short focus label for the per-reply badge and terminal title; empty when idle."""
+    a = sd["active"]
+    if not a:
+        return ""
+    return f"{a['id']} {a['type']} · " + (f"{a['step']['n']}/{a['step']['of']}" if a["step"] else f"{a['steps_done']}/{a['steps_total']}")
+
+
+def glob_match(rel, pattern):
+    """Scope glob: `**` spans directories, `*` and `?` stay within one; a bare path matches itself and its subtree."""
+    pat = pattern.strip().rstrip("/")
+    if pat.startswith("./"):
+        pat = pat[2:]
+    if not any(ch in pat for ch in "*?["):
+        return rel == pat or rel.startswith(pat + "/")
+    rx, i = "", 0
+    while i < len(pat):
+        if pat.startswith("**/", i):
+            rx, i = rx + "(?:.*/)?", i + 3
+        elif pat.startswith("**", i):
+            rx, i = rx + ".*", i + 2
+        elif pat[i] == "*":
+            rx, i = rx + "[^/]*", i + 1
+        elif pat[i] == "?":
+            rx, i = rx + "[^/]", i + 1
+        else:
+            rx, i = rx + re.escape(pat[i]), i + 1
+    return re.fullmatch(rx, rel) is not None
 
 
 # ---------------------------------------------------------------- checkpoint / resume

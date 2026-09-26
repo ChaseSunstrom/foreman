@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Foreman hook dispatcher (PROTECTED CORE): `hook <Event>` with the event JSON on stdin.
+
+One entry point per event (see hooks.json). Non-guard failures exit 0; the PreToolUse guard fails closed.
+"""
+import os
+import sys
+
+EVENT = sys.argv[1] if len(sys.argv) > 1 else ""
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+try:
+    import fmhooks
+except Exception as exc:  # broken install: never block unless this is the guard
+    if EVENT == "PreToolUse":
+        print(f"Foreman guard unavailable ({exc!r}); the tool call was blocked (fail-closed). "
+              "Fix the plugin or run: claude plugin disable foreman@foreman", file=sys.stderr)
+        sys.exit(2)
+    sys.exit(0)
+sys.exit(fmhooks.run(EVENT, sys.stdin.read()))
