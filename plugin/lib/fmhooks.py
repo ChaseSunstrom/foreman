@@ -134,8 +134,8 @@ def session_start(pl):
         if other.get("id") and other["id"] != sid and age is not None and age < 15 / 1440:
             other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root))
-        synced = _sync_import(p, meta)
         c.write_meta(p, meta)
+        synced = _sync_import(p)
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
@@ -144,18 +144,23 @@ def session_start(pl):
             "terminalSequence": _title_seq(sd)}
 
 
-def _sync_import(p, meta):
+def _sync_import(p):
     """A repo with a .foreman/ mirror (fm sync) brings its work along: take in what's new at session start, and on a
-    fresh clone turn syncing on. Caller holds the lock; returns a note for the session context, or None."""
+    fresh clone (no local briefs, sync never switched off here) turn syncing on. Caller holds the lock; returns a note
+    for the session context, or None."""
     import fmsync
-    if not os.path.isdir(fmsync.mirror(p)) or not (meta.get("sync") or not c.load_briefs(p, include_archive=True)):
+    meta = c.read_meta(p)
+    if not os.path.isdir(fmsync.mirror(p)) or not (meta.get("sync") or ("sync" not in meta and not
+                                                                          c.load_briefs(p, include_archive=True))):
         return None
     try:
         res = fmsync.import_(p)
     except (OSError, ValueError):
         log_error("SessionStart", traceback.format_exc())
         return None
+    meta = c.read_meta(p)
     meta["sync"] = True
+    c.write_meta(p, meta)
     n = res["added"] + res["updated"]
     return (f"fm sync: {res['added']} added, {res['updated']} updated from .foreman/"
             + (f"; {len(res['conflicts'])} conflict(s) (fm sync status)" if res["conflicts"] else "") + ".") if n or \

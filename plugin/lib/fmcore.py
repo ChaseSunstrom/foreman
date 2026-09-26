@@ -195,8 +195,9 @@ def worktree_tree(root):
                                   capture_output=True, text=True, timeout=10).stdout.strip()
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
-            # .foreman/ (fm sync's mirror of Foreman state) changes with every fm call: not the work being audited
-            subprocess.run(["git", "-C", root, "add", "-A", "--", ".", ":(exclude).foreman"], env=env,
+            # fm sync's mirror (.foreman/**.md) changes with every fm call: not the work being audited. Anything else
+            # put in that folder still counts.
+            subprocess.run(["git", "-C", root, "add", "-A", "--", ".", ":(exclude,glob).foreman/**/*.md"], env=env,
                            capture_output=True, timeout=120, check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
                                   timeout=60, check=True).stdout.strip()
@@ -1443,7 +1444,8 @@ def _git(root, *args, timeout=2):
 
 def git_summary(root):
     branch = _git(root, "rev-parse", "--abbrev-ref", "HEAD").strip()
-    changed = [l[3:] for l in _git(root, "status", "--porcelain").splitlines() if len(l) > 3]
+    changed = [l[3:] for l in _git(root, "status", "--porcelain", "--", ".", ":(exclude).foreman").splitlines()
+               if len(l) > 3]  # fm sync's mirror changes with every fm call; it isn't the user's work
     return branch, changed
 
 

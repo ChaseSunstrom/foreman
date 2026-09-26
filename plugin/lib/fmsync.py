@@ -2,13 +2,22 @@
 another clone or machine can pick the work up.
 
 Briefs (and their archive), decisions and research travel; the ledger, meta, sessions, pending asks, gates and views
-stay local. Authorization never travels: `allow` and `approved` are stripped on export and ignored on import, so a
-pulled branch can't grant anything. The mirror is written only by fm (the guard treats hand edits as state-direct)
-and is left out of the worktree id, so exports don't stale audits.
+stay local. Nothing from the mirror counts for this machine's gates: grants (`allow`, `approved`) are stripped both
+ways, fm's `[ran]`/`[tree]` marks and audits recorded elsewhere are neutralized on import, and focus (active) is per
+machine. fm writes the folder (the guard treats hand edits as state-direct); its markdown is left out of the worktree
+id, so exports don't stale audits, while anything else put there still shows.
+
+Git is the transport and the conflict detector. meta["sync_base"] keeps a hash of what fm last wrote to or took from
+each mirror file: a file that differs from it changed in the repo (a pull or merge). Exports leave such a file alone;
+the next fm command (or session start, or `fm sync import`) takes it in before working. If the local copy changed too,
+the local one wins and theirs is kept under sync-conflicts/ for a manual merge; files with unresolved merge markers
+wait until git's conflict is resolved. Callers hold the project lock.
 """
+import hashlib
 import os
 import re
 import shutil
+import subprocess
 
 import fmcore as c
 
@@ -19,13 +28,19 @@ README = """# .foreman
 
 Foreman's task briefs, decisions and research for this repository, mirrored by `fm sync` so another clone or machine
 can pick the work up (`fm sync import`, or automatically at session start). fm writes this folder; change the work
-through fm, not by editing these files. Approvals never travel: they stay on the machine where they were granted.
+through fm, not by editing these files. Approvals, run marks, audits and focus never count on another machine.
 """
 _ID = re.compile(r"^(T-\d{4,})")
+_CONFLICT = re.compile(r"(?m)^(<{7}|={7}|>{7})( |$)")
+_AUDIT_LINE = re.compile(r"(?m)^(-\s+\(audit\s+[a-z]+)\)")
 
 
 def mirror(p):
     return os.path.join(p.root, DIR)
+
+
+def _sha(text):
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
 
 
 def _read(path):
@@ -33,132 +48,228 @@ def _read(path):
         return f.read()
 
 
-def _write_if_changed(path, text):
-    try:
-        if _read(path) == text:
-            return False
-    except OSError:
-        pass
+def _write(path, text):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     c.write_atomic(path, text)
-    return True
 
 
-def _without_grants(text):
+def _walk(base):
+    """Markdown under base, as relative paths; symlinks are never followed (a pulled one could point anywhere)."""
+    if os.path.islink(base) or not os.path.isdir(base):
+        return
+    for d, dirs, files in os.walk(base):
+        dirs[:] = sorted(x for x in dirs if not os.path.islink(os.path.join(d, x)))
+        for f in sorted(files):
+            if f.endswith(".md") and not os.path.islink(os.path.join(d, f)):
+                yield os.path.relpath(os.path.join(d, f), base).replace(os.sep, "/")
+
+
+def _travels(rel):
+    return rel.startswith(BRIEFS) or rel.startswith("research/") or rel == "decisions.md"
+
+
+def _for_mirror(text):
     b = c.Brief.parse(text)
+    for k in LOCAL_ONLY:
+        b.meta.pop(k, None)
+    return b.render()
+
+
+def _from_mirror(text):
+    """A mirrored brief as this machine may take it: no grants, no run or worktree marks, audits relabelled so they
+    don't count here (this machine's gates need its own runs and audits)."""
+    b = c.Brief.parse(_AUDIT_LINE.sub(r"\1, imported)", c._unmarked(text)))
     for k in LOCAL_ONLY:
         b.meta.pop(k, None)
     return b
 
 
-def _walk(base):
-    for d, _, files in os.walk(base):
-        for f in sorted(files):
-            if f.endswith(".md"):
-                yield os.path.relpath(os.path.join(d, f), base).replace(os.sep, "/")
+def _save_base(p, base):
+    meta = c.read_meta(p)
+    if meta.get("sync_base") != base:
+        meta["sync_base"] = base
+        c.write_meta(p, meta)
 
 
 def export(p):
-    """Bring the mirror up to date with local state. Returns the number of files written."""
-    root, written, here = mirror(p), 0, {}
-    written += _write_if_changed(os.path.join(root, "README.md"), README)
+    """Bring the mirror up to date with local state, leaving files that changed in the repo for the import.
+    Returns the number of files written."""
+    root = mirror(p)
+    if os.path.islink(root):
+        raise OSError(f"{root} is a symlink; fm sync writes only a real folder")
+    base, written, here = dict(c.read_meta(p).get("sync_base") or {}), 0, {}
+    if not os.path.exists(os.path.join(root, "README.md")):
+        _write(os.path.join(root, "README.md"), README)
     for rel in _walk(p.dir):
-        if rel.startswith(BRIEFS) or rel.startswith("research/") or rel == "decisions.md":
-            text = _read(os.path.join(p.dir, rel))
-            if rel.startswith(BRIEFS):
-                text = _without_grants(text).render()
-                here[_ID.match(os.path.basename(rel)).group(1)] = rel
-            written += _write_if_changed(os.path.join(root, rel), text)
-    for rel in list(_walk(root)):  # a brief archived here moved: drop its old place (briefs only known elsewhere stay)
+        if not _travels(rel):
+            continue
+        text = _read(os.path.join(p.dir, rel))
+        if rel.startswith(BRIEFS):
+            m = _ID.match(os.path.basename(rel))
+            if not m:
+                continue  # not a brief (fm names them T-NNNN-…)
+            try:
+                text = _for_mirror(text)
+            except ValueError:
+                continue
+            here[m.group(1)] = rel
+        dest = os.path.join(root, rel)
+        cur = _read(dest) if os.path.isfile(dest) and not os.path.islink(dest) else None
+        if cur is not None and cur != text and _sha(cur) != base.get(rel):
+            continue  # changed in the repo (pull, merge): the import takes it first
+        if cur != text:
+            _write(dest, text)
+            written += 1
+        base[rel] = _sha(text)
+    for rel in list(_walk(root)):  # a brief archived here moved: drop its old copy if it is still ours
         m = _ID.match(os.path.basename(rel))
-        if rel.startswith(BRIEFS) and m and here.get(m.group(1), rel) != rel:
+        if rel.startswith(BRIEFS) and m and here.get(m.group(1), rel) != rel \
+                and _sha(_read(os.path.join(root, rel))) == base.get(rel):
             os.remove(os.path.join(root, rel))
+            base.pop(rel, None)
+    _save_base(p, base)
     return written
 
 
+def _set_aside(p, rel, text):
+    dest = os.path.join(p.dir, "sync-conflicts", rel.replace("/", "__"))
+    _write(dest, text)
+    return os.path.relpath(dest, p.dir)
+
+
 def import_(p):
-    """Take in what the mirror has that is new or newer here. Local grants stay; the mirror's are ignored.
-    Returns {"added", "updated", "conflicts"}. The caller holds the project lock and regenerates views."""
+    """Take in what changed in the mirror since fm last wrote or read it. Returns {added, updated, conflicts}."""
     root, res = mirror(p), {"added": 0, "updated": 0, "conflicts": []}
-    if not os.path.isdir(root):
-        return res
+    base = dict(c.read_meta(p).get("sync_base") or {})
     mine = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    active = {b.id for b in mine.values() if b.status in ("active", "verifying")}
     for rel in _walk(root):
-        src, dest = os.path.join(root, rel), os.path.join(p.dir, rel)
+        if not _travels(rel):
+            continue
+        cur = _read(os.path.join(root, rel))
+        h = _sha(cur)
+        if base.get(rel) == h:
+            continue  # nothing new from the repo
+        if _CONFLICT.search(cur):
+            res["conflicts"].append(f"{rel}: unresolved merge conflict (resolve it in git, then fm sync import)")
+            continue
+        dest = os.path.join(p.dir, rel)
         if rel.startswith(BRIEFS):
             try:
-                theirs = _without_grants(_read(src))
-            except (OSError, ValueError):
-                res["conflicts"].append(f"{rel}: unreadable")
+                theirs = _from_mirror(cur)
+            except ValueError:
+                res["conflicts"].append(f"{rel}: not a brief")
                 continue
             local = mine.get(theirs.id)
+            if theirs.status in ("active", "verifying") and theirs.id not in active:
+                theirs.meta["status"] = "planned"  # focus is per machine
             if local is None:
-                _write_if_changed(dest, theirs.render())
+                _write(dest, theirs.render())
                 res["added"] += 1
-            elif (theirs.meta.get("updated") or "") > (local.meta.get("updated") or ""):
-                if theirs.meta.get("created") != local.meta.get("created"):  # the same id for different work
-                    res["conflicts"].append(f"{theirs.id}: a different task here has this id; kept the local one")
+            else:
+                mine_text = _for_mirror(_read(local.path))
+                if base.get(rel) is None and (theirs.meta.get("updated") or "") <= (local.meta.get("updated") or ""):
+                    base[rel] = h  # never synced, and this copy is as new: keep it (the next export writes it)
+                    continue
+                if base.get(rel) is not None and _sha(mine_text) != base[rel]:
+                    res["conflicts"].append(f"{theirs.id}: changed here and in the repo; kept this one, theirs is in "
+                                            f"{_set_aside(p, rel, cur)}")
+                    base[rel] = h
+                    continue
+                if local.meta.get("created") and theirs.meta.get("created") != local.meta.get("created"):
+                    res["conflicts"].append(f"{theirs.id}: the repo has a different task with this id; kept this one, "
+                                            f"theirs is in {_set_aside(p, rel, cur)}")
+                    base[rel] = h
                     continue
                 for k in LOCAL_ONLY:
                     if k in local.meta:
                         theirs.meta[k] = local.meta[k]
                 if os.path.abspath(local.path) != os.path.abspath(dest):
                     os.remove(local.path)  # archived (or restored) on the other side
-                _write_if_changed(dest, theirs.render())
+                _write(dest, theirs.render())
                 res["updated"] += 1
         elif rel == "decisions.md":  # append-only: take the lines this copy lacks
             have = _read(dest) if os.path.exists(dest) else ""
-            extra = [l for l in _read(src).splitlines() if l.strip() and l not in have.splitlines()]
+            extra = [l for l in cur.splitlines() if l.strip() and l not in have.splitlines()]
             if extra:
-                _write_if_changed(dest, have.rstrip("\n") + ("\n" if have else "") + "\n".join(extra) + "\n")
+                _write(dest, have.rstrip("\n") + ("\n" if have else "") + "\n".join(extra) + "\n")
                 res["updated"] += 1
-        elif rel.startswith("research/") and not os.path.exists(dest):
-            _write_if_changed(dest, _read(src))
+        elif not os.path.exists(dest):
+            _write(dest, cur)
             res["added"] += 1
+        elif _read(dest) != cur:
+            res["conflicts"].append(f"{rel}: differs here; kept this one, theirs is in {_set_aside(p, rel, cur)}")
+        base[rel] = h
+    _save_base(p, base)
     return res
 
 
+def incoming(p):
+    """Has the repo changed any mirrored file since fm last wrote or read it?"""
+    base, root = c.read_meta(p).get("sync_base") or {}, mirror(p)
+    return any(_travels(rel) and base.get(rel) != _sha(_read(os.path.join(root, rel))) for rel in _walk(root))
+
+
 def mirrored_ids(p):
-    root = mirror(p)
-    return {m.group(1) for rel in _walk(root) if rel.startswith(BRIEFS)
-            for m in [_ID.match(os.path.basename(rel))] if m} if os.path.isdir(root) else set()
+    return {m.group(1) for rel in _walk(mirror(p)) if rel.startswith(BRIEFS)
+            for m in [_ID.match(os.path.basename(rel))] if m}
 
 
 def status(p):
     root, meta = mirror(p), c.read_meta(p)
-    local = {b.id: b for b in c.load_briefs(p, include_archive=True)}
-    theirs = {}
-    for rel in (_walk(root) if os.path.isdir(root) else []):
-        if rel.startswith(BRIEFS):
-            try:
-                b = c.Brief.parse(_read(os.path.join(root, rel)))
-                theirs[b.id] = b
-            except (OSError, ValueError):
-                continue
-    newer = lambda a, b: (a.meta.get("updated") or "") > (b.meta.get("updated") or "")
+    base = meta.get("sync_base") or {}
+    local = {b.id for b in c.load_briefs(p, include_archive=True)}
+    theirs, incoming = set(), []
+    for rel in _walk(root):
+        if rel.startswith(BRIEFS) and (m := _ID.match(os.path.basename(rel))):
+            theirs.add(m.group(1))
+            if base.get(rel) != _sha(_read(os.path.join(root, rel))):
+                incoming.append(m.group(1))
     return {"on": bool(meta.get("sync")), "dir": root, "briefs": len(theirs), "local": len(local),
-            "repo_only": sorted(set(theirs) - set(local)), "local_only": sorted(set(local) - set(theirs)),
-            "newer_in_repo": sorted(i for i in set(theirs) & set(local) if newer(theirs[i], local[i])),
-            "newer_here": sorted(i for i in set(theirs) & set(local) if newer(local[i], theirs[i]))}
+            "repo_only": sorted(theirs - local), "local_only": sorted(local - theirs), "incoming": sorted(incoming)}
+
+
+def _ignored(p):
+    try:
+        return subprocess.run(["git", "-C", p.root, "check-ignore", "-q", DIR + "/README.md"],
+                              capture_output=True, timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
 
 
 def cmd_sync(args):
     import fmcli
     p = fmcli.resolve(args)
     if args.action == "on":
-        c.update_meta(p, sync=True)
         with c.lock(p.dir):
-            n = export(p)
-            c.log_event(p, "sync", data={"on": True, "written": n}, session=fmcli.session())
-        note = (" This repo is marked sensitive: review .foreman/ before pushing (evidence is redacted, but briefs "
-                "describe the work)." if c.read_meta(p).get("sensitive") else "")
+            try:
+                res = import_(p)  # a clone that already has a mirror takes it before writing its own
+                meta = c.read_meta(p)
+                meta["sync"] = True
+                c.write_meta(p, meta)
+                n = export(p)
+            except (OSError, ValueError) as e:
+                meta = c.read_meta(p)
+                meta["sync"] = False
+                c.write_meta(p, meta)
+                raise fmcli.UsageError(f"can't write {mirror(p)}: {e}; sync stays off")
+            c.log_event(p, "sync", data={"on": True, "written": n, "imported": res["added"] + res["updated"]},
+                        session=fmcli.session())
+            c.regen_views(p)
+        notes = [" .foreman/ is ignored by git here: add `!.foreman/` to .gitignore, or it never reaches another "
+                 "clone." if _ignored(p) else "",
+                 " This repo is marked sensitive: review .foreman/ before pushing (evidence is redacted, but briefs "
+                 "describe the work)." if c.read_meta(p).get("sensitive") else ""]
         return print(f"Mirroring Foreman state to {mirror(p)} ({n} file(s) written); commit it with your work. "
-                     f"Approvals stay on this machine.{note}")
+                     f"Approvals stay on this machine." + "".join(notes)
+                     + "".join(f"\n  conflict: {x}" for x in res["conflicts"]))
     if args.action == "off":
-        c.update_meta(p, sync=False)
-        if args.remove and os.path.isdir(mirror(p)):
-            shutil.rmtree(mirror(p))
-        with c.lock(p.dir):
+        with c.lock(p.dir):  # with the lock, no export can recreate the folder mid-removal
+            meta = c.read_meta(p)
+            meta["sync"] = False
+            c.write_meta(p, meta)
+            if args.remove and os.path.isdir(mirror(p)) and not os.path.islink(mirror(p)):
+                shutil.rmtree(mirror(p))
             c.log_event(p, "sync", data={"on": False, "removed": bool(args.remove)}, session=fmcli.session())
         return print(f"Sync off; {mirror(p)} " + ("removed." if args.remove else "left as it is (fm sync off --remove "
                                                                                     "deletes it)."))
@@ -177,5 +288,4 @@ def cmd_sync(args):
     st = status(p)
     fmcli.out(args, st, f"Sync {'on' if st['on'] else 'off'} · {st['dir']} · {st['briefs']} brief(s) mirrored, "
                         f"{st['local']} here" + "".join(f"\n  {k.replace('_', ' ')}: {', '.join(st[k])}" for k in
-                                                         ("repo_only", "local_only", "newer_in_repo", "newer_here")
-                                                         if st[k]))
+                                                         ("incoming", "repo_only", "local_only") if st[k]))

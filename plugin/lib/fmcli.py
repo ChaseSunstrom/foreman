@@ -702,6 +702,24 @@ def cmd_audit(args):
         f"once); save each reply with fm research add {b.id}-<lens>; record with fm task audit {b.id} <lens> …")
 
 
+def _sync_in(args):
+    """fm sync: a pull or merge changed .foreman/, so take it in before this command works on the old copy (cheap when
+    nothing came in: a hash per mirrored file). Never in the way of the command itself."""
+    if getattr(args, "cmd", None) == "sync":
+        return
+    try:
+        p = resolve(args, create=False)
+        if not c.read_meta(p).get("sync"):
+            return
+        import fmsync
+        if fmsync.incoming(p):
+            with c.lock(p.dir):
+                fmsync.import_(p)
+                c.regen_views(p)
+    except (UsageError, OSError, ValueError, c.LockTimeout):
+        pass
+
+
 def cmd_next(args):
     b, st, action = c.next_for(resolve(args))
     out(args, {"task": b.id if b else None, "stage": st, "action": action}, f"Next: {action}")
@@ -960,6 +978,7 @@ def build_parser():
 
 def main(argv=None):
     args = build_parser().parse_args(argv)
+    _sync_in(args)
     try:
         rc = args.fn(args)
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
