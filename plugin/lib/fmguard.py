@@ -10,8 +10,6 @@ import re
 import shlex
 import subprocess
 
-from fmcore import record  # @dataclass stand-in (import cost on every hook)
-
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
               "git-destructive", "pipe-shell", "publish"]
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
@@ -20,23 +18,23 @@ FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
 
-@record
+# Plain classes, no imports from the rest of Foreman: the guard must load (and fall back to its committed copy) even
+# when the rest of the library is broken, and dataclasses would cost every hook ~9 ms of import.
 class Ctx:
-    cwd: str
-    project_root: str
-    home: str
-    foreman_home: str
-    scratch: list = []
-    allow: set = set()
-    task_id: str = None
-    state_dir: str = None  # when Foreman state lives outside foreman_home (read-only home fallback)
-    state_fallbacks: list = []  # where a fallback could live: state even before it's used
+    def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
+                 state_fallbacks=()):
+        self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
+        self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
+        self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
+        self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
 
 
-@record
 class Block:
-    category: str
-    detail: str
+    def __init__(self, category, detail):
+        self.category, self.detail = category, detail
+
+    def __repr__(self):
+        return f"Block({self.category!r}, {self.detail!r})"
 
 
 def findings(tool_name, tool_input, ctx):
@@ -244,12 +242,9 @@ def classify_write(path, ctx):
 
 # ---------------------------------------------------------------- shell parsing
 
-@record
 class Cmd:
-    argv: list
-    redirs: list
-    piped: bool
-    procsub: bool = False
+    def __init__(self, argv, redirs, piped, procsub=False):
+        self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
 
 
 def _strip_heredocs(cmd):

@@ -7,13 +7,54 @@ import os
 import sys
 
 EVENT = sys.argv[1] if len(sys.argv) > 1 else ""
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+PLUGIN = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+LIB = os.path.join(PLUGIN, "lib")
+sys.path.insert(0, LIB)
+
+
+def committed_library():
+    """Load Foreman's library as last committed (git HEAD of Foreman's own repo, plugin/ at its top; GIT_* variables
+    ignored) into sys.modules, for when the working copy can't be imported: a half-applied edit must not block every
+    tool call, and the committed guard still decides. False when there is no committed copy."""
+    import subprocess
+    import types
+    root = os.path.dirname(PLUGIN)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+
+    def git(*args):
+        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=5, env=env)
+        return r.stdout if r.returncode == 0 else None
+    try:
+        if os.path.realpath((git("rev-parse", "--show-toplevel") or "").strip() or "/nonexistent") != \
+                os.path.realpath(root):
+            return False
+        names = [os.path.basename(n)[:-3] for n in (git("ls-tree", "--name-only", "HEAD", "plugin/lib/") or "").split()
+                 if os.path.basename(n).startswith("fm") and n.endswith(".py")]
+        if not {"fmcore", "fmguard", "fmhooks"} <= set(names):
+            return False
+        for name in ["fmcore", "fmguard"] + sorted(set(names) - {"fmcore", "fmguard"}):  # fmcore first: others import it
+            src = git("show", f"HEAD:plugin/lib/{name}.py")
+            if src is None:
+                return False
+            mod = types.ModuleType(name)
+            mod.__file__ = os.path.join(LIB, f"{name}.py")
+            sys.modules[name] = mod
+            exec(compile(src, f"HEAD:plugin/lib/{name}.py", "exec"), mod.__dict__)
+        return True
+    except Exception:
+        return False
+
+
 try:
     import fmhooks
 except Exception as exc:  # broken install: never block unless this is the guard
-    if EVENT == "PreToolUse":
+    if EVENT != "PreToolUse":
+        sys.exit(0)
+    if not committed_library():
         print(f"Foreman guard unavailable ({exc!r}); the tool call was blocked (fail-closed). "
               "Fix the plugin or run: claude plugin disable foreman@foreman", file=sys.stderr)
         sys.exit(2)
-    sys.exit(0)
+    import fmhooks
+    fmhooks.log_error("PreToolUse", f"the working copy of Foreman's library failed to import ({exc!r}); using the "
+                                    f"committed library (fix plugin/lib)")
 sys.exit(fmhooks.run(EVENT, sys.stdin.read()))

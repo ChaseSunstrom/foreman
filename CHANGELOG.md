@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Round 7: no self-lockout from a broken library (T-0037): the hook script falls back to the committed library when the working copy can't be imported, and reads the active task with the committed `fmcore` when the working one fails; `fmguard` is self-contained again.
 - Round 6: hooks p50 ≈ 29 ms (was ≈ 41): `traceback` loads only on errors and `fmcore.record` replaces `@dataclass` on the hook path; sync hashing measured at 3 ms for 300 briefs, so its stat cache was dropped.
 - Round 5: `fm research add --from-agent FILE` keeps a subagent's final report; `fm audit prep --note`; `fm task drop ID --done-in HOST` for never-started requests another task did; the progress line names the current step; `fm doctor` names the latest hook error. Round-4 audit fixes: checkouts, extractions and recursive copies over a folder that contains protected paths need that category (a checkout at Foreman's root can't swap the guard); `core.hooksPath` in every spelling, `direnv allow` and more startup paths are `system`; titles are control-free wherever they're read; pulled briefs are sanitized; the guard fallback only trusts Foreman's own repo and ignores `GIT_*` variables.
 - Round 4: the guard falls back to the committed `fmguard.py` when the working copy fails (no more self-lockout); persistence (shell startup files, autostart, git hooks and `core.hooksPath`, `crontab`, `at`) is `system`; titles and dashboard text carry no terminal control sequences; `fm sync` redacts secrets on export and skips imports over 1 MB.

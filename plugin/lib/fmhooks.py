@@ -352,9 +352,9 @@ def _use_plugin_grant(p, tid, detail, sid):
     return True
 
 
-def _committed_guard():
-    """The guard as last committed in Foreman's repo (git HEAD), for when the working copy fails to import or run: a
-    half-applied edit can't lock the session out, and protection stays on. None without a committed copy."""
+def _committed(name):
+    """A library module as last committed in Foreman's repo (git HEAD), for when the working copy fails to import or
+    run: a half-applied edit can't lock the session out, and protection stays on. None without a committed copy."""
     import subprocess
     import types
     lib = os.path.join(c.PLUGIN_ROOT, "lib")
@@ -362,7 +362,7 @@ def _committed_guard():
     # only Foreman's own repo (plugin/ at its top), never some other repository the plugin copy happens to sit in
     if not root or os.path.normpath(os.path.join(root, "plugin")) != os.path.normpath(c.PLUGIN_ROOT):
         return None
-    rel = os.path.relpath(os.path.join(lib, "fmguard.py"), root).replace(os.sep, "/")
+    rel = os.path.relpath(os.path.join(lib, f"{name}.py"), root).replace(os.sep, "/")
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # GIT_DIR etc. would pick another repo
     try:
         r = subprocess.run(["git", "-C", root, "show", f"HEAD:{rel}"], capture_output=True, text=True, timeout=5,
@@ -371,7 +371,8 @@ def _committed_guard():
         return None
     if r.returncode or not r.stdout:
         return None
-    mod = types.ModuleType("fmguard_committed")  # registered, so dataclasses can resolve it
+    mod = types.ModuleType(f"{name}_committed")  # registered under its own name, beside the working copy
+    mod.__file__ = os.path.join(lib, f"{name}.py")  # fmcore finds its plugin folder from it
     sys.modules[mod.__name__] = mod
     exec(compile(r.stdout, f"HEAD:{rel}", "exec"), mod.__dict__)
     return mod
@@ -395,7 +396,7 @@ def _pre_tool_use(raw):
         except Exception:
             log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard (fix "
                                     "plugin/lib/fmguard.py):\n" + _tb())
-            guard = _committed_guard()
+            guard = _committed("fmguard")
             if guard is None:
                 raise
             ctx, p, act, found, block = _guard_decision(pl, guard)
@@ -456,7 +457,14 @@ def _guard_ctx(pl, fmguard):
         p = c.find_project(cwd)
         act = c.active_brief(c.load_briefs(p)) if p else None
     except Exception:
-        log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
+        log_error("PreToolUse", "the working copy of fmcore failed to read the task; trying the committed fmcore "
+                                "(fix plugin/lib/fmcore.py):\n" + _tb())
+        try:  # a bug in the library mustn't hide the active task's grants (the fix itself would be refused)
+            cc = _committed("fmcore")
+            p = cc.find_project(cwd) if cc else None
+            act = cc.active_brief(cc.load_briefs(p)) if p else None
+        except Exception:
+            log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(),

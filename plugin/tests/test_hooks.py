@@ -486,6 +486,44 @@ class PreToolUse(HookCase):
                 self.assertIn("committed guard", self.hooks_log())
                 subprocess.run(["git", "-C", copy, "checkout", "--", "."], check=True)
 
+    def test_a_broken_core_library_keeps_grants_visible_and_protection_on(self):
+        # T-0037: a bug in fmcore hid the active task's grants (core edits refused, even the fix); a syntax error in it
+        # would make the hook script itself fail to import and block every tool call
+        import shutil
+        import subprocess
+        import sys
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "core")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        copy = os.path.join(self.tmp, "fcopy2")
+        shutil.copytree(c.PLUGIN_ROOT, os.path.join(copy, "plugin"), ignore=shutil.ignore_patterns("__pycache__", "tests"))
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
+            subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
+        core_py = os.path.join(copy, "plugin", "lib", "fmcore.py")
+        hook = os.path.join(copy, "plugin", "hooks", "hook")
+
+        def pre(path):
+            payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "PreToolUse", "tool_name": "Write",
+                       "tool_input": {"file_path": path, "content": "x"}}
+            return subprocess.run([sys.executable, hook, "PreToolUse"], input=json.dumps(payload), capture_output=True,
+                                  text=True, env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=20)
+        with open(core_py) as f:
+            good = f.read()
+        for kind, broken in (("runtime", good.replace("def find_project(", "def find_project(*_a, **_k):\n    raise "
+                                                      "TypeError('bug')\n\n\ndef _unused_find_project(", 1)),
+                             ("import", good + "\ndef oops(:\n")):
+            with self.subTest(kind=kind):
+                with open(core_py, "w") as f:
+                    f.write(broken)
+                self.assertEqual(pre(os.path.join(self.repo, "src", "ok.py")).returncode, 0, "ordinary work goes on")
+                r = pre(os.path.join(self.home, "plugin", "lib", "fmcore.py"))
+                self.assertEqual(r.returncode, 0, "the task's core grant is still seen, so the fix can be made: "
+                                 + r.stderr[-300:])
+                self.assertEqual(pre(os.path.join(self.home, "state", "x.json")).returncode, 2, "protection stays on")
+        with open(core_py, "w") as f:
+            f.write(good)
+
     def test_core_stays_granted_for_the_task(self):
         self.fm("init")
         tid = self.task()
