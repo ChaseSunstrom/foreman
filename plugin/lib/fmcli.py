@@ -482,8 +482,16 @@ def lazy(module, func):
 
 # ---------------------------------------------------------------- parser
 
+class _Parser(argparse.ArgumentParser):
+    """No abbreviated long options (subparsers inherit the class): `--allo core` must not slip past the guard."""
+
+    def __init__(self, *args, **kw):
+        kw["allow_abbrev"] = False
+        super().__init__(*args, **kw)
+
+
 def build_parser():
-    ap = argparse.ArgumentParser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
+    ap = _Parser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
     sp = ap.add_subparsers(dest="cmd", required=True)
 

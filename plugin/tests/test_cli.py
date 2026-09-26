@@ -136,6 +136,14 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "set", "T-0001", "--section", "Execution prompt", "--text", "Do X then Y.")
         self.assertIn("Do X then Y.", self.brief().section("Execution prompt"))
 
+    def test_abbreviated_options_are_rejected(self):
+        # The guard matches `--allow core` literally; an abbreviation must not reach the same code path (T-0010).
+        for spelling in (["--allo", "core"], ["--al=core"], ["--all", "core"]):
+            p = self.fm("task", "set", "T-0001", *spelling, check=False)
+            self.assertEqual(p.returncode, 2, spelling)
+        self.assertEqual(self.brief().meta.get("allow") or [], [])
+        self.assertEqual(self.fm("capture", "x", "--sour", "self", check=False).returncode, 2)
+
     def test_set_rejects_unknown_status_and_protected_fields(self):
         self.assertEqual(self.fm("task", "set", "T-0001", "status=weird", check=False).returncode, 1)
         self.assertEqual(self.fm("task", "set", "T-0001", "id=T-9999", check=False).returncode, 1)
