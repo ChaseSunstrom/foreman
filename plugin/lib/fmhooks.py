@@ -250,6 +250,8 @@ def user_prompt_submit(pl):
                      + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip else ""))
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
+    elif not r.items and c.is_open_ended(text):
+        parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
     a = sd["active"]
     if a:
         parts.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]

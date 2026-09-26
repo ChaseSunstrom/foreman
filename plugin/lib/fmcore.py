@@ -782,6 +782,27 @@ _FULL_AUTO = {"full auto", "full autonomy", "autonomy full", "go full auto"}
 _STANDARD = {"standard autonomy", "autonomy standard", "full auto off", "stop full auto"}
 
 
+_GENERIC = r"(it|this|that|everything|all|things|stuff|the (app|project|repo|code|codebase|product|system|tool))"
+_OPEN_ENDED = re.compile("|".join([
+    r"\bbrainstorm",
+    r"\bget (it|this|everything|things|stuff) done\b",
+    r"\bmake " + _GENERIC + r" (better|great|awesome|perfect|nicer|amazing|shine)\b",
+    r"\b(super[- ]?)?(improve|upgrade|polish|optimi[sz]e|enhance) " + _GENERIC + r"\s*([.!?,]|etc|$)",
+    r"\b(fix|clean up|tidy up) (everything|all of it|things|stuff)\b",
+    r"\bwhat(ever)? (else )?(should|would|could|can) (we|you|i) (do|build|improve|add|work on)\b",
+    r"\b(surprise me|go wild|do whatever you think|your call)\b",
+]), re.I)
+
+
+def is_open_ended(text):
+    """A short request with no concrete target ("super improve it"): Foreman brainstorms before planning."""
+    t = (text or "").strip()
+    tag = _TAG_LINE.match(t)
+    if not t or len(t.split()) > 30 or (tag and tag.group("tag").upper() in WORK_TAGS):
+        return False
+    return bool(_OPEN_ENDED.search(t))
+
+
 def parse_intake(text):
     r = IntakeResult()
     whole = re.sub(r"[.!]+$", "", text.strip().lower())

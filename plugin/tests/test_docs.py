@@ -6,8 +6,8 @@ import unittest
 
 from helpers import PLUGIN, read_text, read_json
 
-SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks"]
-USER_ONLY = {"status", "capture", "tidy", "doctor", "improve"}
+SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm"]
+USER_ONLY = {"capture"}  # everything else Claude may start itself when the user asks in plain words
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PreCompact",
                "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd"}
@@ -94,10 +94,11 @@ class Agents(unittest.TestCase):
         agents = sorted(os.listdir(os.path.join(PLUGIN, "agents")))
         self.assertIn("fm-recon.md", agents)
         self.assertIn("fm-reviewer.md", agents)
+        self.assertEqual(frontmatter(os.path.join(PLUGIN, "agents", "fm-ideas.md"))[0]["tools"], "[]", "brainstormers get no tools")
         for a in agents:
             with self.subTest(agent=a):
                 meta, body = frontmatter(os.path.join(PLUGIN, "agents", a))
-                tools = {t.strip() for t in meta["tools"].split(",")}
+                tools = {t.strip() for t in meta["tools"].strip("[]").split(",") if t.strip()}
                 self.assertTrue(tools <= READ_ONLY_TOOLS, tools - READ_ONLY_TOOLS)
                 self.assertIn("400 words", body)
 

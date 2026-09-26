@@ -145,8 +145,9 @@ def check_frontmatter(plugin=PLUGIN):
         if meta is None or not meta.get("name") or not meta.get("description"):
             bad.append(f"agent {f}: missing frontmatter")
             continue
-        extra = {t.strip() for t in meta.get("tools", "").split(",") if t.strip()} - READ_ONLY_TOOLS
-        if extra or not meta.get("tools"):
+        raw = meta.get("tools", "")
+        extra = {t.strip() for t in raw.strip("[]").split(",") if t.strip()} - READ_ONLY_TOOLS  # `[]` = no tools
+        if extra or not raw:
             bad.append(f"agent {f}: not read-only ({', '.join(sorted(extra)) or 'no tools allowlist'})")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 

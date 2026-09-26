@@ -121,6 +121,11 @@ class UserPromptSubmit(HookCase):
         self.assertIn("NOW", ctx)
         self.assertIn(f"{tid} FIX step 1/2", ctx)
 
+    def test_open_ended_request_points_at_brainstorm(self):
+        self.fm("init")
+        self.assertIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))
+        self.assertNotIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "fix the login timeout"})))
+
     def test_pause_and_resume_toggle_drive_pause(self):
         self.fm("init")
         self.hook("UserPromptSubmit", {"prompt": "pause"})

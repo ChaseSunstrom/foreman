@@ -297,6 +297,21 @@ class Briefs(unittest.TestCase):
         self.assertNotIn("step 2/3", sec)
 
 
+class OpenEnded(unittest.TestCase):
+    def test_vague_requests_are_open_ended(self):
+        for text in ("Just get it done", "super improve it", "make it better!", "improve everything",
+                     "brainstorm some features for this", "what should we build next?", "go wild",
+                     "Just get it done etc, super improve it"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_open_ended(text))
+
+    def test_concrete_requests_are_not(self):
+        for text in ("fix the login timeout on slow wifi", "FIX: login times out", "improve the error message in parse_ts",
+                     "add a --verbose flag to the CLI", "yes", "PAUSE", ""):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_open_ended(text))
+
+
 class Intake(unittest.TestCase):
     BLOCK = """FIX: login times out after 30s on slow networks
 FEATURE: export report as CSV @src/reports #T-0003
