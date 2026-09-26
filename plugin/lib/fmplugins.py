@@ -19,6 +19,16 @@ FOREMAN_OWNS = {
     "verification gates": ("verification-before-completion", "verify-before", "quality-gate"),
     "task tracking and drive": ("todo", "task-tracker", "ralph", "loop"),
 }
+# Measured conflicts, by plugin name; setup-plugins.sh warns about the same ones (test_docs keeps the lists equal).
+KNOWN_CONFLICTS = {
+    "ecc": "~41k always-on tokens and 24 hook handlers, with its own memory, learning and planning; Foreman ports "
+           "its useful procedures as /foreman:playbooks",
+    "superpowers": "a second orchestrator (brainstorm → plan → execute); Foreman ports its debugging, TDD and "
+                   "verification procedures",
+    "feature-dev": "duplicates Foreman's intake and planning",
+    "ralph-loop": "keeps Claude running via a Stop hook; collides with Foreman's completion gate",
+    "example-skills": "12 mostly unrelated skills; duplicates skill-creator and frontend-design",
+}
 _STOP = {"a", "an", "the", "for", "and", "or", "of", "to", "with", "in", "on", "my", "i", "need", "plugin"}
 
 
@@ -41,7 +51,14 @@ def _frontmatter(path):
     except OSError:
         return {}
     m = re.match(r"---\n(.*?)\n---", text, re.S)
-    return dict(re.findall(r"^(name|description):\s*(.+)$", m.group(1), re.M)) if m else {}
+    if not m:
+        return {}
+    out = {}
+    # `key: value`, or a block scalar (`key: >` / `key: |`) whose value is the indented lines that follow
+    for key, value, block in re.findall(r"^(name|description):[ \t]*(.*)\n?((?:[ \t]+.*\n?)*)", m.group(1), re.M):
+        value = value.strip()
+        out[key] = " ".join(l.strip() for l in block.splitlines()) if value[:1] in (">", "|") else value
+    return out
 
 
 def profile(path):
@@ -56,9 +73,15 @@ def profile(path):
             name = fm.get("name") or os.path.basename(os.path.dirname(f) if kind == "skills" else f)[:-3 if kind != "skills" else None]
             out[kind].append((name, fm.get("description", "")))
             out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
-    hooks = (_json(os.path.join(path, "hooks", "hooks.json"), {}) or {}).get("hooks") or {}
-    out["hooks"] = set(hooks)
-    out["mcp"] = (_json(os.path.join(path, ".mcp.json"), {}) or {}).get("mcpServers") or {}
+    manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {}) or {}
+    for key, default in (("hooks", "hooks/hooks.json"), ("mcpServers", ".mcp.json")):
+        spec = manifest.get(key, default)  # plugin.json can inline them or name another file
+        data = spec if isinstance(spec, dict) else _json(os.path.join(path, spec), {}) if isinstance(spec, str) else {}
+        data = data.get(key, data) if isinstance(data, dict) else {}
+        if key == "hooks":
+            out["hooks"] |= set(data or {})
+        else:
+            out["mcp"].update(data or {})
     return out
 
 
@@ -79,12 +102,20 @@ def index():
 
 
 def installed():
-    """{id: {"path", "enabled"}} for installed plugins (enabled per the user's settings)."""
+    """{id: {"path", "enabled"}} for installed plugins, enabled as Claude Code resolves it here: user settings, then
+    this project's .claude/settings.json and settings.local.json."""
     data = (_json(os.path.join(claude_dir(), "plugins", "installed_plugins.json"), {}) or {}).get("plugins") or {}
-    enabled = (_json(os.path.join(claude_dir(), "settings.json"), {}) or {}).get("enabledPlugins") or {}
+    root = c.git_root(os.getcwd()) or os.getcwd()
+    enabled = {}
+    for f in (os.path.join(claude_dir(), "settings.json"), os.path.join(root, ".claude", "settings.json"),
+              os.path.join(root, ".claude", "settings.local.json")):
+        enabled.update((_json(f, {}) or {}).get("enabledPlugins") or {})
     out = {}
     for pid, entries in data.items():
-        entry = entries[0] if isinstance(entries, list) and entries else entries if isinstance(entries, dict) else {}
+        entries = [e for e in (entries if isinstance(entries, list) else [entries]) if isinstance(e, dict)]
+        # a stale entry (another scope, a removed checkout) must not hide the copy that is really there
+        entry = next((e for e in entries if e.get("installPath") and os.path.isdir(e["installPath"])),
+                     entries[0] if entries else {})
         out[pid] = {"path": entry.get("installPath"), "enabled": bool(enabled.get(pid, False))}
     return out
 
@@ -96,7 +127,9 @@ def find(need, n=10):
     have, hits = installed(), []
     for p in index():
         name, text = p["name"].lower(), f"{p['description']} {p['category']}".lower()
-        score = sum(3 * (w in name) + (w in text) for w in words)
+        # a short word must be a whole word ("go" is not google or mongo); longer ones may prefix ("test" → testing)
+        pats = [re.compile(r"\b" + re.escape(w) + (r"\b" if len(w) <= 3 else "")) for w in words]
+        score = sum(3 * bool(r.search(name)) + bool(r.search(text)) for r in pats)
         if score:
             hits.append(dict(p, score=score, installed=p["id"] in have,
                              enabled=have.get(p["id"], {}).get("enabled", False),
@@ -126,6 +159,9 @@ def check(only=None):
         if not info["enabled"] or pid.startswith("foreman@") or (only and pid != only):
             continue
         prof = profile(info["path"])
+        if pid.split("@")[0] in KNOWN_CONFLICTS:
+            found.append({"plugin": pid, "kind": "known-conflict", "detail": KNOWN_CONFLICTS[pid.split("@")[0]],
+                          "action": f"fm plugins disable {pid} (after fm ask ID plugin)"})
         found += _own_findings(pid, prof)
         for server, spec in prof["mcp"].items():
             key = (server, json.dumps(spec, sort_keys=True))
@@ -137,11 +173,43 @@ def check(only=None):
     return found
 
 
-def _manifest_add(pid):
+def _manifest(key, add=None, drop=None):
+    """uninstall-user's record of what fm plugins added (`plugins_installed`, `marketplaces_added`). True if changed."""
     path = os.path.join(c.state_dir(), "install-manifest.json")
     m = _json(path, {}) or {}
-    m["plugins_installed"] = list(dict.fromkeys(list(m.get("plugins_installed") or []) + [pid]))
+    old = list(m.get(key) or [])
+    new = list(dict.fromkeys(x for x in old + ([add] if add else []) if x != drop))
+    if new == old:
+        return False
+    m[key] = new
     c.write_atomic(path, json.dumps(m, indent=2) + "\n")
+    return True
+
+
+def _claude(*args, timeout=300):
+    try:
+        r = subprocess.run(["claude", *args], capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise c.PolicyError("the claude CLI isn't on PATH")
+    if r.returncode != 0:
+        raise c.PolicyError(f"claude {' '.join(args)} failed: {(r.stderr or r.stdout).strip()[:300]}")
+    return r
+
+
+def _marketplaces():
+    return {os.path.basename(os.path.dirname(os.path.dirname(f))) for f in glob.glob(
+        os.path.join(claude_dir(), "plugins", "marketplaces", "*", ".claude-plugin", "marketplace.json"))}
+
+
+def add_marketplace(source):
+    """Add a marketplace (GitHub owner/repo, git URL or local path); a new one is recorded for uninstall-user.
+    Returns the names it added."""
+    before = _marketplaces()
+    _claude("plugin", "marketplace", "add", source)
+    new = sorted(_marketplaces() - before)
+    for name in new:
+        _manifest("marketplaces_added", add=name)
+    return new
 
 
 def install(pid):
@@ -152,21 +220,31 @@ def install(pid):
         return None, []
     conflicts = _own_findings(pid, profile((known.get(pid) or {}).get("local") or have.get(pid, {}).get("path")))
     fresh = pid not in have
-    cmd = ["claude", "plugin", "install", pid, "--scope", "user"] if fresh else ["claude", "plugin", "enable", pid]
-    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if r.returncode != 0:
-        raise c.PolicyError(f"{' '.join(cmd)} failed: {(r.stderr or r.stdout).strip()[:300]}")
+    _claude("plugin", "install", pid, "--scope", "user") if fresh else _claude("plugin", "enable", pid)
     if fresh:
-        _manifest_add(pid)
+        if pid not in installed():  # exit 0 without an install (e.g. a prompt it couldn't show) owns nothing
+            raise c.PolicyError(f"claude plugin install exited 0 but {pid} isn't installed")
+        _manifest("plugins_installed", add=pid)
     return ("installed" if fresh else "enabled"), conflicts
 
 
 def cmd_plugins(args):
     import fmcli
+    if args.action in ("add-marketplace", "forget") and not args.words:
+        raise fmcli.UsageError(f"fm plugins {args.action} needs " + (
+            "a source (owner/repo, git URL or path)" if args.action == "add-marketplace" else "an id"))
+    if args.action == "add-marketplace":
+        new = add_marketplace(args.words[0])
+        return print((f"Added marketplace {', '.join(new)}" if new else f"{args.words[0]} was already known")
+                     + "; fm plugins find <what you need> searches it.")
+    if args.action == "forget":  # uninstall-user leaves it in place
+        dropped = [k for k in ("plugins_installed", "marketplaces_added") if _manifest(k, drop=args.words[0])]
+        return print(f"uninstall-user will keep {args.words[0]}." if dropped else
+                     f"{args.words[0]} wasn't added by fm plugins; nothing to forget.")
     if args.action in ("install", "enable", "disable"):
         pid = args.words[0] if args.words else ""
         if args.action == "disable":
-            subprocess.run(["claude", "plugin", "disable", pid], check=False, timeout=120)
+            _claude("plugin", "disable", pid, timeout=120)
             return print(f"{pid} disabled (/reload-plugins to apply)")
         done, conflicts = install(pid)
         if not done:

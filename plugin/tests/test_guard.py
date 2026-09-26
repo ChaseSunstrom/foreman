@@ -409,6 +409,8 @@ class PluginChanges(GuardCase):
             ("claude mcp add db -- npx pg-mcp", "plugin"),
             ("claude config set -g theme dark", "plugin"),
             ("fm plugins install rust-analyzer-lsp@claude-plugins-official", "plugin"),
+            ("fm plugins add-marketplace some-org/some-plugins", "plugin"),
+            ("fm plugins forget x@y", None),
             ("claude plugin list --json", None),
             ("claude plugin details x@y", None),
             ("claude mcp list", None),
@@ -417,6 +419,31 @@ class PluginChanges(GuardCase):
         ], self.bash)
         self.assertIsNone(self.bash("claude plugin install x@y", allow=["plugin"]))
         self.assertBlocked(self.bash("fm task set T-0002 --allow plugin"), "self-authorize")
+
+    def test_evasions_are_caught(self):  # adversary audit, T-0016
+        self.run_table([
+            ("claude --model sonnet plugin install evil@official", "plugin"),
+            ("claude --add-dir mcp mcp add db -- npx pg-mcp", "plugin"),
+            ("claude plugins install evil@official", "plugin"),
+            ("claude -p '/plugin install evil@official'", "plugin"),
+            ("claude -p 'list the /mcp servers'", "plugin"),
+            ("python3 -c 'import subprocess; subprocess.run([\"claude\", \"plugin\", \"install\", \"x@y\"])'", "plugin"),
+            ("python3 -c \"import os; os.system('claude mcp add db npx pg')\"", "plugin"),
+            ("python3 -c \"import fmplugins; fmplugins.install('evil@m')\"", "core"),
+            ("python3 -c \"import fmserve as s; s.start(None)\"", "core"),
+            ("claude -p 'fix the config parser'", None),
+            ("python3 -c 'print(\"claude is a plugin host\")'", None),
+            ("python3 -c \"open('x.py', 'w').write('msg = \\\"claude plugin install x\\\"')\"", None),
+        ], self.bash)
+
+    def test_installed_plugin_files_are_the_users(self):
+        # editing an enabled plugin's hooks or skills changes what runs in every session, like installing one
+        self.run_table([
+            ("{home}/.claude/plugins/cache/official/x/1.0/hooks/hooks.json", "plugin"),
+            ("{home}/.claude/plugins/installed_plugins.json", "plugin"),
+            ("{home}/.claude/plugins/marketplaces/m/.claude-plugin/marketplace.json", "plugin"),
+        ], self.write)
+        self.assertBlocked(self.bash("rm -rf {home}/.claude/plugins/cache/official"), "plugin")
 
 
 class SelfAuthorize(GuardCase):

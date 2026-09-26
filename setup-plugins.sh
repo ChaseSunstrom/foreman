@@ -114,6 +114,7 @@ if [ "$DOCS" = 1 ]; then
 fi
 
 # ---------- conflicts with Foreman ----------
+# Same plugins as KNOWN_CONFLICTS in plugin/lib/fmplugins.py (`fm plugins check`); tests/test_docs.py keeps them equal.
 say "Conflicts with Foreman"
 conflict "ecc@ecc"                         "~41k always-on tokens (measured Sept 2026) and 24 hook handlers (incl. sync hooks on every tool call); its own memory, learning, and planning system. Foreman ports its useful procedures as /foreman:playbooks"
 conflict "superpowers@$OFFICIAL"           "a second orchestrator (brainstorm -> plan -> execute); Foreman ports its debugging, TDD and verification procedures"

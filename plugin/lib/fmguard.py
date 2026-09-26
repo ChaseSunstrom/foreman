@@ -176,6 +176,8 @@ def classify_write(path, ctx):
             cats.append("credentials")
         if (p.startswith("/dev/") and not _SAFE_DEV.match(p)) or _under(p, os.path.join(ctx.home, ".config", "systemd")):
             cats.append("system")  # device files; user units (persistence that outlives the session)
+        if _under(p, os.path.join(ctx.home, ".claude", "plugins")):
+            cats.append("plugin")  # installed plugins' code and registries: what runs in every session
     return list(dict.fromkeys(cats))
 
 
@@ -312,17 +314,23 @@ _WRITE_API = re.compile(
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
-_GUARDED_BY_PATH = ("core", "state-direct", "credentials")
+_GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin")
+# Interpreter code that runs claude's plugin/mcp/config subcommands (argv list or command string) or sends /plugin in
+# a prompt. Both an exec API and the command shape must appear, so code that merely mentions them isn't blocked.
+_CLAUDE_IN_CODE = re.compile(r"""['"]claude['"]\s*,\s*['"](?:plugins?|mcp|config)['"]|['"]claude\s+(?:plugins?|mcp|"""
+                             r"""config)\b|['"]\s*/(?:plugins?|mcp|config)\s""")
+_EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
+                       r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(|`")
 
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
 # point modules count as mutating; fmcore/fmguard/fmdocs/fmdoctor are mostly read-only, so their mutators are by name.
 _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b")
-_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve)"
+_FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
                           r"restore_default_state)\s*\(|"
-                          rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b")
+                          rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b")
 
 
 def _interpreter_writes(cmd, ctx):
@@ -335,6 +343,8 @@ def _interpreter_writes(cmd, ctx):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
+    if _CLAUDE_IN_CODE.search(cmd) and _EXEC_API.search(cmd):
+        return [("plugin", "interpreter code running claude's plugin, MCP or config commands")]
     if not _WRITE_API.search(cmd):
         return []
     found = []
@@ -414,7 +424,7 @@ def check_bash(cmd, ctx, depth=0):
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
             sub, rest = _fm_subcommand(fm_args)
-            if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable"):
+            if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
@@ -640,16 +650,23 @@ _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", 
                    "mcp": {"add", "add-json", "add-from-claude-desktop", "remove"}, "config": {"set", "add", "remove"}}
 
 
+_SLASH_CHANGE = re.compile(r"(?:^|\s)/(?:plugins?|mcp|config)\b")
+
+
 def _check_claude_config(name, args):
     """Installing or toggling plugins, marketplaces and MCP servers, or changing Claude Code's config: new code and
     always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it."""
-    pos = [a for a in args if not a.startswith("-")]
-    if name != "claude" or len(pos) < 2:
+    if name != "claude":
         return []
-    if pos[:2] == ["plugin", "marketplace"] and pos[2:3] and pos[2] in ("add", "remove", "rm", "update"):
-        return [("plugin", f"claude plugin marketplace {pos[2]}")]
-    if pos[0] in _CLAUDE_CHANGES and pos[1] in _CLAUDE_CHANGES[pos[0]]:
-        return [("plugin", f"claude {pos[0]} {pos[1]} changes Claude Code's plugins, MCP servers or config")]
+    if any(_SLASH_CHANGE.search(a) for a in args):  # a prompt's slash command isn't a tool call the guard sees
+        return [("plugin", "a /plugin, /mcp or /config command in a claude prompt")]
+    # every adjacent pair, not just the first two words: global options and their values can come first
+    pos = ["plugin" if a == "plugins" else a for a in args if not a.startswith("-")]
+    for a, b, c3 in zip(pos, pos[1:], pos[2:] + [""]):
+        if (a, b) == ("plugin", "marketplace") and c3 in ("add", "remove", "rm", "update"):
+            return [("plugin", f"claude plugin marketplace {c3}")]
+        if b in _CLAUDE_CHANGES.get(a, ()):
+            return [("plugin", f"claude {a} {b} changes Claude Code's plugins, MCP servers or config")]
     return []
 
 

@@ -191,12 +191,19 @@ def cmd_uninstall(args):
     if m is None:
         print("No Foreman install manifest; nothing to undo.")
         return
-    for pid in m.get("plugins_installed") or []:  # installed by `fm plugins install` after the user's yes
+    # added by `fm plugins install` / `add-marketplace` after the user's yes; plugins go before their marketplaces
+    removals = [("plugin", pid, ["uninstall", pid, "--scope", "user"]) for pid in m.get("plugins_installed") or []] + \
+               [("marketplace", mk, ["marketplace", "remove", mk]) for mk in m.get("marketplaces_added") or []]
+    for what, name, cmd in removals:
         if args.dry_run:
-            print(f"Would uninstall plugin {pid}")
-        else:
-            subprocess.run(["claude", "plugin", "uninstall", pid, "--scope", "user"], capture_output=True, timeout=300)
-            print(f"Uninstalled plugin {pid}")
+            print(f"Would remove {what} {name}")
+            continue
+        try:
+            r = subprocess.run(["claude", "plugin", *cmd], capture_output=True, text=True, timeout=300)
+            err = "" if r.returncode == 0 else (r.stderr or r.stdout).strip()[:200] or f"exit {r.returncode}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            err = str(e)
+        print(f"Could not remove {what} {name}: {err}" if err else f"Removed {what} {name}")
     s = _load(P["settings"], {})
     new_s, actions = copy.deepcopy(s), []
     if (new_s.get("statusLine") or {}).get("command") == P["wrapper"]:

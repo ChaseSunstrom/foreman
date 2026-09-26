@@ -789,8 +789,9 @@ def build_parser():
 
     s = add("plugins", lazy("fmplugins", "cmd_plugins"),
             help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")
-    s.add_argument("action", choices=["find", "check", "install", "enable", "disable"])
-    s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled)")
+    s.add_argument("action", choices=["find", "check", "install", "enable", "disable", "add-marketplace", "forget"])
+    s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled); "
+                                            "add-marketplace: owner/repo, git URL or path; forget: an id to keep")
 
     s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")
     s.add_argument("path", nargs="?")

@@ -104,6 +104,14 @@ class Agents(unittest.TestCase):
                 self.assertIn("400 words", body)
 
 
+class PluginConflicts(unittest.TestCase):
+    def test_setup_plugins_and_fm_plugins_share_one_curated_conflict_list(self):
+        import fmplugins
+        with open(os.path.join(os.path.dirname(PLUGIN), "setup-plugins.sh")) as f:
+            names = {m.split("@")[0] for m in re.findall(r'^conflict "([^"]+)"', f.read(), re.M)}
+        self.assertEqual(names, set(fmplugins.KNOWN_CONFLICTS))
+
+
 class OutputStyle(unittest.TestCase):
     def test_foreman_style_is_well_formed_and_keeps_the_coding_instructions(self):
         import fmsetup
