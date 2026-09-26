@@ -69,7 +69,7 @@ def message(block, ctx):
     if cat == "self-authorize":
         return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (Foreman code, rules, evals, "
                 f"BUILD_PROMPT.md, settings) and remote sessions need the user's approval, which an agent can't grant: "
-                + _ASK.format(id=tid, cat="<core|remote>") + ".")
+                + _ASK.format(id=tid, cat="<" + "|".join(sorted(USER_ONLY)) + ">") + ".")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -78,10 +78,9 @@ def message(block, ctx):
     else:
         how = (f"create or focus a task first (fm task new \"…\" --type T --tier S, or fm focus ID), "
                f"then fm task set <ID> --allow {cat}, then retry")
-    if cat == "core":
-        return f"Foreman guard: blocked core: {detail} is protected core. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
-    if cat == "remote":
-        return f"Foreman guard: blocked remote: {detail}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
+    if cat in USER_ONLY:  # rules/foreman.md, README and MASTER name these categories too
+        what = f"{detail} is protected core" if cat == "core" else detail
+        return f"Foreman guard: blocked {cat}: {what}. To authorize: " + _ASK.format(id=tid, cat=cat) + "."
     return f"Foreman guard: blocked {cat}: {detail}. To authorize: {how}."
 
 
@@ -402,7 +401,8 @@ def check_bash(cmd, ctx, depth=0):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
-            if fm_args[:1] == ["serve"] and fm_args[1:2] not in (["status"], ["stop"]):
+            sub, rest = _fm_subcommand(fm_args)
+            if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
@@ -613,6 +613,18 @@ _SYSTEMCTL_MUTATE = {"start", "stop", "restart", "reload", "try-restart", "reloa
                      "preset", "reset-failed"}
 
 
+def _fm_subcommand(args, takes_value=("-p", "--project")):
+    """(first word that isn't an option, what follows it); `takes_value` options consume the next word."""
+    i = 0
+    while i < len(args) and args[i].startswith("-"):
+        i += 2 if args[i] in takes_value else 1
+    return (args[i], args[i + 1:]) if i < len(args) else (None, [])
+
+
+_USER_UNIT_PERSIST = {"link", "enable", "reenable", "edit", "preset", "revert", "set-property", "add-wants",
+                      "add-requires"}
+
+
 def _check_system(name, args):
     pos = _positionals(args)
     if name.startswith("mkfs") or name in _DISK:
@@ -630,6 +642,10 @@ def _check_system(name, args):
         return [("system", "firewall-cmd change")]
     if name == "systemctl" and "--user" not in args and pos and pos[0] in _SYSTEMCTL_MUTATE:
         return [("system", f"systemctl {pos[0]} (system unit)")]
+    if name == "systemctl" and "--user" in args and pos and pos[0] in _USER_UNIT_PERSIST:
+        return [("system", f"systemctl --user {pos[0]} (a user unit outlives the session)")]
+    if name == "systemd-run":
+        return [("system", "systemd-run (a transient unit outside the session)")]
     if name in _POWER or (name == "init" and pos[:1] in (["0"], ["6"])):
         return [("system", f"{name} (power state)")]
     if name == "cryptsetup" and pos[:1] and pos[0] in ("luksFormat", "erase", "luksErase", "reencrypt"):

@@ -21,6 +21,8 @@ import fmcore as c
 MARK = "# Managed by Foreman (fm serve); `fm serve stop` removes it"
 HOME_TAG = "# foreman-home: "  # which Foreman install owns the unit (another install's units are left alone)
 SESSIONS_PER_TASK = 3  # fresh sessions fm run gives one task before it stops
+RESTART = {"burst": 5, "window_s": 600, "delay_s": 30}  # a login/usage failure stops after 5 tries, not forever
+RUN_LOG_MAX = 1_000_000  # bytes; the run log rotates to .1 past this
 
 
 def unit_dir():
@@ -62,12 +64,12 @@ def unit_text(p, mode):
     path_env = path.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
     return "\n".join([
         MARK, f"{HOME_TAG}{c.foreman_home()}", "[Unit]", f"Description=Foreman serve: Claude Code Remote Control in {p.root.replace('%', '%%')}",
-        "StartLimitIntervalSec=600", "StartLimitBurst=5", "",
+        f"StartLimitIntervalSec={RESTART['window_s']}", f"StartLimitBurst={RESTART['burst']}", "",
         "[Service]", "Type=simple", f"WorkingDirectory={p.root.replace('%', '%%')}",
         f'Environment="PATH={path_env}"',  # the session's tools (git, fm, language toolchains) as in your shell
         "ExecStart=" + " ".join(map(_arg, rc)),
         "StandardOutput=null", "StandardError=journal",
-        "Restart=always", "RestartSec=30", "",
+        "Restart=always", f"RestartSec={RESTART['delay_s']}", "",
         "[Install]", "WantedBy=default.target", ""])
 
 
@@ -240,17 +242,16 @@ def _fingerprint(b):
 def _next_runnable(p, skip, told):
     briefs = c.load_briefs(p)
     meta = c.read_meta(p)
-    pending = {a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict)}
-    autonomy = meta.get("autonomy", "standard")
+    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
     act = c.active_brief(briefs)
     for b in ([act] if act else []) + c.order_queue(briefs)[0]:
         if b.id in skip:
             continue
-        if b.id in pending or c.needs_approval(b, autonomy):
+        why = c.waits_on_user(b, pending, autonomy)
+        if why:
             if b.id not in told:
                 told.add(b.id)
-                print(f"{b.id} waits on the user ({'pending approval' if b.id in pending else 'plan approval'}); "
-                      f"skipped")
+                print(f"{b.id} waits on the user ({why}); skipped")
             continue
         return b
     return None
@@ -277,7 +278,7 @@ def cmd_run(args):
         raise fmcli.UsageError(f"another fm run is already working on {p.slug}")
     log = os.path.join(c.state_dir(), "logs", f"run-{p.slug}.log")
     os.makedirs(os.path.dirname(log), exist_ok=True)
-    if os.path.exists(log) and os.path.getsize(log) > 1_000_000:
+    if os.path.exists(log) and os.path.getsize(log) > RUN_LOG_MAX:
         os.replace(log, log + ".1")
 
     def fail(msg):

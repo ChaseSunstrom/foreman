@@ -75,7 +75,7 @@ def _writable(path):
 
 
 _STATE_MARKER = ".foreman-state.json"
-PERMISSION_MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"]  # claude --permission-mode
+PERMISSION_MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"]  # claude 2.1.280 --help
 ASK_TTL = 300  # seconds an `fm ask` the PreToolUse hook saw stays claimable by fm (it runs right after)
 
 
@@ -1078,6 +1078,18 @@ def needs_approval(b, autonomy="standard"):
     return (b.tier == "L" or bool(b.meta.get("explore"))) and not b.meta.get("approved") and autonomy != "full"
 
 
+def pending_tasks(meta):
+    """Task ids with an open `fm ask` (only the user's next reply settles it)."""
+    return [a.get("task") for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")]
+
+
+def waits_on_user(b, pending, autonomy="standard"):
+    """Why a task can't be worked without the user (drive and fm run both skip it), else None."""
+    if b.id in pending:
+        return "pending approval"
+    return "plan approval" if needs_approval(b, autonomy) else None
+
+
 def plan_gaps(b, autonomy="standard"):
     """What a brief still needs before work may start (fm focus refuses until this is empty)."""
     gaps = []
@@ -1183,7 +1195,7 @@ def state_dict(p, briefs=None):
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
         "autonomy": meta.get("autonomy", "standard"),
-        "pending": [a.get("task") for a in meta.get("pending_approvals") or []],
+        "pending": pending_tasks(meta),
         "last_tidy": meta.get("last_tidy"),
         "tidy_overdue_days": int(days) if days is not None and days > TIDY_EVERY_DAYS else None,
         "session": meta.get("session") or {},

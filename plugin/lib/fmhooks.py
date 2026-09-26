@@ -605,7 +605,7 @@ def _drive(p, sd, briefs, pl, g):
     if not work:
         return None  # nothing left that doesn't need the user
     wb = next(b for b in briefs if b.id == work["id"])
-    if c.needs_approval(wb, "full" if full else "standard"):
+    if c.waits_on_user(wb, waiting, "full" if full else "standard"):
         return None  # waiting on the user's approval (AUTONOMY standard)
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):

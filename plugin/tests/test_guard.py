@@ -370,6 +370,10 @@ class Remote(GuardCase):
             ("fm serve {repo} --permission-mode acceptEdits", "remote"),
             ("fm serve start", "remote"),
             ("python3 /x/plugin/bin/fm serve", "remote"),
+            ("fm -p app-1a2b3c serve", "remote"),
+            ("fm --project=app-1a2b3c serve {repo}", "remote"),
+            ("fm --json serve", "remote"),
+            ("fm -p app-1a2b3c serve status", None),
             ("fm serve status", None),
             ("fm serve stop --all", None),
             ("python3 -c \"import fmserve; fmserve.start(p)\"", "core"),
@@ -384,6 +388,14 @@ class Remote(GuardCase):
         self.assertBlocked(self.write("{home}/.claude.json"), "core")  # workspace trust, MCP servers
         self.assertBlocked(self.bash("echo '{{}}' > {home}/.claude.json"), "core")
         self.assertBlocked(self.write("{home}/.config/systemd/user/x.service"), "system")
+        self.run_table([  # persistence through systemd without writing the unit dir
+            ("systemctl --user link /tmp/x.service", "system"),
+            ("systemctl --user enable --now x.service", "system"),
+            ("systemctl --user edit x.service", "system"),
+            ("systemd-run --user /tmp/x.sh", "system"),
+            ("systemctl --user status x.service", None),
+            ("systemctl --user restart x.service", None),
+        ], self.bash)
 
 
 class SelfAuthorize(GuardCase):
