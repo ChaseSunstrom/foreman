@@ -71,11 +71,12 @@ class ForemanTestCase(unittest.TestCase):
             raise AssertionError(f"fm {' '.join(args)} exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p
 
-    def fm_ask(self, tid, *cats, session="sess-1", why="needs it", env=None, check=True):
+    def fm_ask(self, tid, *cats, session="sess-1", why="needs it", env=None, check=True, pin=None):
         """fm ask the way a session runs it: PreToolUse sees the Bash command (trusted session id), then fm runs."""
-        cmd = f"fm ask {tid} {' '.join(cats)} --why '{why}'"
+        extra = ["--pin", pin] if pin else []
+        cmd = f"fm ask {tid} {' '.join(cats + tuple(extra))} --why '{why}'"
         self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": session})
-        return self.fm("ask", tid, *cats, "--why", why, env=env, check=check)
+        return self.fm("ask", tid, *cats, *extra, "--why", why, env=env, check=check)
 
     def fm_json(self, *args, **kw):
         return json.loads(self.fm(*args, "--json", **kw).stdout)

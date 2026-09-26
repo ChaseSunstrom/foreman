@@ -5,6 +5,7 @@ Everything is read from disk (~/.claude/plugins): marketplace indexes, their loc
 cache. Always-on cost is estimated from skill/agent/command descriptions (~4 characters a token).
 """
 import glob
+import hashlib
 import json
 import os
 import re
@@ -103,8 +104,43 @@ def index():
             local = os.path.normpath(os.path.join(root, src)) if isinstance(src, str) else None
             out.append({"id": f"{p.get('name')}@{mk}", "name": p.get("name", ""), "marketplace": mk,
                         "description": p.get("description", ""), "category": p.get("category", ""),
-                        "local": local if local and os.path.isdir(local) else None})
+                        "local": local if local and os.path.isdir(local) else None,
+                        "entry_hash": _digest(json.dumps(p, sort_keys=True).encode())})
     return out
+
+
+def _digest(data):
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def _tree_hash(root):
+    """Every file under root (paths and contents; symlinks as their targets, never followed; .git skipped)."""
+    h = hashlib.sha256()
+    for d, dirs, files in os.walk(root):
+        links = sorted(x for x in dirs if os.path.islink(os.path.join(d, x)))
+        dirs[:] = sorted(x for x in dirs if x != ".git" and x not in links)
+        for f in sorted(files) + links:
+            path = os.path.join(d, f)
+            h.update(os.path.relpath(path, root).encode() + b"\0")
+            if os.path.islink(path):
+                h.update(b"link:" + os.readlink(path).encode())
+            elif os.path.isfile(path):
+                with open(path, "rb") as fh:
+                    h.update(hashlib.sha256(fh.read()).digest())
+    return h.hexdigest()[:16]
+
+
+def content_hash(pid):
+    """What a yes to install or enable pid approves (T-0036): its installed copy when there is one (enable), else its
+    marketplace entry plus the marketplace's local copy of it, or the entry alone for a remote source (which pins the
+    code only as far as the entry names a ref or sha). None for an unknown plugin."""
+    have = installed().get(pid) or {}
+    if have.get("path") and os.path.isdir(have["path"]):
+        return _tree_hash(have["path"])
+    known = next((p for p in index() if p["id"] == pid), None)
+    if not known:
+        return None
+    return _digest((known["entry_hash"] + (_tree_hash(known["local"]) if known["local"] else "")).encode())
 
 
 def installed():

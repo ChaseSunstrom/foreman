@@ -218,3 +218,21 @@ class Check(PluginsCase):
         r = fmdoctor.check_plugins()
         self.assertEqual(r.status, "WARN")
         self.assertIn("fm plugins check", r.detail)
+
+
+class ContentHash(PluginsCase):
+    """T-0036: what a pinned yes approves."""
+
+    def test_local_installed_and_remote_plugins_hash_and_change_with_their_content(self):
+        local, remote = fmplugins.content_hash("rust-analyzer-lsp@official"), fmplugins.content_hash("superpowers@official")
+        self.assertTrue(local and remote and fmplugins.content_hash("db-tools@official"))
+        write(os.path.join(self.cc, "plugins", "marketplaces", "official", "plugins", "rust-analyzer-lsp", "skills",
+                           "rust", "SKILL.md"), "---\nname: rust\ndescription: now does something else\n---\n")
+        self.assertNotEqual(fmplugins.content_hash("rust-analyzer-lsp@official"), local)
+        mk = os.path.join(self.cc, "plugins", "marketplaces", "official", ".claude-plugin", "marketplace.json")
+        data = read_json(mk)
+        data["plugins"][1]["source"]["ref"] = "v2"
+        write(mk, data)
+        self.assertNotEqual(fmplugins.content_hash("superpowers@official"), remote)
+        self.assertIsNone(fmplugins.content_hash("nope@official"))
+

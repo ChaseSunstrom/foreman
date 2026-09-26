@@ -561,6 +561,11 @@ def cmd_ask(args):
         ok = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE]
         raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
     why = c.redact(args.why)
+    if args.pin:
+        import fmplugins
+        if "plugin" not in cats or fmplugins.content_hash(args.pin) is None:
+            raise UsageError(f"--pin names a plugin to install or enable with the plugin category; {args.pin!r} "
+                             f"isn't in the known marketplaces or installed (fm plugins find <need>)")
     with c.lock(p.dir):
         b = need_brief(p, args.id)
         if _prompted(p, b.id, cats):
@@ -575,7 +580,8 @@ def cmd_ask(args):
                              "If it was its own command, state was busy: run the same fm ask again")
         meta = c.read_meta(p)
         pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
-        pend.append({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now()})
+        pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now()},
+                         **({"pin": args.pin} if args.pin else {})))
         meta["pending_approvals"] = pend
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
@@ -874,6 +880,7 @@ def build_parser():
     s.add_argument("id")
     s.add_argument("categories", nargs="+")
     s.add_argument("--why", default="")
+    s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
 
     s = add("decide", cmd_decide, help="record a decision in decisions.md")
     s.add_argument("decision")

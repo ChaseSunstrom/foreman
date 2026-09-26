@@ -1,6 +1,7 @@
 """Hook handler tests: run plugin/hooks/hook <Event> with JSON payloads against an isolated FOREMAN_HOME."""
 import json
 import os
+import time
 import unittest
 
 from helpers import ForemanTestCase, read_text
@@ -428,6 +429,92 @@ class PromptApprovals(HookCase):
         self.assertIn("core", self.allow())
 
 
+class PluginPins(HookCase):
+    """T-0036: a yes to install or enable a plugin names the plugin, and holds only for the content it saw."""
+
+    def setUp(self):
+        super().setUp()
+        self.cc = os.path.join(self.tmp, "cc")
+        mk = os.path.join(self.cc, "plugins", "marketplaces", "m")
+        os.makedirs(os.path.join(mk, ".claude-plugin"))
+        with open(os.path.join(mk, ".claude-plugin", "marketplace.json"), "w") as f:
+            json.dump({"name": "m", "plugins": [{"name": n, "source": f"./plugins/{n}"} for n in ("a", "b")]}, f)
+        self.skill = {}
+        for n in ("a", "b"):
+            self.skill[n] = os.path.join(mk, "plugins", n, "skills", "s", "SKILL.md")
+            os.makedirs(os.path.dirname(self.skill[n]))
+            with open(self.skill[n], "w") as f:
+                f.write("---\nname: s\ndescription: helps\n---\n")
+        os.environ["CLAUDE_CONFIG_DIR"] = self.cc
+        self.fm("init")
+        self.tid = self.task()
+
+    def tearDown(self):
+        os.environ.pop("CLAUDE_CONFIG_DIR", None)
+        super().tearDown()
+
+    def pre(self, command):
+        return self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": command}})
+
+    def brief(self):
+        return c.find_brief(self.project(), self.tid)
+
+    def approve(self, pin):
+        self.fm_ask(self.tid, "plugin", pin=pin)
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+
+    def test_the_yes_is_spent_only_on_the_pinned_plugin(self):
+        self.approve("a@m")
+        self.assertEqual(self.brief().meta.get("plugin_pin", [])[:1], ["a@m"])
+        p = self.pre("claude plugin install b@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("a@m", p.stderr)
+        self.assertIn("plugin", self.brief().meta.get("allow"), "a refused call doesn't spend the yes")
+        self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
+        self.assertNotIn("plugin", self.brief().meta.get("allow") or [])
+        self.assertNotIn("plugin_pin", self.brief().meta)
+
+    def test_changed_content_or_an_old_yes_asks_again(self):
+        self.approve("a@m")
+        with open(self.skill["a"], "a") as f:
+            f.write("new instructions\n")
+        p = self.pre("claude plugin install a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("changed", p.stderr)
+        self.approve("a@m")  # the user saw the new content
+        b = self.brief()
+        b.meta["plugin_pin"] = b.meta["plugin_pin"][:2] + [str(int(time.time()) - 25 * 3600)]
+        c.save_brief(self.project(), b)
+        p = self.pre("claude plugin install a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("24 h", p.stderr)
+
+    def test_an_install_needs_a_pin_but_other_plugin_changes_do_not(self):
+        self.fm_ask(self.tid, "plugin")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        p = self.pre("claude plugin install --scope user a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("--pin a@m", p.stderr)
+        self.assertEqual(self.pre("claude plugin marketplace add o/r").returncode, 0)
+
+    def test_fm_ask_refuses_a_pin_it_cannot_resolve(self):
+        for args in (("plugin", "--pin", "nope@m"), ("core", "--pin", "a@m")):
+            with self.subTest(args=args):
+                self.assertEqual(self.fm("ask", self.tid, *args, "--why", "x", check=False).returncode, 1)
+
+    def test_the_dialog_names_the_plugin_and_its_yes_carries_the_pin(self):
+        cmd = f"fm ask {self.tid} plugin --pin a@m --why 'rust support'"
+        call = lambda event: self.hook(event, {"tool_name": "Bash", "tool_use_id": "t1", "tool_input": {"command": cmd}})
+        out = parse(call("PreToolUse"))["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "ask")
+        self.assertIn("a@m", out["permissionDecisionReason"])
+        call("PermissionRequest")
+        self.fm("ask", self.tid, "plugin", "--pin", "a@m", "--why", "rust support")
+        call("PostToolUse")
+        self.assertEqual(self.brief().meta.get("plugin_pin", [])[:1], ["a@m"])
+        self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})
@@ -438,10 +525,10 @@ class PreToolUse(HookCase):
         tid = self.task()
         self.fm_ask(tid, "plugin")
         self.hook("UserPromptSubmit", {"prompt": "yes"})
-        self.assertEqual(self.pre("Bash", {"command": "claude plugin install a@m"}).returncode, 0)
+        self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/a"}).returncode, 0)
         self.assertNotIn("plugin", c.find_brief(self.project(), tid).meta.get("allow") or [])
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
-        self.assertEqual(self.pre("Bash", {"command": "claude plugin install b@m"}).returncode, 2)
+        self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
 
     def test_a_plugin_grant_is_used_at_most_once_even_in_a_race(self):
         # round-1 edge audit: two calls that both saw the grant must not both get through

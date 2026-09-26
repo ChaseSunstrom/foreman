@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Plugin approvals are pinned (T-0036): `fm ask ID plugin --pin <plugin id>` binds the yes to that plugin and a hash of its content; `fm plugins install|enable` and `claude plugin install|enable` spend it only for that plugin, unchanged, within 24 h, and otherwise say which `fm ask` to run again. The dialog names the plugin; pins never travel through `fm sync`.
 - The Stop evidence gate reads a completion word under a finished step's `▸ Step N/M` header as about that step, however far below the header it is (T-0038).
 - Round 10 (final audit): a whole skill, agent or command folder copied, moved, linked or extracted into place needs the user's `plugin` yes like a single new file; `fm sync` never reads a FIFO or device node from the mirror; `fm doctor`'s core integrity check works in a git worktree and budgets the always-on rules by characters too (≤ 9000, now 7.5k), not only lines; a question bounced back by the Stop hook in a session without AskUserQuestion (`claude -p`) is decided and recorded, and the final message keeps the plan.
 - Round 9: `fm audit prep` seeds each lens brief with this project's past findings for that lens (up to six CRITICAL/HIGH/MEDIUM headlines from reviews saved as `<task>-<lens>`, newest first, raw transcripts included), so a reviewer starts from the weak spots earlier reviews found.

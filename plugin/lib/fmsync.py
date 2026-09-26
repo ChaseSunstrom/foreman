@@ -22,7 +22,7 @@ import subprocess
 import fmcore as c
 
 DIR = ".foreman"
-LOCAL_ONLY = ("allow", "approved")
+LOCAL_ONLY = ("allow", "approved", "plugin_pin")
 BRIEFS = ("tasks/", "archive/")
 README = """# .foreman
 

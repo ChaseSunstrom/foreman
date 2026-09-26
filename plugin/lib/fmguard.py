@@ -506,7 +506,9 @@ def check_bash(cmd, ctx, depth=0):
             if sub == "check" and rest[:1] == ["add"]:
                 found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
-                found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins"))
+                target = f" [plugin {_one_plugin([a for a in rest[1:] if not a.startswith('-')])}]" \
+                    if rest[0] in ("install", "enable") else ""
+                found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
@@ -778,8 +780,32 @@ def _check_claude_config(name, args, stdin=""):
         if (a, b) == ("plugin", "marketplace") and c3 in ("add", "remove", "rm", "update"):
             return [("plugin", f"claude plugin marketplace {c3}")]
         if b in _CLAUDE_CHANGES.get(a, ()):
-            return [("plugin", f"claude {a} {b} changes Claude Code's plugins, MCP servers or config")]
+            target = f" [plugin {_claude_plugin_target(args)}]" if a == "plugin" and b in _PLUGIN_ADDS else ""
+            return [("plugin", f"claude {a} {b} changes Claude Code's plugins, MCP servers or config{target}")]
     return []
+
+
+_PLUGIN_ADDS = ("install", "i", "enable")  # the plugin changes that bring code in: a yes for them is pinned (T-0036)
+
+
+def _one_plugin(words):
+    """The plugin id when words name exactly one, else "?" (which no pinned yes matches)."""
+    return words[0] if len(words) == 1 and re.fullmatch(r"[\w.-]+(?:@[\w.-]+)?", words[0]) else "?"
+
+
+def _claude_plugin_target(args):
+    """The plugin a `claude plugin install|i|enable …` names (the value of -s/--scope isn't one), or "?"."""
+    for i, (x, y) in enumerate(zip(args, args[1:])):
+        if x in ("plugin", "plugins") and y in _PLUGIN_ADDS:
+            words, skip = [], False
+            for a in args[i + 2:]:
+                if skip or a in ("-s", "--scope"):
+                    skip = not skip
+                    continue
+                if not a.startswith("-"):
+                    words.append(a)
+            return _one_plugin(words)
+    return "?"
 
 
 _USER_UNIT_PERSIST = {"link", "enable", "reenable", "edit", "preset", "revert", "set-property", "add-wants",

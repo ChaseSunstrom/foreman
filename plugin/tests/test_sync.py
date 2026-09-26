@@ -63,7 +63,8 @@ class Sync(ForemanTestCase):
         path = next(os.path.join(d, f) for d, _, fs in os.walk(os.path.join(self.mirror, "tasks")) for f in fs)
         text = read_text(path)
         text = re.sub(r"(?m)^updated: .*$", "updated: 2999-01-01T00:00:00Z", text)  # a collaborator's later change
-        text = text.replace("---\n#", "allow: [core, plugin]\n---\n#", 1) + "- 2999-01-01T00:00:00Z pulled note\n"
+        text = text.replace("---\n#", "allow: [core, plugin]\nplugin_pin: [evil@m, 0000, 9999999999]\n---\n#", 1) \
+            + "- 2999-01-01T00:00:00Z pulled note\n"
         with open(path, "w") as f:
             f.write(text)
         out = self.fm("sync", "import").stdout
@@ -71,6 +72,7 @@ class Sync(ForemanTestCase):
         b = c.find_brief(c.find_project(self.repo), self.tid)
         self.assertIn("pulled note", b.render())
         self.assertEqual(b.meta.get("allow"), ["publish"], "local grants stay; the repo's are ignored")
+        self.assertNotIn("plugin_pin", b.meta, "a pinned plugin yes (T-0036) never comes from the repo either")
 
     def pulled(self, text_fn, rel=None):
         """Change the mirror the way a git pull would."""

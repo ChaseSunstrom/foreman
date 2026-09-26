@@ -252,7 +252,7 @@ def _resolve_approvals(p, meta, sid, text):
         fresh = bool(at) and time.time() - at.timestamp() < c.APPROVAL_TTL
         b = c.find_brief(p, a["task"]) if yes and fresh else None
         if b:
-            _grant(p, b, a["allow"], sid, "chat", reply=c.redact(text[:80]))
+            _grant(p, b, a["allow"], sid, "chat", pin=a.get("pin"), reply=c.redact(text[:80]))
             notes.append(f"User approved {cats} for {b.id}")
         else:
             c.log_event(p, "approval_declined", task=a["task"], data={"allow": a["allow"], "expired": not fresh},
@@ -338,6 +338,26 @@ def user_prompt_submit(pl):
 
 # ---------------------------------------------------------------- PreToolUse (guard: fail closed)
 
+def _pin_problem(b, detail):
+    """Why a plugin yes can't be spent on this install or enable (T-0036): the yes must name this plugin, be under
+    24 h old, and its content must still hash as when the user said yes. None when fine, or not an install/enable."""
+    m = re.search(r"\[plugin (\S+)\]$", str(detail))
+    if not m:
+        return None
+    target, pin = m.group(1), b.meta.get("plugin_pin") or []
+    if target == "?":
+        return "name exactly one plugin to install or enable (fm plugins install <id>), so it can match the user's yes"
+    ask = f"ask again: fm ask {b.id} plugin --pin {target} --why \"<what it adds>\""
+    if len(pin) != 3 or pin[0] != target:
+        return f"the user's plugin yes names {pin[0] if pin else 'no plugin'}, not {target}; {ask}"
+    if not str(pin[2]).isdigit() or time.time() - int(pin[2]) >= c.APPROVAL_TTL:
+        return f"the user's yes for {target} is over 24 h old; {ask}"
+    import fmplugins
+    if fmplugins.content_hash(target) != pin[1]:
+        return f"{target} changed since the user's yes (its content no longer matches what they approved); {ask}"
+    return None
+
+
 def _use_plugin_grant(p, tid, detail, sid):
     """A plugin yes covers one change (new code in every session): the call it lets through uses it up. Inside the
     guard's fail-closed try: if the grant can't be removed, the call is blocked rather than left re-usable."""
@@ -346,6 +366,7 @@ def _use_plugin_grant(p, tid, detail, sid):
         if "plugin" not in (b.meta.get("allow") or []):
             return False
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "plugin"]
+        b.meta.pop("plugin_pin", None)
         b.append_log(f"plugin grant used for: {str(detail)[:120]}")
         c.save_brief(p, b)
         c.log_event(p, "approval_used", task=tid, data={"allow": ["plugin"], "detail": str(detail)[:200]}, session=sid)
@@ -401,9 +422,13 @@ def _pre_tool_use(raw):
                 raise
             ctx, p, act, found, block = _guard_decision(pl, guard)
         used = next((d for cat, d in found if cat == "plugin"), None) if not block and act else None
-        if used is not None and "plugin" in ctx.allow and not _use_plugin_grant(p, act.id, used, pl.get("session_id")):
-            block = guard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
-                                          "change)")
+        if used is not None and "plugin" in ctx.allow:
+            problem = _pin_problem(act, used)
+            if problem:
+                block = guard.Block("plugin", problem)
+            elif not _use_plugin_grant(p, act.id, used, pl.get("session_id")):
+                block = guard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
+                                              "change)")
     except Exception as e:
         log_error("PreToolUse", _tb())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
@@ -483,7 +508,7 @@ def _record_asks(pl, p, fmguard):
     dialog = bool(fmguard.lone_fm_ask(cmd)) and not os.environ.get("FOREMAN_DRIVE_TASK")  # PreToolUse asks for one
     for args in fmguard.fm_calls(cmd):
         if len(args) > 2 and args[0] == "ask":
-            task, cats, _, _ = _ask_target(args)
+            task, cats, _, _, _ = _ask_target(args)
             asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
@@ -495,7 +520,7 @@ def _record_asks(pl, p, fmguard):
 
 
 def _ask_target(args):
-    """(task, sorted categories, why, problems) from `fm ask` arguments, read by fm's own parser so the dialog and
+    """(task, sorted categories, why, problems, plugin pin) from `fm ask` arguments, read by fm's own parser so the dialog and
     the grant can't drift from what the command means."""
     import contextlib
     import io
@@ -504,16 +529,24 @@ def _ask_target(args):
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):  # -h prints
             ns = fmcli.build_parser().parse_args(args)
     except SystemExit:
-        return "", [], "", ["arguments fm ask doesn't accept"]
-    return ns.id, sorted(set(ns.categories)), ns.why or "", []
+        return "", [], "", ["arguments fm ask doesn't accept"], None
+    return ns.id, sorted(set(ns.categories)), ns.why or "", [], ns.pin
 
 
 _plain = c.plain  # dialog text (fm ask): see fmcore.plain
 
 
-def _grant(p, b, cats, sid, via, **data):
-    """The one place a user's approval becomes an authorization (chat reply or permission dialog)."""
+def _grant(p, b, cats, sid, via, pin=None, **data):
+    """The one place a user's approval becomes an authorization (chat reply or permission dialog). A plugin yes with
+    a pin records the plugin and the hash of its content now: plugin_pin: [id, hash, epoch] (T-0036)."""
     b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + list(cats)))
+    if "plugin" in cats:
+        import fmplugins
+        h = fmplugins.content_hash(pin) if pin else None
+        b.meta.pop("plugin_pin", None)  # a new plugin yes replaces an earlier pin
+        if h:
+            b.meta["plugin_pin"] = [pin, h, str(int(time.time()))]
+            data["pin"] = pin
     b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
     c.save_brief(p, b)
     c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": list(cats), "via": via}, **data), session=sid)
@@ -533,8 +566,12 @@ def _ask_prompt(pl, p, fmguard):
     if not args:
         return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
                         "permission prompt approves exactly that request")
-    task, cats, why, bad = _ask_target(args)
+    task, cats, why, bad, pin = _ask_target(args)
     unknown = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
+    if pin:
+        import fmplugins
+        if "plugin" not in cats or not re.fullmatch(r"[\w.-]+(?:@[\w.-]+)?", pin) or fmplugins.content_hash(pin) is None:
+            bad = bad + [f"--pin {_plain(pin)[:60]} (a known plugin, with the plugin category)"]
     if bad or unknown or not cats or not re.fullmatch(r"T-\d{4,}", task):
         return ("deny", f"Foreman: fm ask takes an id, categories ({', '.join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE)}) "
                         f"and --why; not {', '.join(bad + unknown) or 'this'}")
@@ -544,6 +581,7 @@ def _ask_prompt(pl, p, fmguard):
     b = c.find_brief(p, task)
     return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
                    + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {c.redact(_plain(why))[:200]}" if why else "")
+                   + (f". The plugin yes holds only for installing or enabling {pin} as its content is now" if pin else "")
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 
@@ -558,7 +596,7 @@ def permission_request(pl):
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
         return None
-    task, cats, _, _ = _ask_target(args)
+    task, cats, _, _, _ = _ask_target(args)
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < c.APPROVAL_TTL]
         seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
@@ -574,7 +612,7 @@ def _grant_prompted(pl, p):
     sid, tuid = pl.get("session_id"), pl.get("tool_use_id")
     if not args or not sid:
         return
-    task, cats, _, _ = _ask_target(args)
+    task, cats, _, _, pin = _ask_target(args)
     ok = [x for x in cats if x in fmguard.CATEGORIES and x not in fmguard.NOT_AUTHORIZABLE]
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(_prompts_path(p))
@@ -588,7 +626,7 @@ def _grant_prompted(pl, p):
             return
         seen.remove(hit)
         c.write_atomic(_prompts_path(p), json.dumps(seen))
-        _grant(p, b, cats, sid, "prompt", bound=bool(tuid and hit.get("tool_use_id")))
+        _grant(p, b, cats, sid, "prompt", pin=pin, bound=bool(tuid and hit.get("tool_use_id")))
         meta = c.read_meta(p)
         meta["pending_approvals"] = [a for a in meta.get("pending_approvals") or []
                                      if not (isinstance(a, dict) and a.get("task") == task)]

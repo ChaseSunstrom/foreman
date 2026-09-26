@@ -528,6 +528,20 @@ class PluginChanges(GuardCase):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd), "plugin")
 
+    def test_plugin_installs_name_their_target_for_the_pin_check(self):
+        # T-0036: the hook compares this with the plugin the user's yes named
+        def plugin_detail(cmd):
+            return next(d for cat, d in g.findings("Bash", {"command": cmd}, self.ctx()) if cat == "plugin")
+        for cmd, target in (("fm plugins install x@m", "x@m"), ("fm plugins enable x@m", "x@m"),
+                            ("claude plugin install x@m", "x@m"), ("claude plugin i x@m", "x@m"),
+                            ("claude plugin install --scope user x@m", "x@m"), ("claude plugin enable -s user x@m", "x@m"),
+                            ("claude plugin install a@m b@m", "?"), ("claude plugin install", "?")):
+            with self.subTest(cmd=cmd):
+                self.assertTrue(plugin_detail(cmd).endswith(f"[plugin {target}]"), plugin_detail(cmd))
+        for cmd in ("fm plugins disable x@m", "claude plugin disable x@m", "claude plugin marketplace add o/r"):
+            with self.subTest(cmd=cmd):
+                self.assertNotIn("[plugin ", plugin_detail(cmd))
+
     def test_one_plugin_change_per_command(self):
         # T-0029: a yes covers one change, so a command can't bundle several behind it
         r = self.bash("fm plugins install a@m && fm plugins install b@m", allow=["plugin"])
