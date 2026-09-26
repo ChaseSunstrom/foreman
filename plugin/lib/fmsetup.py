@@ -208,6 +208,9 @@ def cmd_uninstall(args):
                 env.pop(k)
         if not env and m.get("env_created"):
             new_s.pop("env")
+    for k in ("enabledPlugins", "extraKnownMarketplaces"):  # emptied by `claude plugin uninstall`/`marketplace remove`
+        if new_s.get(k) == {}:
+            new_s.pop(k)
     md = _read(P["claude_md"])
     new_md = md
     if md is not None and BEGIN in md:

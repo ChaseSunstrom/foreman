@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Remove Foreman from this machine.
-#   1. undo the ~/.claude wiring recorded in state/install-manifest.json (statusLine, deny rules, env,
-#      CLAUDE.md block, rules symlink, permission mode)
-#   2. uninstall the foreman@foreman plugin and the local "foreman" marketplace
+#   1. uninstall the foreman@foreman plugin and the local "foreman" marketplace
+#   2. undo the ~/.claude wiring recorded in state/install-manifest.json (statusLine, deny rules, env,
+#      CLAUDE.md block, rules symlink, permission mode, plugin maps left empty by step 1)
 #   3. keep state/ unless you confirm (it is archived to backups/ before it is removed)
 # Usage: plugin/uninstall.sh [--dry-run] [--purge-state] [--yes]
 # Plugins Foreman disabled are listed with the command to re-enable them; nothing else is touched.
@@ -34,12 +34,12 @@ else
   disabled=""
 fi
 
-say "Undoing the ~/.claude wiring"
-if [ "$DRY" = 1 ]; then python3 "$HERE/bin/fm" uninstall-user --dry-run; else python3 "$HERE/bin/fm" uninstall-user; fi
-
 say "Uninstalling the plugin and the local marketplace"
 run claude plugin uninstall foreman@foreman --scope user >/dev/null 2>&1 || say "  (foreman@foreman was not installed)"
 run claude plugin marketplace remove foreman >/dev/null 2>&1 || say "  (marketplace 'foreman' was not registered)"
+
+say "Undoing the ~/.claude wiring"  # after the plugin removal, so the maps it empties are cleaned up too
+if [ "$DRY" = 1 ]; then python3 "$HERE/bin/fm" uninstall-user --dry-run; else python3 "$HERE/bin/fm" uninstall-user; fi
 
 if [ -d "$state" ]; then
   if [ "$PURGE" = 1 ] && { [ "$YES" = 1 ] || { [ -r /dev/tty ] && read -r -p "Delete $state (archived to backups/ first)? [y/N] " ans </dev/tty && [ "$ans" = y ]; }; }; then

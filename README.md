@@ -105,7 +105,7 @@ python3 plugin/tests/e2e/scenarios.py                           # live §12 scen
 
 - Update: `git pull` in `~/.claude/foreman` (then `/reload-plugins`), or rerun `install.sh`.
 - Health check: ask "is foreman ok?" (`fm doctor`). Hygiene: "clean up" (`fm tidy`).
-- Remove: `~/.claude/foreman/plugin/uninstall.sh` (undoes the wiring, uninstalls the plugin and marketplace, keeps `state/` unless you pass `--purge-state`; `--dry-run` previews).
+- Remove: `~/.claude/foreman/plugin/uninstall.sh` (uninstalls the plugin and marketplace, undoes the wiring, keeps `state/` unless you pass `--purge-state`; `--dry-run` previews).
 
 ## Plugin choices
 
