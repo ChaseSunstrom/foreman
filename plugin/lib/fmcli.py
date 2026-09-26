@@ -607,6 +607,7 @@ def build_parser():
     s = add("tidy", lazy("fmtidy", "cmd_tidy"), help="hygiene (dry-run by default)")
     s.add_argument("--apply", action="store_true")
     s.add_argument("--all", action="store_true")
+    s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
