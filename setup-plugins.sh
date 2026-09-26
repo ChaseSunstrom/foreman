@@ -115,8 +115,8 @@ fi
 
 # ---------- conflicts with Foreman ----------
 say "Conflicts with Foreman"
-conflict "ecc@ecc"                         "~29k always-on tokens and 24 hook handlers (incl. sync hooks on every tool call); its own memory, learning, and planning system"
-conflict "superpowers@$OFFICIAL"           "a second orchestrator (brainstorm -> plan -> execute); Foreman ports the useful procedures"
+conflict "ecc@ecc"                         "~41k always-on tokens (measured Sept 2026) and 24 hook handlers (incl. sync hooks on every tool call); its own memory, learning, and planning system. Foreman ports its useful procedures as /foreman:playbooks"
+conflict "superpowers@$OFFICIAL"           "a second orchestrator (brainstorm -> plan -> execute); Foreman ports its debugging, TDD and verification procedures"
 conflict "feature-dev@$OFFICIAL"           "duplicates Foreman's intake and planning"
 conflict "ralph-loop@$OFFICIAL"            "keeps Claude running via a Stop hook; collides with Foreman's completion gate"
 conflict "example-skills@anthropic-agent-skills" "12 mostly unrelated skills; duplicates skill-creator and frontend-design"

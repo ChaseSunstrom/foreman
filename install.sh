@@ -8,6 +8,7 @@
 #   --build          start Claude Code and begin (or resume) the Foreman build when setup finishes
 #   --no-plugins     skip setup-plugins.sh
 #   --no-bypass      don't set bypassPermissions as the default permission mode
+#   --no-wiring      don't wire Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
 # Environment:
 #   FOREMAN_REPO     git URL to clone (default below)
@@ -17,12 +18,13 @@ set -euo pipefail
 FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/foreman.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 
-BUILD=0 PLUGINS=1 BYPASS=1 PASS=()
+BUILD=0 PLUGINS=1 BYPASS=1 WIRING=1 PASS=()
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
     --no-plugins) PLUGINS=0 ;;
     --no-bypass) BYPASS=0 ;;
+    --no-wiring) WIRING=0 ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASS+=("$arg") ;;
   esac
@@ -71,10 +73,18 @@ if [ "$BYPASS" = 1 ]; then
   settings="$HOME/.claude/settings.json"
   mkdir -p "$HOME/.claude"
   [ -f "$settings" ] && cp "$settings" "$FOREMAN_HOME/backups/settings.json.$(date +%Y%m%d-%H%M%S)"
-  if command -v python3 >/dev/null 2>&1 && python3 - "$settings" <<'PY'
+  if command -v python3 >/dev/null 2>&1 && python3 - "$settings" "$FOREMAN_HOME/state/install-manifest.json" <<'PY'
 import json, os, sys
-path = sys.argv[1]
+path, manifest = sys.argv[1], sys.argv[2]
 data = json.load(open(path)) if os.path.exists(path) and os.path.getsize(path) else {}
+# Record the mode we found before the first change, so uninstall can restore it.
+m = json.load(open(manifest)) if os.path.exists(manifest) else {}
+if "defaultMode_original" not in m:
+    m["defaultMode_original"] = (data.get("permissions") or {}).get("defaultMode")
+    os.makedirs(os.path.dirname(manifest), exist_ok=True)
+    with open(manifest + ".tmp", "w") as f:
+        json.dump(m, f, indent=2, sort_keys=True)
+    os.replace(manifest + ".tmp", manifest)
 data.setdefault("permissions", {})["defaultMode"] = "bypassPermissions"
 tmp = path + ".foreman-tmp"
 with open(tmp, "w") as f:
@@ -87,6 +97,12 @@ PY
   else
     say "Couldn't update $settings; add  \"permissions\": {\"defaultMode\": \"bypassPermissions\"}  yourself"
   fi
+fi
+
+# 5. Foreman user wiring (reversible: plugin/uninstall.sh or `fm uninstall-user`)
+if [ "$WIRING" = 1 ]; then
+  say "Wiring Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)"
+  python3 "$FOREMAN_HOME/plugin/bin/fm" install-user || say "Wiring failed; run: $FOREMAN_HOME/plugin/bin/fm install-user --dry-run"
 fi
 
 say "Foreman is installed at $FOREMAN_HOME"

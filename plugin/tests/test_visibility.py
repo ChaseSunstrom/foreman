@@ -5,7 +5,7 @@ import subprocess
 import time
 import unittest
 
-from helpers import PLUGIN, ForemanTestCase
+from helpers import PLUGIN, ForemanTestCase, read_json
 
 import fmcore as c
 
@@ -63,7 +63,7 @@ class Statusline(VisibilityCase):
     def test_writes_session_snapshot(self):
         self.manifest(statusline_hud=False)
         self.statusline()
-        snap = json.load(open(os.path.join(self.home, "state", "sessions", "sess-9.json")))
+        snap = read_json(os.path.join(self.home, "state", "sessions", "sess-9.json"))
         self.assertEqual((snap["context_pct"], snap["cost_usd"], snap["cache_hit_ratio"]), (41.5, 1.23, 0.8))
         self.assertEqual(snap["project"], c.slug_for(self.repo))
 

@@ -43,8 +43,9 @@ gh repo create foreman --private --source . --push
 1. Clones this repo to `~/.claude/foreman` (or fast-forwards it if it's clean and on `main`).
 2. Runs `setup-plugins.sh`: installs the curated plugins that are missing, installs language-server plugins only when the server is on your PATH, and reports conflicting or heavy plugins. It never uninstalls anything.
 3. Registers this repo as a local plugin marketplace and installs `foreman@foreman`. Local marketplaces load in place, so edits under `plugin/` apply on `/reload-plugins`.
-4. Sets `bypassPermissions` as your default permission mode (backing up `settings.json` first) unless you pass `--no-bypass`.
-5. With `--build`, opens Claude Code and starts (or resumes) the build.
+4. Sets `bypassPermissions` as your default permission mode (backing up `settings.json` first and recording the original) unless you pass `--no-bypass`.
+5. Wires Foreman into `~/.claude` with `fm install-user` unless you pass `--no-wiring`: a statusLine wrapper (your original line and claude-hud still render above the Foreman line), catastrophic-command deny rules, a raised Stop-hook continuation cap for drive mode, a marked block in `~/.claude/CLAUDE.md`, and the `~/.claude/rules/foreman.md` symlink. Every change is recorded in `state/install-manifest.json` so it can be undone exactly.
+6. With `--build`, opens Claude Code and starts (or resumes) the build.
 
 ## What the build does
 
@@ -64,11 +65,13 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE af
 
 Foreman runs in bypass mode by default: no tool-call prompts in any Claude Code session. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes to main, credential files, `curl | sh`, disk/firewall/system-service changes, deploys), plus a short list of deny rules the build proposes. Bypass only affects tool prompts; Foreman still pauses for plan approval where its autonomy setting says to.
 
-To opt a repo out (client code, anything with production credentials), put this in that repo's `.claude/settings.local.json`:
+To opt a repo out (client code, anything with production credentials), run `fm sensitive on` inside it. That writes this to the repo's `.claude/settings.local.json` (kept out of commits via `.git/info/exclude`), and Foreman shows the repo as sensitive at session start:
 
 ```json
-{ "permissions": { "defaultMode": "auto" } }
+{ "permissions": { "defaultMode": "default" } }
 ```
+
+Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` and `bypassPermissions` in project and local settings. `fm sensitive off` undoes it.
 
 To turn bypass off everywhere, set `defaultMode` back to `"auto"` (or delete it) in `~/.claude/settings.json`; the original is in `~/.claude/foreman/backups/`.
 
@@ -100,4 +103,4 @@ The reasoning, measured context costs, and conflicts are in `BUILD_PROMPT.md` (�
 ## Updating and removing
 
 - Update: rerun `~/.claude/foreman/install.sh`, or `git pull` in `~/.claude/foreman`.
-- Remove the bootstrap: `claude plugin uninstall foreman@foreman && claude plugin marketplace remove foreman`. The full build adds an `uninstall.sh`.
+- Remove: `~/.claude/foreman/plugin/uninstall.sh` (undoes the wiring, uninstalls the plugin and marketplace, keeps `state/` unless you pass `--purge-state`; `--dry-run` previews).

@@ -14,6 +14,16 @@ if LIB not in sys.path:
     sys.path.insert(0, LIB)
 
 
+def read_text(path, encoding="utf-8", limit=-1):
+    with open(path, encoding=encoding) as f:
+        return f.read(limit)
+
+
+def read_json(path):
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 def git_repo(parent, name="app"):
     root = os.path.join(parent, name)
     os.makedirs(root)

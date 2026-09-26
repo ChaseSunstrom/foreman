@@ -4,7 +4,7 @@ import os
 import re
 import unittest
 
-from helpers import PLUGIN
+from helpers import PLUGIN, read_text, read_json
 
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks"]
 USER_ONLY = {"status", "capture", "tidy", "doctor", "improve"}
@@ -15,7 +15,7 @@ OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md"}
 
 
 def frontmatter(path):
-    text = open(path, encoding="utf-8").read()
+    text = read_text(path, encoding="utf-8")
     m = re.match(r"^---\n(.*?)\n---\n(.*)$", text, re.S)
     assert m, f"{path}: no frontmatter"
     meta = {}
@@ -32,7 +32,7 @@ def rel(path):
 
 class Rules(unittest.TestCase):
     def test_rules_file_within_always_on_budget(self):
-        lines = open(os.path.join(PLUGIN, "rules", "foreman.md")).read().splitlines()
+        lines = read_text(os.path.join(PLUGIN, "rules", "foreman.md")).splitlines()
         self.assertLessEqual(len(lines), 80)
         self.assertTrue(lines[0].startswith("# "))
 
@@ -49,13 +49,13 @@ class Skills(unittest.TestCase):
 
     def test_skill_references_exist(self):
         for name in SKILLS:
-            body = open(os.path.join(PLUGIN, "skills", name, "SKILL.md")).read()
+            body = read_text(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
             for ref in re.findall(r"`(references/[\w./-]+\.md)`", body):
                 with self.subTest(skill=name, ref=ref):
                     self.assertTrue(os.path.exists(os.path.join(PLUGIN, "skills", name, ref)))
 
     def test_playbook_index_covers_every_reference(self):
-        body = open(os.path.join(PLUGIN, "skills", "playbooks", "SKILL.md")).read()
+        body = read_text(os.path.join(PLUGIN, "skills", "playbooks", "SKILL.md"))
         root = os.path.join(PLUGIN, "skills", "playbooks", "references")
         for dirpath, _, files in os.walk(root):
             for f in files:
@@ -71,10 +71,10 @@ class Skills(unittest.TestCase):
                         continue
                     path = os.path.join(dirpath, f)
                     with self.subTest(file=rel(path)):
-                        self.assertIn(marker, open(path, encoding="utf-8").read(400))
+                        self.assertIn(marker, read_text(path, limit=400))
 
     def test_third_party_licenses(self):
-        text = open(os.path.join(PLUGIN, "THIRD_PARTY_LICENSES.md")).read()
+        text = read_text(os.path.join(PLUGIN, "THIRD_PARTY_LICENSES.md"))
         self.assertIn("Copyright (c) 2026 Affaan Mustafa", text)
         self.assertIn("Copyright (c) 2025 Jesse Vincent", text)
 
@@ -94,17 +94,17 @@ class Agents(unittest.TestCase):
 
 class PluginFiles(unittest.TestCase):
     def test_settings_only_supported_keys(self):
-        settings = json.load(open(os.path.join(PLUGIN, "settings.json")))
+        settings = read_json(os.path.join(PLUGIN, "settings.json"))
         self.assertTrue(set(settings) <= {"agent", "subagentStatusLine"})
 
     def test_theme_is_valid(self):
-        theme = json.load(open(os.path.join(PLUGIN, "themes", "foreman.json")))
+        theme = read_json(os.path.join(PLUGIN, "themes", "foreman.json"))
         self.assertIn(theme["base"], {"dark", "light", "dark-daltonized", "light-daltonized", "dark-ansi", "light-ansi"})
         for v in theme["overrides"].values():
             self.assertRegex(v, r"^(#[0-9a-fA-F]{6}|#[0-9a-fA-F]{3}|ansi:\w+|ansi256\(\d+\)|rgb\(\d+,\d+,\d+\))$")
 
     def test_hooks_json_uses_known_events_and_one_handler_each(self):
-        hooks = json.load(open(os.path.join(PLUGIN, "hooks", "hooks.json")))["hooks"]
+        hooks = read_json(os.path.join(PLUGIN, "hooks", "hooks.json"))["hooks"]
         self.assertEqual(set(hooks), HOOK_EVENTS)
         for event, groups in hooks.items():
             handlers = [h for g in groups for h in g["hooks"]]

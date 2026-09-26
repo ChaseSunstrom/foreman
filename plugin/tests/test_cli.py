@@ -4,7 +4,7 @@ import os
 import threading
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text, read_json
 
 import fmcore as c
 
@@ -39,7 +39,7 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("T-0001", out)
         b = c.find_brief(c.find_project(self.repo), "T-0001")
         self.assertEqual((b.status, b.type, b.meta["source"]), ("captured", "FEATURE", "discovered"))
-        inbox = open(os.path.join(c.find_project(self.repo).dir, "INBOX.md")).read()
+        inbox = read_text(os.path.join(c.find_project(self.repo).dir, "INBOX.md"))
         self.assertIn("T-0001", inbox)
         self.assertEqual([i["id"] for i in self.fm_json("state")["inbox"]], ["T-0001"])
 
@@ -180,7 +180,7 @@ class StateViews(ForemanTestCase):
         for i in range(30):
             self.fm("task", "new", f"task {i}", "--type", "FIX", "--tier", "S")
             self.fm("capture", f"idea {i}")
-        text = open(os.path.join(c.find_project(self.repo).dir, "STATE.md")).read()
+        text = read_text(os.path.join(c.find_project(self.repo).dir, "STATE.md"))
         self.assertLessEqual(len(text.splitlines()), 60)
 
     def test_state_line(self):
@@ -214,12 +214,12 @@ class SensitiveAndDrive(ForemanTestCase):
         with open(path, "w") as f:
             json.dump({"env": {"A": "1"}}, f)
         self.fm("sensitive", "on")
-        data = json.load(open(path))
+        data = read_json(path)
         self.assertEqual(data["permissions"]["defaultMode"], "default")
         self.assertEqual(data["env"], {"A": "1"})
         self.assertTrue(c.read_meta(c.find_project(self.repo))["sensitive"])
         self.fm("sensitive", "off")
-        data = json.load(open(path))
+        data = read_json(path)
         self.assertNotIn("defaultMode", data.get("permissions", {}))
         self.assertEqual(data["env"], {"A": "1"})
         self.assertFalse(c.read_meta(c.find_project(self.repo))["sensitive"])
@@ -236,26 +236,26 @@ class DecisionsResearchSelf(ForemanTestCase):
     def test_decide_appends_a_table_row_and_logs(self):
         self.fm("init")
         self.fm("decide", "Use Python stdlib for fm", "--why", "jq missing; python on PATH", "--rejected", "sh+jq")
-        text = open(os.path.join(c.find_project(self.repo).dir, "decisions.md")).read()
+        text = read_text(os.path.join(c.find_project(self.repo).dir, "decisions.md"))
         self.assertRegex(text, r"\| \d{4}-\d\d-\d\d \| Use Python stdlib for fm \| jq missing; python on PATH \| sh\+jq \|")
         self.assertIn("decision", [e["event"] for e in c.ledger_tail(c.find_project(self.repo))])
 
     def test_decide_escapes_pipes(self):
         self.fm("init")
         self.fm("decide", "a | b", "--why", "c|d")
-        text = open(os.path.join(c.find_project(self.repo).dir, "decisions.md")).read()
+        text = read_text(os.path.join(c.find_project(self.repo).dir, "decisions.md"))
         self.assertIn("a \\| b", text)
 
     def test_research_add_from_stdin_and_file(self):
         self.fm("init")
         self.fm("research", "add", "auth-recon", input="## Findings\n- src/auth.py:12 retries missing\n")
         path = os.path.join(c.find_project(self.repo).dir, "research", "auth-recon.md")
-        self.assertIn("retries missing", open(path).read())
+        self.assertIn("retries missing", read_text(path))
         src = os.path.join(self.tmp, "notes.md")
         with open(src, "w") as f:
             f.write("token=abcd1234efgh leaked\n")
         self.fm("research", "add", "notes", "--file", src)
-        saved = open(os.path.join(c.find_project(self.repo).dir, "research", "notes.md")).read()
+        saved = read_text(os.path.join(c.find_project(self.repo).dir, "research", "notes.md"))
         self.assertNotIn("abcd1234efgh", saved)
 
     def test_research_name_must_be_safe(self):

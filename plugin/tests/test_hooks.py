@@ -3,7 +3,7 @@ import json
 import os
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text
 
 import fmcore as c
 
@@ -39,7 +39,7 @@ class HookCase(ForemanTestCase):
 
     def hooks_log(self):
         path = os.path.join(self.home, "state", "logs", "hooks.log")
-        return open(path).read() if os.path.exists(path) else ""
+        return read_text(path) if os.path.exists(path) else ""
 
     def events(self):
         with open(os.path.join(self.home, "state", "events.jsonl")) as f:
@@ -66,7 +66,7 @@ class SessionStart(HookCase):
 
     def test_exports_session_and_project_to_env_file(self):
         self.run_ss()
-        env = open(self.env_file).read()
+        env = read_text(self.env_file)
         self.assertIn("FOREMAN_SESSION_ID=sess-1", env)
         self.assertIn(f"FOREMAN_PROJECT={c.slug_for(self.repo)}", env)
         self.assertIsNotNone(self.project(), "git repo auto-registered")
