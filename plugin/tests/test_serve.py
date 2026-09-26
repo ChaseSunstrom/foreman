@@ -201,6 +201,38 @@ class Run(ServeCase):
         self.assertIn("no progress", p.stderr)
         self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 1)
 
+    def limited_then(self, body):
+        """A stub session that hits the usage limit on its first call, then runs body."""
+        n = os.path.join(self.tmp, "sessions")
+        return (f'echo x >> {n}\nif [ "$(wc -l < {n})" -eq 1 ]; then\n'
+                f'echo "You\'ve hit your session limit · resets 3pm (Europe/Berlin)" >&2; exit 1\nfi\n' + body)
+
+    def test_a_usage_limit_is_waited_out_and_the_task_retried(self):
+        a = self.task("one")
+        self.stub("claude", self.limited_then(self.finisher))
+        out = self.run_fm("--wait", "0.0003").stdout  # hours: ~1 s budget
+        self.assertEqual(c.find_brief(c.find_project(self.repo), a).status, "done")
+        self.assertIn("usage limit", out)
+        self.assertIn("usage limit", read_text(os.path.join(c.state_dir(), "logs", f"run-{self.slug}.log")))
+
+    def test_a_usage_limit_past_the_wait_budget_stops_the_run(self):
+        self.task("one")
+        self.stub("claude", 'echo "You\'ve hit your weekly limit" >&2\nexit 1\n')
+        p = self.run_fm("--wait", "0.0003", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("usage limit", p.stderr)
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 2)
+
+    def test_wait_zero_and_other_failures_stop_at_once(self):
+        self.task("one")
+        self.stub("claude", self.limited_then(self.finisher))
+        p = self.run_fm("--wait", "0", check=False)
+        self.assertEqual((p.returncode, "usage limit" in p.stderr), (1, True))
+        self.stub("claude", 'echo "Invalid API key" >&2\nexit 1\n')
+        p = self.run_fm("--wait", "1", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("claude exited 1", p.stderr)
+
     def test_tasks_waiting_on_the_user_are_skipped(self):
         a, b = self.task("one"), self.task("two")
         self.fm_ask(a, "publish")

@@ -15,6 +15,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 import fmcore as c
 
@@ -23,6 +24,9 @@ HOME_TAG = "# foreman-home: "  # which Foreman install owns the unit (another in
 SESSIONS_PER_TASK = 3  # fresh sessions fm run gives one task before it stops
 RESTART = {"burst": 5, "window_s": 600, "delay_s": 30}  # a login/usage failure stops after 5 tries, not forever
 RUN_LOG_MAX = 1_000_000  # bytes; the run log rotates to .1 past this
+# Claude Code's own usage-limit message openings (its print mode says one of these on stderr and exits 1)
+USAGE_LIMIT = re.compile(r"You've hit your|You've reached your|You're out of usage|out of usage|usage limit reached", re.I)
+WAIT_FIRST, WAIT_STEP_MAX = 300, 3600  # seconds; a usage-limit wait doubles per hit in a row, capped per wait
 
 
 def unit_dir():
@@ -286,6 +290,7 @@ def cmd_run(args):
         sys.exit(1)
 
     finished, skip, told, sessions = 0, set(), set(), {}
+    budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     while finished < args.max:
         b = _next_runnable(p, skip, told)
         if not b:
@@ -307,8 +312,20 @@ def cmd_run(args):
             f.write(f"== {c.now()} {b.id} exit {code}\n{c.redact(output)}\n")
         if code is None:
             fail(f"{b.id}: the session hit the {args.timeout}-minute limit; stopping")
+        if code != 0 and USAGE_LIMIT.search(output):
+            if budget <= 0:
+                fail(f"{b.id}: usage limit still in effect after waiting {args.wait:g} h (--wait); stopping")
+            pause, step = min(step, budget), min(step * 2, WAIT_STEP_MAX)
+            budget -= pause
+            msg = f"{b.id}: usage limit; retrying at {time.strftime('%H:%M', time.localtime(time.time() + pause))}"
+            print(msg, flush=True)
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"== {c.now()} {msg}\n")
+            time.sleep(pause)
+            continue
         if code != 0:
-            fail(f"{b.id}: claude exited {code} (usage limit, login or crash); stopping")
+            fail(f"{b.id}: claude exited {code} (login or crash); stopping")
+        step = WAIT_FIRST
         after = c.find_brief(p, b.id)
         if after.status == "done":
             finished += 1

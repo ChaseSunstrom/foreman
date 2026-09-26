@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Round 8: `fm run` waits out a usage limit instead of stopping: Claude Code's limit message triggers a logged wait (5 min doubling to 1 h) and a retry of the same task, up to `--wait` hours in total (default 6; `0` stops at once as before).
 - Round 7: `fm doctor` warns when protected core differs from the last commit (a half-applied edit or an unreviewed change) and budgets skill/agent/command descriptions (≤ 6000 chars, now 4.2k); the two large follow-ups (headless audits, eval capture) are deferred with revisit triggers.
 - Round 7: no self-lockout from a broken library (T-0037): the hook script falls back to the committed library when the working copy can't be imported, and reads the active task with the committed `fmcore` when the working one fails; `fmguard` is self-contained again.
 - Round 6: hooks p50 ≈ 29 ms (was ≈ 41): `traceback` loads only on errors and `fmcore.record` replaces `@dataclass` on the hook path; sync hashing measured at 3 ms for 300 briefs, so its stat cache was dropped.
