@@ -288,6 +288,26 @@ class Authorization(GuardCase):
         self.assertIn("state-direct", g.message(self.write("{fhome}/state/projects/x/a.md"), self.ctx()))
 
 
+class InterpreterWrites(GuardCase):
+    """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
+
+    def test_table(self):
+        self.run_table([
+            ("python3 - <<'EOF'\nopen('{fhome}/plugin/lib/fmguard.py', 'w').write('x')\nEOF", "core"),
+            ("python3 -c \"import pathlib; pathlib.Path('{fhome}/plugin/hooks/hook').write_text('')\"", "core"),
+            ("node -e \"require('fs').writeFileSync('{fhome}/plugin/rules/foreman.md', '')\"", "core"),
+            ("python3 - <<'EOF'\nimport json\njson.dump({{}}, open('{fhome}/state/projects/x/meta.json', 'w'))\nEOF",
+             "state-direct"),
+            ("python3 -c \"print(open('{fhome}/plugin/lib/fmguard.py').read())\"", None),
+            ("python3 - <<'EOF'\nopen('{repo}/src/app.py', 'w').write('x')\nEOF", None),
+        ], self.bash)
+
+    def test_relative_paths_resolve_against_cwd(self):
+        cmd = "python3 - <<'EOF'\np = 'lib/fmcli.py'\ns = open(p).read()\nopen(p, 'w').write(s)\nEOF"
+        self.assertBlocked(self.bash(cmd, cwd=os.path.join(self.fhome, "plugin")), "core")
+        self.assertIsNone(self.bash(cmd, cwd=os.path.join(self.fhome, "plugin"), allow=["core"]))
+
+
 class SelfAuthorize(GuardCase):
     def test_agent_cannot_grant_core(self):
         for cmd in ("fm task set T-0002 --allow core", "fm task set T-0002 --allow=core",

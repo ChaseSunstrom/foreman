@@ -301,11 +301,34 @@ _SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
+_INTERP = re.compile(r"(?:^|[\s;&|(])(?:python[0-9.]*|perl|ruby|node|deno|bun|php)(?:\s|$)")
+_WRITE_API = re.compile(
+    r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
+    r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
+    r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
+_QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
+_GUARDED_BY_PATH = ("core", "state-direct", "credentials")
+
+
+def _interpreter_writes(cmd, ctx):
+    """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
+
+    Coarse on purpose: a script that names a protected path and writes anything is treated as writing it."""
+    if not (_INTERP.search(cmd) and _WRITE_API.search(cmd)):
+        return []
+    found = []
+    for m in _QUOTED.finditer(cmd):
+        path = _resolve(_expand(m.group(2), ctx), ctx.cwd)
+        found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
+                  if cat in _GUARDED_BY_PATH]
+    return found
+
+
 def check_bash(cmd, ctx, depth=0):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    found = []
+    found = _interpreter_writes(cmd, ctx) if depth == 0 else []
     cmds = _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; ")))
     cwd, chain = ctx.cwd, []
     for idx, c in enumerate(cmds):
