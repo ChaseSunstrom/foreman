@@ -310,12 +310,15 @@ def user_prompt_submit(pl):
 def _use_plugin_grant(p, tid, detail, sid):
     """A plugin yes covers one change (new code in every session): the call it lets through uses it up. Inside the
     guard's fail-closed try: if the grant can't be removed, the call is blocked rather than left re-usable."""
-    with c.lock(p.dir, timeout=LOCK_QUICK):
+    with c.lock(p.dir, timeout=LOCK_QUICK):  # re-read under the lock: two calls that both saw the grant get one
         b = c.find_brief(p, tid)
+        if "plugin" not in (b.meta.get("allow") or []):
+            return False
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "plugin"]
         b.append_log(f"plugin grant used for: {str(detail)[:120]}")
         c.save_brief(p, b)
         c.log_event(p, "approval_used", task=tid, data={"allow": ["plugin"], "detail": str(detail)[:200]}, session=sid)
+    return True
 
 
 def _pre_tool_use(raw):
@@ -329,8 +332,9 @@ def _pre_tool_use(raw):
         found = fmguard.findings(tool, pl.get("tool_input"), ctx)
         block = fmguard.check(tool, pl.get("tool_input"), ctx, found)
         used = next((d for cat, d in found if cat == "plugin"), None) if not block and act else None
-        if used is not None and "plugin" in ctx.allow:
-            _use_plugin_grant(p, act.id, used, pl.get("session_id"))
+        if used is not None and "plugin" in ctx.allow and not _use_plugin_grant(p, act.id, used, pl.get("session_id")):
+            block = fmguard.Block("plugin", "the plugin yes was already used by another call (one yes covers one "
+                                            "change)")
     except Exception as e:
         log_error("PreToolUse", traceback.format_exc())
         print(f"Foreman guard internal error ({type(e).__name__}); the tool call was blocked (fail-closed). "
@@ -631,18 +635,20 @@ _ASK = re.compile(r"(\?\s*$)|\b(should i|shall i|do you want|would you like|want
 _ABOUT = re.compile(r"\b(?:steps?\s+(\d+)(?:\s*(?:[–-]|to|and|,)\s*(\d+))?|(T-\d{4,}))\b[^.;\n]{0,40}$", re.I)
 
 
-def claims_done(msg, step=None, task=None):
-    """A completion claim, unless negated or about other steps or another task than `step` / `task`."""
+def claims_done(msg, step=None, finished=(), closed=()):
+    """A completion claim, unless negated or about work that is already over: steps other than `step` that are all
+    in `finished`, or a task in `closed`. Naming a step or task that isn't over still counts as a claim."""
     for m in _CLAIM.finditer(msg or ""):
         before = msg[max(0, m.start() - 60):m.start()]
         if _NEG.search(before[-30:]):
             continue
         about = _ABOUT.search(before)
-        if about and about.group(3):
-            if task and about.group(3).upper() != task:
-                continue
-        elif about and step is not None and not int(about.group(1)) <= step <= int(about.group(2) or about.group(1)):
+        if about and about.group(3) and about.group(3).upper() in closed:
             continue
+        if about and about.group(1) and step is not None:
+            span = range(int(about.group(1)), int(about.group(2) or about.group(1)) + 1)
+            if step not in span and all(n in finished for n in span):
+                continue
         return True
     return False
 
@@ -695,7 +701,7 @@ def stop(pl):
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
-        reason = _evidence_gate(p, act, pl, g) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
+        reason = _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         _write_gate(p, g)
@@ -718,11 +724,12 @@ def _question_nudge(pl):
             "fm ask for a guard category, so the answer can't be lost in chat.")
 
 
-def _evidence_gate(p, act, pl, g):
+def _evidence_gate(p, act, pl, g, closed=()):
     if not act or pl.get("stop_hook_active"):
         return None
     steps, cur = act.steps(), act.current_step()
-    if not claims_done(pl.get("last_assistant_message"), step=cur.n if cur else None, task=act.id):
+    if not claims_done(pl.get("last_assistant_message"), step=cur.n if cur else None,
+                       finished={s.n for s in steps if s.done}, closed=closed):
         return None
     if cur:
         missing, label, flag = not act.has_evidence(step=cur.n), f"step {cur.n}/{len(steps)}", f"--step {cur.n} "

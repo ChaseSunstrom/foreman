@@ -188,14 +188,15 @@ def cmd_task(args):
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
             need_brief(p, args.id)
-            code, output = c.run_command(p.root, args.run, args.timeout)
+            code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
         else:
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
-        b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree),
+        b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree,
+                                                            ran=args.run is not None),
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300]})
         out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
             + (f" ({result})." if args.run is not None else "."))
@@ -601,40 +602,44 @@ def cmd_drive(args):
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
     p = resolve(args)
-    checks = list(c.read_meta(p).get("checks") or [])
     if args.action in ("add", "rm"):
-        if args.action == "add":
-            if not args.words:
-                raise UsageError("fm check add needs a command")
-            checks.append(" ".join(args.words))
-        else:
-            try:
-                checks.pop(int(args.words[0]) - 1)
-            except (IndexError, ValueError):
-                raise UsageError(f"no check {' '.join(args.words)!r}; fm check list numbers them")
-        c.update_meta(p, checks=checks)
-        with c.lock(p.dir):
+        with c.lock(p.dir):  # one read-modify-write, so concurrent adds can't drop each other
+            meta = c.read_meta(p)
+            checks = list(meta.get("checks") or [])
+            if args.action == "add":
+                if not args.words:
+                    raise UsageError("fm check add needs a command")
+                checks.append(" ".join(args.words))
+            else:
+                try:
+                    checks.pop(int(args.words[0]) - 1)
+                except (IndexError, ValueError):
+                    raise UsageError(f"no check {' '.join(args.words)!r}; fm check list numbers them")
+            meta["checks"] = checks
+            c.write_meta(p, meta)
             c.log_event(p, "checks", data={"checks": checks}, session=session())
         return out(args, {"checks": checks}, f"{p.slug}: {len(checks)} check(s).")
+    checks = list(c.read_meta(p).get("checks") or [])
     if args.action == "list":
         return out(args, {"checks": checks},
                    "\n".join(f"{i}. {x}" for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
     if not checks:
         raise UsageError("no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…)")
-    results = [(cmd, *c.run_command(p.root, cmd, args.timeout)) for cmd in checks]
-    if args.evidence:
+    results = [(cmd, *c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)) for cmd in checks]
+    failed = sum(1 for _, code, _ in results if code)
+    if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         tree = c.worktree_id(p.root)
-
-        def record(b):
-            for cmd, code, output in results:
-                b.add_evidence(cmd, c.run_result(code, output), step=args.step, ac=args.ac, tree=tree)
-        mutate(p, args.evidence, record, "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check",
-                                                      "result": f"{sum(1 for r in results if r[1])} failed"})
+        shown = [r for r in results if r[1]] or results
+        result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
+                  f"exit 0 · {len(results)} passed: ") + "; ".join(f"{cmd} → {c.run_result(code, output)}"
+                                                                  for cmd, code, output in shown)
+        mutate(p, args.evidence, lambda b: b.add_evidence("fm check: " + "; ".join(checks), result[:600],
+                                                          step=args.step, ac=args.ac, tree=tree, ran=True),
+               "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": result[:300]})
     lines = []
     for cmd, code, output in results:
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)}")
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
-    failed = sum(1 for _, code, _ in results if code)
     out(args, {"results": [{"cmd": cmd, "exit": code} for cmd, code, _ in results], "failed": failed},
         "\n".join(lines))
     return 1 if failed else 0
@@ -658,7 +663,11 @@ def cmd_audit(args):
     tree = c.worktree_tree(p.root)
     if not tree:
         raise UsageError("fm audit prep needs a git repository")
-    r = subprocess.run(["git", "-C", p.root, "diff", base, tree], capture_output=True, text=True, timeout=120)
+    try:
+        r = subprocess.run(["git", "-C", p.root, "diff", base, tree], capture_output=True, text=True, errors="replace",
+                           timeout=300)
+    except subprocess.TimeoutExpired:
+        raise UsageError(f"git diff {base[:12]} took over 5 minutes; narrow it with --base <a later rev>")
     if r.returncode:
         raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
     path = os.path.join(p.dir, "audits", f"{b.id}.diff")
@@ -668,6 +677,9 @@ def cmd_audit(args):
         ref = f.read()
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
     lenses = args.lens or (["self"] if b.tier == "S" else [x for x in c.AUDIT_LENSES if x != "self"])
+    missing = [x for x in lenses if x != "self" and x not in templates]
+    if missing:
+        raise UsageError(f"references/audit.md has no template for {', '.join(missing)} (its lens format changed?)")
     head = (f"Read-only audit of task {b.id} \"{b.title}\" ({b.type} {b.tier}) in {p.root}.\n"
             f"Diff to review: {path} (git diff {base[:12]} → working tree, untracked files included; "
             f"{r.stdout.count(chr(10))} lines).")

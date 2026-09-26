@@ -215,8 +215,11 @@ def git_head(root):
 def run_command(root, cmd, timeout=600):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     try:
-        r = subprocess.run(["bash", "-c", cmd], cwd=root, capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["bash", "-c", cmd], cwd=root, capture_output=True, text=True, errors="replace",
+                           timeout=timeout)
         return r.returncode, redact(r.stdout + r.stderr)
+    except OSError as e:  # no bash on PATH, or the repo root is gone
+        return 127, f"could not run bash: {e}"
     except subprocess.TimeoutExpired as e:
         partial = (e.stdout or b"") + (e.stderr or b"")
         partial = partial.decode(errors="replace") if isinstance(partial, bytes) else partial
@@ -488,6 +491,12 @@ _AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+(.*?)\s*$")
 _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
 _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
 _TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
+_RAN_MARK = " [ran]"  # evidence fm produced by running the command (fm task evidence --run, fm check)
+
+
+def _unmarked(text):
+    """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
+    return re.sub(r"\[(tree|ran)\b", r"(\1", text)
 _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
 # Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
@@ -683,26 +692,29 @@ class Brief:
                 return True
         return False
 
-    def add_evidence(self, cmd, result, step=None, ac=None, ts=None, tree=None):
+    def add_evidence(self, cmd, result, step=None, ac=None, ts=None, tree=None, ran=False):
         tag = f"(step {step}) " if step is not None else f"(ac {ac}) " if ac is not None else ""
-        cmd = redact(str(cmd)).replace("`", "'").strip()
-        result = redact(str(result)).replace("\n", " ").strip()
-        mark = f" [tree {tree}]" if tree else ""  # the files it was recorded against (see audit_blockers)
+        cmd = _unmarked(redact(str(cmd)).replace("`", "'").strip())
+        result = _unmarked(redact(str(result)).replace("\n", " ").strip())
+        # [ran]: fm ran it (only runs decide pass/fail); [tree]: the files it was recorded against (audit_blockers)
+        mark = (_RAN_MARK if ran else "") + (f" [tree {tree}]" if tree else "")
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result}{mark} ({ts or now()})")
 
     def _refuse_failed_run(self, step=None, ac=None):
+        """Once fm has run a check for this step/criterion, only a passing run clears a failed one."""
         want = ("step", step) if step is not None else ("ac", ac)
-        mine = [l for l in self.evidence() if (m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == want]
-        if mine and "` → ✗ exit" in mine[-1]:
-            raise PolicyError(f"{self.id} {want[0]} {want[1]}: the newest evidence is a failed run "
-                              f"({mine[-1].split('` → ✗ ', 1)[1][:80]}); fix it and record a passing run")
+        runs = [l for l in self.evidence() if _RAN_MARK in l and (m := _EV_RE.match(l))
+                and (m.group(1), int(m.group(2))) == want]
+        if runs and "` → ✗ exit" in runs[-1]:
+            raise PolicyError(f"{self.id} {want[0]} {want[1]}: the newest run failed "
+                              f"({runs[-1].split('` → ✗ ', 1)[1][:80]}); fix it and record a passing run (--run)")
 
     # --- audits (evidence lines tagged "(audit <lens>)")
     def add_audit(self, lens, how, result, ts=None, tree=None):
         if lens not in AUDIT_LENSES:
             raise ValueError(f"unknown audit lens {lens!r}; one of {', '.join(AUDIT_LENSES)}")
-        how = redact(str(how)).replace("`", "'").strip()
-        result = redact(str(result)).replace("\n", " ").strip()
+        how = _unmarked(redact(str(how)).replace("`", "'").strip())
+        result = _unmarked(redact(str(result)).replace("\n", " ").strip())
         mark = f" [tree {tree}]" if tree else ""
         self._append_line("Verification evidence", f"- (audit {lens}) `{how}` → {result}{mark} ({ts or now()})")
 

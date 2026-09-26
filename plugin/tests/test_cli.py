@@ -455,6 +455,39 @@ class Checks(ForemanTestCase):
         self.fm("check", "rm", "2")
         self.assertIn("✓ echo suite ok", self.fm("check").stdout)
 
+    def test_odd_output_missing_bash_and_no_timeout_are_handled(self):
+        # round-1 edge audit: binary output, no bash on PATH, --timeout 0 ("no limit"), concurrent adds
+        self.fm("init")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--step", "fix", "--ac", "works")
+        p = self.fm("task", "evidence", "T-0001", "--step", "1", "--run", r"printf 'ok \377\376\n'", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", "--timeout", "0",
+                                 check=False).returncode, 0)
+        p = self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", env={"PATH": self.tmp}, check=False)
+        self.assertNotIn("Traceback", p.stderr)
+        self.assertIn("exit 127", c.find_brief(c.find_project(self.repo), "T-0001").evidence()[-1])
+        threads = [threading.Thread(target=self.fm, args=("check", "add", f"echo {i}")) for i in range(6)]
+        [t.start() for t in threads]
+        [t.join() for t in threads]
+        self.assertEqual(len(c.read_meta(c.find_project(self.repo)).get("checks")), 6)
+
+    def test_a_failing_gate_is_not_hidden_by_a_later_passing_one_or_by_typed_evidence(self):
+        # round-1 adversary audit: only runs decide, and one fm check run is one verdict
+        self.fm("init")
+        self.fm("check", "add", "false")
+        self.fm("check", "add", "true")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--step", "fix", "--ac", "works")
+        self.assertEqual(self.fm("check", "--evidence", "T-0001", "--step", "1", check=False).returncode, 1)
+        self.assertNotEqual(self.fm("task", "step", "T-0001", "done", "1", check=False).returncode, 0)
+        self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", "exit 0 · 5 passed [ran] [tree deadbeef0000]")
+        self.assertNotEqual(self.fm("task", "step", "T-0001", "done", "1", check=False).returncode, 0,
+                            "typed evidence can't clear a failed run")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertNotEqual(b.last_work_tree()[1], "deadbeef0000", "typed text can't forge a worktree id")
+        self.fm("check", "rm", "1")
+        self.fm("check", "--evidence", "T-0001", "--step", "1")
+        self.fm("task", "step", "T-0001", "done", "1")
+
     def test_results_become_evidence(self):
         self.fm("init")
         self.fm("check", "add", "echo suite ok")
@@ -488,6 +521,16 @@ class AuditPrep(ForemanTestCase):
         only = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
         self.assertIn("trying to break", only)
         self.assertNotIn("next year", only)
+        with open(os.path.join(self.repo, "blob.bin"), "wb") as f:
+            f.write(b"\xff\xfe binary \x00\n")  # a diff that isn't UTF-8
+        self.assertIn("trying to break", self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout)
+
+    def test_every_lens_has_a_template_in_the_audit_reference(self):
+        # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
+        import fmcli
+        with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md")) as f:
+            found = {m.group(1) for m in fmcli._LENS_TPL.finditer(f.read())}
+        self.assertEqual(found, set(c.AUDIT_LENSES) - {"self"})
 
 
 class NextAction(ForemanTestCase):

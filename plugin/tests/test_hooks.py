@@ -443,6 +443,16 @@ class PreToolUse(HookCase):
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin install b@m"}).returncode, 2)
 
+    def test_a_plugin_grant_is_used_at_most_once_even_in_a_race(self):
+        # round-1 edge audit: two calls that both saw the grant must not both get through
+        import fmhooks
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "plugin")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertTrue(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install a@m", "s"))
+        self.assertFalse(fmhooks._use_plugin_grant(self.project(), tid, "claude plugin install b@m", "s"))
+
     def test_core_stays_granted_for_the_task(self):
         self.fm("init")
         tid = self.task()
@@ -569,14 +579,23 @@ class Stop(HookCase):
     def test_claims_about_other_steps_or_tasks_do_not_trip_the_gate(self):
         # T-0027: "steps 1–3 are done" is about finished steps, not the current one
         self.fm("init")
+        other = self.task(title="Earlier work", focus=False)
+        self.fm("task", "drop", other, "superseded")
         tid = self.task(steps=("a", "b", "c", "d"))
         self.fm("drive", "off")
         for n in ("1", "2", "3"):
             self.fm("task", "step", tid, "done", n, "--evidence", "pytest", "ok")
         for msg in ("Steps 1–3 are done; now on step 4.", "Step 2 is done, moving on.",
-                    "T-0999 is done; back to this one."):
+                    f"{other} is done; back to this one."):
             self.assertIsNone(self.decision(self.stop(msg)), msg)
-        self.assertEqual(self.decision(self.stop("Step 4 is done.")), "block")
+        # round-1 adversary audit: naming a step that isn't finished, or a task that isn't closed, still counts
+        self.assertEqual(self.decision(self.stop("Step 99 is done.")), "block")
+
+    def test_claims_about_unfinished_steps_still_count(self):
+        self.fm("init")
+        self.task(steps=("a", "b"))
+        self.fm("drive", "off")
+        self.assertEqual(self.decision(self.stop("Step 2 is done.")), "block", "step 2 isn't finished either")
 
     def test_stop_hook_active_never_evidence_blocks(self):
         self.fm("init")
