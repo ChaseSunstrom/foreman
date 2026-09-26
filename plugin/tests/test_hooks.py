@@ -501,7 +501,8 @@ class PreToolUse(HookCase):
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"]):
             subprocess.run(["git", "-C", copy, *args], check=True, capture_output=True)
         core_py = os.path.join(copy, "plugin", "lib", "fmcore.py")
-        hook = os.path.join(copy, "plugin", "hooks", "hook")
+        link = os.path.join(self.tmp, "flink")  # an install reached through a symlink (final audit, rounds 6-7)
+        os.symlink(copy, link)
 
         def pre(path):
             payload = {"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "PreToolUse", "tool_name": "Write",
@@ -510,9 +511,11 @@ class PreToolUse(HookCase):
                                   text=True, env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=20)
         with open(core_py) as f:
             good = f.read()
-        for kind, broken in (("runtime", good.replace("def find_project(", "def find_project(*_a, **_k):\n    raise "
-                                                      "TypeError('bug')\n\n\ndef _unused_find_project(", 1)),
-                             ("import", good + "\ndef oops(:\n")):
+        runtime = good.replace("def find_project(", "def find_project(*_a, **_k):\n    raise "
+                               "TypeError('bug')\n\n\ndef _unused_find_project(", 1)
+        for kind, broken, base in (("runtime", runtime, copy), ("import", good + "\ndef oops(:\n", copy),
+                                   ("runtime via symlink", runtime, link)):
+            hook = os.path.join(base, "plugin", "hooks", "hook")
             with self.subTest(kind=kind):
                 with open(core_py, "w") as f:
                     f.write(broken)

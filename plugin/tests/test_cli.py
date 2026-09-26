@@ -591,6 +591,14 @@ class RoundFiveWorkflow(ForemanTestCase):
         with open(plain, "w") as f:
             f.write("## Verdict: ok\n")
         self.assertIn("## Verdict: ok", read_text(self.fm_json("research", "add", "r2", "--from-agent", plain)["path"]))
+        # final maintainer audit: a FIFO or device would hang the read, a directory would crash it
+        os.mkfifo(os.path.join(self.tmp, "fifo"))
+        for bad in ("/dev/zero", os.path.join(self.tmp, "fifo"), self.tmp):
+            for flag in ("--from-agent", "--file"):
+                with self.subTest(bad=bad, flag=flag):
+                    p = self.fm("research", "add", "r3", flag, bad, check=False)
+                    self.assertEqual(p.returncode, 1)
+                    self.assertIn("regular file", p.stderr)
 
     def test_audit_prep_note_reaches_every_lens_brief(self):
         self.fm("init")

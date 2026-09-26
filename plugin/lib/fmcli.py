@@ -627,6 +627,9 @@ def cmd_research(args):
     name = args.name[:-3] if args.name.endswith(".md") else args.name
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", name):
         raise UsageError(f"research name must be a plain file name, got {args.name!r}")
+    src = args.from_agent or args.file
+    if src and not os.path.isfile(src):  # a FIFO or device would hang the read, a directory would crash it
+        raise UsageError(f"{src} is not a regular file")
     text = (_agent_report(args.from_agent) if args.from_agent else
             open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read())
     path = os.path.join(p.dir, "research", name + ".md")

@@ -262,5 +262,11 @@ class CoreIntegrity(unittest.TestCase):
             r = d.check_footprint(os.path.join(t, "none.md"), os.path.join(t, "none.md"), plugin=t)
             self.assertEqual(r.status, "FAIL")
             self.assertIn("descriptions", r.detail)
+            dense = os.path.join(t, "dense.md")  # few lines, many tokens: the line budget alone misses it
+            with open(dense, "w") as f:
+                f.write(("x" * 300 + "\n") * 40)
+            r = d.check_footprint(dense, os.path.join(t, "none.md"), plugin=os.path.join(t, "none"))
+            self.assertEqual(r.status, "FAIL")
+            self.assertIn("chars", r.detail)
         self.assertEqual(d.check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"),
                                            os.path.join(PLUGIN, "none.md")).status, "PASS")

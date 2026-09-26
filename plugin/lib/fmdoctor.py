@@ -15,6 +15,7 @@ import fmsetup
 PLUGIN = c.PLUGIN_ROOT
 RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
 DESCRIPTIONS_MAX = 6000  # chars (~1.5k tokens) of skill/agent/command descriptions, loaded in every session
+RULES_CHARS_MAX = 9000  # chars (~2.3k tokens) of always-on rules: denser lines cost as much as more lines
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EXPECTED_EXIT = {"PreToolUse:Bash:block": [2], "TaskCompleted": [2]}  # fixtures that are designed to block
@@ -117,6 +118,9 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
     bad = []
     if len(rules) > RULES_MAX:
         bad.append(f"rules {len(rules)} lines > {RULES_MAX}")
+    chars = sum(len(l) + 1 for l in rules)
+    if chars > RULES_CHARS_MAX:
+        bad.append(f"rules {chars} chars > {RULES_CHARS_MAX}")
     if len(block) > BLOCK_MAX:
         bad.append(f"CLAUDE.md block {len(block)} lines > {BLOCK_MAX}")
     if total > ALWAYS_ON_MAX:
@@ -128,7 +132,7 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
         bad.append(f"skill/agent/command descriptions {desc} chars > {DESCRIPTIONS_MAX}")
     return Result("footprint", "FAIL" if bad else "PASS",
                   "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines "
-                                    f"(≤ {ALWAYS_ON_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
+                                    f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
 
 
 def _frontmatter(path):
@@ -228,6 +232,8 @@ def check_validate(home):
     return Result("plugin validate", "FAIL" if bad else "PASS", "; ".join(bad) or "marketplace and plugin pass --strict")
 
 
+# repo-relative protected core, for comparing with git; the guard's own list (fmguard._is_core, _protected_roots) also
+# covers paths outside the repo (settings, ~/.claude.json, state): change both together
 CORE_PATHS = ("plugin/lib", "plugin/bin", "plugin/hooks", "plugin/evals", "plugin/rules/foreman.md", "BUILD_PROMPT.md")
 
 
