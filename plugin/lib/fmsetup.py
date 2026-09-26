@@ -172,6 +172,10 @@ def cmd_install(args):
 # ---------------------------------------------------------------- uninstall
 
 def cmd_uninstall(args):
+    import fmserve
+    if not args.dry_run:
+        for line in fmserve.stop_all():  # fm serve units live outside the manifest: found by their marker
+            print(line)
     P = paths()
     m = _load(P["manifest"], None)
     if m is None:

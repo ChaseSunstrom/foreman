@@ -599,7 +599,9 @@ def _drive(p, sd, briefs, pl, g):
     waiting = [t for t in sd.get("pending") or [] if t]
     if waiting and not full:
         return None  # an `fm ask` is open: the user's reply decides it
-    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"] if w["id"] not in waiting), None)
+    scope = os.environ.get("FOREMAN_DRIVE_TASK")  # fm run: one task per fresh session; the next gets its own
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
+                 if w["id"] not in waiting and (not scope or w["id"] == scope)), None)
     if not work:
         return None  # nothing left that doesn't need the user
     wb = next(b for b in briefs if b.id == work["id"])

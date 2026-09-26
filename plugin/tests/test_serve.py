@@ -1,0 +1,158 @@
+"""fm serve / fm run with stub systemctl, tmux and claude on PATH: no real services, sessions or network."""
+import json
+import os
+import sys
+
+from helpers import FM, ForemanTestCase, read_text
+
+import fmcore as c
+
+
+class ServeCase(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.uhome = os.path.join(self.tmp, "uhome")  # HOME: systemd unit dir and ~/.claude.json live here
+        self.bin = os.path.join(self.tmp, "bin")
+        self.calls = os.path.join(self.tmp, "calls.log")
+        os.makedirs(self.uhome)
+        os.makedirs(self.bin)
+        self.stub("systemctl", 'if [ "$2" = is-active ]; then echo active; fi\n')
+        self.stub("tmux", "")
+        self.stub("claude", "")
+        self.trust(self.repo)
+        self.fm("init")
+        self.slug = c.find_project(self.repo).slug
+        self.unit = os.path.join(self.uhome, ".config", "systemd", "user", f"foreman-serve-{self.slug}.service")
+
+    def stub(self, name, body):
+        path = os.path.join(self.bin, name)
+        with open(path, "w") as f:
+            f.write(f'#!/usr/bin/env bash\necho "{name} $*" >> {self.calls}\n' + body)
+        os.chmod(path, 0o755)
+
+    def trust(self, path):
+        with open(os.path.join(self.uhome, ".claude.json"), "w") as f:
+            json.dump({"projects": {path: {"hasTrustDialogAccepted": True}}}, f)
+
+    def env(self, **extra):
+        return dict({"HOME": self.uhome, "XDG_CONFIG_HOME": os.path.join(self.uhome, ".config"),
+                     "PATH": self.bin + os.pathsep + os.environ["PATH"]}, **extra)
+
+    def serve(self, *args, check=True):
+        return self.fm("serve", *args, check=check, env=self.env())
+
+    def called(self):
+        return read_text(self.calls) if os.path.exists(self.calls) else ""
+
+    def meta(self):
+        return c.read_meta(c.find_project(self.repo))
+
+
+class Serve(ServeCase):
+    def test_start_writes_and_enables_a_unit_and_sets_full_auto_drive(self):
+        self.fm("autonomy", "standard")
+        self.fm("drive", "off")
+        self.serve()
+        unit = read_text(self.unit)
+        for needle in ("Managed by Foreman", f"WorkingDirectory={self.repo}", "Restart=always", "StartLimitBurst=",
+                       f"-L foreman-{self.slug}", "remote-control", "--spawn same-dir"):
+            self.assertIn(needle, unit)
+        self.assertNotIn("--permission-mode", unit, "the user's own default mode applies unless one is given")
+        self.assertIn(f"systemctl --user enable --now foreman-serve-{self.slug}.service", self.called())
+        self.assertNotIn("claude ", self.called(), "serve never runs claude itself (remote-control --help blocks)")
+        m = self.meta()
+        self.assertEqual((m["autonomy"], m["drive"]), ("full", True))
+        self.assertEqual((m["serve"]["prev_autonomy"], m["serve"]["prev_drive"]), ("standard", False))
+
+    def test_stop_reverses_everything(self):
+        self.fm("autonomy", "standard")
+        self.serve()
+        self.serve("stop")
+        self.assertFalse(os.path.exists(self.unit))
+        self.assertIn(f"systemctl --user disable --now foreman-serve-{self.slug}.service", self.called())
+        m = self.meta()
+        self.assertEqual((m["autonomy"], m["drive"]), ("standard", True))
+        self.assertNotIn("serve", m)
+
+    def test_untrusted_workspace_is_refused_with_the_reason(self):
+        self.trust(os.path.join(self.tmp, "elsewhere"))
+        p = self.serve(check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("trust", p.stderr)
+        self.assertFalse(os.path.exists(self.unit))
+        self.trust(self.tmp)  # a trusted parent covers the repo, as in Claude Code
+        self.serve()
+
+    def test_permission_mode_given_or_sensitive(self):
+        self.serve("--permission-mode", "acceptEdits")
+        self.assertIn("--permission-mode acceptEdits", read_text(self.unit))
+        self.serve("stop")
+        self.fm("sensitive", "on")
+        self.serve()
+        self.assertIn("--permission-mode default", read_text(self.unit), "sensitive repos approve from the phone")
+        self.assertNotEqual(self.serve("--permission-mode", "yolo", check=False).returncode, 0)
+
+    def test_status_and_attach(self):
+        self.serve()
+        out = self.serve("status").stdout
+        for needle in (self.slug, "active", self.repo, f"tmux -L foreman-{self.slug} attach"):
+            self.assertIn(needle, out)
+        self.assertIn(f"tmux -L foreman-{self.slug} attach -t foreman", self.serve("attach").stdout)
+
+    def test_uninstall_user_stops_serve_units(self):
+        self.serve()
+        self.fm("uninstall-user", env=self.env())
+        self.assertFalse(os.path.exists(self.unit))
+        self.assertIn("disable --now", self.called())
+
+
+class Run(ServeCase):
+    def setUp(self):
+        super().setUp()
+        # a stub session that finishes whatever task it is scoped to, the way a real one would through fm
+        fm = f"{sys.executable} {FM}"
+        self.finisher = (f't=$FOREMAN_DRIVE_TASK\necho "session for $t"\n{fm} focus $t >/dev/null\n'
+                         f'{fm} task step $t done 1 --evidence x ok >/dev/null\n'
+                         f'{fm} task ac $t check 1 --evidence x ok >/dev/null\n'
+                         f'{fm} task audit $t self x ok >/dev/null\n{fm} task done $t\n')
+
+    def task(self, title):
+        return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "works",
+                                  "--step", "fix it", "--json").stdout)["id"]
+
+    def run_fm(self, *args, check=True):
+        return self.fm("run", *args, check=check, env=self.env())
+
+    def test_each_task_runs_in_its_own_fresh_session(self):
+        a, b = self.task("one"), self.task("two")
+        self.stub("claude", self.finisher)
+        out = self.run_fm().stdout
+        p = c.find_project(self.repo)
+        self.assertEqual([c.find_brief(p, t).status for t in (a, b)], ["done", "done"])
+        sessions = [l for l in self.called().splitlines() if l.startswith("claude ")]
+        self.assertEqual(len(sessions), 2)
+        self.assertTrue(all(" -p " in s for s in sessions))
+        self.assertIn(f"{a} done", out)
+        self.assertIn(f"session for {a}", read_text(os.path.join(c.state_dir(), "logs", f"run-{self.slug}.log")))
+
+    def test_a_session_without_progress_stops_the_run(self):
+        self.task("one")
+        p = self.run_fm(check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("no progress", p.stderr)
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 1)
+
+    def test_tasks_waiting_on_the_user_are_skipped(self):
+        a, b = self.task("one"), self.task("two")
+        self.fm_ask(a, "publish")
+        self.stub("claude", self.finisher)
+        out = self.run_fm().stdout
+        self.assertIn(f"{a} waits on the user", out)
+        self.assertEqual(c.find_brief(c.find_project(self.repo), b).status, "done")
+
+    def test_refuses_while_serve_runs_here(self):
+        self.task("one")
+        self.fm("serve", env=self.env())
+        p = self.run_fm(check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("fm serve", p.stderr)

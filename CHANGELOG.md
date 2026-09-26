@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased
+- Headless: `fm serve` runs Claude Code Remote Control in a repo under a systemd user unit (tmux for the TTY, restart with a crash-loop breaker, survives logout and reboot) with the project in full autonomy + drive; `fm serve status|attach|stop [--all]`, uninstall stops every unit. Untrusted folders are refused with the reason. `fm run` works the queue in fresh `claude -p` sessions, one task each (drive scoped by `FOREMAN_DRIVE_TASK`), skipping tasks waiting on you and stopping on no progress, a failed session or the timeout.
+
 ## 1.1.0 — 2026-09-26
 Claude works autonomously and checks its own work.
 - You never run commands: consent is a yes/no question. `fm ask ID CAT…` records a one-shot request that only your next reply can grant (starts with yes) or cancel; pasted text, other sessions and requests older than 24 h never grant. `core` can no longer be granted from the command line at all.

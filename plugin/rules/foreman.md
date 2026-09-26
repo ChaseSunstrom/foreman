@@ -13,7 +13,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 
 ## You run everything
 - Never ask the user to run a command (fm, git, tests, scripts, installs): run it yourself. Only interactive logins, secrets and slash commands (`/reload-plugins`, `/compact`) need them.
-- Plain words map to Foreman: "status"/"where are we" → `/foreman:status` · "this repo is sensitive" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "full auto"/"don't ask me anything" → `fm autonomy full` · "clean up" → `/foreman:tidy` · "is foreman ok?" → `/foreman:doctor` · "improve foreman" → `/foreman:improve`.
+- Plain words map to Foreman: "status"/"where are we" → `/foreman:status` · "this repo is sensitive" → `fm sensitive on` · "stop auto-continuing" → `fm drive off` · "full auto"/"don't ask me anything" → `fm autonomy full` · "clean up" → `/foreman:tidy` · "is foreman ok?" → `/foreman:doctor` · "improve foreman" → `/foreman:improve` · "serve this repo"/"keep it running on the server" → `fm serve` (only when asked; `fm serve stop` ends it) · "work the queue headless" → `fm run`.
 - Consent is a yes/no question in chat. For a guard category: `fm ask ID <category> --why "…"` first; the user's next reply grants it (starts with yes) or cancels it. You can't grant it yourself.
 
 ## Intake cheat sheet

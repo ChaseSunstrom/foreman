@@ -46,6 +46,10 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE af
 - **Docs stay current**: bigger tasks can't close until they record which docs they changed, and those docs must exist and match the code; drift elsewhere is reported when a task closes (`fm docs` shows it any time). Long sessions compact earlier, since Foreman's state makes that cheap.
 - **Full auto**: say `FULL AUTO` (or "don't ask me anything") and Claude works through the whole queue without questions, recording its decisions; anything only you can approve waits for one summary at the end. `STANDARD AUTONOMY` switches back.
 
+## Headless: keep it working on a server
+
+In a repo on your server, ask Claude to "serve this repo" (`fm serve`): Claude Code Remote Control starts there under a systemd user unit, survives logout and reboot, and the project switches to full autonomy with drive on. Send feature requests from claude.ai/code or the Claude app whenever you like; they're captured, planned, built, audited and committed one after another. "Stop serving" (`fm serve stop`) undoes it, and uninstall stops every unit. Claude Code has to trust the folder first (open `claude` there once). `fm run` is the other option: it works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context.
+
 ## Permissions
 
 Foreman runs in bypass mode by default: no tool-call prompts. What still stops a dangerous command is Foreman's guard hook (recursive deletes outside the project, force-pushes and hard resets on default branches, credential files, `curl | sh`, disk/firewall/system-service changes, publish/deploy commands, direct writes to Foreman state, and edits to Foreman's own protected core), plus 20 deny rules for the truly catastrophic cases. A blocked command says how to authorize it for the current task. For anything that needs you (Foreman's own code, destructive categories) Claude asks one yes/no question; your reply starting with yes grants it, and nothing else can.

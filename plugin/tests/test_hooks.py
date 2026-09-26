@@ -482,6 +482,20 @@ class Stop(HookCase):
                + "Details of the plan follow. " * 30)
         self.assertIsNone(self.decision(self.stop(msg)))
 
+    def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
+        # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.
+        self.fm("init")
+        first = self.task()
+        self.task(title="Second", focus=False)
+        scoped = {"FOREMAN_DRIVE_TASK": first}
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Working.", "session_id": "s"},
+                      env=scoped)
+        self.assertEqual(self.decision(p), "block")
+        self.fm("task", "block", first, "stub: waits on something")
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Blocked.", "session_id": "s"},
+                      env=scoped)
+        self.assertIsNone(self.decision(p))
+
     def test_a_question_inside_a_code_block_is_not_a_question_for_the_user(self):
         self.fm("init")
         self.task()

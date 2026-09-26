@@ -75,6 +75,7 @@ def _writable(path):
 
 
 _STATE_MARKER = ".foreman-state.json"
+PERMISSION_MODES = ["acceptEdits", "auto", "bypassPermissions", "default", "dontAsk", "plan"]  # claude --permission-mode
 ASK_TTL = 300  # seconds an `fm ask` the PreToolUse hook saw stays claimable by fm (it runs right after)
 
 

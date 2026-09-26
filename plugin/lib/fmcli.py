@@ -754,6 +754,17 @@ def build_parser():
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=300)
 
+    s = add("serve", lazy("fmserve", "cmd_serve"),
+            help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop|attach] [PATH]")
+    s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
+    s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
+    s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
+
+    s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
+    s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
+    s.add_argument("--timeout", type=int, default=60, help="minutes per session")
+    s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
+
     s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
