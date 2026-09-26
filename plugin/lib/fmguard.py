@@ -11,8 +11,8 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 
-CATEGORIES = ["state-direct", "core", "credentials", "system", "rm-outside", "git-destructive", "pipe-shell", "publish"]
-NOT_AUTHORIZABLE = {"state-direct"}
+CATEGORIES = ["self-authorize", "state-direct", "core", "credentials", "system", "rm-outside", "git-destructive", "pipe-shell", "publish"]
+NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
@@ -52,6 +52,10 @@ def check(tool_name, tool_input, ctx):
 
 def message(block, ctx):
     cat, detail = block.category, block.detail
+    if cat == "self-authorize":
+        return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (guard, hooks, rules, evals, "
+                f"BUILD_PROMPT.md, settings) needs the user's approval, and only you can grant it: if you approve, run "
+                f"`fm task set <ID> --allow core` yourself in a terminal or as `! fm task set <ID> --allow core` in the prompt.")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -324,6 +328,10 @@ def check_bash(cmd, ctx, depth=0):
         for target in c.redirs + _write_targets(name, args):
             if not _unresolvable(target):
                 found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
+        if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
+            fm_args = args[1:] if name != "fm" else args
+            if "--allow=core" in fm_args or any(a == "--allow" and b == "core" for a, b in zip(fm_args, fm_args[1:])):
+                found.append(("self-authorize", "an agent may not grant the core authorization"))
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)

@@ -284,6 +284,25 @@ class Authorization(GuardCase):
         self.assertIn("state-direct", g.message(self.write("{fhome}/state/projects/x/a.md"), self.ctx()))
 
 
+class SelfAuthorize(GuardCase):
+    def test_agent_cannot_grant_core(self):
+        for cmd in ("fm task set T-0002 --allow core", "fm task set T-0002 --allow=core",
+                    "python3 /x/plugin/bin/fm task set T-0002 --allow publish --allow core",
+                    "fm focus T-0002 && fm task set T-0002 --allow core"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "self-authorize")
+                self.assertBlocked(self.bash(cmd, allow=["core", "self-authorize"]), "self-authorize")
+
+    def test_other_authorizations_are_allowed(self):
+        self.assertIsNone(self.bash("fm task set T-0002 --allow publish"))
+        self.assertIsNone(self.bash("echo 'fm task set T-0002 --allow core'"))
+
+    def test_message_tells_the_user_how(self):
+        msg = g.message(self.bash("fm task set T-0002 --allow core"), self.ctx())
+        self.assertIn("only you can grant", msg)
+        self.assertIn("!", msg)
+
+
 class Robustness(GuardCase):
     def test_unbalanced_quotes_still_checked(self):
         self.assertBlocked(self.bash("rm -rf ~ 'unterminated"), "rm-outside")

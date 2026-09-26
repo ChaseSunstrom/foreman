@@ -49,7 +49,7 @@ append_system_prompt: |
   - Get approval for L-tier plans, `?` items, and anything destructive or irreversible. After approval: `fm task set ID approved=true`. S/M tasks run after self-review.
   - Drive is on: when the Stop hook reports open Foreman work, continue with it. To hand control back, ask the user a direct question.
   - Batch questions into one message, each with your default; ask only what would make the work wrong or irreversible if guessed.
-  - Guard blocks name a category. Authorize only for a brief that genuinely needs it: `fm task set ID --allow <category>`. `core` needs the user's explicit approval in this conversation.
+  - Guard blocks name a category. Authorize only for a brief that genuinely needs it: `fm task set ID --allow <category>`. `core` can only be granted by the user (`! fm task set ID --allow core`); the guard blocks agents from granting it.
 
   ## Subagents
   Default none. Only read-only recon, research, audits or L-tier review, via `foreman:fm-recon` / `foreman:fm-reviewer`, with a self-contained brief. ≤3 in parallel on disjoint scopes. Save each summary with `fm research add NAME` and spot-check two claims.
