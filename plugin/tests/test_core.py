@@ -26,6 +26,24 @@ class PathsAndProjects(ForemanTestCase):
         finally:
             os.chmod(self.home, 0o700)
 
+    def test_fallback_is_sticky_and_shared_and_migrates_existing_state(self):
+        # A sandboxed fm (default read-only) and the hooks (default writable) must end up in the same place.
+        os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")
+        alt = os.path.join(self.tmp, "xdg", "foreman")
+        p = c.init_project(self.repo)
+        c.log_event(p, "note", data={"x": 1})
+        default = os.path.join(self.home, "state")
+        os.chmod(self.home, 0o500)
+        os.chmod(default, 0o500)
+        try:
+            self.assertEqual(c.state_dir(), alt)  # the sandboxed side activates the fallback
+        finally:
+            os.chmod(self.home, 0o700)
+            os.chmod(default, 0o700)
+        self.assertEqual(c.state_dir(), alt, "the unsandboxed side (hooks) follows the marker")
+        self.assertTrue(any(e["event"] == "note" for e in c.ledger_tail(c.find_project(self.repo))),
+                        "existing state was copied across")
+
     def test_foreman_state_env_overrides(self):
         os.environ["FOREMAN_STATE"] = os.path.join(self.tmp, "elsewhere")
         self.assertEqual(c.state_dir(), os.path.join(self.tmp, "elsewhere"))

@@ -10,6 +10,7 @@ import heapq
 import json
 import os
 import re
+import shutil
 import string
 import subprocess
 import tempfile
@@ -73,19 +74,53 @@ def _writable(path):
     return os.access(path, os.W_OK)
 
 
+_STATE_MARKER = ".foreman-state.json"
+
+
+def _state_fallbacks():
+    xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return [os.path.join(xdg, "foreman"), os.path.join(tempfile.gettempdir(), f"foreman-state-{os.getuid()}")]
+
+
+def _marker_default(alt):
+    try:
+        with open(os.path.join(alt, _STATE_MARKER)) as f:
+            return json.load(f).get("default")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def state_dir():
-    """FOREMAN_STATE, else <foreman home>/state; when that isn't writable (sandboxes such as claude plugin eval,
-    read-only containers) a per-user fallback, so fm keeps working instead of failing on every write."""
+    """FOREMAN_STATE, else <foreman home>/state. When that isn't writable (Claude Code's Bash sandbox, claude plugin
+    eval, read-only containers) state moves to a per-user fallback, once: existing state is copied across and a marker
+    makes every process follow it, so a sandboxed fm and the unsandboxed hooks never split the state."""
     if os.environ.get("FOREMAN_STATE"):
         return os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"]))
     default = os.path.join(foreman_home(), "state")
+    for alt in _state_fallbacks():
+        if _marker_default(alt) == default:
+            return alt
     if _writable(default):
         return default
-    xdg = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
-    for alt in (os.path.join(xdg, "foreman"), os.path.join(tempfile.gettempdir(), f"foreman-state-{os.getuid()}")):
-        if _writable(alt):
+    for alt in _state_fallbacks():
+        if _writable(alt) and _activate_fallback(alt, default):
             return alt
     return default
+
+
+def _activate_fallback(alt, default):
+    try:
+        if os.path.isdir(default) and not os.path.exists(os.path.join(alt, "projects")):
+            shutil.copytree(default, alt, ignore=shutil.ignore_patterns(".lock"), dirs_exist_ok=True)
+            for d, _, files in os.walk(alt):  # the copy keeps the source's read-only modes
+                for path in [d] + [os.path.join(d, f) for f in files]:
+                    os.chmod(path, os.stat(path).st_mode | 0o200)
+        os.makedirs(alt, exist_ok=True)
+        with open(os.path.join(alt, _STATE_MARKER), "w") as f:
+            json.dump({"default": default, "reason": "default state dir not writable", "at": now()}, f)
+        return True
+    except OSError:
+        return False
 
 
 def projects_dir():

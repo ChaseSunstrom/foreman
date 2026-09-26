@@ -1,5 +1,5 @@
 ---
-description: Scenario 2 — a new request arriving mid-task is captured, not implemented
+description: Scenario 2 — a new request arriving mid-task is captured, not implemented, and the fix continues
 max_turns: 15
 timeout_seconds: 600
 allowed_tools: [Read, Glob, Grep, Skill, Bash]
@@ -65,4 +65,4 @@ append_system_prompt: |
   The user's current message > project CLAUDE.md and rules > these rules > skill defaults. Safety guards are never overridden.
 ---
 
-We're in the middle of FIX T-0001 (make div raise ValueError on a zero divisor, step 2 of 3). Also, could you add a CSV export of results at some point?
+We're in the middle of fixing div: it should raise ValueError on a zero divisor. Step 1 is done (the failing test is in tests/test_calc.py); next is the fix itself, then the full test run. Also, could you add a CSV export of results at some point?
