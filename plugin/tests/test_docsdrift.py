@@ -41,6 +41,17 @@ class DocsDrift(ForemanTestCase):
             ("docs/guide.md", "path", "docs/setup.md"),
         ])  # bare names, other repos and branch names aren't repo paths: never reported
 
+    def test_a_folder_holding_only_ignored_files_is_not_a_repo_path(self):
+        # Claude Code drops .claude/scheduled_tasks.lock (ignored) into repos; `.claude/…` in docs means the user's
+        os.makedirs(os.path.join(self.repo, ".claude"))
+        open(os.path.join(self.repo, ".claude", "scheduled_tasks.lock"), "w").close()
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write("**/.claude/scheduled_tasks.lock\n")
+        with open(os.path.join(self.repo, "SETUP.md"), "w") as f:
+            f.write("Put overrides in `.claude/settings.local.json`; the app is `src/app.py`, not `src/old.py`.\n")
+        found = [f["detail"] for f in fmdocs.scan(self.repo) if f["file"] == "SETUP.md"]
+        self.assertEqual(found, ["src/old.py"])
+
     def test_cli(self):
         p = self.fm("docs", "--json", cwd=self.repo)
         self.assertEqual(len(json.loads(p.stdout)["findings"]), 5)

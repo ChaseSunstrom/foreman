@@ -72,6 +72,7 @@ class DryRun(TidyCase):
 
     def test_reports_doc_drift_in_project_docs(self):
         os.makedirs(os.path.join(self.repo, "src"))
+        open(os.path.join(self.repo, "src", "main.py"), "w").close()  # src/ is repo content
         with open(os.path.join(self.repo, "README.md"), "w") as f:
             f.write("Entry point: `src/gone.py`\n")
         drift = [f for f in self.tidy()["findings"] if f["kind"] == "docs_drift"]

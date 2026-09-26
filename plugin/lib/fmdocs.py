@@ -30,18 +30,33 @@ def _ignored(root, rels):
     return set(p.stdout.splitlines())
 
 
-def _anchored(tok, root, here):
-    """Only paths that clearly point into this repo: ./ or ../, or a first component that exists at the repo root or
-    next to the file. Bare names, other repos (org/repo), branches and domains are too ambiguous to call drift."""
+def _top_level(root):
+    """Top-level names that hold repo content (tracked, or untracked and not ignored); every name outside git. A
+    folder with only ignored files (Claude Code's .claude/scheduled_tasks.lock) doesn't make `.claude/…` a repo path."""
+    try:
+        r = subprocess.run(["git", "-C", root, "ls-files", "--cached", "--others", "--exclude-standard"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            return {line.split("/", 1)[0] for line in r.stdout.splitlines() if line}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        return set(os.listdir(root))
+    except OSError:
+        return set()
+
+
+def _anchored(tok, root, here, tops):
+    """Only paths that clearly point into this repo: ./ or ../, or a first component that is repo content at the root
+    or exists next to the file. Bare names, other repos (org/repo), branches and domains are too ambiguous."""
     if tok.startswith(("./", "../")):
         return True
     first = tok.split("/", 1)[0]
-    return "/" in tok and bool(first) and (os.path.exists(os.path.join(root, first)) or
-                                           os.path.exists(os.path.join(here, first)))
+    return "/" in tok and bool(first) and (first in tops or (here != root and os.path.exists(os.path.join(here, first))))
 
 
 def scan(root):
-    findings = []
+    findings, tops = [], _top_level(root)
     for md in _markdown(root):
         try:
             with open(md, encoding="utf-8", errors="replace") as f:
@@ -49,7 +64,7 @@ def scan(root):
         except OSError:
             continue
         rel, here = os.path.relpath(md, root), os.path.dirname(md)
-        missing = [t for t in dead_paths(text, here) if _anchored(t, root, here)
+        missing = [t for t in dead_paths(text, here) if _anchored(t, root, here, tops)
                    and not os.path.exists(os.path.join(root, t))]
         ignored = _ignored(root, missing)
         findings += [{"file": rel, "kind": "path", "detail": t} for t in missing if t not in ignored]
