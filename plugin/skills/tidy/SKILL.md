@@ -1,7 +1,6 @@
 ---
 name: tidy
-description: Run Foreman hygiene — archive old done tasks, flag stale inbox items, lint CLAUDE.md/rules, check auto memory, the task graph, plugin footprint and event logs. Dry-run first; apply only what is safe. Usage /foreman:tidy.
-disable-model-invocation: true
+description: Use when the user asks to clean up Foreman or memory, when STATE says tidy is overdue, or at the end of a queue. Runs Foreman hygiene — archive old done tasks, flag stale inbox items, lint CLAUDE.md/rules, check auto memory, the task graph, plugin footprint and event logs. Dry-run first; applies only what is safe.
 ---
 
 # Foreman: tidy
