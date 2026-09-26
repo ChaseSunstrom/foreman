@@ -755,7 +755,7 @@ def build_parser():
     s.add_argument("--timeout", type=int, default=300)
 
     s = add("serve", lazy("fmserve", "cmd_serve"),
-            help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop|attach] [PATH]")
+            help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")

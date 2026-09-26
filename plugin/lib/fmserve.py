@@ -1,9 +1,9 @@
 """fm serve / fm run: Foreman working without a terminal open.
 
-fm serve runs Claude Code Remote Control in a repo under a systemd user unit, so requests sent from claude.ai/code or
-the Claude app keep getting worked (the project is put in full autonomy with drive on). The unit starts tmux on a
-private socket: Remote Control needs a TTY, and `fm serve attach` gives a way in. Restart=always with a start-limit
-breaker keeps it up without hammering a login or usage problem.
+fm serve runs Claude Code Remote Control in a repo as a systemd user unit, so requests sent from claude.ai/code or
+the Claude app keep getting worked (the project is put in full autonomy with drive on). Remote Control needs no TTY;
+its output (which includes the session URL) is discarded, errors go to the journal. Restart=always with a
+start-limit breaker keeps it up without hammering a login or usage problem, and a restart reconnects its sessions.
 
 fm run works the queue in fresh `claude -p` sessions, one task per session (drive is scoped to it through
 FOREMAN_DRIVE_TASK), so a long queue never runs in one ever-growing context.
@@ -31,24 +31,16 @@ def unit_name(slug):
     return f"foreman-serve-{slug}.service"
 
 
-def tmux_socket(slug):
-    return f"foreman-{slug}"
-
-
-def trusted(path):
-    """Claude Code's workspace trust (Remote Control exits on an untrusted folder); a trusted parent covers it."""
+def trusted(root):
+    """Claude Code's workspace trust for this repo root (Remote Control exits on an untrusted folder). Checked on the
+    root itself: a trusted parent folder doesn't carry over into a separate repo."""
     try:
         with open(os.path.join(os.path.expanduser("~"), ".claude.json")) as f:
             projects = json.load(f).get("projects") or {}
     except (OSError, ValueError, AttributeError):
         return False
-    ok = {os.path.realpath(k) for k, v in projects.items() if isinstance(v, dict) and v.get("hasTrustDialogAccepted")}
-    d = os.path.realpath(path)
-    while d not in ok:
-        if os.path.dirname(d) == d:
-            return False
-        d = os.path.dirname(d)
-    return True
+    return any(isinstance(v, dict) and v.get("hasTrustDialogAccepted") and os.path.realpath(k) == os.path.realpath(root)
+               for k, v in projects.items())
 
 
 def _arg(s):
@@ -59,19 +51,17 @@ def _arg(s):
 
 
 def unit_text(p, mode):
-    tmux = shutil.which("tmux") or "tmux"
     name = re.sub(r"[^\w .()-]", "", os.path.basename(p.root)) + " (foreman)"
     rc = [shutil.which("claude") or "claude", "remote-control", "--name", name, "--spawn", "same-dir"]
-    start = [tmux, "-L", tmux_socket(p.slug), "new-session", "-d", "-s", "foreman", "-x", "200", "-y", "50",
-             "-c", p.root] + rc + (["--permission-mode", mode] if mode else [])
+    rc += ["--permission-mode", mode] if mode else []
     path_env = os.environ.get("PATH", "").replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
     return "\n".join([
         MARK, "[Unit]", f"Description=Foreman serve: Claude Code Remote Control in {p.root.replace('%', '%%')}",
         "StartLimitIntervalSec=600", "StartLimitBurst=5", "",
-        "[Service]", "Type=forking", f"WorkingDirectory={p.root.replace('%', '%%')}",
+        "[Service]", "Type=simple", f"WorkingDirectory={p.root.replace('%', '%%')}",
         f'Environment="PATH={path_env}"',  # the session's tools (git, fm, language toolchains) as in your shell
-        "ExecStart=" + " ".join(map(_arg, start)),
-        "ExecStop=" + " ".join(map(_arg, [tmux, "-L", tmux_socket(p.slug), "kill-server"])),
+        "ExecStart=" + " ".join(map(_arg, rc)),
+        "StandardOutput=null", "StandardError=journal",
         "Restart=always", "RestartSec=30", "",
         "[Install]", "WantedBy=default.target", ""])
 
@@ -162,15 +152,21 @@ def status_lines():
         if p:
             sd = c.state_dict(p)
             work = (f" · active {sd['active']['id']}" if sd["active"] else " · idle") + f" · queue {len(sd['queue'])}"
-        lines.append(f"{slug}: {state} · {root.group(1).replace('%%', '%') if root else '?'}{work} · "
-                     f"attach: tmux -L {tmux_socket(slug)} attach -t foreman")
+        lines.append(f"{slug}: {state} · {root.group(1).replace('%%', '%') if root else '?'}{work}")
+        if state != "active":
+            try:
+                log = subprocess.run(["journalctl", "--user", "-u", unit_name(slug), "-n", "3", "--no-pager", "-o",
+                                      "cat"], capture_output=True, text=True, timeout=30).stdout.strip()
+            except (OSError, subprocess.SubprocessError):
+                log = ""
+            lines += [f"  {l}" for l in c.redact(log).splitlines()[-3:]]
     return lines or ["No fm serve units."]
 
 
 def cmd_serve(args):
     import fmcli
     action, rest = "start", list(args.args)
-    if rest and rest[0] in ("start", "status", "stop", "attach"):
+    if rest and rest[0] in ("start", "status", "stop"):
         action = rest.pop(0)
     if action == "status":
         return print("\n".join(status_lines()))
@@ -182,15 +178,12 @@ def cmd_serve(args):
             raise fmcli.UsageError(f"{rest[0]} isn't a Foreman project (run fm init there)")
     else:
         p = fmcli.resolve(args)
-    if action == "attach":
-        return print(f"tmux -L {tmux_socket(p.slug)} attach -t foreman   (detach: Ctrl-b d; Ctrl-C there stops "
-                     f"Remote Control and systemd restarts it)")
     if action == "stop":
         return print("\n".join(stop(p.slug)) or f"fm serve isn't running for {p.slug}.")
     start(p, args.permission_mode)
     print(f"Serving {p.root}: Claude Code Remote Control runs under {unit_name(p.slug)} (survives logout and reboot), "
           f"autonomy full, drive on. Open it from claude.ai/code or the Claude app and send requests there.\n"
-          f"Status: fm serve status · Stop: fm serve stop · Attach: fm serve attach")
+          f"Status: fm serve status · Stop: fm serve stop")
 
 
 # ---------------------------------------------------------------- fm run

@@ -1,4 +1,4 @@
-"""fm serve / fm run with stub systemctl, tmux and claude on PATH: no real services, sessions or network."""
+"""fm serve / fm run with stub systemctl, journalctl and claude on PATH: no real services, sessions or network."""
 import json
 import os
 import sys
@@ -17,7 +17,7 @@ class ServeCase(ForemanTestCase):
         os.makedirs(self.uhome)
         os.makedirs(self.bin)
         self.stub("systemctl", 'if [ "$2" = is-active ]; then echo active; fi\n')
-        self.stub("tmux", "")
+        self.stub("journalctl", 'echo "Error: Workspace not trusted."\n')
         self.stub("claude", "")
         self.trust(self.repo)
         self.fm("init")
@@ -54,8 +54,8 @@ class Serve(ServeCase):
         self.fm("drive", "off")
         self.serve()
         unit = read_text(self.unit)
-        for needle in ("Managed by Foreman", f"WorkingDirectory={self.repo}", "Restart=always", "StartLimitBurst=",
-                       f"-L foreman-{self.slug}", "remote-control", "--spawn same-dir"):
+        for needle in ("Managed by Foreman", f"WorkingDirectory={self.repo}", "Type=simple", "Restart=always",
+                       "StartLimitBurst=", "remote-control", "--spawn same-dir", "StandardOutput=null"):
             self.assertIn(needle, unit)
         self.assertNotIn("--permission-mode", unit, "the user's own default mode applies unless one is given")
         self.assertIn(f"systemctl --user enable --now foreman-serve-{self.slug}.service", self.called())
@@ -80,8 +80,10 @@ class Serve(ServeCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("trust", p.stderr)
         self.assertFalse(os.path.exists(self.unit))
-        self.trust(self.tmp)  # a trusted parent covers the repo, as in Claude Code
-        self.serve()
+        self.trust(self.tmp)  # Claude Code checks the repo root itself: a trusted parent folder doesn't count
+        self.assertNotEqual(self.serve(check=False).returncode, 0)
+        self.trust(self.repo)
+        self.serve(os.path.join(self.repo, "."))
 
     def test_permission_mode_given_or_sensitive(self):
         self.serve("--permission-mode", "acceptEdits")
@@ -92,12 +94,14 @@ class Serve(ServeCase):
         self.assertIn("--permission-mode default", read_text(self.unit), "sensitive repos approve from the phone")
         self.assertNotEqual(self.serve("--permission-mode", "yolo", check=False).returncode, 0)
 
-    def test_status_and_attach(self):
+    def test_status_names_the_unit_state_and_the_last_error_when_down(self):
         self.serve()
         out = self.serve("status").stdout
-        for needle in (self.slug, "active", self.repo, f"tmux -L foreman-{self.slug} attach"):
+        for needle in (self.slug, "active", self.repo, "idle"):
             self.assertIn(needle, out)
-        self.assertIn(f"tmux -L foreman-{self.slug} attach -t foreman", self.serve("attach").stdout)
+        self.assertNotIn("Workspace not trusted", out)
+        self.stub("systemctl", 'if [ "$2" = is-active ]; then echo failed; fi\n')
+        self.assertIn("Workspace not trusted", self.serve("status").stdout)
 
     def test_uninstall_user_stops_serve_units(self):
         self.serve()
