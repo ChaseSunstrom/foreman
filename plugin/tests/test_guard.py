@@ -398,6 +398,27 @@ class Remote(GuardCase):
         ], self.bash)
 
 
+class PluginChanges(GuardCase):
+    def test_plugin_mcp_and_config_changes_need_the_users_yes(self):
+        self.run_table([
+            ("claude plugin install rust-analyzer-lsp@claude-plugins-official", "plugin"),
+            ("claude plugin enable superpowers@claude-plugins-official", "plugin"),
+            ("claude plugin disable ecc@ecc", "plugin"),
+            ("claude plugin uninstall x@y --scope user", "plugin"),
+            ("claude plugin marketplace add some-org/some-repo", "plugin"),
+            ("claude mcp add db -- npx pg-mcp", "plugin"),
+            ("claude config set -g theme dark", "plugin"),
+            ("fm plugins install rust-analyzer-lsp@claude-plugins-official", "plugin"),
+            ("claude plugin list --json", None),
+            ("claude plugin details x@y", None),
+            ("claude mcp list", None),
+            ("fm plugins find rust", None),
+            ("fm plugins check", None),
+        ], self.bash)
+        self.assertIsNone(self.bash("claude plugin install x@y", allow=["plugin"]))
+        self.assertBlocked(self.bash("fm task set T-0002 --allow plugin"), "self-authorize")
+
+
 class SelfAuthorize(GuardCase):
     def test_agent_cannot_grant_core(self):
         for cmd in ("fm task set T-0002 --allow core", "fm task set T-0002 --allow=core",

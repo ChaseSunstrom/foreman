@@ -11,10 +11,10 @@ import shlex
 import subprocess
 from dataclasses import dataclass, field
 
-CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "credentials", "system", "rm-outside", "git-destructive",
-              "pipe-shell", "publish"]
+CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
+              "git-destructive", "pipe-shell", "publish"]
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
-USER_ONLY = {"core", "remote"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
+USER_ONLY = {"core", "remote", "plugin"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
@@ -414,12 +414,15 @@ def check_bash(cmd, ctx, depth=0):
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant core or remote"))
             sub, rest = _fm_subcommand(fm_args)
+            if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable"):
+                found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)
+        found += _check_claude_config(name, args)
         found += _check_publish(name, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
     return found
@@ -631,6 +634,23 @@ def _fm_subcommand(args, takes_value=("-p", "--project")):
     while i < len(args) and args[i].startswith("-"):
         i += 2 if args[i] in takes_value else 1
     return (args[i], args[i + 1:]) if i < len(args) else (None, [])
+
+
+_CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", "remove", "update"},
+                   "mcp": {"add", "add-json", "add-from-claude-desktop", "remove"}, "config": {"set", "add", "remove"}}
+
+
+def _check_claude_config(name, args):
+    """Installing or toggling plugins, marketplaces and MCP servers, or changing Claude Code's config: new code and
+    always-on context in every session, so only the user's yes to `fm ask ID plugin` allows it."""
+    pos = [a for a in args if not a.startswith("-")]
+    if name != "claude" or len(pos) < 2:
+        return []
+    if pos[:2] == ["plugin", "marketplace"] and pos[2:3] and pos[2] in ("add", "remove", "rm", "update"):
+        return [("plugin", f"claude plugin marketplace {pos[2]}")]
+    if pos[0] in _CLAUDE_CHANGES and pos[1] in _CLAUDE_CHANGES[pos[0]]:
+        return [("plugin", f"claude {pos[0]} {pos[1]} changes Claude Code's plugins, MCP servers or config")]
+    return []
 
 
 _USER_UNIT_PERSIST = {"link", "enable", "reenable", "edit", "preset", "revert", "set-property", "add-wants",

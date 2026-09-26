@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import time
 
 import fmcore as c
@@ -190,6 +191,12 @@ def cmd_uninstall(args):
     if m is None:
         print("No Foreman install manifest; nothing to undo.")
         return
+    for pid in m.get("plugins_installed") or []:  # installed by `fm plugins install` after the user's yes
+        if args.dry_run:
+            print(f"Would uninstall plugin {pid}")
+        else:
+            subprocess.run(["claude", "plugin", "uninstall", pid, "--scope", "user"], capture_output=True, timeout=300)
+            print(f"Uninstalled plugin {pid}")
     s = _load(P["settings"], {})
     new_s, actions = copy.deepcopy(s), []
     if (new_s.get("statusLine") or {}).get("command") == P["wrapper"]:

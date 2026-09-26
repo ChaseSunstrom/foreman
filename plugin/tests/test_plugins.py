@@ -63,6 +63,37 @@ class Find(PluginsCase):
         self.assertIn("Rust language server", out)
 
 
+class Install(PluginsCase):
+    def setUp(self):
+        super().setUp()
+        self.bin, self.calls = os.path.join(self.tmp, "bin"), os.path.join(self.tmp, "calls.log")
+        write(os.path.join(self.bin, "claude"), f'#!/usr/bin/env bash\necho "claude $*" >> {self.calls}\n')
+        os.chmod(os.path.join(self.bin, "claude"), 0o755)
+        self.env = {"CLAUDE_CONFIG_DIR": self.cc, "HOME": self.uhome, "PATH": self.bin + os.pathsep + os.environ["PATH"]}
+
+    def manifest(self):
+        return read_json(os.path.join(self.home, "state", "install-manifest.json"))
+
+    def test_install_records_it_for_uninstall(self):
+        out = self.fm("plugins", "install", "rust-analyzer-lsp@official", env=self.env).stdout
+        self.assertIn("claude plugin install rust-analyzer-lsp@official --scope user", read_text(self.calls))
+        self.assertIn("installed", out)
+        self.assertEqual(self.manifest()["plugins_installed"], ["rust-analyzer-lsp@official"])
+        self.fm("uninstall-user", env=self.env)
+        self.assertIn("claude plugin uninstall rust-analyzer-lsp@official --scope user", read_text(self.calls))
+
+    def test_an_installed_but_disabled_plugin_is_enabled_instead(self):
+        write(os.path.join(self.cc, "settings.json"), {"enabledPlugins": {"db-tools@official": False}})
+        self.fm("plugins", "install", "db-tools@official", env=self.env)
+        self.assertIn("claude plugin enable db-tools@official", read_text(self.calls))
+        self.assertNotIn("plugin install", read_text(self.calls))
+
+    def test_install_shows_conflicts_first_and_refuses_unknown_ids(self):
+        p = self.fm("plugins", "install", "nope@nowhere", env=self.env, check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("fm plugins find", p.stderr)
+
+
 class Check(PluginsCase):
     def kinds(self):
         return {(f["plugin"], f["kind"]) for f in fmplugins.check()}

@@ -789,7 +789,7 @@ def build_parser():
 
     s = add("plugins", lazy("fmplugins", "cmd_plugins"),
             help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")
-    s.add_argument("action", choices=["find", "check"])
+    s.add_argument("action", choices=["find", "check", "install", "enable", "disable"])
     s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled)")
 
     s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")

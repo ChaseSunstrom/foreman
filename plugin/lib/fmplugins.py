@@ -104,6 +104,21 @@ def find(need, n=10):
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
 
 
+def _own_findings(pid, prof):
+    """Conflicts a plugin brings on its own: a Stop hook, process skills that duplicate Foreman."""
+    found = []
+    if "Stop" in prof["hooks"]:
+        found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook: it competes with Foreman's "
+                      "evidence gate and drive for when a turn may end",
+                      "action": f"fm plugins disable {pid} (after fm ask ID plugin)"})
+    for name, _ in prof["skills"] + prof["commands"]:
+        owner = next((b for b, keys in FOREMAN_OWNS.items() if any(k in name.lower() for k in keys)), None)
+        if owner:
+            found.append({"plugin": pid, "kind": "overlaps-foreman", "detail": f"{name} duplicates Foreman's {owner}",
+                          "action": "use Foreman's; disable the plugin if both keep triggering"})
+    return found
+
+
 def check(only=None):
     """Conflicts among enabled plugins and with Foreman: [{plugin, kind, detail, action}]."""
     found, mcp = [], {}
@@ -111,15 +126,7 @@ def check(only=None):
         if not info["enabled"] or pid.startswith("foreman@") or (only and pid != only):
             continue
         prof = profile(info["path"])
-        if "Stop" in prof["hooks"]:
-            found.append({"plugin": pid, "kind": "stop-hook", "detail": "a Stop hook: it competes with Foreman's "
-                          "evidence gate and drive for when a turn may end",
-                          "action": f"claude plugin disable {pid} (after fm ask ID plugin)"})
-        for name, _ in prof["skills"] + prof["commands"]:
-            owner = next((b for b, keys in FOREMAN_OWNS.items() if any(k in name.lower() for k in keys)), None)
-            if owner:
-                found.append({"plugin": pid, "kind": "overlaps-foreman", "detail": f"{name} duplicates Foreman's {owner}",
-                              "action": "use Foreman's; disable the plugin if both keep triggering"})
+        found += _own_findings(pid, prof)
         for server, spec in prof["mcp"].items():
             key = (server, json.dumps(spec, sort_keys=True))
             if server in {k[0] for k in mcp} or key in mcp:
@@ -130,8 +137,42 @@ def check(only=None):
     return found
 
 
+def _manifest_add(pid):
+    path = os.path.join(c.state_dir(), "install-manifest.json")
+    m = _json(path, {}) or {}
+    m["plugins_installed"] = list(dict.fromkeys(list(m.get("plugins_installed") or []) + [pid]))
+    c.write_atomic(path, json.dumps(m, indent=2) + "\n")
+
+
+def install(pid):
+    """Install (or, when installed but disabled, enable) a plugin; a fresh install is recorded for uninstall-user.
+    Returns (what was done, conflicts it brings)."""
+    known, have = {p["id"]: p for p in index()}, installed()
+    if pid not in known and pid not in have:
+        return None, []
+    conflicts = _own_findings(pid, profile((known.get(pid) or {}).get("local") or have.get(pid, {}).get("path")))
+    fresh = pid not in have
+    cmd = ["claude", "plugin", "install", pid, "--scope", "user"] if fresh else ["claude", "plugin", "enable", pid]
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if r.returncode != 0:
+        raise c.PolicyError(f"{' '.join(cmd)} failed: {(r.stderr or r.stdout).strip()[:300]}")
+    if fresh:
+        _manifest_add(pid)
+    return ("installed" if fresh else "enabled"), conflicts
+
+
 def cmd_plugins(args):
     import fmcli
+    if args.action in ("install", "enable", "disable"):
+        pid = args.words[0] if args.words else ""
+        if args.action == "disable":
+            subprocess.run(["claude", "plugin", "disable", pid], check=False, timeout=120)
+            return print(f"{pid} disabled (/reload-plugins to apply)")
+        done, conflicts = install(pid)
+        if not done:
+            raise fmcli.UsageError(f"{pid!r} isn't in the known marketplaces; fm plugins find <what you need> lists them")
+        return print(f"{pid} {done} (/reload-plugins to load it)." + "".join(
+            f"\n  note: {f['detail']} → {f['action']}" for f in conflicts))
     if args.action == "find":
         hits = find(" ".join(args.words))
         fmcli.out(args, hits, "\n".join(
