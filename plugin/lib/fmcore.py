@@ -893,6 +893,72 @@ def brief_summary(b):
             "step": {"n": cur.n, "of": len(steps), "text": cur.text} if cur else None, "path": b.path}
 
 
+# ---------------------------------------------------------------- stages (derived, never stored)
+
+STAGE_REFERENCE = {
+    "FIX": "skills/intake/references/debugging.md, then regression-test.md",
+    "CLEAN": "/foreman:playbooks (clean)", "PERFORMANCE": "/foreman:playbooks (perf: baseline first)",
+    "SECURITY": "/foreman:playbooks (security)", "FEATURE": "skills/intake/references/execute.md (TDD)",
+    "RESEARCH": "skills/intake/references/delegate.md (recon) and fm research add",
+}
+
+
+def plan_gaps(b, autonomy="standard"):
+    """What a brief still needs before work may start (fm focus refuses until this is empty)."""
+    gaps = []
+    if b.tier in ("M", "L"):
+        gaps += [name for name, sec in (("Interpretation", "Interpretation"),
+                                         ("Approach", "Approach (options → choice → why)")) if not b.section(sec).strip()]
+    acs = b.acceptance()
+    if not acs:
+        gaps.append("acceptance criterion")
+    elif b.tier in ("M", "L"):
+        gaps += [f"verify command on criterion {a.n}" for a in acs if "verify with" not in a.text]
+    if not b.steps():
+        gaps.append("step")
+    if (b.tier == "L" or b.meta.get("explore")) and not b.meta.get("approved") and autonomy != "full":
+        gaps.append(f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
+    return gaps
+
+
+def stage(b, autonomy="standard", since=None):
+    if b.status in CLOSED or b.status in ("blocked", "deferred"):
+        return b.status
+    if b.status == "captured":
+        return "captured"
+    if b.status == "planned":
+        return "planning" if plan_gaps(b, autonomy) else "ready"
+    if any(not s.done for s in b.steps()):
+        return "executing"
+    if any(not a.checked for a in b.acceptance()):
+        return "verifying"
+    return "auditing" if b.audit_blockers(since) else "closing"
+
+
+def next_action(b, autonomy="standard", since=None):
+    """The one next required action for a brief, with the procedure to use: the harness decides, not recall."""
+    st, tid = stage(b, autonomy, since), b.id
+    if st == "captured":
+        return f"{tid}: expand it into a planned brief (fm task new \"<title>\" --from {tid} …; /foreman:intake §2)"
+    if st == "planning":
+        return f"{tid}: plan is missing {', '.join(plan_gaps(b, autonomy))} (fm task set/ac/step; /foreman:intake)"
+    if st == "ready":
+        return f"{tid}: fm focus {tid}"
+    if st == "executing":
+        steps = b.steps()
+        cur = next((s for s in steps if s.current), None) or next(s for s in steps if not s.done)
+        return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, verify, then fm task step {tid} done "
+                f"{cur.n} --evidence \"<cmd>\" \"<result>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
+    if st == "verifying":
+        a = next(a for a in b.acceptance() if not a.checked)
+        return f"{tid}: fm task ac {tid} check {a.n} --evidence \"<cmd>\" \"<result>\" ({a.text[:80]})"
+    if st == "auditing":
+        return f"{tid}: {'; '.join(b.audit_blockers(since))} (skills/intake/references/audit.md; fm task audit)"
+    if st == "closing":
+        return f"{tid}: fm task done {tid}, then /foreman:next"
+    return f"{tid} is {st}"
+
+
 def active_brief(briefs):
     return next((b for b in briefs if b.status in ("active", "verifying")), None)
 

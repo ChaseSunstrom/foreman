@@ -293,6 +293,19 @@ class SensitiveAndDrive(ForemanTestCase):
         self.assertTrue(c.read_meta(c.find_project(self.repo))["drive"])
 
 
+class NextAction(ForemanTestCase):
+    def test_next_names_the_one_required_action(self):
+        self.fm("init")
+        self.assertIn("queue is empty", self.fm("next").stdout)
+        self.fm("task", "new", "Fix login", "--type", "FIX", "--tier", "S")
+        self.assertIn("missing acceptance criterion, step", self.fm("next").stdout)
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "pytest")
+        self.fm("task", "step", "T-0001", "add", "reproduce")
+        self.assertIn("fm focus T-0001", self.fm("next").stdout)
+        res = self.fm_json("next")
+        self.assertEqual((res["task"], res["stage"]), ("T-0001", "ready"))
+
+
 class Autonomy(ForemanTestCase):
     def test_autonomy_defaults_to_standard_and_switches(self):
         self.fm("init")

@@ -520,6 +520,23 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def next_for(p):
+    """(brief or None, stage, action): the active task, else the first queued, else the oldest captured item."""
+    briefs = c.load_briefs(p)
+    autonomy = c.read_meta(p).get("autonomy", "standard")
+    b = c.active_brief(briefs) or next(iter(c.order_queue(briefs)[0]), None) or \
+        next((x for x in briefs if x.status == "captured"), None)
+    if not b:
+        return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
+    since = last_change(p, b.id)
+    return b, c.stage(b, autonomy, since), c.next_action(b, autonomy, since)
+
+
+def cmd_next(args):
+    b, st, action = next_for(resolve(args))
+    out(args, {"task": b.id if b else None, "stage": st, "action": action}, f"Next: {action}")
+
+
 def cmd_autonomy(args):
     p = resolve(args)
     if not args.level:
@@ -685,6 +702,8 @@ def build_parser():
 
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
+
+    add("next", cmd_next, help="the one next required action (derived from the briefs)")
 
     s = add("autonomy", cmd_autonomy, help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
     s.add_argument("level", nargs="?", choices=["standard", "full"])

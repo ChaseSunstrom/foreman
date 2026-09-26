@@ -307,6 +307,65 @@ class Briefs(unittest.TestCase):
         self.assertNotIn("step 2/3", sec)
 
 
+class Stages(unittest.TestCase):
+    """The harness derives stage and the one next required action from the brief itself (T-0012)."""
+
+    def brief(self, tier="S", type_="FIX", status="planned"):
+        b = c.Brief.new("T-0001", "Fix login", type_, tier, now="2026-01-01T00:00:00Z", status=status)
+        return b
+
+    def plan(self, b):
+        b.set_section("Interpretation", "Login times out on slow networks.")
+        b.set_section("Approach (options → choice → why)", "Retry with backoff vs longer timeout → retry.")
+        b.add_ac("login works on 3G", verify="pytest -k slow")
+        b.add_step("reproduce")
+        return b
+
+    def test_plan_gaps_by_tier(self):
+        s = self.brief("S")
+        self.assertEqual(sorted(c.plan_gaps(s)), ["acceptance criterion", "step"])
+        s.add_ac("works")
+        s.add_step("do it")
+        self.assertEqual(c.plan_gaps(s), [])
+        m = self.brief("M")
+        m.add_ac("works")
+        m.add_step("do it")
+        self.assertEqual(sorted(c.plan_gaps(m)), ["Approach", "Interpretation", "verify command on criterion 1"])
+        big = self.plan(self.brief("L"))
+        self.assertEqual(c.plan_gaps(big), ["approval (L tier, standard autonomy)"])
+        self.assertEqual(c.plan_gaps(big, autonomy="full"), [])
+        big.meta["approved"] = True
+        self.assertEqual(c.plan_gaps(big), [])
+
+    def test_stage_and_next_action_follow_the_brief(self):
+        b = self.brief("M", status="captured")
+        self.assertEqual(c.stage(b), "captured")
+        self.assertIn("fm task new", c.next_action(b))
+        b.meta["status"] = "planned"
+        self.assertEqual(c.stage(b), "planning")
+        self.assertIn("Interpretation", c.next_action(b))
+        self.plan(b)
+        self.assertEqual(c.stage(b), "ready")
+        self.assertIn("fm focus T-0001", c.next_action(b))
+        b.meta["status"] = "active"
+        self.assertEqual(c.stage(b), "executing")
+        nxt = c.next_action(b)
+        self.assertIn("step 1/1", nxt)
+        self.assertIn("debugging.md", nxt, "FIX names its procedure")
+        b.add_evidence("pytest -k slow", "1 failed as expected", step=1, ts="2026-01-01T10:00:00Z")
+        b.mark_step(1)
+        self.assertEqual(c.stage(b), "verifying")
+        self.assertIn("fm task ac T-0001 check 1", c.next_action(b))
+        b.add_evidence("pytest -k slow", "1 passed", ac=1)
+        b.check_ac(1)
+        self.assertEqual(c.stage(b), "auditing")
+        self.assertIn("audit.md", c.next_action(b))
+        b.add_audit("intent", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        b.add_audit("edge", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
+        self.assertEqual(c.stage(b), "closing")
+        self.assertIn("fm task done T-0001", c.next_action(b))
+
+
 class OpenEnded(unittest.TestCase):
     def test_vague_requests_are_open_ended(self):
         for text in ("Just get it done", "super improve it", "make it better!", "improve everything",
