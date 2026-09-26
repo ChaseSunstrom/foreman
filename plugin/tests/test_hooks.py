@@ -665,6 +665,18 @@ class Stop(HookCase):
         # round-1 adversary audit: naming a step that isn't finished, or a task that isn't closed, still counts
         self.assertEqual(self.decision(self.stop("Step 99 is done.")), "block")
 
+    def test_claims_under_a_finished_steps_header_belong_to_that_step(self):
+        # T-0038: the Foreman reply format groups checks under "▸ Step N/M" headers; a "fixed" under step 2's header
+        # is about step 2 even when the word is far from the header
+        self.fm("init")
+        tid = self.task(steps=("a", "b", "c"))
+        self.fm("drive", "off")
+        for n in ("1", "2"):
+            self.fm("task", "step", tid, "done", n, "--evidence", "pytest", "ok")
+        long = "▸ Step 2/3 — Review (closed)\n✓ " + "the review had two findings, " * 5 + "both fixed test-first\n"
+        self.assertIsNone(self.decision(self.stop(long + "Next: step 3.")))
+        self.assertEqual(self.decision(self.stop(long + "▸ Step 3/3 — Ship\nShipped and fixed.")), "block")
+
     def test_claims_about_unfinished_steps_still_count(self):
         self.fm("init")
         self.task(steps=("a", "b"))

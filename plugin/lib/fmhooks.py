@@ -704,12 +704,13 @@ _ASK = re.compile(r"(\?\s*$)|\b(should i|shall i|do you want|would you like|want
 
 
 # what a claim is about, just before it in the same sentence: "steps 1–3 are done", "T-0012 done"
+_STEP_HEADER = re.compile(r"▸\s*Step\s+(\d+)/\d+")  # the Foreman reply format's per-step header
 _ABOUT = re.compile(r"\b(?:steps?\s+(\d+)(?:\s*(?:[–-]|to|and|,)\s*(\d+))?|(T-\d{4,}))\b[^.;\n]{0,40}$", re.I)
 
 
 def claims_done(msg, step=None, finished=(), closed=()):
     """A completion claim, unless negated or about work that is already over: steps other than `step` that are all
-    in `finished`, or a task in `closed`. Naming a step or task that isn't over still counts as a claim."""
+    in `finished` (named just before it, or heading its section), or a task in `closed`. Naming a step or task that isn't over still counts as a claim."""
     for m in _CLAIM.finditer(msg or ""):
         before = msg[max(0, m.start() - 60):m.start()]
         if _NEG.search(before[-30:]):
@@ -717,6 +718,11 @@ def claims_done(msg, step=None, finished=(), closed=()):
         about = _ABOUT.search(before)
         if about and about.group(3) and about.group(3).upper() in closed:
             continue
+        header = None
+        for header in _STEP_HEADER.finditer(msg, 0, m.start()):
+            pass
+        if header and step is not None and int(header.group(1)) != step and int(header.group(1)) in finished:
+            continue  # under a finished step's "▸ Step N/M" header: about that step, however far below it
         if about and about.group(1) and step is not None:
             span = range(int(about.group(1)), int(about.group(2) or about.group(1)) + 1)
             if step not in span and all(n in finished for n in span):
