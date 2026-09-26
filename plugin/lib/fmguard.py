@@ -50,12 +50,22 @@ def check(tool_name, tool_input, ctx):
     return None
 
 
+def _is_allow(arg):
+    """`--allow`, `--allow=…` and any abbreviation argparse would have accepted (fm now rejects those too)."""
+    flag = arg.partition("=")[0]
+    return len(flag) > 3 and "--allow".startswith(flag)
+
+
+_ASK = "fm ask {id} core --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
+
+
 def message(block, ctx):
     cat, detail = block.category, block.detail
+    tid = ctx.task_id or "<ID>"
     if cat == "self-authorize":
-        return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (guard, hooks, rules, evals, "
-                f"BUILD_PROMPT.md, settings) needs the user's approval, and only you can grant it: if you approve, run "
-                f"`fm task set <ID> --allow core` yourself in a terminal or as `! fm task set <ID> --allow core` in the prompt.")
+        return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (Foreman code, rules, evals, "
+                f"BUILD_PROMPT.md, settings) needs the user's approval, which an agent can't grant: "
+                + _ASK.format(id=tid) + ".")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -64,8 +74,9 @@ def message(block, ctx):
     else:
         how = (f"create or focus a task first (fm task new \"…\" --type T --tier S, or fm focus ID), "
                f"then fm task set <ID> --allow {cat}, then retry")
-    extra = " Protected core: authorize only with the user's explicit approval in this conversation." if cat == "core" else ""
-    return f"Foreman guard: blocked {cat}: {detail}. To authorize: {how}.{extra}"
+    if cat == "core":
+        return f"Foreman guard: blocked core: {detail} is protected core. To authorize: " + _ASK.format(id=tid) + "."
+    return f"Foreman guard: blocked {cat}: {detail}. To authorize: {how}."
 
 
 def project_root_for(cwd, home):
@@ -140,11 +151,12 @@ def _is_credential(path, ctx):
 
 
 def _is_core(path, ctx):
+    """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
-    files = {os.path.join(fh, f) for f in ("plugin/lib/fmguard.py", "plugin/hooks/hooks.json", "plugin/hooks/hook",
-                                            "plugin/rules/foreman.md", "BUILD_PROMPT.md")}
+    files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")}
     files.add(os.path.join(ctx.home, ".claude", "settings.json"))
-    return path in files or _under(path, os.path.join(fh, "plugin", "evals")) or \
+    dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
+    return path in files or any(_under(path, d) for d in dirs) or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
 
 
@@ -330,7 +342,7 @@ def check_bash(cmd, ctx, depth=0):
                 found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
-            if "--allow=core" in fm_args or any(a == "--allow" and b == "core" for a, b in zip(fm_args, fm_args[1:])):
+            if any(_is_allow(a) and (a.partition("=")[2] or b) == "core" for a, b in zip(fm_args, fm_args[1:] + [""])):
                 found.append(("self-authorize", "an agent may not grant the core authorization"))
         found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)

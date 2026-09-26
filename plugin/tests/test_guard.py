@@ -236,8 +236,12 @@ class Core(GuardCase):
             ("{fhome}/BUILD_PROMPT.md", "core"),
             ("{home}/.claude/settings.json", "core"),
             ("{repo}/.claude/settings.local.json", "core"),
-            ("{fhome}/plugin/lib/fmcli.py", None),
+            ("{fhome}/plugin/lib/fmcli.py", "core"),
+            ("{fhome}/plugin/lib/fmnew.py", "core"),
+            ("{fhome}/plugin/bin/fm", "core"),
+            ("{fhome}/plugin/hooks/statusline", "core"),
             ("{fhome}/plugin/skills/intake/SKILL.md", None),
+            ("{fhome}/plugin/tests/test_core.py", None),
         ], self.write)
 
     def test_bash_write_to_core(self):
@@ -288,7 +292,8 @@ class SelfAuthorize(GuardCase):
     def test_agent_cannot_grant_core(self):
         for cmd in ("fm task set T-0002 --allow core", "fm task set T-0002 --allow=core",
                     "python3 /x/plugin/bin/fm task set T-0002 --allow publish --allow core",
-                    "fm focus T-0002 && fm task set T-0002 --allow core"):
+                    "fm focus T-0002 && fm task set T-0002 --allow core",
+                    "fm task set T-0002 --allo core", "fm task set T-0002 --al=core"):
             with self.subTest(cmd=cmd):
                 self.assertBlocked(self.bash(cmd), "self-authorize")
                 self.assertBlocked(self.bash(cmd, allow=["core", "self-authorize"]), "self-authorize")
@@ -299,8 +304,13 @@ class SelfAuthorize(GuardCase):
 
     def test_message_tells_the_user_how(self):
         msg = g.message(self.bash("fm task set T-0002 --allow core"), self.ctx())
-        self.assertIn("only you can grant", msg)
-        self.assertIn("!", msg)
+        self.assertIn("fm ask", msg)
+        self.assertIn("yes", msg)
+        self.assertNotIn("! fm", msg, "the user no longer types a command")
+
+    def test_core_message_points_at_fm_ask(self):
+        msg = g.message(self.write("{fhome}/plugin/lib/fmcli.py"), self.ctx())
+        self.assertIn("fm ask", msg)
 
 
 class Robustness(GuardCase):
