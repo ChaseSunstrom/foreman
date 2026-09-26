@@ -1,0 +1,6 @@
+{
+  "subagentStatusLine": {
+    "type": "command",
+    "command": "\"${CLAUDE_PLUGIN_ROOT:-$HOME/.claude/foreman/plugin}\"/hooks/subagent-statusline"
+  }
+}

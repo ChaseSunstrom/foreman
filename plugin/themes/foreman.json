@@ -1,0 +1,10 @@
+{
+  "name": "Foreman",
+  "base": "dark",
+  "overrides": {
+    "claude": "#e0a33e",
+    "success": "#7fbf6a",
+    "error": "#e0625c",
+    "warning": "#e6c35c"
+  }
+}

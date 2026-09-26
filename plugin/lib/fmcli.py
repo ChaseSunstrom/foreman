@@ -5,6 +5,7 @@ Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock t
 import argparse
 import json
 import os
+import re
 import sys
 
 import fmcore as c
@@ -144,7 +145,11 @@ def cmd_intake(args):
 
 
 def cmd_capture(args):
-    p = resolve(args)
+    if args.self_:
+        home = c.foreman_home()
+        p = c.find_project(home, create=True) or c.init_project(home)
+    else:
+        p = resolve(args)
     type_ = (args.type or "FEATURE").upper()
     type_ = c.WORK_TAGS.get(type_, type_)
     if type_ not in c.TYPES:
@@ -428,6 +433,35 @@ def _git_exclude(root, rel):
         pass
 
 
+def cmd_decide(args):
+    p = resolve(args)
+
+    def cell(v):
+        return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
+    row = f"| {c.now()[:10]} | {cell(args.decision)} | {cell(args.why)} | {cell(args.rejected)} |\n"
+    path = os.path.join(p.dir, "decisions.md")
+    with c.lock(p.dir):
+        cur = open(path, encoding="utf-8").read() if os.path.exists(path) else \
+            "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
+        c.write_atomic(path, cur + row)
+        c.log_event(p, "decision", task=args.task, data={"decision": args.decision, "why": args.why,
+                                                          "rejected": args.rejected}, session=session())
+    out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
+
+
+def cmd_research(args):
+    p = resolve(args)
+    name = args.name[:-3] if args.name.endswith(".md") else args.name
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", name):
+        raise UsageError(f"research name must be a plain file name, got {args.name!r}")
+    text = open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read()
+    path = os.path.join(p.dir, "research", name + ".md")
+    with c.lock(p.dir):
+        c.write_atomic(path, c.redact(text))
+        c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text)}, session=session())
+    out(args, {"path": path}, f"Saved {path}")
+
+
 def cmd_drive(args):
     p = resolve(args)
     c.update_meta(p, drive=args.state == "on")
@@ -476,6 +510,21 @@ def build_parser():
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
     s.add_argument("--urgent", action="store_true")
+    s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
+
+    s = add("decide", cmd_decide, help="record a decision in decisions.md")
+    s.add_argument("decision")
+    s.add_argument("--why", default="")
+    s.add_argument("--rejected", default="")
+    s.add_argument("--task")
+
+    s = add("research", cmd_research, help="save a research/recon summary into the project's research/")
+    rsp = s.add_subparsers(dest="research_cmd", required=True)
+    r = rsp.add_parser("add")
+    r.add_argument("name")
+    r.add_argument("--file")
+    r.add_argument("--task")
+    r.add_argument("--json", action="store_true")
 
     s = add("task", cmd_task, help="task operations")
     tsp = s.add_subparsers(dest="task_cmd", required=True)

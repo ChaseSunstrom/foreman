@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+"""Foreman subagentStatusLine: one row per subagent — active task, what it's doing, tokens vs window, elapsed."""
+import json
+import os
+import sys
+import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+
+
+def active_id(cwd):
+    try:
+        import fmcore as c
+        p = c.find_project(cwd or os.getcwd())
+        if p:
+            with open(os.path.join(p.dir, "badge.txt")) as f:
+                return f.read().split(" ")[0].strip()
+    except Exception:
+        pass
+    return ""
+
+
+def row(t, tid, width):
+    parts = [tid] if tid else []
+    parts.append(f"{t.get('label') or t.get('name') or 'agent'}: {t.get('description') or ''}".strip())
+    tok, size = t.get("tokenCount"), t.get("contextWindowSize")
+    if tok:
+        parts.append(f"{tok / 1000:.1f}k/{size // 1000}k tok ({int(100 * tok / size)}%)" if size else f"{tok / 1000:.1f}k tok")
+    if t.get("startTime"):
+        secs = max(0, int(time.time() - t["startTime"] / 1000))
+        parts.append(f"{secs // 60}m{secs % 60:02d}s")
+    return " · ".join(parts)[:max(20, width)]
+
+
+def main():
+    try:
+        data = json.loads(sys.stdin.read())
+        tasks = data.get("tasks") or []
+    except (ValueError, AttributeError):
+        return 0
+    tid = active_id(data.get("cwd"))
+    for t in tasks:
+        if isinstance(t, dict) and t.get("id"):
+            print(json.dumps({"id": t["id"], "content": row(t, tid, int(data.get("columns") or 120))}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

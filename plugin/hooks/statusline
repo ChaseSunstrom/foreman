@@ -1,0 +1,121 @@
+#!/usr/bin/env python3
+"""Foreman statusLine wrapper: [original statusLine] + [claude-hud] + one Foreman line (display only).
+
+Reads the statusline JSON once, feeds it to the saved original command and to claude-hud (in parallel),
+drops blank lines, appends the Foreman line from the cached state.line, and snapshots the JSON to
+state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a Foreman line.
+"""
+import glob
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+
+
+def find_hud():
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    found = []
+    for path in glob.glob(os.path.join(base, "plugins", "cache", "*", "claude-hud", "*", "dist", "index.js")):
+        ver = path.split(os.sep)[-3]
+        if re.fullmatch(r"\d+(\.\d+)*", ver):
+            found.append((tuple(int(x) for x in ver.split(".")), path))
+    return max(found)[1] if found and shutil.which("node") else None
+
+
+def run_children(raw, manifest):
+    cmds = []
+    orig = (manifest.get("statusLine_original") or {}).get("command")
+    if orig:
+        cmds.append(["bash", "-c", orig])
+    if manifest.get("statusline_hud", True):
+        hud = find_hud()
+        if hud:
+            cmds.append(["node", hud])
+    procs = []
+    for cmd in cmds:
+        try:
+            p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+            try:
+                p.stdin.write(raw)
+                p.stdin.close()
+            except BrokenPipeError:
+                pass
+            procs.append(p)
+        except OSError:
+            continue
+    lines = []
+    for p in procs:
+        try:
+            out, _ = p.communicate(timeout=2)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            out = ""
+        lines += [l for l in (out or "").splitlines() if l.strip()]
+    return lines
+
+
+def user_mode():
+    try:
+        with open(os.path.expanduser("~/.claude/settings.json")) as f:
+            return (json.load(f).get("permissions") or {}).get("defaultMode") or "default"
+    except (OSError, ValueError):
+        return "default"
+
+
+def foreman_line(c, data):
+    cwd = data.get("cwd") or (data.get("workspace") or {}).get("current_dir") or os.getcwd()
+    p = c.find_project(cwd)
+    if not p:
+        return "foreman · no project", None
+    try:
+        with open(os.path.join(p.dir, "state.line")) as f:
+            label = f.read().strip()
+    except OSError:
+        label = c.state_line(c.state_dict(p))
+    mode = "manual (sensitive)" if c.detect_sensitive(p.root) else user_mode()
+    mode = {"bypassPermissions": "bypass"}.get(mode, mode)
+    return f"foreman · {label} · guard on · {mode}", p
+
+
+def snapshot(c, data, p):
+    sid = re.sub(r"[^\w-]", "", str(data.get("session_id") or ""))[:80]
+    if not sid:
+        return
+    cw, cost = data.get("context_window") or {}, data.get("cost") or {}
+    snap = {"ts": c.now(), "session_id": sid, "project": p.slug if p else None, "cwd": data.get("cwd"),
+            "model": (data.get("model") or {}).get("display_name"), "context_pct": cw.get("used_percentage"),
+            "context_size": cw.get("context_window_size"), "cost_usd": cost.get("total_cost_usd"),
+            "lines_added": cost.get("total_lines_added"), "lines_removed": cost.get("total_lines_removed"),
+            "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio")}
+    c.write_atomic(os.path.join(c.state_dir(), "sessions", f"{sid}.json"), json.dumps(snap) + "\n")
+
+
+def main():
+    raw = sys.stdin.read()
+    try:
+        data = json.loads(raw) if raw.strip() else {}
+    except ValueError:
+        data = {}
+    lines, tail = [], "foreman"
+    try:
+        import fmcore as c
+        try:
+            with open(os.path.join(c.state_dir(), "install-manifest.json")) as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            manifest = {}
+        lines = run_children(raw, manifest)
+        tail, p = foreman_line(c, data)
+        snapshot(c, data, p)
+    except Exception:
+        pass
+    print("\n".join(lines + [tail]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

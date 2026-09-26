@@ -232,5 +232,46 @@ class SensitiveAndDrive(ForemanTestCase):
         self.assertTrue(c.read_meta(c.find_project(self.repo))["drive"])
 
 
+class DecisionsResearchSelf(ForemanTestCase):
+    def test_decide_appends_a_table_row_and_logs(self):
+        self.fm("init")
+        self.fm("decide", "Use Python stdlib for fm", "--why", "jq missing; python on PATH", "--rejected", "sh+jq")
+        text = open(os.path.join(c.find_project(self.repo).dir, "decisions.md")).read()
+        self.assertRegex(text, r"\| \d{4}-\d\d-\d\d \| Use Python stdlib for fm \| jq missing; python on PATH \| sh\+jq \|")
+        self.assertIn("decision", [e["event"] for e in c.ledger_tail(c.find_project(self.repo))])
+
+    def test_decide_escapes_pipes(self):
+        self.fm("init")
+        self.fm("decide", "a | b", "--why", "c|d")
+        text = open(os.path.join(c.find_project(self.repo).dir, "decisions.md")).read()
+        self.assertIn("a \\| b", text)
+
+    def test_research_add_from_stdin_and_file(self):
+        self.fm("init")
+        self.fm("research", "add", "auth-recon", input="## Findings\n- src/auth.py:12 retries missing\n")
+        path = os.path.join(c.find_project(self.repo).dir, "research", "auth-recon.md")
+        self.assertIn("retries missing", open(path).read())
+        src = os.path.join(self.tmp, "notes.md")
+        with open(src, "w") as f:
+            f.write("token=abcd1234efgh leaked\n")
+        self.fm("research", "add", "notes", "--file", src)
+        saved = open(os.path.join(c.find_project(self.repo).dir, "research", "notes.md")).read()
+        self.assertNotIn("abcd1234efgh", saved)
+
+    def test_research_name_must_be_safe(self):
+        self.fm("init")
+        self.assertEqual(self.fm("research", "add", "../escape", input="x", check=False).returncode, 1)
+
+    def test_capture_self_targets_the_foreman_repo_project(self):
+        own = os.path.join(self.home)  # FOREMAN_HOME is itself a git repo in this test
+        import subprocess
+        subprocess.run(["git", "init", "-q", own], check=True)
+        out = self.fm("capture", "stop gate too chatty", "--source", "self", "--self").stdout
+        self.assertIn("T-0001", out)
+        p = c.find_project(own)
+        self.assertEqual(c.find_brief(p, "T-0001").meta["source"], "self")
+        self.assertIsNone(c.find_project(self.repo))
+
+
 if __name__ == "__main__":
     unittest.main()
