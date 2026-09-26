@@ -103,6 +103,14 @@ class Install(SetupCase):
         self.assertEqual(self.run_fm("install-user").returncode, 0)
         self.assertIn("statusLine", self.load())
 
+    def test_record_disabled_plugins_is_additive_and_only_touches_the_manifest(self):
+        self.run_fm("install-user")
+        before = self.load()
+        self.assertEqual(self.run_fm("install-user", "--record-disabled", "ecc@ecc", "--record-disabled", "x@y").returncode, 0)
+        self.run_fm("install-user", "--record-disabled", "ecc@ecc")
+        self.assertEqual(read_json(self.manifest_path())["plugins_disabled"], ["ecc@ecc", "x@y"])
+        self.assertEqual(self.load(), before)
+
 
 class Uninstall(SetupCase):
     def test_round_trip_restores_originals(self):

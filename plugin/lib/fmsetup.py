@@ -135,6 +135,12 @@ def plan_install(P):
 
 def cmd_install(args):
     P = paths()
+    if getattr(args, "record_disabled", None):
+        m = _load(P["manifest"], {})
+        m["plugins_disabled"] = list(dict.fromkeys(m.get("plugins_disabled", []) + args.record_disabled))
+        c.write_atomic(P["manifest"], json.dumps(m, indent=2, sort_keys=True) + "\n")
+        print("Recorded disabled plugins: " + ", ".join(m["plugins_disabled"]))
+        return
     try:
         s, new_s, m, new_m, md, new_md, link, actions = plan_install(P)
     except SetupError as e:

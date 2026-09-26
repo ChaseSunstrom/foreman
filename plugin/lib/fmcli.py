@@ -617,6 +617,8 @@ def build_parser():
 
     s = add("install-user", lazy("fmsetup", "cmd_install"), help="wire Foreman into ~/.claude (used by install.sh)")
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--record-disabled", action="append", metavar="PLUGIN_ID",
+                   help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
     s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
     return ap
