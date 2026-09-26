@@ -28,6 +28,7 @@ if __name__ == "__main__":
     main()
 PY
 mkdir -p tests
+touch tests/__init__.py  # plain `python -m unittest` discovers the tests
 cat > tests/test_calc.py <<'PY'
 import unittest
 
