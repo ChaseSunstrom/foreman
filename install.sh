@@ -60,7 +60,8 @@ chmod +x "$FOREMAN_HOME"/*.sh
 # 2. Curated plugins
 if [ "$PLUGINS" = 1 ]; then
   say "Setting up plugins"
-  "$FOREMAN_HOME/setup-plugins.sh" --build-tools ${PASS[@]+"${PASS[@]}"}
+  [ "$BUILD" = 1 ] && PASS+=(--build-tools)   # plugin-dev: only needed while building Foreman itself
+  "$FOREMAN_HOME/setup-plugins.sh" ${PASS[@]+"${PASS[@]}"}
 fi
 
 # 3. The Foreman plugin itself, from this repo as a local marketplace (loads in place: edits apply on /reload-plugins)
@@ -106,7 +107,7 @@ if [ "$WIRING" = 1 ]; then
 fi
 
 say "Foreman is installed at $FOREMAN_HOME"
-if [ "$BUILD" = 1 ] && [ -r /dev/tty ]; then
+if [ "$BUILD" = 1 ] && (: </dev/tty) 2>/dev/null; then   # a terminal we can actually open (not just a device node)
   say "Starting the build (it pauses once for plan approval unless BUILD_GATE is off)"
   cd "$FOREMAN_HOME"
   exec claude "Run the Foreman build: read $FOREMAN_HOME/BUILD_PROMPT.md in full and execute it. If $FOREMAN_HOME/local/PLAN.md exists, resume from it instead of starting over." </dev/tty

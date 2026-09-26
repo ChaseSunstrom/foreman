@@ -6,6 +6,7 @@ First full build from `BUILD_PROMPT.md` (branch `foreman/build`).
 - Hooks: one dispatcher for 13 events; fail-closed guard (8 categories + self-authorize), Stop evidence gate + drive, factual SessionStart/UserPromptSubmit injection, async timeline, reply badge, terminal notifications.
 - Skills, rules (51 lines), read-only agents; ECC and superpowers procedures ported with MIT attribution.
 - Visibility: statusline wrapper (original + claude-hud + Foreman line), subagent rows, `fm watch`, theme, OTel/Grafana snippet.
+- `install.sh`: installs plugin-dev only with `--build`; `--build` starts Claude Code only when a terminal can actually be opened.
 - Verification: 170+ unit/behaviour tests, hook bench (p95 ≤ 38 ms), live `claude -p` scenarios, install round trip, `claude plugin eval` suite.
 
 ## 0.1.0

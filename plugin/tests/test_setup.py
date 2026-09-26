@@ -149,5 +149,46 @@ class Uninstall(SetupCase):
         self.assertEqual(self.load(), ORIGINAL)
 
 
+class InstallScript(unittest.TestCase):
+    """install.sh with stub claude and setup-plugins.sh: plugin-dev (--build-tools) only when building."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = os.path.realpath(self._tmp.name)
+        self.fhome = os.path.join(tmp, "foreman")
+        os.makedirs(self.fhome)
+        subprocess.run(["git", "init", "-q", "-b", "scratch", self.fhome], check=True)
+        subprocess.run(["git", "-C", self.fhome, "-c", "user.email=t@example.com", "-c", "user.name=t",
+                        "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(FM)))
+        with open(os.path.join(repo, "install.sh")) as src, open(os.path.join(self.fhome, "install.sh"), "w") as dst:
+            dst.write(src.read())
+        self.args_file = os.path.join(tmp, "setup-args")
+        stubs = {os.path.join(self.fhome, "setup-plugins.sh"): f'echo "$@" > {self.args_file}\n',
+                 os.path.join(tmp, "bin", "claude"): "exit 0\n"}
+        for path, body in stubs.items():
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        self.env = dict(os.environ, HOME=tmp, FOREMAN_HOME=self.fhome,
+                        PATH=os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"])
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def setup_args(self, *flags):
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-bypass", "--no-wiring", *flags],
+                           capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return read_text(self.args_file).split()
+
+    def test_plain_install_skips_build_tools(self):
+        self.assertEqual(self.setup_args("--security"), ["--security"])
+
+    def test_build_install_adds_build_tools(self):
+        self.assertIn("--build-tools", self.setup_args("--build"))
+
+
 if __name__ == "__main__":
     unittest.main()
