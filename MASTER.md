@@ -108,7 +108,7 @@ flowchart TD
     C -->|Bash / Write / Edit| PTU[PreToolUse hook<br/>guard: deny + how to authorize<br/>scope note]
     PTU -->|allowed| T[Tool runs]
     T --> POST[PostToolUse async<br/>touched files → ledger<br/>timeline → events.jsonl]
-    C -->|turn ends| STOP[Stop hook<br/>evidence gate: block once per step<br/>drive: continue while work remains]
+    C -->|turn ends| STOP[Stop hook<br/>evidence gate: block once per step<br/>drive: continue while work remains,<br/>wait while background agents/commands run]
     STOP -->|block reason| C
     TC[TaskCompleted hook] -->|refuse step without evidence| C
     PC[PreCompact hook] -->|fm checkpoint --auto| ST

@@ -237,6 +237,8 @@ def user_prompt_submit(pl):
         return None
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
+        for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
+            _event({"kind": "bg_done", "session_id": sid, "id": tid})  # drive stops waiting on it
         return None
     r = c.parse_intake(text)
     try:
@@ -573,6 +575,10 @@ def post_tool_use(pl, ok=True):
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
+    if ok and tool == "Bash" and ti.get("run_in_background"):
+        m = re.search(r"\bID:?\s*([\w-]+)|backgroundTaskId\W+([\w-]+)", json.dumps(pl.get("tool_response")))
+        if m:
+            _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1) or m.group(2)})
     if ok and p and tool == "Bash":
         _grant_prompted(pl, p)
     if ok and p and tool in FILE_TOOLS:
@@ -711,6 +717,24 @@ def _context_pct(sid):
         return None
 
 
+BG_WAIT_S = 6 * 3600  # background work older than this is assumed lost (a missed completion never blocks drive)
+
+
+def _running(sid):
+    """Background agents and commands of this session still running: their completion notification wakes the
+    session, so drive waits instead of pushing busywork."""
+    state = {}
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 1500):
+        if e.get("session_id") != sid or (c.age_days(e.get("ts")) or 0) * 86400 > BG_WAIT_S:
+            continue
+        kind, key = e.get("kind"), e.get("agent_id") or e.get("id")
+        if kind in ("subagent_start", "bg_start"):
+            state[key] = True
+        elif kind in ("subagent_stop", "bg_done"):
+            state[key] = False
+    return [k for k, on in state.items() if on]
+
+
 def _drive(p, sd, briefs, pl, g):
     sid = pl.get("session_id")
     full = sd.get("autonomy") == "full"
@@ -730,6 +754,8 @@ def _drive(p, sd, briefs, pl, g):
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
+    if _running(sid):
+        return None  # background work is out; its completion notification wakes the session
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:

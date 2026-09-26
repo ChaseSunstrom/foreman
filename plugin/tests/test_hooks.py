@@ -600,6 +600,26 @@ class Stop(HookCase):
         p = self.stop("All steps are verified. Next: T-0002.")
         self.assertNotIn("AskUserQuestion", (parse(p) or {}).get("reason", ""))
 
+    def test_drive_waits_while_a_background_agent_runs(self):
+        # T-0019: its completion notification wakes the session; pushing meanwhile only makes busywork
+        self.fm("init")
+        self.task()
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        self.assertIsNone(self.decision(self.stop("Waiting for the audit.")))
+        self.hook("SubagentStop", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        self.assertEqual(self.decision(self.stop("Audit is in.")), "block")
+
+    def test_drive_waits_while_a_background_command_runs(self):
+        self.fm("init")
+        self.task()
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sleep 60", "run_in_background": True},
+                                  "tool_response": "Command running in background with ID: bx7k2. Output is being "
+                                                   "written to: /tmp/x.output"})
+        self.assertIsNone(self.decision(self.stop("Waiting for the eval.")))
+        self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>bx7k2</task-id>\n"
+                                                 "<status>completed</status>\n</task-notification>"})
+        self.assertEqual(self.decision(self.stop("The eval finished.")), "block")
+
     def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
         # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.
         self.fm("init")

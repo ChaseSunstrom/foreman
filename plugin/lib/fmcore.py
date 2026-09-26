@@ -401,9 +401,15 @@ def log_event(p, event, task=None, data=None, session=None):
 
 
 def ledger_tail(p, n=200):
-    """The last n events; reads backwards in growing chunks, so n is honoured however long the lines are."""
+    """The last n ledger events."""
+    return tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), n)
+
+
+def tail_jsonl(path, n=200):
+    """The last n records of a JSONL file; reads backwards in growing chunks, so n is honoured however long the
+    lines are."""
     try:
-        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+        with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
             size, chunk = f.tell(), 64 * 1024
             while True:
