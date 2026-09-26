@@ -260,3 +260,44 @@ class InstallScript(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SetupPluginsInSession(unittest.TestCase):
+    """T-0039: inside a Claude Code session the guard can't see the installs in the script's body, so a real run
+    refuses there and points at the pinned path (fm ask ID plugin --pin, then fm plugins install)."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        tmp = os.path.realpath(self._tmp.name)
+        self.calls = os.path.join(tmp, "calls")
+        os.makedirs(os.path.join(tmp, "bin"))
+        with open(os.path.join(tmp, "bin", "claude"), "w") as f:
+            f.write(f'#!/usr/bin/env bash\necho "claude $*" >> {self.calls}\n'
+                    f'if [ "$2" = list ]; then echo "[]"; fi\nexit 0\n')
+        os.chmod(os.path.join(tmp, "bin", "claude"), 0o755)
+        self.script = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(FM))), "setup-plugins.sh")
+        self.env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
+        self.env.update(HOME=tmp, PATH=os.path.join(tmp, "bin") + os.pathsep + os.environ["PATH"])
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def run_script(self, *args, **env):
+        return subprocess.run(["bash", self.script, *args], capture_output=True, text=True, timeout=120,
+                              env=dict(self.env, **env), stdin=subprocess.DEVNULL)
+
+    def installs(self):
+        return [l for l in (read_text(self.calls) if os.path.exists(self.calls) else "").splitlines()
+                if " install " in l or " enable " in l]
+
+    def test_a_real_run_inside_a_session_refuses_and_changes_nothing(self):
+        p = self.run_script(CLAUDECODE="1")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("fm plugins install", p.stderr)
+        self.assertEqual(self.installs(), [])
+        self.assertEqual(self.run_script("--dry-run", CLAUDECODE="1").returncode, 0)
+
+    def test_outside_a_session_it_runs_as_before(self):
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(self.installs(), "the curated plugins are installed")

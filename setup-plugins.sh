@@ -26,6 +26,13 @@ for arg in "$@"; do
 done
 
 command -v claude >/dev/null 2>&1 || { echo "setup-plugins: 'claude' not found on PATH" >&2; exit 1; }
+# Inside a Claude Code session (its shells set CLAUDECODE=1) Foreman's guard can't see the installs below, so they'd
+# skip the user's yes: there, install one plugin at a time with `fm ask ID plugin --pin <id>`, then `fm plugins install`.
+if [ "${CLAUDECODE:-}" = 1 ] && [ "$DRY" != 1 ]; then
+  echo "setup-plugins: not inside a Claude Code session (the installs would skip the user's yes). Run it from your own" \
+       "terminal, or install one plugin: fm ask <task> plugin --pin <id>, then fm plugins install <id>." >&2
+  exit 3
+fi
 
 OFFICIAL=claude-plugins-official
 run() { if [ "$DRY" = 1 ]; then echo "    (dry-run) $*"; else "$@"; fi; }
