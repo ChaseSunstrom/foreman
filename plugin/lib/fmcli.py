@@ -501,7 +501,9 @@ def _prompted(p, tid, cats):
             seen = json.load(f)
     except (OSError, ValueError):
         return False
-    return any(isinstance(a, dict) and a.get("task") == tid and a.get("allow") == sorted(set(cats)) for a in seen)
+    import time
+    return any(isinstance(a, dict) and a.get("task") == tid and a.get("allow") == sorted(set(cats))
+               and time.time() - a.get("at", 0) < 24 * 3600 for a in seen)
 
 
 def cmd_ask(args):

@@ -110,7 +110,7 @@ def progress(c, p):
             line = f.read().strip()
     except OSError:
         line = c.progress_line(c.state_dict(p))
-    width = int(os.environ.get("COLUMNS") or 120)
+    width = max(20, int(os.environ.get("COLUMNS") or 120))
     return [line if len(line) <= width else line[:width - 1] + "…"] if line else []
 
 
@@ -133,7 +133,7 @@ def main():
         data = json.loads(raw) if raw.strip() else {}
     except ValueError:
         data = {}
-    lines, tail, extra = [], "foreman", []
+    lines, tail, extra, procs = [], "foreman", [], None
     try:
         # the wrapped lines (node for claude-hud) start before Foreman's own import, which costs ~20 ms
         procs = start_children(raw, quick_manifest())
@@ -141,11 +141,12 @@ def main():
         if procs is None:  # state lives in a fallback dir: ask fmcore where
             procs = start_children(raw, load_manifest(c.state_dir()) or {})
         tail, p = foreman_line(c, data)
-        lines = collect(procs)
+        lines, procs = collect(procs), None
         extra = progress(c, p)
         snapshot(c, data, p)
     except Exception:
-        pass
+        if procs:  # never leave the wrapped lines' processes behind
+            lines = collect(procs)
     print("\n".join(lines + [tail] + extra))
     return 0
 

@@ -406,16 +406,30 @@ def _record_asks(pl, p, fmguard):
 
 
 def _ask_target(args):
-    """(task, sorted categories, why) from `fm ask` arguments."""
-    cats, why = [], ""
-    for i, a in enumerate(args[2:], 2):
+    """(task, sorted categories, why, unknown options) from `fm ask` arguments."""
+    cats, why, bad, i = [], "", [], 2
+    while i < len(args):
+        a = args[i]
+        if a in ("--why", "-p", "--project"):
+            why = args[i + 1] if a == "--why" and i + 1 < len(args) else why
+            i += 2
+            continue
         if a.startswith("--why="):
             why = a[6:]
-        elif a == "--why" and i + 1 < len(args):
-            why = args[i + 1]
-        elif not a.startswith("-") and (i == 2 or not args[i - 1].startswith("-")) and not why:
+        elif a.startswith("-") and a != "--json" and not a.startswith("--project="):
+            bad.append(a)
+        elif not a.startswith("-"):
             cats.append(a)
-    return (args[1] if len(args) > 1 else ""), sorted(set(cats)), why
+        i += 1
+    return (args[1] if len(args) > 1 else ""), sorted(set(cats)), why, bad
+
+
+_HIDDEN = re.compile("[\x00-\x1f\x7f-\x9f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]")
+
+
+def _plain(s):
+    """Text safe to show in a dialog: no control, escape or bidi-override characters that could disguise it."""
+    return _HIDDEN.sub("", s or "")
 
 
 def _ask_prompt(pl, p, fmguard):
@@ -428,10 +442,17 @@ def _ask_prompt(pl, p, fmguard):
     if not args:
         return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
                         "permission prompt approves exactly that request")
-    task, cats, why = _ask_target(args)
+    task, cats, why, bad = _ask_target(args)
+    unknown = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
+    if bad or unknown or not cats:
+        return ("deny", f"Foreman: fm ask takes an id, categories ({', '.join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE)}) "
+                        f"and --why; not {', '.join(bad + unknown) or 'this'}")
+    if os.environ.get("FOREMAN_DRIVE_TASK"):  # fm run's claude -p: no one can answer a dialog here
+        return ("deny", f"Foreman: nobody can answer a permission prompt in this headless session. Record it with "
+                        f"fm task block {task} \"needs {', '.join(cats)} from the user\" and stop.")
     b = c.find_brief(p, task)
     return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
-                   + (f" ({b.title[:70]})" if b else "") + (f": {why[:200]}" if why else "")
+                   + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {_plain(why)[:200]}" if why else "")
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 
@@ -446,7 +467,7 @@ def permission_request(pl):
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
         return None
-    task, cats, _ = _ask_target(args)
+    task, cats, _, _ = _ask_target(args)
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < APPROVAL_TTL]
         seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
@@ -462,7 +483,7 @@ def _grant_prompted(pl, p):
     sid, tuid = pl.get("session_id"), pl.get("tool_use_id")
     if not args or not sid:
         return
-    task, cats, _ = _ask_target(args)
+    task, cats, _, _ = _ask_target(args)
     ok = [x for x in cats if x in fmguard.CATEGORIES and x not in fmguard.NOT_AUTHORIZABLE]
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(_prompts_path(p))
@@ -481,7 +502,8 @@ def _grant_prompted(pl, p):
         meta["pending_approvals"] = [a for a in meta.get("pending_approvals") or []
                                      if not (isinstance(a, dict) and a.get("task") == task)]
         c.write_meta(p, meta)
-        c.log_event(p, "approval_granted", task=task, data={"allow": cats, "via": "prompt"}, session=sid)
+        c.log_event(p, "approval_granted", task=task, session=sid,
+                    data={"allow": cats, "via": "prompt", "bound": bool(tuid and hit.get("tool_use_id"))})
         c.regen_views(p)
 
 
@@ -643,7 +665,7 @@ def stop(pl):
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
-        reason = _evidence_gate(p, act, pl, g) or _drive(p, sd, briefs, pl, g)
+        reason = _evidence_gate(p, act, pl, g) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         _write_gate(p, g)
@@ -653,6 +675,16 @@ def stop(pl):
     if reason:
         out.update(decision="block", reason=reason)
     return out
+
+
+def _question_nudge(pl):
+    """A question for the user left in the reply text gets lost when they type something else; the user asked for
+    such blockers as Claude Code prompts. Sent back once per stop chain."""
+    if pl.get("stop_hook_active") or not needs_user(pl.get("last_assistant_message")):
+        return None
+    return ("Foreman: the reply asks the user something in text. If it's yours to decide, decide it and record it "
+            "(fm decide); otherwise ask it with the AskUserQuestion tool (one prompt, your default first), or "
+            "fm ask for a guard category, so the answer can't be lost in chat.")
 
 
 def _evidence_gate(p, act, pl, g):

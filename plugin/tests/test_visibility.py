@@ -115,6 +115,11 @@ class Progress(VisibilityCase):
             self.assertIn(needle, line)
         self.assertLessEqual(len(line), 120)
 
+    def test_a_zero_width_terminal_still_gets_a_short_line(self):
+        self.fm_ask("T-0001", "publish")
+        line = self.statusline(env={"COLUMNS": "0"}).stdout.rstrip("\n").split("\n")[-1]
+        self.assertLessEqual(len(line), 40)
+
     def test_idle_without_asks_has_no_progress_line(self):
         self.fm("task", "drop", "T-0001", "not needed")
         self.assertEqual(c.progress_line(self.sd()), "")

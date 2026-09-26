@@ -344,6 +344,29 @@ class PromptApprovals(HookCase):
         self.assertIn(f"grant core for {self.tid}", out["permissionDecisionReason"])
         self.assertIn("fix the guard", out["permissionDecisionReason"])
 
+    def test_the_dialog_text_cannot_be_disguised(self):
+        # control characters (ESC sequences, bidi overrides) could make the dialog say something else
+        cmd = f"fm ask {self.tid} core --why 'routine\x1b[2J\x1b[Hlint check\u202e'"
+        reason = parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]["permissionDecisionReason"]
+        self.assertNotIn("\x1b", reason)
+        self.assertNotIn("\u202e", reason)
+        self.assertIn("grant core", reason)
+
+    def test_unknown_options_or_categories_are_refused(self):
+        for cmd in (f"fm ask {self.tid} core --wh 'x'", f"fm ask {self.tid} rootkit --why 'x'"):
+            with self.subTest(cmd=cmd):
+                out = parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]
+                self.assertEqual(out["permissionDecision"], "deny")
+
+    def test_no_prompt_where_nobody_can_answer_it(self):
+        # fm run's claude -p sessions: the task waits on the user instead
+        p = self.hook("PreToolUse", {"tool_name": "Bash", "tool_use_id": "t9",
+                                     "tool_input": {"command": self.CMD.format(tid=self.tid)}},
+                      env={"FOREMAN_DRIVE_TASK": self.tid})
+        out = parse(p)["hookSpecificOutput"]
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("fm task block", out["permissionDecisionReason"])
+
     def test_chained_fm_ask_is_refused(self):
         cmd = self.CMD.format(tid=self.tid) + " && echo done"
         self.assertEqual(parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]["permissionDecision"], "deny")
@@ -521,7 +544,8 @@ class Stop(HookCase):
     def test_drive_allows_stop_when_asking_the_user(self):
         self.fm("init")
         self.task()
-        self.assertIsNone(self.decision(self.stop("Should I use the existing logger or add a new one?")))
+        # after the one nudge toward a prompt (stop_hook_active), drive lets the turn end for the user's answer
+        self.assertIsNone(self.decision(self.stop("Should I use the existing logger or add a new one?", active=True)))
 
     def test_drive_holds_when_the_user_asked_for_planning_only(self):
         self.fm("init")
@@ -536,7 +560,18 @@ class Stop(HookCase):
         self.task()
         msg = ("Plan ready.\n\nQuestions:\n1. Should aliases stay?\n2. What should div(0) do?\n\n"
                + "Details of the plan follow. " * 30)
-        self.assertIsNone(self.decision(self.stop(msg)))
+        self.assertIsNone(self.decision(self.stop(msg, active=True)))
+
+    def test_a_question_asked_in_text_is_sent_back_once_to_become_a_prompt(self):
+        # the user asked for blockers as Claude Code prompts, which their other messages can't break
+        self.fm("init")
+        self.task()
+        p = self.stop("Which parser should I keep, the old or the new one?")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("AskUserQuestion", parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop("Which parser should I keep?", active=True)), "only once")
+        p = self.stop("All steps are verified. Next: T-0002.")
+        self.assertNotIn("AskUserQuestion", (parse(p) or {}).get("reason", ""))
 
     def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
         # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.
