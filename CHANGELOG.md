@@ -6,6 +6,7 @@ Claude works autonomously and checks its own work.
 - Audits gate `fm task done`: S self-check, M `intent` + one more lens, L all five (`intent`, `adversary`, `edge`, `operator`, `maintainer`), each with its own prompt and context slice (`skills/intake/references/audit.md`), recorded after the last edit (`fm task audit`). FINAL VERIFY adds a session-wide operator + adversary audit.
 - Full autonomy (`fm autonomy full`, or `FULL AUTO`): no questions mid-run; decisions recorded with `fm decide`; what only you can grant is collected for one summary at the end.
 - `/foreman:brainstorm` for open-ended requests (detected by the prompt hook): context pack, `fm ideas` runs one tool-less `claude -p` per lens in parallel (a subagent can't be tool-less), then grounding, scoring and a queued slate.
+- Harness-enforced procedure: stages derived from briefs, `fm next`, the next action injected every turn, `fm focus` plan gate, no edits without an active task, one-command S tasks (`fm task new … --ac … --step … --focus`).
 - Status, doctor, tidy and improve can be started by Claude; plain words map to Foreman actions.
 - Protected core widened to all Foreman code (`plugin/lib`, `bin`, `hooks`); interpreter-code writes to protected paths are caught.
 - Approval hardening from the audits: `fm ask` is bound to the session the PreToolUse hook saw running it (not the agent's environment), requests without a trusted session are refused, a negation right after the yes cancels it ("ok, don't…"), and a task's tier can't be lowered once it has evidence.

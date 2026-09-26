@@ -36,7 +36,9 @@ Plain words work too: Claude runs every command itself ("is foreman ok?" → doc
 
 Slash commands (Claude can start all but capture itself): `/foreman:intake` · `/foreman:brainstorm` · `/foreman:next` · `/foreman:resume` · `/foreman:status` · `/foreman:capture <text>` · `/foreman:tidy` · `/foreman:doctor` · `/foreman:reflect` · `/foreman:improve` · `/foreman:playbooks` · `/foreman:build`.
 
-CLI (on the Bash tool PATH): `fm state|queue|resume|watch|intake|capture|task new|show|set|step|ac|evidence|audit|log|done|block|drop|defer|focus|checkpoint|log|ask|decide|research add|sensitive on|off|drive on|off|autonomy [standard|full]|ideas|tidy|doctor|install-user|uninstall-user` — see `fm --help`.
+CLI (on the Bash tool PATH): `fm state|queue|next|resume|watch|intake|capture|task new|show|set|step|ac|evidence|audit|log|done|block|drop|defer|focus|checkpoint|log|ask|decide|research add|sensitive on|off|drive on|off|autonomy [standard|full]|ideas|tidy|doctor|install-user|uninstall-user` — see `fm --help`.
+
+The procedure is enforced by the harness, not recalled: each task's stage (captured → planning → ready → executing → verifying → auditing → closing) is derived from its brief; `fm next` and every prompt, session start and Stop note name the one next required action and its procedure; `fm focus` refuses a brief that isn't planned for its tier; file edits inside a Foreman project are refused while no task is active (`fm task new … --ac … --step … --focus` starts a small one in one command).
 
 ## 3. File map
 

@@ -9,7 +9,7 @@ Run this for every new request, tagged or plain. A typo gets a three-line brief,
 
 ## 1. Capture
 - Tagged block → `fm intake <<'EOF'` … `EOF` (stdin). It creates one **captured** brief per item, attaches the block's CONTEXT/CONSTRAINT/DONE-WHEN/SKIP lines, and prints the canonical order. Language details: `references/language.md`.
-- Plain request → classify it (type + tier) and state that in one line, then `fm capture "<verbatim request>" --type T --tier X`.
+- Plain request → classify it (type + tier) and state that in one line, then `fm capture "<verbatim request>" --type T --tier X`. A small, obvious S task can be briefed and started in one command: `fm task new "<title>" --type T --tier S --ac "<done when>" --step "<step>" --focus`.
 - While another task is active, a new request is only captured (focus lock in the rules): reply with its id and continue the active task.
 
 ## 2. Expand, ground, anticipate, compile (per item, in canonical order)
@@ -34,4 +34,4 @@ Check the level with `fm autonomy`.
 Confirm the build and tests run; record baseline metrics for PERF items; note git state. `fm log baseline '{"tests":"<result>","commit":"<sha>"}'`. A FIX that breaks the baseline is hoisted first.
 
 ## 6. Execute
-`fm focus ID`, then follow `references/execute.md` — one step at a time, fresh evidence per step, checkpoints, commits, the 3-attempt loop cap and end-of-task triage. Stage procedures: `/foreman:playbooks`. FIX work: `references/debugging.md` then `references/regression-test.md`. Before any completion claim: `references/verification.md`; before `fm task done`: the audits in `references/audit.md`.
+`fm focus ID` (it refuses a brief that isn't planned for its tier and lists what's missing; `fm next` always names the one next required action and its procedure), then follow `references/execute.md` — one step at a time, fresh evidence per step, checkpoints, commits, the 3-attempt loop cap and end-of-task triage. Stage procedures: `/foreman:playbooks`. FIX work: `references/debugging.md` then `references/regression-test.md`. Before any completion claim: `references/verification.md`; before `fm task done`: the audits in `references/audit.md`.
