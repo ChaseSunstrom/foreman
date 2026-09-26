@@ -104,6 +104,21 @@ class Agents(unittest.TestCase):
                 self.assertIn("400 words", body)
 
 
+class OutputStyle(unittest.TestCase):
+    def test_foreman_style_is_well_formed_and_keeps_the_coding_instructions(self):
+        import fmsetup
+        path = os.path.join(PLUGIN, "output-styles", "foreman.md")
+        with open(path) as f:
+            text = f.read()
+        head, body = text.split("---\n")[1], text.split("---\n", 2)[2]
+        self.assertIn("name: Foreman", head)
+        self.assertIn("keep-coding-instructions: true", head)
+        self.assertEqual(fmsetup.OUTPUT_STYLE, "foreman:Foreman")  # plugin styles are selected as <plugin>:<name>
+        for needle in ("▸ Step", "✓", "Changed:", "Next:", "Needs you"):
+            self.assertIn(needle, body)
+        self.assertLess(len(body.split()), 260, "it's in every prompt: keep it short")
+
+
 class PluginFiles(unittest.TestCase):
     def test_settings_only_supported_keys(self):
         settings = read_json(os.path.join(PLUGIN, "settings.json"))

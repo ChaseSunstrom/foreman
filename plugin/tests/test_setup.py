@@ -73,6 +73,18 @@ class Install(SetupCase):
         self.assertTrue(m["statusline_hud"])
         self.assertTrue(any(b.startswith("settings.json.") for b in os.listdir(os.path.join(self.fhome, "backups"))))
 
+    def test_selects_the_foreman_output_style_only_when_none_is_set(self):
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["outputStyle"], fmsetup.OUTPUT_STYLE)
+        self.run_fm("uninstall-user")
+        self.assertNotIn("outputStyle", self.load())
+        with open(self.settings, "w") as f:
+            json.dump(dict(ORIGINAL, outputStyle="Concise"), f)
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["outputStyle"], "Concise", "the user's own style stays")
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load()["outputStyle"], "Concise")
+
     def test_second_install_is_a_noop(self):
         self.run_fm("install-user")
         s1, md1, m1 = self.load(), read_text(self.claude_md), read_text(self.manifest_path())

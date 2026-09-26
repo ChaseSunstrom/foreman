@@ -23,6 +23,7 @@ DENY_RULES = [
 STOP_CAP = "60"  # drive mode: allow long queues past Claude Code's default 8 consecutive Stop-hook continuations
 COMPACT_PCT = "70"  # compact earlier than the default: PreCompact checkpoints and SessionStart re-injects the task
 ENV = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": STOP_CAP, "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": COMPACT_PCT}
+OUTPUT_STYLE = "foreman:Foreman"  # plugin/output-styles/foreman.md; plugin styles are selected as <plugin>:<name>
 WHY = {"CLAUDE_CODE_STOP_HOOK_BLOCK_CAP": "drive mode: long queues aren't cut at 8 continuations",
        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "compact before long contexts degrade; Foreman state survives compaction"}
 BEGIN, END = "<!-- foreman:begin -->", "<!-- foreman:end -->"
@@ -116,6 +117,10 @@ def plan_install(P):
             actions.append(f"env.{k}={v} ({WHY[k]})")
     if not env and not env_existed:
         new_s.pop("env")
+    if "outputStyle" not in new_s:  # the user's own style always wins
+        new_s["outputStyle"] = OUTPUT_STYLE
+        new_m["outputStyle_set"] = True
+        actions.append(f"outputStyle = {OUTPUT_STYLE} (Foreman reply format; /output-style switches it)")
 
     md = _read(P["claude_md"])
     new_md = md
@@ -216,6 +221,9 @@ def cmd_uninstall(args):
                 env.pop(k)
         if not env and m.get("env_created"):
             new_s.pop("env")
+    if m.get("outputStyle_set") and new_s.get("outputStyle") == OUTPUT_STYLE:
+        new_s.pop("outputStyle")
+        actions.append("outputStyle removed")
     for k in ("enabledPlugins", "extraKnownMarketplaces"):  # emptied by `claude plugin uninstall`/`marketplace remove`
         if new_s.get(k) == {}:
             new_s.pop(k)
