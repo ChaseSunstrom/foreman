@@ -1,6 +1,6 @@
 {
   "name": "foreman",
-  "owner": { "name": "YOUR_GITHUB_USER" },
+  "owner": { "name": "ChaseSunstrom" },
   "metadata": {
     "description": "Foreman: a self-orchestration layer for Claude Code (intake, planning, focus, memory hygiene).",
     "version": "0.1.0"

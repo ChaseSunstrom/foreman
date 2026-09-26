@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Foreman bootstrap. Public repo:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USER/foreman/main/install.sh | bash -s -- --build
+#   curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --build
 # Private repo (uses your gh login):
-#   gh repo clone YOUR_GITHUB_USER/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
+#   gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
 #
 # Options:
 #   --build          start Claude Code and begin (or resume) the Foreman build when setup finishes
@@ -14,7 +14,7 @@
 #   FOREMAN_HOME     where to put it (default ~/.claude/foreman; BUILD_PROMPT.md assumes this path)
 set -euo pipefail
 
-FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/YOUR_GITHUB_USER/foreman.git}"
+FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/foreman.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 
 BUILD=0 PLUGINS=1 BYPASS=1 PASS=()

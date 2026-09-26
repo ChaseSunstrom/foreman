@@ -9,13 +9,13 @@ This repo starts as a **bootstrap**: `BUILD_PROMPT.md` is the spec, and Claude C
 Public repo:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/YOUR_GITHUB_USER/foreman/main/install.sh | bash -s -- --build
+curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash -s -- --build
 ```
 
 Private repo (uses your `gh` login):
 
 ```bash
-gh repo clone YOUR_GITHUB_USER/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
+gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh --build
 ```
 
 Leave off `--build` to set up without starting; later, run `/foreman:build` in any Claude Code session. Extra flags pass through to the plugin setup: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode).

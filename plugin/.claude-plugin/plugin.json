@@ -2,5 +2,5 @@
   "name": "foreman",
   "version": "0.1.0",
   "description": "Plans, sequences, tracks, and verifies work from terse prompts. Starts as a bootstrap: run /foreman:build to build the full system from BUILD_PROMPT.md.",
-  "author": { "name": "YOUR_GITHUB_USER" }
+  "author": { "name": "ChaseSunstrom" }
 }
