@@ -180,6 +180,9 @@ def check_briefs(p):
     briefs = c.load_briefs(p, errors=errors)
     if errors:
         return Result("briefs", "FAIL", f"{p.slug}: unparseable " + ", ".join(os.path.basename(e[0]) for e in errors))
+    if (c.read_meta(p).get("schema") or 0) > c.STATE_SCHEMA:
+        return Result("briefs", "FAIL", f"{p.slug}: state written by a newer Foreman (schema "
+                                        f"{c.read_meta(p)['schema']} > {c.STATE_SCHEMA}); update this install")
     current = _read(os.path.join(p.dir, "STATE.md"))
     expected = c.render_state(c.state_dict(p, briefs))
     if current is not None and _strip_generated(current) != _strip_generated(expected):

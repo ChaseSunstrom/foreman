@@ -249,6 +249,8 @@ def cmd_task(args):
         try:
             import fmrecall
             fmrecall.write_tripwires(p)
+            fmrecall.share_lesson(p, b, lesson or next((x.lstrip("- ").strip() for x in
+                                                        b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
         grade, why = b.grade()
@@ -862,7 +864,7 @@ def cmd_research(args):
             open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read())
     path = os.path.join(p.dir, "research", name + ".md")
     with c.lock(p.dir):
-        c.write_atomic(path, c.redact(text))
+        c.write_atomic(path, c.defang(c.redact(text)))
         c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text)}, session=session())
         c.regen_views(p)  # (and fm sync's mirror)
     out(args, {"path": path}, f"Saved {path}")
@@ -1389,6 +1391,15 @@ def build_parser():
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
+    s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons (privacy-filtered) and "
+                                                         "recall other projects' lessons")
+    s.add_argument("state", nargs="?", choices=["on", "off"])
+    s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
+    s.add_argument("--days", type=float, default=7)
+    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
+    s.add_argument("action", choices=["add"])
+    s.add_argument("id")
+    s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
@@ -1502,6 +1513,12 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
+    s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
+    s.add_argument("--save", action="store_true", help="keep --models for later runs")
+    s = add("notify", lazy("fmserve", "cmd_notify"), help="command fm run uses to tell you a task finished or blocked")
+    s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Foreman \"$1\"")
+    s.add_argument("--off", action="store_true")
+    s.add_argument("--test", action="store_true")
 
     s = add("plugins", lazy("fmplugins", "cmd_plugins"),
             help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")

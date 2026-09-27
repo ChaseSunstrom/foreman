@@ -144,6 +144,17 @@ def session_start(pl):
         age = c.age_days(other.get("seen"))
         if other.get("id") and other["id"] != sid and age is not None and age < 15 / 1440:
             other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+        offered = c.age_days(meta.get("digest_offered"))
+        if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
+            try:
+                import fmcost
+                week = fmcost.weekly_line(p)
+            except Exception:
+                log_error("SessionStart", _tb())
+                week = None
+            if week:
+                meta["digest_offered"] = c.now()
+                other_note = " ".join(x for x in (other_note, week) if x)
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root))
         c.write_meta(p, meta)
         synced = _sync_import(p)
@@ -364,6 +375,9 @@ def user_prompt_submit(pl):
         state.append("Autonomy: full")
     if not _same_note(pl.get("session_id"), " | ".join(state)):  # unchanged state isn't repeated every turn
         parts += state
+        nxt = next((x[6:] for x in state if x.startswith("Next: ")), None)
+        if nxt:  # T-0051: fm usage compares it with what ran next
+            _event({"kind": "next", "session_id": pl.get("session_id"), "project": p.slug, "action": nxt[:200]})
     out = {"terminalSequence": _title_seq(sd)}
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",

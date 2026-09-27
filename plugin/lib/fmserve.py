@@ -269,6 +269,57 @@ def _prompt(p, b):
             f"finished, record why with fm task block {b.id} \"<why>\". Next: {nxt}")
 
 
+def _models(p, args):
+    """{tier: model} for fm run (T-0053): --models S=sonnet,L=opus (kept with --save), else the kept choice."""
+    if not args.models:
+        return c.read_meta(p).get("run_models") or {}
+    try:
+        models = {k.strip().upper(): v.strip() for k, v in (x.split("=", 1) for x in args.models.split(",") if x.strip())}
+    except ValueError:
+        models = {"?": ""}
+    if not models or set(models) - {"S", "M", "L"} or not all(re.fullmatch(r"[\w.:-]+", v) for v in models.values()):
+        raise c.PolicyError(f"--models takes TIER=MODEL pairs (tiers S, M, L), e.g. S=sonnet,L=opus; got {args.models!r}")
+    if args.save:
+        c.update_meta(p, run_models=models)
+    return models
+
+
+def _session_tokens(p, since):
+    """Input-equivalent tokens the transcripts show for this project since a time (the session fm run just ran)."""
+    try:
+        import fmcost
+        msgs, _ = fmcost.scan(fmcost.transcripts_dir(p.root), since[:19])
+        return round(sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in fmcost.WEIGHTS.items()))
+    except (OSError, ValueError):
+        return 0
+
+
+def _notify(p, message):
+    """The user's notify command (fm notify), with the message as $1: never part of the shell text."""
+    cmd = c.read_meta(p).get("notify")
+    if cmd:
+        try:
+            subprocess.run(["bash", "-c", cmd, "fm-notify", c.plain(message)[:300]], cwd=p.root, timeout=30,
+                           stdin=subprocess.DEVNULL, capture_output=True)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
+def cmd_notify(args):
+    """fm notify <cmd> (it gets the message as $1, e.g. notify-send Foreman "$1"), --off, or --test."""
+    import fmcli
+    p = fmcli.resolve(args)
+    if args.off:
+        c.update_meta(p, notify=None)
+        return fmcli.out(args, {"notify": None}, "fm run notifications off.")
+    if args.command:
+        c.update_meta(p, notify=" ".join(args.command))
+    cmd = c.read_meta(p).get("notify")
+    if args.test and cmd:
+        _notify(p, "Foreman test notification")
+    fmcli.out(args, {"notify": cmd}, f"fm run notifies with: {cmd}" if cmd else "No notify command: fm notify '<cmd>'")
+
+
 def cmd_run(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -287,10 +338,12 @@ def cmd_run(args):
 
     def fail(msg):
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
+        _notify(p, f"fm run stopped: {msg}")
         sys.exit(1)
 
     if not 0 <= args.wait < float("inf"):
         raise fmcli.UsageError(f"--wait takes hours from 0 up, got {args.wait}")
+    models = _models(p, args)
     finished, skip, told, sessions = 0, set(), set(), {}
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     while finished < args.max:
@@ -298,8 +351,10 @@ def cmd_run(args):
         if not b:
             break
         before = _fingerprint(b)
+        model = models.get(b.tier)
         cmd = ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode]
-                                               if args.permission_mode else [])
+                                               if args.permission_mode else []) + (["--model", model] if model else [])
+        started, t0 = c.now(), time.monotonic()
         try:
             r = subprocess.run(cmd, cwd=p.root, env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), capture_output=True,
                                text=True, timeout=args.timeout * 60)
@@ -330,18 +385,25 @@ def cmd_run(args):
         if code != 0:
             fail(f"{b.id}: claude exited {code} (login or crash); stopping")
         step = WAIT_FIRST
+        spent = _session_tokens(p, started)
+        c.log_event(p, "run_session", task=b.id, data={"model": model or "default", "tokens": spent,
+                                                        "minutes": round((time.monotonic() - t0) / 60, 1)})
+        how = f" ({model or 'default model'}, {spent:,} input-equivalent tokens)" if spent else ""
         after = c.find_brief(p, b.id)
         if after.status == "done":
             finished += 1
-            print(f"{b.id} done")
+            print(f"{b.id} done{how}")
+            _notify(p, f"{b.id} done: {b.title[:80]}")
         elif after.status in ("blocked", "dropped", "deferred"):
             skip.add(b.id)
-            print(f"{b.id} {after.status}")
+            print(f"{b.id} {after.status}{how}")
+            _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
         elif _fingerprint(after) == before:
             fail(f"{b.id}: no progress in a fresh session; stopping")
         else:
             sessions[b.id] = sessions.get(b.id, 0) + 1
             if sessions[b.id] >= SESSIONS_PER_TASK:
                 fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping")
+    _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
           + ("; the queue has nothing else runnable" if finished < args.max else f"; stopped at --max {args.max}"))
