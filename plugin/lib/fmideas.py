@@ -14,6 +14,7 @@ import time
 import fmcore as c
 
 LENSES = ["user value", "reliability", "performance", "security and safety", "simplicity", "bold bets"]
+PACK_WORDS = 2000
 DEFAULT_LENSES = ["user value", "reliability", "simplicity", "bold bets"]  # T-0061: the rest on request
 PROMPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "skills", "brainstorm", "references", "ideas-prompt.md")
@@ -98,7 +99,10 @@ def cmd_ideas(args):
         system = f.read()
     out_dir = os.path.join(p.dir, "research", "brainstorm-" + time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out_dir, exist_ok=True)
-    results, titles, seen, by_round, rounds = [], [], [], [], 0
+    if len(pack.split()) > PACK_WORDS:
+        print(f"fm: warning: the pack is {len(pack.split())} words; every lens and round pays for it (aim for "
+              f"≤ {PACK_WORDS})", file=sys.stderr)
+    results, titles, seen, by_round, rounds, lens_yield = [], [], [], [], 0, dict.fromkeys(lenses, 0)
     for n in range(1, max(1, args.rounds) + 1):
         rounds = n
         prefix = f"r{n}-" if args.rounds > 1 else ""
@@ -106,22 +110,25 @@ def cmd_ideas(args):
                          prefix, fmcli)
         results += [dict(r, round=n) for r in got]
         new = []
-        for t in (t for r in got for t in r["titles"]):
-            if _is_new(t, seen):
-                seen.append(_words(t))
-                new.append(t)
+        for r in got:
+            for t in r["titles"]:
+                if _is_new(t, seen):
+                    seen.append(_words(t))
+                    new.append(t)
+                    lens_yield[r["lens"]] += 1
         titles += new
         by_round.append(new)
         if n > 1 and len(new) < args.dry:
             break
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
         f.write("# Ideas by round (deduplicated titles; details in the lens files)\n"
-                + "".join(f"\n## Round {i}\n" + "".join(f"- {t}\n" for t in ts) for i, ts in enumerate(by_round, 1)))
+                + "".join(f"\n## Round {i}\n" + "".join(f"- {t}\n" for t in ts) for i, ts in enumerate(by_round, 1))
+                + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items()))
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles),
                                       "failed": failed}, session=fmcli.session())
-    fmcli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles), "results": results},
+    fmcli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles), "results": results, "yield": lens_yield},
               f"Brainstorm ideas in {out_dir} ({len(titles)} distinct over {rounds} round(s); index: ideas.md):\n"
               + "\n".join(f"  {'ok  ' if r['ok'] else 'FAIL'} {'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
                           f"{r['lens']}: {r['file'] if r['ok'] else r['error']}" for r in results)

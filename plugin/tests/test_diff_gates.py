@@ -2,6 +2,7 @@
 outlines of big files and a mechanical pre-audit."""
 import json
 import os
+import time
 
 from helpers import ForemanTestCase
 
@@ -44,6 +45,12 @@ class DiffGates(ForemanTestCase):
         self.assertIn("edited outside scope [src/**]: setup.cfg", p.stderr)
         self.assertNotIn("src/app.py", p.stderr)
         self.fm("task", "log", "T-0001", "scope: the build config names the new module")
+        time.sleep(1.1)  # one-second timestamps: the next edit comes after the reason
+        self.touch("Makefile")
+        p = self.fm("task", "done", "T-0001", check=False)
+        self.assertIn("Makefile", p.stderr, "an earlier reason doesn't cover a later out-of-scope edit")
+        self.fm("task", "log", "T-0001", "scope: the Makefile builds it")
+        self.fm("task", "audit", "T-0001", "self", "rechecked after the Makefile edit", "ok")
         self.assertEqual(self.fm("task", "done", "T-0001", check=False).returncode, 0)
 
     def test_security_sensitive_change_needs_the_adversary_lens(self):

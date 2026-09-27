@@ -161,6 +161,7 @@ def render(hits, tier=None):
 # ---------------------------------------------------------------- failure memory (T-0046)
 
 _ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing")
+REPEATS = 3  # the same failure this often in one task: a thrash note
 FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 
 
@@ -190,6 +191,11 @@ def note_failure(p, task, text):
                 f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
     except (OSError, c.LockTimeout):
         pass
+    same = sum(1 for r in c.tail_jsonl(path, 200) if r.get("task") == task and r.get("sig") == sig) if task else 0
+    if same == REPEATS:  # R1 thrash: once, when it becomes a pattern
+        hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
+                                             f"retrying variations, diagnose the cause first "
+                                             f"(skills/intake/references/debugging.md) and log what is ruled out."]))
     return hint
 
 

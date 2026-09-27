@@ -15,6 +15,7 @@ import fmsetup
 PLUGIN = c.PLUGIN_ROOT
 RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
 DESCRIPTIONS_MAX = 6000  # chars (~1.5k tokens) of skill/agent/command descriptions, loaded in every session
+SKILL_MAX = 10000  # chars of one SKILL.md body: loaded whole whenever the skill runs
 RULES_CHARS_MAX = 6000  # chars (~1.5k tokens) of always-on rules: denser lines cost as much as more lines
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
@@ -130,6 +131,8 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
                ("skills/*/SKILL.md", "agents/*.md", "commands/*.md") for f in glob.glob(os.path.join(plugin, pattern)))
     if desc > DESCRIPTIONS_MAX:
         bad.append(f"skill/agent/command descriptions {desc} chars > {DESCRIPTIONS_MAX}")
+    bad += [f"{os.path.relpath(f, plugin)} {n} chars > {SKILL_MAX}" for f in glob.glob(os.path.join(plugin, "skills/*/SKILL.md"))
+            if (n := len(_read(f) or "")) > SKILL_MAX]
     return Result("footprint", "FAIL" if bad else "PASS",
                   "; ".join(bad) or f"rules {len(rules)} + CLAUDE.md block {len(block)} = {total} always-on lines "
                                     f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")

@@ -4,6 +4,7 @@ Non-guard handlers fail open: any exception is logged to state/logs/hooks.log an
 The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
+import hashlib
 import json
 import os
 import re
@@ -381,6 +382,26 @@ def _first_time(sid, key):
         return True
     except OSError:
         return False
+
+
+THRASH = 6  # edits of one file with no check recorded in between
+
+
+def _thrash_note(pl, p, act, path):
+    """R1: the same file edited again and again with no check recorded in between is guessing, not converging."""
+    n = 0
+    for e in reversed(c.ledger_tail(p, 300)):
+        if e.get("task") != act.id:
+            continue
+        if e.get("event") in ("evidence", "step_done", "check_run", "focus"):
+            break
+        if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path:
+            n += 1
+    if n < THRASH or not _first_time(pl.get("session_id"), "thrash-" + hashlib.sha1(path.encode()).hexdigest()[:10]):
+        return None
+    return (f"Foreman: {os.path.basename(path)} has been edited {n} times without a check in between. State one "
+            f"hypothesis (fm task log {act.id} \"hypothesis: …\"), test it, and log what it rules out before editing "
+            f"again (skills/intake/references/debugging.md).")
 
 
 BIG_READ = 600  # lines
@@ -842,6 +863,10 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
+        if act:
+            note = _thrash_note(pl, p, act, path)
+            if note:
+                return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 
@@ -853,6 +878,7 @@ def _auto_evidence(pl, p, ok):
     """R6 (T-0063): a Bash command that is exactly a criterion's verify command is recorded as that criterion's
     evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
+    cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
     act = c.active_brief(c.load_briefs(p)) if cmd else None
     hits = [a.n for a in (act.acceptance() if act else []) if (m := _VERIFY.search(a.text))
             and " ".join(m.group(1).split()) == cmd]

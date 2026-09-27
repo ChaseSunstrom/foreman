@@ -215,14 +215,15 @@ def cmd_task(args):
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
-        files = c.task_files(p, pre.id)
+        touches = c.task_touches(p, pre.id)
+        files = list(touches)
         risky = c.sensitive(files, c._git(p.root, "diff", pre.meta["base"], timeout=30) if pre.meta.get("base") else "")
 
         def done(b):
             reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             outside = c.scope_drift(b, files)
-            if outside and "scope:" not in b.section("Log").lower():
+            if outside and not c.scope_reason_covers(b, touches, outside):
                 reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: {', '.join(outside[:8])}"
                                f"; widen it (fm task set {b.id} scope=…) or say why (fm task log {b.id} \"scope: <why>\")")
             if b.type == "CLEAN" and first_edit and not b.section("Behaviour lock").strip() and not any(
@@ -248,14 +249,16 @@ def cmd_task(args):
         try:
             import fmrecall
             fmrecall.write_tripwires(p)
-        except OSError:
-            pass
+        except Exception as e:  # the task is done already; a derived index must not make that look failed
+            print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
         grade, why = b.grade()
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
+    if sub == "finish":
+        return task_finish(p, args)
     if sub == "drop" and getattr(args, "done_in", None):
         return task_done_in(p, args)
     if sub == "drop" and not args.reason:
@@ -277,6 +280,44 @@ def _lint_verify(p, cmds):
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
+
+
+_VERIFY_CMD = re.compile(r"— verify with `(.+)`\s*$")
+
+
+def task_finish(p, args):
+    """S-tier fast path (R1, R4 "fm step"): one call runs each open criterion's own verify command (else --run) and
+    --run for each open step, records them as fm runs, checks what passed, records the self audit, then fm task done.
+    Anything that fails stops it before the audit; the failing runs stay recorded."""
+    b = need_brief(p, args.id)
+    if b.tier != "S":
+        raise UsageError(f"fm task finish is for S tasks; {b.id} is {b.tier} (its audits need their own lenses)")
+    runs = {}
+
+    def run(cmd):
+        if cmd not in runs:
+            runs[cmd] = c.run_command(p.root, cmd, args.timeout)
+        return runs[cmd]
+    todo = [("ac", a.n, (m.group(1) if (m := _VERIFY_CMD.search(a.text)) else args.run)) for a in b.acceptance()
+            if not a.checked] + [("step", s.n, args.run) for s in b.steps() if not s.done]
+    if any(cmd is None for _, _, cmd in todo):
+        raise UsageError("give --run \"<cmd>\": a step or criterion has no verify command of its own")
+    results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
+    tree = c.worktree_id(p.root)
+
+    def record(x):
+        for kind, n, cmd, code, output in results:
+            x.add_evidence(cmd, c.run_result(code, output), tree=tree, ran=True, **{kind: n})
+            if not code:
+                x.check_ac(n) if kind == "ac" else x.mark_step(n)
+        if not any(code for *_, code, _ in results):
+            x.add_audit("self", args.audit, args.result, tree=tree)
+    mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
+    failed = [f"{kind} {n}: {cmd} → {c.run_result(code, output)}" for kind, n, cmd, code, output in results if code]
+    if failed:
+        raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
+    args.task_cmd = "done"
+    return cmd_task(args)
 
 
 def task_prove(p, args):
@@ -524,8 +565,9 @@ def cmd_focus(args):
             if related:
                 target.set_section("Related", related)
         moved = _moved_since_planned(p, target)
-        if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since
+        if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
+            target.set_section("Preflight", moved + "\n")
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
@@ -536,7 +578,54 @@ def cmd_focus(args):
     if warn:
         print(warn, file=sys.stderr)
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
-        + (f"\n{related}" if related else ""))
+        + (f"\n{related}" if related else "")
+        + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
+
+
+def cmd_quiet(args):
+    """R3: a noisy command's output costs context on every run; show one line when it passes, the tail when not."""
+    import time
+    words = args.words[1:] if args.words[:1] == ["--"] else args.words
+    if not words:
+        raise UsageError("fm quiet -- <command>")
+    t0 = time.monotonic()
+    import shlex  # one word is a shell string ("pytest | tail"); several are argv, quoted as given
+    code, output = c.run_command(os.getcwd(), words[0] if len(words) == 1 else shlex.join(words), args.timeout)
+    secs = time.monotonic() - t0
+    lines = [l for l in output.rstrip().splitlines() if l.strip()]
+    if code:
+        print("\n".join(lines[-args.tail:]) + f"\n✗ exit {code} ({secs:.1f} s; last {min(len(lines), args.tail)} of "
+                                                 f"{len(lines)} lines)")
+    else:
+        print(f"✓ exit 0 ({secs:.1f} s) · {lines[-1][:200] if lines else '(no output)'}")
+    return code
+
+
+def gates(type_, tier):
+    """What fm task done checks for this type and tier: [(short, how)]."""
+    audits = " + ".join(" or ".join(sorted(g)) for g in c.REQUIRED_AUDITS[tier])
+    need = [("evidence", "every step and criterion has a check fm ran (--run) or a typed one for what can't run here"),
+            ("audits", f"{audits}, recorded after the last change (fm audit prep ID); adversary as well when the "
+                       f"change touches auth, crypto, secrets, exec or deserialization")]
+    if tier in ("M", "L"):
+        need += [("docs impact", "--section \"Docs impact\" (updated docs, or none: why)"),
+                 ("lesson", "fm task done ID --lesson \"…\"")]
+    need += {"FIX": [("red→green", "fm task prove ID --run \"<test>\" (or --section \"Regression test\" none: why)")],
+             "PERFORMANCE": [("numbers", "--section \"Measurements\": <metric> before → after")],
+             "CLEAN": [("behaviour lock", "tests run (fm check --evidence ID --step 1) before the first edit")]
+             }.get(type_, [])
+    need.append(("scope", "a reason for edits outside the scope globs (fm task log ID \"scope: …\")"))
+    return need
+
+
+def cmd_gates(args):
+    p = resolve(args)
+    act = c.active_brief(c.load_briefs(p))
+    type_, tier = args.type or (act.type if act else "FEATURE"), args.tier or (act.tier if act else "S")
+    need = gates(type_, tier)
+    out(args, {"type": type_, "tier": tier, "gates": [{"gate": g, "how": h} for g, h in need]},
+        f"fm task done needs ({type_} {tier}):\n" + "\n".join(f"- {g}: {h}" for g, h in need)
+        + ("\nS shortcut: fm task finish ID --run \"<check>\" --audit \"<how>\"" if tier == "S" else ""))
 
 
 def _moved_since_planned(p, b):
@@ -876,8 +965,11 @@ def cmd_check(args):
     return 1 if failed else 0
 
 
-_SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|merge|commit|tag|rm|mv|curl|wget|ssh|scp|rsync|"
-                           r"docker|kubectl|terraform|fm)\b")
+# ponytail: a denylist over declared checks only (criteria's verify commands); an allowlist if one ever slips through
+_SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|uninstall|merge|commit|tag|rm|mv|cp|curl|wget|ssh|"
+                           r"scp|rsync|docker|kubectl|terraform|fm|chmod|chown|dd|truncate|tee|kill|pkill|reset|"
+                           r"checkout|migrate|seed|drop)\b|\s-i\b|--(fix|write|in-place|apply)\b|>|\b(python3?|node|ruby|"
+                           r"perl|bash|sh) -[ce]\b")
 
 
 def cmd_sentinel(args):
@@ -888,10 +980,10 @@ def cmd_sentinel(args):
                   key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
     cmds, skipped = {}, 0
     for b in done:
-        for line in b.evidence():
-            if c._RAN_MARK in line and "` → exit 0" in line and "`" in line:
+        for line in b.evidence():  # criteria checks only: steps record work (pushes, migrations) as well as checks
+            if line.startswith("- (ac ") and c._RAN_MARK in line and "` → exit 0" in line:
                 cmd = line.split("`", 2)[1]
-                if _SIDE_EFFECTS.search(cmd) or cmd.startswith("fm check"):
+                if _SIDE_EFFECTS.search(cmd):
                     skipped += 1
                 elif cmd not in cmds:
                     cmds[cmd] = b.id
@@ -1262,6 +1354,13 @@ def build_parser():
     t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
     t.add_argument("how")
     t.add_argument("result")
+    t = tadd("finish")  # S fast path: run the checks, mark them, self audit, done
+    t.add_argument("id")
+    t.add_argument("--run", help="check for steps (and criteria without their own verify command)")
+    t.add_argument("--audit", required=True, help="how the self checklist was applied")
+    t.add_argument("--result", default="no findings", help="the self audit's result")
+    t.add_argument("--lesson")
+    t.add_argument("--timeout", type=float, default=600)
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
     t.add_argument("--run", required=True, help="the test command")
@@ -1290,6 +1389,17 @@ def build_parser():
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
+    s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
+    s.add_argument("--days", type=float, default=7)
+    s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
+    s.add_argument("--days", type=float, default=30)
+    s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
+    s.add_argument("--tail", type=int, default=40)
+    s.add_argument("--timeout", type=float, default=1800)
+    s.add_argument("words", nargs=argparse.REMAINDER)
+    s = add("gates", cmd_gates, help="what fm task done will require for a type and tier (default: the active task)")
+    s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
+    s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 

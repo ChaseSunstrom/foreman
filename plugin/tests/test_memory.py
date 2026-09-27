@@ -104,3 +104,4 @@ class Memory(ForemanTestCase):
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "search"], check=True)
         out = self.fm("focus", "T-0001").stdout
         self.assertIn("Changed in scope since this was planned (2000-01-01): src/search.py", out)
+        self.assertIn("src/search.py", c.find_brief(self.p, "T-0001").section("Preflight"), "kept for fresh sessions")

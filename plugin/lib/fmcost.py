@@ -1,0 +1,136 @@
+"""fm cost / fm usage (T-0064, T-0056): where the tokens went — per session, per task and per tool — read from Claude
+Code's own transcripts, and which Foreman skills, playbooks and commands actually get used. Read-only; stdlib only."""
+import collections
+import datetime
+import json
+import os
+import re
+
+import fmcore as c
+
+WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
+SHORT = {"input_tokens": "input", "cache_creation_input_tokens": "cache writes", "cache_read_input_tokens":
+         "cache reads", "output_tokens": "output"}
+
+
+def transcripts_dir(root):
+    """Claude Code keeps a project's transcripts under ~/.claude/projects/<its path, non-alphanumerics as '-'>."""
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    return os.path.join(base, "projects", re.sub(r"[^A-Za-z0-9]", "-", root))
+
+
+def _since(days):
+    return (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S")
+
+
+def _human(n):
+    return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 1e3 else f"{n:.0f}"
+
+
+def scan(folder, since):
+    """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
+    repeats on each of its content blocks: counted once per message id."""
+    msgs, tools, names = {}, collections.Counter(), {}
+    for dirpath, _, files in os.walk(folder):
+        for n in files:
+            if not n.endswith(".jsonl"):
+                continue
+            try:
+                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        try:
+                            e = json.loads(line)
+                        except ValueError:
+                            continue
+                        ts = str(e.get("timestamp") or "")
+                        m = e.get("message") if isinstance(e, dict) else None
+                        if not isinstance(m, dict) or ts[:19] < since:
+                            continue
+                        content = m.get("content") if isinstance(m.get("content"), list) else []
+                        for x in content:
+                            if not isinstance(x, dict):
+                                continue
+                            if x.get("type") == "tool_use":
+                                names[x.get("id")] = x.get("name") or "?"
+                            elif x.get("type") == "tool_result":
+                                tools[names.get(x.get("tool_use_id"), "?")] += len(json.dumps(x.get("content")))
+                        if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
+                            msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
+            except OSError:
+                continue
+    return list(msgs.values()), tools
+
+
+def _task_at(timeline, ts):
+    """The task of the newest ledger event at or before ts (events carry the task they were recorded for)."""
+    task = None
+    for t, tid in timeline:
+        if t > ts:
+            break
+        task = tid
+    return task
+
+
+def cmd_cost(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    folder = transcripts_dir(p.root)
+    if not os.path.isdir(folder):
+        raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
+    msgs, tools = scan(folder, _since(args.days))
+    totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
+    timeline = sorted((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_tail(p, 20000) if e.get("task"))
+    for ts, sid, usage in msgs:
+        w = 0.0
+        for k, weight in WEIGHTS.items():
+            v = usage.get(k) or 0
+            totals[k] += v
+            w += v * weight
+        by_task[_task_at(timeline, ts[:19]) or "(no task)"] += w
+        by_session[sid] += w
+    total = sum(by_task.values()) or 1
+    tool_total = sum(tools.values()) or 1
+    data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
+            "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
+            "tool_result_chars": dict(tools.most_common())}
+    text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
+            + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
+            + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
+            + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
+            + "\nTool results (what filled the context): " + " · ".join(
+                f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
+            + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5)))
+    fmcli.out(args, data, text)
+
+
+def cmd_usage(args):
+    """Which skills, playbooks and fm commands this project used in the window, and which it never did: candidates to
+    trim from the always-loaded context."""
+    import fmcli
+    p = fmcli.resolve(args)
+    since = _since(args.days)
+    skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 100000):
+        if e.get("project") != p.slug or str(e.get("ts", ""))[:19] < since or e.get("kind") != "tool":
+            continue
+        tool, target = e.get("tool"), str(e.get("target") or "")
+        if tool == "Skill":
+            skills[target.split(":")[-1]] += 1
+        elif tool == "Read" and "/skills/playbooks/references/" in target:
+            books[target.split("/skills/playbooks/references/")[1][:-3]] += 1
+        elif tool == "Bash" and (m := re.match(r"\s*fm\s+([a-z-]+)(?:\s+([a-z-]+))?", target)):
+            cmds[m.group(1) + (" " + m.group(2) if m.group(1) == "task" and m.group(2) else "")] += 1
+    all_skills = sorted(n for n in os.listdir(os.path.join(c.PLUGIN_ROOT, "skills"))
+                        if os.path.isfile(os.path.join(c.PLUGIN_ROOT, "skills", n, "SKILL.md")))
+    ref = os.path.join(c.PLUGIN_ROOT, "skills", "playbooks", "references")
+    all_books = sorted(os.path.relpath(os.path.join(d, n), ref)[:-3] for d, _, fs in os.walk(ref) for n in fs
+                       if n.endswith(".md"))
+    unused = {"skills": [s for s in all_skills if not skills[s]], "playbooks": [b for b in all_books if not books[b]]}
+    fmcli.out(args, {"days": args.days, "skills": dict(skills), "playbooks": dict(books), "commands": dict(cmds),
+                     "unused": unused},
+              f"Last {args.days} day(s) in {p.slug}:\n  skills: "
+              + (" · ".join(f"{k} {v}" for k, v in skills.most_common()) or "none")
+              + "\n  playbooks read: " + (" · ".join(f"{k} {v}" for k, v in books.most_common(8)) or "none")
+              + "\n  fm commands: " + (" · ".join(f"{k} {v}" for k, v in cmds.most_common(12)) or "none")
+              + f"\n  never used: skills {', '.join(unused['skills']) or '-'}; {len(unused['playbooks'])} of "
+                f"{len(all_books)} playbooks")

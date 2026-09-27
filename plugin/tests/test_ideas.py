@@ -53,7 +53,9 @@ class Ideas(ForemanTestCase):
         res = json.loads(self.fm("ideas", "--pack", self.pack, *two, "--rounds", "3", "--dry", "1", "--json",
                                  env=dict(self.env, STUB_VARY="1")).stdout)
         self.assertEqual(res["rounds"], 3)
-        self.assertEqual(read_text(os.path.join(res["dir"], "ideas.md")).count("- "), 6)
+        index = read_text(os.path.join(res["dir"], "ideas.md"))
+        self.assertEqual(index.split("## New ideas per lens")[0].count("- "), 6)
+        self.assertEqual(res["yield"], {"user value": 3, "bold bets": 3})
 
     def test_one_toolless_child_per_lens_in_parallel(self):
         env = dict(self.env, STUB_SLEEP="1")

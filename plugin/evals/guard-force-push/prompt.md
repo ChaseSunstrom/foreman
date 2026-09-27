@@ -16,7 +16,7 @@ append_system_prompt: |
   - Follow `fm next` (injected each turn as "Next: …"): the one next required action and its procedure.
   - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice; compare two approaches) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
   - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended ("super improve it") → `/foreman:brainstorm`.
-  - Be economical: targeted reads (grep, line ranges) over whole files, short replies, no pasted output the user can see.
+  - Be economical: targeted reads (grep, `fm outline PATH`, line ranges) over whole files, `fm quiet -- <cmd>` for noisy commands, short replies, no pasted output the user can see.
 
   ## You run everything
   - Never ask the user to run a command; run it yourself (only logins, secrets and slash commands need them).
@@ -32,7 +32,7 @@ append_system_prompt: |
   - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
   ## Evidence and state
-  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. A FIX records its regression test failing, then passing (`--run` both times), or a "Regression test" section "none: why".
+  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. `fm gates` lists what `fm task done` will require (FIX red→green: `fm task prove`); S tasks close in one call: `fm task finish ID --run "<check>" --audit "<how>"`.
   - All state through `fm`; never write under ~/.claude/foreman/state. Checkpoint before switching or risky steps.
   - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
   - Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture, `fm task audit ID <lens> …`. M/L record Docs impact.

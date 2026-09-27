@@ -96,11 +96,14 @@ class VerifyStrength(ForemanTestCase):
         self.assertEqual(b.grade()[0], "ok")
 
     def test_sentinel_reruns_past_passing_checks(self):
-        self.new("FEATURE")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "do it", "--ac", "flag",
+                "--ac", "pushed", "--focus")
         self.write("flag", "1")
         self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "test -f flag")
         self.fm("task", "ac", "T-0001", "check", "1")
-        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "git push --dry-run || true")
+        self.fm("task", "evidence", "T-0001", "--ac", "2", "--run", "git push --dry-run || true")
+        self.fm("task", "ac", "T-0001", "check", "2")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "test -d .")
         self.fm("task", "step", "T-0001", "done", "1")
         self.fm("task", "audit", "T-0001", "self", "checked", "ok")
         self.fm("task", "done", "T-0001")
@@ -110,6 +113,7 @@ class VerifyStrength(ForemanTestCase):
         self.assertEqual(p.returncode, 1)
         self.assertIn("✗ T-0001: test -f flag", p.stdout)
         self.assertIn("1 with side effects skipped", p.stdout)
+        self.assertNotIn("test -d", p.stdout, "step evidence is work, not a declared check")
 
     def test_a_timed_out_check_kills_its_whole_process_group(self):
         marker = os.path.join(self.tmp, "orphan")

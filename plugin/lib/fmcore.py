@@ -1570,20 +1570,35 @@ def touched_since_checkpoint(p, tid):
     return list(reversed(files))
 
 
-def task_files(p, tid):
-    """Project files the hooks saw this task edit (relative). ponytail: Edit/Write only; Bash edits aren't seen."""
-    files = []
-    for e in ledger_tail(p, 5000):
+TASK_WINDOW = 50000  # ledger events read for a task's edits at done (a fm command, not a hook: it can afford it)
+
+
+def task_touches(p, tid):
+    """{relative path: timestamp of its last edit} for the project files the hooks saw this task edit, in first-edit
+    order. ponytail: Edit/Write only; Bash edits aren't seen."""
+    files = {}
+    for e in ledger_tail(p, TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
-        if f and f.startswith(p.root.rstrip("/") + "/") and os.path.relpath(f, p.root) not in files:
-            files.append(os.path.relpath(f, p.root))
+        if f and f.startswith(p.root.rstrip("/") + "/"):
+            files[os.path.relpath(f, p.root)] = e.get("ts", "")
     return files
+
+
+def task_files(p, tid):
+    return list(task_touches(p, tid))
 
 
 def first_touch(p, tid):
     """Timestamp of the first file edit the hooks attributed to this task, or ""."""
-    return min((e.get("ts", "") for e in ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
-               default="")
+    return min((e.get("ts", "") for e in ledger_tail(p, TASK_WINDOW) if e.get("task") == tid
+                and e.get("event") == "touched"), default="")
+
+
+def scope_reason_covers(b, touches, outside):
+    """A "scope:" log line recorded after the last edit of every out-of-scope file: one early reason can't excuse
+    later, unrelated edits."""
+    last = max((touches.get(f, "") for f in outside), default="")
+    return any(m.group(1) >= last for m in re.finditer(r"(?m)^- (\S+) scope:", b.section("Log")))
 
 
 def scope_drift(b, files):
