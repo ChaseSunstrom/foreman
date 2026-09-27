@@ -146,6 +146,7 @@ def session_start(pl):
             other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
         offered = c.age_days(meta.get("digest_offered"))
         if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
+            meta["digest_offered"] = c.now()  # checked once a week even when there was nothing to show
             try:
                 import fmcost
                 week = fmcost.weekly_line(p)
@@ -153,7 +154,6 @@ def session_start(pl):
                 log_error("SessionStart", _tb())
                 week = None
             if week:
-                meta["digest_offered"] = c.now()
                 other_note = " ".join(x for x in (other_note, week) if x)
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root))
         c.write_meta(p, meta)
@@ -288,6 +288,7 @@ def _resolve_approvals(p, meta, sid, text, hashes=None):
     return notes
 
 
+STATUS_WORDS = {"status", "where are we", "fm status", "what's the status", "whats the status"}
 _CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don'?t\b|do not\b|stop\b|that'?s (wrong|not)|not what i|wrong\b|"
                          r"i said\b|i meant\b|why did you\b|you (should|shouldn'?t)\b|never\b|please don'?t\b)")
 
@@ -302,6 +303,13 @@ def user_prompt_submit(pl):
         for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
             _event({"kind": "bg_done", "session_id": sid, "id": tid})  # drive stops waiting on it
         return None
+    if text.lower().strip(" ?.!") in STATUS_WORDS:  # R2: a state question costs no model tokens
+        try:
+            state = c.render_state(c.state_dict(p))
+            return {"decision": "block", "reason": c.fit(state.split("\n", 2)[-1].strip(), 1800)
+                    + "\n(Answered by Foreman from its state, without the model; ask in more words for more.)"}
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     r = c.parse_intake(text)
     if _CORRECTION.match(text):  # R2: the user's corrections, for /foreman:reflect to turn into durable preferences
         try:
@@ -885,17 +893,13 @@ def post_tool_use(pl, ok=True):
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 
 
-_VERIFY = re.compile(r"— verify with `(.+)`\s*$")
-
-
 def _auto_evidence(pl, p, ok):
     """R6 (T-0063): a Bash command that is exactly a criterion's verify command is recorded as that criterion's
     evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
     cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
     act = c.active_brief(c.load_briefs(p)) if cmd else None
-    hits = [a.n for a in (act.acceptance() if act else []) if (m := _VERIFY.search(a.text))
-            and " ".join(m.group(1).split()) == cmd]
+    hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
     if not hits:
         return
     if ok:

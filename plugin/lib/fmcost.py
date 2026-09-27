@@ -88,6 +88,10 @@ def cmd_cost(args):
             w += v * weight
         by_task[_task_at(timeline, ts[:19]) or "(no task)"] += w
         by_session[sid] += w
+    if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
+        return fmcli.out(args, {"days": args.days, "messages": 0},
+                         f"No token usage found in {folder} for the last {args.days:g} day(s): nothing ran, or the "
+                         f"transcript format changed (fm cost reads message.usage on assistant lines).")
     total = sum(by_task.values()) or 1
     tool_total = sum(tools.values()) or 1
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
@@ -182,7 +186,7 @@ def cmd_evals(args):
                           f"max_turns: 30\ntimeout_seconds: 900\nallowed_tools: [Read, Glob, Grep, Skill, Bash, Write, Edit]\n"
                           f"tags: [regression, {b.type.lower()}]\nappend_system_prompt: |\n{rules}---\n\n{request}\n",
              "graders/classified.md": "---\ntype: regex\ntarget: trace\npattern: 'fm (task new|capture)[^\\n]{0,400}--type'\n---\n"}
-    checks = [m.group(1) for a in b.acceptance() if (m := re.search(r"— verify with `(.+)`\s*$", a.text))]
+    checks = [cmd for _, cmd in b.verify_cmds() if cmd]
     if checks:
         files["graders/ran-checks.md"] = (f"---\ntype: regex\ntarget: trace\npattern: "
                                           f"{q('|'.join(re.escape(x) for x in checks[:3]))}\n---\n")
@@ -208,7 +212,7 @@ def cmd_usage(args):
         if e.get("kind") == "next":  # T-0051: was the injected Next's command the next fm command run?
             if pending.get(sid):
                 ignored[pending[sid]] += 1
-            m = re.search(r"\bfm [a-z-]+(?: (?:prep|step|done|new|evidence|ac|audit|finish|prove))?", e.get("action", ""))
+            m = re.search(r"\bfm [a-z-]+(?: [a-z][a-z-]*)?", e.get("action", ""))  # e.g. fm task step, fm audit prep
             pending[sid] = m.group(0) if m else None
             continue
         if e.get("kind") != "tool":

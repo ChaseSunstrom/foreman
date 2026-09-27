@@ -81,6 +81,8 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
             slug = re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
             path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
             text = c.redact(out.strip()) if ok else ""
+            if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
+                ok, why = False, f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"# Brainstorm — lens: {lens}\n\n" + (text if ok else f"FAILED: {why}") + "\n")
             results.append({"lens": lens, "file": path, "ok": ok, "error": why,
@@ -103,10 +105,21 @@ def cmd_ideas(args):
         print(f"fm: warning: the pack is {len(pack.split())} words; every lens and round pays for it (aim for "
               f"≤ {PACK_WORDS})", file=sys.stderr)
     results, titles, seen, by_round, rounds, lens_yield = [], [], [], [], 0, dict.fromkeys(lenses, 0)
+    for path in args.seen or []:  # earlier brainstorms' ideas.md: don't repeat them, go past them (recursion)
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = [m.group(1).strip() for m in re.finditer(r"(?m)^- (?!\w[\w ]*: \d+$)(.+)$", f.read())]
+        except OSError as e:
+            raise fmcli.UsageError(f"can't read --seen {path}: {e.strerror}")
+        for t in old:
+            if _is_new(t, seen):
+                seen.append(_words(t))
+                titles.append(t)
+    known = len(titles)
     for n in range(1, max(1, args.rounds) + 1):
         rounds = n
         prefix = f"r{n}-" if args.rounds > 1 else ""
-        got = _run_round(lenses, pack if n == 1 else later_round_pack(pack, titles, n), system, args, out_dir,
+        got = _run_round(lenses, pack if not titles else later_round_pack(pack, titles, n), system, args, out_dir,
                          prefix, fmcli)
         results += [dict(r, round=n) for r in got]
         new = []
@@ -126,10 +139,10 @@ def cmd_ideas(args):
                 + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items()))
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
-        c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles),
+        c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,
                                       "failed": failed}, session=fmcli.session())
-    fmcli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles), "results": results, "yield": lens_yield},
-              f"Brainstorm ideas in {out_dir} ({len(titles)} distinct over {rounds} round(s); index: ideas.md):\n"
+    fmcli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles) - known, "results": results, "yield": lens_yield},
+              f"Brainstorm ideas in {out_dir} ({len(titles) - known} new distinct over {rounds} round(s); index: ideas.md):\n"
               + "\n".join(f"  {'ok  ' if r['ok'] else 'FAIL'} {'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
                           f"{r['lens']}: {r['file'] if r['ok'] else r['error']}" for r in results)
               + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else ""))

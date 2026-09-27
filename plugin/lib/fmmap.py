@@ -231,3 +231,37 @@ def changed(root, base):
     """Files changed since base (committed or not) plus untracked ones, relative to root."""
     return sorted(set(_git(root, "diff", "--name-only", base).splitlines())
                   | set(_git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
+
+
+def cmd_why(args):
+    """fm why FILE[:LINE] (R2): the commits behind a line (or a file's last five), the Foreman tasks they name, and
+    each task's title, outcome and lesson — why the code is the way it is, without reading history by hand."""
+    import fmcli
+    p = fmcli.resolve(args)
+    path, _, line = args.target.rpartition(":")
+    if not line.isdigit():
+        path, line = args.target, ""
+    rel = os.path.relpath(os.path.abspath(path), p.root) if os.path.exists(path) else path
+    if line:
+        blame = _git(p.root, "blame", "-L", f"{line},{line}", "--porcelain", "--", rel)
+        shas = [blame.split()[0]] if blame.strip() and not blame.startswith("0" * 40) else []
+    else:
+        shas = _git(p.root, "log", "-n", "5", "--format=%H", "--", rel).split()
+    briefs = {b.id: b for b in c.load_briefs(p, include_archive=True)}
+    rows, lines = [], []
+    for sha in shas:
+        msg = _git(p.root, "log", "-1", "--format=%h %as %s%n%b", sha).strip()
+        if not msg:
+            continue
+        ids = list(dict.fromkeys(re.findall(r"\bT-\d{4,}\b", msg)))
+        rows.append({"commit": msg.split()[0], "subject": msg.splitlines()[0], "tasks": ids})
+        lines.append(c.fit(msg.splitlines()[0], 160))
+        for tid in ids:
+            b = briefs.get(tid)
+            if b:
+                lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
+                lines.append(c.fit(f"  {tid} [{b.type} {b.tier}, {b.status}] {b.title}"
+                                   + (f" — lesson: {lesson}" if lesson else ""), 220))
+    fmcli.out(args, {"path": rel, "line": int(line) if line else None, "commits": rows},
+              c.plain_lines("\n".join(lines)) if lines else f"No commits found for {rel}{':' + line if line else ''} "
+                                                            f"(uncommitted, or not in git).")

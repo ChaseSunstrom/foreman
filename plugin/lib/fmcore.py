@@ -40,6 +40,11 @@ def now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def iso(epoch):
+    """A POSIX time in now()'s format."""
+    return datetime.datetime.fromtimestamp(epoch, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def parse_ts(ts):
     try:
         return datetime.datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=datetime.timezone.utc)
@@ -764,8 +769,8 @@ class Brief:
     def add_audit(self, lens, how, result, ts=None, tree=None):
         if lens not in AUDIT_LENSES:
             raise ValueError(f"unknown audit lens {lens!r}; one of {', '.join(AUDIT_LENSES)}")
-        how = _unmarked(redact(str(how)).replace("`", "'").strip())
-        result = _unmarked(redact(str(result)).replace("\n", " ").strip())
+        how = defang(_unmarked(redact(str(how)).replace("`", "'").strip()))
+        result = defang(_unmarked(redact(str(result)).replace("\n", " ").strip()))
         mark = f" [tree {tree}]" if tree else ""
         self._append_line("Verification evidence", f"- (audit {lens}) `{how}` → {result}{mark} ({ts or now()})")
 
@@ -822,6 +827,10 @@ class Brief:
             if m:
                 out.append(Criterion(len(out) + 1, m.group(1) in "xX", m.group(2)))
         return out
+
+    def verify_cmds(self, unchecked=False):
+        """[(criterion number, its verify command or None)]"""
+        return [(a.n, verify_of(a.text)) for a in self.acceptance() if not (unchecked and a.checked)]
 
     def add_ac(self, text, verify=None):
         line = f"- [ ] {text.strip()}" + (f" — verify with `{verify}`" if verify else "")
@@ -1588,10 +1597,6 @@ def task_touches(p, tid):
     return files
 
 
-def task_files(p, tid):
-    return list(task_touches(p, tid))
-
-
 _INSTRUCTION = re.compile(r"(?i)(ignore|disregard|forget) (all |any |the )?(previous|prior|above|earlier|your) "
                           r"(instructions|prompts?|rules)|\byou are now\b|new (system )?instructions:|system prompt|"
                           r"</?(system|instructions?|assistant)>|^\s*(system|assistant)\s*:|do not tell the user|"
@@ -1625,6 +1630,15 @@ def scope_drift(b, files):
     return [f for f in files if scope and not f.startswith(".foreman/") and not any(glob_match(f, s) for s in scope)]
 
 
+_VERIFY_OF = re.compile(r"— verify with `(.+)`\s*$")
+
+
+def verify_of(criterion_text):
+    """The verify command a criterion carries (add_ac writes "— verify with `cmd`"), or None."""
+    m = _VERIFY_OF.search(criterion_text or "")
+    return m.group(1) if m else None
+
+
 _SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|token|passw|credential|session|login|oauth|jwt|permission|acl|"
                              r"sandbox|guard|sudo|security|keyring|signing)")
 _SENSITIVE_CODE = re.compile(r"(?m)^\+.*(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
@@ -1632,10 +1646,15 @@ _SENSITIVE_CODE = re.compile(r"(?m)^\+.*(pickle\.loads?\(|yaml\.load\(|marshal\.
                              r"deseriali[sz]e)")
 
 
+_MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
+                       r"poetry\.lock|uv\.lock|Pipfile(\.lock)?|Cargo\.(toml|lock)|go\.(mod|sum)|Gemfile(\.lock)?|"
+                       r"composer\.(json|lock)|pom\.xml|build\.gradle(\.kts)?)$")  # supply chain: new code runs here
+
+
 def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
-    why = [f for f in files if _SENSITIVE_PATH.search(f)][:5]
+    why = [f for f in files if _SENSITIVE_PATH.search(f) or _MANIFEST.search(f)][:5]
     why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(diff)})[:5]
     return why
 

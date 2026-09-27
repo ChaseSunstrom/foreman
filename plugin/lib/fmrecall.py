@@ -183,17 +183,22 @@ def note_failure(p, task, text):
         return None
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
+    same, hinted = 0, True
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
             if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
                 keep = c.tail_jsonl(path, FAILURES_KEEP)
                 c.write_atomic(path, "".join(json.dumps(r) + "\n" for r in keep))
+            mine = [r for r in c.tail_jsonl(path, FAILURES_KEEP) if task and r.get("task") == task
+                    and r.get("sig") == sig]
+            same, hinted = 1 + sum(not r.get("hinted") for r in mine), any(r.get("hinted") for r in mine)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
+                if task and same >= REPEATS and not hinted:
+                    f.write(json.dumps({"sig": sig, "task": task, "at": c.now(), "hinted": True}) + "\n")
     except (OSError, c.LockTimeout):
         pass
-    same = sum(1 for r in c.tail_jsonl(path, 200) if r.get("task") == task and r.get("sig") == sig) if task else 0
-    if same == REPEATS:  # R1 thrash: once, when it becomes a pattern
+    if task and same >= REPEATS and not hinted:  # R1 thrash: once per task and failure, when it becomes a pattern
         hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
                                              f"retrying variations, diagnose the cause first "
                                              f"(skills/intake/references/debugging.md) and log what is ruled out."]))
@@ -256,6 +261,9 @@ def tripwire(p, rel, active=None):
 
 # ---------------------------------------------------------------- cross-project lessons (T-0054, opt-in)
 
+SHARED_KEEP = 2000  # lessons kept in the shared file
+
+
 def shared_path():
     return os.path.join(c.state_dir(), "shared", "lessons.jsonl")
 
@@ -287,8 +295,12 @@ def share_lesson(p, b, lesson):
     rec = {"lesson": c.fit(private(lesson, p), 300), "title": c.fit(private(b.title, p), 120), "type": b.type,
            "tier": b.tier, "at": c.now(), "from": _me(p)}
     os.makedirs(os.path.dirname(shared_path()), exist_ok=True)
-    with open(shared_path(), "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec) + "\n")
+    with c.lock(os.path.dirname(shared_path()), timeout=5):  # every opted-in project appends here: capped, one writer
+        if os.path.exists(shared_path()) and os.path.getsize(shared_path()) > 1_000_000:
+            keep = c.tail_jsonl(shared_path(), SHARED_KEEP)
+            c.write_atomic(shared_path(), "".join(json.dumps(r) + "\n" for r in keep))
+        with open(shared_path(), "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
 
 
 def _shared_docs(p):

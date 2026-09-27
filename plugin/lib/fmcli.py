@@ -216,6 +216,14 @@ def cmd_task(args):
 
         lesson = c.plain(args.lesson or "").strip()
         touches = c.task_touches(p, pre.id)
+        if pre.meta.get("base") and c.git_root(p.root):  # R1: edits made through the shell or outside Claude count too
+            import fmmap
+            for f in fmmap.changed(p.root, pre.meta["base"]):
+                if f not in touches and not f.startswith(".foreman/"):
+                    try:
+                        touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
+                    except OSError:  # deleted
+                        touches[f] = c.now()
         files = list(touches)
         risky = c.sensitive(files, c._git(p.root, "diff", pre.meta["base"], timeout=30) if pre.meta.get("base") else "")
 
@@ -284,9 +292,6 @@ def _lint_verify(p, cmds):
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
 
 
-_VERIFY_CMD = re.compile(r"— verify with `(.+)`\s*$")
-
-
 def task_finish(p, args):
     """S-tier fast path (R1, R4 "fm step"): one call runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the self audit, then fm task done.
@@ -300,8 +305,8 @@ def task_finish(p, args):
         if cmd not in runs:
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
         return runs[cmd]
-    todo = [("ac", a.n, (m.group(1) if (m := _VERIFY_CMD.search(a.text)) else args.run)) for a in b.acceptance()
-            if not a.checked] + [("step", s.n, args.run) for s in b.steps() if not s.done]
+    todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
+        ("step", s.n, args.run) for s in b.steps() if not s.done]
     if any(cmd is None for _, _, cmd in todo):
         raise UsageError("give --run \"<cmd>\": a step or criterion has no verify command of its own")
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
@@ -944,6 +949,11 @@ def cmd_check(args):
         slow = None if code else _slower(p, cmd, results[-1][3])
         if slow:
             notes[cmd] = slow
+        now_tree = c.worktree_id(p.root) if tree else None
+        if now_tree != tree:  # R2: a check should only read; this one wrote (formatter, codegen, leftovers)
+            notes[cmd] = "; ".join(filter(None, [notes.get(cmd), "changed the working tree (it writes files; a check "
+                                                                 "should only read)"]))
+            tree = now_tree
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
@@ -1032,6 +1042,9 @@ def _flaky_count(p, cmd, runs=20):
     return n
 
 
+CACHE_DAYS = 0.5  # a cached pass older than this reruns: time, caches and services outside the tree drift too
+
+
 def _cached_pass(p, checks, tree):
     """When the newest full fm check run was on this exact tree, with these gates, and all passed: its time."""
     if not tree:
@@ -1041,7 +1054,7 @@ def _cached_pass(p, checks, tree):
             d = e.get("data") or {}
             rs = d.get("results") or []
             if d.get("tree") == tree and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
-                    and not any(r.get("exit") for r in rs):
+                    and not any(r.get("exit") for r in rs) and (c.age_days(e.get("ts")) or 0) < CACHE_DAYS:
                 return f"run at {str(e.get('ts', ''))[11:16]} UTC"
             return None
     return None
@@ -1391,8 +1404,9 @@ def build_parser():
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
-    s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons (privacy-filtered) and "
-                                                         "recall other projects' lessons")
+    s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
+                                                         "(paths, URLs, emails, file names, task ids and the project "
+                                                         "name are removed; other names in the prose are not)")
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
@@ -1411,6 +1425,8 @@ def build_parser():
     s = add("gates", cmd_gates, help="what fm task done will require for a type and tier (default: the active task)")
     s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
+    s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
+    s.add_argument("target")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
@@ -1500,6 +1516,7 @@ def build_parser():
     s.add_argument("--model", default="sonnet")
     s.add_argument("--rounds", type=int, default=1, help="super brainstorm: each round builds on every idea so far")
     s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
+    s.add_argument("--seen", action="append", help="an earlier ideas.md whose ideas this run must go past (repeatable)")
     s.add_argument("--timeout", type=int, default=300)
 
     s = add("serve", lazy("fmserve", "cmd_serve"),

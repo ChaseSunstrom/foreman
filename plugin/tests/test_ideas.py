@@ -18,6 +18,9 @@ with open(os.environ["STUB_LOG"], "a") as f:
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
 if lens == os.environ.get("STUB_FAIL_LENS"):
     sys.exit(3)
+if lens == os.environ.get("STUB_CHAT_LENS"):
+    print("Could you tell me more about the project first?")
+    sys.exit(0)
 phrases = ["apple banana cherry", "delta echo foxtrot", "golf hotel india", "juliet kilo lima", "mike november oscar"]
 vary = " " + phrases[stdin.count(chr(10) + '- ') // 2 % 5] if os.environ.get("STUB_VARY") else ""
 print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low")
@@ -101,6 +104,25 @@ class Ideas(ForemanTestCase):
         out = os.path.join(c.find_project(self.repo).dir, "research")
         files = [f for _, _, fs in os.walk(out) for f in fs]
         self.assertTrue(any("simplicity" in f for f in files))
+
+    def test_an_answer_without_ideas_counts_as_a_failed_lens(self):
+        env = dict(self.env, STUB_CHAT_LENS="simplicity")
+        p = self.fm("ideas", "--pack", self.pack, "--lens", "simplicity", "--lens", "reliability", env=env, check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("simplicity", p.stderr)
+        self.assertIn("no ideas in the required format", p.stdout)
+
+    def test_seen_ideas_seed_the_pack_and_the_dedupe(self):
+        old = os.path.join(self.tmp, "old-ideas.md")
+        with open(old, "w") as f:
+            f.write("# Ideas by round\n\n## Round 1\n- Idea for user value\n- Cache the parser\n\n"
+                    "## New ideas per lens\n- user value: 2\n")
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "user value", "--lens", "bold bets",
+                                 "--seen", old, "--json", env=self.env).stdout)
+        self.assertEqual(res["ideas"], 1, "the user-value idea was already seen; only bold bets is new")
+        stdin = self.calls()[0]["stdin"]
+        self.assertIn("- Cache the parser", stdin)
+        self.assertNotIn("- user value: 2", stdin, "the per-lens tally isn't an idea")
 
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
