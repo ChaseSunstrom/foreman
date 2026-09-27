@@ -1635,6 +1635,21 @@ def lint_verify(cmd, root):
     return problems
 
 
+_RULED = re.compile(r"(?i)\b(ruled out|tried|dead end|didn't work|rejected):\s*(.+)")
+
+
+def ruled_out(p, b):
+    """What a fresh session shouldn't try again (R1): the task's "ruled out:/tried:" log lines and the distinct
+    failures it met, as resume lines."""
+    out = [f"- ruled out: {fit(m.group(2).strip(), 160)}" for line in b.section("Log").splitlines()
+           if (m := _RULED.search(line))][-4:]
+    sigs = []
+    for r in reversed(tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 300)):
+        if r.get("task") == b.id and r.get("sig") and r["sig"] not in sigs:
+            sigs.append(r["sig"])
+    return out + ([f"- failures met: {'; '.join(fit(s, 90) for s in sigs[:3])}"] if sigs else [])
+
+
 def checkpoint(p, note=None, auto=False, session=None):
     """Flush the exact resume point into the active brief and STATE. Caller holds the lock."""
     briefs = load_briefs(p)
@@ -1651,6 +1666,7 @@ def checkpoint(p, note=None, auto=False, session=None):
         if touched:
             lines.append("- touched since last checkpoint: " + ", ".join(os.path.relpath(f, p.root) if f.startswith(p.root) else f
                                                                          for f in touched[:15]))
+        lines += ruled_out(p, b)
         b.set_resume_auto("\n".join(lines))
         if note:
             b.set_resume_note(note)

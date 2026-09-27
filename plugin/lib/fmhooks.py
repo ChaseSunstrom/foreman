@@ -276,6 +276,10 @@ def _resolve_approvals(p, meta, sid, text, hashes=None):
     return notes
 
 
+_CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don'?t\b|do not\b|stop\b|that'?s (wrong|not)|not what i|wrong\b|"
+                         r"i said\b|i meant\b|why did you\b|you (should|shouldn'?t)\b|never\b|please don'?t\b)")
+
+
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
     p = c.find_project(_cwd(pl), create=True)
@@ -287,6 +291,13 @@ def user_prompt_submit(pl):
             _event({"kind": "bg_done", "session_id": sid, "id": tid})  # drive stops waiting on it
         return None
     r = c.parse_intake(text)
+    if _CORRECTION.match(text):  # R2: the user's corrections, for /foreman:reflect to turn into durable preferences
+        try:
+            act = c.active_brief(c.load_briefs(p))
+            c.log_event(p, "correction", task=act.id if act else None, data={"text": c.fit(c.plain(text), 300)},
+                        session=sid)
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
@@ -555,7 +566,7 @@ def _pre_tool_use(raw):
         print(gate, file=sys.stderr)
         return 2
     try:
-        note = _scope_note(pl, p, act)
+        note = " ".join(filter(None, [_scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
     except Exception:
@@ -761,6 +772,20 @@ def _no_task_gate(pl, p, act, ctx):
     return (f"Foreman: no active task in {p.slug}, so {os.path.relpath(path, p.root)} can't be edited yet. One "
             f"command starts a small task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" "
             f"--step \"<step>\" --focus (bigger work: /foreman:intake; fm next says what's next).")
+
+
+def _tripwire_note(pl, p, act):
+    """An edit of a file a finished task touched and left a lesson about: that lesson, once per session per task."""
+    if not p or pl.get("tool_name") not in FILE_TOOLS:
+        return None
+    path = _edit_path(pl)
+    if not _in_project(path, p):
+        return None
+    import fmrecall
+    hit = fmrecall.tripwire(p, os.path.relpath(path, p.root), act.id if act else None)
+    if not hit or not _first_time(pl.get("session_id"), f"trip-{hit[0]}"):
+        return None
+    return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
 
 
 def _scope_note(pl, p, act):

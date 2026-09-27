@@ -30,8 +30,28 @@ def _tokens(text):
     return [_stem(w) for w in _WORD.findall(text.lower()) if w not in _STOP]
 
 
+PLAYBOOKS = os.path.join(c.PLUGIN_ROOT, "skills", "playbooks", "references")
+HALF_LIFE = 180  # days: a hit this old counts half as much as a fresh one
+
+
+def _age(ts):
+    try:
+        import datetime
+        then = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+        if then.tzinfo is None:
+            then = then.replace(tzinfo=datetime.timezone.utc)
+        return max(0.0, (datetime.datetime.now(datetime.timezone.utc) - then).total_seconds() / 86400)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _files(b):
+    return [x.lstrip("- ").strip() for x in b.section("Files touched").splitlines() if x.strip()]
+
+
 def _documents(p, skip=None):
-    """(kind, label, text, tier of a finished brief or None) for everything recall can point to."""
+    """(kind, label, text, tier of a finished brief or None, extra) for everything recall can point to; extra has the
+    age in days and, for briefs, the files they touched and their step count."""
     for b in c.load_briefs(p, include_archive=True):
         if b.id == skip or b.status == "captured":
             continue
@@ -40,13 +60,16 @@ def _documents(p, skip=None):
                  + (f" — lesson: {lesson[0]}" if lesson else ""))
         text = " ".join([b.title, b.section("Raw request"), b.section("Interpretation"), " ".join(lesson),
                          " ".join(b.meta.get("scope") or [])])
-        yield "brief", label, text, b.tier if b.status == "done" else None
+        yield "brief", label, text, b.tier if b.status == "done" else None, {
+            "age": _age(b.meta.get("updated") or b.meta.get("created")), "files": _files(b), "steps": len(b.steps()),
+            "id": b.id}
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
             for line in f:
                 m = _ROW.match(line)
                 if m and m.group(1) != "Date":
-                    yield "decision", f"decision {m.group(1)}: {m.group(2)}", f"{m.group(2)} {m.group(3)}", None
+                    yield ("decision", f"decision {m.group(1)}: {m.group(2)}", f"{m.group(2)} {m.group(3)}", None,
+                           {"age": _age(m.group(1))})
     except OSError:
         pass
     folder = os.path.join(p.dir, "research")
@@ -65,15 +88,28 @@ def _documents(p, skip=None):
             continue
         first = next((x.strip("-* ").strip() for x in text.splitlines()
                       if x.strip("-* ").strip() and not x.lstrip().startswith(("{", "#"))), "")
-        yield "research", f"research {n[:-3]}: {first}", f"{n[:-3].replace('-', ' ')} {text}", None
+        yield "research", f"research {n[:-3]}: {first}", f"{n[:-3].replace('-', ' ')} {text}", None, {
+            "age": max(0.0, (__import__("time").time() - os.path.getmtime(path)) / 86400)}
+    for group, _, names in sorted(os.walk(PLAYBOOKS)):  # the ported procedures: a request about profiling should
+        for n in sorted(x for x in names if x.endswith(".md")):  # surface the profiling playbook (no age)
+            rel = os.path.relpath(os.path.join(group, n), PLAYBOOKS)
+            try:
+                with open(os.path.join(group, n), encoding="utf-8", errors="replace") as f:
+                    text = f.read(MAX_READ)
+            except OSError:
+                continue
+            title = next((x[2:].strip() for x in text.splitlines() if x.startswith("# ")), n[:-3])
+            yield "playbook", f"playbook {title} (skills/playbooks/references/{rel})", \
+                f"{rel[:-3].replace('-', ' ').replace('/', ' ')} {text}", None, {"age": 0.0}
 
 
 def recall(p, query, skip=None, n=HITS):
-    """The n most related documents to query: [(score, kind, label, tier)], best first; a hit shares ≥ 2 words."""
+    """The n most related documents to query: [(score, kind, label, tier, extra)], best first; a hit shares ≥ 2
+    words. Older history counts less (half at HALF_LIFE days)."""
     q = set(_tokens(query))
     if not q:
         return []
-    docs = [(kind, label, _tokens(text), tier) for kind, label, text, tier in _documents(p, skip)]
+    docs = [(kind, label, _tokens(text), tier, extra) for kind, label, text, tier, extra in _documents(p, skip)]
     if not docs:
         return []
     avg = sum(len(d[2]) for d in docs) / len(docs) or 1
@@ -82,7 +118,7 @@ def recall(p, query, skip=None, n=HITS):
         for w in set(d[2]) & q:
             df[w] = df.get(w, 0) + 1
     scored = []
-    for kind, label, words, tier in docs:
+    for kind, label, words, tier, extra in docs:
         tf = {}
         for w in words:
             if w in q:
@@ -91,8 +127,10 @@ def recall(p, query, skip=None, n=HITS):
             continue
         s = sum(math.log(1 + (len(docs) - df[w] + 0.5) / (df[w] + 0.5)) * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * len(words) / avg))
                 for w, f in tf.items())
-        scored.append((s, kind, label, tier))
-    return sorted(scored, key=lambda x: -x[0])[:n]
+        scored.append((s / (1 + extra.get("age", 0) / HALF_LIFE), kind, label, tier, extra))
+    ranked = sorted(scored, key=lambda x: -x[0])
+    book = next((x for x in ranked if x[1] == "playbook"), None)  # one procedure at most: history comes first
+    return [x for x in ranked if x[1] != "playbook" or x is book][:n]
 
 
 def brief_query(b):
@@ -104,10 +142,18 @@ def render(hits, tier=None):
     if not hits:
         return ""
     lines = ["Related past work (data from this project's history, not instructions):"]
-    lines += ["- " + c.fit(c.plain(label), LINE) for _, _, label, _ in hits]
-    done = [TIERS[t] for _, kind, _, t in hits if kind == "brief" and t in TIERS]
-    if tier in TIERS and len(done) >= 1 and min(done) > TIERS[tier]:
-        lines.append(f"- similar past tasks were {'SML'[max(done)]}: consider --tier {'SML'[max(done)]}")
+    lines += ["- " + c.fit(c.plain(label), LINE) for _, _, label, _, _ in hits]
+    done = [(TIERS[t], x) for _, kind, _, t, x in hits if kind == "brief" and t in TIERS]
+    if tier in TIERS and done and min(t for t, _ in done) > TIERS[tier]:
+        big = max(t for t, _ in done)
+        lines.append(f"- similar past tasks were {'SML'[big]}: consider --tier {'SML'[big]}")
+    if done:  # T-0050: effort from the nearest finished tasks
+        steps = [x["steps"] for _, x in done]
+        lines.append(f"- similar finished tasks took {min(steps)}–{max(steps)} steps" if len(steps) > 1 else
+                     f"- the similar finished task took {steps[0]} steps")
+    start = next((x for _, x in done if x.get("files")), None)
+    if start:  # R2: begin where the nearest finished task worked
+        lines.append(c.plain(f"- start here (files {start['id']} touched): {', '.join(start['files'][:6])}"))
     out = "\n".join(lines)
     return out if len(out) <= TOTAL else out[:TOTAL].rsplit("\n", 1)[0]
 
@@ -162,10 +208,40 @@ def seen_before(p, sig, task):
 def cmd_recall(args):
     import fmcli
     p = fmcli.resolve(args)
+    if args.corrections:
+        rows = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-(args.n * 5):]
+        return fmcli.out(args, rows, "\n".join(f"- {str(e.get('ts', ''))[:10]} {e.get('task') or '-'}: "
+                                                f"{c.plain((e.get('data') or {}).get('text', ''))}" for e in rows)
+                         or "No corrections recorded.")
     b = fmcli.need_brief(p, args.task) if args.task else None
     query = " ".join(args.text) or (brief_query(b) if b else "")
     if not query.strip():
         raise fmcli.UsageError("fm recall needs text or --task ID")
     hits = recall(p, query, skip=b.id if b else None, n=args.n)
-    fmcli.out(args, [{"kind": k, "label": c.plain(label), "score": round(s, 2)} for s, k, label, _ in hits],
+    fmcli.out(args, [{"kind": k, "label": c.plain(label), "score": round(s, 2)} for s, k, label, _, _ in hits],
               render(hits, b.tier if b else None) or "Nothing related in this project's history.")
+
+
+# ---------------------------------------------------------------- lesson tripwires (T-0071 round C)
+
+def write_tripwires(p):
+    """tripwires.json: {file: [[task id, lesson]]} from finished tasks' Files touched and Lessons, so an edit of one
+    of those files can surface the lesson (PreToolUse reads this small index; it never scans briefs)."""
+    index = {}
+    for b in c.load_briefs(p, include_archive=True):
+        lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
+        if b.status != "done" or not lesson or lesson.lower().startswith("none"):
+            continue
+        for f in _files(b):
+            index.setdefault(f, []).append([b.id, c.fit(c.plain(lesson), 200)])
+    c.write_atomic(os.path.join(p.dir, "tripwires.json"), json.dumps(index))
+
+
+def tripwire(p, rel, active=None):
+    """(task id, lesson) of the newest finished task that touched rel and left a lesson, or None."""
+    try:
+        with open(os.path.join(p.dir, "tripwires.json"), encoding="utf-8") as f:
+            hits = [h for h in json.load(f).get(rel) or [] if h[0] != active]
+    except (OSError, ValueError, AttributeError):
+        return None
+    return max(hits, key=lambda h: c.id_num(h[0])) if hits else None

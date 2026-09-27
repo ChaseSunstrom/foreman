@@ -245,6 +245,11 @@ def cmd_task(args):
             b.append_log("done")
         first_edit = c.first_touch(p, pre.id)
         b, _ = mutate(p, args.id, done, "task_done", {"lesson": lesson[:300]} if lesson else None)
+        try:
+            import fmrecall
+            fmrecall.write_tripwires(p)
+        except OSError:
+            pass
         grade, why = b.grade()
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade),
                    f"{b.id} done (verification: {grade} — {why})." + (
@@ -518,6 +523,9 @@ def cmd_focus(args):
                         ", ".join(tests), 200)
             if related:
                 target.set_section("Related", related)
+        moved = _moved_since_planned(p, target)
+        if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since
+            related = (related + "\n" if related else "") + moved
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
@@ -529,6 +537,17 @@ def cmd_focus(args):
         print(warn, file=sys.stderr)
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\n{related}" if related else ""))
+
+
+def _moved_since_planned(p, b):
+    """Commits since the brief was written that changed files in its scope (an hour's grace for its own planning)."""
+    scope, since = b.meta.get("scope") or [], str(b.meta.get("created") or "")
+    if not scope or not since or (c.age_days(since) or 0) < 1 / 24 or not c.git_root(p.root):
+        return ""
+    files = c._git(p.root, "log", f"--since={since}", "--name-only", "--pretty=format:", timeout=10).splitlines()
+    moved = sorted({f for f in files if f and any(c.glob_match(f, s) for s in scope)})
+    return (f"Changed in scope since this was planned ({since[:10]}): {c.fit(', '.join(moved), 200)}; re-ground the "
+            f"plan against them before editing") if moved else ""
 
 
 def cmd_checkpoint(args):
@@ -695,18 +714,32 @@ def cmd_ask(args):
 
 
 def cmd_decide(args):
+    """Record a decision; T-0057: --kind costly|outward marks one the user should review in the final report,
+    --reverses names the earlier decision it undoes; --list shows them (--review: only those to review)."""
     p = resolve(args)
+    path = os.path.join(p.dir, "decisions.md")
+    if args.list or args.review or not args.decision:
+        rows = [l.rstrip("\n") for l in (open(path, encoding="utf-8").readlines() if os.path.exists(path) else [])
+                if l.startswith("| 2")]
+        text = "\n".join(rows)
+        reversed_ = re.findall(r"\[reverses: ([^\]]+)\]", text)
+        pick = [r for r in rows if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
+        pick = [r + ("  ← reversed later" if any(x.lower() in r.lower() for x in reversed_ if "[reverses:" not in r)
+                     else "") for r in pick]
+        return out(args, {"decisions": pick}, "\n".join(pick[-args.n:]) or "No decisions recorded.")
 
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
-    row = f"| {c.now()[:10]} | {cell(args.decision)} | {cell(args.why)} | {cell(args.rejected)} |\n"
-    path = os.path.join(p.dir, "decisions.md")
+    tags = ("" if args.kind == "reversible" else f"[{args.kind}] ") + (f"[reverses: {cell(args.reverses)}] "
+                                                                       if args.reverses else "")
+    row = f"| {c.now()[:10]} | {tags}{cell(args.decision)} | {cell(args.why)} | {cell(args.rejected)} |\n"
     with c.lock(p.dir):
         cur = open(path, encoding="utf-8").read() if os.path.exists(path) else \
             "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
         c.write_atomic(path, cur + row)
         c.log_event(p, "decision", task=args.task, data={"decision": args.decision, "why": args.why,
-                                                          "rejected": args.rejected}, session=session())
+                                                          "rejected": args.rejected, "kind": args.kind,
+                                                          "reverses": args.reverses}, session=session())
     out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
 
 
@@ -1154,10 +1187,16 @@ def build_parser():
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
 
     s = add("decide", cmd_decide, help="record a decision in decisions.md")
-    s.add_argument("decision")
+    s.add_argument("decision", nargs="?")
     s.add_argument("--why", default="")
     s.add_argument("--rejected", default="")
     s.add_argument("--task")
+    s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
+                   help="costly/outward: listed for the user's review (fm decide --review)")
+    s.add_argument("--reverses", help="words from the earlier decision this one undoes")
+    s.add_argument("--list", action="store_true")
+    s.add_argument("--review", action="store_true", help="only costly/outward decisions")
+    s.add_argument("-n", type=int, default=30)
 
     s = add("research", cmd_research, help="save a research/recon summary into the project's research/")
     rsp = s.add_subparsers(dest="research_cmd", required=True)
@@ -1258,6 +1297,7 @@ def build_parser():
     s.add_argument("text", nargs="*")
     s.add_argument("--task", help="recall for this task's title, request and scope")
     s.add_argument("-n", type=int, default=4)
+    s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
 
     s = add("focus", cmd_focus, help="make a task the single active task")
     s.add_argument("id")

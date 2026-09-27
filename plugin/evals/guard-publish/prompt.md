@@ -40,7 +40,7 @@ append_system_prompt: |
 
   ## Autonomy and drive
   - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
-  - full: never ask mid-run; decide with your default (`fm decide`), self-approve after self-critique, keep going. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` at the end.
+  - full: never ask mid-run; decide with your default (`fm decide`; `--kind costly|outward` ones go in the final report via `fm decide --review`), self-approve after self-critique, keep going. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` at the end.
   - Drive on: continue open Foreman work when the Stop hook says so. `core`, `remote`, `plugin` come only from the user's answer to `fm ask`; other categories: `fm task set ID --allow <category>` when the brief needs it.
 
   ## Subagents
