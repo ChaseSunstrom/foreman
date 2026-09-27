@@ -585,6 +585,25 @@ class PluginPins(HookCase):
         self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
 
 
+class AutoEvidence(HookCase):
+    """R6 (T-0063): running a criterion's verify command records its real result; no second run via fm."""
+
+    def test_a_verify_command_run_in_bash_is_recorded_as_evidence(self):
+        self.fm("init")
+        tid = self.task()
+        self.fm("task", "ac", tid, "add", "slow login passes", "--verify", "pytest -k slow")
+        ok = {"stdout": "3 passed in 0.2s", "stderr": "", "interrupted": False}
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest  -k slow"}, "tool_response": ok})
+        ev = c.find_brief(self.project(), tid).evidence()
+        self.assertTrue(any("(ac 2)" in l and "exit 0" in l and "[ran]" in l and "3 passed" in l for l in ev), ev)
+        self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "pytest -k slow"},
+                                         "error": "Exit code 1\n1 failed"})
+        self.assertIn("✗ exit 1", c.find_brief(self.project(), tid).evidence()[-1])
+        n = len(c.find_brief(self.project(), tid).evidence())
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": ok})
+        self.assertEqual(len(c.find_brief(self.project(), tid).evidence()), n, "other commands record nothing")
+
+
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})

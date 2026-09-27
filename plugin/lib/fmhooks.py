@@ -765,6 +765,11 @@ def post_tool_use(pl, ok=True):
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
+    if p and tool == "Bash":
+        try:
+            _auto_evidence(pl, p, ok)
+        except Exception:
+            log_error("PostToolUse", _tb())
     if ok and tool == "Bash" and ti.get("run_in_background"):
         m = re.search(r"\bID:?\s*([\w-]+)|backgroundTaskId\W+([\w-]+)", json.dumps(pl.get("tool_response")))
         if m:
@@ -777,6 +782,35 @@ def post_tool_use(pl, ok=True):
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
     return None
+
+
+_VERIFY = re.compile(r"— verify with `(.+)`\s*$")
+
+
+def _auto_evidence(pl, p, ok):
+    """R6 (T-0063): a Bash command that is exactly a criterion's verify command is recorded as that criterion's
+    evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
+    cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
+    act = c.active_brief(c.load_briefs(p)) if cmd else None
+    hits = [a.n for a in (act.acceptance() if act else []) if (m := _VERIFY.search(a.text))
+            and " ".join(m.group(1).split()) == cmd]
+    if not hits:
+        return
+    if ok:
+        r = pl.get("tool_response")
+        code, output = 0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+    else:
+        err = str(pl.get("error") or "")
+        m = re.match(r"Exit code (\d+)", err)
+        code, output = (int(m.group(1)) if m else 1), err.split("\n", 1)[-1]
+    result, tree = c.run_result(code, c.redact(output)), c.worktree_id(p.root)
+    with c.lock(p.dir, timeout=LOCK_QUICK):
+        b = c.find_brief(p, act.id)
+        for n in hits:
+            b.add_evidence(cmd, result, ac=n, tree=tree, ran=True)
+        c.save_brief(p, b)
+        c.log_event(p, "evidence", task=b.id, data={"ac": hits, "cmd": cmd[:200], "auto": True},
+                    session=pl.get("session_id"))
 
 
 def post_tool_use_failure(pl):

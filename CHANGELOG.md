@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Auto-evidence (R6): running a criterion's exact verify command records its real result as evidence; no second run through fm.
 - Faster and fewer tokens (round 5): `fm check` reuses a pass on the identical tree and `--affected` runs only linked tests while iterating; the review brief goes to a file instead of the conversation; the per-turn state note is sent only when it changed.
 - Project map (T-0044): `fm map` (gates, layout, entry points, hot files, test links; rebuilt when HEAD moves), `fm impact PATH`, likely tests for the scope at focus; intake grounds from map, impact and recall first.
 - Verification (T-0045..T-0047): FIX tasks need red→green proof (or a stated reason); `fm check` times gates, reruns a failure once (flaky) and labels failures that predate the task; a recurring failure points to the finished task that met it, with its lesson.

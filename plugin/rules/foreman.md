@@ -25,7 +25,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
 ## Evidence and state
-- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. A FIX records its regression test failing, then passing (`--run` both times), or a "Regression test" section "none: why".
+- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. A FIX records its regression test failing, then passing (`--run` both times), or a "Regression test" section "none: why".
 - All state through `fm`; never write under ~/.claude/foreman/state. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
 - Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture, `fm task audit ID <lens> …`. M/L record Docs impact.
