@@ -1496,9 +1496,13 @@ def glob_match(rel, pattern):
 # ---------------------------------------------------------------- checkpoint / resume
 
 def _git(root, *args, timeout=2):
+    """git's stdout, or "" on any failure. Paths come raw (no quoting of spaces or non-ASCII), undecodable bytes are
+    replaced, and GIT_* variables can't point it at another repository."""
     import subprocess
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
     try:
-        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=timeout)
+        r = subprocess.run(["git", "-c", "core.quotePath=false", "-C", root, *args], capture_output=True, text=True,
+                           errors="replace", timeout=timeout, env=env)
         return r.stdout if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""

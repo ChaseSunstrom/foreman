@@ -434,7 +434,10 @@ def cmd_focus(args):
             related = fmrecall.render(fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id), target.tier)
             if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
                 import fmmap
-                tests = fmmap.tests_for(fmmap.load(p), target.meta["scope"])
+                try:
+                    tests = fmmap.tests_for(fmmap.load(p), target.meta["scope"])
+                except Exception:  # the map is a hint: it never stops a focus
+                    tests = []
                 if tests:
                     related = (related or "Related (data):") + "\n- likely tests for the scope: " + c.fit(
                         ", ".join(tests), 200)
@@ -732,7 +735,9 @@ def cmd_check(args):
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
         if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
             code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
-            if not code2:
+            if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
+                notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
+            elif not code2:
                 code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
@@ -760,6 +765,19 @@ def cmd_check(args):
     return 1 if failed else 0
 
 
+def _flaky_count(p, cmd, runs=20):
+    """How many of the last `runs` fm check runs labelled this gate flaky."""
+    seen = n = 0
+    for e in reversed(c.ledger_tail(p, 2000)):
+        if e.get("event") == "check_run":
+            seen += 1
+            n += any(r.get("cmd") == cmd and str(r.get("note") or "").startswith("flaky")
+                     for r in (e.get("data") or {}).get("results") or [])
+            if seen >= runs:
+                break
+    return n
+
+
 def _cached_pass(p, checks, tree):
     """When the newest full fm check run was on this exact tree, with these gates, and all passed: its time."""
     if not tree:
@@ -779,8 +797,8 @@ def _check_affected(p, args):
     import fmmap
     act = c.active_brief(c.load_briefs(p))
     base = (act.meta.get("base") if act else None) or "HEAD"
-    changed = set(fmmap._git(p.root, "diff", "--name-only", base).split()) | set(
-        fmmap._git(p.root, "ls-files", "--others", "--exclude-standard").split())
+    changed = set(fmmap._git(p.root, "diff", "--name-only", base).splitlines()) | set(
+        fmmap._git(p.root, "ls-files", "--others", "--exclude-standard").splitlines())
     m = fmmap.load(p)
     tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
@@ -793,7 +811,7 @@ def _check_affected(p, args):
     cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests))
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
-    out(args, {"tests": tests, "exit": code}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
+    out(args, {"tests": tests, "exit": code, "changed": sorted(changed)}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
         f"{c.run_result(code, output)}\n(the full gates still decide before commit and done: fm check)")
     return 1 if code else 0
 

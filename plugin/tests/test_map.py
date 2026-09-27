@@ -57,3 +57,17 @@ class Map(ForemanTestCase):
         tid = json.loads(self.fm("task", "new", "Speed up parse", "--type", "PERF", "--tier", "S", "--scope",
                                  "src/parser.py", "--ac", "faster", "--step", "do", "--json").stdout)["id"]
         self.assertIn("tests/test_parser.py", self.fm("focus", tid).stdout)
+
+    def test_odd_bytes_and_names_dont_break_the_map_or_focus(self):
+        # final review: a Latin-1 Makefile crashed fm map (and so fm focus); spaced names were split apart
+        with open(os.path.join(self.repo, "Makefile"), "wb") as f:
+            f.write(b"# Jos\xe9\ntest:\n\tpytest\n")
+        with open(os.path.join(self.repo, "src", "my parser.py"), "w") as f:
+            f.write("x = 1\n")
+        self.commit("odd")
+        self.assertIn("make test", self.fm("map").stdout)
+        with open(os.path.join(self.repo, "src", "my parser.py"), "a") as f:
+            f.write("y = 2\n")
+        self.fm("check", "affected", "echo {tests}")
+        res = json.loads(self.fm("check", "--affected", "--json").stdout)
+        self.assertIn("src/my parser.py", res["changed"])

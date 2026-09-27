@@ -452,6 +452,15 @@ class OneCommandTask(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_a_gate_flaky_again_and_again_fails(self):
+        # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
+        self.fm("init")
+        flag = os.path.join(self.tmp, "odd")
+        self.fm("check", "add", f"if [ -e {flag} ]; then rm {flag}; exit 0; else touch {flag}; exit 1; fi")
+        codes = [self.fm("check", "--fresh", check=False) for _ in range(3)]
+        self.assertEqual([p.returncode for p in codes], [0, 0, 1])
+        self.assertIn("flaky again", codes[2].stdout)
+
     def test_a_pass_on_the_same_tree_is_reused_and_affected_runs_only_linked_tests(self):
         # round 5 (T-0063): the ~100 s suite ran twice per tree (step and criterion evidence); iterate on linked tests
         self.fm("init")

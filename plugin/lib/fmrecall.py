@@ -136,12 +136,13 @@ def note_failure(p, task, text):
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
     try:
-        if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
-            keep = c.tail_jsonl(path, FAILURES_KEEP)
-            c.write_atomic(path, "".join(json.dumps(r) + "\n" for r in keep))
-        with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
-    except OSError:
+        with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
+            if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
+                keep = c.tail_jsonl(path, FAILURES_KEEP)
+                c.write_atomic(path, "".join(json.dumps(r) + "\n" for r in keep))
+            with open(path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
+    except (OSError, c.LockTimeout):
         pass
     return hint
 

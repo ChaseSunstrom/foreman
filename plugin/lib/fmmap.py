@@ -5,7 +5,6 @@ import collections
 import json
 import os
 import re
-import subprocess
 
 import fmcore as c
 
@@ -17,16 +16,10 @@ OUT_MAX = 1500
 
 
 def _git(root, *args):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    try:
-        r = subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=30, env=env,
-                           errors="replace")
-    except (OSError, subprocess.SubprocessError):
-        return ""
-    return r.stdout if r.returncode == 0 else ""
+    return c._git(root, *args, timeout=30)
 
 
-def _stem(path):
+def _name_stem(path):
     base = os.path.basename(path).split(".")[0]
     return re.sub(r"^test_|_test$", "", base)
 
@@ -48,7 +41,8 @@ def _gates(root, files, checks):
         found.append("go test ./...")
     if "Makefile" in names:
         try:
-            targets = re.findall(r"(?m)^(test|lint|check)\s*:", open(os.path.join(root, "Makefile")).read())
+            with open(os.path.join(root, "Makefile"), encoding="utf-8", errors="replace") as f:
+                targets = re.findall(r"(?m)^(test|lint|check)\s*:", f.read())
             found += [f"make {t}" for t in targets]
         except OSError:
             pass
@@ -68,9 +62,9 @@ def build(p):
     sources = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
     links = {}
     for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
-        stem, ext = _stem(t), os.path.splitext(t)[1]
+        stem, ext = _name_stem(t), os.path.splitext(t)[1]
         # same language; the source's name is the test's, or ends with it (test_guard.py → fmguard.py)
-        srcs = [s for s in sources if s.endswith(ext) and (_stem(s) == stem or (len(stem) >= 4 and _stem(s).endswith(stem)))]
+        srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (len(stem) >= 4 and _name_stem(s).endswith(stem)))]
         if srcs:
             links[t] = srcs
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
@@ -133,7 +127,7 @@ def cmd_impact(args):
     m = load(p)
     rel = os.path.relpath(os.path.abspath(args.path), p.root) if os.path.isabs(args.path) or os.path.exists(args.path) \
         else args.path
-    stem = _stem(rel)
+    stem = _name_stem(rel)
     users = [f for f in _git(p.root, "grep", "-l", "-w", "-I", "-e", stem).splitlines() if f != rel and _CODE.search(f)]
     tests = tests_for(m, [rel])
     data = {"path": rel, "tests": tests, "dependents": users[:15]}
