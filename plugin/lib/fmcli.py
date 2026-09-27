@@ -917,7 +917,15 @@ def cmd_check(args):
         return out(args, {"checks": checks},
                    "\n".join(f"{i}. {x}" for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
     if not checks:
-        raise UsageError("no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…)")
+        hint = ""
+        try:  # R3 bootstrap: what the project itself says it runs
+            import fmmap
+            m = fmmap.load(p) if c.git_root(p.root) else {}
+            hint = "; found in the project: " + "; ".join((m.get("gates") or []) + (m.get("ci") or [])[:4]) \
+                if m.get("gates") or m.get("ci") else ""
+        except Exception:
+            pass
+        raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
     import time
     act = c.active_brief(c.load_briefs(p))
     tree = c.worktree_id(p.root)
@@ -954,6 +962,10 @@ def cmd_check(args):
             notes[cmd] = "; ".join(filter(None, [notes.get(cmd), "changed the working tree (it writes files; a check "
                                                                  "should only read)"]))
             tree = now_tree
+        if code and args.fail_fast and len(results) < len(checks):  # the red loop: the first failure is enough
+            notes[cmd] = "; ".join(filter(None, [notes.get(cmd), f"--fail-fast: {len(checks) - len(results)} "
+                                                                 f"later gate(s) not run"]))
+            break
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
@@ -1157,7 +1169,11 @@ def cmd_audit(args):
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
     import fmmap
     files = sorted(set(re.findall(r"(?m)^diff --git a/.+? b/(.+)$", r.stdout)))
-    found = fmmap.pre_audit(p.root, r.stdout, files)
+    try:
+        m = fmmap.load(p)
+    except Exception:  # the map is a hint: it never stops an audit
+        m = None
+    found = fmmap.pre_audit(p.root, r.stdout, files, m)
     risky = ["adversary"] if c.sensitive(files, r.stdout) else []
     lenses = args.lens or (["self"] + risky if b.tier == "S" else [x for x in c.AUDIT_LENSES if x != "self"])
     missing = [x for x in lenses if x != "self" and x not in templates]
@@ -1425,6 +1441,8 @@ def build_parser():
     s = add("gates", cmd_gates, help="what fm task done will require for a type and tier (default: the active task)")
     s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
+    s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief (printed only)")
+    s.add_argument("id")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
@@ -1472,6 +1490,7 @@ def build_parser():
                                             "with {tests} (paths) or {names} (file names without extension)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
+    s.add_argument("--fail-fast", action="store_true", help="stop at the first failing gate (while iterating)")
     s.add_argument("--affected", action="store_true", help="only the tests linked to files changed since the task "
                                                            "started (fm map); the full gates still decide at the end")
     s.add_argument("--evidence", metavar="ID", help="record each result as evidence on this task")

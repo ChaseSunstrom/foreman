@@ -94,16 +94,23 @@ def cmd_cost(args):
                          f"transcript format changed (fm cost reads message.usage on assistant lines).")
     total = sum(by_task.values()) or 1
     tool_total = sum(tools.values()) or 1
+    first = {}  # R3: each session's first reply shows the context every turn starts from (system, tools, rules, hooks)
+    for ts, sid, usage in sorted(msgs, key=lambda x: x[0]):
+        first.setdefault(sid, sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
+                                                               "cache_read_input_tokens")))
+    base = sorted(first.values())[len(first) // 2] if first else 0
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
-            "tool_result_chars": dict(tools.most_common())}
+            "tool_result_chars": dict(tools.most_common()), "session_start_context": base}
     text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
             + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
-            + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5)))
+            + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
+            + (f"\nContext at the first reply of a session (median): {_human(base)} tokens, re-read every turn"
+               if base else ""))
     fmcli.out(args, data, text)
 
 
@@ -195,6 +202,33 @@ def cmd_evals(args):
     fmcli.out(args, {"case": folder, "files": sorted(files)},
               f"Eval case for {b.id}: {folder} ({', '.join(sorted(files))}). Review the graders, then copy it into a "
               f"plugin's evals/ and run claude plugin eval.")
+
+
+def cmd_pr(args):
+    """fm pr ID (R1): a pull-request description from the brief — what and why, criteria with their evidence, how it
+    was verified and reviewed, the lesson. Printed only: opening the PR stays an outward action behind the user's yes."""
+    import fmcli
+    p = fmcli.resolve(args)
+    b = fmcli.need_brief(p, args.id)
+    why = (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip()
+           or b.title)
+    ev = [l for l in b.evidence() if not l.startswith("- (audit ")]
+    grade, how = b.grade()
+    lines = [f"## {b.title}", "", c.plain(why), "", "### Done when"]
+    for a in b.acceptance():
+        proof = next((l.split("`", 2)[1] + " → " + l.split("` → ", 1)[1].split(" [")[0] for l in reversed(ev)
+                      if l.startswith(f"- (ac {a.n}) ") and "` → " in l), "")
+        lines.append(f"- [{'x' if a.checked else ' '}] {re.sub(r' — verify with `.+`$', '', a.text)}"
+                     + (f" — `{proof}`" if proof else ""))
+    lines += ["", "### Verification", f"- {grade} ({how})"]
+    lenses = sorted({lens for lens, _, _ in b.audits()})
+    if lenses:
+        lines.append(f"- reviewed: {', '.join(lenses)}")
+    lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
+    if lesson:
+        lines += ["", "### Notes", f"- {c.plain(lesson)}"]
+    lines += ["", f"Foreman task {b.id} ({b.type} {b.tier})"]
+    fmcli.out(args, {"id": b.id, "body": "\n".join(lines)}, c.redact("\n".join(lines)))
 
 
 def cmd_usage(args):

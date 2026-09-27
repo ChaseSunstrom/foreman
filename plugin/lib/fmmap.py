@@ -69,10 +69,46 @@ def build(p):
             links[t] = srcs
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
             "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
-            "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files)}
+            "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files))}
 
 
-VERSION = 2  # bump when build() changes, so older maps are rebuilt
+_CI_FILE = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml)$")
+_CI_RUN = re.compile(r"(?m)^\s*(?:-\s+)?(?:run:\s*|-\s+)(?![|>])([^#\n]*\b(test|lint|check|typecheck|vet|clippy|fmt|"
+                     r"format|build|mypy|ruff|flake8|eslint|pytest|tox)\b[^#\n]*)$")
+
+
+def _ci(root, files):
+    """R3 (mirror CI): the check-like commands the CI workflows run, so local gates can match what CI enforces."""
+    found = []
+    for f in (f for f in files if _CI_FILE.match(f)):
+        try:
+            with open(os.path.join(root, f), encoding="utf-8", errors="replace") as fh:
+                found += [m.group(1).strip().strip("'\"") for m in _CI_RUN.finditer(fh.read())]
+        except OSError:
+            pass
+    return list(dict.fromkeys(x for x in found if not x.startswith(("uses:", "name:"))))[:12]
+
+
+def _co_change(root, files, min_together=3, share=0.6):
+    """R2 (companion edits): {file: [files it changed with in ≥ 60% of its last year's commits, ≥ 3 times]}."""
+    log = _git(root, "log", "--since=365.days", "--name-only", "--pretty=format:%x00")
+    alone, together = collections.Counter(), collections.Counter()
+    for commit in log.split("\0"):
+        names = sorted({f for f in commit.split("\n") if f in files})
+        if not 2 <= len(names) <= 20:  # a sweeping commit says nothing about companions
+            alone.update(names)
+            continue
+        alone.update(names)
+        together.update((a, b) for a in names for b in names if a != b)
+    pairs = {}
+    for (a, b), n in together.items():
+        if n >= min_together and n / alone[a] >= share:
+            pairs.setdefault(a, []).append(b)
+    return {a: sorted(bs)[:3] for a, bs in pairs.items()}
+
+
+VERSION = 3  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -107,6 +143,8 @@ def render(m):
         lines.append("most changed (180 days): " + ", ".join(m["hot"]))
     if m["tests"]:
         lines.append("tests → sources: " + "; ".join(f"{t} → {', '.join(s[:2])}" for t, s in list(m["tests"].items())[:10]))
+    if m.get("ci"):
+        lines.append("CI runs: " + "; ".join(m["ci"]))
     out = "\n".join(c.plain(x) for x in lines)
     return out if len(out) <= OUT_MAX else out[:OUT_MAX - 1] + "…"
 
@@ -191,6 +229,49 @@ _DEBUG = re.compile(r"\b(breakpoint\(\)|pdb\.set_trace|ipdb|console\.log\(|debug
 _MARKER = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b")
 
 
+_SKIP = re.compile(r"@(unittest\.skip|pytest\.mark\.(skip|xfail))|\bpytest\.skip\(|\b(xit|xdescribe|xtest)\(|"
+                   r"\.(skip|only)\(|\bt\.Skip\(|#\[ignore\]")
+_ASSERT = re.compile(r"\bassert|\bexpect\(|\.should\b|\bt\.(Error|Fatal)")
+
+
+def _tampering(diff):
+    """R3: weakened tests in the diff — assertions or test files removed, skips/only added."""
+    found, cur, removed = [], "", collections.Counter()
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            cur = line.rsplit(" b/", 1)[-1]
+        elif line.startswith("deleted file mode") and _TEST.search(cur):
+            found.append(f"test file deleted: {cur}")
+        elif _TEST.search(cur) and line.startswith("-") and not line.startswith("---") and _ASSERT.search(line):
+            removed[cur] += 1
+        elif _TEST.search(cur) and line.startswith("+") and not line.startswith("+++") and _SKIP.search(line):
+            found.append(f"test skipped or narrowed in {cur}: {c.fit(line[1:].strip(), 80)}")
+    added = collections.Counter()
+    for line in diff.splitlines():
+        if line.startswith("diff --git "):
+            cur = line.rsplit(" b/", 1)[-1]
+        elif line.startswith("+") and not line.startswith("+++") and _ASSERT.search(line):
+            added[cur] += 1
+    found += [f"{n} assertion(s) removed from {f} ({added[f]} added)" for f, n in removed.items() if n > added[f]]
+    return found
+
+
+_REMOVED_DEF = re.compile(r"^-(?:export\s+)?(?:async\s+)?(?:def|class|function|func|fn)\s+([A-Za-z]\w{2,})")
+
+
+def _dangling(root, diff):
+    """R3: public names the diff removed that the tree still mentions (a rename or delete left callers behind)."""
+    removed = {m.group(1) for line in diff.splitlines() if (m := _REMOVED_DEF.match(line))}
+    readded = {m.group(1) for line in diff.splitlines() if line.startswith("+")
+               and (m := _REMOVED_DEF.match("-" + line[1:]))}
+    found = []
+    for name in sorted(removed - readded)[:10]:
+        users = _git(root, "grep", "--untracked", "-l", "-w", "-I", "-e", name).splitlines()
+        if users:
+            found.append(f"removed {name} is still named in {', '.join(users[:4])}")
+    return found
+
+
 def pre_audit(root, diff, files, m=None):
     """Mechanical findings from a task's diff (T-0068), so the reviewer spends its reading on judgement: debug
     leftovers, conflict markers, new TODOs, secret-looking values, changed source with no test changed, big files,
@@ -221,6 +302,13 @@ def pre_audit(root, diff, files, m=None):
                 found.append(f"large file in the change: {f} ({os.path.getsize(os.path.join(root, f)) // 1024} KB)")
         except OSError:
             pass
+    found += _tampering(diff) + _dangling(root, diff)
+    if m and m.get("pairs"):  # R2: files that nearly always change together, one of them left out
+        changed = set(files)
+        for f in sorted(changed):
+            missing = [b for b in m["pairs"].get(f, []) if b not in changed]
+            if missing:
+                found.append(f"{f} usually changes with {', '.join(missing)} (git history); check it needs no edit")
     risky = c.sensitive(files, diff)
     if risky:
         found.append(f"security-sensitive: {', '.join(risky)} (adversary lens required)")

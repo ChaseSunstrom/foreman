@@ -126,9 +126,12 @@ def _write_gate(p, g):
 
 def session_start(pl):
     sid = pl.get("session_id")
-    if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state
+    if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
+        folder = os.path.join(c.state_dir(), "sessions")  # and one-shot notes (outline, thrash, tripwires) re-arm
         try:
-            os.remove(os.path.join(c.state_dir(), "sessions", f"{sid}.note"))
+            for name in os.listdir(folder):
+                if name.startswith(sid + "."):
+                    os.remove(os.path.join(folder, name))
         except OSError:
             pass
     p = c.find_project(_cwd(pl), create=True)
@@ -404,6 +407,26 @@ def _first_time(sid, key):
         return True
     except OSError:
         return False
+
+
+def _syntax_note(path):
+    """R3: an edit that left a Python or JSON file unparsable, said right away (before a test run finds it)."""
+    try:
+        if not path.endswith((".py", ".json")) or not os.path.isfile(path) or os.path.getsize(path) > 2_000_000:
+            return None
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        if path.endswith(".py"):
+            compile(text, path, "exec", dont_inherit=True)
+        else:
+            json.loads(text)
+    except SyntaxError as e:
+        return f"Foreman: {os.path.basename(path)}:{e.lineno}: SyntaxError: {e.msg} — the edit left it unparsable."
+    except ValueError as e:  # JSONDecodeError, or undecodable bytes
+        return f"Foreman: {os.path.basename(path)}: not valid JSON/UTF-8 after the edit: {c.fit(str(e), 120)}"
+    except OSError:
+        return None
+    return None
 
 
 THRASH = 6  # edits of one file with no check recorded in between
@@ -885,10 +908,9 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
-        if act:
-            note = _thrash_note(pl, p, act, path)
-            if note:
-                return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
+        note = _syntax_note(path) or (_thrash_note(pl, p, act, path) if act else None)
+        if note:
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 

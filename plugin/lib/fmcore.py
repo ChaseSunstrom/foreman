@@ -228,6 +228,8 @@ def run_command(root, cmd, timeout=600):
         return 127, f"could not run bash: {e}"
     try:
         out, _ = pr.communicate(timeout=timeout)
+        if pr.returncode == 0 and _NO_TESTS.search(out or ""):  # R3: a green run of zero tests proves nothing
+            return 5, redact(out) + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
         return pr.returncode, redact(out)
     except subprocess.TimeoutExpired:
         try:
@@ -239,6 +241,10 @@ def run_command(root, cmd, timeout=600):
         except subprocess.TimeoutExpired:  # a grandchild kept the pipe open after leaving the group
             out = ""
         return 124, redact((out or "") + f"\ntimed out after {timeout:g}s")
+
+
+_NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
+                       r"0 examples, 0 failures)")
 
 
 def env_id():
@@ -1555,10 +1561,10 @@ def _git(root, *args, timeout=2):
     """git's stdout, or "" on any failure. Paths come raw (no quoting of spaces or non-ASCII), undecodable bytes are
     replaced, and GIT_* variables can't point it at another repository."""
     import subprocess
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
-    try:
+    env = dict({k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, GIT_TERMINAL_PROMPT="0")
+    try:  # never interactive: no terminal prompt, no stdin to wait on
         r = subprocess.run(["git", "-c", "core.quotePath=false", "-C", root, *args], capture_output=True, text=True,
-                           errors="replace", timeout=timeout, env=env)
+                           errors="replace", timeout=timeout, env=env, stdin=subprocess.DEVNULL)
         return r.stdout if r.returncode == 0 else ""
     except (OSError, subprocess.SubprocessError):
         return ""
