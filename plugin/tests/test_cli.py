@@ -157,7 +157,7 @@ class TaskLifecycle(ForemanTestCase):
         def audited_done(check):
             for lens in ("intent", "edge"):
                 self.fm("task", "audit", "T-0002", lens, "lens prompt", "ok")
-            return self.fm("task", "done", "T-0002", check=check)
+            return self.fm("task", "done", "T-0002", "--lesson", "none: test", check=check)
         p = audited_done(False)
         self.assertEqual(p.returncode, 2)
         self.assertIn("docs/usage.md, which doesn't exist", p.stderr)

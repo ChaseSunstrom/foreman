@@ -29,7 +29,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - All state through `fm`; never write under ~/.claude/foreman/state. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
 - Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture, `fm task audit ID <lens> …`. M/L record Docs impact.
-- End of task: `fm task done ID`, triage the inbox, continue per autonomy (`/foreman:next`).
+- End of task: `fm task done ID` (M/L: `--lesson "…"`), triage the inbox, continue per autonomy (`/foreman:next`).
 
 ## Autonomy and drive
 - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.

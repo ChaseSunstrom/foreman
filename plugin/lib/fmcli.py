@@ -214,13 +214,21 @@ def cmd_task(args):
         pre = need_brief(p, args.id)
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
+        lesson = c.plain(args.lesson or "").strip()
+
         def done(b):
             reasons = b.done_blockers(since, tree) + drift
+            if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
+                reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
+                               f"know>\" (or \"none: <why>\"); recall shows it on related work")
             if reasons:
                 raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
+            if lesson:
+                old = b.section("Lessons").rstrip()
+                b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
             b.meta["status"] = "done"
             b.append_log("done")
-        b, _ = mutate(p, args.id, done, "task_done")
+        b, _ = mutate(p, args.id, done, "task_done", {"lesson": lesson[:300]} if lesson else None)
         return out(args, dict(c.brief_summary(b), doc_drift=notes), f"{b.id} done." + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "drop" and getattr(args, "done_in", None):
@@ -420,6 +428,12 @@ def cmd_focus(args):
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
         target.append_log("focused")
+        related = ""
+        if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
+            import fmrecall
+            related = fmrecall.render(fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id), target.tier)
+            if related:
+                target.set_section("Related", related)
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
@@ -429,7 +443,8 @@ def cmd_focus(args):
         c.regen_views(p)
     if warn:
         print(warn, file=sys.stderr)
-    out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}")
+    out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
+        + (f"\n{related}" if related else ""))
 
 
 def cmd_checkpoint(args):
@@ -966,6 +981,7 @@ def build_parser():
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
     t = tadd("done")
     t.add_argument("id")
+    t.add_argument("--lesson", help="what the next similar task should know (M/L: required; 'none: why' allowed)")
     t = tadd("block")
     t.add_argument("id")
     t.add_argument("reason")
@@ -976,6 +992,11 @@ def build_parser():
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
+
+    s = add("recall", lazy("fmrecall", "cmd_recall"), help="related past work: briefs, decisions, research")
+    s.add_argument("text", nargs="*")
+    s.add_argument("--task", help="recall for this task's title, request and scope")
+    s.add_argument("-n", type=int, default=4)
 
     s = add("focus", cmd_focus, help="make a task the single active task")
     s.add_argument("id")

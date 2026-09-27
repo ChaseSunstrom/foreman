@@ -1285,7 +1285,8 @@ def next_action(b, autonomy="standard", since=None):
     if st == "auditing":
         return f"{tid}: {'; '.join(b.audit_blockers(since))} (skills/intake/references/audit.md; fm task audit)"
     if st == "closing":
-        return f"{tid}: fm task done {tid}, then /foreman:next"
+        lesson = "" if b.tier == "S" or b.section("Lessons").strip() else " --lesson \"<what the next similar task should know>\""
+        return f"{tid}: fm task done {tid}{lesson}, then /foreman:next"
     return f"{tid} is {st}"
 
 
