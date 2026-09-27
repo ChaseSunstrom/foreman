@@ -493,6 +493,10 @@ class PluginChanges(GuardCase):
         fh = self.fhome
         self.run_table([
             (f"git -C {fh} checkout evil-branch", "core"),
+            (f"git -C {fh} pull", "core"),
+            (f"git -C {fh} fetch -q origin", None),  # T-0040: fetch only updates refs under .git
+            (f"cd {fh} && git fetch --all", None),
+            (f"git -C {fh} fetch --update-head-ok origin evil:main", "core"),
             (f"cd {fh} && git reset --hard HEAD~3", "core"),
             (f"cd {fh} && git checkout HEAD~1 -- plugin/lib/fmguard.py", "core"),
             (f"tar -xf evil.tar -C {fh}", "core"),

@@ -87,4 +87,4 @@ class Ideas(ForemanTestCase):
 
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
-        self.assertEqual(len(self.calls()), 6)
+        self.assertEqual(len(self.calls()), 4)  # T-0061: four by default

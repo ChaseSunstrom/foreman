@@ -15,7 +15,7 @@ import fmsetup
 PLUGIN = c.PLUGIN_ROOT
 RULES_MAX, BLOCK_MAX, ALWAYS_ON_MAX = 80, 5, 120
 DESCRIPTIONS_MAX = 6000  # chars (~1.5k tokens) of skill/agent/command descriptions, loaded in every session
-RULES_CHARS_MAX = 9000  # chars (~2.3k tokens) of always-on rules: denser lines cost as much as more lines
+RULES_CHARS_MAX = 6000  # chars (~1.5k tokens) of always-on rules: denser lines cost as much as more lines
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
 EXPECTED_EXIT = {"PreToolUse:Bash:block": [2], "TaskCompleted": [2]}  # fixtures that are designed to block

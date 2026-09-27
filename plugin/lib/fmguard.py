@@ -551,7 +551,7 @@ def _tar_targets(args):
     return out
 
 
-_GIT_WORKTREE_WRITES = {"pull", "fetch", "checkout", "switch", "reset", "merge", "rebase", "restore", "stash", "apply",
+_GIT_WORKTREE_WRITES = {"pull", "checkout", "switch", "reset", "merge", "rebase", "restore", "stash", "apply",
                         "am", "cherry-pick", "revert", "clean", "rm", "mv"}
 
 
@@ -598,7 +598,8 @@ def _write_targets(name, args):
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
             return [rest[-1]] if len(rest) >= 2 else ["."]
-        if i < len(args) and args[i] in _GIT_WORKTREE_WRITES:  # rewrites its checkout (and repository)
+        if i < len(args) and (args[i] in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
+                args[i] == "fetch" and ({"-u", "--update-head-ok"} & set(args[i + 1:])))):  # fetch can move HEAD then
             base = os.path.join(*where) if where else "."
             return [os.path.join(base, t) for t in trees] or [base]
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):

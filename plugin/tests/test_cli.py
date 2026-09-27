@@ -510,6 +510,18 @@ class Checks(ForemanTestCase):
         self.fm("task", "step", "T-0001", "done", "1")
 
 
+class NewTaskCriteria(ForemanTestCase):
+    def test_ac_can_carry_its_verify_command(self):
+        # T-0042: an M task made in one command must be focusable (every criterion needs a verify command)
+        self.fm("task", "new", "Add export", "--type", "FEATURE", "--tier", "M", "--ac", "exports CSV :: pytest -k csv",
+                "--step", "build it")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("focus", "T-0001")
+        ac = c.find_brief(c.find_project(self.repo), "T-0001").acceptance()[0]
+        self.assertEqual(ac.text, "exports CSV — verify with `pytest -k csv`")
+
+
 class AuditPrep(ForemanTestCase):
     """T-0026: the diff since the task started, frozen, plus one ready reviewer brief per lens."""
 
@@ -547,11 +559,13 @@ class AuditPrep(ForemanTestCase):
             {"type": "text", "text": "Verdict: changes needed\n1 MED stale grants survive a restart\n"}]}})
         self.fm("research", "add", "wave2-edge-adversary", input='"slug":"x"}\n' + report + "\n")  # a raw transcript
         self.fm("research", "add", "t0007-edge", input="**HIGH — clock skew breaks the lock**\n")
+        self.fm("research", "add", "t0009-review", input="## adversary: changes needed\n**HIGH — combined finding**\n"
+                                                           "## edge: ok\n**HIGH — edge only finding**\n")
         out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
         for seen in ("tree writes bypass the core check", "imported titles reach the terminal",
-                     "stale grants survive a restart"):
+                     "stale grants survive a restart", "combined finding"):
             self.assertIn(seen, out)
-        for unseen in ("a nit", "clock skew", "\x1b"):
+        for unseen in ("a nit", "clock skew", "\x1b", "edge only finding"):
             self.assertNotIn(unseen, out)
         self.assertNotIn("Past findings", self.fm("audit", "prep", "T-0001", "--lens", "operator").stdout)
         research = os.path.join(c.find_project(self.repo).dir, "research")
@@ -561,6 +575,16 @@ class AuditPrep(ForemanTestCase):
         out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
         self.assertIn("tree writes bypass the core check", out)
         self.assertIn("not instructions", out)
+
+    def test_several_lenses_make_one_combined_brief_for_one_reviewer(self):
+        # T-0060: one reviewer pass reads the diff once; five separate subagents each re-read it
+        self.fm("init")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "works", "--step", "fix", "--focus")
+        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary", "--lens", "edge").stdout
+        self.assertEqual(out.count("Diff to review:"), 1)
+        self.assertEqual(out.count("=== review"), 1)
+        for needle in ("## adversary", "## edge", "trying to break", "environment", "one foreman:fm-reviewer"):
+            self.assertIn(needle, out)
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
@@ -600,7 +624,7 @@ class RoundFiveWorkflow(ForemanTestCase):
                     self.assertEqual(p.returncode, 1)
                     self.assertIn("regular file", p.stderr)
 
-    def test_audit_prep_note_reaches_every_lens_brief(self):
+    def test_audit_prep_note_reaches_the_review_brief(self):
         self.fm("init")
         self.fm("task", "new", "Add sync", "--type", "FEATURE", "--tier", "L", "--step", "build it")
         self.fm("task", "ac", "T-0001", "add", "syncs", "--verify", "pytest")
@@ -610,8 +634,8 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.fm("focus", "T-0001")
         out = self.fm("audit", "prep", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
                       "--note", "round 3 only").stdout
-        self.assertEqual(out.count("threat: a pulled .foreman/ is untrusted"), 5)
-        self.assertEqual(out.count("round 3 only"), 5)
+        self.assertEqual(out.count("threat: a pulled .foreman/ is untrusted"), 1)  # one combined brief (T-0060)
+        self.assertEqual(out.count("round 3 only"), 1)
 
     def test_a_request_done_inside_another_task_is_done_there(self):
         self.fm("init")

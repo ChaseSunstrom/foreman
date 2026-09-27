@@ -14,6 +14,7 @@ import time
 import fmcore as c
 
 LENSES = ["user value", "reliability", "performance", "security and safety", "simplicity", "bold bets"]
+DEFAULT_LENSES = ["user value", "reliability", "simplicity", "bold bets"]  # T-0061: the rest on request
 PROMPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "skills", "brainstorm", "references", "ideas-prompt.md")
 # No built-in tools, no MCP servers, and no user settings (so other plugins' hooks and prompts don't bias the lens).
@@ -34,7 +35,7 @@ def cmd_ideas(args):
     import fmcli
     p = fmcli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
-    lenses = list(dict.fromkeys(args.lens or LENSES))
+    lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
     with open(PROMPT, encoding="utf-8") as f:
         system = f.read()
     out_dir = os.path.join(p.dir, "research", "brainstorm-" + time.strftime("%Y%m%d-%H%M%S"))

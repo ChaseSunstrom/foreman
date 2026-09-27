@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Leaner and cheaper: `fm audit prep` prints one combined brief, so an L review is one reviewer pass instead of five subagents (past-finding seeding reads combined reviews by section); `fm ideas` runs four lenses by default; the always-on rules shrank from 7.6k to 4.9k characters (doctor caps them at 6,000) and ask for economical reads and short replies (T-0060..T-0062).
+- `fm task new --ac "<done when> :: <verify cmd>"` attaches the verify command, so an M/L task made in one command can be focused (T-0042); `git fetch` no longer counts as a tree write unless it may move HEAD (`--update-head-ok`) (T-0040).
 - `setup-plugins.sh` refuses a real run inside a Claude Code session (`CLAUDECODE=1`): its installs would skip the user's yes; `--dry-run` still works, and a terminal run is unchanged (T-0039).
 - Plugin approvals are pinned (T-0036): `fm ask ID plugin --pin <plugin id>` binds the yes to that plugin and a hash of its content; `fm plugins install|enable` and `claude plugin install|enable` spend it only for that plugin, unchanged, within 24 h, and otherwise say which `fm ask` to run again. The dialog names the plugin; pins never travel through `fm sync`.
 - The Stop evidence gate reads a completion word under a finished step's `▸ Step N/M` header as about that step, however far below the header it is (T-0038).

@@ -8,12 +8,12 @@ what counts as correct. `fm task done` refuses until the tier's audits are recor
 |---|---|
 | S | `self`: run the checklist below yourself, all five lenses, in the main thread |
 | M | `intent` + one of `adversary` / `edge` / `operator` / `maintainer` (pick the riskiest), via `foreman:fm-reviewer` |
-| L | all five: `intent`, `adversary`, `edge`, `operator`, `maintainer`, via `foreman:fm-reviewer` (≤ 3 in parallel) |
+| L | all five: `intent`, `adversary`, `edge`, `operator`, `maintainer`, in one `foreman:fm-reviewer` pass |
 
 ## Protocol
 1. **Freeze the change.** All steps done with evidence, tests green (`fm check`). `fm audit prep ID` saves the diff since the task was focused (untracked files included) and prints step 2's briefs, each with this project's past findings for its lens (so save reviews as `<task>-<lens>`).
-2. **Build each lens brief** from the template below (`fm audit prep ID` does this): the lens prompt, its context slice and nothing else. Leave out your plan, rationale and conversation; the point is a fresh view.
-3. **Run** each lens as a separate `foreman:fm-reviewer` subagent (read-only). ≤ 3 at a time.
+2. **Build the review brief** from the templates below (`fm audit prep ID` does this): one section per lens, each with its prompt and context slice and nothing else. Leave out your plan, rationale and conversation; the point is a fresh view.
+3. **Run** it as one `foreman:fm-reviewer` subagent (read-only): it reads the diff once and reports per lens. Save the reply with `fm research add ID-review --from-agent <its output file>`.
 4. **Verify every finding yourself**: reproduce it (run the input, read the line, write the failing test). Auditors can be wrong; unverified findings are neither fixed nor dismissed silently.
 5. **Resolve**: real finding in scope → fix it test-first (regression test), re-run the full suite. Real but out of scope → `fm capture --source discovered`. False positive → say why in one line.
 6. **Record** each lens: `fm task audit ID <lens> "<how: agent/lens/diff>" "<N findings: F fixed (tests), C captured (ids), X false positive>"`.
