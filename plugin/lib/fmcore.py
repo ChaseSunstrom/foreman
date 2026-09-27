@@ -773,7 +773,7 @@ class Brief:
                 newest = (t.group(1), w.group(1) if w else None)
         return newest
 
-    def audit_blockers(self, since=None, tree=None):
+    def audit_blockers(self, since=None, tree=None, need=()):
         """Required audits missing or stale. An audit recorded against the current worktree id covers exactly these
         files, so later evidence (test runs, a push) doesn't stale it; without ids (outside git, older audits) it must
         postdate the last step evidence / attributed edit. Callers that can't afford a worktree id (fm next, hooks)
@@ -788,7 +788,7 @@ class Brief:
         changed = {lens for lens, ts, t in audits if ts >= cutoff and tree and t and t != tree}
         stale = {lens for lens, _, _ in audits} - fresh - changed
         reasons = []
-        for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]):
+        for group in REQUIRED_AUDITS.get(self.tier, REQUIRED_AUDITS["S"]) + [{x} for x in need]:
             if not group & fresh:
                 why = (" (files changed since the audit; re-audit)" if group & changed else
                        " (recorded audits predate the last change; re-audit after the last change)" if group & stale
@@ -826,7 +826,7 @@ class Brief:
             raise KeyError(f"no acceptance criterion {n}")
         self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
 
-    def done_blockers(self, since=None, tree=None):
+    def done_blockers(self, since=None, tree=None, need=()):
         reasons = []
         for s in self.steps():
             if not s.done:
@@ -845,7 +845,7 @@ class Brief:
             reasons.append(f"no red→green proof: record the regression test failing before the fix and passing after "
                            f"(fm task evidence {self.id} --run \"<test cmd>\", both times), or say why there is none "
                            f"(fm task set {self.id} --section \"Regression test\" --text \"none: <why>\")")
-        return reasons + self.audit_blockers(since, tree)
+        return reasons + self.audit_blockers(since, tree, need)
 
     def red_green(self):
         """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
@@ -1535,6 +1535,65 @@ def touched_since_checkpoint(p, tid):
             if f and f not in files:
                 files.append(f)
     return list(reversed(files))
+
+
+def task_files(p, tid):
+    """Project files the hooks saw this task edit (relative). ponytail: Edit/Write only; Bash edits aren't seen."""
+    files = []
+    for e in ledger_tail(p, 5000):
+        f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
+        if f and f.startswith(p.root.rstrip("/") + "/") and os.path.relpath(f, p.root) not in files:
+            files.append(os.path.relpath(f, p.root))
+    return files
+
+
+def scope_drift(b, files):
+    """Files this task edited outside its scope globs (T-0055); .foreman/ is Foreman's own mirror."""
+    scope = b.meta.get("scope") or []
+    return [f for f in files if scope and not f.startswith(".foreman/") and not any(glob_match(f, s) for s in scope)]
+
+
+_SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|token|passw|credential|session|login|oauth|jwt|permission|acl|"
+                             r"sandbox|guard|sudo|security|keyring|signing)")
+_SENSITIVE_CODE = re.compile(r"(?m)^\+.*(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
+                             r"os\.system\(|verify=False|innerHTML|dangerouslySetInnerHTML|\bmd5\(|\bsha1\(|"
+                             r"deseriali[sz]e)")
+
+
+def sensitive(files, diff=""):
+    """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
+    deserialization in the paths it touched or the lines it added. [] when none."""
+    why = [f for f in files if _SENSITIVE_PATH.search(f)][:5]
+    why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(diff)})[:5]
+    return why
+
+
+_BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
+             "!", "(", "{", "env", "command", "timeout", "time", "xargs", "sh", "bash"}
+
+
+_VACUOUS = {"true", ":", "echo", "printf", "ls", "cat", "pwd", "exit", "sleep", "date", "cd"}
+
+
+def lint_verify(cmd, root):
+    """What's wrong with a verify command as a check (T-0066): programs that aren't on PATH, builtins or repo files
+    (it would fail with 'command not found', not on the behaviour), nothing that can fail (echo ok, true), or a
+    pipe whose last program decides the exit status (pytest | tail passes whatever pytest says)."""
+    problems, firsts = [], []
+    for seg in re.split(r"&&|\|\||;", cmd or ""):
+        for k, part in enumerate(seg.split("|")):
+            words = [w for w in part.split() if not re.match(r"^\w+=", w)]
+            w = words[0].strip("()") if words else ""
+            if k == 0:
+                firsts.append(w)
+            if w and w not in _BUILTINS and w not in _VACUOUS and not shutil.which(w) \
+                    and not os.path.exists(os.path.join(root, w)) and not os.path.exists(os.path.expanduser(w)):
+                problems.append(f"{w} isn't on PATH or in the repo")
+    if any(firsts) and all(f in _VACUOUS or not f for f in firsts):
+        problems.append("it can't fail (nothing in it checks the behaviour)")
+    if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
+        problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
+    return problems
 
 
 def checkpoint(p, note=None, auto=False, session=None):

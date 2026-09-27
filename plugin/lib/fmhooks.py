@@ -359,6 +359,39 @@ def user_prompt_submit(pl):
     return out
 
 
+def _first_time(sid, key):
+    """True the first time this session asks for key (a one-shot note); False after, or without a usable id."""
+    if not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return False
+    path = os.path.join(c.state_dir(), "sessions", f"{sid}.{key}")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.close(os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+        return True
+    except OSError:
+        return False
+
+
+BIG_READ = 600  # lines
+
+
+def _big_read_note(pl, ti):
+    """A whole-file Read of a big source file: say once per session that fm outline gives its map (T-0067)."""
+    path = os.path.join(_cwd(pl), str(ti.get("file_path") or ""))
+    if ti.get("offset") or ti.get("limit") or not path.endswith((".py", ".js", ".ts", ".tsx", ".go", ".rs", ".java",
+                                                                   ".rb", ".c", ".cc", ".cpp", ".kt", ".swift", ".php")):
+        return None
+    try:
+        with open(path, "rb") as f:
+            n = sum(chunk.count(b"\n") for chunk in iter(lambda: f.read(1 << 16), b""))
+    except OSError:
+        return None
+    if n < BIG_READ or not _first_time(pl.get("session_id"), "outline"):
+        return None
+    return (f"Foreman: {os.path.basename(path)} is {n} lines. For big files, `fm outline PATH` lists definitions with "
+            f"line ranges; then Read only the range you need (offset/limit).")
+
+
 def _same_note(sid, text):
     """Whether this session was last told exactly this state; records it when not (SessionStart clears it)."""
     if not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
@@ -784,7 +817,8 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
-    return None
+    note = _big_read_note(pl, ti) if ok and tool == "Read" else None
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 
 
 _VERIFY = re.compile(r"— verify with `(.+)`\s*$")

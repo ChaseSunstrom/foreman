@@ -133,3 +133,95 @@ def cmd_impact(args):
     data = {"path": rel, "tests": tests, "dependents": users[:15]}
     fmcli.out(args, data, c.plain_lines(f"{rel}\n  likely tests: {', '.join(tests) or 'none linked by name'}\n  mention "
                                  f"'{stem}': {', '.join(users[:15]) or 'none'}"))
+
+
+_DEF = re.compile(r"^(\s*)(?:(?:export|default|pub(?:\([\w:]+\))?|async|static|public|private|protected|abstract|final|"
+                  r"override|inline|unsafe|extern)\s+)*(def|class|function|fn|func|struct|enum|trait|impl|interface|"
+                  r"module|type|object)\s+([\w.$:<>]+)")
+
+
+def outline(path):
+    """[(first line, last line, depth, "kind name")] for a source file (T-0067): exact for Python (ast), by
+    definition keywords and indentation for other languages."""
+    import ast
+    with open(path, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    lines = text.splitlines()
+    if path.endswith(".py"):
+        try:
+            out = []
+
+            def walk(node, depth):
+                for n in ast.iter_child_nodes(node):
+                    if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        out.append((n.lineno, n.end_lineno, depth, ("class " if isinstance(n, ast.ClassDef) else
+                                                                    "def ") + n.name))
+                        walk(n, depth + 1)
+            walk(ast.parse(text), 0)
+            return out, len(lines)
+        except (SyntaxError, ValueError):
+            pass
+    hits = [(i + 1, len(m.group(1).expandtabs()), f"{m.group(2)} {m.group(3)}")
+            for i, line in enumerate(lines) if (m := _DEF.match(line))]
+    indents = sorted({h[1] for h in hits})
+    out = []
+    for k, (n, ind, name) in enumerate(hits):
+        end = next((h[0] - 1 for h in hits[k + 1:] if h[1] <= ind), len(lines))
+        while end > n and not lines[end - 1].strip():
+            end -= 1
+        out.append((n, end, indents.index(ind), name))
+    return out, len(lines)
+
+
+def cmd_outline(args):
+    import fmcli
+    try:
+        defs, total = outline(args.path)
+    except OSError as e:
+        raise fmcli.UsageError(f"can't read {args.path}: {e.strerror}")
+    rows = [f"{a:>6}-{b:<6} {'  ' * d}{name}" for a, b, d, name in defs[:400]]
+    fmcli.out(args, {"path": args.path, "lines": total, "defs": [dict(zip(("start", "end", "depth", "name"), x))
+                                                                 for x in defs]},
+              c.plain_lines(f"{args.path}: {total} lines, {len(defs)} definitions (Read a range with offset/limit)\n"
+                            + "\n".join(rows) + ("\n  …" if len(defs) > 400 else "")))
+
+
+_ADDED = re.compile(r"(?m)^\+(?!\+\+)(.*)$")
+_DEBUG = re.compile(r"\b(breakpoint\(\)|pdb\.set_trace|ipdb|console\.log\(|debugger;|dbg!\(|var_dump\(|binding\.pry)")
+_MARKER = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b")
+
+
+def pre_audit(root, diff, files, m=None):
+    """Mechanical findings from a task's diff (T-0068), so the reviewer spends its reading on judgement: debug
+    leftovers, conflict markers, new TODOs, secret-looking values, changed source with no test changed, big files,
+    security-sensitive code."""
+    found = []
+    cur = ""
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            cur = line[6:] if line.startswith("+++ b/") else line[4:]
+            continue
+        if not line.startswith("+") or line.startswith("+++"):
+            continue
+        added = line[1:]
+        if _DEBUG.search(added):
+            found.append(f"debug leftover in {cur}: {c.fit(added.strip(), 100)}")
+        if re.match(r"^(<<<<<<<|>>>>>>>)( |$)|^=======$", added):
+            found.append(f"conflict marker in {cur}")
+        if _MARKER.search(added):
+            found.append(f"new {_MARKER.search(added).group(1)} in {cur}: {c.fit(added.strip(), 100)}")
+        if c.redact(added) != added:
+            found.append(f"secret-looking value added in {cur}")
+    code = [f for f in files if _CODE.search(f) and not _TEST.search(f)]
+    if code and not any(_TEST.search(f) for f in files):
+        found.append(f"source changed with no test changed: {', '.join(code[:6])}")
+    for f in files:
+        try:
+            if os.path.getsize(os.path.join(root, f)) > 200_000:
+                found.append(f"large file in the change: {f} ({os.path.getsize(os.path.join(root, f)) // 1024} KB)")
+        except OSError:
+            pass
+    risky = c.sensitive(files, diff)
+    if risky:
+        found.append(f"security-sensitive: {', '.join(risky)} (adversary lens required)")
+    return list(dict.fromkeys(found))[:30]

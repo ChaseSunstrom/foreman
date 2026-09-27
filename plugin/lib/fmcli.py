@@ -215,9 +215,16 @@ def cmd_task(args):
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
+        files = c.task_files(p, pre.id)
+        risky = c.sensitive(files, c._git(p.root, "diff", pre.meta["base"], timeout=30) if pre.meta.get("base") else "")
 
         def done(b):
-            reasons = b.done_blockers(since, tree) + drift
+            reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
+                       else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
+            outside = c.scope_drift(b, files)
+            if outside and "scope:" not in b.section("Log").lower():
+                reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: {', '.join(outside[:8])}"
+                               f"; widen it (fm task set {b.id} scope=…) or say why (fm task log {b.id} \"scope: <why>\")")
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
@@ -245,6 +252,13 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
     raise UsageError(f"unknown task subcommand {sub}")
+
+
+def _lint_verify(p, cmds):
+    for cmd in filter(None, cmds):
+        problems = c.lint_verify(cmd, p.root)
+        if problems:
+            print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
 
 
 def task_done_in(p, args):
@@ -303,6 +317,7 @@ def task_new(p, args):
             for text in args.step or []:
                 b.add_step(text)
         b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
+        _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
     out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})")
     if args.focus:
         cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
@@ -394,6 +409,7 @@ def task_ac(p, args):
         text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
         text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
         b, _ = mutate(p, args.id, lambda b: b.add_ac(text, verify), "ac_add", {"text": text})
+        _lint_verify(p, [verify])
         return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
     try:
         n = int(args.arg)
@@ -890,17 +906,25 @@ def cmd_audit(args):
     with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md"), encoding="utf-8") as f:
         ref = f.read()
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
-    lenses = args.lens or (["self"] if b.tier == "S" else [x for x in c.AUDIT_LENSES if x != "self"])
+    import fmmap
+    files = sorted(set(re.findall(r"(?m)^diff --git a/.+? b/(.+)$", r.stdout)))
+    found = fmmap.pre_audit(p.root, r.stdout, files)
+    risky = ["adversary"] if c.sensitive(files, r.stdout) else []
+    lenses = args.lens or (["self"] + risky if b.tier == "S" else [x for x in c.AUDIT_LENSES if x != "self"])
     missing = [x for x in lenses if x != "self" and x not in templates]
     if missing:
         raise UsageError(f"references/audit.md has no template for {', '.join(missing)} (its lens format changed?)")
     head = (f"Read-only audit of task {b.id} \"{b.title}\" ({b.type} {b.tier}) in {p.root}.\n"
             f"Diff to review: {path} (git diff {base[:12]} → working tree, untracked files included; "
             f"{r.stdout.count(chr(10))} lines).")
+    if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
+        head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
+            f"- {x}" for x in found)
     blocks, sections = [], []
     for lens in lenses:
         if lens == "self":
-            blocks.append("=== self (main thread) ===\n" + ref[ref.index("**self**"):].strip())
+            blocks.append("=== self (main thread) ===\n" + ref[ref.index("**self**"):].strip()
+                          + "".join(f"\n- pre-audit: {x}" for x in found))
             continue
         context, prompt = templates[lens]
         extra = ""
@@ -924,9 +948,10 @@ def cmd_audit(args):
            f"save its reply with fm research add {b.id}-review --from-agent <its output file>; record each lens with "
            f"fm task audit {b.id} <lens> …" if sections else f"Record it with fm task audit {b.id} self …")
     # the brief goes to a file: printed, it would be paid for twice (here and in the reviewer's prompt)
-    out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief},
+    out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief, "pre_audit": found},
         ("\n\n".join(blocks) + f"\n\nDiff: {path}\n" if args.print else
-         f"Review brief ({', '.join(lenses)}; {sum(map(len, blocks))} chars): {brief}\nDiff: {path}\n") + how)
+         f"Review brief ({', '.join(lenses)}; {sum(map(len, blocks))} chars): {brief}\nDiff: {path}\n"
+         + "".join(f"Pre-audit: {x}\n" for x in found)) + how)
 
 
 def _sync_in(args):
@@ -1109,6 +1134,8 @@ def build_parser():
     s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
+    s.add_argument("path")
+    s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
     s = add("recall", lazy("fmrecall", "cmd_recall"), help="related past work: briefs, decisions, research")

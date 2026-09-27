@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Gates from the diff (T-0071 round A): `fm task done` asks for a reason for edits outside the brief's scope (T-0055) and for the adversary lens whatever the tier when the change touches auth, crypto, secrets, exec or deserialization (T-0049); verify commands are linted when written (not on PATH, can't fail, exit status hidden by a pipe; T-0066); `fm outline PATH` lists a file's definitions with line ranges and a whole Read of a 600+ line file gets a one-time pointer to it (T-0067); `fm audit prep` puts mechanical findings (debug leftovers, conflict markers, new TODOs, secret-looking values, source without tests, big files, sensitive code) at the top of the review brief (T-0068).
 - Super brainstorm (T-0071): `fm ideas --rounds N` runs rounds that each see every idea so far and add only new ones (gaps, second-order improvements, combinations), stopping when a round adds fewer than `--dry` (default 3), with a deduplicated `ideas.md` index; "fully featured"-style requests are pointed at it, and the brainstorm skill's super mode builds every grounded idea and re-brainstorms until dry. `fm task ac add` takes `criterion :: verify` too.
 - Auto-evidence (R6): running a criterion's exact verify command records its real result as evidence; no second run through fm.
 - Faster and fewer tokens (round 5): `fm check` reuses a pass on the identical tree and `--affected` runs only linked tests while iterating; the review brief goes to a file instead of the conversation; the per-turn state note is sent only when it changed.

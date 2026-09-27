@@ -2,7 +2,7 @@
 
 ## Per step
 1. `fm resume` if you are not sure where you are. Work only on the CURRENT step.
-2. Do the work. Stay in scope; out-of-scope edits → widen scope with a logged reason or `fm capture`.
+2. Do the work. Stay in scope; out-of-scope edits → widen scope (`fm task set ID scope=…`) or log why (`fm task log ID "scope: <why>"`; `fm task done` asks for one), or `fm capture`. Big file: `fm outline PATH`, then Read only the range you need.
 3. Verify with a fresh command (tests, build, lint, a reproduction). Read the whole output.
 4. Record: `fm task step ID done N --evidence "<cmd>" "<result>"` (or `fm task evidence` first). fm refuses without evidence.
 5. Acceptance criteria: `fm task ac ID check N --evidence "<cmd>" "<result>"`.
