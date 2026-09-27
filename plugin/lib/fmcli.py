@@ -432,6 +432,12 @@ def cmd_focus(args):
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
             import fmrecall
             related = fmrecall.render(fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id), target.tier)
+            if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
+                import fmmap
+                tests = fmmap.tests_for(fmmap.load(p), target.meta["scope"])
+                if tests:
+                    related = (related or "Related (data):") + "\n- likely tests for the scope: " + c.fit(
+                        ", ".join(tests), 200)
             if related:
                 target.set_section("Related", related)
         c.save_brief(p, target)
@@ -1018,6 +1024,11 @@ def build_parser():
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
+
+    s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
+    s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
+    s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
+    s.add_argument("path")
 
     s = add("recall", lazy("fmrecall", "cmd_recall"), help="related past work: briefs, decisions, research")
     s.add_argument("text", nargs="*")
