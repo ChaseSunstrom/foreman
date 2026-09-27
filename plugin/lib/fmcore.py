@@ -228,7 +228,8 @@ def run_command(root, cmd, timeout=600):
         return 127, f"could not run bash: {e}"
     try:
         out, _ = pr.communicate(timeout=timeout)
-        if pr.returncode == 0 and _NO_TESTS.search(out or ""):  # R3: a green run of zero tests proves nothing
+        if pr.returncode == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
+            # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
             return 5, redact(out) + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
         return pr.returncode, redact(out)
     except subprocess.TimeoutExpired:
@@ -245,6 +246,7 @@ def run_command(root, cmd, timeout=600):
 
 _NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
                        r"0 examples, 0 failures)")
+_SOME_TESTS = re.compile(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
 
 
 def env_id():
@@ -1637,6 +1639,11 @@ def scope_drift(b, files):
 
 
 _VERIFY_OF = re.compile(r"— verify with `(.+)`\s*$")
+
+
+def strip_verify(criterion_text):
+    """The criterion without its "— verify with `cmd`" tail."""
+    return _VERIFY_OF.sub("", criterion_text or "").rstrip()
 
 
 def verify_of(criterion_text):

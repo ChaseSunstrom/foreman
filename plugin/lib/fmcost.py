@@ -218,7 +218,7 @@ def cmd_pr(args):
     for a in b.acceptance():
         proof = next((l.split("`", 2)[1] + " → " + l.split("` → ", 1)[1].split(" [")[0] for l in reversed(ev)
                       if l.startswith(f"- (ac {a.n}) ") and "` → " in l), "")
-        lines.append(f"- [{'x' if a.checked else ' '}] {re.sub(r' — verify with `.+`$', '', a.text)}"
+        lines.append(f"- [{'x' if a.checked else ' '}] {c.strip_verify(a.text)}"
                      + (f" — `{proof}`" if proof else ""))
     lines += ["", "### Verification", f"- {grade} ({how})"]
     lenses = sorted({lens for lens, _, _ in b.audits()})

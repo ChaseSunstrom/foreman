@@ -42,7 +42,7 @@ class RoundF(ForemanTestCase):
                 "tree": tree, "env": c.env_id(), "results": [{"cmd": "true", "exit": 0, "s": 0.1}]}}) + "\n")
         self.assertNotIn("cached", self.fm("check").stdout, "a pass from long ago isn't reused")
         self.fm("check", "add", "date > stamp.txt")
-        self.assertIn("changed the working tree", self.fm("check").stdout)
+        self.assertIn("the gates changed the working tree", self.fm("check").stdout)
 
     def test_why_traces_a_line_to_its_task(self):
         self.fm("task", "new", "handle empty carts", "--type", "FIX", "--tier", "S")

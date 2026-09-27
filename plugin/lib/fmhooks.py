@@ -129,11 +129,14 @@ def session_start(pl):
     if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
         folder = os.path.join(c.state_dir(), "sessions")  # and one-shot notes (outline, thrash, tripwires) re-arm
         try:
-            for name in os.listdir(folder):
-                if name.startswith(sid + "."):
-                    os.remove(os.path.join(folder, name))
+            names = [n for n in os.listdir(folder) if n.startswith(sid + ".")]
         except OSError:
-            pass
+            names = []
+        for name in names:
+            try:
+                os.remove(os.path.join(folder, name))
+            except OSError:  # another SessionStart got it first
+                pass
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
@@ -409,10 +412,26 @@ def _first_time(sid, key):
         return False
 
 
+def _generated_note(pl, path):
+    """R4: an edit of a generated or vendored file, said once per session per file."""
+    import fmmap
+    if not fmmap.is_generated(path):
+        return None
+    if not _first_time(pl.get("session_id"), "gen-" + hashlib.sha1(path.encode()).hexdigest()[:10]):
+        return None
+    return (f"Foreman: {os.path.basename(path)} looks generated or vendored; a hand edit is overwritten or drifts — "
+            f"change its source or generator instead, unless that is the point.")
+
+
+_JSONC = re.compile(r"(^|/)(tsconfig[^/]*|jsconfig[^/]*|devcontainer|\.eslintrc)\.json$|/\.vscode/")  # JSON with
+# comments: valid for its tools, not for json.loads (Claude Code's own settings.json is strict JSON: still checked)
+
+
 def _syntax_note(path):
     """R3: an edit that left a Python or JSON file unparsable, said right away (before a test run finds it)."""
     try:
-        if not path.endswith((".py", ".json")) or not os.path.isfile(path) or os.path.getsize(path) > 2_000_000:
+        if not path.endswith((".py", ".json")) or not os.path.isfile(path) or os.path.getsize(path) > 2_000_000 \
+                or _JSONC.search(path):
             return None
         with open(path, encoding="utf-8") as f:
             text = f.read()
@@ -908,7 +927,7 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
-        note = _syntax_note(path) or (_thrash_note(pl, p, act, path) if act else None)
+        note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None

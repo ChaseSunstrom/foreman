@@ -953,19 +953,20 @@ def cmd_check(args):
                 code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
+        env = failure_class(output) if code else None
+        if env:  # R4: say when a failure is the environment's, not a regression in the code
+            notes[cmd] = "; ".join(filter(None, [notes.get(cmd), env]))
         results.append((cmd, code, output, time.monotonic() - t0))
         slow = None if code else _slower(p, cmd, results[-1][3])
         if slow:
             notes[cmd] = slow
-        now_tree = c.worktree_id(p.root) if tree else None
-        if now_tree != tree:  # R2: a check should only read; this one wrote (formatter, codegen, leftovers)
-            notes[cmd] = "; ".join(filter(None, [notes.get(cmd), "changed the working tree (it writes files; a check "
-                                                                 "should only read)"]))
-            tree = now_tree
         if code and args.fail_fast and len(results) < len(checks):  # the red loop: the first failure is enough
             notes[cmd] = "; ".join(filter(None, [notes.get(cmd), f"--fail-fast: {len(checks) - len(results)} "
                                                                  f"later gate(s) not run"]))
             break
+    after = c.worktree_id(p.root) if tree else None
+    wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
+    tree = after or tree
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
@@ -984,8 +985,10 @@ def cmd_check(args):
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
+    if wrote:
+        lines.append("! the gates changed the working tree: one of them writes files (a check should only read)")
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
-                           for cmd, code, _, s in results], "failed": failed}, "\n".join(lines))
+                           for cmd, code, _, s in results], "failed": failed, "wrote": wrote}, "\n".join(lines))
     return 1 if failed else 0
 
 
@@ -1052,6 +1055,22 @@ def _flaky_count(p, cmd, runs=20):
             if seen >= runs:
                 break
     return n
+
+
+_ENV_FAILURES = [
+    (re.compile(r"ModuleNotFoundError|No module named|Cannot find module|command not found|error while loading shared "
+                r"libraries|ImportError: cannot import name"), "environment: a module or tool is missing"),
+    (re.compile(r"Connection refused|ECONNREFUSED|Could not resolve host|Temporary failure in name resolution|"
+                r"Network is unreachable"), "environment: a network or service call failed"),
+    (re.compile(r"Permission denied|EACCES"), "environment: permission denied"),
+    (re.compile(r"No space left on device|ENOSPC"), "environment: disk full"),
+]
+
+
+def failure_class(output):
+    """An environment cause visible in a failed run's output (missing tool, network, permissions, disk), or None."""
+    tail = "\n".join((output or "").splitlines()[-60:])
+    return next((why for rx, why in _ENV_FAILURES if rx.search(tail)), None)
 
 
 CACHE_DAYS = 0.5  # a cached pass older than this reruns: time, caches and services outside the tree drift too
@@ -1142,10 +1161,35 @@ def _past_findings(p, lens):
     return seen
 
 
+def _audit_scan(p, args):
+    """fm audit scan [--base REV] (R4): the mechanical pre-audit over any diff (a branch, a PR checkout), no task
+    needed; base defaults to where the branch left main. Exit 1 when it finds something."""
+    import fmmap
+    if not c.git_root(p.root):
+        raise UsageError("fm audit scan needs a git repository")
+    base = args.base or next((b for ref in ("origin/HEAD", "origin/main", "main", "origin/master", "master")
+                              if (b := c._git(p.root, "merge-base", "HEAD", ref, timeout=10).strip())), "HEAD")
+    diff = c._git(p.root, "diff", base, timeout=120)
+    files = sorted(set(re.findall(r"(?m)^diff --git a/.+? b/(.+)$", diff)))
+    try:
+        m = fmmap.load(p)
+    except Exception:
+        m = None
+    found = fmmap.pre_audit(p.root, diff, files, m)
+    out(args, {"base": base, "files": files, "findings": found},
+        f"Pre-audit of {len(files)} file(s) since {base[:12]}: " + (
+            "\n".join(["", *(f"- {x}" for x in found)]) if found else "nothing mechanical found"))
+    return 1 if found else 0
+
+
 def cmd_audit(args):
     """fm audit prep ID: freeze the diff since the task started and print one reviewer brief per lens."""
     import subprocess
     p = resolve(args)
+    if args.action == "scan":
+        return _audit_scan(p, args)
+    if not args.id:
+        raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
     base = args.base or b.meta.get("base")
     if not base:
@@ -1509,8 +1553,9 @@ def build_parser():
     s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
     s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and write one review brief for one reviewer")
-    s.add_argument("action", choices=["prep"])
-    s.add_argument("id")
+    s.add_argument("action", choices=["prep", "scan"], help="prep ID: review brief for a task; scan: mechanical "
+                                                             "pre-audit of any diff (--base, default: the main branch)")
+    s.add_argument("id", nargs="?")
     s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
     s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")
     s.add_argument("--base", help="diff from this revision (default: the commit the task was focused at)")
