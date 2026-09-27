@@ -841,7 +841,24 @@ class Brief:
         if self.docs_gap():
             reasons.append(f"docs impact not recorded (fm task set {self.id} --section \"Docs impact\" --text "
                            f"\"<docs updated | none: why>\")")
+        if self.type == "FIX" and not self.red_green() and not self.section("Regression test").strip():
+            reasons.append(f"no red→green proof: record the regression test failing before the fix and passing after "
+                           f"(fm task evidence {self.id} --run \"<test cmd>\", both times), or say why there is none "
+                           f"(fm task set {self.id} --section \"Regression test\" --text \"none: <why>\")")
         return reasons + self.audit_blockers(since, tree)
+
+    def red_green(self):
+        """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
+        failed = set()
+        for line in self.evidence():
+            if _RAN_MARK not in line or "`" not in line:
+                continue
+            cmd = line.split("`", 2)[1]
+            if "` → ✗ exit" in line:
+                failed.add(cmd)
+            elif cmd in failed:
+                return True
+        return False
 
     def docs_gap(self):
         """M/L changes say which docs they updated (or why none): out-of-date docs are the drift T-0013 targets."""

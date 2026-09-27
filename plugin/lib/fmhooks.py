@@ -752,7 +752,21 @@ def post_tool_use(pl, ok=True):
 
 
 def post_tool_use_failure(pl):
-    return post_tool_use(pl, ok=False)
+    """Also failure memory (T-0046): a failed command whose failure a finished task already met gets a pointer to it."""
+    post_tool_use(pl, ok=False)
+    if pl.get("tool_name") != "Bash":
+        return None
+    try:
+        p = c.find_project(_cwd(pl))
+        if not p:
+            return None
+        import fmrecall
+        act = c.active_brief(c.load_briefs(p))
+        note = fmrecall.note_failure(p, act.id if act else None, str(pl.get("error") or ""))
+    except Exception:
+        log_error("PostToolUseFailure", _tb())
+        return None
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": note}} if note else None
 
 
 # ---------------------------------------------------------------- PreCompact

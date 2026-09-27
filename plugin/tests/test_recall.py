@@ -31,6 +31,7 @@ class Recall(ForemanTestCase):
         for lens in ("self", "intent", "edge"):
             self.fm("task", "audit", tid, lens, "x", "ok")
         self.fm("task", "set", tid, "--section", "Docs impact", "--text", "none: test")
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
         return self.fm("task", "done", tid, *(["--lesson", lesson] if lesson else []), check=False)
 
     def test_related_past_work_is_recalled_for_a_similar_request(self):
@@ -68,3 +69,76 @@ class Recall(ForemanTestCase):
         self.assertIn("csv module handles quoting", b.section("Lessons"))
         s = self.new("Rename a helper", "CLEAN", "S")
         self.assertEqual(self.finish(s).returncode, 0, "S tasks don't need one")
+
+
+class RedGreen(ForemanTestCase):
+    """T-0045: a FIX is proven by its regression test failing before and passing after."""
+
+    def fix(self):
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "Fix the parser", "--type", "FIX", "--tier", "S", "--ac", "parses",
+                                 "--step", "fix it", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        self.fm("task", "audit", tid, "self", "x", "ok")
+        return tid
+
+    def close(self, tid):
+        self.fm("task", "step", tid, "done", "1", check=False)
+        self.fm("task", "ac", tid, "check", "1", "--evidence", "true", "ok", check=False)
+        return self.fm("task", "done", tid, check=False)
+
+    def test_a_fix_without_a_failing_run_first_is_not_done(self):
+        tid = self.fix()
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        p = self.close(tid)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("red→green", p.stderr)
+
+    def test_fail_then_pass_of_the_same_command_proves_it(self):
+        tid = self.fix()
+        flag = f"{self.tmp}/fixed"
+        cmd = f"test -e {flag}"
+        self.fm("task", "evidence", tid, "--step", "1", "--run", cmd, check=False)  # red
+        open(flag, "w").close()
+        self.fm("task", "evidence", tid, "--step", "1", "--run", cmd)  # green
+        self.assertEqual(self.close(tid).returncode, 0)
+
+    def test_a_stated_reason_for_no_regression_test_is_accepted(self):
+        tid = self.fix()
+        self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: a config typo, nothing to test")
+        self.assertEqual(self.close(tid).returncode, 0)
+
+
+class FailureMemory(ForemanTestCase):
+    """T-0046: a failure seen and fixed in an earlier task is pointed out when it happens again."""
+    ERR = "Exit code 1\nTraceback (most recent call last):\n  File \"/tmp/a/{f}.py\", line {n}\nModuleNotFoundError: No module named 'yaml'"
+
+    def fail(self, n=12, f="parser"):
+        return self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"},
+                                                "error": self.ERR.format(n=n, f=f)})
+
+    def task(self, title, lesson=None):
+        tid = json.loads(self.fm("task", "new", title, "--type", "CLEAN", "--tier", "S", "--ac", "ok", "--step", "do",
+                                 "--json").stdout)["id"]
+        self.fm("focus", tid)
+        return tid
+
+    def test_a_failure_fixed_in_an_earlier_task_is_pointed_out(self):
+        import fmrecall
+        self.fm("init")
+        first = self.task("Tidy the YAML loader")
+        self.assertIsNone(json.loads(self.fail().stdout or "null"), "first sighting: nothing to point to")
+        self.fm("task", "step", first, "done", "1", "--evidence", "x", "ok")
+        self.fm("task", "ac", first, "check", "1", "--evidence", "x", "ok")
+        self.fm("task", "audit", first, "self", "x", "ok")
+        self.fm("task", "done", first, "--lesson", "add PyYAML to requirements.txt")
+        self.task("Tidy the config reader")
+        ctx = json.loads(self.fail(n=40, f="config").stdout)["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(first, ctx)
+        self.assertIn("PyYAML", ctx)
+        self.assertEqual(fmrecall.failure_signature(self.ERR.format(n=1, f="a")),
+                         fmrecall.failure_signature(self.ERR.format(n=99, f="b")))
+        other = self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "make"},
+                                                 "error": "Exit code 2\nmake: *** No rule to make target 'all'"})
+        self.assertEqual(other.stdout.strip(), "")

@@ -94,6 +94,7 @@ class TaskLifecycle(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.fm("task", "new", "Fix login timeout", "--type", "FIX", "--tier", "S", "--scope", "src/auth/**")
+        self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: fixture (T-0045 has its own)")
         self.p = c.find_project(self.repo)
 
     def brief(self, tid="T-0001"):
@@ -450,6 +451,23 @@ class OneCommandTask(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
+        # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
+        self.fm("init")
+        flag = os.path.join(self.tmp, "ran-once")
+        self.fm("check", "add", f"test -e {flag} || {{ touch {flag}; exit 1; }}")
+        p = self.fm("check", check=False)
+        self.assertEqual(p.returncode, 0, p.stdout)
+        self.assertIn("flaky", p.stdout)
+        self.assertRegex(p.stdout, r"\d+\.\d s")
+        self.fm("check", "rm", "1")
+        self.fm("check", "add", "exit 3")
+        self.assertNotIn("pre-existing", self.fm("check", check=False).stdout)
+        self.fm("task", "new", "Other work", "--type", "CLEAN", "--tier", "S", "--ac", "ok", "--step", "do", "--focus")
+        p = self.fm("check", check=False)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("pre-existing", p.stdout)
+
     """T-0025: the project's gates in one command that can't be masked by a pipe."""
 
     def test_gates_run_together_and_any_failure_fails(self):

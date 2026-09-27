@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Verification (T-0045..T-0047): FIX tasks need red→green proof (or a stated reason); `fm check` times gates, reruns a failure once (flaky) and labels failures that predate the task; a recurring failure points to the finished task that met it, with its lesson.
 - Recall and lessons (T-0043, T-0048): `fm focus` records and prints the project's related past work (similar briefs with outcome and lesson, decisions, research) with a tier hint; `fm recall`; M/L tasks close with `fm task done --lesson`.
 - Leaner and cheaper: `fm audit prep` prints one combined brief, so an L review is one reviewer pass instead of five subagents (past-finding seeding reads combined reviews by section); `fm ideas` runs four lenses by default; the always-on rules shrank from 7.6k to 4.9k characters (doctor caps them at 6,000) and ask for economical reads and short replies (T-0060..T-0062).
 - `fm task new --ac "<done when> :: <verify cmd>"` attaches the verify command, so an M/L task made in one command can be focused (T-0042); `git fetch` no longer counts as a tree write unless it may move HEAD (`--update-head-ok`) (T-0040).

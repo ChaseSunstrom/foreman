@@ -697,24 +697,50 @@ def cmd_check(args):
                    "\n".join(f"{i}. {x}" for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
     if not checks:
         raise UsageError("no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…)")
-    results = [(cmd, *c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)) for cmd in checks]
-    failed = sum(1 for _, code, _ in results if code)
+    import time
+    act = c.active_brief(c.load_briefs(p))
+    before = _last_check_results(p, act.id if act else None)
+    results, notes = [], {}
+    for cmd in checks:  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
+        t0 = time.monotonic()
+        code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
+        if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
+            code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
+            if not code2:
+                code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
+            elif before.get(cmd):
+                notes[cmd] = "pre-existing: it also failed before this task"
+        results.append((cmd, code, output, time.monotonic() - t0))
+    failed = sum(1 for _, code, _, _ in results if code)
+    c.log_event(p, "check_run", task=act.id if act else None, session=session(),
+                data={"results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
+                                  for cmd, code, _, s in results]})
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         tree = c.worktree_id(p.root)
         shown = [r for r in results if r[1]] or results
         result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
-                  f"exit 0 · {len(results)} passed: ") + "; ".join(f"{cmd} → {c.run_result(code, output)}"
-                                                                  for cmd, code, output in shown)
+                  f"exit 0 · {len(results)} passed: ") + "; ".join(
+            f"{cmd} → {c.run_result(code, output)}" + (f" ({notes[cmd]})" if cmd in notes else "")
+            for cmd, code, output, _ in shown)
         mutate(p, args.evidence, lambda b: b.add_evidence("fm check: " + "; ".join(checks), result[:600],
                                                           step=args.step, ac=args.ac, tree=tree, ran=True),
                "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": result[:300]})
     lines = []
-    for cmd, code, output in results:
-        lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)}")
+    for cmd, code, output, secs in results:
+        lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
+                     + (f" — {notes[cmd]}" if cmd in notes else ""))
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
-    out(args, {"results": [{"cmd": cmd, "exit": code} for cmd, code, _ in results], "failed": failed},
-        "\n".join(lines))
+    out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
+                           for cmd, code, _, s in results], "failed": failed}, "\n".join(lines))
     return 1 if failed else 0
+
+
+def _last_check_results(p, task):
+    """{gate: failed?} from the newest fm check run recorded before `task` (another task's, or none's)."""
+    for e in reversed(c.ledger_tail(p, 2000)):
+        if e.get("event") == "check_run" and e.get("task") != task:
+            return {r.get("cmd"): bool(r.get("exit")) for r in (e.get("data") or {}).get("results") or []}
+    return {}
 
 
 _LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)

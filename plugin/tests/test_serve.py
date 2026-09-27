@@ -165,7 +165,8 @@ class Run(ServeCase):
         self.finisher = (f't=$FOREMAN_DRIVE_TASK\necho "session for $t"\n{fm} focus $t >/dev/null\n'
                          f'{fm} task step $t done 1 --evidence x ok >/dev/null\n'
                          f'{fm} task ac $t check 1 --evidence x ok >/dev/null\n'
-                         f'{fm} task audit $t self x ok >/dev/null\n{fm} task done $t\n')
+                         f'{fm} task audit $t self x ok >/dev/null\n'
+                         f'{fm} task set $t --section "Regression test" --text "none: stub" >/dev/null\n{fm} task done $t\n')
 
     def task(self, title):
         return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "works",

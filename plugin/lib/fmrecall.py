@@ -1,6 +1,7 @@
 """fm recall: related past work for a request or a task (T-0043): earlier briefs with their outcome and lesson,
 decisions and research notes, ranked by BM25 over their words. Stdlib only, computed on demand by fm (never in a
 hook). Recalled text is data from past work: plain (no control characters), one capped line per hit."""
+import json
 import math
 import os
 import re
@@ -109,6 +110,52 @@ def render(hits, tier=None):
         lines.append(f"- similar past tasks were {'SML'[max(done)]}: consider --tier {'SML'[max(done)]}")
     out = "\n".join(lines)
     return out if len(out) <= TOTAL else out[:TOTAL].rsplit("\n", 1)[0]
+
+
+# ---------------------------------------------------------------- failure memory (T-0046)
+
+_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing")
+FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
+
+
+def failure_signature(text):
+    """The telling line of a failure (the last one that names an error), with paths cut to their last part and
+    numbers and hex zeroed, so the same failure matches across files, lines and runs."""
+    lines = [x.strip() for x in (text or "").splitlines() if x.strip() and not x.startswith("Exit code")]
+    pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
+    s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
+    s = re.sub(r"0x[0-9a-f]+|\d+", "0", s)
+    return c.redact(re.sub(r"\s+", " ", s).strip())[:160]
+
+
+def note_failure(p, task, text):
+    """Record a failure against the active task; if a finished task already met it, a one-line pointer to how."""
+    sig = failure_signature(text)
+    if not sig:
+        return None
+    path = os.path.join(p.dir, "failures.jsonl")
+    hint = seen_before(p, sig, task)
+    try:
+        if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
+            keep = c.tail_jsonl(path, FAILURES_KEEP)
+            c.write_atomic(path, "".join(json.dumps(r) + "\n" for r in keep))
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
+    except OSError:
+        pass
+    return hint
+
+
+def seen_before(p, sig, task):
+    for rec in reversed(c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), FAILURES_KEEP)):
+        if rec.get("sig") != sig or not rec.get("task") or rec["task"] == task:
+            continue
+        b = c.find_brief(p, rec["task"])
+        if b and b.status == "done":
+            lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
+            return c.fit(c.plain(f"Foreman: the same failure came up in {b.id} (done: {b.title}"
+                                 + (f"; lesson: {lesson}" if lesson else "") + f"); see how it was fixed: fm task show {b.id}"), 300)
+    return None
 
 
 def cmd_recall(args):
