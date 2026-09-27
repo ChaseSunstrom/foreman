@@ -175,6 +175,13 @@ class UserPromptSubmit(HookCase):
         self.assertIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))
         self.assertNotIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "fix the login timeout"})))
 
+    def test_an_exhaustive_request_points_at_the_super_brainstorm(self):
+        # T-0071: "fully featured" means rounds of ideas that build on each other, then all of them
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "make it genuinely fully featured"}))
+        self.assertIn("--rounds", ctx)
+        self.assertNotIn("--rounds", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))
+
     def test_pause_and_resume_toggle_drive_pause(self):
         self.fm("init")
         self.hook("UserPromptSubmit", {"prompt": "pause"})

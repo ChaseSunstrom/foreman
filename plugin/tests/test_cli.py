@@ -577,6 +577,9 @@ class NewTaskCriteria(ForemanTestCase):
         self.fm("focus", "T-0001")
         ac = c.find_brief(c.find_project(self.repo), "T-0001").acceptance()[0]
         self.assertEqual(ac.text, "exports CSV — verify with `pytest -k csv`")
+        self.fm("task", "ac", "T-0001", "add", "quotes fields :: pytest -k quote")  # same form on ac add
+        ac = c.find_brief(c.find_project(self.repo), "T-0001").acceptance()[1]
+        self.assertEqual(ac.text, "quotes fields — verify with `pytest -k quote`")
 
 
 class AuditPrep(ForemanTestCase):

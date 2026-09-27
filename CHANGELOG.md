@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Super brainstorm (T-0071): `fm ideas --rounds N` runs rounds that each see every idea so far and add only new ones (gaps, second-order improvements, combinations), stopping when a round adds fewer than `--dry` (default 3), with a deduplicated `ideas.md` index; "fully featured"-style requests are pointed at it, and the brainstorm skill's super mode builds every grounded idea and re-brainstorms until dry. `fm task ac add` takes `criterion :: verify` too.
 - Auto-evidence (R6): running a criterion's exact verify command records its real result as evidence; no second run through fm.
 - Faster and fewer tokens (round 5): `fm check` reuses a pass on the identical tree and `--affected` runs only linked tests while iterating; the review brief goes to a file instead of the conversation; the per-turn state note is sent only when it changed.
 - Project map (T-0044): `fm map` (gates, layout, entry points, hot files, test links; rebuilt when HEAD moves), `fm impact PATH`, likely tests for the scope at focus; intake grounds from map, impact and recall first.

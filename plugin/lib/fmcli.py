@@ -391,7 +391,9 @@ def task_step(p, args):
 
 def task_ac(p, args):
     if args.action == "add":
-        b, _ = mutate(p, args.id, lambda b: b.add_ac(args.arg, args.verify), "ac_add", {"text": args.arg})
+        text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
+        text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
+        b, _ = mutate(p, args.id, lambda b: b.add_ac(text, verify), "ac_add", {"text": text})
         return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
     try:
         n = int(args.arg)
@@ -1188,6 +1190,8 @@ def build_parser():
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, reliability, simplicity, bold bets")
     s.add_argument("--model", default="sonnet")
+    s.add_argument("--rounds", type=int, default=1, help="super brainstorm: each round builds on every idea so far")
+    s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
     s.add_argument("--timeout", type=int, default=300)
 
     s = add("serve", lazy("fmserve", "cmd_serve"),

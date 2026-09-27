@@ -1110,6 +1110,16 @@ def is_open_ended(text):
     return bool(_OPEN_ENDED.search(t))
 
 
+_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|every (possible )?feature|all (the |possible )?"
+                         r"(features|ideas|possibilities)|everything possible|exhaustive(ly)?|super[- ]brainstorm\w*)\b")
+
+
+def is_exhaustive(text):
+    """A request for everything ("make it fully featured", "all possible features"): a super brainstorm, in rounds
+    that build on each other until dry, then every grounded idea (T-0071)."""
+    return bool(_EXHAUSTIVE.search(text or ""))
+
+
 def parse_intake(text):
     r = IntakeResult()
     whole = re.sub(r"[.!]+$", "", text.strip().lower())

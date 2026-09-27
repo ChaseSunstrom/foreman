@@ -18,7 +18,9 @@ with open(os.environ["STUB_LOG"], "a") as f:
 time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
 if lens == os.environ.get("STUB_FAIL_LENS"):
     sys.exit(3)
-print(f"- **Idea for {lens}** — FEATURE — value 4 — effort S — risk low")
+phrases = ["apple banana cherry", "delta echo foxtrot", "golf hotel india", "juliet kilo lima", "mike november oscar"]
+vary = " " + phrases[stdin.count(chr(10) + '- ') // 2 % 5] if os.environ.get("STUB_VARY") else ""
+print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low")
 '''
 
 
@@ -39,6 +41,19 @@ class Ideas(ForemanTestCase):
 
     def calls(self):
         return [json.loads(l) for l in read_text(self.log).splitlines()]
+
+    def test_super_brainstorm_rounds_build_on_earlier_ideas_until_dry(self):
+        # T-0071: each round sees every idea so far and is asked only for new ones; a round with nothing new ends it
+        two = ["--lens", "user value", "--lens", "bold bets"]
+        res = json.loads(self.fm("ideas", "--pack", self.pack, *two, "--rounds", "4", "--json", env=self.env).stdout)
+        self.assertEqual(res["rounds"], 2, "round 2 repeated round 1: dry")
+        later = [x for x in self.calls() if "Ideas so far" in x["stdin"]]
+        self.assertTrue(later and "Idea for user value" in later[0]["stdin"])
+        self.assertIn("Idea for bold bets", read_text(os.path.join(res["dir"], "ideas.md")))
+        res = json.loads(self.fm("ideas", "--pack", self.pack, *two, "--rounds", "3", "--dry", "1", "--json",
+                                 env=dict(self.env, STUB_VARY="1")).stdout)
+        self.assertEqual(res["rounds"], 3)
+        self.assertEqual(read_text(os.path.join(res["dir"], "ideas.md")).count("- "), 6)
 
     def test_one_toolless_child_per_lens_in_parallel(self):
         env = dict(self.env, STUB_SLEEP="1")

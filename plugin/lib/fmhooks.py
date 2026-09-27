@@ -326,6 +326,9 @@ def user_prompt_submit(pl):
         parts.append("Plan-only request: drive won't start implementation until the next message")
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
+    elif c.is_exhaustive(text):
+        parts.append("Exhaustive request (everything / fully featured): the Foreman procedure is /foreman:brainstorm in "
+                     "super mode (fm ideas --rounds 4: rounds build on each other until dry), then every grounded idea")
     elif not r.items and c.is_open_ended(text):
         parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
     elif not r.items and c.is_work_request(text):
