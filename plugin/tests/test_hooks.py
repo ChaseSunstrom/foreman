@@ -148,6 +148,17 @@ class UserPromptSubmit(HookCase):
         self.assertIn("debugging.md", ctx, "the harness names the FIX procedure")
         self.assertLessEqual(len(ctx), 400)
 
+    def test_unchanged_state_is_not_repeated_every_turn(self):
+        # round 5 (T-0063): the same Next line every prompt costs tokens and says nothing new
+        self.fm("init")
+        tid = self.task()
+        self.assertIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
+        self.assertNotIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
+        self.fm("task", "step", tid, "add", "another step")
+        self.assertIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
+        self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_ENV_FILE": self.env_file})
+        self.assertIn("Next:", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "carry on"})))
+
     def test_untagged_work_request_names_classification(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "add a --verbose flag to the CLI"}))

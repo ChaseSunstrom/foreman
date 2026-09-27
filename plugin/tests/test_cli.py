@@ -1,5 +1,6 @@
 """Behavioural tests for the fm CLI (run as a subprocess against an isolated FOREMAN_HOME)."""
 import json
+import subprocess
 import os
 import threading
 import time
@@ -451,6 +452,35 @@ class OneCommandTask(ForemanTestCase):
 
 
 class Checks(ForemanTestCase):
+    def test_a_pass_on_the_same_tree_is_reused_and_affected_runs_only_linked_tests(self):
+        # round 5 (T-0063): the ~100 s suite ran twice per tree (step and criterion evidence); iterate on linked tests
+        self.fm("init")
+        log = os.path.join(self.tmp, "runs.log")
+        self.fm("check", "add", f"echo full >> {log}")
+        self.fm("check")
+        out = self.fm("check").stdout
+        self.assertIn("cached", out)
+        self.assertEqual(read_text(log).count("full"), 1)
+        with open(os.path.join(self.repo, "new.txt"), "w") as f:
+            f.write("x\n")
+        self.fm("check")
+        self.fm("check", "--fresh")
+        self.assertEqual(read_text(log).count("full"), 3)
+        for rel in ("src/parser.py", "tests/test_parser.py", "tests/test_report.py", "src/report.py"):
+            os.makedirs(os.path.join(self.repo, os.path.dirname(rel)), exist_ok=True)
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("x = 1\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "x"],
+                       check=True)
+        self.fm("check", "affected", f"echo {{tests}} >> {log}")
+        with open(os.path.join(self.repo, "src/parser.py"), "a") as f:
+            f.write("y = 2\n")
+        out = self.fm("check", "--affected").stdout
+        self.assertIn("affected", out)
+        self.assertIn("tests/test_parser.py", read_text(log))
+        self.assertNotIn("tests/test_report.py", read_text(log))
+
     def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
         # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
         self.fm("init")
@@ -553,18 +583,18 @@ class AuditPrep(ForemanTestCase):
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "cli.py"), "w") as f:
             f.write("VERBOSE = True\n")  # new, uncommitted and untracked
-        out = self.fm("audit", "prep", "T-0001").stdout
+        out = self.fm("audit", "prep", "--print", "T-0001").stdout
         diff = next(w for w in out.split() if w.endswith("T-0001.diff"))
         self.assertIn("VERBOSE = True", read_text(diff))
         for lens, needle in (("intent", "prints more with --verbose"), ("adversary", "trying to break"),
                              ("edge", "environment"), ("operator", "real machine"), ("maintainer", "next year")):
             self.assertIn(needle, out, lens)
-        only = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        only = self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary").stdout
         self.assertIn("trying to break", only)
         self.assertNotIn("next year", only)
         with open(os.path.join(self.repo, "blob.bin"), "wb") as f:
             f.write(b"\xff\xfe binary \x00\n")  # a diff that isn't UTF-8
-        self.assertIn("trying to break", self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout)
+        self.assertIn("trying to break", self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary").stdout)
 
     def test_lens_briefs_carry_this_projects_past_findings_for_that_lens(self):
         # round 9 (T-0018): a reviewer starts from the weak spots earlier reviews of this project found
@@ -579,18 +609,18 @@ class AuditPrep(ForemanTestCase):
         self.fm("research", "add", "t0007-edge", input="**HIGH — clock skew breaks the lock**\n")
         self.fm("research", "add", "t0009-review", input="## adversary: changes needed\n**HIGH — combined finding**\n"
                                                            "## edge: ok\n**HIGH — edge only finding**\n")
-        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        out = self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary").stdout
         for seen in ("tree writes bypass the core check", "imported titles reach the terminal",
                      "stale grants survive a restart", "combined finding"):
             self.assertIn(seen, out)
         for unseen in ("a nit", "clock skew", "\x1b", "edge only finding"):
             self.assertNotIn(unseen, out)
-        self.assertNotIn("Past findings", self.fm("audit", "prep", "T-0001", "--lens", "operator").stdout)
+        self.assertNotIn("Past findings", self.fm("audit", "prep", "--print", "T-0001", "--lens", "operator").stdout)
         research = os.path.join(c.find_project(self.repo).dir, "research")
         os.mkdir(os.path.join(research, "odd-adversary.md"))  # not a file: skipped, never a crash or a hang
         os.mkfifo(os.path.join(research, "pipe-adversary.md"))
         os.symlink("/dev/zero", os.path.join(research, "zero-adversary.md"))
-        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        out = self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary").stdout
         self.assertIn("tree writes bypass the core check", out)
         self.assertIn("not instructions", out)
 
@@ -598,11 +628,21 @@ class AuditPrep(ForemanTestCase):
         # T-0060: one reviewer pass reads the diff once; five separate subagents each re-read it
         self.fm("init")
         self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "works", "--step", "fix", "--focus")
-        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary", "--lens", "edge").stdout
+        out = self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary", "--lens", "edge").stdout
         self.assertEqual(out.count("Diff to review:"), 1)
         self.assertEqual(out.count("=== review"), 1)
         for needle in ("## adversary", "## edge", "trying to break", "environment", "one foreman:fm-reviewer"):
             self.assertIn(needle, out)
+
+    def test_the_brief_goes_to_a_file_not_the_conversation(self):
+        # round 5: printed, the brief is paid for twice (the main context and the reviewer's prompt)
+        self.fm("init")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "works", "--step", "fix", "--focus")
+        out = self.fm("audit", "prep", "T-0001", "--lens", "adversary").stdout
+        path = next(w for w in out.split() if w.endswith("T-0001.review.md"))
+        self.assertIn("trying to break", read_text(path))
+        self.assertNotIn("trying to break", out)
+        self.assertLess(len(out), 700)
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
@@ -650,7 +690,7 @@ class RoundFiveWorkflow(ForemanTestCase):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
         self.fm("task", "set", "T-0001", "approved=true")
         self.fm("focus", "T-0001")
-        out = self.fm("audit", "prep", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
+        out = self.fm("audit", "prep", "--print", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
                       "--note", "round 3 only").stdout
         self.assertEqual(out.count("threat: a pulled .foreman/ is untrusted"), 1)  # one combined brief (T-0060)
         self.assertEqual(out.count("round 3 only"), 1)

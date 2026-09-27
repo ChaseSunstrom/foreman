@@ -697,6 +697,14 @@ def cmd_check(args):
             c.write_meta(p, meta)
             c.log_event(p, "checks", data={"checks": checks}, session=session())
         return out(args, {"checks": checks}, f"{p.slug}: {len(checks)} check(s).")
+    if args.action == "affected":
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta["affected"] = " ".join(args.words)
+            c.write_meta(p, meta)
+        return out(args, {"affected": meta["affected"]}, f"fm check --affected runs: {meta['affected'] or '(unset)'}")
+    if args.affected:
+        return _check_affected(p, args)
     checks = list(c.read_meta(p).get("checks") or [])
     if args.action == "list":
         return out(args, {"checks": checks},
@@ -705,6 +713,18 @@ def cmd_check(args):
         raise UsageError("no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…)")
     import time
     act = c.active_brief(c.load_briefs(p))
+    tree = c.worktree_id(p.root)
+    cached = None if args.fresh else _cached_pass(p, checks, tree)
+    if cached:  # the same gates already passed on this exact tree: rerunning them only costs time
+        results, notes = [(cmd, 0, f"cached pass ({cached})", 0.0) for cmd in checks], {}
+        if args.evidence:
+            mutate(p, args.evidence, lambda b: b.add_evidence(
+                "fm check: " + "; ".join(checks), f"exit 0 · {len(checks)} passed on this tree ({cached})"[:600],
+                step=args.step, ac=args.ac, tree=tree, ran=True),
+                "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": "cached pass"})
+        out(args, {"results": [{"cmd": x, "exit": 0, "cached": cached} for x in checks], "failed": 0},
+            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)")
+        return 0
     before = _last_check_results(p, act.id if act else None)
     results, notes = [], {}
     for cmd in checks:  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -719,10 +739,9 @@ def cmd_check(args):
         results.append((cmd, code, output, time.monotonic() - t0))
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
-                data={"results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
-                                  for cmd, code, _, s in results]})
+                data={"tree": tree, "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
+                                                for cmd, code, _, s in results]})
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
-        tree = c.worktree_id(p.root)
         shown = [r for r in results if r[1]] or results
         result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
                   f"exit 0 · {len(results)} passed: ") + "; ".join(
@@ -739,6 +758,44 @@ def cmd_check(args):
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
                            for cmd, code, _, s in results], "failed": failed}, "\n".join(lines))
     return 1 if failed else 0
+
+
+def _cached_pass(p, checks, tree):
+    """When the newest full fm check run was on this exact tree, with these gates, and all passed: its time."""
+    if not tree:
+        return None
+    for e in reversed(c.ledger_tail(p, 2000)):
+        if e.get("event") == "check_run":
+            d = e.get("data") or {}
+            rs = d.get("results") or []
+            if d.get("tree") == tree and [r.get("cmd") for r in rs] == checks and not any(r.get("exit") for r in rs):
+                return f"run at {str(e.get('ts', ''))[11:16]} UTC"
+            return None
+    return None
+
+
+def _check_affected(p, args):
+    """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
+    import fmmap
+    act = c.active_brief(c.load_briefs(p))
+    base = (act.meta.get("base") if act else None) or "HEAD"
+    changed = set(fmmap._git(p.root, "diff", "--name-only", base).split()) | set(
+        fmmap._git(p.root, "ls-files", "--others", "--exclude-standard").split())
+    m = fmmap.load(p)
+    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
+    template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
+    if not template:
+        raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
+    if not tests:
+        return out(args, {"tests": [], "changed": sorted(changed)},
+                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
+    import shlex
+    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
+        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests))
+    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
+    out(args, {"tests": tests, "exit": code}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
+        f"{c.run_result(code, output)}\n(the full gates still decide before commit and done: fm check)")
+    return 1 if code else 0
 
 
 def _last_check_results(p, task):
@@ -841,11 +898,15 @@ def cmd_audit(args):
         focus = "".join(f"\nFocus: {n}" for n in args.note)
         blocks.append(f"=== review ({', '.join(names)}) ===\n{head}{focus}\n\n" + "\n\n".join(sections)
                       + f"\n\n{_REVIEW_OUT}")
-    out(args, {"diff": path, "base": base, "lenses": lenses},
-        "\n\n".join(blocks) + f"\n\nDiff: {path}\n" + (
-            f"Run the review brief as one foreman:fm-reviewer subagent; save its reply with fm research add "
-            f"{b.id}-review --from-agent <its output file>; record each lens with fm task audit {b.id} <lens> …"
-            if sections else f"Record it with fm task audit {b.id} self …"))
+    brief = os.path.join(p.dir, "audits", f"{b.id}.review.md")
+    c.write_atomic(brief, "\n\n".join(blocks) + f"\n\nDiff: {path}\n")
+    how = (f"Run one foreman:fm-reviewer subagent with the prompt \"Read {brief} and do the review it describes.\"; "
+           f"save its reply with fm research add {b.id}-review --from-agent <its output file>; record each lens with "
+           f"fm task audit {b.id} <lens> …" if sections else f"Record it with fm task audit {b.id} self …")
+    # the brief goes to a file: printed, it would be paid for twice (here and in the reviewer's prompt)
+    out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief},
+        ("\n\n".join(blocks) + f"\n\nDiff: {path}\n" if args.print else
+         f"Review brief ({', '.join(lenses)}; {sum(map(len, blocks))} chars): {brief}\nDiff: {path}\n") + how)
 
 
 def _sync_in(args):
@@ -1062,9 +1123,13 @@ def build_parser():
     add("next", cmd_next, help="the one next required action (derived from the briefs)")
 
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
-    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list"])
-    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list)")
+    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "affected"])
+    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); affected: a command "
+                                            "with {tests} (paths) or {names} (file names without extension)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
+    s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
+    s.add_argument("--affected", action="store_true", help="only the tests linked to files changed since the task "
+                                                           "started (fm map); the full gates still decide at the end")
     s.add_argument("--evidence", metavar="ID", help="record each result as evidence on this task")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
@@ -1080,9 +1145,10 @@ def build_parser():
     s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
     s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
-    s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and print one reviewer brief per lens")
+    s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and write one review brief for one reviewer")
     s.add_argument("action", choices=["prep"])
     s.add_argument("id")
+    s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
     s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")
     s.add_argument("--base", help="diff from this revision (default: the commit the task was focused at)")
     s.add_argument("--note", action="append", default=[], help="focus for every lens brief: this round's change, "

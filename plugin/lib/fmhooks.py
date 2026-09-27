@@ -125,6 +125,11 @@ def _write_gate(p, g):
 
 def session_start(pl):
     sid = pl.get("session_id")
+    if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state
+        try:
+            os.remove(os.path.join(c.state_dir(), "sessions", f"{sid}.note"))
+        except OSError:
+            pass
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
@@ -326,25 +331,48 @@ def user_prompt_submit(pl):
     elif not r.items and c.is_work_request(text):
         parts.append("Untagged work request; Foreman intake classifies it first (type and tier on the reply's first "
                      "line), then briefs it (fm task new … --focus)")
-    a = sd["active"]
+    a, state = sd["active"], []
     if a:
-        parts.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]
+        state.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]
                                                         else f"{a['steps_done']}/{a['steps_total']} steps done"))
     else:
-        parts.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
+        state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
     try:
-        parts.append("Next: " + c.next_for(p)[2])
+        state.append("Next: " + c.next_for(p)[2])
     except Exception:
         log_error("UserPromptSubmit", _tb())
     if sd["inbox"]:
-        parts.append(f"Inbox: {len(sd['inbox'])}")
+        state.append(f"Inbox: {len(sd['inbox'])}")
     if sd["paused"]:
-        parts.append("Drive paused")
+        state.append("Drive paused")
     if sd.get("autonomy") == "full":
-        parts.append("Autonomy: full")
-    note = ("Foreman: " + ". ".join(parts) + ".")[:PROMPT_BUDGET]
-    return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": note},
-            "terminalSequence": _title_seq(sd)}
+        state.append("Autonomy: full")
+    if not _same_note(pl.get("session_id"), " | ".join(state)):  # unchanged state isn't repeated every turn
+        parts += state
+    out = {"terminalSequence": _title_seq(sd)}
+    if parts:
+        out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
+                                     "additionalContext": ("Foreman: " + ". ".join(parts) + ".")[:PROMPT_BUDGET]}
+    return out
+
+
+def _same_note(sid, text):
+    """Whether this session was last told exactly this state; records it when not (SessionStart clears it)."""
+    if not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return False
+    path = os.path.join(c.state_dir(), "sessions", f"{sid}.note")
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == text:
+                return True
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, text)
+    except OSError:
+        pass
+    return False
 
 
 # ---------------------------------------------------------------- PreToolUse (guard: fail closed)
