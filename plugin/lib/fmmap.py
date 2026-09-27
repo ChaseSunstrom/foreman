@@ -225,3 +225,9 @@ def pre_audit(root, diff, files, m=None):
     if risky:
         found.append(f"security-sensitive: {', '.join(risky)} (adversary lens required)")
     return list(dict.fromkeys(found))[:30]
+
+
+def changed(root, base):
+    """Files changed since base (committed or not) plus untracked ones, relative to root."""
+    return sorted(set(_git(root, "diff", "--name-only", base).splitlines())
+                  | set(_git(root, "ls-files", "--others", "--exclude-standard").splitlines()))

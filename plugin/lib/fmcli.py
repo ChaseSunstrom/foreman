@@ -225,6 +225,11 @@ def cmd_task(args):
             if outside and "scope:" not in b.section("Log").lower():
                 reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: {', '.join(outside[:8])}"
                                f"; widen it (fm task set {b.id} scope=…) or say why (fm task log {b.id} \"scope: <why>\")")
+            if b.type == "CLEAN" and first_edit and not b.section("Behaviour lock").strip() and not any(
+                    ts <= first_edit for ts in b.ran_times()):
+                reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (fm check "
+                               f"--evidence {b.id} --step 1), or fm task set {b.id} --section \"Behaviour lock\" --text "
+                               f"\"none: <why>\"")
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
@@ -234,10 +239,18 @@ def cmd_task(args):
                 old = b.section("Lessons").rstrip()
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
             b.meta["status"] = "done"
+            b.meta["verified"] = b.grade()[0]
+            if files:  # recall's "Start here" and edit tripwires for the next related task
+                b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")
+        first_edit = c.first_touch(p, pre.id)
         b, _ = mutate(p, args.id, done, "task_done", {"lesson": lesson[:300]} if lesson else None)
-        return out(args, dict(c.brief_summary(b), doc_drift=notes), f"{b.id} done." + (
+        grade, why = b.grade()
+        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade),
+                   f"{b.id} done (verification: {grade} — {why})." + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
+    if sub == "prove":
+        return task_prove(p, args)
     if sub == "drop" and getattr(args, "done_in", None):
         return task_done_in(p, args)
     if sub == "drop" and not args.reason:
@@ -259,6 +272,50 @@ def _lint_verify(p, cmds):
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
+
+
+def task_prove(p, args):
+    """T-0059: run a test on the tree the task started from with only this task's test files brought over (it must
+    fail there) and on the current tree (it must pass). Both runs are recorded, so red→green holds for FIX tasks."""
+    import shutil
+    import tempfile
+    import fmmap
+    b = need_brief(p, args.id)
+    base = b.meta.get("base")
+    if not base:
+        raise UsageError(f"{b.id} has no start commit on record: prove needs the tree the task started from")
+    tests = [f for f in fmmap.changed(p.root, base) if fmmap._TEST.search(f) and os.path.isfile(os.path.join(p.root, f))]
+    if not tests:
+        raise UsageError(f"{b.id} changed no test files since {base[:12]}: write the test that proves it first")
+    with tempfile.TemporaryDirectory(prefix="fm-prove-") as t:
+        wt = os.path.join(t, "base")
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, base, timeout=120)
+        if not os.path.isdir(wt):
+            raise UsageError(f"git worktree add at {base[:12]} failed")
+        try:
+            for f in tests:
+                os.makedirs(os.path.dirname(os.path.join(wt, f)), exist_ok=True)
+                shutil.copy2(os.path.join(p.root, f), os.path.join(wt, f))
+            red = c.run_command(wt, args.run, args.timeout)
+        finally:
+            c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
+            c._git(p.root, "worktree", "prune", timeout=30)
+    green = c.run_command(p.root, args.run, args.timeout)
+    tree = c.worktree_id(p.root)
+
+    def record(b):
+        b.add_evidence(args.run, c.run_result(*red) + " (start tree + this task's tests)", step=args.step, ac=args.ac,
+                       tree=tree, ran=True)
+        b.add_evidence(args.run, c.run_result(*green), step=args.step, ac=args.ac, tree=tree, ran=True)
+    mutate(p, b.id, record, "prove", {"cmd": args.run[:200], "red": red[0], "green": green[0], "tests": tests[:10]})
+    proved = bool(red[0]) and not green[0]
+    verdict = ("proved: fails without the change, passes with it" if proved else
+               "not proved: it passes without the change too, so it doesn't test the fix" if not red[0] else
+               "not proved: it fails on the current tree")
+    out(args, {"proved": proved, "red": red[0], "green": green[0], "tests": tests},
+        f"{b.id}: {verdict}\n  start tree + {len(tests)} test file(s): {c.run_result(*red)}\n  current tree: "
+        f"{c.run_result(*green)}")
+    return 0 if proved else 1
 
 
 def task_done_in(p, args):
@@ -760,9 +817,12 @@ def cmd_check(args):
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
         results.append((cmd, code, output, time.monotonic() - t0))
+        slow = None if code else _slower(p, cmd, results[-1][3])
+        if slow:
+            notes[cmd] = slow
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
-                data={"tree": tree, "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
+                data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
                                                 for cmd, code, _, s in results]})
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         shown = [r for r in results if r[1]] or results
@@ -781,6 +841,55 @@ def cmd_check(args):
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
                            for cmd, code, _, s in results], "failed": failed}, "\n".join(lines))
     return 1 if failed else 0
+
+
+_SIDE_EFFECTS = re.compile(r"\b(push|deploy|publish|release|install|merge|commit|tag|rm|mv|curl|wget|ssh|scp|rsync|"
+                           r"docker|kubectl|terraform|fm)\b")
+
+
+def cmd_sentinel(args):
+    """Re-run the checks that passed for the last N finished tasks (their [ran] evidence) and report any that fail
+    now: a later change broke what an earlier task proved. Commands with side effects are skipped."""
+    p = resolve(args)
+    done = sorted((b for b in c.load_briefs(p, include_archive=True) if b.status == "done"),
+                  key=lambda b: str(b.meta.get("updated", "")), reverse=True)[:args.last]
+    cmds, skipped = {}, 0
+    for b in done:
+        for line in b.evidence():
+            if c._RAN_MARK in line and "` → exit 0" in line and "`" in line:
+                cmd = line.split("`", 2)[1]
+                if _SIDE_EFFECTS.search(cmd) or cmd.startswith("fm check"):
+                    skipped += 1
+                elif cmd not in cmds:
+                    cmds[cmd] = b.id
+    results = []
+    for cmd, tid in list(cmds.items())[:args.max]:
+        code, output = c.run_command(p.root, cmd, args.timeout)
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
+    failed = [r for r in results if r["exit"]]
+    c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
+                session=session())
+    out(args, {"results": results, "failed": len(failed), "skipped": skipped},
+        f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
+        + (f"; {skipped} with side effects skipped" if skipped else "") + "".join(
+            f"\n  ✗ {r['task']}: {r['cmd']} → {r['result']}" for r in failed))
+    return 1 if failed else 0
+
+
+def _slower(p, cmd, secs, runs=5):
+    """A gate that passed but took well over its usual time (median of its last passing runs): a perf regression or a
+    test that started waiting on something."""
+    past = []
+    for e in reversed(c.ledger_tail(p, 2000)):
+        for r in (e.get("data") or {}).get("results") or [] if e.get("event") == "check_run" else []:
+            if r.get("cmd") == cmd and not r.get("exit") and r.get("s"):
+                past.append(r["s"])
+        if len(past) >= runs:
+            break
+    if len(past) < 3:
+        return None
+    med = sorted(past)[len(past) // 2]
+    return f"slower: {secs:.1f} s vs a usual {med:.1f} s" if secs > 1.5 * med and secs - med > 2 else None
 
 
 def _flaky_count(p, cmd, runs=20):
@@ -804,7 +913,8 @@ def _cached_pass(p, checks, tree):
         if e.get("event") == "check_run":
             d = e.get("data") or {}
             rs = d.get("results") or []
-            if d.get("tree") == tree and [r.get("cmd") for r in rs] == checks and not any(r.get("exit") for r in rs):
+            if d.get("tree") == tree and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
+                    and not any(r.get("exit") for r in rs):
                 return f"run at {str(e.get('ts', ''))[11:16]} UTC"
             return None
     return None
@@ -815,8 +925,7 @@ def _check_affected(p, args):
     import fmmap
     act = c.active_brief(c.load_briefs(p))
     base = (act.meta.get("base") if act else None) or "HEAD"
-    changed = set(fmmap._git(p.root, "diff", "--name-only", base).splitlines()) | set(
-        fmmap._git(p.root, "ls-files", "--others", "--exclude-standard").splitlines())
+    changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
     tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
@@ -1114,6 +1223,13 @@ def build_parser():
     t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
     t.add_argument("how")
     t.add_argument("result")
+    t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
+    t.add_argument("id")
+    t.add_argument("--run", required=True, help="the test command")
+    g = t.add_mutually_exclusive_group()
+    g.add_argument("--step", type=int)
+    g.add_argument("--ac", type=int)
+    t.add_argument("--timeout", type=float, default=600)
     t = tadd("log")
     t.add_argument("id")
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
@@ -1169,6 +1285,10 @@ def build_parser():
 
     add("next", cmd_next, help="the one next required action (derived from the briefs)")
 
+    s = add("sentinel", cmd_sentinel, help="re-run the checks recent finished tasks passed; report what fails now")
+    s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
+    s.add_argument("--max", type=int, default=20, help="commands to run at most")
+    s.add_argument("--timeout", type=float, default=120)
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "affected"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); affected: a command "

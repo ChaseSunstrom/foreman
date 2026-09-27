@@ -35,4 +35,4 @@
 - The same delegation brief sent again and again → a project agent, `.claude/agents/<name>.md`, with only the tools it needs.
 
 ## Evidence quality
-Evidence is a command plus its actual result. "Tests pass" needs the test command's output with 0 failures; "bug fixed" needs the original reproduction passing; "regression test works" needs the red-green cycle. See `verification.md`.
+Evidence is a command plus its actual result. "Tests pass" needs the test command's output with 0 failures; "bug fixed" needs the original reproduction passing; "regression test works" needs the red-green cycle: `fm task prove ID --run "<test cmd>"` runs it on the start tree with only your test files (must fail) and on the current tree (must pass), recording both. PERFORMANCE tasks record numbers (`--section "Measurements"`: before → after); CLEAN tasks run the tests before their first edit (behaviour lock). `fm task done` prints a verification grade (strong: every check ran through fm, plus red→green or an independent lens). `fm sentinel` re-runs the checks recent finished tasks passed (FINAL VERIFY). See `verification.md`.

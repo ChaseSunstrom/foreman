@@ -216,16 +216,30 @@ def git_head(root):
 
 def run_command(root, cmd, timeout=600):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
-    try:
-        r = subprocess.run(["bash", "-c", cmd], cwd=root, capture_output=True, text=True, errors="replace",
-                           timeout=timeout)
-        return r.returncode, redact(r.stdout + r.stderr)
+    try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
+        pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True)
     except OSError as e:  # no bash on PATH, or the repo root is gone
         return 127, f"could not run bash: {e}"
-    except subprocess.TimeoutExpired as e:
-        partial = (e.stdout or b"") + (e.stderr or b"")
-        partial = partial.decode(errors="replace") if isinstance(partial, bytes) else partial
-        return 124, redact(partial + f"\ntimed out after {timeout:g}s")
+    try:
+        out, _ = pr.communicate(timeout=timeout)
+        return pr.returncode, redact(out)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(pr.pid, 9)
+        except OSError:
+            pr.kill()
+        try:
+            out, _ = pr.communicate(timeout=10)
+        except subprocess.TimeoutExpired:  # a grandchild kept the pipe open after leaving the group
+            out = ""
+        return 124, redact((out or "") + f"\ntimed out after {timeout:g}s")
+
+
+def env_id():
+    """The environment a gate result depends on beyond the files (PATH, virtualenv, node env…), as a short hash."""
+    keys = ("PATH", "VIRTUAL_ENV", "CONDA_PREFIX", "PYTHONPATH", "NODE_ENV", "GOFLAGS", "RUSTFLAGS", "JAVA_HOME")
+    return hashlib.sha1("\0".join(os.environ.get(k, "") for k in keys).encode()).hexdigest()[:8]
 
 
 def run_result(code, output):
@@ -845,7 +859,26 @@ class Brief:
             reasons.append(f"no red→green proof: record the regression test failing before the fix and passing after "
                            f"(fm task evidence {self.id} --run \"<test cmd>\", both times), or say why there is none "
                            f"(fm task set {self.id} --section \"Regression test\" --text \"none: <why>\")")
+        if self.type == "PERFORMANCE" and not self.section("Measurements").strip():
+            reasons.append(f"no before/after numbers: fm task set {self.id} --section \"Measurements\" --text "
+                           f"\"<metric>: <before> → <after> (<how measured>)\" (or \"none: <why>\")")
         return reasons + self.audit_blockers(since, tree, need)
+
+    def ran_times(self):
+        """Timestamps of the evidence fm ran itself."""
+        return [t.group(1) for l in self.evidence() if _RAN_MARK in l and (t := _TS_TAIL.search(l))]
+
+    def grade(self):
+        """How strongly this task was verified: (strong | ok | weak, why). Strong = every check fm ran itself, and
+        a failing-then-passing test or an independent review behind it; weak = nothing fm ran."""
+        ev = [l for l in self.evidence() if not l.startswith("- (audit ")]
+        ran = sum(_RAN_MARK in l for l in ev)
+        lenses = sorted({lens for lens, _, _ in self.audits()} - {"self"})
+        why = ", ".join(filter(None, [f"{ran} ran", f"{len(ev) - ran} typed", "red→green" if self.red_green() else "",
+                                      f"lenses: {', '.join(lenses)}" if lenses else ""]))
+        if not ran:
+            return "weak", why
+        return ("strong" if ran == len(ev) and (lenses or self.red_green()) else "ok"), why
 
     def red_green(self):
         """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
@@ -1545,6 +1578,12 @@ def task_files(p, tid):
         if f and f.startswith(p.root.rstrip("/") + "/") and os.path.relpath(f, p.root) not in files:
             files.append(os.path.relpath(f, p.root))
     return files
+
+
+def first_touch(p, tid):
+    """Timestamp of the first file edit the hooks attributed to this task, or ""."""
+    return min((e.get("ts", "") for e in ledger_tail(p, 5000) if e.get("task") == tid and e.get("event") == "touched"),
+               default="")
 
 
 def scope_drift(b, files):
