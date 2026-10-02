@@ -57,6 +57,16 @@ class Find(PluginsCase):
         self.assertEqual({h["id"] for h in fmplugins.find("postgres")}, {"postgres-mcp@official", "db-tools@official"})
         self.assertEqual(fmplugins.find("kubernetes operator"), [])
 
+    def test_a_directory_marketplace_outside_the_cache_is_known(self):
+        repo = os.path.join(self.tmp, "fm-repo")
+        write(os.path.join(repo, ".claude-plugin", "marketplace.json"), {"name": "localmk", "plugins": [
+            {"name": "board-ui", "source": "./mods/board-ui", "description": "a kanban board pane"}]})
+        write(os.path.join(repo, "mods", "board-ui", "hooks", "register.tsx"), "export const register = () => {}\n")
+        write(os.path.join(self.cc, "plugins", "known_marketplaces.json"), {"localmk": {
+            "source": {"source": "directory", "path": repo}, "installLocation": repo}})
+        self.assertEqual([h["id"] for h in fmplugins.find("kanban board")], ["board-ui@localmk"])
+        self.assertIsNotNone(fmplugins.content_hash("board-ui@localmk"), "pinnable: its code is hashed")
+
     def test_short_words_match_whole_words(self):
         self.assertEqual(fmplugins.find("db"), [h for h in fmplugins.find("db") if "db" in h["id"]])
         self.assertEqual(fmplugins.find("go"), [], "go is not google, mongo or django")

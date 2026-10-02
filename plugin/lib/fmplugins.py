@@ -92,11 +92,28 @@ def profile(path):
     return out
 
 
+def _marketplace_files():
+    """Each known marketplace's marketplace.json: the cached ones, and directory sources registered where they live
+    (known_marketplaces.json installLocation, e.g. Foreman's own repo)."""
+    files = glob.glob(os.path.join(claude_dir(), "plugins", "marketplaces", "*", ".claude-plugin", "marketplace.json"))
+    known = _json(os.path.join(claude_dir(), "plugins", "known_marketplaces.json"), {}) or {}
+    for entry in known.values() if isinstance(known, dict) else ():
+        loc = entry.get("installLocation") if isinstance(entry, dict) else None
+        if isinstance(loc, str):
+            files.append(os.path.join(loc, ".claude-plugin", "marketplace.json"))
+    seen, out = set(), []
+    for f in files:
+        real = os.path.realpath(f)
+        if real not in seen and os.path.isfile(real):
+            seen.add(real)
+            out.append(f)
+    return sorted(out)
+
+
 def index():
     """Every plugin in the known marketplaces: id, description, category, and its local copy when there is one."""
     out = []
-    for f in sorted(glob.glob(os.path.join(claude_dir(), "plugins", "marketplaces", "*", ".claude-plugin",
-                                           "marketplace.json"))):
+    for f in _marketplace_files():
         root, data = os.path.dirname(os.path.dirname(f)), _json(f, {}) or {}
         mk = data.get("name") or os.path.basename(root)
         for p in data.get("plugins") or []:
@@ -254,8 +271,8 @@ def _claude(*args, timeout=300):
 
 
 def _marketplaces():
-    return {os.path.basename(os.path.dirname(os.path.dirname(f))) for f in glob.glob(
-        os.path.join(claude_dir(), "plugins", "marketplaces", "*", ".claude-plugin", "marketplace.json"))}
+    return {(_json(f, {}) or {}).get("name") or os.path.basename(os.path.dirname(os.path.dirname(f)))
+            for f in _marketplace_files()}
 
 
 def add_marketplace(source):
