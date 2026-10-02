@@ -7,3 +7,5 @@ backups/
 __pycache__/
 *.pyc
 plugin/evals/results/
+mods/*/.claude-plugin/types/
+mods/*/tsconfig.json

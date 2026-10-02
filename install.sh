@@ -8,6 +8,7 @@
 #   --build          open Claude Code on the Foreman build (rebuild or resume from BUILD_PROMPT.md)
 #   --no-plugins     skip setup-plugins.sh
 #   --no-bypass      don't set bypassPermissions as the default permission mode
+#   --no-mod         don't install the foreman-ui mod (band above the prompt, dashboard pane, toasts)
 #   --no-wiring      don't wire Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
 # Environment:
@@ -18,14 +19,15 @@ set -euo pipefail
 FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/foreman.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 
-BUILD=0 PLUGINS=1 BYPASS=1 WIRING=1 PASS=()
+BUILD=0 PLUGINS=1 BYPASS=1 WIRING=1 MOD=1 PASS=()
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
     --no-plugins) PLUGINS=0 ;;
     --no-bypass) BYPASS=0 ;;
+    --no-mod) MOD=0 ;;
     --no-wiring) WIRING=0 ;;
-    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASS+=("$arg") ;;
   esac
 done
@@ -68,6 +70,14 @@ fi
 say "Installing the Foreman plugin"
 claude plugin marketplace add "$FOREMAN_HOME" >/dev/null 2>&1 || true
 claude plugin install foreman@foreman --scope user >/dev/null 2>&1 || die "couldn't install foreman@foreman (run: claude plugin validate $FOREMAN_HOME)"
+# The UI mod (band, pane, toasts) is optional: builds without function-hook plugins keep the statusline and fm watch
+if [ "$MOD" = 1 ]; then
+  if claude plugin install foreman-ui@foreman --scope user >/dev/null 2>&1; then
+    say "  installed foreman-ui (band, /fm pane, toasts; --no-mod skips it, claude plugin disable foreman-ui@foreman turns it off)"
+  else
+    say "  (foreman-ui not installed: this Claude Code build has no mods; the statusline and fm watch still work)"
+  fi
+fi
 
 # 4. Permission mode: bypass by default (Foreman's guard hook + deny rules are the brakes; see BUILD_PROMPT.md §4.7)
 if [ "$BYPASS" = 1 ]; then

@@ -18,7 +18,7 @@ Private repo (uses your `gh` login):
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-Flags: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode), `--no-wiring` (don't touch `~/.claude`), `--build` (open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`).
+Flags: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode), `--no-mod` (skip the foreman-ui mod), `--no-wiring` (don't touch `~/.claude`), `--build` (open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`).
 
 ## What `install.sh` does
 
@@ -65,6 +65,8 @@ Use `"default"` (or `"acceptEdits"`), not `"auto"`: Claude Code ignores `auto` a
 To turn bypass off everywhere, set `defaultMode` back to `"auto"` (or delete it) in `~/.claude/settings.json`; the original is in `~/.claude/foreman/backups/`.
 
 ## Seeing what's going on
+
+**In Claude Code (mods):** the `foreman-ui` mod draws Foreman live inside the session: a band above the prompt (active task, stage, step bar, the next action, what waits on you, `[f]` dashboard / `[n]` next / `[y]` approve a waiting plan), a dashboard pane docked beside the transcript on wide fullscreen terminals or opened with `/fm` (steps, acceptance criteria, audits, queue, inbox with Start/Drop, recent events, hook health, drive and autonomy toggles), and toasts when a step or task finishes, a yes is needed or the guard refuses something. It only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.
 
 A Foreman line under your statusline (`foreman · T-0012 FIX 3/5 · q2 · in1 · guard on · bypass`), per-subagent rows, a `[T-0012 FIX · 3/5 · 14:02]` badge on each reply (screen only, zero tokens), terminal titles and desktop notifications, `fm watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
 

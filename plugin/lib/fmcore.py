@@ -258,7 +258,8 @@ def env_id():
 def run_result(code, output):
     """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed."""
     lines = [l.strip() for l in output.splitlines() if l.strip()]
-    return f"{'✗ ' if code else ''}exit {code} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
+    timed = f" ({lines[-1]})" if code == 124 and lines and lines[-1].startswith("timed out after") else ""
+    return f"{'✗ ' if code else ''}exit {code}{timed} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
 
 
 def git_root(path):
@@ -669,11 +670,20 @@ class Brief:
 
     def set_section(self, name, body):
         body = body if body.endswith("\n") or not body else body + "\n"
+        heads = [s[0].strip() for s in self.sections]
+        if name not in heads:  # a short name fills the template's long heading ("Approach" → "Approach (options …)")
+            name = next((h for h in heads if h.startswith(name + " (")), name)
         for s in self.sections:
             if s[0].strip() == name:
                 s[1] = body
                 return
         self.sections.append([name, body])
+
+    def keep_ticks(self, text):
+        """New acceptance text with [x] kept on each criterion that was checked and whose text is unchanged (T-0075)."""
+        done = {a.text for a in self.acceptance() if a.checked}
+        return "\n".join(f"- [x] {m.group(2)}" if (m := _AC_RE.match(line)) and m.group(2) in done else line
+                         for line in text.splitlines()) + ("\n" if text.endswith("\n") else "")
 
     def _append_line(self, name, line):
         cur = self.section(name)
@@ -1256,6 +1266,15 @@ def brief_summary(b):
             "step": {"n": cur.n, "of": len(steps), "text": cur.text} if cur else None, "path": b.path}
 
 
+def brief_detail(b):
+    """brief_summary plus the plan itself (T-0076): steps, criteria with their verify commands, depends."""
+    return dict(brief_summary(b),
+                steps=[{"n": s.n, "text": plain(s.text), "done": s.done, "current": s.current} for s in b.steps()],
+                criteria=[{"n": a.n, "text": plain(_VERIFY_OF.sub("", a.text).strip()), "verify": verify_of(a.text),
+                           "checked": a.checked} for a in b.acceptance()],
+                depends=list(b.meta.get("depends_on") or []))
+
+
 # ---------------------------------------------------------------- stages (derived, never stored)
 
 STAGE_REFERENCE = {
@@ -1654,9 +1673,12 @@ def verify_of(criterion_text):
 
 _SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|token|passw|credential|session|login|oauth|jwt|permission|acl|"
                              r"sandbox|guard|sudo|security|keyring|signing)")
-_SENSITIVE_CODE = re.compile(r"(?m)^\+.*(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
+_SENSITIVE_CODE = re.compile(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
                              r"os\.system\(|verify=False|innerHTML|dangerouslySetInnerHTML|\bmd5\(|\bsha1\(|"
                              r"deseriali[sz]e)")
+# ponytail: one-line quotes only; a pattern inside a multi-line string or a docstring still counts. f-strings are
+# kept: their {fields} are code
+_STRING_LITERAL = re.compile(r"""(?<![fF])(?<![fF][rR])(["'])(?:\\.|(?!\1).)*\1""")
 
 
 _MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
@@ -1668,7 +1690,8 @@ def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
     why = [f for f in files if _SENSITIVE_PATH.search(f) or _MANIFEST.search(f)][:5]
-    why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(diff)})[:5]
+    added = "\n".join(_STRING_LITERAL.sub('""', line[1:]) for line in diff.splitlines() if line.startswith("+"))
+    why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(added)})[:5]
     return why
 
 

@@ -171,7 +171,7 @@ def cmd_task(args):
     if sub == "show":
         b = need_brief(p, args.id)
         if args.json:
-            return print(json.dumps(dict(c.brief_summary(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
+            return print(json.dumps(dict(c.brief_detail(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
         return print(b.render(), end="")
     if sub == "set":
         return task_set(p, args)
@@ -419,8 +419,11 @@ def task_new(p, args):
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
         c.regen_views(p)
-    if args.ac or args.step:
+    if args.ac or args.step or args.interpretation or args.approach:
         def plan(b):
+            for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
+                if text:  # an M/L brief plans in one call (T-0083)
+                    b.set_section(name, c.redact(text))
             for text in args.ac or []:  # "criterion :: verify command" (T-0042)
                 done_when, sep, verify = text.rpartition(" :: ")
                 b.add_ac(done_when, verify.strip()) if sep else b.add_ac(text)
@@ -484,7 +487,8 @@ def task_set(p, args):
             b.meta["allow"] = allow
             b.append_log(f"guard authorization added: {cat}")
         if args.section:
-            b.set_section(args.section, c.redact(section_text))
+            text = c.redact(section_text)
+            b.set_section(args.section, b.keep_ticks(text) if args.section == "Acceptance criteria" else text)
         if changes:
             b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
     b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [], "section": args.section})
@@ -601,8 +605,9 @@ def cmd_quiet(args):
     secs = time.monotonic() - t0
     lines = [l for l in output.rstrip().splitlines() if l.strip()]
     if code:
-        print("\n".join(lines[-args.tail:]) + f"\n✗ exit {code} ({secs:.1f} s; last {min(len(lines), args.tail)} of "
-                                                 f"{len(lines)} lines)")
+        timed = f"{lines[-1]}; " if code == 124 and lines and lines[-1].startswith("timed out after") else ""
+        print("\n".join(lines[-args.tail:]) + f"\n✗ exit {code} ({timed}{secs:.1f} s; last {min(len(lines), args.tail)} "
+                                                 f"of {len(lines)} lines)")
     else:
         print(f"✓ exit 0 ({secs:.1f} s) · {lines[-1][:200] if lines else '(no output)'}")
     return code
@@ -1394,6 +1399,8 @@ def build_parser():
     t.add_argument("--from", dest="from_id")
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable)")
     t.add_argument("--step", action="append", help="step (repeatable)")
+    t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
+    t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t = tadd("show")
     t.add_argument("id")
@@ -1612,6 +1619,7 @@ def build_parser():
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
 
+    add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)

@@ -173,3 +173,71 @@ def cmd_watch(args):
         curses.wrapper(loop)
     except KeyboardInterrupt:
         pass
+
+
+def view(p):
+    """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
+    surface to render, built from gather() so it shows what fm watch shows."""
+    import fmdoctor
+    d = gather(p)
+    sd, act = d["sd"], d["active"]
+    meta = c.read_meta(p)
+    autonomy = sd["autonomy"]
+    pending = c.pending_tasks(meta)
+    briefs = c.load_briefs(p)
+    by_id = {b.id: b for b in briefs}
+    active = None
+    if act:
+        changed = c.last_change(p, act.id)
+        prog = c.audit_progress(act, changed)
+        active = dict(c.brief_detail(act), stage=c.stage(act, autonomy, changed), stages=list(c.STAGES),
+                      audits={"done": prog["done"], "need": prog["required"]},
+                      blockers=act.done_blockers(changed)[:6])
+
+    def item(s):
+        b = by_id.get(s["id"])
+        waits = c.waits_on_user(b, pending, autonomy) if b else None
+        out = {"id": s["id"], "type": s["type"], "tier": s["tier"], "title": s["title"], "status": s["status"],
+               "waits": waits}
+        if waits == "plan approval":  # a yes is given where what it approves is shown
+            d = c.brief_detail(b)
+            out["plan"] = {"interpretation": c.plain(b.section("Interpretation").strip())[:600],
+                           "approach": c.plain(b.section("Approach (options → choice → why)").strip())[:600],
+                           "steps": d["steps"], "criteria": d["criteria"]}
+        return out
+
+    closed = sorted((b for b in briefs if b.status in c.CLOSED), key=lambda b: b.meta.get("updated") or "",
+                    reverse=True)[:5]
+    lat = [ms for vals in d["latency"].values() for ms in vals]
+    return {
+        "v": 1, "project": p.slug, "root": p.root,
+        "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"])},
+        "active": active,
+        "next": c.plain(c.next_for(p, briefs)[2]),
+        "queue": [item(s) for s in sd["queue"]][:20],
+        "inbox": [item(s) for s in sd["inbox"]][:10], "inbox_total": len(sd["inbox"]),
+        "approvals": [{"task": a.get("task"), "allow": list(a.get("allow") or []), "why": c.plain(a.get("why") or "")}
+                      for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
+        "closed": [{"id": b.id, "status": b.status} for b in closed],
+        "recent": d["recent"],
+        "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
+                   "hook_errors": len(fmdoctor.recent_hook_errors())},
+        "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")],
+    }
+
+
+def cmd_ui(args):
+    """fm ui --json: the view model for the foreman-ui mod and any other surface; {"v": 1, "project": null} outside a
+    project (never creates one)."""
+    import fmcli
+    try:
+        p = fmcli.resolve(args, create=False)
+    except fmcli.UsageError:
+        p = None
+    v = view(p) if p else {"v": 1, "project": None}
+    if getattr(args, "json", False):
+        print(json.dumps(v))
+    else:
+        a = v.get("active")
+        print(f"{v['project'] or 'not a Foreman project'}" + (f" · {a['id']} {a['stage']}" if a else "")
+              + (f"\nNext: {v['next']}" if v.get("next") else ""))

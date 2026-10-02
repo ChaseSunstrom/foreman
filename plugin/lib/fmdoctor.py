@@ -356,15 +356,20 @@ def check_hook_writers(settings, home):
                   "; ".join(bad) or "only Foreman's own hooks write Foreman state; no duplicate registrations")
 
 
-def check_hook_errors():
+def recent_hook_errors():
+    """Hook errors of the last 24h, each its log lines: "<ts> <event> <traceback…>" and its continuation."""
     log = _read(os.path.join(c.state_dir(), "logs", "hooks.log")) or ""
-    entries = []  # one per error: "<ts> <event> <traceback…>" continued on the following lines
+    entries = []
     for line in log.splitlines():
         if re.match(r"\d{4}-\d\d-\d\dT\S+ ", line):
             entries.append([line])
         elif entries:
             entries[-1].append(line)
-    recent = [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < 1]
+    return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < 1]
+
+
+def check_hook_errors():
+    recent = recent_hook_errors()
     if not recent:
         return Result("hook errors", "PASS", "no hook errors in the last 24h")
     last = recent[-1]

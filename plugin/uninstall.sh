@@ -35,6 +35,7 @@ else
 fi
 
 say "Uninstalling the plugin and the local marketplace"
+run claude plugin uninstall foreman-ui@foreman --scope user >/dev/null 2>&1 || true
 run claude plugin uninstall foreman@foreman --scope user >/dev/null 2>&1 || say "  (foreman@foreman was not installed)"
 run claude plugin marketplace remove foreman >/dev/null 2>&1 || say "  (marketplace 'foreman' was not registered)"
 
