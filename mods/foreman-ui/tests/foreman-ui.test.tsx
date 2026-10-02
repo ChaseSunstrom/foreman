@@ -1,7 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { bar, guardReason, toasts } from '../hooks/register'
+import { activityCells, elapsed, progressCells, shortPath, textBar, toolFace } from '../hooks/kit'
+import { guardReason, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -41,21 +42,31 @@ const VIEW: FmView = {
   watch: [],
 }
 
-const BAND = {
-  component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 12, bodyColumns: 100, scroll: { offset: 0, bodyRows: 12 }, view: {} },
-} as const
+const band = (isWorking = false) =>
+  ({
+    component: 'AbovePrompt',
+    props: { hasSurvey: false, isWorking, maxRows: 14, bodyColumns: 120, scroll: { offset: 0, bodyRows: 14 }, view: {} },
+  }) as const
 const PANE = {
   component: 'Pane',
   requestId: 'foreman',
-  props: { title: 'Foreman', isFocused: true, bodyColumns: 60, placement: 'dock', scroll: { offset: 0, bodyRows: 40 }, view: {} },
+  props: { title: 'Foreman', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
 
-// The world beneath the plugin: fm answers from `views` (last one repeats) and every argv is recorded.
+const decode = (b64: string) => {
+  const bin = atob(b64)
+  const view = new DataView(new Uint8Array([...bin].map(c => c.charCodeAt(0))).buffer)
+  const out: { ch: string; fg: number }[] = []
+  for (let i = 0; i < bin.length; i += 12) out.push({ ch: String.fromCodePoint(view.getUint32(i, true)), fg: view.getUint32(i + 4, true) })
+  return out
+}
+
+// The world beneath the plugin: fm answers from `views` (last one repeats); every argv, toast and open is recorded.
 function world(on: On, views: FmView[]) {
   const calls: string[][] = []
   const toasted: string[] = []
-  mock.clock(on)
+  const opened: string[] = []
+  const clock = mock.clock(on)
   mock.env(on, { FOREMAN_FM: 'fm', HOME: '/home/u' })
   on('process.run', async ($, e) => {
     calls.push([...e.argv])
@@ -67,24 +78,47 @@ function world(on: On, views: FmView[]) {
     toasted.push(e.text)
     return { value: undefined }
   })
-  const opened: string[] = []
   on('ui.open', async ($, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
   })
   on('session.start', async ($, e) => ({ cwd: e.cwd }))
   on('command.register', async ($, e) => ({ value: { command: e.name } }))
+  on('turn.start', async ($, e) => ({ turnId: e.turnId }))
+  on('turn.complete', async () => ({ text: '' }))
+  const answer = { deny: '' }
+  on('tool.call', async () => (answer.deny ? { deny: answer.deny } : { result: {} }))
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
-    return <Text key="engine">engine</Text>
+    if (e.component === 'Spinner') return <Text>{`${e.props.word}${e.props.suffix}`}</Text>
+    return <Text>engine</Text>
   })
-  return { calls, toasted, opened }
+  return { calls, toasted, opened, clock, answer }
 }
 
-test('progress bar fills by steps done', () => {
-  expect(bar(1, 2)).toBe('▰▱')
-  expect(bar(0, 0)).toBe('')
-  expect(bar(5, 20)).toBe('▰▰▰▱▱▱▱▱▱▱')
+test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
+  const still = decode(progressCells(10, 0.5, 0x112233, 0x88ff88, null))
+  expect(still.length).toBe(10)
+  expect(still.every(c => c.ch === '━')).toBe(true)
+  expect(still[0]!.fg).not.toBe(still[4]!.fg) // a gradient, not one color
+  expect(still[9]!.fg).toBe(still[8]!.fg) // the empty track is flat
+  const lit = decode(progressCells(10, 0.5, 0x112233, 0x88ff88, 7))
+  expect(lit.some((c, i) => c.fg !== still[i]!.fg)).toBe(true)
+  expect(decode(activityCells(8, 0xff0000, 3)).map(c => c.fg)).not.toEqual(decode(activityCells(8, 0xff0000, 6)).map(c => c.fg))
+  expect(textBar(4, 0.5)).toEqual(['━━', '──'])
+})
+
+test('kit: each tool reads as what it does', () => {
+  expect(toolFace('Edit', { file_path: '/r/src/a.py', old_string: 'x', new_string: 'y\nz' })).toMatchObject({
+    verb: 'Editing', target: '/r/src/a.py', delta: '+2 −1', add: 2, del: 1,
+  })
+  expect(toolFace('Write', { file_path: '/r/b.md', content: 'a\nb\nc' }).delta).toBe('+3')
+  expect(toolFace('Bash', { command: 'pytest -q', description: 'Run tests' }).target).toBe('Run tests')
+  expect(toolFace('Agent', { subagent_type: 'fm-reviewer', description: 'Review' })).toMatchObject({ icon: '◆', target: 'fm-reviewer: Review' })
+  expect(toolFace('mcp__docs__query', {})).toMatchObject({ verb: 'query', target: 'docs' })
+  expect(elapsed(1234)).toBe('1.2s')
+  expect(elapsed(75000)).toBe('1m 15s')
+  expect(shortPath('/a/very/long/path/to/some/deeply/nested/file_name.py', 24)).toBe('…/nested/file_name.py')
 })
 
 test('toasts: a step done, a task closed, a new approval; nothing on the first snapshot', () => {
@@ -115,14 +149,18 @@ test('guard refusals are recognised by their Foreman prefix only', () => {
   expect(guardReason({})).toBeUndefined()
 })
 
-test('band shows the task line and next action; a waiting plan is reviewed in the pane, never approved from the band', async ($, on) => {
+test('band is a card: type chip, title, gradient progress (text twin off the terminal), next; a waiting plan is reviewed, never approved, from it', async ($, on) => {
   const { calls, opened } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
-    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...BAND })
-    expect(await ui.find({ type: 'Text', text: /T-0007 FIX M · executing ▰▱ 1\/2 raise the timeout/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /Next: T-0007 step 2\/2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /audits 0\/2 · q2 in1 · standard/ })).toBeDefined()
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...band() })
+    expect(await ui.find({ type: 'Text', text: / FIX M / })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /Login times out/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /raise the timeout/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /◇ standard · q2 · in1/ })).toBeDefined()
+    expect((await ui.findAll({ type: 'Raster' })).length).toBe(surface === 'terminal' ? 1 : 0)
     expect(await ui.find({ key: 'approve-T-0009' })).toBeUndefined()
     await ui.press({ key: 'review-T-0009' })
     expect(opened).toContain('foreman')
@@ -131,23 +169,33 @@ test('band shows the task line and next action; a waiting plan is reviewed in th
   }
 })
 
-test('band stays out of the way outside a Foreman project', async ($, on) => {
-  world(on, [{ v: 1, project: null }])
-  await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /▌/ })).toBeUndefined()
-  expect(await ui.find({ text: 'engine' })).toBeDefined()
+test('while a turn runs the band animates; when it ends the clock stops', async ($, on) => {
+  const { clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  const first = JSON.stringify(await ui.drawn())
+  await clock.advance(360)
+  const later = JSON.stringify(await ui.drawn())
+  expect(later).not.toBe(first)
+  expect(await ui.find({ key: 'next' })).toBeUndefined() // no Next while Claude works
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't1', reason: 'answer' })
+  await clock.advance(1000)
+  const settled = JSON.stringify(await ui.drawn())
+  await clock.advance(1000)
+  expect(JSON.stringify(await ui.drawn())).toBe(settled)
   await ui.unmount()
 })
 
-test('pane lists steps, criteria, queue and inbox; its buttons run fm', async ($, on) => {
+test('pane is organized cards; a waiting plan shows what a yes approves, and its buttons run fm', async ($, on) => {
   const { calls } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...PANE })
+    for (const key of ['card-task', 'card-queue', 'card-inbox', 'card-activity']) expect(await ui.find({ key })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /▸ 2\. raise the timeout/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /○ AC1 slow wifi logs in/ })).toBeDefined()
-    expect(await ui.find({ key: 'in-T-0011' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /csv module vs pandas: csv module/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /write the exporter/ })).toBeDefined()
     await ui.press({ key: 'approve-T-0009' })
@@ -161,9 +209,63 @@ test('pane lists steps, criteria, queue and inbox; its buttons run fm', async ($
   }
 })
 
+test('a running edit is an animated row with its delta; a finished one is the engine own row', async ($, on) => {
+  const { clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const input = { file_path: '/repo/src/login.py', old_string: 'a', new_string: 'b\nc' }
+  const props = { tool_use_id: 'tu1', tool: 'Edit', input, isRunning: true, isErrored: false, isInterrupted: false }
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, component: 'ToolUse', requestId: 'tu1', props })
+    expect(await ui.find({ type: 'Text', text: /✎ Editing/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /login\.py/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: '+2 −1' })).toBeDefined()
+    const first = JSON.stringify(await ui.drawn())
+    await clock.advance(240)
+    expect(JSON.stringify(await ui.drawn())).not.toBe(first) // the spinner and the comet move
+    await ui.unmount()
+    for (const end of [{ isRunning: false }, { isErrored: true }, { isInterrupted: true }]) {
+      const done = await $.ui.mount({ plugin: 'foreman-ui', surface, component: 'ToolUse', requestId: 'tu1', props: { ...props, ...end } })
+      expect(await done.find({ type: 'Text', text: 'engine' })).toBeDefined()
+      await done.unmount()
+    }
+  }
+})
+
+test('the spinner names the Foreman step; the closing line says what the turn did', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const spinner = await $.ui.mount({
+    plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner',
+    props: { word: 'Baking', message: null, suffix: '…', mode: 'tool-use' },
+  })
+  expect(await spinner.find({ type: 'Text', text: 'Baking… ▸ T-0007 2/2 raise the timeout' })).toBeDefined()
+  await spinner.unmount()
+
+  await $.turn.start({ text: 'go', turnId: 't2' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.py', old_string: 'a', new_string: 'b\nc', replace_all: false })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q' })
+  await $.turn.complete({ answer: '', durationMs: 3100, isAborted: false, turnId: 't2', reason: 'answer' })
+  const line = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'TurnDuration', props: { word: 'Baked', durationMs: 3100 } })
+  expect(await line.find({ type: 'Text', text: /2 tools · 1 edit \+2 −1/ })).toBeDefined()
+  await line.unmount()
+  expect(summaryText({ durationMs: 1, tools: 1, edits: 0, add: 0, del: 0, agents: 2, step: 'T-1 step 2/3' })).toBe(
+    '1 tool · 2 subagents · ✓ T-1 step 2/3',
+  )
+})
+
+test('band stays out of the way outside a Foreman project', async ($, on) => {
+  world(on, [{ v: 1, project: null }])
+  await $.session.start({ cwd: '/elsewhere', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /T-0007/ })).toBeUndefined()
+  expect(await ui.find({ text: 'engine' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('a guard refusal of a tool call becomes a toast', async ($, on) => {
-  const { toasted } = world(on, [VIEW])
-  on('tool.call', async () => ({ deny: 'Foreman guard: blocked core: plugin/lib/fmcore.py is protected core.' }))
+  const { toasted, answer } = world(on, [VIEW])
+  answer.deny = 'Foreman guard: blocked core: plugin/lib/fmcore.py is protected core.'
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'rm -rf plugin/lib' })
   expect(toasted.some(t => t.startsWith('⛔ Foreman: blocked core'))).toBe(true)

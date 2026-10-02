@@ -59,7 +59,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `plugin/lib/` | `fmcore` (state, briefs, queue, intake, ledger, locks, audits), `fmcli`, `fmguard`, `fmhooks` (incl. chat approvals), `fmtidy`, `fmdoctor`, `fmwatch`, `fmsetup`, `fmideas` (tool-less brainstorm children), `fmserve` (`fm serve` / `fm run`), `fmplugins` (`fm plugins`: marketplace search, conflict check), `fmrecall` (`fm recall`, Related at focus, failure memory), `fmmap` (`fm map`, `fm impact`), `fmrepeats` (`fm repeats`), `fmsync` (`fm sync`) — all protected core | Claude | on call | stdlib only |
 | `plugin/hooks/hooks.json` | one handler per event (13 events), exec form (protected) | Claude | by Claude Code | p95 ≤ 150 ms |
 | `plugin/hooks/hook` | dispatcher `hook <Event>`; guard fails closed (protected) | Claude | per event | — |
-| `plugin/hooks/statusline` | statusLine wrapper: original + claude-hud + Foreman line; session snapshots (protected) | Claude | per statusline refresh | < 100 ms own work |
+| `plugin/hooks/statusline` | statusLine: one true-color session line + Foreman line (a chip when foreman-ui is on), from `status.json`; `statusline_layout: "stack"` restores original + claude-hud + Foreman lines; session snapshots (protected) | Claude | per statusline refresh | < 100 ms own work |
 | `plugin/hooks/subagent-statusline` | per-subagent rows (task, tokens vs window, elapsed) (protected) | Claude | per refresh | — |
 | `plugin/rules/foreman.md` | always-on operating rules (protected; symlinked into `~/.claude/rules/`) | Claude | every session | ≤ 80 lines, 6000 chars (43, 4.9k) |
 | `plugin/output-styles/foreman.md` | the Foreman reply format (task/stage header, `✓ cmd → result` lines, `Changed:`, `Next:`, `⚠ Needs you:`); `fm install-user` selects `foreman:Foreman` when you have no style | Claude Code | system prompt, every turn | < 260 words |
@@ -71,7 +71,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `plugin/observability/` | telegraf OTel input, Grafana dashboard, setup notes | Claude | manual | — |
 | `plugin/evals/` | `claude plugin eval` cases with the rules embedded (protected) | Claude | `claude plugin eval` | `--max-cost-usd` |
 | `plugin/tests/` | unit/behaviour tests, fixtures, hook bench, `e2e/` (live scenarios, install round trip, eval sync) | Claude | on demand | — |
-| `mods/foreman-ui/` | the UI mod (function-hook plugin `foreman-ui@foreman`): `hooks/register.tsx` (band, pane, `/fm`, toasts; renders `fm ui --json`, buttons run `fm`), `types/index.d.ts` (the view-model contract), `tests/` (`claude plugin test`) | Claude | by Claude Code when the build has mods | no rules or gates of its own |
+| `mods/foreman-ui/` | the UI mod (function-hook plugin `foreman-ui@foreman`): `hooks/register.tsx` (band card, pane cards, `/fm`, toasts, animated running tool/subagent rows, spinner step, turn summary line; renders `fm ui --json`, buttons run `fm`), `hooks/kit.ts` (palette, true-color Raster bars and text twins, tool faces), `types/index.d.ts` (the view-model contract), `tests/` (`claude plugin test`) | Claude | by Claude Code when the build has mods | no rules or gates of its own |
 | `plugin/uninstall.sh` | remove wiring, plugin and marketplace; keeps state unless `--purge-state` | Claude | run by user | — |
 | `plugin/README.md` | plugin overview | Claude | on demand | — |
 | `plugin/THIRD_PARTY_LICENSES.md` | MIT licenses of ported ECC and superpowers material | Claude | on demand | — |

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Foreman statusLine wrapper: [original statusLine] + [claude-hud] + one Foreman line (display only).
+"""Foreman statusLine (display only). Default layout: one true-color session line (model, folder, branch, context and
+rate-limit bars, cost, lines changed) and one Foreman line (task, stage, step bar, audits, queue, autonomy, guard) —
+or, when the foreman-ui mod draws the band above the prompt, a Foreman chip on the session line instead.
 
-Reads the statusline JSON once, feeds it to the saved original command and to claude-hud (in parallel),
-drops blank lines, appends the Foreman line from the cached state.line (plus progress.line: task progress, audits
-and what a pending yes grants, when there is one), and snapshots the JSON to
-state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a Foreman line.
+`statusline_layout: "stack"` in the install manifest brings back the old stack: the saved original statusLine and
+claude-hud (run in parallel on the same JSON), then the Foreman line from state.line and progress.line. Either way the
+JSON is snapshotted to state/sessions/<session_id>.json for `fm watch`. Never fails: any error still prints a line.
 """
 import glob
 import json
@@ -13,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
 
@@ -126,6 +128,171 @@ def snapshot(c, data, p):
     c.write_atomic(os.path.join(c.state_dir(), "sessions", f"{sid}.json"), json.dumps(snap) + "\n")
 
 
+# ---------------------------------------------------------------- the default layout
+
+RESET, BOLD = "\x1b[0m", "\x1b[1m"
+ACCENT, ACCENT2, OK, WARN, ERR, DIM, TRACK, BRANCH = (0x5fd7d7, 0x87afff, 0x87d787, 0xffd75f, 0xff6b6b, 0x6c7686,
+                                                      0x3a414c, 0xd787ff)
+
+
+def fg(c):
+    return f"\x1b[38;2;{c >> 16 & 255};{c >> 8 & 255};{c & 255}m"
+
+
+def mix(a, b, t):
+    t = max(0.0, min(1.0, t))
+    return sum(round(((a >> s) & 255) + (((b >> s) & 255) - ((a >> s) & 255)) * t) << s for s in (16, 8, 0))
+
+
+def heat(frac):
+    """green → amber → red as a meter fills."""
+    return mix(OK, WARN, frac * 2) if frac < 0.5 else mix(WARN, ERR, (frac - 0.5) * 2)
+
+
+def bar(frac, width, color=None):
+    """A gradient bar as (text, style) cells: filled ━ colored by `color(t)` or by heat, the rest a dim ─ track."""
+    frac = max(0.0, min(1.0, frac))
+    done = round(frac * width)
+    cells = [("━", fg(color(i / max(1, width - 1)) if color else heat(frac))) for i in range(done)]
+    return cells + ([("─" * (width - done), fg(TRACK))] if width > done else [])
+
+
+def render(segs, width):
+    """Join (text, style) segments, cut to `width` visible cells with an ellipsis; styles never count."""
+    out, used = [], 0
+    for text, style in segs:
+        room = width - used
+        if room <= 0:
+            break
+        if len(text) > room:
+            text = text[:max(0, room - 1)] + "…"
+        out.append(f"{style}{text}{RESET}" if style else text)
+        used += len(text)
+    return "".join(out)
+
+
+def git_branch(cwd):
+    """The checked-out branch from .git/HEAD (no git process on the statusline's path); '' when none."""
+    d = os.path.abspath(cwd or ".")
+    while True:
+        g = os.path.join(d, ".git")
+        try:
+            if os.path.isfile(g):  # a worktree: "gitdir: <path>"
+                with open(g) as f:
+                    g = f.read().split(":", 1)[1].strip()
+            with open(os.path.join(g, "HEAD")) as f:
+                head = f.read().strip()
+            return head[16:] if head.startswith("ref: refs/heads/") else head[:8]
+        except (OSError, IndexError):
+            pass
+        parent = os.path.dirname(d)
+        if parent == d:
+            return ""
+        d = parent
+
+
+def until(epoch):
+    try:
+        s = max(0, int(float(epoch) - time.time()))
+    except (TypeError, ValueError):
+        return ""
+    return f"↻{s // 3600}h{s % 3600 // 60:02d}m" if s >= 3600 else f"↻{s // 60}m"
+
+
+def session_segs(data, cwd):
+    sep = ("  ", "")
+    segs = [("◆ ", fg(ACCENT)), ((data.get("model") or {}).get("display_name") or "Claude", BOLD + fg(ACCENT)), sep]
+    ws = data.get("workspace") or {}
+    segs.append((os.path.basename((ws.get("project_dir") or cwd).rstrip("/")) or "/", BOLD))
+    branch = git_branch(cwd)
+    if branch:
+        segs += [(" ⎇ ", fg(DIM)), (branch, fg(BRANCH))]
+    ctx = (data.get("context_window") or {}).get("used_percentage")
+    if isinstance(ctx, (int, float)):
+        segs += [sep, ("ctx ", fg(DIM))] + bar(ctx / 100, 8) + [(f" {round(ctx)}%", fg(heat(ctx / 100)))]
+    limits = data.get("rate_limits") or {}
+    for key, name in (("five_hour", "5h"), ("seven_day", "7d")):
+        lim = limits.get(key) or {}
+        pct = lim.get("used_percentage")
+        if isinstance(pct, (int, float)):
+            segs += [sep, (f"{name} ", fg(DIM))] + bar(pct / 100, 5) + [(f" {round(pct)}%", fg(heat(pct / 100)))]
+            if key == "five_hour" and lim.get("resets_at"):
+                segs.append((f" {until(lim['resets_at'])}", fg(DIM)))
+    cost = data.get("cost") or {}
+    if isinstance(cost.get("total_cost_usd"), (int, float)):
+        segs += [sep, (f"${cost['total_cost_usd']:.2f}", fg(DIM))]
+    if cost.get("total_lines_added") or cost.get("total_lines_removed"):
+        segs += [("  ", ""), (f"+{cost.get('total_lines_added') or 0}", fg(OK)),
+                 (f" −{cost.get('total_lines_removed') or 0}", fg(ERR))]
+    return segs
+
+
+def read_status(c, p):
+    try:
+        with open(os.path.join(p.dir, "status.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return c.status_dict(c.state_dict(p))
+
+
+def foreman_segs(st, mode):
+    a, sep = st.get("active"), (" · ", fg(DIM))
+    if a:
+        segs = [("▌", fg(ACCENT)), (a["id"], BOLD + fg(ACCENT)), (f" {a['type']} {a['tier']}", fg(ACCENT2)),
+                ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
+        if a["total"]:
+            segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
+                [(f" {a['done']}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
+        need = a["audits"][1]
+        if need:
+            segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]
+    else:
+        segs = [("▌", fg(ACCENT)), ("foreman", BOLD + fg(ACCENT)), sep, ("idle", fg(DIM))]
+    segs += [sep, (f"q{st.get('queue', 0)} in{st.get('inbox', 0)}", fg(DIM)), sep,
+             ("⚡ full auto" if st.get("autonomy") == "full" else "standard", fg(WARN if st.get("autonomy") == "full" else DIM)),
+             sep, (f"guard on · {mode}", fg(DIM))]
+    asks = st.get("asks") or []
+    if asks:
+        segs += [sep, ("⚠ reply yes = " + "; ".join(f"{'+'.join(x.get('allow') or [])} for {x.get('task')}"
+                                                     for x in asks), fg(WARN))]
+    return segs
+
+
+def chip_segs(st):
+    a = st.get("active") if st else None
+    if not st:
+        return [("  ", ""), ("▌foreman", fg(ACCENT))]
+    if not a:
+        return [("  ", ""), ("▌foreman idle", fg(ACCENT))]
+    return [("  ", ""), (f"▌{a['id']} {a['done']}/{a['total']}", BOLD + fg(ACCENT))]
+
+
+def user_settings():
+    base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+    try:
+        with open(os.path.join(base, "settings.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def default_layout(c, data):
+    cwd = data.get("cwd") or (data.get("workspace") or {}).get("current_dir") or os.getcwd()
+    cols = os.environ.get("COLUMNS") or ""
+    width = max(20, int(cols)) if cols.isdigit() and int(cols) else 160
+    settings = user_settings()
+    p = c.find_project(cwd)
+    st = read_status(c, p) if p else None
+    mode = "manual (sensitive)" if p and c.detect_sensitive(p.root) else \
+        ((settings.get("permissions") or {}).get("defaultMode") or "default")
+    mode = {"bypassPermissions": "bypass"}.get(mode, mode)
+    line1 = session_segs(data, cwd)
+    if (settings.get("enabledPlugins") or {}).get("foreman-ui@foreman"):  # the band shows the rest above the prompt
+        return [render(line1 + chip_segs(st), width)], p
+    line2 = foreman_segs(st, mode) if st else [("▌foreman", fg(ACCENT)), (" · no project here · guard on", fg(DIM))]
+    return [render(line1, width), render(line2, width)], p
+
+
 def main():
     raw = sys.stdin.read()
     try:
@@ -134,8 +301,21 @@ def main():
         data = {}
     lines, tail, extra, procs = [], "foreman", [], None
     try:
-        # the wrapped lines (node for claude-hud) start before Foreman's own import, which costs ~20 ms
-        procs = start_children(raw, quick_manifest())
+        manifest = quick_manifest()
+        if (manifest or {}).get("statusline_layout") != "stack":
+            import fmcore as c
+            if manifest is None:
+                manifest = load_manifest(c.state_dir()) or {}
+            if manifest.get("statusline_layout") != "stack":
+                out, p = default_layout(c, data)
+                print("\n".join(out))
+                try:  # the lines are out first: a snapshot that can't be written never costs them
+                    snapshot(c, data, p)
+                except Exception:
+                    pass
+                return 0
+        # the old stack: the wrapped lines (node for claude-hud) start before Foreman's own import (~20 ms)
+        procs = start_children(raw, manifest)
         import fmcore as c
         if procs is None:  # state lives in a fallback dir: ask fmcore where
             procs = start_children(raw, load_manifest(c.state_dir()) or {})

@@ -21,8 +21,10 @@ class VisibilityCase(ForemanTestCase):
         self.fm("task", "step", "T-0001", "add", "fix")
         self.fm("task", "ac", "T-0001", "add", "works")
         self.fm("focus", "T-0001")
+        self.manifest(statusline_hud=False)
 
-    def manifest(self, **kw):
+    def manifest(self, **kw):  # these tests pin the opt-in stack layout; test_statusline_ui covers the default one
+        kw.setdefault("statusline_layout", "stack")
         c.write_atomic(os.path.join(self.home, "state", "install-manifest.json"), json.dumps(kw))
 
     def status_payload(self):

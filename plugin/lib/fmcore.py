@@ -1516,6 +1516,7 @@ def regen_views(p, briefs=None):
     write_atomic(os.path.join(p.dir, "state.line"), state_line(sd) + "\n")
     write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
     write_atomic(os.path.join(p.dir, "progress.line"), progress_line(sd) + "\n")
+    write_atomic(os.path.join(p.dir, "status.json"), json.dumps(status_dict(sd)) + "\n")
     if read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
         import fmsync
         try:
@@ -1523,6 +1524,17 @@ def regen_views(p, briefs=None):
         except (OSError, ValueError):
             pass  # a read-only checkout or a bad brief costs the mirror update, never the fm command
     return sd
+
+
+def status_dict(sd):
+    """What the statusline draws, as data (status.json): it styles this itself instead of re-parsing a text line."""
+    a = sd["active"]
+    return {"active": a and {"id": a["id"], "type": a["type"], "tier": a["tier"], "stage": a["stage"],
+                             "done": a["steps_done"], "total": a["steps_total"],
+                             "step": plain(a["step"]["text"]) if a.get("step") else "",
+                             "audits": [a["audits"]["done"], a["audits"]["required"]]},
+            "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "autonomy": sd["autonomy"],
+            "drive": bool(sd["drive"]), "asks": sd.get("asks") or []}
 
 
 def badge_text(sd):

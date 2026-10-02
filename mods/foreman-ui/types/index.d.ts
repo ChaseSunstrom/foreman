@@ -37,8 +37,11 @@ export type FmView = {
   watch?: string[] // paths whose mtime moves when the record changes
 }
 
+// What one turn did, for the line that closes it (matched by its duration).
+export type TurnSummary = { durationMs: number; tools: number; edits: number; add: number; del: number; agents: number; step: string }
+
 declare module 'claude-code' {
   interface PluginState {
-    'foreman-ui': { view: FmView | null; error: string | null }
+    'foreman-ui': { view: FmView | null; error: string | null; frame: number; summaries: TurnSummary[] }
   }
 }
