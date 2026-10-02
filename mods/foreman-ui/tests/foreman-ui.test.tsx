@@ -96,6 +96,11 @@ function world(on: On, views: FmView[]) {
   on('session.usage', async () => ({
     value: { startedAt: 0, context: { window: 1000, percent: usage.percent }, rateLimits: [], cost: { usd: 1.5 } },
   }))
+  const compacted: string[] = []
+  on('session.compact', async ($, e) => {
+    compacted.push(String(e.instructions ?? ''))
+    return { messages: [] }
+  })
   on('prompt.suggest', async ($, e) => {
     suggested.push(e.text)
     return { isShown: true }
@@ -117,7 +122,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -425,4 +430,35 @@ test('a finished fm bookkeeping command is one quiet line; a failed one keeps th
     expect(await row.find({ type: 'Text', text: 'engine' })).toBeDefined()
     await row.unmount()
   }
+})
+
+const DONE: FmView = { ...CALM, active: null, queue: CALM.queue!.filter(q => q.id !== 'T-0007'), closed: [{ id: 'T-0007', status: 'done' }] }
+
+test('a task closing with context at the threshold compacts once, so the next task starts fresh', async ($, on) => {
+  const { compacted, clock, usage, toasted } = world(on, [CALM, DONE])
+  usage.percent = 55
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(33000) // the refresh that sees T-0007 close
+  await clock.advance(1000)
+  expect(compacted.length).toBe(1)
+  expect(compacted[0]).toContain('Foreman task boundary')
+  expect(toasted.some(t => t.includes('compacting'))).toBe(true)
+  await clock.advance(70000)
+  expect(compacted.length).toBe(1)
+})
+
+test('below the threshold nothing compacts', async ($, on) => {
+  const { compacted, clock, usage } = world(on, [CALM, DONE])
+  usage.percent = 20
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(35000)
+  expect(compacted).toEqual([])
+})
+
+test('freshAt 0 turns it off', { options: { freshAt: 0 } }, async ($, on) => {
+  const { compacted, clock, usage } = world(on, [CALM, DONE])
+  usage.percent = 90
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(35000)
+  expect(compacted).toEqual([])
 })

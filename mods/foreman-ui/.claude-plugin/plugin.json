@@ -5,5 +5,26 @@
   "author": {
     "name": "ChaseSunstrom"
   },
-  "types": "./types/index.d.ts"
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "freshAt": {
+      "type": "number",
+      "title": "Compact at task boundaries (context %)",
+      "description": "When a task closes with context at or above this percent, compact so the next task starts fresh. 0 turns it off.",
+      "default": 40
+    },
+    "mascot": {
+      "type": "string",
+      "title": "Mascot",
+      "description": "The animated Claude in the Foreman pane's top-right corner.",
+      "options": [
+        "blue",
+        "orange",
+        "purple",
+        "green",
+        "off"
+      ],
+      "default": "blue"
+    }
+  }
 }

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Fresh long sessions (T-0098): when a task closes with context at or above `freshAt` (foreman-ui setting, default 40%, 0 = off), the mod compacts at that boundary with instructions that keep standing requests and live decisions and drop finished tasks' files and logs; Foreman's checkpoint and resume note restore the exact point. foreman-ui gains `userConfig` (`freshAt`, `mascot`).
 - Cheaper help (T-0101): `foreman:fm-scout`, a Haiku read-only lookup agent (file:line hits only) for the many small "where is X" questions; six new on-demand playbooks (terminal/mod UI, flaky tests, release and changelog, dependency upgrades, profiling, API design) at zero always-on cost; the playbook index trimmed under its budget. Long logs stay out of context with `fm quiet`.
 - Bigger, wilder brainstorms (T-0099): default lenses add `unspoken needs` (the need behind what the user keeps asking and pushing back on) and `delight`; every pack carries the user's own recent requests and corrections; lenses return 8–12 ideas with at least 3 wild ones, each tagged by category; `fm ideas --deepen K` runs a yes-and round on the K biggest categories.
 - Faster close-out (T-0097, measured over 287 real tasks: median 18 bookkeeping calls a task, close-out 42 of 125 hours): `fm task finish` closes any tier in one call (`--lens '<lens>: <result>'` per audit, `--docs`, `--lesson`), the rules and `/foreman:next` point at it, and drive in full autonomy also works captured inbox requests instead of stopping on an empty queue.

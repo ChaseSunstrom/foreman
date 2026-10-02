@@ -41,6 +41,13 @@ const LIST = 6
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
 const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
+const FRESH = [
+  'Foreman task boundary: a task just closed.',
+  "Keep: the user's standing requests and preferences, decisions still in force, and what the next queued task needs.",
+  "Drop: finished tasks' file contents, diffs, logs and back-and-forth.",
+  "Foreman's record (fm state, the briefs) is the source of truth for tasks: after this, check `fm next` and re-read",
+  'files before editing them, since what was read earlier may be out of date.',
+].join(' ')
 
 /** What changed between two snapshots that deserves a toast. */
 export function toasts(prev: FmView | null, next: FmView): string[] {
@@ -113,6 +120,7 @@ let poll: { cancel: () => void } | null = null
 let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
+let freshAt = 40 // userConfig: compact at a task boundary from this context percent (0: never)
 const turns = new Set<string>()
 const starts = new Map<string, number>() // tool_use_id → when it started (ms)
 const agentCalls = new Map<string, string>() // running Agent call → its description
@@ -152,6 +160,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
     for (const line of lines) $.ui.toast(line)
     if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
     else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
+    if (lines.some(l => l.startsWith('✔'))) $.clock.after(500, () => void freshen($)) // outside this dispatch
     await update($, view, () => next)
     await update($, error, () => null)
     lastFull = await $.clock.now()
@@ -196,6 +205,15 @@ async function gauge($: EngineInterface) {
       { timeoutMs: 10000 },
     )
   }
+}
+
+// A task just closed: with the context past freshAt, compact so the next task starts on what still matters (T-0098).
+async function freshen($: EngineInterface) {
+  if (!freshAt) return
+  const percent = (await $.session.usage().catch(() => null))?.context.percent
+  if (typeof percent !== 'number' || percent < freshAt) return
+  $.ui.toast(`Task closed at context ${Math.round(percent)}% · compacting so the next task starts fresh`, { timeoutMs: 8000 })
+  await $.session.compact({ instructions: FRESH }).catch(() => undefined)
 }
 
 async function act($: EngineInterface, args: string[], done: string) {
@@ -331,7 +349,8 @@ function captureBox($: EngineInterface, e: ResolveInput) {
   )
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     const stored = await $.store.get('sound').catch(() => undefined)
