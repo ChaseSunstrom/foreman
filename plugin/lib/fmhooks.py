@@ -1183,6 +1183,8 @@ def _drive(p, sd, briefs, pl, g):
     scope = os.environ.get("FOREMAN_DRIVE_TASK")  # fm run: one task per fresh session; the next gets its own
     work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
                  if w["id"] not in waiting and (not scope or w["id"] == scope)), None)
+    if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
+        work = next((w for w in sd["inbox"] if w["id"] not in waiting), None)
     if not work:
         return None  # nothing left that doesn't need the user
     wb = next(b for b in briefs if b.id == work["id"])
@@ -1201,7 +1203,9 @@ def _drive(p, sd, briefs, pl, g):
         return None
     more = [x["id"] for x in sd["queue"] if x["id"] != work["id"]]
     what = (f"step {work['step']['n']}/{work['step']['of']} ({work['step']['text'][:80]}) is open" if work.get("step")
-            else "is open" if sd["active"] and work["id"] == sd["active"]["id"] else "is next in the queue (not focused)")
+            else "is open" if sd["active"] and work["id"] == sd["active"]["id"]
+            else "is captured in the inbox (plan it, then work it)" if work.get("status") == "captured"
+            else "is next in the queue (not focused)")
     reason = (f"Foreman drive: {work['id']} {work['type']} {what}"
               + (f"; {len(more)} more queued ({', '.join(more[:4])})" if more else "")
               + (". Autonomy full: the user is not asked mid-run; decide with your default and record it (fm decide), "

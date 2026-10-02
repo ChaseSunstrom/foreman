@@ -978,6 +978,17 @@ class Stop(HookCase):
             f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
         self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
 
+    def test_full_autonomy_drive_takes_inbox_requests_when_the_queue_is_empty(self):
+        # T-0097: "continue implementing everything, don't stop until complete" — captured requests are work too
+        self.fm("init")
+        self.fm("capture", "add a dark theme")
+        self.assertIsNone(self.decision(self.stop("Queue is empty.")), "standard autonomy leaves triage to the user")
+        self.fm("autonomy", "full")
+        p = self.stop("Queue is empty.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("T-0001", parse(p)["reason"])
+        self.assertIn("expand it into a planned brief", parse(p)["reason"])
+
     def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
         # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.
         self.fm("init")

@@ -54,3 +54,27 @@ class RoundI(ForemanTestCase):
         self.assertEqual(b.status, "active")
         self.assertEqual(b.section("Interpretation").strip(), "what it means")
         self.assertEqual(b.section("Approach (options → choice → why)").strip(), "a vs b: a")
+
+    def test_finish_closes_an_m_task_in_one_call(self):
+        # T-0097: close-out cost ~18 fm calls a task across 287 real tasks; one call does it now
+        self.fm("init")
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach", "a vs b: a",
+                "--ac", "works :: python3 -c 'print(1)'", "--ac", "fast :: python3 -c 'print(2)'", "--step", "build", "--focus")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "python3 -c 'print(0)'", "ok")
+        p = self.fm("task", "finish", "T-0001", "--audit", "fm-reviewer pass (research T-0001-review)",
+                    "--lens", "intent: matches the request", "--lens", "edge: empty input handled",
+                    "--docs", "README.md", "--lesson", "one call closes it", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        b = self.brief("T-0001")
+        self.assertEqual(b.status, "done")
+        self.assertTrue(all(a.checked for a in b.acceptance()))
+        self.assertEqual(b.section("Docs impact").strip(), "README.md")
+
+    def test_finish_on_an_m_task_refuses_an_unknown_lens(self):
+        self.fm("init")
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach", "y",
+                "--ac", "works :: python3 -c 'print(1)'", "--step", "build", "--focus")
+        p = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'print(0)'", "--audit", "review",
+                    "--lens", "vibes: fine", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("vibes", p.stderr)

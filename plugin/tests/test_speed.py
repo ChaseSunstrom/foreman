@@ -36,7 +36,8 @@ class Speed(ForemanTestCase):
         self.assertEqual(b.status, "active")
         self.assertEqual(b.audits(), [], "no self audit over a failing check")
         self.fm("task", "new", "m", "--type", "FEATURE", "--tier", "M")
-        self.assertIn("for S tasks", self.fm("task", "finish", "T-0002", "--audit", "x", check=False).stderr)
+        # T-0097: M/L close in one call too, naming their audit lenses
+        self.assertIn("--lens", self.fm("task", "finish", "T-0002", "--audit", "x", check=False).stderr)
 
     def test_quiet_prints_one_line_or_the_tail(self):
         p = self.fm("quiet", "--", "bash", "-c", "seq 1 500")

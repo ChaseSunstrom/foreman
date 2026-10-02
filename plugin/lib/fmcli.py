@@ -293,12 +293,19 @@ def _lint_verify(p, cmds):
 
 
 def task_finish(p, args):
-    """S-tier fast path (R1, R4 "fm step"): one call runs each open criterion's own verify command (else --run) and
-    --run for each open step, records them as fm runs, checks what passed, records the self audit, then fm task done.
-    Anything that fails stops it before the audit; the failing runs stay recorded."""
+    """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
+    --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
+    --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
+    stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
-    if b.tier != "S":
-        raise UsageError(f"fm task finish is for S tasks; {b.id} is {b.tier} (its audits need their own lenses)")
+    lenses = []
+    for spec in args.lens or []:
+        lens, sep, result = spec.partition(":")
+        if not sep or lens.strip() not in c.AUDIT_LENSES or not result.strip():
+            raise UsageError(f"--lens takes '<lens>: <result>' with a lens of {', '.join(c.AUDIT_LENSES)}; got {spec!r}")
+        lenses.append((lens.strip(), result.strip()))
+    if b.tier != "S" and not lenses:
+        raise UsageError(f"{b.id} is {b.tier}: name its audits, e.g. --lens 'intent: <result>' --lens 'edge: <result>'")
     runs = {}
 
     def run(cmd):
@@ -318,7 +325,10 @@ def task_finish(p, args):
             if not code:
                 x.check_ac(n) if kind == "ac" else x.mark_step(n)
         if not any(code for *_, code, _ in results):
-            x.add_audit("self", args.audit, args.result, tree=tree)
+            for lens, result in lenses or [("self", args.result)]:
+                x.add_audit(lens, args.audit, result, tree=tree)
+            if args.docs:
+                x.set_section("Docs impact", c.redact(args.docs))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
     failed = [f"{kind} {n}: {cmd} → {c.run_result(code, output)}" for kind, n, cmd, code, output in results if code]
     if failed:
@@ -1436,11 +1446,13 @@ def build_parser():
     t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
     t.add_argument("how")
     t.add_argument("result")
-    t = tadd("finish")  # S fast path: run the checks, mark them, self audit, done
+    t = tadd("finish")  # one-call close-out: run the checks, mark them, audits, docs, done
     t.add_argument("id")
     t.add_argument("--run", help="check for steps (and criteria without their own verify command)")
-    t.add_argument("--audit", required=True, help="how the self checklist was applied")
-    t.add_argument("--result", default="no findings", help="the self audit's result")
+    t.add_argument("--audit", required=True, help="how the audits were done (the self checklist, a review pass…)")
+    t.add_argument("--result", default="no findings", help="the self audit's result (S)")
+    t.add_argument("--lens", action="append", help="M/L: '<lens>: <result>' per audit lens (repeatable)")
+    t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now

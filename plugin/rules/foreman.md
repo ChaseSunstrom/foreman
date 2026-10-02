@@ -25,11 +25,11 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
 ## Evidence and state
-- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. `fm gates` lists what `fm task done` will require (FIX red→green: `fm task prove`); S tasks close in one call: `fm task finish ID --run "<check>" --audit "<how>"`.
+- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. `fm gates` lists what `fm task done` will require (FIX red→green: `fm task prove`); every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …]`.
 - All state through `fm`; never write under ~/.claude/foreman/state. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
-- Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture, `fm task audit ID <lens> …`. M/L record Docs impact.
-- End of task: `fm task done ID` (M/L: `--lesson "…"`), triage the inbox, continue per autonomy (`/foreman:next`).
+- Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
+- End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
 
 ## Autonomy and drive
 - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
