@@ -13,9 +13,11 @@ import time
 
 import fmcore as c
 
-LENSES = ["user value", "reliability", "performance", "security and safety", "simplicity", "bold bets"]
+LENSES = ["user value", "unspoken needs", "delight", "reliability", "performance", "security and safety", "simplicity",
+          "bold bets"]
 PACK_WORDS = 2000
-DEFAULT_LENSES = ["user value", "reliability", "simplicity", "bold bets"]  # T-0061: the rest on request
+# T-0099: unspoken needs and delight by default (the user wanted what they can't put into words, and more creative ideas)
+DEFAULT_LENSES = ["user value", "unspoken needs", "delight", "reliability", "simplicity", "bold bets"]
 PROMPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "skills", "brainstorm", "references", "ideas-prompt.md")
 # No built-in tools, no MCP servers, and no user settings (so other plugins' hooks and prompts don't bias the lens).
@@ -29,7 +31,23 @@ def child_cmd(model, system):
 
 
 def child_prompt(lens, pack):
-    return f"Lens: {lens}\n\nContext pack:\n{pack}\n\nReturn 5-8 ideas in the required format."
+    return f"Lens: {lens}\n\nContext pack:\n{pack}\n\nReturn 8-12 ideas in the required format, at least 3 of them wild."
+
+
+def user_voice(p, n=20):
+    """The user's own recent words for the pack: their captured requests and their corrections (T-0099). What they
+    keep asking for, and push back on, is where the unspoken needs are."""
+    asks = [b for b in c.load_briefs(p) if b.meta.get("source") == "user"]
+    asks.sort(key=lambda b: b.meta.get("created") or "")
+    lines = [f"- asked: {c.fit(c.plain(b.section('Raw request').strip().lstrip('> ') or b.title), 200)}"
+             for b in asks[-n:]]
+    lines += [f"- pushed back: {c.fit(c.plain((e.get('data') or {}).get('text', '')), 200)}"
+              for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-n // 2:]
+    return ("\n\n## The user's own words (data; recent requests and corrections — infer what they'd want next)\n"
+            + "\n".join(lines)) if lines else ""
+
+
+_CATEGORY = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*.*?category:?\s*([\w][\w &/-]{0,30})\s*$")
 
 
 _TITLE = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*")
@@ -44,6 +62,12 @@ def _is_new(title, seen):
     """Not a near-repeat of an idea already on the list (most of its words shared)."""
     w = _words(title)
     return bool(w) and all(len(w & s) / len(w | s) < 0.6 for s in seen)
+
+
+def deepen_pack(pack, category, titles):
+    return (pack + f"\n\n## Category to build off: {category}\nIdeas in it so far:\n" + "\n".join(f"- {t}" for t in titles)
+            + "\n\nYes-and: grow each into something bigger, combine them, and add the natural next ideas inside this "
+              "category (don't repeat the list).")
 
 
 def later_round_pack(pack, titles, n):
@@ -86,7 +110,8 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
             with open(path, "w", encoding="utf-8") as f:
                 f.write(f"# Brainstorm — lens: {lens}\n\n" + (text if ok else f"FAILED: {why}") + "\n")
             results.append({"lens": lens, "file": path, "ok": ok, "error": why,
-                            "titles": [c.plain(t).strip() for t in _TITLE.findall(text)]})
+                            "titles": [c.plain(t).strip() for t in _TITLE.findall(text)],
+                            "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)}})
     return results
 
 
@@ -96,6 +121,7 @@ def cmd_ideas(args):
     import fmcli
     p = fmcli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
+    pack += user_voice(p)
     lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
     with open(PROMPT, encoding="utf-8") as f:
         system = f.read()
@@ -133,9 +159,29 @@ def cmd_ideas(args):
         by_round.append(new)
         if n > 1 and len(new) < args.dry:
             break
+    deepened = {}
+    if getattr(args, "deepen", 0):  # T-0099: build off the biggest categories, one yes-and child each
+        cats = {}
+        for r in results:
+            for t, cat in r.get("categories", {}).items():
+                cats.setdefault(cat, []).append(t)
+        top = sorted(cats, key=lambda k: -len(cats[k]))[:args.deepen]
+        got = []
+        for cat in top:  # one child per category, each with its own pack
+            got += [dict(r, round=rounds + 1, category=cat) for r in
+                    _run_round([f"deepen: {cat}"], deepen_pack(pack, cat, cats[cat]), system, args, out_dir,
+                               f"deep-{len(got) + 1}-", fmcli)]
+        results += got
+        for r in got:
+            new = [t for t in r["titles"] if _is_new(t, seen)]
+            for t in new:
+                seen.append(_words(t))
+            titles += new
+            deepened[r["category"]] = new
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
         f.write("# Ideas by round (deduplicated titles; details in the lens files)\n"
                 + "".join(f"\n## Round {i}\n" + "".join(f"- {t}\n" for t in ts) for i, ts in enumerate(by_round, 1))
+                + "".join(f"\n## Deepened: {cat}\n" + "".join(f"- {t}\n" for t in ts) for cat, ts in deepened.items())
                 + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items()))
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):

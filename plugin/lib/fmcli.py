@@ -1595,11 +1595,13 @@ def build_parser():
 
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
-    s.add_argument("--lens", action="append", help="repeatable; default: user value, reliability, simplicity, bold bets")
+    s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
+                                                    "simplicity, bold bets")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--rounds", type=int, default=1, help="super brainstorm: each round builds on every idea so far")
     s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
     s.add_argument("--seen", action="append", help="an earlier ideas.md whose ideas this run must go past (repeatable)")
+    s.add_argument("--deepen", type=int, default=0, help="then a yes-and round for each of the K biggest idea categories")
     s.add_argument("--timeout", type=int, default=300)
 
     s = add("serve", lazy("fmserve", "cmd_serve"),

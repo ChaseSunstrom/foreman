@@ -23,7 +23,8 @@ if lens == os.environ.get("STUB_CHAT_LENS"):
     sys.exit(0)
 phrases = ["apple banana cherry", "delta echo foxtrot", "golf hotel india", "juliet kilo lima", "mike november oscar"]
 vary = " " + phrases[stdin.count(chr(10) + '- ') // 2 % 5] if os.environ.get("STUB_VARY") else ""
-print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low")
+cat = "speed" if "user" in lens or "deepen" in lens else "looks"
+print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low — category: {cat}")
 '''
 
 
@@ -126,4 +127,27 @@ class Ideas(ForemanTestCase):
 
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
-        self.assertEqual(len(self.calls()), 4)  # T-0061: four by default
+        self.assertEqual(len(self.calls()), 6)  # T-0061 four; T-0099 adds unspoken needs and delight
+
+    def test_default_lenses_look_for_unspoken_needs_and_delight(self):
+        # T-0099: the user wanted ideas they can't put into words, and more creative ones
+        self.fm("ideas", "--pack", self.pack, env=self.env)
+        lenses = {next(l for l in x["stdin"].splitlines() if l.startswith("Lens: "))[6:] for x in self.calls()}
+        self.assertTrue({"unspoken needs", "delight", "user value", "bold bets"} <= lenses, lenses)
+
+    def test_every_pack_carries_the_users_own_words(self):
+        self.fm("capture", "make the dashboard feel alive")
+        self.hook("UserPromptSubmit", {"prompt": "no, don't stop after one task"})
+        self.fm("ideas", "--pack", self.pack, "--lens", "user value", env=self.env)
+        stdin = self.calls()[0]["stdin"]
+        self.assertIn("The user's own words", stdin)
+        self.assertIn("make the dashboard feel alive", stdin)
+        self.assertIn("don't stop after one task", stdin)
+
+    def test_deepen_builds_off_the_biggest_categories(self):
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "user value", "--lens", "user value 2",
+                                 "--lens", "delight", "--deepen", "1", "--json", env=self.env).stdout)
+        deep = [x for x in self.calls() if "Lens: deepen: speed" in x["stdin"]]
+        self.assertEqual(len(deep), 1, "one yes-and round for the top category (speed: 2 ideas)")
+        self.assertIn("Idea for user value", deep[0]["stdin"])
+        self.assertIn("## Deepened: speed", read_text(os.path.join(res["dir"], "ideas.md")))
