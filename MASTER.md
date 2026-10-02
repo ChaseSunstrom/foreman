@@ -64,7 +64,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `plugin/rules/foreman.md` | always-on operating rules (protected; symlinked into `~/.claude/rules/`) | Claude | every session | ≤ 80 lines, 6000 chars (43, 4.9k) |
 | `plugin/output-styles/foreman.md` | the Foreman reply format (task/stage header, `✓ cmd → result` lines, `Changed:`, `Next:`, `⚠ Needs you:`); `fm install-user` selects `foreman:Foreman` when you have no style | Claude Code | system prompt, every turn | < 260 words |
 | `plugin/skills/` | intake (+ references: planning, execute, audit lenses, delegate, ported superpowers procedures), brainstorm (+ `references/ideas-prompt.md` for `fm ideas`), next, resume, status, capture, tidy, doctor, reflect, improve, playbooks (40 ported ECC references) | Claude | descriptions always-on; bodies on invoke | SKILL.md < 500 lines |
-| `plugin/agents/` | `fm-recon`, `fm-reviewer` (read-only tool allowlists; the reviewer runs one audit lens per brief). No tool-less agent: Claude Code gives an empty `tools:` list every tool | Claude | on delegation | output ≤ 400 words |
+| `plugin/agents/` | `fm-recon`, `fm-reviewer` (Sonnet), `fm-scout` (Haiku: cheap file:line lookups) — all read-only tool allowlists; the reviewer runs one audit lens per brief. No tool-less agent: Claude Code gives an empty `tools:` list every tool | Claude | on delegation | output ≤ 400 words |
 | `plugin/commands/build.md` | `/foreman:build` (the bootstrap) | Claude | on invoke | — |
 | `plugin/templates/` | `brief.md` template | Claude | by fm | — |
 | `plugin/themes/` | optional Foreman color theme (`/theme`) | Claude | on selection | — |
