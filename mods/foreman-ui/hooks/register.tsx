@@ -1,22 +1,46 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ResolveInput } from 'claude-code'
 
-import type { FmView, TurnSummary } from '../types'
-import { C, activityCells, elapsed, hex, mix, progressCells, spin, textBar, textComet, toolFace, typeColor } from './kit'
+import type { FileChurn, FmItem, FmView, LiveAgent, TurnSummary } from '../types'
+import {
+  C,
+  activityCells,
+  ago,
+  churnCells,
+  elapsed,
+  fade,
+  hex,
+  mix,
+  progressCells,
+  pulse,
+  shortPath,
+  sparkCells,
+  sparkText,
+  spin,
+  textBar,
+  textComet,
+  toolFace,
+  typeColor,
+} from './kit'
 
-// Foreman inside Claude Code. A pure renderer over `fm ui --json`: every rule and gate stays in fm and its classic
-// hooks (which still run under claude -p and older builds); buttons only run fm commands or submit a prompt the
-// person pressed for. While a turn runs, a frame clock animates the band and every running tool row; a finished row
-// goes back to the engine, which draws its result (diffs, output) as it always does.
+// Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
+// every rule and gate stays in fm and its classic hooks (which still run under claude -p and older builds); buttons
+// only run fm commands or submit a prompt the person pressed for. While work is live a frame clock animates the band,
+// the cards and every running tool row; a finished row goes back to the engine, which draws its result as always.
 const PANE = 'foreman'
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
 const frame = atom({ plugin: 'foreman-ui', key: 'frame' } as const, 0)
 const summaries = atom({ plugin: 'foreman-ui', key: 'summaries' } as const, [])
+const files = atom({ plugin: 'foreman-ui', key: 'files' } as const, [])
+const agents = atom({ plugin: 'foreman-ui', key: 'agents' } as const, [])
+const ctx = atom({ plugin: 'foreman-ui', key: 'ctx' } as const, null)
+const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
 
 const LIST = 6
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
+const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 
 /** What changed between two snapshots that deserves a toast. */
 export function toasts(prev: FmView | null, next: FmView): string[] {
@@ -60,6 +84,25 @@ export function summaryText(s: TurnSummary): string {
   return parts.join(' · ')
 }
 
+/** A plain Foreman bookkeeping command (`fm …`, maybe after a `cd`): its row folds to one line once it succeeds.
+ * Anything chained, piped, substituted or on a second line keeps the full row, so the fold never hides what ran. */
+export function fmCommand(command: unknown): string | null {
+  if (typeof command !== 'string') return null
+  const m = /^(?:cd\s+[^\s;&|`$<>]+\s*&&\s*)?fm\s+([^;&|`$<>\n\r]+)$/.exec(command.trim())
+  return m && m[1]!.length <= 160 ? m[1]!.replace(/\s+/g, ' ') : null
+}
+
+/** The last meaningful line a command printed. */
+export function lastLine(output: unknown): string {
+  const o = (output && typeof output === 'object' ? output : {}) as { stdout?: unknown; stderr?: unknown }
+  const text = [o.stdout, o.stderr].filter(x => typeof x === 'string').join('\n')
+  return (text.split('\n').map(l => l.trim()).filter(Boolean).at(-1) ?? '').slice(0, 100)
+}
+
+/** Whether something waits on the person: a yes, or a plan to approve. */
+const waiting = (v: FmView | null) =>
+  !!v && ((v.approvals ?? []).length > 0 || (v.queue ?? []).some(q => q.waits === 'plan approval'))
+
 // Module variables start over on a reload; what a drawing reads lives in $.state.
 let fmPath: string | null = null
 let marks = ''
@@ -69,11 +112,11 @@ let lastFull = 0
 let poll: { cancel: () => void } | null = null
 let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
+let checkpointed = false
 const turns = new Set<string>()
 const starts = new Map<string, number>() // tool_use_id → when it started (ms)
 const agentCalls = new Map<string, string>() // running Agent call → its description
 const agentOf = new Map<string, string>() // running Agent call → the subagent's id
-const agentStats = new Map<string, { tools: number; last: string }>()
 let turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: -1, task: '' }
 
 async function fm($: EngineInterface): Promise<string> {
@@ -89,10 +132,14 @@ async function run($: EngineInterface, args: string[]) {
   return $.process.run([await fm($), ...args], { timeoutMs: 15000 })
 }
 
-async function refresh($: EngineInterface) {
+async function chime($: EngineInterface, name: 'done' | 'needs') {
+  if (await read($, sound)) await $.audio.play({ asset: `sounds/${name}.wav` }).catch(() => undefined)
+}
+
+async function refresh($: EngineInterface): Promise<boolean> {
   if (isBusy) {
     isDirty = true
-    return
+    return false
   }
   isBusy = true
   isDirty = false
@@ -101,19 +148,25 @@ async function refresh($: EngineInterface) {
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
     const next = JSON.parse(r.stdout) as FmView
     const prev = await read($, view)
-    for (const line of toasts(prev, next)) $.ui.toast(line)
+    const lines = toasts(prev, next)
+    for (const line of lines) $.ui.toast(line)
+    if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
+    else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
     await update($, view, () => next)
     await update($, error, () => null)
     lastFull = await $.clock.now()
+    return true
   } catch (err) {
     await update($, error, () => String(err instanceof Error ? err.message : err).slice(0, 200))
+    return false
   } finally {
     isBusy = false
   }
 }
 
-// Cheap in-process change check: stat the paths fm names; spawn fm only when one moved (or every 30 s).
+// Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
+  await gauge($).catch(() => undefined)
   const v = await read($, view)
   const stamps = await Promise.all(
     (v?.watch ?? []).map(p => $.fs.stat(p).then(s => `${s.mtimeMs}:${s.size}`, () => '-')),
@@ -124,9 +177,39 @@ async function tick($: EngineInterface) {
   if (isDirty || moved || now - lastFull > 30000) await refresh($)
 }
 
+// The context meter; at CHECKPOINT_AT% Foreman checkpoints the active task once, so a compaction loses nothing.
+async function gauge($: EngineInterface) {
+  const u = await $.session.usage().catch(() => null)
+  const percent = u?.context.percent
+  if (typeof percent !== 'number') return
+  const prev = await read($, ctx)
+  if (!prev || Math.round(prev.percent) !== Math.round(percent)) await update($, ctx, () => ({ percent }))
+  if (percent < 60) checkpointed = false // a /compact brought it down: the next climb checkpoints again
+  if (percent >= CHECKPOINT_AT && !checkpointed && (await read($, view))?.active) {
+    checkpointed = true
+    const r = await run($, ['checkpoint']).catch(err => ({ exitCode: 1, stderr: String(err), stdout: '' }))
+    if (r.exitCode !== 0) checkpointed = false // try again on the next poll
+    $.ui.toast(
+      r.exitCode === 0
+        ? `Context ${Math.round(percent)}% · Foreman checkpointed: /compact resumes at this exact step`
+        : `Context ${Math.round(percent)}% · checkpoint failed: ${lastLine({ stderr: r.stderr })}`,
+      { timeoutMs: 10000 },
+    )
+  }
+}
+
 async function act($: EngineInterface, args: string[], done: string) {
   const r = await run($, args)
   $.ui.toast(r.exitCode === 0 ? done : `fm ${args[0]}: ${(r.stderr || r.stdout).trim().split('\n').at(-1)}`)
+  await refresh($)
+}
+
+async function capture($: EngineInterface, text: string) {
+  const idea = text.trim()
+  if (!idea) return
+  const r = await run($, ['capture', idea])
+  const id = /T-\d{4,}/.exec(r.stdout)?.[0]
+  $.ui.toast(r.exitCode === 0 ? `⚑ Captured ${id ?? ''} — ${idea.slice(0, 60)}` : `fm capture: ${lastLine({ stderr: r.stderr })}`)
   await refresh($)
 }
 
@@ -156,12 +239,32 @@ function sleep() {
 
 // A subagent's tool calls carry its id: count them and tie the subagent to the Agent row that started it.
 async function noteSubagent($: EngineInterface, agentId: string, last: string) {
-  const s = agentStats.get(agentId) ?? { tools: 0, last: '' }
-  agentStats.set(agentId, { tools: s.tools + 1, last })
-  if ([...agentOf.values()].includes(agentId)) return
+  const known = (await read($, agents)).find(a => a.id === agentId)
+  if (known) {
+    await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, tools: a.tools + 1, last } : a)))
+    return
+  }
   const info = (await $.agent.list()).find(a => a.id === agentId)
   const call = [...agentCalls].find(([id, d]) => d === info?.description && !agentOf.has(id))
   if (call) agentOf.set(call[0], agentId)
+  const fresh: LiveAgent = {
+    id: agentId,
+    type: info?.type ?? 'subagent',
+    description: info?.description ?? '',
+    startedAt: await $.clock.now(),
+    tools: 1,
+    last,
+    done: false,
+  }
+  await update($, agents, list => [...list.filter(a => !a.done).concat(list.filter(a => a.done).slice(-3)), fresh])
+}
+
+async function noteEdit($: EngineInterface, path: string, add: number, del: number) {
+  await update($, files, list => {
+    const was = list.find(f => f.path === path)
+    const row: FileChurn = { path, add: (was?.add ?? 0) + add, del: (was?.del ?? 0) + del, edits: (was?.edits ?? 0) + 1 }
+    return [...list.filter(f => f.path !== path), row].slice(-12)
+  })
 }
 
 /** A bar: a true-color Raster on the terminal, its text twin elsewhere. `fraction` null draws an activity comet. */
@@ -200,9 +303,39 @@ function meter(
   )
 }
 
+/** A sparkline (Raster on the terminal, block characters elsewhere) and a lines-added/removed bar. */
+function spark($: EngineInterface, e: ResolveInput, key: string, values: readonly number[], width: number) {
+  if (e.surface === 'terminal') {
+    const { Raster } = $.ui.resolve(e)
+    return <Raster key={key} columns={width} rows={1} cells={sparkCells(values, width)} />
+  }
+  const { Text } = $.ui.resolve(e)
+  return <Text color={hex(C.accent2)}>{sparkText(values, width)}</Text>
+}
+
+function churn($: EngineInterface, e: ResolveInput, key: string, f: FileChurn, max: number) {
+  if (e.surface === 'terminal') {
+    const { Raster } = $.ui.resolve(e)
+    return <Raster key={key} columns={10} rows={1} cells={churnCells(f.add, f.del, max, 10)} />
+  }
+  const { Text } = $.ui.resolve(e)
+  return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
+}
+
+/** The quick-capture box (every surface with text input). */
+function captureBox($: EngineInterface, e: ResolveInput) {
+  if (e.surface === 'mobile') return null
+  const { Input } = $.ui.resolve(e)
+  return (
+    <Input key="capture" placeholder="⚑ capture an idea for later… (Enter)" submitLabel="Capture" onSubmit={text => void capture($, text)} />
+  )
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
+    const stored = await $.store.get('sound').catch(() => undefined)
+    if (stored === false) await update($, sound, () => false)
     await refresh($)
     poll?.cancel() // one poller per environment, however often the session starts
     poll = $.clock.every(2000, () => void tick($))
@@ -232,13 +365,18 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     turns.delete(e.turnId)
     isDirty = true
-    if (!e.agentId) {
-      await refresh($)
-      const a = (await read($, view))?.active
+    if (e.agentId) await update($, agents, list => list.map(a => (a.id === e.agentId ? { ...a, done: true } : a)))
+    else {
+      const fresh = await refresh($)
+      const v = await read($, view)
+      const a = v?.active
       const now = a && a.id === turn.task ? a.steps.filter(s => s.done).length : -1
       const step = turn.stepsDone >= 0 && now > turn.stepsDone && a ? `${a.id} step ${now}/${a.steps.length}` : ''
       const s: TurnSummary = { durationMs: e.durationMs, tools: turn.tools, edits: turn.edits, add: turn.add, del: turn.del, agents: turn.agents, step }
       await update($, summaries, list => [...list, s].slice(-40))
+      // Ghost text for the obvious next move; never a suggestion that would answer a question put to the person.
+      if (fresh && !e.isAborted && v?.project && !waiting(v) && (a || (v.queue ?? []).length))
+        await $.prompt.suggest({ text: '/foreman:next' }).catch(() => undefined)
     }
     return next(e)
   })
@@ -263,8 +401,11 @@ export const register: Register = on => {
       const r = await next(e)
       const why = guardReason(r)
       if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
+      else if (face.add !== undefined && r.deny === undefined && !r.isError) await noteEdit($, face.target, face.add, face.del ?? 0)
       return r
     } finally {
+      const agent = agentOf.get(id)
+      if (agent) await update($, agents, list => list.map(a => (a.id === agent ? { ...a, done: true } : a))).catch(() => undefined)
       starts.delete(id)
       agentCalls.delete(id)
       agentOf.delete(id)
@@ -272,14 +413,27 @@ export const register: Register = on => {
     }
   })
 
-  // While a tool runs: an animated row (spinner, verb, target, edit delta, activity bar, elapsed). Done: the engine's.
+  // While a tool runs: an animated row. A Foreman bookkeeping command that succeeded: one quiet line. Else the engine's.
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    const sub = e.props.tool === 'Bash' ? fmCommand((e.props.input as { command?: unknown } | null)?.command) : null
+    if (sub && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
+      const { Box, Text } = $.ui.resolve(e)
+      return (
+        <Box flexDirection="row" gap={1} key="fm-quiet">
+          <Text color={hex(C.dim)}>⚙ fm {sub}</Text>
+          <Text color={hex(mix(C.dim, C.ok, 0.6))} wrap="truncate-end">
+            ✓ {lastLine(e.props.output)}
+          </Text>
+        </Box>
+      )
+    }
     if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
     const f = await read($, frame)
     const face = toolFace(e.props.tool, e.props.input)
     const since = starts.get(e.props.tool_use_id)
     const ms = since === undefined ? 0 : (await $.clock.now()) - since
-    const agent = agentStats.get(agentOf.get(e.props.tool_use_id) ?? '')
+    const agentId = agentOf.get(e.props.tool_use_id)
+    const agent = agentId ? (await read($, agents)).find(a => a.id === agentId) : undefined
     const { Box, Text } = $.ui.resolve(e)
     const width = Math.max(30, e.viewport?.columns ?? 100)
 
@@ -326,6 +480,20 @@ export const register: Register = on => {
     )
   })
 
+  // The footer: a pointer when something waits on the person, and the autonomy as a mode label.
+  on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
+    const v = await read($, view)
+    if (e.props.isDraft || !waiting(v)) return next(e)
+    return next({ ...e, props: { ...e.props, tail: ' · ⚠ Foreman needs you: /fm' } })
+  })
+
+  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
+    const m = (await read($, view))?.mode
+    if (!m) return next(e)
+    const add = [m.autonomy === 'full' ? 'full auto' : '', m.drive ? '' : 'drive off'].filter(Boolean)
+    return add.length ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, ...add] } }) : next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const v = await read($, view)
     if (e.props.hasSurvey || !v?.project) return next(e)
@@ -336,17 +504,18 @@ export const register: Register = on => {
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
     const f = working ? await read($, frame) : null
+    const c = await read($, ctx)
     const m = v.mode
     const done = a ? a.steps.filter(s => s.done).length : 0
     const cur = a?.steps.find(s => s.current)
-    const width = Math.max(10, Math.min(28, e.props.bodyColumns - 60))
+    const width = Math.max(10, Math.min(28, e.props.bodyColumns - 70))
 
     return (
-      <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? C.accent : C.track)} paddingX={1} key="fm-band">
+      <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="row" gap={1}>
             {a ? (
-              <>
+              <Box flexDirection="row" gap={1}>
                 <Text backgroundColor={typeColor(a.type)} color="#000000" bold>
                   {` ${a.type} ${a.tier} `}
                 </Text>
@@ -356,17 +525,22 @@ export const register: Register = on => {
                 <Text bold wrap="truncate-end">
                   {a.title}
                 </Text>
-              </>
+              </Box>
             ) : (
               <Text bold color={hex(C.accent)}>
                 ▌Foreman · {(v.queue ?? []).length} queued
               </Text>
             )}
           </Box>
-          <Text color={hex(C.dim)}>
-            {m ? (m.autonomy === 'full' ? '⚡ full auto' : '◇ standard') : ''}
-            {m && !m.drive ? ' · drive off' : ''} · q{(v.queue ?? []).length} · in{v.inbox_total ?? 0}
-          </Text>
+          <Box flexDirection="row" gap={1}>
+            {c && <Text color={hex(C.dim)}>ctx</Text>}
+            {c && meter($, e, 'fm-band-ctx', 6, c.percent / 100, c.percent >= CHECKPOINT_AT ? C.err : c.percent >= 60 ? C.warn : C.ok, null)}
+            {c && <Text color={hex(C.dim)}>{Math.round(c.percent)}%</Text>}
+            <Text color={hex(C.dim)}>
+              {m ? (m.autonomy === 'full' ? '⚡ full auto' : '◇ standard') : ''}
+              {m && !m.drive ? ' · drive off' : ''} · q{(v.queue ?? []).length} · in{v.inbox_total ?? 0}
+            </Text>
+          </Box>
         </Box>
         {a && (
           <Box flexDirection="row" gap={1}>
@@ -433,34 +607,55 @@ export const register: Register = on => {
         </Box>
       )
     }
+    const live = turns.size > 0 || starts.size > 0
+    const f = live ? await read($, frame) : null
     const a = v.active
     const m = v.mode
     const width = Math.max(10, e.props.bodyColumns - 12)
+    const touched = await read($, files)
+    const subs = await read($, agents)
+    const isOn = await read($, sound)
+    const now = live ? await $.clock.now() : 0
+    const queue = v.queue ?? []
+    const inbox = v.inbox ?? []
+    const recent = (v.recent ?? []).slice(-LIST)
+    const checks = v.checks
     const card = (color: number) =>
-      ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(color), paddingX: 1 }) as const
-    const done = a ? a.steps.filter(s => s.done).length : 0
-    const chip = (type: string, tier: string) => (
-      <Text backgroundColor={typeColor(type)} color="#000000">
-        {` ${type.slice(0, 4)} ${tier} `}
+      ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(pulse(color, f)), paddingX: 1 }) as const
+    const head = (title: string, color: number, count?: string) => (
+      <Box flexDirection="row" gap={1}>
+        <Text bold color={hex(color)}>
+          ▍{title}
+        </Text>
+        {count !== undefined && <Text color={hex(C.dim)}>{count}</Text>}
+      </Box>
+    )
+    const chip = (it: FmItem) => (
+      <Text backgroundColor={typeColor(it.type)} color="#000000">
+        {` ${it.type.slice(0, 4)} ${it.tier} `}
       </Text>
     )
+    const done = a ? a.steps.filter(s => s.done).length : 0
+    const maxChurn = Math.max(1, ...touched.map(t => t.add + t.del))
+    const passed = checks ? checks.results.filter(r => !r.exit).length : 0
 
     return (
       <Box flexDirection="column" key="fm-pane">
         <Box flexDirection="row" justifyContent="space-between">
           <Text bold color={hex(C.accent)}>
-            ▌{v.project}
+            {live ? spin(f ?? 0) : '▌'} {v.project}
           </Text>
           <Text color={hex(C.dim)}>
             {m ? `${m.autonomy === 'full' ? '⚡ full auto' : '◇ standard'} · drive ${m.drive ? 'on' : 'off'}${m.sensitive ? ' · sensitive' : ''}` : ''}
           </Text>
         </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
+
         <Box key="card-task" {...card(a ? C.accent : C.track)}>
           {a ? (
             <Box flexDirection="column">
               <Box flexDirection="row" gap={1}>
-                {chip(a.type, a.tier)}
+                {chip(a)}
                 <Text bold color={hex(C.accent)}>
                   {a.id}
                 </Text>
@@ -469,11 +664,13 @@ export const register: Register = on => {
                 </Text>
               </Box>
               <Text wrap="wrap">
-                {a.stages.map(s => (s === a.stage ? `◉ ${s}` : a.stages.indexOf(s) < a.stages.indexOf(a.stage) ? `● ${s}` : `○ ${s}`)).join('  ')}
+                {a.stages
+                  .map(s => (s === a.stage ? `◉ ${s}` : a.stages.indexOf(s) < a.stages.indexOf(a.stage) ? `● ${s}` : `○ ${s}`))
+                  .join('  ')}
               </Text>
               {a.steps.length > 0 && (
                 <Box flexDirection="row" gap={1}>
-                  {meter($, e, 'fm-pane-bar', Math.min(40, width - 8), done / a.steps.length, C.ok, null)}
+                  {meter($, e, 'fm-pane-bar', Math.min(40, width - 8), done / a.steps.length, C.ok, f)}
                   <Text bold>
                     {done}/{a.steps.length}
                   </Text>
@@ -481,7 +678,7 @@ export const register: Register = on => {
               )}
               {a.steps.map(s => (
                 <Text key={`step-${s.n}`} color={s.current ? hex(C.accent) : s.done ? hex(C.dim) : undefined} wrap="truncate-end">
-                  {s.done ? '✓' : s.current ? '▸' : '○'} {s.n}. {s.text}
+                  {s.done ? '✓' : s.current ? (live ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
                 </Text>
               ))}
               {a.criteria.map(c => (
@@ -504,15 +701,23 @@ export const register: Register = on => {
             </Text>
           )}
         </Box>
-        {(v.approvals ?? []).map(x => (
-          <Text color={hex(C.warn)} wrap="wrap" key={`ask-${x.task}`}>
-            ⚠ {x.task} needs your yes for {x.allow.join(', ')}: {x.why}
-          </Text>
-        ))}
-        {(v.queue ?? []).flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : [])).map(q => (
-          <Box flexDirection="column" borderStyle="round" borderColor={hex(C.warn)} paddingX={1} key={`plan-${q.id}`}>
-            <Text bold color={hex(C.warn)} wrap="wrap">
-              ⚠ {q.id} {q.type} {q.tier} plan awaits your approval: {q.title}
+
+        {(v.approvals ?? []).length > 0 && (
+          <Box key="card-asks" {...card(C.warn)}>
+            {head('Needs you', C.warn)}
+            {(v.approvals ?? []).map(x => (
+              <Text color={hex(C.warn)} wrap="wrap" key={`ask-${x.task}`}>
+                ⚠ {x.task} · {x.allow.join(', ')}: {x.why}
+              </Text>
+            ))}
+          </Box>
+        )}
+
+        {queue.flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : [])).map(q => (
+          <Box key={`plan-${q.id}`} {...card(C.warn)}>
+            {head(`${q.id} plan awaits your approval`, C.warn)}
+            <Text bold wrap="wrap">
+              {q.title}
             </Text>
             {q.plan.interpretation && <Text wrap="wrap">Means: {q.plan.interpretation}</Text>}
             {q.plan.approach && <Text wrap="wrap">Approach: {q.plan.approach}</Text>}
@@ -536,12 +741,53 @@ export const register: Register = on => {
             </Box>
           </Box>
         ))}
-        <Box key="card-queue" {...card(C.track)}>
-          <Text bold>Queue · {(v.queue ?? []).length}</Text>
-          {(v.queue ?? []).length === 0 && <Text color={hex(C.dim)}>empty</Text>}
-          {(v.queue ?? []).slice(0, LIST).map(q => (
+
+        {subs.length > 0 && (
+          <Box key="card-agents" {...card(C.agent)}>
+            {head('Subagents', C.agent, `${subs.filter(s => !s.done).length} running`)}
+            {subs.map(s => (
+              <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
+                <Text color={hex(s.done ? C.dim : C.agent)}>{s.done ? '✓' : spin((f ?? 0) + s.tools)}</Text>
+                <Text bold color={hex(s.done ? C.dim : C.agent)}>
+                  {s.type}
+                </Text>
+                <Text wrap="truncate-end" color={s.done ? hex(C.dim) : undefined}>
+                  {s.description}
+                </Text>
+                <Text color={hex(C.dim)} wrap="truncate-end">
+                  {s.tools} tools · {s.last.slice(0, 30)}
+                  {!s.done && now ? ` · ${elapsed(now - s.startedAt)}` : ''}
+                </Text>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {touched.length > 0 && (
+          <Box key="card-files" {...card(C.edit)}>
+            {head('Files this session', C.edit, `${touched.length}`)}
+            {touched
+              .slice(-LIST)
+              .reverse()
+              .map((t, i) => (
+                <Box flexDirection="row" gap={1} key={`file-${i}`}>
+                  {churn($, e, `file-bar-${i}`, t, maxChurn)}
+                  <Text color={hex(C.ok)}>+{t.add}</Text>
+                  <Text color={hex(C.err)}>−{t.del}</Text>
+                  <Text wrap="truncate-start">{shortPath(t.path, 40)}</Text>
+                </Box>
+              ))}
+          </Box>
+        )}
+
+        <Box key="card-queue" {...card(queue.some(q => q.waits) ? C.warn : C.accent2)}>
+          {head('Queue', C.accent2, `${queue.length}`)}
+          {queue.length === 0 && <Text color={hex(C.dim)}>empty</Text>}
+          {queue.slice(0, LIST).map((q, i) => (
             <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
-              {chip(q.type, q.tier)}
+              <Text color={hex(fade(LIST - 1 - i, LIST, C.accent2))}>{i + 1}.</Text>
+              {chip(q)}
+              {q.steps_total ? meter($, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
               <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : undefined}>
                 {q.id} {q.title}
                 {q.waits ? `  (${q.waits})` : ''}
@@ -549,14 +795,17 @@ export const register: Register = on => {
             </Box>
           ))}
         </Box>
-        <Box key="card-inbox" {...card(C.track)}>
-          <Text bold>Inbox · {v.inbox_total ?? (v.inbox ?? []).length}</Text>
-          {(v.inbox ?? []).slice(0, LIST).map(it => (
+
+        <Box key="card-inbox" {...card(C.accent)}>
+          {head('Inbox', C.accent, `${v.inbox_total ?? inbox.length}`)}
+          {captureBox($, e)}
+          {inbox.slice(0, LIST).map(it => (
             <Box flexDirection="row" gap={1} key={`in-${it.id}`}>
-              {chip(it.type, it.tier)}
+              {chip(it)}
               <Text wrap="truncate-end">
                 {it.id} {it.title}
               </Text>
+              {it.age_days !== undefined && <Text color={hex(fade(Math.max(0, 7 - it.age_days), 7))}>{ago(it.age_days)}</Text>}
               <Button
                 key={`start-${it.id}`}
                 label="Start"
@@ -572,20 +821,44 @@ export const register: Register = on => {
             </Box>
           ))}
         </Box>
-        <Box key="card-activity" {...card(C.track)}>
-          <Text bold>Activity</Text>
-          {(v.recent ?? []).slice(-LIST).map((line, i) => (
-            <Text color={hex(C.dim)} wrap="truncate-end" key={`r-${i}`}>
+
+        {checks && checks.results.length > 0 && (
+          <Box key="card-gates" {...card(passed === checks.results.length ? C.ok : C.err)}>
+            {head('Gates', passed === checks.results.length ? C.ok : C.err, `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)}`)}
+            {checks.results.map((r, i) => (
+              <Box flexDirection="row" gap={1} key={`gate-${i}`}>
+                <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>
+                <Text wrap="truncate-end">{r.cmd.slice(0, 60)}</Text>
+                <Text color={hex(C.dim)}>{r.s.toFixed(1)}s</Text>
+                {r.note ? (
+                  <Text color={hex(C.warn)} wrap="truncate-end">
+                    {r.note.slice(0, 40)}
+                  </Text>
+                ) : null}
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        <Box key="card-activity" {...card(C.dim)}>
+          {head('Activity', C.dim)}
+          {recent.map((line, i) => (
+            <Text color={hex(fade(i, recent.length))} wrap="truncate-end" key={`r-${i}`}>
               {line}
             </Text>
           ))}
           {v.health && (
-            <Text color={hex(v.health.hook_errors ? C.err : C.dim)}>
-              hooks p95 {v.health.hook_p95_ms ?? '–'} ms · guard blocks {v.health.guard_blocks}
-              {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
-            </Text>
+            <Box flexDirection="row" gap={1}>
+              <Text color={hex(C.dim)}>hooks</Text>
+              {(v.latency ?? []).length > 1 && spark($, e, 'fm-latency', v.latency ?? [], 24)}
+              <Text color={hex(v.health.hook_errors ? C.err : C.dim)}>
+                p95 {v.health.hook_p95_ms ?? '–'} ms · guard blocks {v.health.guard_blocks}
+                {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
+              </Text>
+            </Box>
           )}
         </Box>
+
         <Box flexDirection="row" gap={1}>
           <Button
             key="next"
@@ -606,6 +879,14 @@ export const register: Register = on => {
             onPress={() => {
               const level = m?.autonomy === 'full' ? 'standard' : 'full'
               return act($, ['autonomy', level], `autonomy ${level}`)
+            }}
+          />
+          <Button
+            key="sound"
+            label={isOn ? 'Sound off' : 'Sound on'}
+            onPress={async () => {
+              await update($, sound, x => !x)
+              await $.store.set('sound', await read($, sound))
             }}
           />
           <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($)} />

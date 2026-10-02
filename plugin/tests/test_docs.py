@@ -122,8 +122,9 @@ class OutputStyle(unittest.TestCase):
         self.assertIn("name: Foreman", head)
         self.assertIn("keep-coding-instructions: true", head)
         self.assertEqual(fmsetup.OUTPUT_STYLE, "foreman:Foreman")  # plugin styles are selected as <plugin>:<name>
-        for needle in ("▸ Step", "✓", "Changed:", "Next:", "Needs you"):
+        for needle in ("✓", "Changed:", "Next:", "Needs you", "write nothing between tool calls"):
             self.assertIn(needle, body)
+        self.assertNotIn("▸ Step", body, "the band and tool rows show steps; replies don't repeat them (T-0095)")
         self.assertLess(len(body.split()), 260, "it's in every prompt: keep it short")
 
 

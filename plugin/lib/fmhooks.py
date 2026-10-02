@@ -1233,20 +1233,11 @@ def subagent_stop(pl):
 # ---------------------------------------------------------------- display, notifications, end
 
 def message_display(pl):
+    """Secrets masked on screen. No task badge (T-0095): the statusline and the band show the task, without going stale."""
     delta = pl.get("delta") or ""
-    shown, badge = c.redact(delta), ""
-    if pl.get("index") == 0:
-        p = c.find_project(_cwd(pl))
-        if p:
-            try:
-                with open(os.path.join(p.dir, "badge.txt")) as f:
-                    label = f.read().strip()
-            except OSError:
-                label = ""
-            if label:
-                badge = f"[{label} · {time.strftime('%H:%M')}] "
-    if badge or shown != delta:
-        return {"hookSpecificOutput": {"hookEventName": "MessageDisplay", "displayContent": badge + shown}}
+    shown = c.redact(delta)
+    if shown != delta:
+        return {"hookSpecificOutput": {"hookEventName": "MessageDisplay", "displayContent": shown}}
     return None
 
 

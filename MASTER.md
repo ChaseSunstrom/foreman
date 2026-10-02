@@ -71,7 +71,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `plugin/observability/` | telegraf OTel input, Grafana dashboard, setup notes | Claude | manual | — |
 | `plugin/evals/` | `claude plugin eval` cases with the rules embedded (protected) | Claude | `claude plugin eval` | `--max-cost-usd` |
 | `plugin/tests/` | unit/behaviour tests, fixtures, hook bench, `e2e/` (live scenarios, install round trip, eval sync) | Claude | on demand | — |
-| `mods/foreman-ui/` | the UI mod (function-hook plugin `foreman-ui@foreman`): `hooks/register.tsx` (band card, pane cards, `/fm`, toasts, animated running tool/subagent rows, spinner step, turn summary line; renders `fm ui --json`, buttons run `fm`), `hooks/kit.ts` (palette, true-color Raster bars and text twins, tool faces), `types/index.d.ts` (the view-model contract), `tests/` (`claude plugin test`) | Claude | by Claude Code when the build has mods | no rules or gates of its own |
+| `mods/foreman-ui/` | the UI mod (function-hook plugin `foreman-ui@foreman`): `hooks/register.tsx` (band card, pane cards, `/fm`, toasts, animated running tool/subagent rows, spinner step, turn summary line; renders `fm ui --json`, buttons run `fm`), `hooks/kit.ts` (palette, true-color Raster bars and text twins, pulse, fade, sparkline, churn bar, tool faces), `sounds/` (chimes), `types/index.d.ts` (the view-model contract), `tests/` (`claude plugin test`) | Claude | by Claude Code when the build has mods | no rules or gates of its own |
 | `plugin/uninstall.sh` | remove wiring, plugin and marketplace; keeps state unless `--purge-state` | Claude | run by user | — |
 | `plugin/README.md` | plugin overview | Claude | on demand | — |
 | `plugin/THIRD_PARTY_LICENSES.md` | MIT licenses of ported ECC and superpowers material | Claude | on demand | — |
@@ -115,7 +115,7 @@ flowchart TD
     PC[PreCompact hook] -->|fm checkpoint --auto| ST
     SS[SessionStart hook<br/>startup · resume · clear · compact] -->|reads| ST
     SS -->|state summary ≤ 2000 chars| C
-    ST --> SL[statusline wrapper · MessageDisplay badge · fm watch]
+    ST --> SL[statusline · foreman-ui band/pane · fm watch]
 ```
 
 ## 5. Lifecycle walkthrough (a `FIX:` line to an archived task)

@@ -159,3 +159,59 @@ export function toolFace(tool: string, input: unknown): Face {
     }
   }
 }
+
+/** A border that breathes while work is live: track ↔ color on a slow sine; still when `frame` is null. */
+export function pulse(color: number, frame: number | null): number {
+  if (frame === null) return mix(C.track, color, 0.55)
+  return mix(C.track, color, 0.45 + 0.55 * ((Math.sin(frame / 4) + 1) / 2))
+}
+
+/** Newest bright, oldest dim: the color of row `i` of `n` (0 = oldest). */
+export function fade(i: number, n: number, color: number = C.accent): number {
+  return mix(C.dim, color, n > 1 ? i / (n - 1) : 1)
+}
+
+const SPARK = '▁▂▃▄▅▆▇█'
+
+/** A sparkline over the last `width` values, each column colored by its height (green → amber → red). */
+export function sparkCells(values: readonly number[], width: number): string {
+  const vals = values.slice(-width)
+  const max = Math.max(1, ...vals)
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) {
+    const v = vals[i - (width - vals.length)]
+    if (v === undefined) {
+      out.push([' ', C.track])
+      continue
+    }
+    const t = v / max
+    out.push([SPARK[Math.min(SPARK.length - 1, Math.floor(t * SPARK.length))]!, heat(t)])
+  }
+  return cells(out)
+}
+
+export function sparkText(values: readonly number[], width: number): string {
+  const vals = values.slice(-width)
+  const max = Math.max(1, ...vals)
+  return vals.map(v => SPARK[Math.min(SPARK.length - 1, Math.floor((v / max) * SPARK.length))]).join('')
+}
+
+/** green → amber → red as a meter fills. */
+export function heat(t: number): number {
+  return t < 0.5 ? mix(C.ok, C.warn, t * 2) : mix(C.warn, C.err, (t - 0.5) * 2)
+}
+
+/** A two-tone bar for an edit: green for lines added, red for lines removed, scaled to `max` lines. */
+export function churnCells(add: number, del: number, max: number, width: number): string {
+  const scale = width / Math.max(1, max)
+  const a = Math.min(width, Math.round(add * scale) || (add ? 1 : 0))
+  const d = Math.min(width - a, Math.round(del * scale) || (del ? 1 : 0))
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) out.push(['━', i < a ? C.ok : i < a + d ? C.err : C.track])
+  return cells(out)
+}
+
+export function ago(days: number | undefined): string {
+  if (days === undefined) return ''
+  return days < 1 ? 'today' : `${Math.round(days)}d`
+}

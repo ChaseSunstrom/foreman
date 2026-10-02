@@ -53,17 +53,20 @@ def gather(p):
             running[e.get("agent_id")] = e
         elif e.get("kind") == "subagent_stop":
             running.pop(e.get("agent_id"), None)
-    latency = {}
+    latency, series = {}, []
     for e in events[-2000:]:
         if e.get("kind") == "hook_ms" and isinstance(e.get("ms"), (int, float)):
             latency.setdefault(e.get("event"), []).append(e["ms"])
+            series.append(e["ms"])
     touched, ledger = [], c.ledger_tail(p, 400)
     if act:
         for e in ledger:
             f = (e.get("data") or {}).get("file")
             if e.get("event") == "touched" and e.get("task") == act.id and f and f not in touched:
                 touched.append(f)
-    return {"sd": sd, "active": act, "project": p, "latency": latency, "touched": touched[-10:],
+    checks = next((e for e in reversed(ledger) if e.get("event") == "check_run"), None)
+    return {"sd": sd, "active": act, "project": p, "latency": latency, "series": series[-40:], "touched": touched[-10:],
+            "checks": checks,
             "tools": [e for e in mine if e.get("kind") in ("tool", "tool_fail")][-12:],
             "subagents": list(running.values())[-5:], "guard": [e for e in mine if e.get("kind") == "guard_block"][-5:],
             "session": _latest_session(p.slug),
@@ -198,7 +201,8 @@ def view(p):
         b = by_id.get(s["id"])
         waits = c.waits_on_user(b, pending, autonomy) if b else None
         out = {"id": s["id"], "type": s["type"], "tier": s["tier"], "title": s["title"], "status": s["status"],
-               "waits": waits}
+               "waits": waits, "steps_done": s["steps_done"], "steps_total": s["steps_total"],
+               "age_days": round(c.age_days(s.get("created")) or 0, 1)}
         if waits == "plan approval":  # a yes is given where what it approves is shown
             d = c.brief_detail(b)
             out["plan"] = {"interpretation": c.plain(b.section("Interpretation").strip())[:600],
@@ -223,6 +227,10 @@ def view(p):
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors())},
         "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")],
+        "latency": [round(ms) for ms in d["series"]],
+        "checks": d["checks"] and {"at": d["checks"].get("ts"), "results": [
+            {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
+            for r in (d["checks"].get("data") or {}).get("results") or []]},
     }
 
 

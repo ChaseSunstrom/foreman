@@ -9,6 +9,9 @@ export type FmItem = {
   status: string
   waits?: string | null // why it can't run without the user ("plan approval", "pending approval")
   plan?: FmPlan // only while waits is "plan approval": what a yes approves
+  steps_done?: number
+  steps_total?: number
+  age_days?: number
 }
 export type FmPlan = { interpretation: string; approach: string; steps: FmStep[]; criteria: FmCriterion[] }
 export type FmActive = FmItem & {
@@ -35,13 +38,31 @@ export type FmView = {
   recent?: string[]
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number }
   watch?: string[] // paths whose mtime moves when the record changes
+  latency?: number[] // the latest hook run times (ms), oldest first
+  checks?: FmChecks | null // the last fm check run
 }
+export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
+export type FmChecks = { at: string; results: FmCheck[] }
+
+// Live data the mod gathers itself from the session's tool calls.
+export type FileChurn = { path: string; add: number; del: number; edits: number }
+export type LiveAgent = { id: string; type: string; description: string; startedAt: number; tools: number; last: string; done: boolean }
+export type Ctx = { percent: number }
 
 // What one turn did, for the line that closes it (matched by its duration).
 export type TurnSummary = { durationMs: number; tools: number; edits: number; add: number; del: number; agents: number; step: string }
 
 declare module 'claude-code' {
   interface PluginState {
-    'foreman-ui': { view: FmView | null; error: string | null; frame: number; summaries: TurnSummary[] }
+    'foreman-ui': {
+      view: FmView | null
+      error: string | null
+      frame: number
+      summaries: TurnSummary[]
+      files: FileChurn[]
+      agents: LiveAgent[]
+      ctx: Ctx | null
+      sound: boolean
+    }
   }
 }

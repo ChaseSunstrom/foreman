@@ -1078,13 +1078,17 @@ class Subagents(HookCase):
 
 class MessageDisplay(HookCase):
     def disp(self, index, delta, final=False):
-        return self.hook("MessageDisplay", {"turn_id": "t", "message_id": "m", "index": index, "final": final, "delta": delta})
+        cfg = os.path.join(self.tmp, "cc")  # no user settings: nothing about plugins decides it
+        os.makedirs(cfg, exist_ok=True)
+        return self.hook("MessageDisplay", {"turn_id": "t", "message_id": "m", "index": index, "final": final,
+                                            "delta": delta}, env={"CLAUDE_CONFIG_DIR": cfg})
 
-    def test_badge_on_first_batch_only(self):
+    def test_replies_carry_no_task_badge(self):
+        # T-0095: the statusline and the band show the task; a "[T-0012 FIX · executing 1/2 · 14:02]" prefix on every
+        # reply was clutter, and went stale ("executing 3/3" after done)
         self.fm("init")
-        tid = self.task()
-        first = parse(self.disp(0, "Here is the plan:\n"))["hookSpecificOutput"]["displayContent"]
-        self.assertRegex(first, rf"^\[{tid} FIX · executing 1/2 · \d\d:\d\d\] Here is the plan:")
+        self.task()
+        self.assertEqual(self.disp(0, "Here is the plan:\n").stdout.strip(), "")
         self.assertEqual(self.disp(1, "more text\n").stdout.strip(), "")
 
     def test_secrets_masked_on_screen(self):

@@ -69,3 +69,16 @@ class UiView(ForemanTestCase):
         self.assertEqual(t["steps"], [{"n": 1, "text": "build", "done": False, "current": True}])
         self.assertEqual(t["criteria"], [{"n": 1, "text": "csv opens", "verify": "true", "checked": False}])
         self.assertEqual(t["depends"], ["T-0001"])
+
+
+    def test_cards_get_queue_progress_inbox_age_latency_and_the_last_check(self):
+        self.fm("check", "add", "python3 -c 'print(1)'")
+        self.fm("check")
+        self.hook("UserPromptSubmit", {"prompt": "hello"})
+        v = json.loads(self.fm("ui", "--json").stdout)
+        q = {x["id"]: x for x in v["queue"]}
+        self.assertEqual((q["T-0002"]["steps_done"], q["T-0002"]["steps_total"]), (0, 1))
+        self.assertEqual(v["inbox"][0]["age_days"], 0)
+        self.assertTrue(v["latency"] and all(isinstance(x, (int, float)) for x in v["latency"]))
+        self.assertEqual([(r["cmd"], r["exit"]) for r in v["checks"]["results"]], [("python3 -c 'print(1)'", 0)])
+        self.assertTrue(v["checks"]["at"])
