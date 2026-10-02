@@ -1,4 +1,5 @@
 """Hook handler tests: run plugin/hooks/hook <Event> with JSON payloads against an isolated FOREMAN_HOME."""
+import datetime
 import json
 import os
 import time
@@ -943,6 +944,39 @@ class Stop(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>bx7k2</task-id>\n"
                                                  "<status>completed</status>\n</task-notification>"})
         self.assertEqual(self.decision(self.stop("The eval finished.")), "block")
+
+    def bg(self, tid, session="sess-1"):
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sleep 60", "run_in_background": True},
+                                  "tool_response": f"Command running in background with ID: {tid}. Output is being "
+                                                   "written to: /tmp/x.output", "session_id": session})
+
+    def test_a_completion_notice_folded_into_a_running_turn_still_frees_drive(self):
+        # T-0096: a notice that lands mid-turn never reaches UserPromptSubmit; drive read it as still running for 6 h
+        self.fm("init")
+        self.task()
+        self.bg("bq1")
+        transcript = os.path.join(self.tmp, "t.jsonl")
+        with open(transcript, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"content": "<task-notification>\n<task-id>bq1</task-id>\n"
+                                                                     "<status>completed</status>\n</task-notification>"}}) + "\n")
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Gate passed.",
+                               "session_id": "sess-1", "transcript_path": transcript})
+        self.assertEqual(self.decision(p), "block")
+
+    def test_a_stopped_background_task_frees_drive(self):
+        self.fm("init")
+        self.task()
+        self.bg("bq2")
+        self.hook("PostToolUse", {"tool_name": "TaskStop", "tool_input": {"task_id": "bq2"}, "tool_response": "stopped"})
+        self.assertEqual(self.decision(self.stop("Stopped the slow run.")), "block")
+
+    def test_a_start_older_than_two_hours_no_longer_holds_drive(self):
+        self.fm("init")
+        self.task()
+        old = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=3)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(self.home, "state", "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": old, "kind": "bg_start", "session_id": "sess-1", "id": "bold"}) + "\n")
+        self.assertEqual(self.decision(self.stop("Next: the queue.")), "block")
 
     def test_drive_scoped_to_one_task_stops_pushing_once_that_task_is_finished(self):
         # fm run gives each fresh session one task (FOREMAN_DRIVE_TASK); the next task gets its own session.

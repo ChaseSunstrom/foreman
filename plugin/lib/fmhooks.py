@@ -916,6 +916,10 @@ def post_tool_use(pl, ok=True):
             _auto_evidence(pl, p, ok)
         except Exception:
             log_error("PostToolUse", _tb())
+    if ok and tool in ("TaskStop", "KillShell", "KillBash"):  # a stopped task sends no completion notice
+        tid = ti.get("task_id") or ti.get("shell_id") or ti.get("bash_id")
+        if tid:
+            _event({"kind": "bg_done", "session_id": pl.get("session_id"), "id": str(tid)})
     if ok and tool == "Bash" and ti.get("run_in_background"):
         m = re.search(r"\bID:?\s*([\w-]+)|backgroundTaskId\W+([\w-]+)", json.dumps(pl.get("tool_response")))
         if m:
@@ -1073,6 +1077,7 @@ def stop(pl):
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
+        _scan_notices(pl, g)
         reason = _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
@@ -1128,7 +1133,7 @@ def _context_pct(sid):
         return None
 
 
-BG_WAIT_S = 6 * 3600  # background work older than this is assumed lost (a missed completion never blocks drive)
+BG_WAIT_S = 2 * 3600  # backstop: a start older than this is assumed finished (T-0096: 6 h stalled a 5-day session)
 
 
 def _running(sid):
@@ -1144,6 +1149,27 @@ def _running(sid):
         elif kind in ("subagent_stop", "bg_done"):
             state[key] = False
     return [k for k, on in state.items() if on]
+
+
+def _scan_notices(pl, g):
+    """Completion notices folded into a running turn never reach UserPromptSubmit (T-0096): read the transcript's new
+    bytes for their task ids, from where the last Stop left off, so drive doesn't wait on work that already finished."""
+    path, sid = pl.get("transcript_path"), pl.get("session_id")
+    if not path or not sid:
+        return
+    offsets = g.setdefault("scan", {})
+    try:
+        start = offsets.get(sid, 0)
+        if start > os.path.getsize(path):
+            start = 0  # a new or rewritten transcript
+        with open(path, "rb") as f:
+            f.seek(start)
+            data = f.read(8 * 1024 * 1024)  # ponytail: 8 MB per Stop; a huge first scan finishes over a few stops
+    except OSError:
+        return
+    offsets[sid] = start + len(data)
+    for tid in set(re.findall(rb"<task-id>([\w-]+)</task-id>", data)):
+        _event({"kind": "bg_done", "session_id": sid, "id": tid.decode()})
 
 
 def _drive(p, sd, briefs, pl, g):
@@ -1165,8 +1191,10 @@ def _drive(p, sd, briefs, pl, g):
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
-    if _running(sid):
-        return None  # background work is out; its completion notification wakes the session
+    running = _running(sid)
+    if running:  # background work is out; its completion notification wakes the session
+        _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
+        return None
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:
