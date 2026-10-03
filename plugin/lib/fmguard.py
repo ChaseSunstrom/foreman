@@ -319,6 +319,27 @@ def _strip_heredocs(cmd):
     return _heredocs(cmd)[0]
 
 
+def _drop_data_heredocs(cmd):
+    """T-0171: the command without the bodies of heredocs that only write text: cat or tee as the line's first word,
+    a quoted delimiter (nothing in the body expands) and no pipe or substitution on the line. For the interpreter gate
+    only: a script written with cat isn't run by writing it. Anything else keeps its body."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        i += 1
+        for quote, delim in re.findall(_HEREDOC_START, line):
+            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line)
+            while i < len(lines) and lines[i].strip() != delim:
+                if not data:
+                    out.append(lines[i])
+                i += 1
+            if i < len(lines):
+                out.append(lines[i])
+                i += 1
+    return "\n".join(out)
+
+
 def _strip_comments(text):
     """T-0161 review: a # starts a comment only at the start of a word outside quotes; shlex's own commenters also cut
     at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed)."""
@@ -637,7 +658,7 @@ def _interpreter_writes(cmd, ctx):
     Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
     imports Foreman's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
-    if not _INTERP.search(_mask_fm(cmd, ctx)):
+    if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]

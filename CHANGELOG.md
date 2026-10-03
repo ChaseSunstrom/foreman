@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: a script written with a quoted `cat`/`tee` heredoc is data, not interpreter code (T-0171, self-improvement pass 2): a shebang or a `python3 -m pytest` line in the text, beside a quoted credential path, blocked the write; piped or unquoted heredocs, and real interpreter heredocs, are read as before.
 - `fm run --parallel N` (T-0167, the user's 'allow things in parallel' with its steer): up to 3 independent tasks at once, each in its own lane and fresh session; only small or medium tasks with disjoint scopes and no dependencies between them; each lane is rebased, gated and fast-forwarded into a clean main checkout, or kept with the reason; a usage limit stops new lanes. Repos whose tasks all touch shared files (a CHANGELOG) run one at a time, as before.
 - `fm taste` (T-0112): what your choices say you want: your finished requests, what was dropped and why, and your steers and corrections; brainstorm packs now carry the drops and steers too.
 - Stale-fact tripwire (T-0113): a resumed or re-focused task is told which files and functions its brief cites that existed when it started and are gone now, before it acts on them; files it plans to create aren't flagged.

@@ -352,6 +352,16 @@ class StateFallback(GuardCase):
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 
+    def test_a_quoted_cat_heredoc_is_data_not_code(self):
+        # T-0171 (self-improvement pass 2): a test file written with cat that names python and a credential path
+        body = f"#!/usr/bin/env python3\nopen('{self.home}/.ssh/config', 'w')\n"  # a script written, not run
+        self.assertFalse(self.bash(f"cat > t.py <<'EOF'\n{body}EOF"))
+        self.assertFalse(self.bash(f"tee t.py <<'EOF' >/dev/null\n{body}EOF"))
+        for cmd in (f"cat <<'EOF' | python3\n{body}EOF",  # piped into an interpreter: code
+                    f"python3 - <<'EOF'\n{body}EOF",
+                    f"cat > t.py <<EOF\n$(python3 -c \"open('{self.home}/.ssh/config', 'w')\")\nEOF"):  # unquoted: runs
+            self.assertBlocked(self.bash(cmd), "credentials")
+
     def test_the_claude_check_reads_only_the_code_the_interpreter_runs(self):
         # T-0128: Markdown backticks in a heredoc, next to a shell `--run "claude plugin test …"`, read as interpreter
         # code running claude plugin
