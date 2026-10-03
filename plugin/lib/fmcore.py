@@ -1691,6 +1691,7 @@ _SENSITIVE_CODE = re.compile(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|
 # ponytail: one-line quotes only; a pattern inside a multi-line string or a docstring still counts. f-strings are
 # kept: their {fields} are code
 _STRING_LITERAL = re.compile(r"""(?<![fF])(?<![fF][rR])(["'])(?:\\.|(?!\1).)*\1""")
+_REGEX_EXEC = re.compile(r"/(?:\\.|[^/\n])+/[a-z]*\.exec\(")  # T-0118: a JS regex literal matching, not running code
 
 
 _MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|requirements[^/]*\.txt|pyproject\.toml|"
@@ -1702,7 +1703,8 @@ def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
     why = [f for f in files if _SENSITIVE_PATH.search(f) or _MANIFEST.search(f)][:5]
-    added = "\n".join(_STRING_LITERAL.sub('""', line[1:]) for line in diff.splitlines() if line.startswith("+"))
+    added = "\n".join(_REGEX_EXEC.sub("", _STRING_LITERAL.sub('""', line[1:]))
+                      for line in diff.splitlines() if line.startswith("+"))
     why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(added)})[:5]
     return why
 

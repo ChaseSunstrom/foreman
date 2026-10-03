@@ -16,6 +16,13 @@ class RoundI(ForemanTestCase):
         self.assertEqual(c.sensitive([], "+x = rf'{exec(user)}'\n"), ["exec("])
         self.assertEqual(c.sensitive([], "+x = fr'{exec(user)}'\n"), ["exec("])
 
+    def test_a_regex_literal_exec_is_matching_not_running_code(self):
+        # T-0118: `/^✔ (T-\d+) done/.exec(line)` asked for an adversary lens on a mod's toast parsing
+        self.assertEqual(c.sensitive([], "+const id = /^✔ (T-\\d+) done/.exec(l)?.[1]\n"), [])
+        self.assertEqual(c.sensitive([], "+const m = /a\\/b/gi.exec(s)\n"), [])
+        self.assertEqual(c.sensitive([], "+child_process.exec(cmd)\n"), ["exec("], "a shell exec is still code")
+        self.assertEqual(c.sensitive([], "+exec(source)\n"), ["exec("])
+
     def brief(self, tid):
         p = c.find_project(self.repo)
         return next(b for b in c.load_briefs(p) if b.id == tid)
