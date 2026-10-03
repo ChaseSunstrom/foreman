@@ -63,10 +63,18 @@ def cmd_lane(args):
         fmcli.mutate(p, b.id, give, "lane_new", {"path": path, "branch": branch})
         return fmcli.out(args, {"id": b.id, "path": path, "branch": branch},
                          f"{b.id}: lane {path} on {branch}. Work there: cd into it and start claude; fm focus {b.id}.")
-    # rm
-    path = b.meta.get("lane")
-    if not path:
+    if not b.meta.get("lane"):
         raise fmcli.UsageError(f"{b.id} isn't in a lane")
+    path, kept = remove(p, b, main)
+    return fmcli.out(args, {"id": b.id, "path": path, "branch_kept": kept},
+                     f"{b.id}: lane {path} removed" + (f"; branch foreman/{b.id} kept (not merged)" if kept else "") + ".")
+
+
+def remove(p, b, main):
+    """fm lane rm (and fm tidy --apply, T-0186): the lane's folder, its registration and its branch if merged; never
+    uncommitted or ignored files (PolicyError). (path, whether the branch was kept)."""
+    import fmcli
+    path, branch = b.meta["lane"], f"foreman/{b.id}"
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored")  # ignored files (.env, builds) go with the folder too
         if st.returncode or st.stdout.strip():
@@ -88,5 +96,34 @@ def cmd_lane(args):
             x.meta["status"] = "planned"  # not the main checkout's active task by accident
         x.append_log(f"lane removed: {path}" + (f" (branch {branch} kept: not merged)" if kept else ""))
     fmcli.mutate(p, b.id, take_back, "lane_rm", {"path": path, "branch_kept": kept})
-    return fmcli.out(args, {"id": b.id, "path": path, "branch_kept": kept},
-                     f"{b.id}: lane {path} removed" + (f"; branch {branch} kept (not merged)" if kept else "") + ".")
+    return path, kept
+
+
+def stale(p, briefs, apply, actions, finding):
+    """fm tidy (T-0186): lanes whose task closed, and merged foreman/T-* branches no worktree holds."""
+    import fmcli
+    main = c.main_worktree(p.root) or p.root
+    if not c.git_root(main):
+        return []
+    out = []
+    for b in briefs:
+        if b.meta.get("lane") and b.status in c.CLOSED:
+            out.append(finding(p.slug, "stale_lane", "action", f"{b.id} is {b.status}; its lane {b.meta['lane']} remains",
+                               f"fm lane rm {b.id}", auto=True))
+            if apply:
+                try:
+                    remove(p, b, main)
+                    actions.append(("lane_rm", b.id))
+                except (c.PolicyError, fmcli.UsageError) as e:
+                    out[-1].update(severity="warn", auto=False, fix=str(e))
+    held = {ln.partition(" ")[2] for ln in _git(main, "worktree", "list", "--porcelain").stdout.splitlines()
+            if ln.startswith("branch ")}
+    for ref in _git(main, "branch", "--merged", "HEAD", "--format=%(refname)", "--list", "foreman/T-*").stdout.split():
+        if ref in held:
+            continue
+        name = ref.removeprefix("refs/heads/")
+        out.append(finding(p.slug, "merged_lane_branch", "action", f"{name} is merged and no lane uses it",
+                           f"git branch -d {name}", auto=True))
+        if apply and _git(main, "branch", "-d", name).returncode == 0:  # -d: never an unmerged one
+            actions.append(("branch_rm", name))
+    return out

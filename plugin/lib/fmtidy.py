@@ -137,6 +137,8 @@ def check_project(p, apply, actions):
     if n:
         out.append(finding(slug, "repeats", "info", f"{n} repeated command(s) or procedure(s) could become project tools",
                            "fm repeats lists them, each with a suggestion (fm check add, a script, a project skill)"))
+    import fmlanes
+    out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),

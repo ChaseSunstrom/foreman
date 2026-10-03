@@ -57,6 +57,30 @@ class Lanes(ForemanTestCase):
         self.assertNotIn("Lane work", self.git("log", "--format=%s", "main"))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "lane.py")))
 
+    def test_tidy_sweeps_stale_lanes(self):
+        # T-0186: a closed task's lane and its branch stayed until someone ran fm lane rm
+        home = {"HOME": self.tmp}  # tidy's global checks stay off the real ~/.claude
+        done = self.new("Done in a lane", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", done, "--json").stdout)["path"]
+        self.fm("focus", done, cwd=path)
+        with open(os.path.join(path, "done.py"), "w") as f:
+            f.write("x = 1\n")
+        self.fm("task", "finish", done, "--run", "true", "--audit", "self check", "--commit", "Done work", cwd=path)
+        dropped = self.new("Dropped with work left", self.repo, focus=False)
+        kept = json.loads(self.fm("lane", "new", dropped, "--json").stdout)["path"]
+        with open(os.path.join(kept, "wip.py"), "w") as f:
+            f.write("y = 1\n")
+        self.fm("task", "drop", dropped, "not needed")
+        self.assertIn(f"stale_lane: {done}", self.fm("tidy", env=home).stdout)
+        self.fm("tidy", "--apply", env=home)
+        self.assertFalse(os.path.isdir(path))
+        self.assertTrue(os.path.isdir(kept), "uncommitted work is never discarded")
+        self.assertIn(f"foreman/{done}", self.git("branch", "--list", "foreman/T-*"), "not merged yet: kept")
+        self.git("merge", "-q", f"foreman/{done}")
+        self.assertIn(f"merged_lane_branch: foreman/{done}", self.fm("tidy", env=home).stdout)
+        self.fm("tidy", "--apply", env=home)
+        self.assertNotIn(f"foreman/{done}", self.git("branch", "--list", "foreman/T-*"))
+
     def test_fm_lane_new_list_and_rm(self):
         tid = self.new("Laned", self.repo, focus=False)
         data = json.loads(self.fm("lane", "new", tid, "--json").stdout)
