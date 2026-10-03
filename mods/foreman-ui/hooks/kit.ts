@@ -278,7 +278,8 @@ export function tone(line: string): Tone {
 }
 
 /** The lines that matter (failures first, else the tail) of stdout and stderr, colour codes stripped. */
-export function outputSummary(stdout: unknown, stderr: unknown, keep = 6) {
+/** `failuresFirst` only for a command that failed: a zero exit that mentions an exception (a grep, a listing) succeeded */
+export function outputSummary(stdout: unknown, stderr: unknown, keep = 6, failuresFirst = true) {
   const all = [stdout, stderr]
     .filter((x): x is string => typeof x === 'string')
     .join('\n')
@@ -286,7 +287,7 @@ export function outputSummary(stdout: unknown, stderr: unknown, keep = 6) {
     .split('\n')
     .map(l => l.trimEnd())
     .filter(l => l.trim())
-  const bad = all.filter(l => tone(l) === 'err')
+  const bad = failuresFirst ? all.filter(l => tone(l) === 'err') : []
   const pick = bad.length ? bad.slice(0, keep) : all.slice(-keep)
   return {
     lines: pick.map(text => ({ text: text.slice(0, 240), tone: tone(text) })),

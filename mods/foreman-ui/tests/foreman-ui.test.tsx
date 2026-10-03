@@ -746,6 +746,15 @@ test('a finished shell command is a Foreman row in the chat: status, command, ti
   expect(await bad.find({ type: 'Text', text: /✗/ })).toBeDefined()
   expect(await bad.find({ type: 'Text', text: /error\[E0425\]/ })).toBeDefined()
   await bad.unmount()
+  // T-0140: a listing that mentions an exception exited 0: it succeeded, so ✓ and its tail, not a red ✗
+  const listing = Array.from({ length: 20 }, (_, i) => `${i}: code`).join('\n').replace('5: code', '5:     except Exception:')
+  const ok = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'b3',
+    props: { tool_use_id: 'b3', tool: 'Bash', input: { command: 'grep -n except lib.py' }, isRunning: false, isErrored: false,
+      isInterrupted: false, output: { stdout: listing, stderr: '', interrupted: false } } })
+  expect(await ok.find({ type: 'Text', text: /✗/ })).toBeUndefined()
+  expect(await ok.find({ type: 'Text', text: /19: code/ })).toBeDefined()
+  expect(await ok.find({ type: 'Text', text: /showing the failures/ })).toBeUndefined()
+  await ok.unmount()
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /▍Output/ })).toBeUndefined()
   await pane.unmount()

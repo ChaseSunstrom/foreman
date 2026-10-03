@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Shell rows tell the truth (T-0140): the ✓/✗ mark and failures-first lines come from the exit status; a successful grep that lists `except Exception:` is ✓ with its tail, not a red ✗ (seen in a live screenshot).
 - Drive survives a restart (T-0138): `claude --continue` in a project with drive on, full autonomy and open work (active, queued, or the inbox) starts its own first turn (SessionStart `initialUserMessage`: "Continue the Foreman drive: T-… — title"); a fresh start, standard autonomy, drive off or paused, `fm run`, another session active minutes ago, or only items waiting on the user starts none.
 - Sizes with meaning (T-0116): `fm ui --json` adds `typical` (median minutes from first focus to done per type and size, three or more closed tasks) and the active task's `on_task_s`; the band shows `12m on it · usually ~25m`, queue rows their usual time, and the gates card what a full run costs.
 - Drive trusts Claude Code's own list of in-flight background work (T-0115): when the Stop hook input carries `background_tasks`, drive waits exactly while it lists something and continues when it's empty; the event scan stays for builds that don't send it. A lost completion notice can no longer stall drive, and a command moved to the background with ctrl+b now holds it.

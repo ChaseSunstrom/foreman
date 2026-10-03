@@ -462,8 +462,8 @@ function shellRow($: EngineInterface, e: ToolUseRender) {
   // a plain one (the T-0095 review's HIGH finding for the quiet fm row)
   const lines = String((e.props.input as { command?: unknown } | null)?.command ?? '').split('\n')
   const cmd = lines.slice(0, 3).join('\n')
-  const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES) : outputSummary(o.stdout, o.stderr, OUT_LINES)
-  const bad = e.props.isErrored || s.failures
+  const bad = !!e.props.isErrored // the exit status decides, not words in the output
+  const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
   const ms = took.get(e.props.tool_use_id)
   const bg = typeof o.backgroundTaskId === 'string'
   const mark = e.props.isInterrupted || o.interrupted ? '■' : bg ? '◷' : bad ? '✗' : '✓'
