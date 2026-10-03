@@ -416,9 +416,11 @@ _SLASH_CHANGE = re.compile(r"(?:^|[\s'\"])" + _SLASH_BODY)
 # sends such a slash command. Both an exec API and the command shape must appear, so code that merely mentions them
 # isn't blocked.
 _CLAUDE_IN_CODE = re.compile(r"""['"]claude['"][^;\n]{0,40}?['"](?:plugins?|mcp|config)['"]|"""
-                             r"""['"]claude\s+(?:plugins?|mcp|config)\b|['"]\s*""" + _SLASH_BODY)
+                             r"""['"`]claude\s+(?:plugins?|mcp|config)\b|['"]\s*""" + _SLASH_BODY)
 _EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
-                       r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(|`")
+                       r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(")
+# T-0150: a backtick runs a shell command only in these; in Python or JS it is text (markdown in a heredoc was blocked)
+_BACKTICK_EXEC = re.compile(r"(?:^|[\s;&|(/])(?:ruby|perl|php)(?:\s|$|[;&|)])")
 
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
@@ -484,7 +486,7 @@ def _interpreter_writes(cmd, ctx):
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     code = _interp_code(cmd)
-    if _CLAUDE_IN_CODE.search(code) and _EXEC_API.search(code):
+    if _CLAUDE_IN_CODE.search(code) and (_EXEC_API.search(code) or ("`" in code and _BACKTICK_EXEC.search(cmd))):
         return [("plugin", "interpreter code running claude's plugin, MCP or config commands" + plugin_mark("?"))]
     if not _WRITE_API.search(cmd):
         return []
@@ -526,7 +528,8 @@ def check_bash(cmd, ctx, depth=0):
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
-    cmds = _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; ")))
+    # an unquoted backtick runs its body as a command, like $( ): split there (T-0150; quoted ones are read elsewhere)
+    cmds = _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; ").replace("`", " ; ")))
     cwd, chain = ctx.cwd, []
     for idx, c in enumerate(cmds):
         argv, via_xargs = _strip_wrappers(c.argv)

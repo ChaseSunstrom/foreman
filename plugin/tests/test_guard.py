@@ -340,6 +340,10 @@ class InterpreterWrites(GuardCase):
               "fm task evidence T-0007 --run \"claude plugin test mods/x\"")
         r = self.bash(ok)
         self.assertFalse(r and "interpreter code running claude" in r.detail, r)
+        # T-0150 (self-improvement pass 1): a backtick executes nothing in Python; markdown in a heredoc was blocked
+        md = "python3 - <<'EOF'\nopen('CHANGELOG.md', 'a').write('run `fm check`, then \"claude plugin test mods/x\"')\nEOF"
+        r = self.bash(md)
+        self.assertFalse(r and "interpreter code running claude" in r.detail, r)
         for bad in ("python3 -c \"import subprocess; subprocess.run(['claude', 'plugin', 'install', 'x@y'])\"",
                     "python3 - <<'EOF'\nimport os\nos.system('claude plugin install x@y')\nEOF",
                     "CODE=\"import os; os.system('claude plugin install x@y')\"; python3 -c \"$CODE\"",
@@ -355,7 +359,11 @@ class InterpreterWrites(GuardCase):
                     "python3 -c \"import sys, subprocess; subprocess.run(sys.argv[2].split())\" --run \"claude plugin install x@y\"",
                     # T-0144 review: $'…' quoting and a heredoc form the parser doesn't know threw the quote scan off
                     "ruby -e $'#\\'\nfm --run \"#{{system(\\\"claude plugin install x\\\")}}\"'",  # {{ }}: str.format
-                    "python3 - <<\\EOF\ns = ''''\nfm --run \"x'''; import os; os.system('claude plugin install x@y') # \"\nEOF"):
+                    "python3 - <<\\EOF\ns = ''''\nfm --run \"x'''; import os; os.system('claude plugin install x@y') # \"\nEOF",
+                    # T-0150: backticks run a shell command in ruby, perl and php
+                    "ruby -e '`claude plugin install x@y`'",
+                    "perl -e 'print `claude mcp add x -- y`'",
+                    "node -e \"require('child_process').execSync('claude plugin install x@y')\""):
             self.assertBlocked(self.bash(bad), "plugin", bad)
 
     def test_table(self):
@@ -427,6 +435,8 @@ class PluginChanges(GuardCase):
     def test_plugin_mcp_and_config_changes_need_the_users_yes(self):
         self.run_table([
             ("claude plugin install rust-analyzer-lsp@claude-plugins-official", "plugin"),
+            ("echo `claude plugin install x@y`", "plugin"),  # T-0150: unquoted backtick substitution went unread
+            ("python3 -c 'print(1)'; echo `claude mcp add a -- b`", "plugin"),
             ("claude plugin enable superpowers@claude-plugins-official", "plugin"),
             ("claude plugin disable ecc@ecc", "plugin"),
             ("claude plugin uninstall x@y --scope user", "plugin"),

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard backticks (T-0150, from self-improvement pass 1): a backtick counts as code execution only in ruby, perl and php, so markdown in a Python heredoc beside a quoted plugin-test command no longer blocks; a claude plugin/mcp/config call inside backticks is now caught there; and an unquoted shell backtick substitution (`` echo `claude plugin install …` ``) is split into its own command and checked (it went unread before, a gap found while checking this change).
 - One drive wait is one `drive_wait` event (T-0152, from self-improvement pass 1): it was logged on every Stop while background work ran, so `fm friction` counted one long wait many times.
 - Recursive self-improvement loop (T-0125): `fm friction` digests Foreman's own friction since the last pass (guard blocks with examples, failed tool calls, nudges and drive stops, slow gates, hook latency, the user's corrections and steers, lessons, and what became of the self-inbox, so a fix that didn't work shows up again); `fm friction --every N` makes `fm next` call for a pass every N closed tasks; `--brief` writes the brief for one read-only `foreman:fm-recon` subagent (≤5 grounded fixes, and whether the loop should change); findings go to the self-inbox and through the normal queue; `--mark` closes a pass.
 - A turn that ends on purpose for a mod reload is no longer held by the evidence or question nudge (T-0147): it blocked twice in a row live; the resumed turn records the live evidence.
