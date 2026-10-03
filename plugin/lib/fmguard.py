@@ -383,10 +383,16 @@ def _strip_wrappers(argv):
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
                 i += 2 if argv[i] in ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U") else 1
-        elif base in ("nohup", "time", "command", "builtin", "exec", "noglob", "stdbuf", "nice", "ionice", "chronic"):
+        elif base in ("nohup", "time", "command", "builtin", "exec", "noglob", "stdbuf", "nice", "ionice", "chronic",
+                      "setsid", "busybox"):  # setsid, busybox: T-0160 (the differential test)
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
                 i += 2 if argv[i] in ("-n", "-c", "-p") else 1
+        elif base == "flock":  # flock [opts] FILE CMD…: the command after the lock file (T-0160)
+            i += 1
+            while i < len(argv) and argv[i].startswith("-"):
+                i += 2 if argv[i] in ("-w", "--timeout", "-E", "--conflict-exit-code") else 1
+            i += 1
         elif base == "timeout":
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
@@ -676,6 +682,18 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
+        # T-0160 (differential test against bash): commands these run as text or as their own arguments
+        if name == "trap" and args and not args[0].startswith("-"):
+            found += check_bash(args[0], ctx, depth + 1)
+        if name == "script":
+            for j, a in enumerate(args[:-1]):
+                if a in ("-c", "--command") or re.fullmatch(r"-[a-zA-Z]*c", a):
+                    found += check_bash(args[j + 1], ctx, depth + 1)
+        if name == "find":
+            for j, a in enumerate(args):
+                if a in ("-exec", "-execdir", "-ok", "-okdir"):
+                    end = next((k for k in range(j + 1, len(args)) if args[k] in (";", "+")), len(args))
+                    found += check_bash(" ".join(shlex.quote(x) for x in args[j + 1:end]), ctx, depth + 1)
         if name == "eval":
             joined = " ".join(args)
             found += check_bash(joined, ctx, depth + 1)

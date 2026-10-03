@@ -105,7 +105,9 @@ Return at most 5 improvements, most valuable first. For each:
 - the change, as small as works, and its type (FIX/PERFORMANCE/CLEAN/FEATURE/SECURITY) and size (S/M/L);
 - done when: one observable check.
 Also say whether an earlier pass's item (the self-inbox section) failed to remove its friction, and whether this
-loop itself should change (how often it runs, what it reads). Skip anything you can't ground; say so instead.
+loop itself should change (how often it runs, what it reads). For the guard, propose shell forms to add to FORMS in
+plugin/tests/test_guard_diff.py (it runs them in real bash and fails on any the guard misses). Skip anything you
+can't ground; say so instead.
 """
 
 
