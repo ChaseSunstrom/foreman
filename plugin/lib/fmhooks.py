@@ -41,6 +41,39 @@ def _quiet():
     return os.environ.get("FOREMAN_QUIET", "") not in ("", "0")
 
 
+BREAKER_FAILS, BREAKER_PAUSE_S = 3, 600  # T-0087: failures in a row that pause an event, and for how long
+UNBREAKABLE = {"PreToolUse", "TaskCompleted"}  # gates: the guard fails closed, TaskCompleted refuses unevidenced work
+
+
+def breaker():
+    """{event: {"fails": failures in a row, "until": epoch it is paused until}}, shared by every project (the
+    handlers are); an entry of any other shape is dropped, so a damaged file can't stop the hooks."""
+    try:
+        with open(os.path.join(c.state_dir(), "logs", "breaker.json"), encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    num = lambda x: isinstance(x, (int, float)) and not isinstance(x, bool)
+    return {k: v for k, v in data.items() if isinstance(v, dict) and num(v.get("fails", 0)) and num(v.get("until", 0))} \
+        if isinstance(data, dict) else {}
+
+
+def paused_hooks():
+    now = time.time()
+    return sorted(e for e, v in breaker().items() if v.get("until", 0) > now)
+
+
+def _breaker_set(event, entry):
+    """Record or clear an event's entry; False when the file couldn't be written."""
+    br = breaker()
+    br.pop(event, None) if entry is None else br.update({event: entry})
+    try:  # ponytail: concurrent async hooks can lose an update; the next failure counts again
+        c.write_atomic(os.path.join(c.state_dir(), "logs", "breaker.json"), json.dumps(br))
+        return True
+    except OSError:
+        return False
+
+
 def run(event, raw):
     t0 = time.monotonic()
     if event != "PreToolUse" and _quiet():
@@ -48,18 +81,29 @@ def run(event, raw):
     if event == "PreToolUse":
         code = _pre_tool_use(raw)
     else:
-        code = 0
+        code, state = 0, ({} if event in UNBREAKABLE else breaker().get(event) or {})
+        if state.get("until", 0) > time.time():
+            return 0  # T-0087: paused after failing in a row; fm doctor and the band say so
         try:
             payload = json.loads(raw) if raw.strip() else {}
             handler = HANDLERS.get(event)
             out = handler(payload) if handler else None
             if out is not None:
                 print(json.dumps(out, ensure_ascii=False))
+            if state:
+                _breaker_set(event, None)
         except HookBlock as e:
+            if state:
+                _breaker_set(event, None)  # it ran: a block isn't a failure
             print(str(e), file=sys.stderr)
             code = 2
         except Exception:
             log_error(event, _tb())
+            fails = state.get("fails", 0) + 1  # after a pause one more failure pauses it again
+            until = time.time() + BREAKER_PAUSE_S if fails >= BREAKER_FAILS and event not in UNBREAKABLE else 0
+            if _breaker_set(event, {"fails": fails, "until": until}) and until:
+                log_error(event, f"paused for {BREAKER_PAUSE_S // 60} min after {fails} failures in a row "
+                                 f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
     if event not in UNTIMED:
         _event({"kind": "hook_ms", "event": event, "ms": round((time.monotonic() - t0) * 1000, 1)})
     return code

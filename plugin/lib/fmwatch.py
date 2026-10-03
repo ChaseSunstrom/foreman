@@ -301,7 +301,7 @@ def view(p):
         "brainstorm": bs,
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
-                   "hook_errors": len(fmdoctor.recent_hook_errors())},
+                   "hook_errors": len(fmdoctor.recent_hook_errors()), "paused_hooks": fmdoctor.paused_hooks()},
         "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
         + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
         "latency": [round(ms) for ms in d["series"]],

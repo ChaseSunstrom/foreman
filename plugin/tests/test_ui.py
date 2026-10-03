@@ -39,7 +39,7 @@ class UiView(ForemanTestCase):
         self.assertEqual(v["inbox_total"], 1)
         self.assertEqual(v["approvals"], [])
         self.assertIsInstance(v["recent"], list)
-        self.assertEqual(set(v["health"]), {"hook_p95_ms", "guard_blocks", "hook_errors"})
+        self.assertEqual(set(v["health"]), {"hook_p95_ms", "guard_blocks", "hook_errors", "paused_hooks"})
         self.assertTrue(v["watch"] and all(os.path.exists(w) for w in v["watch"]))
         self.assertTrue(any(w.endswith("ledger.jsonl") for w in v["watch"]), "appends move the ledger, not the dir")
         plan = q["T-0002"]["plan"]  # what a yes approves is shown where it's given

@@ -524,6 +524,17 @@ test('the band shows the whole queue: today, queued, inbox and what is next', as
   await ui.unmount()
 })
 
+test('a paused hook shows in the band and the pane (T-0087)', async ($, on) => {
+  world(on, [{ ...VIEW, health: { hook_p95_ms: 31, guard_blocks: 0, hook_errors: 3, paused_hooks: ['Stop'] } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /⚠ Foreman's Stop hook is paused: it failed 3 times in a row/ })).toBeDefined()
+  await ui.unmount()
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /paused: Stop/ })).toBeDefined()
+  await pane.unmount()
+})
+
 test('the pane wears the mascot top-right; a size legend explains the words', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })

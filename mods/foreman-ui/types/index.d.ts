@@ -37,7 +37,7 @@ export type FmView = {
   approvals?: FmApproval[]
   closed?: { id: string; status: string }[]
   recent?: string[]
-  health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number }
+  health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run

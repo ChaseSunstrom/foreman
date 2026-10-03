@@ -368,8 +368,18 @@ def recent_hook_errors():
     return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < 1]
 
 
+def paused_hooks():
+    """T-0087: the events the hook breaker has paused after failing in a row."""
+    import fmhooks
+    return fmhooks.paused_hooks()
+
+
 def check_hook_errors():
-    recent = recent_hook_errors()
+    recent, paused = recent_hook_errors(), paused_hooks()
+    if paused:
+        return Result("hook errors", "FAIL", f"paused: {', '.join(paused)} ({len(recent)} hook error(s) in the last "
+                                             f"24h; a paused hook runs again 10 min after its last failure; "
+                                             f"state/logs/hooks.log)")
     if not recent:
         return Result("hook errors", "PASS", "no hook errors in the last 24h")
     last = recent[-1]

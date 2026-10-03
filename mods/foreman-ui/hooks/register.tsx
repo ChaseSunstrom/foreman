@@ -1054,7 +1054,8 @@ export const register: Register = (on, options) => {
     const plans = (v.queue ?? []).filter(q => q.waits === 'plan approval')
     const bgs = await read($, shells)
     const doneSince = await read($, away)
-    const idle = !a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0)
+    const paused = v.health?.paused_hooks ?? [] // T-0087: hooks the breaker paused after failing in a row
+    const idle = !a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0) && !paused.length
     if (idle && !bgs.length && !doneSince.length && !v.mode?.trust) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
@@ -1206,6 +1207,12 @@ export const register: Register = (on, options) => {
         {!working && !paneOpen && v.next && (
           <Text color={hex(C.dim)} wrap={cut}>
             → {humanNext(v.next)}
+          </Text>
+        )}
+        {paused.length > 0 && (
+          <Text color={hex(C.warn)} wrap={cut} key="fm-band-paused">
+            ⚠ Foreman's {paused.join(', ')} hook{paused.length === 1 ? ' is' : 's are'} paused: it failed 3 times in a row
+            and runs again within 10 min (fm doctor)
           </Text>
         )}
         {asks.map(x => (
@@ -1581,6 +1588,7 @@ export const register: Register = (on, options) => {
               <Text color={hex(v.health.hook_errors ? C.err : C.dim)}>
                 p95 {v.health.hook_p95_ms ?? '–'} ms · guard blocks {v.health.guard_blocks}
                 {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
+                {(v.health.paused_hooks ?? []).length ? ` · paused: ${(v.health.paused_hooks ?? []).join(', ')}` : ''}
               </Text>
             </Box>
           )}
