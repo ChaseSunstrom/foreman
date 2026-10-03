@@ -110,6 +110,8 @@ export function elapsed(ms: number): string {
 
 /** A typical duration in minutes, roughly: ~25m, ~1.5h. */
 export const about = (min: number) => (min < 60 ? `~${Math.max(1, Math.round(min))}m` : `~${(min / 60).toFixed(1).replace(/\.0$/, '')}h`)
+/** '9h ago', '3d ago' */
+export const hoursAgo = (h: number) => (h < 24 ? `${Math.max(1, Math.round(h))}h ago` : `${Math.round(h / 24)}d ago`)
 
 export function shortPath(path: string, max = 48): string {
   if (path.length <= max) return path

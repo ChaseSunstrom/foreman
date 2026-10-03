@@ -133,6 +133,8 @@ function world(on: On, views: FmView[]) {
   })
   const session = { id: 'sess-1' }
   on('session.id', async () => ({ value: session.id }))
+  const panes = { shown: false } // whether the Foreman pane is docked and showing
+  on('ui.panes', async () => ({ value: panes.shown ? [{ id: 'foreman', isShown: true }] : [] }))
   const agentStatus = { now: 'running', listed: true } // what the engine's list says of every subagent
   on('agent.list', async () => ({
     value: agentStatus.listed
@@ -146,7 +148,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -690,7 +692,7 @@ test('/fm-trust works only when the person types it; it writes the trust record 
   expect(JSON.parse(written[0]!.text)).toMatchObject({ on: true, via: 'composer' })
   expect(calls.some(c => c[1] === 'trust' && c.length === 2)).toBe(true) // fm trust: records it in the ledger
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
-  expect(await ui.find({ type: 'Text', text: /trust on: Claude may edit the guard and Claude Code settings/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^trust on$/ })).toBeDefined() // a word beside the mode (T-0146), not a row
   await ui.unmount()
   await $.command.run({ command: 'fm-trust', args: 'off', origin: { kind: 'composer' }, presentation })
   expect(calls.at(-2)).toEqual(['fm', 'trust', 'off'])
@@ -869,6 +871,51 @@ test('another session\'s resume record starts nothing here', async ($, on) => {
   const { submitted } = world(on, [OTHER])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   expect(submitted).toEqual([])
+})
+
+test('with the pane open the band stops repeating it; trust is a word beside the mode', async ($, on) => {
+  // T-0146: 'there's duplicated things, in the dashboard'
+  const trusted: FmView = { ...CALM, mode: { ...CALM.mode!, trust: true } }
+  const { panes } = world(on, [trusted])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  let ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /^trust on$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Claude may edit the guard/ })).toBeUndefined() // no warning row
+  expect(await ui.find({ type: 'Text', text: /queued/ })).toBeDefined() // closed pane: the band carries the day
+  await ui.unmount()
+  panes.shown = true
+  ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /queued/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^→ / })).toBeUndefined()
+  expect(await ui.find({ type: 'Button', text: 'dashboard' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /T-0007/ })).toBeDefined() // the task line stays
+  await ui.unmount()
+})
+
+test('the pane: nothing stale, nothing cut without saying so, controls that read as actions', async ($, on) => {
+  // T-0146: 'some stuff looks weird, not everything is shown, again, be self aware'
+  const many = Array.from({ length: 9 }, (_, i) => ({ id: `T-01${10 + i}`, type: 'FEATURE', tier: 'M', title: `idea ${i}`, status: 'captured', waits: null }))
+  const v: FmView = { ...CALM, inbox: many, inbox_total: 17, mode: { ...CALM.mode!, autonomy: 'full', drive: true }, typical: { 'CLEAN/S': 8 },
+    brainstorm: { name: 'brainstorm-20261002-215842', running: false, answers: 4, count: 152, ideas: ['Cache gate results'], age_h: 9 } }
+  world(on, [v])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag1' } as never)
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't9', reason: 'answer', agentId: 'ag1' })
+  for (const p of ['/repo/src/a.py', '/tmp/scratch/x.py'])
+    await $.tool.call({ tool: 'Edit', file_path: p, old_string: 'a', new_string: 'b', replace_all: false } as never)
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /Reading/ })).toBeUndefined() // a finished agent's last action is stale
+  expect(await pane.find({ type: 'Text', text: /done · 1 tool/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Cache gate results/ })).toBeUndefined() // an old brainstorm is one line
+  expect(await pane.find({ type: 'Text', text: /152 ideas · 9h ago/ })).toBeDefined()
+  expect((await pane.find({ type: 'Box', key: 'q-typ-T-0008' }))?.props.flexShrink).toBe(0) // '~8m' never splits
+  expect(await pane.find({ type: 'Text', text: /^src\/a\.py$/ })).toBeDefined() // project-relative
+  expect(await pane.find({ type: 'Text', text: /scratch/ })).toBeUndefined() // outside the project: not this card's
+  expect(await pane.find({ type: 'Text', text: /… 11 more in the inbox/ })).toBeDefined() // 17, 6 shown
+  expect(await pane.find({ type: 'Button', text: 'turn drive off' })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: 'switch to standard' })).toBeDefined()
+  expect(await pane.find({ type: 'Button', text: 'mute' })).toBeDefined()
+  await pane.unmount()
 })
 
 test('a long task title gives way before the task id: the id never wraps', async ($, on) => {

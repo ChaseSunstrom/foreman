@@ -142,3 +142,4 @@ class UiView(ForemanTestCase):
         self.assertEqual(b["count"], 3)
         self.assertEqual(b["ideas"][:2], ["Faster gates", "A mascot"])
         self.assertEqual(b["name"], "brainstorm-20261003-010203")
+        self.assertLess(b["age_h"], 1)  # T-0146: an old one folds to a line in the pane

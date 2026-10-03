@@ -9,6 +9,7 @@ import {
   MASCOT_COLORS,
   SIZE_LEGEND,
   about,
+  hoursAgo,
   activityCells,
   agentColor,
   TONE_COLOR,
@@ -744,7 +745,10 @@ export const register: Register = (on, options) => {
       const r = await next(e)
       const why = guardReason(r)
       if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
-      else if (face.add !== undefined && r.deny === undefined && !r.isError) await noteEdit($, face.target, face.add, face.del ?? 0)
+      else if (face.add !== undefined && r.deny === undefined && !r.isError) {
+        const file = (e as { file_path?: unknown }).file_path // the real path; the files card shows it project-relative
+        await noteEdit($, typeof file === 'string' ? file : face.target, face.add, face.del ?? 0)
+      }
       const bg = (r.result as { backgroundTaskId?: unknown } | undefined)?.backgroundTaskId
       if (e.tool === 'Bash' && typeof bg === 'string' && !e.agentId) {
         const startedAt = await $.clock.now()
@@ -1024,6 +1028,8 @@ export const register: Register = (on, options) => {
     const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
     const bandNow = await $.clock.now()
     const cut = 'truncate-end' as const
+    // T-0146: with the pane shown, the band keeps the task, what waits and what needs the person; the rest is the pane's
+    const paneOpen = (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)
 
     // Beside a docked pane the band is narrow: each row is one Text that cuts at its end, never mid-word per span.
     const head = narrow ? (
@@ -1089,6 +1095,7 @@ export const register: Register = (on, options) => {
             {c && <Text color={hex(C.dim)}>{Math.round(c.percent)}%</Text>}
             {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
             {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
+            {m?.trust && <Text color={hex(C.warn)}>trust on</Text>}
           </Box>
         </Box>
         {a && (
@@ -1121,7 +1128,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
         {head}
-        {(queued > 0 || inboxN > 0) && (
+        {!paneOpen && (queued > 0 || inboxN > 0) && (
           <Box flexDirection="row" gap={1} key="fm-band-queue-row">
             {!narrow && <Text color={hex(C.dim)}>today</Text>}
             {!narrow && meter($, e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
@@ -1130,11 +1137,6 @@ export const register: Register = (on, options) => {
               {upNext && !narrow ? ` · next ${upNext.id} ${upNext.title}` : ''}
             </Text>
           </Box>
-        )}
-        {m?.trust && (
-          <Text color={hex(C.warn)} wrap={cut} key="fm-band-trust">
-            ⚠ trust on: Claude may edit the guard and Claude Code settings · /fm-trust off
-          </Text>
         )}
         {doneSince.length > 0 && (
           <Text color={hex(C.ok)} wrap={cut} key="fm-band-away">
@@ -1155,7 +1157,7 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
         )}
-        {!working && v.next && (
+        {!working && !paneOpen && v.next && (
           <Text color={hex(C.dim)} wrap={cut}>
             → {humanNext(v.next)}
           </Text>
@@ -1175,7 +1177,7 @@ export const register: Register = (on, options) => {
           </Box>
         ))}
         <Box flexDirection="row" gap={2}>
-          <Button key="open" label="dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />
+          {!paneOpen && <Button key="open" label="dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />}
           {!working && (
             <Button
               key="next"
@@ -1210,6 +1212,8 @@ export const register: Register = (on, options) => {
     const m = v.mode
     const width = Math.max(10, e.props.bodyColumns - 12)
     const touched = await read($, files)
+    const base = `${v.root || root}/` // T-0146: the project's files, relative; scratch files elsewhere aren't this card's
+    const mine = touched.filter(t => t.path.startsWith(base))
     const subs = await read($, agents)
     const bgShells = await read($, shells)
     const fb = bgShells.length ? await read($, frame) : 0
@@ -1378,8 +1382,9 @@ export const register: Register = (on, options) => {
                   {s.description}
                 </Text>
                 <Text color={hex(C.dim)} wrap="truncate-end">
-                  {s.tools} tools · {s.last.slice(0, 30)}
-                  {!s.done ? ` · ${elapsed(clockNow - s.startedAt)}` : ''}
+                  {s.done
+                    ? `done · ${s.tools} tool${s.tools === 1 ? '' : 's'}` // its last action is stale once it ends (T-0146)
+                    : `${s.tools} tools · ${s.last.slice(0, 30)} · ${elapsed(clockNow - s.startedAt)}`}
                 </Text>
                 {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= QUIET_MS && (
                   <Text color={hex(C.warn)}>quiet {elapsed(clockNow - (s.lastAt ?? s.startedAt))}</Text>
@@ -1412,9 +1417,11 @@ export const register: Register = (on, options) => {
               C.agent,
               v.brainstorm.running
                 ? `${spin(fb + clockNow / 300)} ${v.brainstorm.answers}/${v.brainstorm.expected ?? '?'} answers · ${v.brainstorm.count} ideas so far`
-                : `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`,
+                : (v.brainstorm.age_h ?? 0) < 2
+                  ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
+                  : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
             )}
-            {v.brainstorm.ideas.map((idea, i) => (
+            {(v.brainstorm.running || (v.brainstorm.age_h ?? 0) < 2 ? v.brainstorm.ideas : []).map((idea, i) => (
               <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
                 {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
               </Text>
@@ -1422,10 +1429,10 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        {touched.length > 0 && (
+        {mine.length > 0 && (
           <Box key="card-files" {...card(C.edit)}>
-            {head('Files this session', C.edit, `${touched.length}`)}
-            {touched
+            {head('Files this session', C.edit, `${mine.length}`)}
+            {mine
               .slice(-LIST)
               .reverse()
               .map((t, i) => (
@@ -1433,9 +1440,10 @@ export const register: Register = (on, options) => {
                   {churn($, e, `file-bar-${i}`, t, maxChurn)}
                   <Text color={hex(C.ok)}>+{t.add}</Text>
                   <Text color={hex(C.err)}>−{t.del}</Text>
-                  <Text wrap="truncate-start">{shortPath(t.path, 40)}</Text>
+                  <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
                 </Box>
               ))}
+            {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
           </Box>
         )}
 
@@ -1448,7 +1456,9 @@ export const register: Register = (on, options) => {
               {chip(q)}
               {q.steps_total ? meter($, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
               {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
-                <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
+                <Box key={`q-typ-${q.id}`} flexShrink={0}>
+                  <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
+                </Box>
               )}
               <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : undefined}>
                 {q.id} {q.title}
@@ -1484,6 +1494,9 @@ export const register: Register = (on, options) => {
               />
             </Box>
           ))}
+          {(v.inbox_total ?? inbox.length) > Math.min(LIST, inbox.length) && (
+            <Text color={hex(C.dim)}>{`… ${(v.inbox_total ?? inbox.length) - Math.min(LIST, inbox.length)} more in the inbox`}</Text>
+          )}
         </Box>
 
         {checks && checks.results.length > 0 && (
@@ -1537,14 +1550,14 @@ export const register: Register = (on, options) => {
           />
           <Button
             key="drive"
-            label={m?.drive ? 'drive off' : 'drive on'}
+            label={m?.drive ? 'turn drive off' : 'turn drive on'}
             hotkey="d"
             plain
             onPress={() => act($, ['drive', m?.drive ? 'off' : 'on'], `drive ${m?.drive ? 'off' : 'on'}`)}
           />
           <Button
             key="autonomy"
-            label={m?.autonomy === 'full' ? 'standard autonomy' : 'full auto'}
+            label={m?.autonomy === 'full' ? 'switch to standard' : 'switch to full auto'}
             plain
             dimColor
             onPress={() => {
@@ -1554,7 +1567,7 @@ export const register: Register = (on, options) => {
           />
           <Button
             key="sound"
-            label={isOn ? 'sound off' : 'sound on'}
+            label={isOn ? 'mute' : 'unmute'}
             plain
             dimColor
             onPress={async () => {

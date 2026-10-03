@@ -218,11 +218,13 @@ def brainstorm(p):
     except (OSError, ValueError):
         st = {}
     answers = sorted(f for f in os.listdir(d) if f.endswith(".md") and f != "ideas.md")
+    age_h = round((time.time() - os.path.getmtime(d)) / 3600, 1)  # T-0146: an old one folds to a line in the pane
     if os.path.exists(os.path.join(d, "ideas.md")):
         with open(os.path.join(d, "ideas.md"), encoding="utf-8") as f:
             body = f.read().split("## New ideas per lens")[0]
         ideas = [ln[2:].strip() for ln in body.splitlines() if ln.startswith("- ")]
-        return {"name": name, "running": False, "answers": len(answers), "count": len(ideas), "ideas": ideas[:8]}
+        return {"name": name, "running": False, "answers": len(answers), "count": len(ideas), "ideas": ideas[:8],
+                "age_h": age_h}
     ideas = []
     for a in answers:
         with open(os.path.join(d, a), encoding="utf-8") as f:
@@ -230,7 +232,8 @@ def brainstorm(p):
     ideas = list(dict.fromkeys(ideas))
     running = (c.age_days(st.get("started")) or 1) * 24 < 1
     return {"name": name, "running": running, "answers": len(answers),
-            "expected": len(st.get("lenses") or []) * int(st.get("rounds") or 1), "count": len(ideas), "ideas": ideas[:8]}
+            "expected": len(st.get("lenses") or []) * int(st.get("rounds") or 1), "count": len(ideas), "ideas": ideas[:8],
+            "age_h": age_h}
 
 
 def view(p):
