@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Bash edits are attributed (T-0086): after each Bash call during a task, `git status` (about 2 ms, in the async PostToolUse hook) names the files whose mtime falls inside the call; they count as the task's touches and one outside its scope gets the live scope note an Edit gets (once per file). `sed -i` and generators were invisible until the task's finish.
 - Rules diet (T-0085): the always-on rules drop what a gate already says when it refuses (planning needed to focus, `fm gates`/`fm task prove`, each tier's audits, how each guard category is granted, the state folder): 5881 → 5566 characters loaded in every session. The red→green refusal now names `fm task prove`.
 - `FOREMAN_QUIET=1` (T-0077): a session an orchestrator drives (jarvis-code had to disable the plugin with `--settings`) gets no Foreman context, nudges or brief requirement; the guard still runs.
 - Guard: a `#` right after a closing `)` is mid-word, not a comment (T-0163, automated security review of T-0161): `echo $(true)#x; rm -rf ~` and `$((1))#x` hid the rest of the line with any payload; the differential test now has those forms and the backtick and `${…}` ones.

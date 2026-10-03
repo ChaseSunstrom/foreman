@@ -1694,7 +1694,7 @@ TASK_WINDOW = 50000  # ledger events read for a task's edits at done (a fm comma
 
 def task_touches(p, tid):
     """{relative path: timestamp of its last edit} for the project files the hooks saw this task edit, in first-edit
-    order. ponytail: Edit/Write only; Bash edits aren't seen."""
+    order: Edit/Write targets, and files a Bash call changed (T-0086)."""
     files = {}
     for e in ledger_tail(p, TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None

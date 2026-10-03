@@ -945,6 +945,46 @@ def _scope_note(pl, p, act):
     return f"Foreman: {rel} is outside {act.id} scope [{', '.join(scope)}]."[:NOTE_BUDGET]
 
 
+def _bash_touches(pl, p):
+    """T-0086: files a Bash command changed (git status entries whose mtime falls inside the call) are the active
+    task's touches, as an Edit's are, and one outside its scope gets the scope note (once per file)."""
+    import subprocess
+    act, top = c.active_brief(c.load_briefs(p)), c.git_root(p.root)
+    if not act or not top:
+        return None
+    since = time.time() - (pl.get("duration_ms") or 0) / 1000 - 2  # mtime granularity and hook latency
+    try:
+        out = subprocess.run(["git", "-C", top, "status", "--porcelain", "-z", "--untracked-files=all"],
+                             capture_output=True, text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    entries, scope, outside, skip = out.split("\0"), act.meta.get("scope") or [], [], False
+    for ent in entries:
+        if skip or len(ent) < 4:  # a rename's original path follows it
+            skip = False
+            continue
+        skip = ent[0] in "RC"
+        full = os.path.join(top, ent[3:])  # porcelain paths are relative to the repository's top
+        rel = os.path.relpath(full, p.root)
+        try:
+            fresh = os.path.getmtime(full) >= since and os.path.isfile(full)
+        except OSError:
+            continue  # deleted: the task's diff at finish still sees it
+        if not fresh or rel.startswith(("..", ".foreman/")):
+            continue
+        c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash"}, session=pl.get("session_id"))
+        if scope and not any(c.glob_match(rel, s) for s in scope):
+            outside.append(full)
+    noted = {(e.get("data") or {}).get("file") for e in c.ledger_tail(p, 300)
+             if e.get("event") == "scope_note" and e.get("task") == act.id} if outside else set()
+    new = [f for f in outside if f not in noted]
+    for f in new:
+        c.log_event(p, "scope_note", task=act.id, data={"file": f}, session=pl.get("session_id"))
+    rels = [os.path.relpath(f, p.root) for f in new]
+    return (f"Foreman: that command changed {', '.join(rels[:5])}{' …' if len(rels) > 5 else ''}, outside {act.id} "
+            f"scope [{', '.join(scope)}]."[:NOTE_BUDGET]) if new else None
+
+
 # ---------------------------------------------------------------- PostToolUse / Failure (async)
 
 def _target(ti):
@@ -981,6 +1021,9 @@ def post_tool_use(pl, ok=True):
             _event({"kind": "bg_start", "session_id": pl.get("session_id"), "id": m.group(1) or m.group(2)})
     if ok and p and tool == "Bash":
         _grant_prompted(pl, p)
+        note = _bash_touches(pl, p)
+        if note:
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     if ok and p and tool in FILE_TOOLS:
         act = c.active_brief(c.load_briefs(p))
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
