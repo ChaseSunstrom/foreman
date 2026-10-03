@@ -1035,9 +1035,10 @@ def cmd_check(args):
                 checks.append(" ".join(args.words))
             else:
                 try:
-                    checks.pop(int(args.words[0]) - 1)
+                    gone = checks.pop(int(args.words[0]) - 1)
                 except (IndexError, ValueError):
                     raise UsageError(f"no check {' '.join(args.words)!r}; fm check list numbers them")
+                (meta.get("check_paths") or {}).pop(gone, None)
             meta["checks"] = checks
             c.write_meta(p, meta)
             c.log_event(p, "checks", data={"checks": checks}, session=session())
@@ -1048,12 +1049,29 @@ def cmd_check(args):
             meta["affected"] = " ".join(args.words)
             c.write_meta(p, meta)
         return out(args, {"affected": meta["affected"]}, f"fm check --affected runs: {meta['affected'] or '(unset)'}")
+    if args.action == "paths":  # T-0126: the files a gate covers; it is skipped while none of them changed
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            checks = list(meta.get("checks") or [])
+            try:
+                cmd = checks[int(args.words[0]) - 1]
+            except (IndexError, ValueError):
+                raise UsageError("fm check paths N GLOB…: N as fm check list numbers it (no globs: it runs every time)")
+            paths, globs = dict(meta.get("check_paths") or {}), args.words[1:]
+            paths.pop(cmd, None) if not globs else paths.update({cmd: globs})
+            meta["check_paths"] = paths
+            c.write_meta(p, meta)
+        return out(args, {"cmd": cmd, "paths": globs},
+                   f"{cmd}: " + (f"runs when {', '.join(globs)} changed (fm check --fresh runs it anyway)" if globs
+                                 else "runs every time"))
     if args.affected:
         return _check_affected(p, args)
     checks = list(c.read_meta(p).get("checks") or [])
+    check_paths = c.read_meta(p).get("check_paths") or {}
     if args.action == "list":
-        return out(args, {"checks": checks},
-                   "\n".join(f"{i}. {x}" for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
+        return out(args, {"checks": checks, "paths": check_paths},
+                   "\n".join(f"{i}. {x}" + (f"  [paths: {', '.join(check_paths[x])}]" if x in check_paths else "")
+                             for i, x in enumerate(checks, 1)) or "No checks yet: fm check add '<cmd>'.")
     if not checks:
         hint = ""
         try:  # R3 bootstrap: what the project itself says it runs
@@ -1079,8 +1097,13 @@ def cmd_check(args):
             f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)")
         return 0
     before = _last_check_results(p, act.id if act else None)
-    results, notes = [], {}
+    results, notes, skipped = [], {}, {}
     for cmd in checks:  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
+        skip = None if args.fresh else _paths_unchanged(p, cmd, check_paths.get(cmd), tree)
+        if skip:  # T-0126: recorded as a pass carrying its real run's time and tree
+            results.append((cmd, 0, skip[0], 0.0))
+            skipped[cmd] = {"since": skip[1], "tree": skip[2]}
+            continue
         t0 = time.monotonic()
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
         if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
@@ -1107,8 +1130,8 @@ def cmd_check(args):
     tree = after or tree
     failed = sum(1 for _, code, _, _ in results if code)
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
-                data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd)}
-                                                for cmd, code, _, s in results]})
+                data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
+                                                                     **skipped.get(cmd, {})} for cmd, code, _, s in results]})
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         shown = [r for r in results if r[1]] or results
         result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
@@ -1212,6 +1235,33 @@ def failure_class(output):
 
 
 CACHE_DAYS = 0.5  # a cached pass older than this reruns: time, caches and services outside the tree drift too
+
+
+def _paths_unchanged(p, cmd, globs, tree):
+    """T-0126: why a gate with declared paths can be skipped (its newest run passed, recently, in this environment, and
+    nothing under its paths changed since), or None to run it.
+    Returns (why, the real run's time, its tree): a skip records them, so a chain of skips still ages from, and diffs
+    against, the run that really passed (review: re-stamping let a gate skip forever, past writes by other gates)."""
+    if not globs or not tree:
+        return None
+    for e in reversed(c.ledger_tail(p, 2000)):
+        d = e.get("data") or {} if e.get("event") == "check_run" else {}
+        r = next((r for r in d.get("results") or [] if r.get("cmd") == cmd), None)
+        if r is None:
+            continue
+        since, base = r.get("since") or e.get("ts"), r.get("tree") or d.get("tree")
+        if r.get("exit") or d.get("env") != c.env_id() or not base or (c.age_days(since) or 0) >= CACHE_DAYS:
+            return None
+        top = c.git_root(p.root)  # --no-renames: a file moved out of the paths counts under its old name too
+        names = c._git(top, "diff", "--name-only", "--no-renames", base, tree, timeout=60, fail=None)
+        if names is None:
+            return None  # its tree is gone: run it
+        rel = [os.path.relpath(os.path.join(top, n), p.root) for n in names.splitlines() if n]
+        if any(c.glob_match(n, g) for n in rel for g in globs):
+            return None
+        return (f"skipped: nothing under {', '.join(globs)} changed since its pass at {str(since)[11:16]} UTC",
+                since, base)
+    return None
 
 
 def _cached_pass(p, checks, tree):
@@ -1705,9 +1755,10 @@ def build_parser():
     s.add_argument("--max", type=int, default=20, help="commands to run at most")
     s.add_argument("--timeout", type=float, default=120)
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
-    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "affected"])
-    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); affected: a command "
-                                            "with {tests} (paths) or {names} (file names without extension)")
+    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected"])
+    s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
+                                            "the globs it covers (none: always run); affected: a command with {tests} "
+                                            "(paths) or {names} (file names without extension)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
     s.add_argument("--fail-fast", action="store_true", help="stop at the first failing gate (while iterating)")

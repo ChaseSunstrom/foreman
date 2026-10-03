@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Gates by path (T-0126): `fm check paths N GLOB…` lets a gate declare what it covers; `fm check` skips it while nothing under those paths changed since its last pass, and says so. This repo's mod tests, hook bench and e2e roundtrip now run only when their files changed.
 - A step (or criterion) whose newest run failed closes when the same command passed afterwards (T-0165, self-inbox from T-0164): the intended red run of a red→green pair no longer needs a third run; a failure after the pass still refuses.
 - The inbox is ranked by value for effort (T-0111): within the intake type order, items are ordered by who asked, how many items wait on them and how long they waited, per tier; dependencies come first. It was oldest-first.
 - Fix (T-0164, a regression from T-0086 found closing T-0087): a Bash edit's touch is timed by the file's mtime, not by the async hook that logs it after the command, so a `scope:` reason logged in the same command covers the edit instead of reading as older and refusing the finish.
