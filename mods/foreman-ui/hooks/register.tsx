@@ -579,8 +579,12 @@ export const register: Register = (on, options) => {
     const ideasRun = e.props.tool === 'Bash' && /^ideas\b/.test(fmCommand((e.props.input as { command?: unknown } | null)?.command) ?? '')
     const bs = ideasRun ? (await read($, view))?.brainstorm : null
 
+    // T-0179 steer ('the command changes … I want in panels too'): a command, an edit or an agent is a panel from the
+    // start, its border pulsing while it runs; reads and searches stay one quiet line
+    const boxed = /^(Bash|Edit|MultiEdit|Write|NotebookEdit|Task|Agent)$/.test(e.props.tool)
     const row = (
-      <Box flexDirection="row" gap={1} key="fm-tool">
+      <Box flexDirection="row" gap={1} key="fm-tool"
+        {...(boxed ? { borderStyle: 'round', borderColor: hex(pulse(face.color, f)), paddingX: 1, width: '100%' } : {})}>
         <Text color={hex(face.color)}>{spin(f)}</Text>
         <Text bold color={hex(face.color)}>
           {face.icon} {face.verb}
@@ -679,18 +683,21 @@ export const register: Register = (on, options) => {
     }
     const live = turns.size > 0 && e.props.isFirstOfReply && text === newestReply
     const f = live ? await read($, frame) : 0
+    const blocks = replyBlocks(text)
+    // T-0179: each message is a panel ('can we have each message … look like a panel'): quiet grey, the closing report
+    // (Foreman's Changed:/✓/✗/Next: lines) in the accent, pulsing while the reply is live
+    const report = blocks.some(b => b.kind !== 'md' && b.kind !== 'gap')
+    const border = live ? pulse(C.accent, f) : report ? C.accent : C.dim
     const { Box, Text, Markdown } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" key="fm-reply">
-        {e.props.isFirstOfReply ? (
+      <Box flexDirection="row" borderStyle="round" borderColor={hex(border)} paddingX={1} width="100%" key="fm-reply">
+        {e.props.isFirstOfReply && (
           <Box key="fm-reply-mark">
             <Text color={hex(C.accent)}>{`${live ? spin(f) : '●'} `}</Text>
           </Box>
-        ) : (
-          <Text>{'  '}</Text>
         )}
         <Box flexDirection="column" flexShrink={1}>
-          {replyBlocks(text).map((b, i) =>
+          {blocks.map((b, i) =>
             b.kind === 'gap' ? (
               <Box key={`gap-${i}`}>
                 <Text> </Text>

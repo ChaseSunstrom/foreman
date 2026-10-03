@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, C, changedLines, clawd, clean, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, C, changedLines, clawd, clean, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, guardReason, lastLine, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
@@ -278,6 +278,7 @@ test('a running edit is an animated row with its delta; a finished one is the en
     expect(await ui.find({ type: 'Text', text: /✎ Editing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /login\.py/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+2 −1' })).toBeDefined()
+    expect((await ui.find({ type: 'Box', key: 'fm-tool' }))?.props.borderStyle).toBe('round') // T-0179: a panel from the start
     const first = JSON.stringify(await ui.drawn())
     await clock.advance(240)
     expect(JSON.stringify(await ui.drawn())).not.toBe(first) // the spinner and the comet move
@@ -807,6 +808,8 @@ test('a finished edit is a Foreman row: the path, +added −removed, and its cha
   expect(await row.find({ type: 'Text', text: /^ ?12 $/ })).toBeDefined() // 'new two' is line 12 of the new file
   expect(await row.find({ type: 'Text', text: /keep/ })).toBeUndefined() // unchanged context stays out
   expect(JSON.stringify(await row.drawn())).not.toContain('backgroundColor')
+  // T-0179 steer: 'the command changes … I want in panels too'
+  expect((await row.find({ type: 'Box', key: 'fm-edit' }))?.props.borderColor).toBe(hex(tint(C.edit)))
   await row.unmount()
   const many = await mount('e2', { ...base, output: patch(['-gone', ...Array.from({ length: 20 }, (_, i) => `+add ${i}`)]) })
   expect(await many.find({ type: 'Text', text: /… 13 more changed lines/ })).toBeDefined()
@@ -1028,10 +1031,17 @@ test('a reply opens with a Foreman mark; Foreman report lines are coloured; the 
   expect(await msg.find({ type: 'Text', text: 'T-0009' })).toBeDefined()
   expect(await msg.find({ type: 'Text', text: /the docs/ })).toBeDefined()
   expect(await msg.find({ type: 'Box', key: 'gap-1' })).toBeDefined() // the blank line before 'Changed:' stays (live)
+  // T-0179: each message is a panel ('can we have each message … look like a panel'); the closing report is accented
+  const panel = await msg.find({ type: 'Box', key: 'fm-reply' })
+  expect(panel?.props.borderStyle).toBe('round')
+  expect(panel?.props.borderColor).toBe(hex(C.accent))
   await msg.unmount()
   const more = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'a second block', isFirstOfReply: false } })
   expect(await more.find({ type: 'Box', key: 'fm-reply-mark' })).toBeUndefined()
+  const plain = await more.find({ type: 'Box', key: 'fm-reply' })
+  expect(plain?.props.borderStyle).toBe('round') // every block is one, in a quiet grey
+  expect(plain?.props.borderColor).toBe(hex(C.dim))
   await more.unmount()
   const long = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'x'.repeat(12000), isFirstOfReply: true } })
@@ -1047,6 +1057,8 @@ test('a long shell command wraps under itself, not under the status mark', async
       isErrored: false, isInterrupted: false, output: { stdout: 'src/a.py:1: x', stderr: '', interrupted: false } } })
   expect((await row.find({ type: 'Box', key: 'fm-shell-head' }))?.props.flexDirection).toBe('row')
   expect(await row.find({ type: 'Text', text: /^grep -rn pattern src \| head -40/ })).toBeDefined() // its own column
+  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.borderColor).toBe(hex(tint(C.accent2))) // T-0179
+  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.width).toBe('100%') // live: a short one hugged its text
   await row.unmount()
 })
 

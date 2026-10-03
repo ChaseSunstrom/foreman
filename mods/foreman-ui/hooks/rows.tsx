@@ -1,6 +1,6 @@
 import type { EngineInterface, ResolveInput } from 'claude-code'
 import type { FileChurn, LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, changedLines, churnCells, clawd, clean, elapsed, hex, miniClawd, mix, outputSummary, progressCells, shortPath, sparkCells, sparkText, textBar, textComet, toolFace } from './kit'
+import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, changedLines, churnCells, clawd, clean, elapsed, hex, miniClawd, mix, outputSummary, tint, progressCells, shortPath, sparkCells, sparkText, textBar, textComet, toolFace } from './kit'
 import { DIFF_LINES, OUT_LINES, cfg, took } from './state'
 import type { ToolUseRender } from './state'
 
@@ -145,7 +145,8 @@ export function shellRow(ui: UI, e: ToolUseRender) {
   let budget = DIFF_LINES
   const commit = o.gitOperation?.commit
   return (
-    <Box flexDirection="column" key="fm-shell">
+    <Box flexDirection="column" borderStyle="round" borderColor={hex(tint(bad ? C.err : stopped ? C.warn : C.accent2))}
+      paddingX={1} width="100%" key="fm-shell">
       {/* the mark in a column of its own, so a long title wraps under itself (T-0141) */}
       <Box flexDirection="row" key="fm-shell-head">
         <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn)}>
@@ -234,7 +235,7 @@ export function editRow(ui: UI, e: ToolUseRender) {
   const face = toolFace(e.props.tool, e.props.input, cfg.root)
   const { Box, Text } = ui
   return (
-    <Box flexDirection="column" key="fm-edit">
+    <Box flexDirection="column" borderStyle="round" borderColor={hex(tint(C.edit))} paddingX={1} width="100%" key="fm-edit">
       <Box flexDirection="row" gap={1} key="fm-edit-head">
         <Text bold color={hex(C.ok)}>
           ✓
@@ -279,7 +280,7 @@ export function agentRow(ui: UI, e: ToolUseRender) {
     : [`${n} tool${n === 1 ? '' : 's'}`, elapsed(Number(o.totalDurationMs) || 0), `${Math.round((Number(o.totalTokens) || 0) / 1000)}k tokens`].join(' · ')
   const { Box, Text } = ui
   return (
-    <Box flexDirection="column" key="fm-agent">
+    <Box flexDirection="column" borderStyle="round" borderColor={hex(tint(C.agent))} paddingX={1} width="100%" key="fm-agent">
       <Box flexDirection="row" key="fm-agent-head">
         <Text bold color={hex(bg ? C.accent2 : C.ok)}>
           {`${bg ? '◷' : '✓'} `}

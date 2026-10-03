@@ -175,6 +175,9 @@ export function toolFace(tool: string, input: unknown, cwd = ''): Face {
 }
 
 /** A border that breathes while work is live: track ↔ color on a slow sine; still when `frame` is null. */
+/** A panel border in a row's colour, held back over the track so the replies' panels stay the loudest (T-0179). */
+export const tint = (color: number): number => mix(C.track, color, 0.5)
+
 export function pulse(color: number, frame: number | null): number {
   if (frame === null) return mix(C.track, color, 0.55)
   return mix(C.track, color, 0.45 + 0.55 * ((Math.sin(frame / 4) + 1) / 2))
