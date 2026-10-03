@@ -15,6 +15,7 @@ import {
   elapsed,
   fade,
   hex,
+  humanNext,
   miniClawd,
   mix,
   progressCells,
@@ -286,7 +287,8 @@ async function capture($: EngineInterface, text: string) {
 }
 
 async function openPane($: EngineInterface, focus: boolean) {
-  return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true } : { id: PANE, title: 'Foreman' })
+  // ~76 columns docked: the cards fit, and the transcript and band keep the rest (T-0122: the share left them ~37)
+  return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true, columns: 76 } : { id: PANE, title: 'Foreman', columns: 76 })
 }
 
 // The frame clock runs only while work is live: a turn, or a tool call (a subagent's included).
@@ -666,7 +668,7 @@ export const register: Register = (on, options) => {
     const cur = a?.steps.find(s => s.current)
     if (!a || !cur) return next(e)
     const done = a.steps.filter(s => s.done).length
-    return next({ ...e, props: { ...e.props, suffix: `… ▸ ${a.id} ${done + 1}/${a.steps.length} ${cur.text}`.slice(0, 90) } })
+    return next({ ...e, props: { ...e.props, suffix: `… · ${a.id} step ${done + 1}/${a.steps.length}: ${cur.text}`.slice(0, 90) } })
   })
 
   // The line closing a turn says what the turn did.
@@ -684,18 +686,11 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The footer: a pointer when something waits on the person, and the autonomy as a mode label.
+  // The footer: a pointer when something waits on the person (the band says the autonomy in words).
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const v = await read($, view)
     if (e.props.isDraft || !waiting(v)) return next(e)
-    return next({ ...e, props: { ...e.props, tail: ' · ⚠ Foreman needs you: /fm' } })
-  })
-
-  on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
-    const m = (await read($, view))?.mode
-    if (!m) return next(e)
-    const add = [m.autonomy === 'full' ? 'full auto' : '', m.drive ? '' : 'drive off'].filter(Boolean)
-    return add.length ? next({ ...e, props: { ...e.props, modes: [...e.props.modes, ...add] } }) : next(e)
+    return next({ ...e, props: { ...e.props, tail: '⚠ Foreman needs you: /fm' } }) // the engine puts the separator before it
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
@@ -717,44 +712,77 @@ export const register: Register = (on, options) => {
     const m = v.mode
     const done = a ? a.steps.filter(s => s.done).length : 0
     const cur = a?.steps.find(s => s.current)
-    const width = Math.max(10, Math.min(28, e.props.bodyColumns - 70))
+    const narrow = e.props.bodyColumns < 90 // beside a docked pane: one column of single lines, details dropped
+    const width = narrow ? Math.max(6, Math.min(12, e.props.bodyColumns - 28)) : Math.max(10, Math.min(28, e.props.bodyColumns - 70))
     const queued = (v.queue ?? []).length
     const inboxN = v.inbox_total ?? (v.inbox ?? []).length
     const todayDone = v.today_done ?? 0
     const upNext = (v.queue ?? [])[0] ?? (v.inbox ?? [])[0]
     const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
     const bandNow = await $.clock.now()
+    const cut = 'truncate-end' as const
 
-    return (
-      <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
-        <Box flexDirection="row" justifyContent="space-between">
+    // Beside a docked pane the band is narrow: each row is one Text that cuts at its end, never mid-word per span.
+    const head = narrow ? (
+      <Box flexDirection="column" key="fm-band-head">
+        {a ? (
+          <Text wrap={cut}>
+            <Text bold color={typeColor(a.type)}>
+              {a.type}
+            </Text>{' '}
+            <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>{' '}
+            <Text bold color={hex(C.accent)}>
+              {a.id}
+            </Text>{' '}
+            <Text bold>{a.title}</Text>
+          </Text>
+        ) : (
+          <Text bold color={hex(C.accent)} wrap={cut}>
+            Foreman · nothing active
+          </Text>
+        )}
+        {a && a.steps.length > 0 && (
           <Box flexDirection="row" gap={1}>
+            {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
+            {meter($, e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
+            <Text wrap={cut}>
+              <Text bold>
+                {done}/{a.steps.length}
+              </Text>{' '}
+              {cur?.text ?? ''}
+            </Text>
+          </Box>
+        )}
+      </Box>
+    ) : (
+      <Box flexDirection="column" key="fm-band-head">
+        <Box flexDirection="row" justifyContent="space-between">
+          <Box flexDirection="row" gap={1} flexShrink={1}>
             {a ? (
-              <Box flexDirection="row" gap={1}>
-                <Text backgroundColor={typeColor(a.type)} color="#000000" bold>
-                  {` ${a.type} · ${sizeWord(a.tier)} `}
+              <Box flexDirection="row" gap={1} flexShrink={1}>
+                <Text bold color={typeColor(a.type)}>
+                  {a.type}
                 </Text>
+                <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>
                 <Text bold color={hex(C.accent)}>
                   {a.id}
                 </Text>
-                <Text bold wrap="truncate-end">
+                <Text bold wrap={cut}>
                   {a.title}
                 </Text>
               </Box>
             ) : (
-              <Text bold color={hex(C.accent)}>
-                ▌Foreman · {(v.queue ?? []).length} queued
+              <Text bold color={hex(C.accent)} wrap={cut}>
+                Foreman · nothing active
               </Text>
             )}
           </Box>
-          <Box flexDirection="row" gap={1}>
-            {c && <Text color={hex(C.dim)}>ctx</Text>}
+          <Box flexDirection="row" gap={1} flexShrink={0}>
+            {c && <Text color={hex(C.dim)}>context</Text>}
             {c && meter($, e, 'fm-band-ctx', 6, c.percent / 100, c.percent >= CHECKPOINT_AT ? C.err : c.percent >= 60 ? C.warn : C.ok, null)}
             {c && <Text color={hex(C.dim)}>{Math.round(c.percent)}%</Text>}
-            <Text color={hex(C.dim)}>
-              {m ? (m.autonomy === 'full' ? '⚡ full auto' : '◇ standard') : ''}
-              {m && !m.drive ? ' · drive off' : ''} · q{(v.queue ?? []).length} · in{v.inbox_total ?? 0}
-            </Text>
+            {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
+            {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
           </Box>
         </Box>
         {a && (
@@ -767,83 +795,85 @@ export const register: Register = (on, options) => {
                 {done}/{a.steps.length}
               </Text>
             )}
-            {cur && <Text wrap="truncate-end">{cur.text}</Text>}
+            {cur && <Text wrap={cut}>{cur.text}</Text>}
             {a.audits.need > 0 && (
               <Text color={hex(a.audits.done >= a.audits.need ? C.ok : C.dim)}>
                 · audits {a.audits.done}/{a.audits.need}
               </Text>
             )}
             {typeof a.on_task_s === 'number' && (
-              <Text color={hex(C.dim)}>
+              <Text color={hex(C.dim)} wrap={cut}>
                 · {elapsed(a.on_task_s * 1000 + Math.max(0, bandNow - lastFull))} on it
                 {usual ? ` · usually ${about(usual)}` : ''}
               </Text>
             )}
           </Box>
         )}
+      </Box>
+    )
+
+    return (
+      <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
+        {head}
         {(queued > 0 || inboxN > 0) && (
           <Box flexDirection="row" gap={1} key="fm-band-queue-row">
-            <Text color={hex(C.dim)}>today</Text>
-            {meter($, e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
-            <Text color={hex(C.dim)}>
+            {!narrow && <Text color={hex(C.dim)}>today</Text>}
+            {!narrow && meter($, e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
+            <Text color={hex(C.dim)} wrap={cut}>
               ✓{todayDone} done · {queued} queued · {inboxN} in inbox
+              {upNext && !narrow ? ` · next ${upNext.id} ${upNext.title}` : ''}
             </Text>
-            {upNext && (
-              <Text color={hex(C.dim)} wrap="truncate-end">
-                · next {upNext.id} {upNext.title}
-              </Text>
-            )}
           </Box>
         )}
         {m?.trust && (
-          <Text color={hex(C.warn)} wrap="truncate-end" key="fm-band-trust">
+          <Text color={hex(C.warn)} wrap={cut} key="fm-band-trust">
             ⚠ trust on: Claude may edit the guard and Claude Code settings · /fm-trust off
           </Text>
         )}
         {doneSince.length > 0 && (
-          <Text color={hex(C.ok)} wrap="truncate-end" key="fm-band-away">
+          <Text color={hex(C.ok)} wrap={cut} key="fm-band-away">
             ✔ since your last message: {doneSince.length} done · {doneSince.slice(-6).join(' ')}
           </Text>
         )}
         {bgs.length > 0 && (
           <Box flexDirection="row" gap={1} key="fm-band-wait">
             <Text color={hex(C.accent2)}>{spin(f ?? 0)}</Text>
-            <Text color={hex(C.accent2)}>
+            <Text color={hex(C.accent2)} wrap={cut}>
               ◷ waiting on {bgs.length} background shell{bgs.length === 1 ? '' : 's'}
               {subsBg ? ` and ${subsBg} subagent${subsBg === 1 ? '' : 's'}` : ''}
             </Text>
-            <Text wrap="truncate-end">{bgs[0]!.command}</Text>
-            <Text color={hex(C.dim)}>
+            <Text wrap={cut}>{bgs[0]!.command}</Text>
+            <Text color={hex(C.dim)} wrap={cut}>
               {elapsed(nowMs - bgs[0]!.startedAt)}
               {working ? '' : ' · Claude picks up when they finish'}
             </Text>
           </Box>
         )}
         {!working && v.next && (
-          <Text color={hex(C.dim)} wrap="truncate-end">
-            → {v.next}
+          <Text color={hex(C.dim)} wrap={cut}>
+            → {humanNext(v.next)}
           </Text>
         )}
         {asks.map(x => (
-          <Text color={hex(C.warn)} wrap="truncate-end" key={`ask-${x.task}`}>
+          <Text color={hex(C.warn)} wrap={cut} key={`ask-${x.task}`}>
             ⚠ Needs you: {x.task} {x.allow.join(', ')} — {x.why}
           </Text>
         ))}
         {plans.slice(0, 2).map(q => (
           <Box flexDirection="row" gap={1} key={`plan-${q.id}`}>
-            <Text color={hex(C.warn)} wrap="truncate-end">
+            <Text color={hex(C.warn)} wrap={cut}>
               ⚠ {q.id} ({sizeWord(q.tier)}) plan awaits approval: {q.title}
             </Text>
             {/* consent is given in the pane, where the plan it approves is shown */}
-            <Button key={`review-${q.id}`} label="Review" hotkey="v" onPress={() => void openPane($, true)} />
+            <Button key={`review-${q.id}`} label="review" hotkey="v" plain onPress={() => void openPane($, true)} />
           </Box>
         ))}
-        <Box flexDirection="row" gap={1}>
-          <Button key="open" label="Dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />
+        <Box flexDirection="row" gap={2}>
+          <Button key="open" label="dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />
           {!working && (
             <Button
               key="next"
-              label="Next"
+              label="next"
               hotkey="n"
               plain
               onPress={() => void $.prompt.submit({ text: '/foreman:next', asUser: true })}
@@ -893,9 +923,12 @@ export const register: Register = (on, options) => {
       </Box>
     )
     const chip = (it: FmItem) => (
-      <Text backgroundColor={typeColor(it.type)} color="#000000">
-        {` ${it.type.slice(0, 4)} · ${sizeWord(it.tier)} `}
-      </Text>
+      <Box flexDirection="row" gap={1} flexShrink={0}>
+        <Text bold color={typeColor(it.type)}>
+          {it.type}
+        </Text>
+        <Text color={hex(C.dim)}>{sizeWord(it.tier)}</Text>
+      </Box>
     )
     const done = a ? a.steps.filter(s => s.done).length : 0
     const maxChurn = Math.max(1, ...touched.map(t => t.add + t.del))
@@ -905,14 +938,25 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" key="fm-pane">
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexDirection="column">
-            <Text bold color={hex(C.accent)}>
-              {live ? spin(f ?? 0) : '▌'} {v.project}
-            </Text>
+            <Box flexDirection="row" gap={1}>
+              <Text bold color={hex(C.accent)}>
+                {live ? spin(f ?? 0) : '▍'} Foreman
+              </Text>
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                {v.project}
+              </Text>
+            </Box>
+            {m && (
+              <Box flexDirection="row" gap={1}>
+                <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>
+                <Text color={hex(m.drive ? C.dim : C.warn)}>· drive {m.drive ? 'on' : 'off'}</Text>
+                {m.sensitive && <Text color={hex(C.warn)}>· sensitive</Text>}
+                {m.trust && <Text color={hex(C.warn)}>· trust on</Text>}
+                {(m.standing ?? []).length > 0 && <Text color={hex(C.dim)}>· standing yes</Text>}
+              </Box>
+            )}
             <Text color={hex(C.dim)}>
-              {m ? `${m.autonomy === 'full' ? '⚡ full auto' : '◇ standard'} · drive ${m.drive ? 'on' : 'off'}${m.sensitive ? ' · sensitive' : ''}` : ''}
-            </Text>
-            <Text color={hex(C.dim)}>
-              ✓ {v.today_done ?? 0} today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
+              <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
             </Text>
           </Box>
           {mascotTree($, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
@@ -967,8 +1011,8 @@ export const register: Register = (on, options) => {
             <Text color={hex(C.dim)}>No active task.</Text>
           )}
           {v.next && (
-            <Text color={hex(C.dim)} wrap="wrap">
-              → {v.next}
+            <Text color={hex(C.dim)} wrap="truncate-end">
+              → {humanNext(v.next)}
             </Text>
           )}
         </Box>
@@ -1005,8 +1049,8 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={1}>
               <Button
                 key={`approve-${q.id}`}
-                label="Approve plan"
-                variant="primary"
+                label="✓ approve this plan"
+                plain
                 onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)}
               />
             </Box>
@@ -1033,7 +1077,7 @@ export const register: Register = (on, options) => {
                   <Text color={hex(C.warn)}>quiet {elapsed(clockNow - (s.lastAt ?? s.startedAt))}</Text>
                 )}
                 {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= STOP_MS && (
-                  <Button key={`stop-${s.id}`} label="Stop" plain onPress={() => void stopAgent($, s.id)} />
+                  <Button key={`stop-${s.id}`} label="■ stop" plain onPress={() => void stopAgent($, s.id)} />
                 )}
               </Box>
             ))}
@@ -1098,17 +1142,19 @@ export const register: Register = (on, options) => {
               <Text wrap="truncate-end">
                 {it.id} {it.title}
               </Text>
-              {it.age_days !== undefined && <Text color={hex(fade(Math.max(0, 7 - it.age_days), 7))}>{ago(it.age_days)}</Text>}
+              {it.age_days !== undefined && <Text color={hex(C.dim)}>{ago(it.age_days)}</Text>}
               <Button
                 key={`start-${it.id}`}
-                label="Start"
+                label="▸ start"
                 plain
+                dimColor
                 onPress={() => void $.prompt.submit({ text: `Plan and start ${it.id} (/foreman:intake).`, asUser: true })}
               />
               <Button
                 key={`drop-${it.id}`}
-                label="Drop"
+                label="✕ drop"
                 plain
+                dimColor
                 onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Foreman pane'], `${it.id} dropped`)}
               />
             </Box>
@@ -1156,23 +1202,26 @@ export const register: Register = (on, options) => {
           )}
         </Box>
 
-        <Box flexDirection="row" gap={1}>
+        <Box flexDirection="row" gap={2}>
           <Button
             key="next"
-            label="Next"
+            label="next"
             hotkey="n"
-            variant="primary"
+            plain
             onPress={() => void $.prompt.submit({ text: '/foreman:next', asUser: true })}
           />
           <Button
             key="drive"
-            label={m?.drive ? 'Drive off' : 'Drive on'}
+            label={m?.drive ? 'drive off' : 'drive on'}
             hotkey="d"
+            plain
             onPress={() => act($, ['drive', m?.drive ? 'off' : 'on'], `drive ${m?.drive ? 'off' : 'on'}`)}
           />
           <Button
             key="autonomy"
-            label={m?.autonomy === 'full' ? 'Standard autonomy' : 'Full auto'}
+            label={m?.autonomy === 'full' ? 'standard autonomy' : 'full auto'}
+            plain
+            dimColor
             onPress={() => {
               const level = m?.autonomy === 'full' ? 'standard' : 'full'
               return act($, ['autonomy', level], `autonomy ${level}`)
@@ -1180,13 +1229,15 @@ export const register: Register = (on, options) => {
           />
           <Button
             key="sound"
-            label={isOn ? 'Sound off' : 'Sound on'}
+            label={isOn ? 'sound off' : 'sound on'}
+            plain
+            dimColor
             onPress={async () => {
               await update($, sound, x => !x)
               await $.store.set('sound', await read($, sound))
             }}
           />
-          <Button key="refresh" label="Refresh" hotkey="r" onPress={() => refresh($)} />
+          <Button key="refresh" label="refresh" hotkey="r" plain dimColor onPress={() => refresh($)} />
         </Box>
       </Box>
     )

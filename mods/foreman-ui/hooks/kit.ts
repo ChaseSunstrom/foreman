@@ -91,8 +91,12 @@ export function textComet(width: number, frame: number): [string, string, string
   return ['─'.repeat(head), '━'.repeat(len), '─'.repeat(width - head - len)]
 }
 
-const SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+// Claude Code's own spinner glyphs, breathing out and back: the band and rows match the working line.
+const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢']
 export const spin = (frame: number) => SPIN[frame % SPIN.length]!
+
+/** What comes next, for a person: fm's next line without the agent's own instructions after it. */
+export const humanNext = (next: string) => next.split(' — ')[0]!.replace(/\s*\(procedure:.*$/, '').trim()
 
 export function elapsed(ms: number): string {
   const s = Math.max(0, ms) / 1000

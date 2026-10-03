@@ -201,12 +201,14 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...band() })
-    expect(await ui.find({ type: 'Text', text: / FIX · medium / })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'FIX' })).toBeDefined() // T-0122: the type is a coloured word
+    expect(await ui.find({ type: 'Text', text: 'medium' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Login times out/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /raise the timeout/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /◇ standard · q2 · in1/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'standard' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\bq\d|\bin\d/ })).toBeUndefined() // no letter codes
     expect((await ui.findAll({ type: 'Raster' })).length).toBe(surface === 'terminal' ? 2 : 0) // the step bar and today's queue bar
     expect(await ui.find({ key: 'approve-T-0009' })).toBeUndefined()
     await ui.press({ key: 'review-T-0009' })
@@ -287,7 +289,7 @@ test('the spinner names the Foreman step; the closing line says what the turn di
     plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner',
     props: { word: 'Baking', message: null, suffix: '…', mode: 'tool-use' },
   })
-  expect(await spinner.find({ type: 'Text', text: 'Baking… ▸ T-0007 2/2 raise the timeout' })).toBeDefined()
+  expect(await spinner.find({ type: 'Text', text: 'Baking… · T-0007 step 2/2: raise the timeout' })).toBeDefined()
   await spinner.unmount()
 
   await $.turn.start({ text: 'go', turnId: 't2' })
@@ -407,10 +409,12 @@ test('the footer points at what waits, and names the autonomy', async ($, on) =>
   world(on, [{ ...VIEW, mode: { autonomy: 'full', drive: false, sensitive: false } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const hint = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'PromptHint', props: { isDraft: false, isWorking: false, hint: '? for shortcuts' } })
-  expect(await hint.find({ type: 'Text', text: '? for shortcuts · ⚠ Foreman needs you: /fm' })).toBeDefined()
+  // the engine draws its own separator before a tail (the live render showed '· ·' when the tail brought one too)
+  expect(await hint.find({ type: 'Text', text: '? for shortcuts⚠ Foreman needs you: /fm' })).toBeDefined()
   await hint.unmount()
+  // the band says the autonomy in words; the engine's mode pills stay its own
   const mode = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'SessionMode', props: { modes: [] } })
-  expect(await mode.find({ type: 'Text', text: 'modes:full auto,drive off' })).toBeDefined()
+  expect(await mode.find({ type: 'Text', text: 'modes:' })).toBeDefined()
   await mode.unmount()
 })
 
@@ -677,4 +681,28 @@ test('/fm-trust works only when the person types it; it writes the trust record 
   await ui.unmount()
   await $.command.run({ command: 'fm-trust', args: 'off', origin: { kind: 'composer' }, presentation })
   expect(calls.at(-2)).toEqual(['fm', 'trust', 'off'])
+})
+
+test('the look: coloured words not highlighted blocks, quiet controls, the human next, a narrow band that never wraps', async ($, on) => {
+  // T-0122, from the live render: chips were background blocks, buttons [ boxed ], the pane showed the agent's own
+  // instruction, and beside a docked pane the band wrapped letter by letter
+  const next = 'T-0007 step 2/2: raise the timeout — do it, verify, then fm task step T-0007 done 2 --evidence "<cmd>" (procedure: x.md)'
+  world(on, [{ ...VIEW, next }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const wide = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (const ui of [wide, pane]) {
+    const drawn = JSON.stringify(await ui.drawn())
+    expect(drawn).not.toContain('backgroundColor')
+    expect(drawn).not.toContain('do it, verify')
+    expect(drawn).toContain('raise the timeout')
+    for (const b of await ui.findAll({ type: 'Button' })) expect(JSON.stringify(b)).toContain('"plain":true')
+  }
+  await wide.unmount()
+  await pane.unmount()
+  const narrow = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(), props: { ...band().props, bodyColumns: 40 } })
+  expect(await narrow.find({ type: 'Text', text: 'FIX' })).toBeDefined()
+  expect(await narrow.find({ type: 'Text', text: 'today' })).toBeUndefined() // the side details drop, nothing wraps
+  expect(await narrow.find({ type: 'Text', text: 'context' })).toBeUndefined()
+  await narrow.unmount()
 })

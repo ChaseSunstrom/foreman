@@ -1,0 +1,180 @@
+#!/usr/bin/env python3
+"""foreman-ui snapshot tool (T-0131): run Claude Code in a detached tmux window with this mod loaded from its folder and
+draw the screen, colours included, to a PNG, so a UI change can be looked at and not only tested.
+
+  shot.py start DIR [--cols 200] [--rows 60]   claude --plugin-dir <this mod> in DIR (FOREMAN_STATE passes through)
+  shot.py keys TEXT [--enter]                  type into it: /fm, /reload-plugins, a digit for a dialog
+  shot.py snap OUT.png                         the visible screen as a PNG (and OUT.txt, its plain text)
+  shot.py stop
+
+Local commands only (/fm, /reload-plugins): nothing here sends the model a prompt.
+"""
+import argparse
+import os
+import re
+import subprocess
+import sys
+import unicodedata
+
+SESSION = "fmui"
+MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FG, BG = (208, 208, 208), (24, 26, 33)  # the terminal's default colours
+
+
+def tmux(*args, check=True):
+    return subprocess.run(["tmux", *args], capture_output=True, text=True, check=check)
+
+
+def start(a):
+    tmux("kill-session", "-t", SESSION, check=False)
+    env = ["-e", "COLORTERM=truecolor"] + (["-e", f"FOREMAN_STATE={os.environ['FOREMAN_STATE']}"]
+                                          if os.environ.get("FOREMAN_STATE") else [])
+    tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
+         f"claude --plugin-dir {MOD}")
+    print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
+
+
+def keys(a):
+    tmux("send-keys", "-t", SESSION, "-l", a.text)
+    if a.enter:
+        tmux("send-keys", "-t", SESSION, "Enter")
+
+
+def _palette(n):
+    base = [(0, 0, 0), (205, 49, 49), (13, 188, 121), (229, 229, 16), (36, 114, 200), (188, 63, 188), (17, 168, 205),
+            (229, 229, 229), (102, 102, 102), (241, 76, 76), (35, 209, 139), (245, 245, 67), (59, 142, 234),
+            (214, 112, 214), (41, 184, 219), (255, 255, 255)]
+    if n < 16:
+        return base[n]
+    if n < 232:
+        n -= 16
+        steps = [0, 95, 135, 175, 215, 255]
+        return steps[n // 36], steps[n // 6 % 6], steps[n % 6]
+    v = 8 + (n - 232) * 10
+    return v, v, v
+
+
+_SGR = re.compile(r"\x1b\[([0-9;:]*)m")
+_OSC = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")  # hyperlinks and titles: not drawn
+FALLBACK = ["/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf", "/usr/share/fonts/noto/NotoSansMono-Regular.ttf",
+            "/usr/share/fonts/noto/NotoSansSymbols-Regular.ttf", "/usr/share/fonts/noto/NotoSans-Regular.ttf"]
+
+
+def cells(line):
+    """[(char, fg, bg, bold, width)] for one captured line."""
+    out, fg, bg, bold, rev, dim = [], None, None, False, False, False
+    pos = 0
+    for m in list(_SGR.finditer(line)) + [None]:
+        text = line[pos:m.start()] if m else line[pos:]
+        for ch in text:
+            if ch < " ":
+                continue
+            f, b = (bg or BG, fg or FG) if rev else (fg or FG, bg or BG)
+            if dim:
+                f = tuple((x + y) // 2 for x, y in zip(f, b))
+            out.append((ch, f, b, bold, 2 if unicodedata.east_asian_width(ch) in "WF" else 1))
+        if not m:
+            break
+        pos = m.end()
+        nums = [int(x) if x else 0 for x in re.split(r"[;:]", m.group(1))] or [0]
+        i = 0
+        while i < len(nums):
+            n = nums[i]
+            if n == 0:
+                fg, bg, bold, rev, dim = None, None, False, False, False
+            elif n == 1:
+                bold = True
+            elif n == 2:
+                dim = True
+            elif n == 22:
+                bold = dim = False
+            elif n == 7:
+                rev = True
+            elif n == 27:
+                rev = False
+            elif n in (38, 48) and i + 1 < len(nums):
+                if nums[i + 1] == 2 and i + 4 < len(nums):
+                    rgb = tuple(nums[i + 2:i + 5])
+                    i += 4
+                elif nums[i + 1] == 5 and i + 2 < len(nums):
+                    rgb = _palette(nums[i + 2])
+                    i += 2
+                else:
+                    rgb = None
+                if n == 38:
+                    fg = rgb
+                else:
+                    bg = rgb
+            elif n == 39:
+                fg = None
+            elif n == 49:
+                bg = None
+            elif 30 <= n <= 37 or 90 <= n <= 97:
+                fg = _palette(n - 30 if n < 90 else n - 82)
+            elif 40 <= n <= 47 or 100 <= n <= 107:
+                bg = _palette(n - 40 if n < 100 else n - 92)
+            i += 1
+    return out
+
+
+def snap(a):
+    from PIL import Image, ImageDraw, ImageFont
+    raw = _OSC.sub("", tmux("capture-pane", "-p", "-e", "-t", SESSION).stdout)
+    rows = raw.rstrip("\n").split("\n")
+    with open(os.path.splitext(a.out)[0] + ".txt", "w") as f:
+        f.write(_SGR.sub("", raw))
+    font = ImageFont.truetype("/usr/share/fonts/TTF/Hack-Regular.ttf", 15)
+    bold = ImageFont.truetype("/usr/share/fonts/TTF/Hack-Bold.ttf", 15)
+    cw, ch = round(font.getlength("M")), 19
+    fallbacks = [ImageFont.truetype(f, 15) for f in FALLBACK if os.path.exists(f)]
+    def sig(f, c):  # the pixels a font draws for c: a missing glyph draws the same box as a surely-missing one
+        im = Image.new("L", (32, 32))
+        ImageDraw.Draw(im).text((0, 0), c, font=f, fill=255)
+        return im.tobytes()
+    pick = {}
+
+    def face(c, b):  # Hack lacks ✓ ⚑ ◆ and friends: the first font that has the glyph draws it
+        if c not in pick:
+            pick[c] = next((f for f in fallbacks if sig(f, c) != sig(f, "\U0010FFFD")), None) \
+                if sig(font, c) == sig(font, "\U0010FFFD") else None
+        return pick[c] or (bold if b else font)
+    cols = max(sum(c[4] for c in cells(r)) for r in rows) if rows else 80
+    img = Image.new("RGB", (max(cols, 1) * cw + 16, len(rows) * ch + 16), BG)
+    d = ImageDraw.Draw(img)
+    for y, row in enumerate(rows):
+        x = 0
+        for c, fg, bg, b, w in cells(row):
+            px, py = 8 + x * cw, 8 + y * ch
+            if bg != BG:
+                d.rectangle([px, py, px + w * cw - 1, py + ch - 1], fill=bg)
+            if c == "█":
+                d.rectangle([px, py, px + cw - 1, py + ch - 1], fill=fg)
+            elif c != " ":
+                d.text((px, py + 1), c, font=face(c, b), fill=fg)
+            x += w
+    img.save(a.out)
+    print(f"{a.out} ({len(rows)} rows)")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    s = sub.add_parser("start")
+    s.add_argument("dir")
+    s.add_argument("--cols", type=int, default=200)
+    s.add_argument("--rows", type=int, default=60)
+    s = sub.add_parser("keys")
+    s.add_argument("text")
+    s.add_argument("--enter", action="store_true")
+    s = sub.add_parser("snap")
+    s.add_argument("out")
+    sub.add_parser("stop")
+    a = ap.parse_args()
+    if a.cmd == "stop":
+        tmux("kill-session", "-t", SESSION, check=False)
+    else:
+        {"start": start, "keys": keys, "snap": snap}[a.cmd](a)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
