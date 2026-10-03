@@ -1254,9 +1254,11 @@ def _drive(p, sd, briefs, pl, g):
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else _running(sid)
     if running:  # background work is out; its completion notification wakes the session
-        _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
-        d["waiting_on"] = running[:3]  # said on screen: a turn that ends with no word of why reads as a stall
+        if d.get("waited") != running[:5]:  # one wait, one event (T-0152: every Stop counted again in fm friction)
+            _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
+        d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
         return None
+    d.pop("waited", None)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
     if d.get("count", 0) >= DRIVE_MAX:

@@ -1060,6 +1060,10 @@ class Stop(HookCase):
         self.assertIsNone(waiting.get("decision"))
         # T-0145 live: the turn ended with no word of why; a never-ending loop then left the session idle
         self.assertIn("bx7k2", waiting.get("systemMessage", ""))
+        self.stop("Still waiting.")
+        self.stop("Still waiting.")
+        # T-0152 (RSI pass 1): one wait is one event; fm friction counted every Stop as another
+        self.assertEqual(sum(e["kind"] == "drive_wait" for e in self.events()), 1)
         self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>bx7k2</task-id>\n"
                                                  "<status>completed</status>\n</task-notification>"})
         self.assertEqual(self.decision(self.stop("The eval finished.")), "block")
