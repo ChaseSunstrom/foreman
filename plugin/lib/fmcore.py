@@ -842,6 +842,10 @@ class Brief:
         runs = [l for l in self.evidence() if _RAN_MARK in l and (m := _EV_RE.match(l))
                 and (m.group(1), int(m.group(2))) == want]
         if runs and "` → ✗ exit" in runs[-1]:
+            lines, cmd = self.evidence(), runs[-1].split("`")[1] if runs[-1].count("`") >= 2 else None
+            later = lines[lines.index(runs[-1]) + 1:]
+            if cmd and any(_RAN_MARK in l and f"`{cmd}` → exit 0" in l for l in later):
+                return  # T-0165: the same command passed afterwards: this was the red run of red→green
             raise PolicyError(f"{self.id} {want[0]} {want[1]}: the newest run failed "
                               f"({runs[-1].split('` → ✗ ', 1)[1][:80]}); fix it and record a passing run (--run)")
 

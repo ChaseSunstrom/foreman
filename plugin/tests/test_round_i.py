@@ -117,6 +117,32 @@ class RoundI(ForemanTestCase):
                                text=True).stdout.split()
         self.assertEqual(names, ["feature.py"], "work from before the task stays out of its commit")
 
+    def test_a_red_step_closes_when_the_same_command_passed_later(self):
+        # T-0165: step 1 holds the intended red run, step 2 the same command passing; T-0164 needed a third run
+        import os
+        self.fm("init")
+        self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "works :: true", "--step", "red",
+                "--step", "green", "--focus")
+        check = "test -f done.txt"
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", check, check=False)
+        open(os.path.join(self.repo, "done.txt"), "w").close()
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", check)
+        p = self.fm("task", "finish", "T-0001", "--audit", "self check", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_later_failure_of_the_same_command_still_refuses(self):
+        import os
+        self.fm("init")
+        self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "works :: true", "--step", "a",
+                "--step", "b", "--focus")
+        check = "test -f done.txt"
+        open(os.path.join(self.repo, "done.txt"), "w").close()
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", check)
+        os.remove(os.path.join(self.repo, "done.txt"))
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", check, check=False)  # fails after the pass
+        p = self.fm("task", "finish", "T-0001", "--audit", "self check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+
     def test_finish_on_an_m_task_refuses_an_unknown_lens(self):
         self.fm("init")
         self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach", "y",
