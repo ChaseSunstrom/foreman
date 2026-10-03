@@ -1910,6 +1910,36 @@ def checkpoint(p, note=None, auto=False, session=None):
     return b
 
 
+_REF_PATH = re.compile(r"(?<![\w./-])((?:[\w.-]+/)+[\w.-]+\.\w+)")
+_REF_NAME = re.compile(r"`([A-Za-z_]\w*_\w+|[a-z]+[A-Z]\w*)(?:\(\))?`")
+
+
+def stale_refs(p, b, limit=8):
+    """T-0113: the paths and backticked code names a brief cites that existed where the task started and are gone now
+    (renamed, deleted, moved), so a resumed task re-checks its plan; a file it means to create never existed there, so
+    it isn't flagged. ponytail: names via git grep -w, so a name moved into a comment still counts as present."""
+    base = task_base(p.root, b) if git_root(p.root) else None
+    if not base:
+        return []
+    text = "\n".join(b.section(s) for s in ("Interpretation", "Approach (options → choice → why)", "Execution prompt",
+                                             "Steps", "Resume here", "Acceptance criteria"))
+    paths = list(dict.fromkeys(_REF_PATH.findall(text) + [s for s in b.meta.get("scope") or [] if not re.search(r"[*?\[]", s)]))
+    top = git_root(p.root)
+    run = lambda *a: subprocess.run(["git", "-C", top, *a], capture_output=True, timeout=10).returncode
+    gone = []
+    try:
+        for path in paths[:20]:
+            rel = os.path.relpath(os.path.join(p.root, path), top)
+            if not os.path.exists(os.path.join(p.root, path)) and run("cat-file", "-e", f"{base}:{rel}") == 0:
+                gone.append(path)
+        for name in list(dict.fromkeys(_REF_NAME.findall(text)))[:limit]:
+            if run("grep", "-q", "-w", "-F", name, base) == 0 and run("grep", "-q", "-w", "-F", "--untracked", name) != 0:
+                gone.append(name)
+    except (OSError, subprocess.SubprocessError):
+        pass  # a slow or broken git costs the warning, never the resume
+    return gone
+
+
 def resume_info(p):
     b = active_brief(load_briefs(p), p.lane)
     if not b:
@@ -1917,4 +1947,4 @@ def resume_info(p):
     s = brief_summary(b)
     return {"id": b.id, "type": b.type, "tier": b.tier, "title": b.title, "status": b.status, "step": s["step"],
             "steps_done": s["steps_done"], "steps_total": s["steps_total"], "resume": b.section("Resume here").strip(),
-            "execution_prompt": b.section("Execution prompt").strip(), "path": b.path}
+            "execution_prompt": b.section("Execution prompt").strip(), "path": b.path, "stale": stale_refs(p, b)}

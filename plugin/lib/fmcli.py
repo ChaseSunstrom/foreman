@@ -687,7 +687,9 @@ def cmd_focus(args):
         c.regen_views(p)
     if warn:
         print(warn, file=sys.stderr)
+    stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
+        + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
         + (f"\n{related}" if related else "")
         + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
 
@@ -764,7 +766,9 @@ def cmd_resume(args):
         nxt = ", ".join(q["id"] for q in c.state_dict(p)["queue"][:3]) or "none"
         return out(args, r, f"No active task. Next in queue: {nxt}")
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
-    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}\nBrief: {r['path']}")
+    stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
+             f"relying on it." if r.get("stale") else "")
+    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):

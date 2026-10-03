@@ -280,10 +280,14 @@ def session_context(p, sd, other_note=None):
         step = f"step {a['step']['n']}/{a['step']['of']}: {a['step']['text']}" if a["step"] else \
             f"{a['steps_done']}/{a['steps_total']} steps done"
         focus.append(f"Active: {a['id']} [{a['type']} {a['tier']}] {a['title']} — {step}.")
-        r = c.resume_info(p).get("resume", "")
-        r = " / ".join(l.strip("- ").strip() for l in r.replace("<!-- auto -->", "").splitlines() if l.strip())
+        info = c.resume_info(p)
+        r = " / ".join(l.strip("- ").strip() for l in info.get("resume", "").replace("<!-- auto -->", "").splitlines()
+                       if l.strip())
         if r:
             resume.append(f"Resume here: {r[:400]}")
+        if info.get("stale"):  # T-0113
+            resume.append(f"Stale since it started (gone from the repo now): {', '.join(info['stale'])[:300]} — "
+                          f"re-check the brief before relying on it.")
         focus.append(f"Brief: {a['path']}")
     else:
         focus.append("Active: none.")
