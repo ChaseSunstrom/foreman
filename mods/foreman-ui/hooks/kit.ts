@@ -98,8 +98,12 @@ export function elapsed(ms: number): string {
   const s = Math.max(0, ms) / 1000
   if (s < 10) return `${s.toFixed(1)}s`
   if (s < 60) return `${Math.round(s)}s`
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`
   return `${Math.floor(s / 60)}m ${String(Math.round(s % 60)).padStart(2, '0')}s`
 }
+
+/** A typical duration in minutes, roughly: ~25m, ~1.5h. */
+export const about = (min: number) => (min < 60 ? `~${Math.max(1, Math.round(min))}m` : `~${(min / 60).toFixed(1).replace(/\.0$/, '')}h`)
 
 export function shortPath(path: string, max = 48): string {
   if (path.length <= max) return path

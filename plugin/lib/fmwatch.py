@@ -178,6 +178,29 @@ def cmd_watch(args):
         pass
 
 
+def typical(events):
+    """Median minutes from first focus to done per "TYPE/TIER" with 3+ closed tasks, from the ledger: what a size word
+    usually means in this project (T-0116)."""
+    import statistics
+    kind, start, took = {}, {}, {}
+    for e in events:
+        t, ev = e.get("task"), e.get("event")
+        if ev == "task_new" and t:
+            d = e.get("data") or {}
+            kind[t] = f"{d.get('type')}/{d.get('tier')}"
+        elif ev == "focus" and t:
+            start.setdefault(t, e.get("ts"))
+        elif ev == "task_done" and t in start and t not in took:
+            a, b = c.parse_ts(start[t]), c.parse_ts(e.get("ts"))
+            if a and b:
+                took[t] = (b - a).total_seconds() / 60
+    groups = {}
+    for t, m in took.items():
+        if t in kind:
+            groups.setdefault(kind[t], []).append(m)
+    return {k: round(statistics.median(v)) for k, v in groups.items() if len(v) >= 3}
+
+
 def view(p):
     """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
     surface to render, built from gather() so it shows what fm watch shows."""
@@ -196,6 +219,10 @@ def view(p):
         active = dict(c.brief_detail(act), stage=c.stage(act, autonomy, changed), stages=list(c.STAGES),
                       audits={"done": prog["done"], "need": prog["required"]},
                       blockers=act.done_blockers(changed)[:6])
+    events = c.ledger_tail(p, 5000)
+    if active:
+        focused = next((e.get("ts") for e in events if e.get("event") == "focus" and e.get("task") == act.id), None)
+        active["on_task_s"] = round((c.age_days(focused) or 0) * 86400) if focused else None
 
     def item(s):
         b = by_id.get(s["id"])
@@ -214,7 +241,7 @@ def view(p):
                     reverse=True)[:5]
     today = time.strftime("%Y-%m-%d", time.gmtime())  # closed today by the ledger, not "saved today" (any later edit)
     done_ids = {b.id for b in briefs if b.status == "done"}
-    today_done = len({e.get("task") for e in c.ledger_tail(p, 3000)
+    today_done = len({e.get("task") for e in events
                       if e.get("event") == "task_done" and str(e.get("ts") or "").startswith(today)} & done_ids)
     lat = [ms for vals in d["latency"].values() for ms in vals]
     return {
@@ -228,6 +255,7 @@ def view(p):
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "closed": [{"id": b.id, "status": b.status} for b in closed],
         "today_done": today_done,
+        "typical": typical(events),
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors())},

@@ -6,6 +6,7 @@ import {
   C,
   MASCOT_COLORS,
   SIZE_LEGEND,
+  about,
   activityCells,
   agentColor,
   ago,
@@ -680,6 +681,8 @@ export const register: Register = (on, options) => {
     const inboxN = v.inbox_total ?? (v.inbox ?? []).length
     const todayDone = v.today_done ?? 0
     const upNext = (v.queue ?? [])[0] ?? (v.inbox ?? [])[0]
+    const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
+    const bandNow = await $.clock.now()
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
@@ -727,6 +730,12 @@ export const register: Register = (on, options) => {
             {a.audits.need > 0 && (
               <Text color={hex(a.audits.done >= a.audits.need ? C.ok : C.dim)}>
                 · audits {a.audits.done}/{a.audits.need}
+              </Text>
+            )}
+            {typeof a.on_task_s === 'number' && (
+              <Text color={hex(C.dim)}>
+                · {elapsed(a.on_task_s * 1000 + Math.max(0, bandNow - lastFull))} on it
+                {usual ? ` · usually ${about(usual)}` : ''}
               </Text>
             )}
           </Box>
@@ -1013,6 +1022,9 @@ export const register: Register = (on, options) => {
               <Text color={hex(fade(LIST - 1 - i, LIST, C.accent2))}>{i + 1}.</Text>
               {chip(q)}
               {q.steps_total ? meter($, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
+              {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
+                <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
+              )}
               <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : undefined}>
                 {q.id} {q.title}
                 {q.waits ? `  (${q.waits})` : ''}
@@ -1049,7 +1061,11 @@ export const register: Register = (on, options) => {
 
         {checks && checks.results.length > 0 && (
           <Box key="card-gates" {...card(passed === checks.results.length ? C.ok : C.err)}>
-            {head('Gates', passed === checks.results.length ? C.ok : C.err, `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)}`)}
+            {head(
+              'Gates',
+              passed === checks.results.length ? C.ok : C.err,
+              `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`,
+            )}
             {checks.results.map((r, i) => (
               <Box flexDirection="row" gap={1} key={`gate-${i}`}>
                 <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>

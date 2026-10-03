@@ -604,3 +604,16 @@ test('a killed subagent sends no turn.complete; the engine list retires its mini
   expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
   await pane.unmount()
 })
+
+test('sizes carry this project history: usually ~N beside the chip, time on task, what a gate run costs', async ($, on) => {
+  const active = { ...VIEW.active!, on_task_s: 720 }
+  world(on, [{ ...CALM, active, typical: { 'FIX/M': 25, 'CLEAN/S': 8 } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /12m 00s on it · usually ~25m/ })).toBeDefined()
+  await ui.unmount()
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: '~8m' })).toBeDefined() // T-0008 CLEAN small in the queue
+  expect(await pane.find({ type: 'Text', text: /a full run ≈ 2m 37s/ })).toBeDefined() // 140.2 + 5.8 + 11.0 s
+  await pane.unmount()
+})

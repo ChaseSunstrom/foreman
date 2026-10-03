@@ -101,3 +101,21 @@ class UiView(ForemanTestCase):
         with open(b.path, "w") as f:  # …and its brief, done, was saved today (an audit note, a lesson)
             f.write(text.replace("status: planned", "status: done", 1))
         self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["today_done"], 0)
+
+    def test_typical_minutes_per_type_and_size_and_time_on_task(self):
+        # T-0116: "medium" means more beside "usually ~30 min", from this project's own history
+        import fmcore as c
+        p = c.find_project(self.repo)
+        rows = []
+        for i, took in enumerate([10, 30, 50, 20]):  # three closed FIX/S tasks (median 30) and one FEATURE/M
+            tid, kind = f"T-09{i:02d}", ("FEATURE", "M") if i == 3 else ("FIX", "S")
+            rows += [{"ts": f"2026-01-0{i + 1}T09:00:00Z", "event": "task_new", "task": tid,
+                      "data": {"type": kind[0], "tier": kind[1]}},
+                     {"ts": f"2026-01-0{i + 1}T10:00:00Z", "event": "focus", "task": tid},
+                     {"ts": f"2026-01-0{i + 1}T10:{took:02d}:00Z", "event": "task_done", "task": tid}]
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        v = json.loads(self.fm("ui", "--json").stdout)
+        self.assertEqual(v["typical"], {"FIX/S": 30}, "one FEATURE/M sample is too few to call typical")
+        self.assertGreaterEqual(v["active"]["on_task_s"], 0)
+        self.assertLess(v["active"]["on_task_s"], 600)

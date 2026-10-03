@@ -21,6 +21,7 @@ export type FmActive = FmItem & {
   criteria: FmCriterion[]
   audits: { done: number; need: number }
   blockers: string[]
+  on_task_s?: number | null // seconds since the task was first focused, when the view was built
 }
 export type FmApproval = { task: string; allow: string[]; why: string }
 export type FmView = {
@@ -41,6 +42,7 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }
