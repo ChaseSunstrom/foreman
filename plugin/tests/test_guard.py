@@ -343,7 +343,11 @@ class InterpreterWrites(GuardCase):
         for bad in ("python3 -c \"import subprocess; subprocess.run(['claude', 'plugin', 'install', 'x@y'])\"",
                     "python3 - <<'EOF'\nimport os\nos.system('claude plugin install x@y')\nEOF",
                     "CODE=\"import os; os.system('claude plugin install x@y')\"; python3 -c \"$CODE\"",
-                    "echo \"import os; os.system('claude plugin install x@y')\" | python3"):
+                    "echo \"import os; os.system('claude plugin install x@y')\" | python3",
+                    # review of T-0128: a harmless heredoc beside piped code narrowed the scan to the heredoc
+                    "echo \"import os; os.system('claude plugin install x@y')\" | python3; cat <<'EOF'\nhi\nEOF",
+                    # and an interpreter inside fm's --run is a command of its own
+                    "fm task evidence T-0007 --run \"python3 -c \\\"import os; os.system('claude plugin install x@y')\\\"\""):
             self.assertBlocked(self.bash(bad), "plugin", bad)
 
     def test_table(self):

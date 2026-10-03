@@ -391,7 +391,7 @@ _SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
-_INTERP = re.compile(r"(?:^|[\s;&|(/])(?:python[0-9.]*|py|perl|ruby|node|deno|bun|php)(?:\s|$)")
+_INTERP = re.compile(r"(?:^|[\s;&|(/])(?:python[0-9.]*|py|perl|ruby|node|deno|bun|php)(?:\s|$|[;&|)])")
 _WRITE_API = re.compile(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
@@ -424,24 +424,15 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
                           rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}")
 
 
+_FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
+
+
 def _interp_code(cmd):
-    """The code an interpreter in cmd runs (T-0128): heredoc bodies and -c/-e arguments, not the rest of the shell
-    command (a `--run "claude plugin test"` beside a heredoc isn't the heredoc's). A -c/-e taken from a variable
-    ($CODE) can't be read here, so then the whole command counts, as before."""
-    if re.search(r"\s-[ce]\s+[\"']?\$", cmd):
-        return cmd
-    lines, bodies, i = cmd.split("\n"), [], 0
-    while i < len(lines):
-        line = lines[i]
-        i += 1
-        for _, delim in re.findall(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line):
-            while i < len(lines) and lines[i].strip() != delim:
-                bodies.append(lines[i])
-                i += 1
-            i += 1
-    args = re.findall(r"""\s-[ce]\s+(?:'([^']*)'|"((?:\\.|[^"\\])*)")""", cmd)
-    # neither (code piped in, a script file): the whole command, as before
-    return "\n".join(bodies + [a or b for a, b in args]) if bodies or args else cmd
+    """What the interpreter-code checks read: the whole command but fm's `--run "<cmd>"` arguments, which are shell
+    commands checked on their own (check_bash recurses into them, interpreter checks included). T-0128 narrowed this to
+    heredoc and -c bodies; review found that fails open (code piped in beside any heredoc went unread), so only the
+    one span known to be checked elsewhere is left out."""
+    return _FM_RUN_ARG.sub(" ", cmd)
 
 
 def _interpreter_writes(cmd, ctx):
@@ -496,7 +487,7 @@ def check_bash(cmd, ctx, depth=0):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    found = _interpreter_writes(cmd, ctx) if depth == 0 else []
+    found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     cmds = _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; ")))
     cwd, chain = ctx.cwd, []
     for idx, c in enumerate(cmds):
