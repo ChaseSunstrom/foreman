@@ -77,6 +77,22 @@ class RoundI(ForemanTestCase):
         self.assertTrue(all(a.checked for a in b.acceptance()))
         self.assertEqual(b.section("Docs impact").strip(), "README.md")
 
+    def test_finish_closes_a_step_that_already_has_evidence_and_names_what_needs_run(self):
+        # T-0142: 'give --run: a step or criterion has no verify command of its own', after the step's evidence was in
+        self.fm("init")
+        self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach", "a vs b: a",
+                "--ac", "works :: python3 -c 'print(1)'", "--step", "build", "--step", "live check", "--focus")
+        self.fm("task", "step", "T-0001", "done", "1", "--evidence", "python3 -c 'print(0)'", "ok")
+        p = self.fm("task", "finish", "T-0001", "--audit", "self", "--lens", "intent: ok", "--lens", "edge: ok",
+                    "--docs", "none", "--lesson", "l", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("step 2 (live check)", p.stderr)  # says which one
+        self.fm("task", "evidence", "T-0001", "--step", "2", "seen in the harness", "rows drawn")
+        p = self.fm("task", "finish", "T-0001", "--audit", "self", "--lens", "intent: ok", "--lens", "edge: ok",
+                    "--docs", "none", "--lesson", "l", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.brief("T-0001").status, "done")
+
     def test_finish_commit_takes_only_the_tasks_files_and_only_after_a_close(self):
         # T-0129: `fm task finish … | tail -1 && git commit` committed after a refused close, twice in one session
         import os

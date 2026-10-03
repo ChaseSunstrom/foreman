@@ -317,14 +317,28 @@ def task_finish(p, args):
         if cmd not in runs:
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
         return runs[cmd]
+    # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
+    # what has neither a verify command nor evidence, and the error names it
+    def closes(n):  # evidence in, and no failed run newer than a pass
+        try:
+            b._refuse_failed_run(step=n)
+        except c.PolicyError:
+            return False
+        return b.has_evidence(step=n)
+    evidenced = [s.n for s in b.steps() if not s.done and closes(s.n)]
     todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
-        ("step", s.n, args.run) for s in b.steps() if not s.done]
-    if any(cmd is None for _, _, cmd in todo):
-        raise UsageError("give --run \"<cmd>\": a step or criterion has no verify command of its own")
+        ("step", s.n, args.run) for s in b.steps() if not s.done and s.n not in evidenced]
+    missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
+               for kind, n, cmd in todo if cmd is None]
+    if missing:
+        raise UsageError(f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
+                         f"evidence of its own")
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
     def record(x):
+        for n in evidenced:
+            x.mark_step(n)  # refuses a failed run, as fm task step done does
         for kind, n, cmd, code, output in results:
             x.add_evidence(cmd, c.run_result(code, output), tree=tree, ran=True, **{kind: n})
             if not code:
