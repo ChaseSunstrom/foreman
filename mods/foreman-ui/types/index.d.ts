@@ -70,6 +70,7 @@ declare module 'claude-code' {
       sound: boolean
       beat: number
       shells: LiveShell[]
+      away: string[]
     }
   }
 }

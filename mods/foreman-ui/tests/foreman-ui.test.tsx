@@ -617,3 +617,18 @@ test('sizes carry this project history: usually ~N beside the chip, time on task
   expect(await pane.find({ type: 'Text', text: /a full run ≈ 2m 37s/ })).toBeDefined() // 140.2 + 5.8 + 11.0 s
   await pane.unmount()
 })
+
+test('the band tallies what closed since the person last wrote, until they write again', async ($, on) => {
+  // the queue ran dry: the band would hide, but the tally is the news the person comes back for
+  const closed: FmView = { ...CALM, active: null, queue: [], inbox: [], inbox_total: 0, closed: [{ id: 'T-0007', status: 'done' }] }
+  world(on, [CALM, closed])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't1', reason: 'answer' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /since your last message: 1 done · T-0007/ })).toBeDefined()
+  await $.prompt.submit({ text: '<task-notification>…</task-notification>', origin: { kind: 'task-notification' }, wait: false })
+  expect(await ui.find({ type: 'Text', text: /since your last message/ })).toBeDefined() // not the person
+  await $.prompt.submit({ text: 'thanks', origin: { kind: 'composer' }, wait: false })
+  expect(await ui.find({ type: 'Text', text: /since your last message/ })).toBeUndefined()
+  await ui.unmount()
+})

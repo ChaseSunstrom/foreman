@@ -45,6 +45,7 @@ const ctx = atom({ plugin: 'foreman-ui', key: 'ctx' } as const, null)
 const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
 const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
+const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 
 const LIST = 6
 const FRAME_MS = 120
@@ -196,6 +197,8 @@ async function refresh($: EngineInterface): Promise<boolean> {
     for (const line of lines) $.ui.toast(line)
     if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
     else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
+    const closed = lines.map(l => /^✔ (T-\d+) done/.exec(l)?.[1]).filter((x): x is string => !!x)
+    if (closed.length) await update($, away, list => [...list, ...closed.filter(x => !list.includes(x))])
     if (lines.some(l => l.startsWith('✔'))) {
       happyUntil = (await $.clock.now()) + 6000
       $.clock.after(500, () => void freshen($)) // outside this dispatch
@@ -540,7 +543,9 @@ export const register: Register = (on, options) => {
 
   // A background task's notification (idle, or folded into a running turn) names the task that ended.
   on('prompt.submit', async ($, e, next) => {
-    if (e.origin?.kind === 'task-notification') {
+    const kind = e.origin?.kind
+    if ((kind === 'composer' || kind === 'bridge') && (await read($, away)).length) await update($, away, () => [])
+    if (kind === 'task-notification') {
       const ended = new Set([...e.text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map(m => m[1]!.trim()))
       await noteShells($, list => list.filter(x => !ended.has(x.id)))
     }
@@ -666,7 +671,9 @@ export const register: Register = (on, options) => {
     const asks = v.approvals ?? []
     const plans = (v.queue ?? []).filter(q => q.waits === 'plan approval')
     const bgs = await read($, shells)
-    if (!a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0) && !bgs.length) return next(e)
+    const doneSince = await read($, away)
+    const idle = !a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0)
+    if (idle && !bgs.length && !doneSince.length) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
     const f = working || bgs.length ? await read($, frame) : null
@@ -753,6 +760,11 @@ export const register: Register = (on, options) => {
               </Text>
             )}
           </Box>
+        )}
+        {doneSince.length > 0 && (
+          <Text color={hex(C.ok)} wrap="truncate-end" key="fm-band-away">
+            ✔ since your last message: {doneSince.length} done · {doneSince.slice(-6).join(' ')}
+          </Text>
         )}
         {bgs.length > 0 && (
           <Box flexDirection="row" gap={1} key="fm-band-wait">
