@@ -265,3 +265,35 @@ export function agentColor(id: string): number {
   for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619)
   return MINI_COLORS[(h >>> 0) % MINI_COLORS.length]!
 }
+
+// T-0123: a shell command's output as a summary. A line's tone: failures, warnings, passes, the rest.
+export type Tone = 'err' | 'warn' | 'ok' | 'plain'
+const ANSI = /\u001b\[[0-9;:]*[A-Za-z]/g
+export function tone(line: string): Tone {
+  if (/\b0 (?:errors?|failures?|failed)\b/i.test(line)) return 'ok'
+  if (/\b(?:error|errors|failed|failure|failures|fatal|panic(?:ked)?|traceback|exception)\b|✗|✘|\bFAIL\b/i.test(line)) return 'err'
+  if (/\bwarn(?:ing)?s?\b|⚠/i.test(line)) return 'warn'
+  if (/\b(?:ok|passed|success(?:ful)?|done)\b|✓|✔|\bPASS\b/i.test(line)) return 'ok'
+  return 'plain'
+}
+
+/** The lines that matter (failures first, else the tail) of stdout and stderr, colour codes stripped. */
+export function outputSummary(stdout: unknown, stderr: unknown, keep = 6) {
+  const all = [stdout, stderr]
+    .filter((x): x is string => typeof x === 'string')
+    .join('\n')
+    .replace(ANSI, '')
+    .split('\n')
+    .map(l => l.trimEnd())
+    .filter(l => l.trim())
+  const bad = all.filter(l => tone(l) === 'err')
+  const pick = bad.length ? bad.slice(0, keep) : all.slice(-keep)
+  return {
+    lines: pick.map(text => ({ text: text.slice(0, 240), tone: tone(text) })),
+    total: all.length,
+    more: all.length - pick.length,
+    failures: bad.length > 0,
+  }
+}
+
+export const TONE_COLOR: Record<Tone, number> = { err: C.err, warn: C.warn, ok: C.ok, plain: 0xc8ccd4 }

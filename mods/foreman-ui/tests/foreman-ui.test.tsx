@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, clawd, elapsed, miniClawd, progressCells, shortPath, sizeWord, textBar, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, clawd, elapsed, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
 import { askNote, guardReason, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
@@ -705,4 +705,43 @@ test('the look: coloured words not highlighted blocks, quiet controls, the human
   expect(await narrow.find({ type: 'Text', text: 'today' })).toBeUndefined() // the side details drop, nothing wraps
   expect(await narrow.find({ type: 'Text', text: 'context' })).toBeUndefined()
   await narrow.unmount()
+})
+
+test('kit: a command output, short: failures first, else the tail, each line toned', () => {
+  // T-0123: a summary instead of the raw output panel
+  expect(tone('FAILED (failures=2)')).toBe('err')
+  expect(tone('0 failed, 12 passed')).toBe('ok')
+  expect(tone('warning: unused import')).toBe('warn')
+  expect(tone('compiling foo')).toBe('plain')
+  const long = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
+  const tail = outputSummary(long, '')
+  expect(tail.total).toBe(40)
+  expect(tail.lines.map(l => l.text)).toEqual(['line 34', 'line 35', 'line 36', 'line 37', 'line 38', 'line 39'])
+  expect(tail.more).toBe(34)
+  const bad = outputSummary(`${long}\nerror: boom at x.rs:3\n\u001b[31mFAILED\u001b[0m`, 'warning: y')
+  expect(bad.lines.map(l => l.text)).toEqual(['error: boom at x.rs:3', 'FAILED']) // colours stripped
+  expect(bad.failures).toBe(true)
+})
+
+test('a finished shell command is a summary with its key lines; the pane keeps the whole output, formatted', async ($, on) => {
+  const { answer } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const stdout = Array.from({ length: 30 }, (_, i) => `test ${i} ... ok`).join('\n') + '\nRan 30 tests\nOK'
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'b1',
+    props: { tool_use_id: 'b1', tool: 'Bash', output: { stdout, stderr: '', interrupted: false }, isErrored: false } })
+  expect(await row.find({ type: 'Text', text: /32 lines/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /Ran 30 tests/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /… 26 more/ })).toBeDefined()
+  await row.unmount()
+  const failed = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'b2',
+    props: { tool_use_id: 'b2', tool: 'Bash', output: { stdout: 'x', stderr: 'boom' }, isErrored: true } })
+  expect(await failed.find({ type: 'Text', text: 'engine' })).toBeDefined() // an error keeps Claude Code's full text
+  await failed.unmount()
+  answer.result = { stdout, stderr: '', interrupted: false }
+  await $.tool.call({ tool: 'Bash', command: 'python3 -m unittest' })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /▍Output/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /\$ python3 -m unittest/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /test 29 \.\.\. ok/ })).toBeDefined()
+  await pane.unmount()
 })
