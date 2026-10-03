@@ -995,6 +995,17 @@ test('the pane: nothing stale, nothing cut without saying so, controls that read
   await pane.unmount()
 })
 
+test('a grounded brainstorm is one line, however recent', async ($, on) => {
+  // T-0196: a brainstorm 40 minutes old listed ideas already built or dropped, as if they were open
+  world(on, [{ ...CALM, brainstorm: { name: 'brainstorm-20261003-140947', running: false, answers: 6, count: 121,
+    ideas: ['Replay the guard'], age_h: 0.7, grounded: true } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /Replay the guard/ })).toBeUndefined()
+  expect(await pane.find({ type: 'Text', text: /121 ideas · grounded/ })).toBeDefined()
+  await pane.unmount()
+})
+
 test('a long task title gives way before the task id: the id never wraps', async ($, on) => {
   // T-0141: seen live, 'T-014' on one row and '1' on the next when the title filled the band
   world(on, [CALM])

@@ -225,8 +225,11 @@ def brainstorm(p):
         with open(os.path.join(d, "ideas.md"), encoding="utf-8") as f:
             body = f.read().split("## New ideas per lens")[0]
         ideas = [ln[2:].strip() for ln in body.splitlines() if ln.startswith("- ")]
+        made = os.path.getmtime(os.path.join(d, "ideas.md"))  # T-0196: a slate recorded after it grounded its ideas
+        grounded = any(f.startswith("brainstorm-") and f.endswith(".md") and os.path.getmtime(os.path.join(root, f)) > made
+                       for f in os.listdir(root))
         return {"name": name, "running": False, "answers": len(answers), "count": len(ideas), "ideas": ideas[:8],
-                "age_h": age_h}
+                "age_h": age_h, "grounded": grounded}
     ideas = []
     for a in answers:
         with open(os.path.join(d, a), encoding="utf-8") as f:

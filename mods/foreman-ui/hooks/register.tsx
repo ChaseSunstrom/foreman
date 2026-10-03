@@ -1200,11 +1200,13 @@ export const register: Register = (on, options) => {
               C.agent,
               v.brainstorm.running
                 ? `${spin(fb + clockNow / 300)} ${v.brainstorm.answers}/${v.brainstorm.expected ?? '?'} answers · ${v.brainstorm.count} ideas so far`
-                : (v.brainstorm.age_h ?? 0) < 2
-                  ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
-                  : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
+                : v.brainstorm.grounded // its slate is built: one line however recent (T-0196)
+                  ? `${v.brainstorm.count} ideas · grounded`
+                  : (v.brainstorm.age_h ?? 0) < 2
+                    ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
+                    : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
             )}
-            {(v.brainstorm.running || (v.brainstorm.age_h ?? 0) < 2 ? v.brainstorm.ideas : []).map((idea, i) => (
+            {(v.brainstorm.running || (!v.brainstorm.grounded && (v.brainstorm.age_h ?? 0) < 2) ? v.brainstorm.ideas : []).map((idea, i) => (
               <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
                 {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
               </Text>

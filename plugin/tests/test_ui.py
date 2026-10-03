@@ -143,3 +143,9 @@ class UiView(ForemanTestCase):
         self.assertEqual(b["ideas"][:2], ["Faster gates", "A mascot"])
         self.assertEqual(b["name"], "brainstorm-20261003-010203")
         self.assertLess(b["age_h"], 1)  # T-0146: an old one folds to a line in the pane
+        self.assertFalse(b["grounded"])
+        note = os.path.join(p.dir, "research", "brainstorm-20261003-round1.md")  # T-0196: its slate is built
+        with open(note, "w") as f:
+            f.write("# Grounded slate\n")
+        os.utime(note, (c.time.time() + 5,) * 2)
+        self.assertTrue(json.loads(self.fm("ui", "--json").stdout)["brainstorm"]["grounded"])
