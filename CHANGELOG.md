@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- foreman-ui dashboard (T-0181): matches the chat's panels: header and controls are panels, cards share a quiet grey border with colour only in their headings, steps and done-when criteria line up under labels, audits are a bar; with the dashboard open, the band under the chat no longer repeats the task and only appears for something that needs you.
 - foreman-ui (T-0182): your own typed messages are panels too, in your colour (blue). Thinking summaries and the question dialog stay as Claude Code draws them: the mod has no hook to box them. The newest reply no longer keeps a frozen spinner frame once its turn ends.
 - Guard (T-0178, security, found grounding a self-improvement item): a heredoc starts only where bash reads one, outside quotes. A quoted marker (`echo '<<EOF'`) was taken for a heredoc, so every later line was a body the guard never read: `git push --force` on the next line passed. The same misreading left an `fm` command whose text quotes a heredoc unmasked, blocking a brief that described code. Three new forms in the bash differential test.
 - Guard (T-0180, security, self-improvement pass 3): a standing or trusted yes covers only a finding that names one file by its real path. A relative shell write (`sed -i … plugin/lib/fmcore.py`) is now named by its real path, so the standing yes covers it as it does the same Edit; a script writing the guard file, a tree write, or a target not known before it runs no longer passes as a path under `lib/` (a python script writing `fmguard.py` slipped past the standing yes).

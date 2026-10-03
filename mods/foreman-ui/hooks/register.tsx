@@ -881,9 +881,12 @@ export const register: Register = (on, options) => {
       </Box>
     )
 
+    // T-0181: 'the dashboard is duplicated at the bottom of the chat even though there's a pannel on the top right': with
+    // the pane shown the band says only what needs the person or just changed, and nothing at all when there's none
+    if (paneOpen && !(doneSince.length || bgs.length || paused.length || asks.length || plans.length)) return next(e)
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
-        {head}
+        {!paneOpen && head}
         {!paneOpen && (queued > 0 || inboxN > 0) && (
           <Box flexDirection="row" gap={1} key="fm-band-queue-row">
             {!narrow && <Text color={hex(C.dim)}>today</Text>}
@@ -938,8 +941,8 @@ export const register: Register = (on, options) => {
             <Button key={`review-${q.id}`} label="review" hotkey="v" plain onPress={() => void openPane($, true)} />
           </Box>
         ))}
-        <Box flexDirection="row" gap={2}>
-          {!paneOpen && <Button key="open" label="dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />}
+        {!paneOpen && <Box flexDirection="row" gap={2}>
+          <Button key="open" label="dashboard" hotkey="f" plain onPress={() => void openPane($, true)} />
           {!working && (
             <Button
               key="next"
@@ -949,7 +952,7 @@ export const register: Register = (on, options) => {
               onPress={() => void $.prompt.submit({ text: '/foreman:next', asUser: true })}
             />
           )}
-        </Box>
+        </Box>}
       </Box>
     )
   })
@@ -984,8 +987,10 @@ export const register: Register = (on, options) => {
     const inbox = v.inbox ?? []
     const recent = (v.recent ?? []).slice(-LIST)
     const checks = v.checks
-    const card = (color: number) =>
-      ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(pulse(color, f)), paddingX: 1 }) as const
+    // T-0181: 'the pannels color doesnt match': cards are the chat's quiet grey, colour only where it signals (the active
+    // task, something waiting on the person, failing gates); each card's heading keeps its colour
+    const card = (color: number | null = null) =>
+      ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(color === null ? C.dim : pulse(color, f)), paddingX: 1 }) as const
     const head = (title: string, color: number, count?: string) => (
       <Box flexDirection="row" gap={1}>
         <Text bold color={hex(color)}>
@@ -1008,7 +1013,8 @@ export const register: Register = (on, options) => {
 
     return (
       <Box flexDirection="column" key="fm-pane">
-        <Box flexDirection="row" justifyContent="space-between">
+        <Box flexDirection="row" justifyContent="space-between" borderStyle="round"
+          borderColor={hex(live ? pulse(C.accent, f) : C.accent)} paddingX={1} key="fm-pane-head">
           <Box flexDirection="column">
             <Box flexDirection="row" gap={1}>
               <Text bold color={hex(C.accent)}>
@@ -1035,7 +1041,7 @@ export const register: Register = (on, options) => {
         </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
 
-        <Box key="card-task" {...card(a ? C.accent : C.track)}>
+        <Box key="card-task" {...card(a ? C.accent : null)}>
           {a ? (
             <Box flexDirection="column">
               <Box flexDirection="row" gap={1}>
@@ -1062,21 +1068,36 @@ export const register: Register = (on, options) => {
                   </Text>
                 </Box>
               )}
+              {/* T-0181: 'the AC and audits thing not matching': steps and done-when criteria under small labels in one
+                  glyph column; audits a bar like the steps' */}
+              {a.steps.length > 0 && <Text color={hex(C.dim)}>steps</Text>}
               {a.steps.map(s => (
                 <Text key={`step-${s.n}`} color={s.current ? hex(C.accent) : s.done ? hex(C.dim) : undefined} wrap="truncate-end">
+                  {'  '}
                   {s.done ? '✓' : s.current ? (live ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
                 </Text>
               ))}
+              {a.criteria.length > 0 && <Text color={hex(C.dim)}>done when</Text>}
               {a.criteria.map(c => (
                 <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
-                  {c.checked ? '✓' : '○'} AC{c.n} {c.text}
+                  {'  '}
+                  {c.checked ? '✓' : '○'} {c.n}. {c.text}
                 </Text>
               ))}
-              <Text color={hex(C.dim)}>
-                audits {'■'.repeat(a.audits.done)}
-                {'□'.repeat(Math.max(0, a.audits.need - a.audits.done))} {a.audits.done}/{a.audits.need}
-                {a.blockers.length ? ` · ${a.blockers.length} blocker(s) before done` : ''}
-              </Text>
+              {a.audits.need > 0 && (
+                <Box flexDirection="row" gap={1} key="fm-pane-audits">
+                  <Text color={hex(C.dim)}>audits</Text>
+                  {meter($.ui.resolve(e), e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
+                  <Text bold>
+                    {a.audits.done}/{a.audits.need}
+                  </Text>
+                  {a.blockers.length > 0 && (
+                    <Text color={hex(C.dim)} wrap="truncate-end">
+                      · {a.blockers.length} left before done
+                    </Text>
+                  )}
+                </Box>
+              )}
               <Text color={hex(mix(C.dim, C.track, 0.4))} wrap="truncate-end">
                 sizes: {SIZE_LEGEND}
               </Text>
@@ -1132,7 +1153,7 @@ export const register: Register = (on, options) => {
         ))}
 
         {subs.length > 0 && (
-          <Box key="card-agents" {...card(C.agent)}>
+          <Box key="card-agents" {...card()}>
             {head('Subagents', C.agent, `${subs.filter(s => !s.done).length} running`)}
             {subs.map(s => (
               <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
@@ -1160,7 +1181,7 @@ export const register: Register = (on, options) => {
         )}
 
         {bgShells.length > 0 && (
-          <Box key="card-shells" {...card(C.accent2)}>
+          <Box key="card-shells" {...card()}>
             {head('Background shells', C.accent2, `${bgShells.length} running · Claude picks up when they finish`)}
             {bgShells.map((x, i) => (
               <Box flexDirection="row" gap={1} key={`shell-${x.id}`}>
@@ -1173,7 +1194,7 @@ export const register: Register = (on, options) => {
         )}
 
         {v.brainstorm && (
-          <Box key="card-brainstorm" {...card(v.brainstorm.running ? C.agent : C.track)}>
+          <Box key="card-brainstorm" {...card()}>
             {head(
               'Brainstorm',
               C.agent,
@@ -1192,7 +1213,7 @@ export const register: Register = (on, options) => {
         )}
 
         {mine.length > 0 && (
-          <Box key="card-files" {...card(C.edit)}>
+          <Box key="card-files" {...card()}>
             {head('Files this session', C.edit, `${mine.length}`)}
             {mine
               .slice(-LIST)
@@ -1209,7 +1230,7 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        <Box key="card-queue" {...card(queue.some(q => q.waits) ? C.warn : C.accent2)}>
+        <Box key="card-queue" {...card(queue.some(q => q.waits) ? C.warn : null)}>
           {head('Queue', C.accent2, `${queue.length}`)}
           {queue.length === 0 && <Text color={hex(C.dim)}>empty</Text>}
           {queue.slice(0, LIST).map((q, i) => (
@@ -1230,7 +1251,7 @@ export const register: Register = (on, options) => {
           ))}
         </Box>
 
-        <Box key="card-inbox" {...card(C.accent)}>
+        <Box key="card-inbox" {...card()}>
           {head('Inbox', C.accent, `${v.inbox_total ?? inbox.length}`)}
           {captureBox($, e)}
           {inbox.slice(0, LIST).map(it => (
@@ -1262,7 +1283,7 @@ export const register: Register = (on, options) => {
         </Box>
 
         {checks && checks.results.length > 0 && (
-          <Box key="card-gates" {...card(passed === checks.results.length ? C.ok : C.err)}>
+          <Box key="card-gates" {...card(passed === checks.results.length ? null : C.err)}>
             {head(
               'Gates',
               passed === checks.results.length ? C.ok : C.err,
@@ -1283,7 +1304,7 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        <Box key="card-activity" {...card(C.dim)}>
+        <Box key="card-activity" {...card()}>
           {head('Activity', C.dim)}
           {recent.map((line, i) => (
             <Text color={hex(fade(i, recent.length))} wrap="truncate-end" key={`r-${i}`}>
@@ -1303,7 +1324,7 @@ export const register: Register = (on, options) => {
           )}
         </Box>
 
-        <Box flexDirection="row" gap={2}>
+        <Box flexDirection="row" gap={2} borderStyle="round" borderColor={hex(C.dim)} paddingX={1} key="fm-pane-controls">
           <Button
             key="next"
             label="next"
