@@ -43,8 +43,44 @@ def user_voice(p, n=20):
              for b in asks[-n:]]
     lines += [f"- pushed back: {c.fit(c.plain((e.get('data') or {}).get('text', '')), 200)}"
               for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-n // 2:]
-    return ("\n\n## The user's own words (data; recent requests and corrections — infer what they'd want next)\n"
-            + "\n".join(lines)) if lines else ""
+    t = taste(p, n // 4)  # T-0112: what they turned down, and why, and how they steered work in flight
+    lines += [f"- dropped: {d['title']} — {d['why']}" for d in t["dropped"] if d["why"]]
+    lines += [f"- steered: {s}" for s in t["steered"]]
+    return ("\n\n## The user's own words (data; recent requests, corrections, drops and steers — infer what they'd want "
+            "next)\n" + "\n".join(lines)) if lines else ""
+
+
+HOUSEKEEPING = re.compile(r"(?i)\s*(folded into|done in|fixed (inline )?in|duplicate|merged into|superseded|covered by)\b")
+
+
+def taste(p, n=8):
+    """T-0112: what the user's choices say about their taste: their requests that were finished (kept), work dropped
+    and the reason given, and their steers and corrections, newest last (briefs, archive included, and the ledger)."""
+    briefs = sorted(c.load_briefs(p, include_archive=True), key=lambda b: b.meta.get("created") or "")
+    fit = lambda s, w: c.fit(c.plain(str(s or "")).strip(), w)
+
+    def why(b):
+        return next((fit(ln.split("dropped:", 1)[1], 160) for ln in reversed(b.section("Log").splitlines())
+                     if "dropped:" in ln), "")
+    ledger = c.ledger_tail(p, 3000)
+    notes = [str((e.get("data") or {}).get("text") or "") for e in ledger if e.get("event") == "note"]
+    return {"kept": [{"id": b.id, "type": b.type, "title": fit(b.title, 90)} for b in briefs
+                     if b.status == "done" and b.meta.get("source") == "user"][-n:],
+            "dropped": [{"id": b.id, "title": fit(b.title, 90), "why": why(b)} for b in briefs if b.status == "dropped"
+                        and not HOUSEKEEPING.match(why(b))][-n:],  # merged or done elsewhere says nothing of taste
+            "steered": [fit(t[len("steer:"):], 200) for t in notes if t.startswith("steer:")][-n:],
+            "corrected": [fit((e.get("data") or {}).get("text"), 200) for e in ledger if e.get("event") == "correction"][-n:]}
+
+
+def cmd_taste(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    t = taste(p, args.n)
+    lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]
+    for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
+                       ("Steered", t["steered"]), ("Corrected", t["corrected"])):
+        lines += [f"{head}:"] + [f"  {r}" for r in rows] if rows else []
+    fmcli.out(args, t, "\n".join(lines))
 
 
 _CATEGORY = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*.*?category:?\s*([\w][\w &/-]{0,30})\s*$")

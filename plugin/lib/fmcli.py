@@ -1556,7 +1556,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
-    ("Reports", "digest cost usage repeats friction evals"),
+    ("Reports", "digest cost usage repeats friction taste evals"),
     ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -1875,6 +1875,9 @@ def build_parser():
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
 
+    s = add("taste", lazy("fmideas", "cmd_taste"), help="what your choices say you want: kept, dropped (and why), "
+                                                         "steered, corrected; brainstorms use it")
+    s.add_argument("-n", type=int, default=8)
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work)")
     s.add_argument("action", choices=["new", "list", "rm"])
