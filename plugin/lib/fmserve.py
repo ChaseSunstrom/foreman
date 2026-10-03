@@ -315,37 +315,42 @@ def _run_lanes(p, batch, args, models, log):
     whose lane couldn't be made is {id: (None, None, why)}."""
     import signal
     import tempfile
-    runs, results = {}, {}
+    runs, lanes, results = {}, {}, {}
     try:
         for b in batch:
             made = _fm(p.root, "lane", "new", b.id, "--json")
             if made.returncode:
                 results[b.id] = (None, None, made.stderr.strip()[:200])
                 continue
-            path, out = json.loads(made.stdout)["path"], tempfile.TemporaryFile("w+", errors="replace")
+            path = lanes[b.id] = json.loads(made.stdout)["path"]
+            out = tempfile.TemporaryFile("w+", errors="replace")
             proc = subprocess.Popen(_claude_cmd(p, b, args, models), cwd=path, stdout=out, stderr=subprocess.STDOUT,
                                     env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), text=True, start_new_session=True)
             runs[b.id] = (path, proc, out, time.monotonic())
-    except BaseException:  # claude missing, or interrupted: no session is left running unwatched
-        for _, proc, out, _ in runs.values():
-            _stop(proc, signal)
-            out.close()
+        deadline = time.monotonic() + args.timeout * 60
+        for tid, (path, proc, out, t0) in runs.items():
+            try:
+                code = proc.wait(timeout=max(1, deadline - time.monotonic()))
+            except subprocess.TimeoutExpired:
+                _stop(proc, signal)  # the whole process group: tools the session started go too
+                code = None
+            out.seek(0)
+            text = out.read()
+            with open(log, "a", encoding="utf-8") as f:
+                f.write(f"== {c.now()} {tid} (lane {path}) exit {code}\n{c.redact(text)}\n")
+            c.log_event(p, "run_session", task=tid, data={"lane": path, "minutes": round((time.monotonic() - t0) / 60, 1),
+                                                           "parallel": len(runs)})
+            results[tid] = (path, code, text)
+    except BaseException:  # claude missing, interrupted, or a write failed (session audit): no session is left
+        for _, proc, _, _ in runs.values():  # running unwatched (its own process group: Ctrl-C never reaches it),
+            _stop(proc, signal)              # and a lane nobody worked in frees its task; one with work is kept
+        for tid, path in lanes.items():
+            if tid not in results and not _lane_has_work(p, path):
+                _fm(p.root, "lane", "rm", tid)
         raise
-    deadline = time.monotonic() + args.timeout * 60
-    for tid, (path, proc, out, t0) in runs.items():
-        try:
-            code = proc.wait(timeout=max(1, deadline - time.monotonic()))
-        except subprocess.TimeoutExpired:
-            _stop(proc, signal)  # the whole process group: tools the session started go too
-            code = None
-        out.seek(0)
-        text = out.read()
-        out.close()
-        with open(log, "a", encoding="utf-8") as f:
-            f.write(f"== {c.now()} {tid} (lane {path}) exit {code}\n{c.redact(text)}\n")
-        c.log_event(p, "run_session", task=tid, data={"lane": path, "minutes": round((time.monotonic() - t0) / 60, 1),
-                                                       "parallel": len(runs)})
-        results[tid] = (path, code, text)
+    finally:
+        for _, _, out, _ in runs.values():
+            out.close()
     return results
 
 
@@ -374,16 +379,31 @@ def _integrate(p, tid, path):
     try:
         return _integrate_lane(p, tid, path)
     except (OSError, subprocess.SubprocessError) as e:  # a slow gate or git: keep it, finish the others
+        try:  # never left half-rebased
+            subprocess.run(["git", "-C", path, "rebase", "--abort"], capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            pass
         return f"kept in {path}: {type(e).__name__} while integrating ({str(e)[:120]})"
+
+
+def _main_moved(git, root, branch):
+    """Why the main checkout can't take a fast-forward of branch now, or ''."""
+    now = git(root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if not now or now == "HEAD":
+        return "the main checkout isn't on a branch"
+    if branch and now != branch:
+        return f"the main checkout moved from {branch} to {now}"
+    if git(root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return "the main checkout has uncommitted changes"
+    return ""
 
 
 def _integrate_lane(p, tid, path):
     git = lambda root, *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, timeout=600)
+    why = _main_moved(git, p.root, "")
+    if why:
+        return f"kept in {path}: {why}"
     branch = git(p.root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
-    if not branch or branch == "HEAD":
-        return f"kept in {path}: the main checkout isn't on a branch"
-    if git(p.root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
-        return f"kept in {path}: the main checkout has uncommitted changes"
     if not git(path, "log", "--oneline", f"{branch}..HEAD").stdout.strip():
         _fm(p.root, "lane", "rm", tid)
         return "nothing to merge"
@@ -394,6 +414,9 @@ def _integrate_lane(p, tid, path):
         return f"kept in {path}: rebasing on {branch} failed ({why})"
     if c.read_meta(p).get("checks") and _fm(path, "check", timeout=3600).returncode:
         return f"kept in {path}: the gates failed after rebasing on {branch}"
+    why = _main_moved(git, p.root, branch)  # session audit: the gates can take an hour; look again right before
+    if why:
+        return f"kept in {path}: {why} while the gates ran"
     if git(p.root, "merge", "-q", "--ff-only", f"foreman/{tid}").returncode:
         return f"kept in {path}: {branch} moved on; rebase the lane again"
     rm = _fm(p.root, "lane", "rm", tid)

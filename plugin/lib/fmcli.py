@@ -372,16 +372,18 @@ def _commit_task(p, b, message):
     base = c.task_base(p.root, b) if c.git_root(p.root) else None
     if not base:
         raise UsageError(f"{b.id} is done, but has no start point on record to tell its files apart: commit by hand")
-    files = fmmap.changed(p.root, base) + ([".foreman"] if os.path.isdir(os.path.join(p.root, ".foreman")) else [])
+    mirror = os.path.isdir(os.path.join(p.root, ".foreman")) and not c.mirror_ignored(p.root)
+    files = fmmap.changed(p.root, base) + ([".foreman"] if mirror else [])
     if not files:
         print(f"{b.id}: nothing to commit.")
         return
-    add = subprocess.run(["git", "-C", p.root, "add", "-A", "--", *files], capture_output=True, text=True)
+    git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
+    add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
         leaks = fmsecrets.staged_leaks(p.root, files)
         if leaks is None or leaks:
-            subprocess.run(["git", "-C", p.root, "reset", "-q", "--", *files], capture_output=True)
+            subprocess.run([*git, "reset", "-q", "--", *files], capture_output=True)
             raise UsageError(f"{b.id} is done, but not committed: git couldn't show the staged lines to check them"
                              if leaks is None else
                              f"{b.id} is done, but not committed: {len(leaks)} added line(s) look like a credential (not "
@@ -390,7 +392,7 @@ def _commit_task(p, b, message):
                                f"`{fmsecrets.ALLOW}`, then commit.")
     trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
-    done = add.returncode == 0 and subprocess.run(["git", "-C", p.root, "commit", "-q", "-m", message, *trailer, "--",
+    done = add.returncode == 0 and subprocess.run([*git, "commit", "-q", "-m", message, *trailer, "--",
                                                    *files], capture_output=True, text=True)
     if not done or done.returncode:
         raise UsageError(f"{b.id} is done, but the commit failed: {((done and done.stderr) or add.stderr).strip()[:300]}")

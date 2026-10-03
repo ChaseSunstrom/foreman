@@ -17,7 +17,6 @@ import hashlib
 import os
 import re
 import shutil
-import subprocess
 
 import fmcore as c
 
@@ -238,14 +237,6 @@ def status(p):
             "repo_only": sorted(theirs - local), "local_only": sorted(local - theirs), "incoming": sorted(incoming)}
 
 
-def _ignored(p):
-    try:
-        return subprocess.run(["git", "-C", c.main_view(p).root, "check-ignore", "-q", DIR + "/README.md"],
-                              capture_output=True, timeout=10).returncode == 0
-    except (OSError, subprocess.SubprocessError):
-        return False
-
-
 def cmd_sync(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -266,7 +257,7 @@ def cmd_sync(args):
                         session=fmcli.session())
             c.regen_views(p)
         notes = [" .foreman/ is ignored by git here: add `!.foreman/` to .gitignore, or it never reaches another "
-                 "clone." if _ignored(p) else "",
+                 "clone." if c.mirror_ignored(c.main_view(p).root) else "",
                  " This repo is marked sensitive: review .foreman/ before pushing (evidence is redacted, but briefs "
                  "describe the work)." if c.read_meta(p).get("sensitive") else ""]
         return print(f"Mirroring Foreman state to {mirror(p)} ({n} file(s) written); commit it with your work. "

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Session audit fixes (T-0174): an interrupt or error while `fm run --parallel` waits on its sessions now stops every one (they run in their own process group, so Ctrl-C never reached them) and frees each untouched lane's task; a lane with work is kept. Integration looks at the main checkout again right before the fast-forward, so a branch switch during the gates keeps the lane instead of merging onto the other branch, and a rebase that times out is aborted rather than left half-done. In a repo that gitignores `.foreman/`, task snapshots and `--commit` no longer fail (git refused the mirror's exclude pathspec); task commits take their paths literally, so a file named `*` commits only itself.
+- The rules name the audit checklist by a path that exists (T-0173; `fm tidy` flagged it).
 - Guard blocks log their command (redacted, one line, 160 characters) and `fm friction` shows the newest per kind (T-0172, self-improvement pass 2: it couldn't ground a block from its category alone).
 - Guard: "interpreter code driving Foreman's modules" reads real Python imports (T-0170, self-improvement pass 2): an edit script whose strings mention `import fmhooks` was blocked; quoted python heredocs are parsed, and everything the parser can't prove (other interpreters, -c code, data heredocs, dynamic code) is read as text as before. A writer imported under an alias (`from fmcore import write_meta as w`) now counts too.
 - The scope refusal names the out-of-scope file edited last and says a `scope:` reason only covers edits before it (T-0168, self-improvement pass 2: a reason logged before a later edit left the finish refused without saying why).

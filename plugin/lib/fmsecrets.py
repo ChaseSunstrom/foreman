@@ -76,8 +76,8 @@ def scan_diff(diff):
 def staged_leaks(root, files):
     """Findings in what a commit of files would take, or None when git can't show it (fails closed)."""
     try:
-        r = subprocess.run(["git", "-C", root, *DIFF, "diff", "--cached", *DIFF_OPTS, "--", *files], capture_output=True,
-                           timeout=120)
+        r = subprocess.run(["git", "--literal-pathspecs", "-C", root, *DIFF, "diff", "--cached", *DIFF_OPTS, "--", *files],
+                           capture_output=True, timeout=120)
     except (OSError, subprocess.SubprocessError):
         return None
     return None if r.returncode else scan_diff(r.stdout.decode("utf-8", "replace"))

@@ -1,6 +1,7 @@
 """T-0167: fm run --parallel N runs independent queued tasks at once, each in its own lane (a fresh session, its own
 files), then integrates them one by one: rebase on the main branch, gates, fast-forward, lane removed. Tasks that could
 collide run one at a time, and a lane that can't be merged cleanly is kept with the reason. A stub claude stands in."""
+import json
 import os
 import subprocess
 import sys
@@ -113,6 +114,58 @@ class Parallel(ForemanTestCase):
         self.assertIn("usage limit hit", out)
         self.assertIn("T-0002 not finished in its lane", out)
         self.assertEqual(len([ln for ln in self.sessions() if ln.startswith("start")]), 2, "T-0003 ran alone, after")
+
+    def test_a_failure_mid_batch_stops_every_session_and_frees_its_tasks(self):
+        # session audit: sessions run in their own process group, so an error or Ctrl-C while waiting left them
+        # running unwatched, and the lanes kept holding their tasks
+        import fmcore as c
+        import fmserve
+        from types import SimpleNamespace
+        from unittest import mock
+        self.task("one", "work-T-0001.txt")
+        self.task("two", "work-T-0002.txt")
+        pids = os.path.join(self.tmp, "pids")
+        self.stub("quick", "sleep 1\n")
+        self.stub("slow", f"echo $$ >> {pids}\nsleep 30\n")
+        p = c.find_project(self.repo)
+        batch = [c.find_brief(p, "T-0001"), c.find_brief(p, "T-0002")]
+        lanes_freed = lambda: (self.assertEqual(self.git("worktree", "list").count("\n"), 1),
+                               self.assertFalse([t for t in ("T-0001", "T-0002") if c.find_brief(p, t).meta.get("lane")]))
+        with mock.patch.object(fmserve, "_claude_cmd", lambda *a, it=iter(["quick", "slow"]): [os.path.join(self.bin, next(it))]):
+            with self.assertRaises(IsADirectoryError):  # the run log can't be written once the first session ends
+                fmserve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, self.tmp)
+        pid = int(open(pids).read().split()[0])
+        self.assertRaises(ProcessLookupError, os.kill, pid, 0)
+        lanes_freed()
+        with mock.patch.object(fmserve, "_claude_cmd", lambda *a, it=iter(["slow", "missing"]): [os.path.join(self.bin, next(it))]):
+            with self.assertRaises(FileNotFoundError):  # claude can't be started for the second
+                fmserve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, os.path.join(self.tmp, "run.log"))
+        lanes_freed()
+
+    def test_a_committed_mirror_doesnt_count_as_the_users_changes(self):
+        # T-0174 review: fm keeps a tracked .foreman/ current from every lane session, in the main checkout
+        self.fm("sync", "on")
+        subprocess.run(["git", "-C", self.repo, "add", ".foreman"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "mirror"], check=True)
+        self.task("one", "work-T-0001.txt")
+        self.task("two", "work-T-0002.txt")
+        out = self.fm("run", "--parallel", "2", env=self.env()).stdout
+        self.assertIn("work T-0002", self.git("log", "--format=%s"), out)
+
+    def test_main_moving_during_the_gates_keeps_the_lane(self):
+        # session audit: main was checked once, before a gate run of up to an hour; a branch switch meanwhile got the merge
+        import fmcore as c
+        import fmserve
+        self.task("one", "work-T-0001.txt")
+        path = json.loads(self.fm("lane", "new", "T-0001", "--json").stdout)["path"]
+        with open(os.path.join(path, "work-T-0001.txt"), "w") as f:
+            f.write("x\n")
+        subprocess.run(["git", "-C", path, "add", "work-T-0001.txt"], check=True)
+        subprocess.run(["git", "-C", path, "commit", "-qm", "work T-0001"], check=True)
+        self.fm("check", "add", f"git -C {self.repo} checkout -q -b other")
+        how = fmserve._integrate_lane(c.find_project(self.repo), "T-0001", path)
+        self.assertIn("kept", how)
+        self.assertNotIn("work T-0001", self.git("log", "other", "--format=%s"))
 
 
 if __name__ == "__main__":

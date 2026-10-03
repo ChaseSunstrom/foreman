@@ -186,6 +186,16 @@ def worktree_id(root):
     return tree[:12] if tree else None
 
 
+def mirror_ignored(root):
+    """True when git ignores fm sync's mirror (.foreman/) in this checkout: git add then refuses any pathspec naming it
+    (session audit: every task snapshot and commit failed in such a repo)."""
+    try:
+        return subprocess.run(["git", "-C", root, "check-ignore", "-q", ".foreman/README.md"], capture_output=True,
+                              timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def worktree_tree(root):
     """The full git tree object of the working files (see worktree_id); `git diff <rev> <tree>` shows every change
     since <rev>, untracked files included. The throwaway index starts as a copy of the real one (mtimes kept, so git's
@@ -200,8 +210,9 @@ def worktree_tree(root):
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
             # fm sync's mirror (.foreman/**.md) changes with every fm call: not the work being audited. Anything else
-            # put in that folder still counts.
-            subprocess.run(["git", "-C", root, "add", "-A", "--", ".", ":(exclude,glob).foreman/**/*.md"], env=env,
+            # put in that folder still counts. An ignored mirror needs no exclude, and git add refuses one naming it.
+            spec = [] if mirror_ignored(root) else [":(exclude,glob).foreman/**/*.md"]
+            subprocess.run(["git", "-C", root, "add", "-A", "--", ".", *spec], env=env,
                            capture_output=True, timeout=120, check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
                                   timeout=60, check=True).stdout.strip()

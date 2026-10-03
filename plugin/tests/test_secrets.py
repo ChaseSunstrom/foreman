@@ -107,6 +107,20 @@ class Secrets(ForemanTestCase):
         self.assertEqual(self.git("show", "--name-only", "--format=").split(), ["c.py"])
         self.assertEqual(self.git("diff", "--cached", "--name-only").split(), ["staged.txt"], "still staged, not committed")
 
+    def test_finish_commit_takes_paths_literally_and_leaves_out_an_ignored_mirror(self):
+        # session audit: a file named '*' widened the pathspec to every changed file, and an ignored .foreman/ made
+        # git add (so every task commit) fail
+        self.fm("init")
+        self.write(".gitignore", ".foreman/\n")
+        self.git("add", ".gitignore")
+        self.git("commit", "-qm", "ignore the mirror")
+        self.fm("sync", "on")
+        self.write("mine.txt", "the user's own work\n")
+        self.fm("task", "new", "One", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "a", "--focus")
+        self.write("*", "star\n")
+        self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check", "--commit", "Add star")
+        self.assertEqual(self.git("show", "--name-only", "--format=").split(), ["*"])
+
 
 if __name__ == "__main__":
     unittest.main()
