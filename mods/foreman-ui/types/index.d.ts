@@ -44,6 +44,8 @@ export type FmView = {
   today_done?: number // tasks closed as done today
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
   trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
+  /** T-0145: a driven turn ended so this session's mod could reload; the reloaded mod starts the next turn */
+  resume_after_reload?: { session: string; at: string; task?: string } | null
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
 // A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
@@ -84,6 +86,7 @@ declare module 'claude-code' {
       beat: number
       shells: LiveShell[]
       away: string[]
+      resumed: string | null // the resume record (its `at`) this session already acted on
     }
   }
 }

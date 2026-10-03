@@ -126,7 +126,13 @@ function world(on: On, views: FmView[]) {
     if (answer.hold) await clock.sleep(answer.hold)
     return answer.deny ? { deny: answer.deny } : { result: answer.result }
   })
-  on('prompt.submit', async ($, e) => ({ text: e.text }))
+  const submitted: string[] = [] // prompts the plugin submitted (each a turn of its own)
+  on('prompt.submit', async ($, e) => {
+    submitted.push(e.text)
+    return { text: e.text }
+  })
+  const session = { id: 'sess-1' }
+  on('session.id', async () => ({ value: session.id }))
   const agentStatus = { now: 'running', listed: true } // what the engine's list says of every subagent
   on('agent.list', async () => ({
     value: agentStatus.listed
@@ -140,7 +146,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -825,6 +831,24 @@ test('kit: drawn text loses every escape sequence, control and bidi character; a
   const out = outputSummary(`10%\r50%\r100% done\n${evil}`, '')
   expect(out.lines.map(l => l.text)).toEqual(['100% done', 'alinkbcd  e'])
   expect(lastLine({ stdout: `ok \u001b]0;title\u0007T-0001 done` })).toBe('ok T-0001 done')
+})
+
+test('a reloaded mod resumes the drive its turn end was for, once, and only in its own session', async ($, on) => {
+  // T-0145: Claude Code hot-reloads the mod only when a turn really ends; the drive ended one so the change shows
+  const RESUME: FmView = { ...CALM, resume_after_reload: { session: 'sess-1', at: '2026-10-03T06:30:00Z', task: 'T-0007' } }
+  const { submitted, toasted } = world(on, [RESUME])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(submitted).toEqual(['Continue the Foreman drive: the Foreman UI reloaded (T-0007)'])
+  expect(toasted.join('\n')).toContain('Foreman UI reloaded · the drive continues') // seen, not just done
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a later reload, same record
+  expect(submitted.length).toBe(1)
+})
+
+test('another session\'s resume record starts nothing here', async ($, on) => {
+  const OTHER: FmView = { ...CALM, resume_after_reload: { session: 'sess-9', at: '2026-10-03T06:30:00Z', task: 'T-0007' } }
+  const { submitted } = world(on, [OTHER])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(submitted).toEqual([])
 })
 
 test('a long task title gives way before the task id: the id never wraps', async ($, on) => {

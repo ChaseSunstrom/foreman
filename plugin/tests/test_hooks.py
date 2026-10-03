@@ -1056,7 +1056,10 @@ class Stop(HookCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sleep 60", "run_in_background": True},
                                   "tool_response": "Command running in background with ID: bx7k2. Output is being "
                                                    "written to: /tmp/x.output"})
-        self.assertIsNone(self.decision(self.stop("Waiting for the eval.")))
+        waiting = parse(self.stop("Waiting for the eval."))
+        self.assertIsNone(waiting.get("decision"))
+        # T-0145 live: the turn ended with no word of why; a never-ending loop then left the session idle
+        self.assertIn("bx7k2", waiting.get("systemMessage", ""))
         self.hook("UserPromptSubmit", {"prompt": "<task-notification>\n<task-id>bx7k2</task-id>\n"
                                                  "<status>completed</status>\n</task-notification>"})
         self.assertEqual(self.decision(self.stop("The eval finished.")), "block")
@@ -1222,6 +1225,57 @@ class Stop(HookCase):
         self.task()
         self.fm("drive", "off")
         self.assertIn("\x1b]0;foreman", parse(self.stop("ok"))["terminalSequence"])
+
+
+class Reload(HookCase):
+    """T-0145: a mod changed during a driven turn reaches the session: Claude Code hot-reloads only when a turn really
+    ends, so the drive lets this one end and the reloaded mod starts the next."""
+
+    def test_a_driven_turn_ends_once_when_this_sessions_mods_changed(self):
+        self.fm("init")
+        tid = self.task()
+        cfg = os.path.join(self.tmp, "cc")
+        env = {"CLAUDE_CONFIG_DIR": cfg}
+        folder = os.path.join(cfg, "dev-mods", "sess-1", "ui")
+        stop = lambda: parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Next.",
+                                               "session_id": "sess-1"}, env=env)) or {}
+        view = lambda: json.loads(self.fm("ui", "--json").stdout).get("resume_after_reload")
+
+        def touch(rel, age):
+            path = os.path.join(folder, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            open(path, "w").close()
+            os.utime(path, (time.time() + age, time.time() + age))
+
+        self.hook("UserPromptSubmit", {"prompt": "go"}, env=env)
+        self.assertEqual(stop().get("decision"), "block", "no dev-mods folder: drive as before")
+        touch("hooks/register.tsx", -600)
+        self.assertEqual(stop().get("decision"), "block", "changed before this turn: already loaded")
+        touch("hooks/register.tsx", 5)
+        out = stop()
+        self.assertIsNone(out.get("decision"), "changed this turn: the turn ends so Claude Code reloads it")
+        self.assertIn("reload", out.get("systemMessage", ""))
+        self.assertEqual(view()["session"], "sess-1")
+        self.assertEqual(view()["task"], tid)
+        self.assertEqual(stop().get("decision"), "block", "one change is handed over once")
+        touch(".claude-plugin/types/claude-code/index.d.ts", 10)  # the engine writes these on every load
+        self.assertEqual(stop().get("decision"), "block")
+        self.hook("UserPromptSubmit", {"prompt": "Continue the Foreman drive: the Foreman UI reloaded"}, env=env)
+        self.assertIsNone(view(), "the resumed turn clears it")
+
+    def test_a_session_whose_turn_start_was_never_recorded_uses_when_it_was_last_seen(self):
+        # a session already running when this shipped: its last prompt went through the old hook
+        self.fm("init")
+        self.task()
+        cfg = os.path.join(self.tmp, "cc")
+        mod = os.path.join(cfg, "dev-mods", "sess-1", "ui", "hooks", "register.tsx")
+        self.hook("SessionStart", {"source": "compact"}, env={"CLAUDE_CONFIG_DIR": cfg, "CLAUDE_ENV_FILE": os.devnull})
+        os.makedirs(os.path.dirname(mod))
+        open(mod, "w").close()
+        os.utime(mod, (time.time() + 5, time.time() + 5))
+        out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Next.", "session_id": "sess-1"},
+                              env={"CLAUDE_CONFIG_DIR": cfg})) or {}
+        self.assertIsNone(out.get("decision"))
 
 
 class TaskCompleted(HookCase):

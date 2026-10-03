@@ -54,6 +54,7 @@ const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
 const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
+const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 
 const LIST = 6
 const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
@@ -565,6 +566,17 @@ function editRow($: EngineInterface, e: ToolUseRender) {
   )
 }
 
+/** T-0145: Claude Code hot-reloads this mod only when a turn really ends, so a driven turn that changed it ends on
+ * purpose and leaves a resume record; the reloaded mod (session.start runs again) starts the next turn itself, once
+ * per record and only in the session the record names. */
+async function resumeAfterReload($: EngineInterface) {
+  const r = (await read($, view))?.resume_after_reload
+  if (!r || r.at === (await read($, resumed)) || r.session !== (await $.session.id())) return
+  await update($, resumed, () => r.at)
+  $.ui.toast('Foreman UI reloaded · the drive continues', { timeoutMs: 6000 })
+  void $.prompt.submit({ text: `Continue the Foreman drive: the Foreman UI reloaded${r.task ? ` (${r.task})` : ''}` })
+}
+
 /** The quick-capture box (every surface with text input). */
 function captureBox($: EngineInterface, e: ResolveInput) {
   if (e.surface === 'mobile') return null
@@ -587,6 +599,7 @@ export const register: Register = (on, options) => {
     const stored = await $.store.get('sound').catch(() => undefined)
     if (stored === false) await update($, sound, () => false)
     await refresh($)
+    await resumeAfterReload($)
     poll?.cancel() // one poller per environment, however often the session starts
     poll = $.clock.every(2000, () => void tick($))
     if ((await read($, view))?.project) void openPane($, false) // seats unasked only on a wide fullscreen terminal

@@ -109,7 +109,7 @@ flowchart TD
     C -->|Bash / Write / Edit| PTU[PreToolUse hook<br/>guard: deny + how to authorize<br/>scope note]
     PTU -->|allowed| T[Tool runs]
     T --> POST[PostToolUse async<br/>touched files → ledger<br/>timeline → events.jsonl]
-    C -->|turn ends| STOP[Stop hook<br/>evidence gate: block once per step<br/>drive: continue while work remains,<br/>wait while background agents/commands run]
+    C -->|turn ends| STOP[Stop hook<br/>evidence gate: block once per step<br/>drive: continue while work remains,<br/>wait while background agents/commands run,<br/>end the turn once when this session's dev-mods changed]
     STOP -->|block reason| C
     TC[TaskCompleted hook] -->|refuse step without evidence| C
     PC[PreCompact hook] -->|fm checkpoint --auto| ST
@@ -125,6 +125,7 @@ flowchart TD
 3. R1–R4: `fm task new … --from T-0012` (planned), `fm task set --section …`, `fm task ac add`, `fm task step add`; grounding reads the code; a tier-M plan compares two approaches. Adjacent ideas go to `fm capture --source followup` (new briefs).
 4. `fm log baseline …`, then `fm focus T-0012` (status active). **PreToolUse** runs the guard on every Bash/Write/Edit (`lib/fmguard.py`) and notes out-of-scope edits; **PostToolUse** records `touched` files and the timeline (`state/events.jsonl`). The reply badge `[T-0012 FIX · 2/4 · 14:02]` comes from **MessageDisplay** (screen only).
 5. Each step: `fm task step T-0012 done N --evidence "<cmd>" "<result>"` (refused without evidence). Steers go in with `fm task log`. If Claude claims "done" without evidence, the **Stop** hook blocks once (`gate.json`); if work remains, **drive** continues it.
+5b. Resuming: `claude --continue` with drive on, full autonomy and open work starts its own first turn (SessionStart `initialUserMessage`). A driven turn that changed this session's hot-reloaded mods (`~/.claude/dev-mods/<session>/`) ends on purpose, since Claude Code reloads a mod only when a turn really ends; the Stop hook records `resume_after_reload` in meta and the reloaded foreman-ui submits "Continue the Foreman drive" once (`fm ui --json` carries the record for 10 minutes; the next prompt clears it).
 6. `/compact` mid-task: **PreCompact** writes the auto resume block into the brief; **SessionStart(compact)** re-injects the focus and resume notes.
 7. Audits (`references/audit.md`): tier M → `intent` plus the riskiest other lens, each a `foreman:fm-reviewer` run with its own context slice; findings are reproduced, fixed test-first or captured, then `fm task audit T-0012 <lens> …`. `fm task ac T-0012 check N --evidence …`, `fm task done T-0012` (refused unless every step and criterion has evidence and the tier's audits postdate the last edit). `/foreman:reflect`: `fm decide …` → `decisions.md`; learnings → auto memory; Foreman ideas → `fm capture --self`.
 8. 14 days later `fm tidy --apply` moves the brief to `archive/YYYY-MM/`, rolls old ledger months into `archive/ledger-YYYY-MM.jsonl`, and records `last_tidy`.

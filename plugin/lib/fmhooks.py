@@ -356,6 +356,8 @@ def user_prompt_submit(pl):
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
             meta["session"] = {"id": sid, "seen": c.now()}
+            if (meta.get("resume_after_reload") or {}).get("session") == sid:
+                meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it
             if "PAUSE" in r.overrides:
                 meta["paused"] = True
             elif "RESUME" in r.overrides:
@@ -367,9 +369,9 @@ def user_prompt_submit(pl):
             c.write_meta(p, meta)
             g = _read_gate(p)
             hold = c.is_plan_only(text)
-            if sid in g["drive"] or hold:
-                g["drive"].setdefault(sid, {}).update(count=0, hold=hold)  # a plan-only prompt holds drive this turn
-                _write_gate(p, g)
+            # a plan-only prompt holds drive this turn; turn_at: when this turn began (T-0145)
+            g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
+            _write_gate(p, g)
             sd = c.regen_views(p) if r.overrides or approvals else c.state_dict(p)
     except c.LockTimeout:  # never drop a yes / PAUSE silently
         return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext":
@@ -1125,12 +1127,19 @@ def stop(pl):
         reason = _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
+        reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
     if not reason and ((act and needs_user(msg)) or (had_work and not d["had_work"])):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
     out = {"terminalSequence": seq}
     if reason:
         out.update(decision="block", reason=reason)
+    elif reloading:
+        out["systemMessage"] = ("Foreman: this turn ended so Claude Code reloads the Foreman UI you changed; the drive "
+                                "picks up by itself (type continue if it doesn't)")
+    elif waiting_on:
+        out["systemMessage"] = (f"Foreman: the drive waits for background work ({', '.join(waiting_on)}) and continues "
+                                f"when it finishes (type continue to go on now)")
     return out
 
 
@@ -1241,6 +1250,7 @@ def _drive(p, sd, briefs, pl, g):
     running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else _running(sid)
     if running:  # background work is out; its completion notification wakes the session
         _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
+        d["waiting_on"] = running[:3]  # said on screen: a turn that ends with no word of why reads as a stall
         return None
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end
@@ -1267,9 +1277,37 @@ def _drive(p, sd, briefs, pl, g):
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
     except Exception:
         log_error("Stop", _tb())
+    seen = c.read_meta(p).get("session") or {}  # a turn start the old prompt hook never recorded: when last seen
+    age = c.age_days(seen.get("seen")) if seen.get("id") == sid else None
+    changed = _ui_changed(sid, d.get("turn_at") or (time.time() - age * 86400 if age is not None else None),
+                          d.get("ui_mtime"))
+    if changed:  # T-0145: Claude Code hot-reloads only at a real turn end; the reloaded mod resumes (fm ui --json)
+        meta = c.read_meta(p)  # the caller holds the lock
+        meta["resume_after_reload"] = {"session": sid, "at": c.now(), "task": work["id"]}
+        c.write_meta(p, meta)
+        d.update(ui_mtime=changed, reloading=True)
+        _event({"kind": "drive_reload", "session_id": sid, "task": work["id"]})
+        return None
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
+
+
+def _ui_changed(sid, since, handed):
+    """The newest change to this session's hot-reloaded mods (~/.claude/dev-mods/<session>/, the types Claude Code
+    writes on each load left out) made since this turn began and not yet handed to a reload, else None."""
+    if not sid or not re.fullmatch(r"[\w-]{1,100}", sid) or not since:
+        return None
+    root = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "dev-mods", sid)
+    newest = 0
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [n for n in dirnames if not (n == "types" and dirpath.endswith(".claude-plugin"))]
+        for name in filenames:
+            try:
+                newest = max(newest, os.stat(os.path.join(dirpath, name)).st_mtime)
+            except OSError:
+                pass
+    return newest if newest > max(since, handed or 0) else None
 
 
 # ---------------------------------------------------------------- TaskCompleted, subagents

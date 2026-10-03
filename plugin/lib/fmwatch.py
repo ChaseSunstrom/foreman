@@ -277,6 +277,8 @@ def view(p):
                       if e.get("event") == "task_done" and str(e.get("ts") or "").startswith(today)} & done_ids)
     lat = [ms for vals in d["latency"].values() for ms in vals]
     bs = brainstorm(p)
+    resume = meta.get("resume_after_reload") or None
+    resume_age = c.age_days(resume.get("at")) if isinstance(resume, dict) else None
     return {
         "v": 1, "project": p.slug, "root": p.root,
         "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"]),
@@ -290,6 +292,8 @@ def view(p):
         "closed": [{"id": b.id, "status": b.status} for b in closed],
         "today_done": today_done,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
+        # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
+        "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
         "recent": d["recent"],
