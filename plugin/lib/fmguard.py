@@ -845,6 +845,38 @@ def _moved(cwds, lost, tgt, sure, cdpath, ctx):
     return list(dict.fromkeys(new if sure else cwds + new)), list(dict.fromkeys(tails if sure else lost + tails))
 
 
+_BRACE = re.compile(r"\{([^{}]*)\}")
+_SEQ = re.compile(r"(-?\d+|[A-Za-z])\.\.(-?\d+|[A-Za-z])(?:\.\.-?\d+)?")
+EXPANSIONS_MAX = 1024  # ponytail: a brace product past this is checked only this far
+
+
+def _expansions(path):
+    """T-0177: the paths bash may make of a target: comma and sequence braces (innermost first; {x} with neither stays
+    as written) and, for any with * ? or [, the existing paths it matches."""
+    out, todo = [], [path]
+    while todo and len(out) + len(todo) <= EXPANSIONS_MAX:
+        p = todo.pop()
+        m = next((m for m in _BRACE.finditer(p) if "," in m.group(1) or _SEQ.fullmatch(m.group(1))), None)
+        if not m:
+            out.append(p)
+            continue
+        seq, inner = _SEQ.fullmatch(m.group(1)), m.group(1)
+        if seq:
+            a, b = seq.group(1), seq.group(2)
+            num = a.lstrip("-").isdigit() and b.lstrip("-").isdigit()
+            lo, hi = (int(a), int(b)) if num else (ord(a), ord(b))
+            step = 1 if hi >= lo else -1
+            alts = [str(i) if num else chr(i) for i in range(lo, hi + step, step)][:EXPANSIONS_MAX]
+        else:
+            alts = inner.split(",")
+        todo += [p[:m.start()] + x + p[m.end():] for x in alts]
+    out += todo
+    import glob
+    import itertools
+    return list(dict.fromkeys(out + [g for p in out if re.search(r"[*?\[]", p)
+                                     for g in itertools.islice(glob.iglob(p), EXPANSIONS_MAX)]))
+
+
 def _possible(path):
     """False when a folder in the path is an existing file: nothing can be written there."""
     d = os.path.dirname(path)
@@ -869,6 +901,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
         e = _expand(t, ctx)
         for path in dict.fromkeys(_resolve(e, b) for b in ([ctx.cwd] if os.path.isabs(e) else cwds)):
             found += [(cat, f"{path if t != target else target}{note}") for cat in classify(path, ctx)]
+            found += [(cat, f"{p}{note}") for p in _expansions(path) if p != path for cat in classify(p, ctx)]
         if os.path.isabs(e) or not lost:
             return found
     elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare

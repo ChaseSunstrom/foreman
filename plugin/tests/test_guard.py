@@ -288,6 +288,22 @@ class Core(GuardCase):
     def test_bash_write_to_core(self):
         self.assertBlocked(self.bash("sed -i 's/x/y/' {fhome}/plugin/hooks/hooks.json"), "core")
 
+    def test_glob_and_brace_targets_are_checked(self):
+        # T-0177: a target was classified as written; bash expands a glob to the existing file and braces to each word
+        lib = os.path.join(self.fhome, "plugin", "lib")
+        os.makedirs(lib, exist_ok=True)
+        open(os.path.join(lib, "fmguard.py"), "a").close()
+        self.run_table([
+            ("echo hi > {fhome}/plugin/li?/fmguard.py", "core"),
+            ("echo hi > {fhome}/plugin/l*/fm*.py", "core"),
+            ("echo hi > {fhome}/plugin/[l]ib/fmguard.py", "core"),
+            ("tee {fhome}/plugin/{{x,lib}}/fmguard.py < /dev/null", "core"),
+            ("cp /etc/hostname {fhome}/plugin/li{{a..c}}/fmguard.py", "core"),
+            ("cp /etc/hostname {fhome}/plugin/{{a,{{b,lib}}}}/new.py", "core"),
+            ("echo hi > {fhome}/plugin/{{lib}}/fmguard.py", None),  # no comma: bash keeps the braces
+            ("echo hi > /tmp/*.log", None),
+        ], self.bash)
+
     def test_a_write_through_a_variable_is_checked(self):
         # T-0175: a target with a $ in it was skipped, so `x=<core>; echo > $x` went through unchecked
         os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)  # a cd only goes into a real folder
