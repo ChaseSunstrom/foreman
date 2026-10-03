@@ -36,8 +36,15 @@ class HookBlock(Exception):
 
 # ---------------------------------------------------------------- plumbing
 
+def _quiet():
+    """T-0077: FOREMAN_QUIET=1 marks a session an orchestrator drives: only the guard runs."""
+    return os.environ.get("FOREMAN_QUIET", "") not in ("", "0")
+
+
 def run(event, raw):
     t0 = time.monotonic()
+    if event != "PreToolUse" and _quiet():
+        return 0
     if event == "PreToolUse":
         code = _pre_tool_use(raw)
     else:
@@ -669,6 +676,8 @@ def _pre_tool_use(raw):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
                                                  "permissionDecisionReason": decision[1]}}))
         return 2 if decision[0] == "deny" else 0
+    if _quiet():
+        return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     gate = _no_task_gate(pl, p, act, ctx)
     if gate:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",

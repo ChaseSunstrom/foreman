@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `FOREMAN_QUIET=1` (T-0077): a session an orchestrator drives (jarvis-code had to disable the plugin with `--settings`) gets no Foreman context, nudges or brief requirement; the guard still runs.
 - Guard: a `#` right after a closing `)` is mid-word, not a comment (T-0163, automated security review of T-0161): `echo $(true)#x; rm -rf ~` and `$((1))#x` hid the rest of the line with any payload; the differential test now has those forms and the backtick and `${…}` ones.
 - Work done while a task was paused isn't its own change (T-0136): re-focusing a task after another task committed a file (or the user edited one) counted those files as the task's, so its finish was refused for edits outside its scope, and audit diffs and `fm check --affected` included them. A pause now snapshots the files; a re-focus moves the start point past the work done meanwhile (the task's own changes reverse-applied in a throwaway index), or keeps it and logs why when the same lines changed.
 - Guard: `rm` variable resolution also stops at a computed command name (T-0162, automated security review of T-0161): `X=read; $X D <<< ~`, a backtick command or a glob such as `rea?` ran `read` and set the variable while the guard kept its earlier literal; all three are in the differential test.
