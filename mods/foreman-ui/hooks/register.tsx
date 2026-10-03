@@ -1,7 +1,9 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, ResolveInput } from 'claude-code'
+import type { EngineInterface, Register, RenderInput, ResolveInput } from 'claude-code'
 
-import type { FileChurn, FmItem, FmView, LastOutput, LiveAgent, LiveShell, TurnSummary } from '../types'
+type ToolUseRender = RenderInput<'ToolUse'>
+
+import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
   C,
   MASCOT_COLORS,
@@ -50,10 +52,9 @@ const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
 const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
-const output = atom({ plugin: 'foreman-ui', key: 'output' } as const, null as LastOutput | null)
 
 const LIST = 6
-const OUT_LINES = 40 // the pane's Output card: the last lines of the last command
+const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
 const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
@@ -168,6 +169,7 @@ let bgLive = 0 // background shells still running: the clock keeps a calm pace f
 let calm = 0
 const turns = new Set<string>()
 const starts = new Map<string, number>() // tool_use_id → when it started (ms)
+const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 const agentCalls = new Map<string, string>() // running Agent call → its description
 const agentOf = new Map<string, string>() // running Agent call → the subagent's id
 let turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: -1, task: '' }
@@ -451,6 +453,52 @@ function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' 
   )
 }
 
+/** T-0137: a finished shell command as a Foreman row in the chat: status, the command, how long it ran, then its
+ * output formatted inline (failures first, else the tail), errors included. fm's own commands keep their quiet row. */
+function shellRow($: EngineInterface, e: ToolUseRender) {
+  const { Box, Text } = $.ui.resolve(e)
+  const o = (e.props.output ?? {}) as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; backgroundTaskId?: unknown }
+  // the command shown whole up to three lines, never silently cut: a chained or multi-line command must not read as
+  // a plain one (the T-0095 review's HIGH finding for the quiet fm row)
+  const lines = String((e.props.input as { command?: unknown } | null)?.command ?? '').split('\n')
+  const cmd = lines.slice(0, 3).join('\n')
+  const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES) : outputSummary(o.stdout, o.stderr, OUT_LINES)
+  const bad = e.props.isErrored || s.failures
+  const ms = took.get(e.props.tool_use_id)
+  const bg = typeof o.backgroundTaskId === 'string'
+  const mark = e.props.isInterrupted || o.interrupted ? '■' : bg ? '◷' : bad ? '✗' : '✓'
+  return (
+    <Box flexDirection="column" key="fm-shell">
+      <Text wrap="wrap">
+        <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : C.warn)}>
+          {mark}
+        </Text>
+        <Text color={hex(C.accent)}>
+          {' '}$ {cmd}
+          {lines.length > 3 ? ` … +${lines.length - 3} more line${lines.length === 4 ? '' : 's'}` : ''}
+        </Text>
+        <Text color={hex(C.dim)}>
+          {ms !== undefined ? `  ${elapsed(ms)}` : ''}
+          {!bg && s.total > 0 ? ` · ${s.total} line${s.total === 1 ? '' : 's'}` : ''}
+        </Text>
+        {bg && <Text color={hex(C.accent2)}> · in the background</Text>}
+      </Text>
+      {s.lines.map((l, i) => (
+        <Text key={`o-${i}`} color={hex(TONE_COLOR[l.tone])} wrap="truncate-end">
+          <Text color={hex(C.track)}>{'  │ '}</Text>
+          {l.text}
+        </Text>
+      ))}
+      {s.more > 0 && (
+        <Text color={hex(C.dim)}>
+          {'  └ '}… {s.more} more line{s.more === 1 ? '' : 's'}
+          {s.failures ? ' (showing the failures)' : ''}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
 /** The quick-capture box (every surface with text input). */
 function captureBox($: EngineInterface, e: ResolveInput) {
   if (e.surface === 'mobile') return null
@@ -564,13 +612,6 @@ export const register: Register = (on, options) => {
         const command = String(e.command).split('\n')[0]!.slice(0, 120)
         await noteShells($, list => [...list.filter(x => x.id !== bg), { id: bg, command, startedAt }])
       }
-      const res = r.result as { stdout?: unknown; stderr?: unknown; backgroundTaskId?: unknown } | undefined
-      if (e.tool === 'Bash' && !e.agentId && !fmCommand(e.command) && res && typeof res.stdout === 'string' && !bg) {
-        const all = `${res.stdout}\n${typeof res.stderr === 'string' ? res.stderr : ''}`.replace(/\u001b\[[0-9;:]*[A-Za-z]/g, '')
-        const lines = all.split('\n').filter(l => l.trim())
-        const last: LastOutput = { command: String(e.command).split('\n')[0]!.slice(0, 160), lines: lines.slice(-200), total: lines.length, ok: !r.isError }
-        await update($, output, () => last)
-      }
       const stopped = ['TaskStop', 'KillShell', 'KillBash'].includes(String(e.tool))
       if (stopped && r.deny === undefined && !r.isError) {
         const input = e as { task_id?: unknown; shell_id?: unknown }
@@ -582,6 +623,9 @@ export const register: Register = (on, options) => {
       noteTimer?.cancel()
       const agent = agentOf.get(id)
       if (agent) await update($, agents, list => list.map(a => (a.id === agent ? { ...a, done: true } : a))).catch(() => undefined)
+      const began = starts.get(id)
+      if (began !== undefined) took.set(id, (await $.clock.now()) - began)
+      if (took.size > 400) took.delete(took.keys().next().value!)
       starts.delete(id)
       agentCalls.delete(id)
       agentOf.delete(id)
@@ -589,32 +633,11 @@ export const register: Register = (on, options) => {
     }
   })
 
-  // T-0123: a finished shell command's output as a summary: how many lines, the ones that matter (failures first, else
-  // the tail) in their colours, and where the rest is. An error keeps Claude Code's full text.
-  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (e.props.tool !== 'Bash' || e.props.isErrored) return next(e)
-    const o = (e.props.output ?? {}) as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; backgroundTaskId?: unknown }
-    const { Box, Text } = $.ui.resolve(e)
-    if (typeof o.backgroundTaskId === 'string')
-      return <Text color={hex(C.accent2)}>◷ running in the background · {o.backgroundTaskId}</Text>
-    const s = outputSummary(o.stdout, o.stderr)
-    if (!s.total) return <Text color={hex(C.dim)}>{o.interrupted ? '■ interrupted' : '✓ no output'}</Text>
-    return (
-      <Box flexDirection="column" key="fm-output">
-        <Text color={hex(C.dim)}>
-          <Text color={hex(s.failures ? C.err : C.ok)}>{s.failures ? '✗' : '✓'}</Text> {s.total} line{s.total === 1 ? '' : 's'}
-          {s.more ? (s.failures ? ' · the failures' : ` · the last ${s.lines.length}`) : ''}
-          {o.interrupted ? ' · interrupted' : ''}
-        </Text>
-        {s.lines.map((l, i) => (
-          <Text key={`out-${i}`} color={hex(TONE_COLOR[l.tone])} wrap="truncate-end">
-            {'  '}
-            {l.text}
-          </Text>
-        ))}
-        {s.more > 0 && <Text color={hex(C.dim)}>  … {s.more} more · /fm → Output</Text>}
-      </Box>
-    )
+  // T-0137: Claude Code folds commands into one "Running 1 shell command…" line, which hid the live row; a group
+  // holding a shell command unfolds, so each command is its own row here. Reads and searches stay folded.
+  on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
+    if (e.props.isExpanded || !e.props.calls.some(x => x.tool === 'Bash')) return next(e)
+    return next({ ...e, props: { ...e.props, isExpanded: true } })
   })
 
   // A background task's notification (idle, or folded into a running turn) names the task that ended.
@@ -642,7 +665,8 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    const quiet = ['Read', 'WebFetch', 'WebSearch'].includes(e.props.tool)
+    if (e.props.tool === 'Bash' && !e.props.isRunning) return shellRow($, e)
+    const quiet = ['Read', 'WebFetch', 'WebSearch', 'Grep', 'Glob'].includes(e.props.tool)
     if (quiet && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
       const face = toolFace(e.props.tool, e.props.input)
       const { Box, Text } = $.ui.resolve(e)
@@ -958,7 +982,6 @@ export const register: Register = (on, options) => {
     const touched = await read($, files)
     const subs = await read($, agents)
     const bgShells = await read($, shells)
-    const lastOut = await read($, output)
     const fb = bgShells.length ? await read($, frame) : 0
     const isOn = await read($, sound)
     const queue = v.queue ?? []
@@ -1162,21 +1185,6 @@ export const register: Register = (on, options) => {
             {v.brainstorm.ideas.map((idea, i) => (
               <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
                 {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {lastOut && (
-          <Box key="card-output" {...card(lastOut.ok ? C.track : C.err)}>
-            {head('Output', lastOut.ok ? C.accent : C.err, `${lastOut.total} lines`)}
-            <Text color={hex(C.accent)} wrap="truncate-end">
-              $ {lastOut.command}
-            </Text>
-            {lastOut.total > OUT_LINES && <Text color={hex(C.dim)}>… {lastOut.total - OUT_LINES} earlier lines</Text>}
-            {lastOut.lines.slice(-OUT_LINES).map((l, i) => (
-              <Text key={`o-${i}`} color={hex(TONE_COLOR[tone(l)])} wrap="truncate-end">
-                {l}
               </Text>
             ))}
           </Box>

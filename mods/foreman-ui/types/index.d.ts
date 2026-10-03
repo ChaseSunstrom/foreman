@@ -65,8 +65,6 @@ export type LiveAgent = {
 }
 // A background shell Claude started (or ctrl+b moved there), until its notification or a stop.
 export type LiveShell = { id: string; command: string; startedAt: number }
-// The last shell command's output, for the pane (T-0123): its last lines, colour codes stripped.
-export type LastOutput = { command: string; lines: string[]; total: number; ok: boolean }
 export type Ctx = { percent: number }
 
 // What one turn did, for the line that closes it (matched by its duration).
@@ -86,7 +84,6 @@ declare module 'claude-code' {
       beat: number
       shells: LiveShell[]
       away: string[]
-      output: LastOutput | null
     }
   }
 }
