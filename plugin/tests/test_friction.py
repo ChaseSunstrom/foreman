@@ -50,6 +50,20 @@ class Friction(ForemanTestCase):
                            "--json").stdout)
         self.assertNotIn("self-improvement pass", nxt(), "never in the middle of a task")
 
+    def test_a_pass_waits_two_hours_after_the_last_so_it_has_friction_to_read(self):
+        # T-0154: pass 2 came due 13 minutes after pass 1 with one new friction line
+        import fmcore as c
+        nxt = lambda: self.fm("next").stdout
+        self.fm("friction", "--every", "1")
+        self.fm("friction", "--mark")
+        self.close_one(1)
+        self.assertNotIn("self-improvement pass", nxt())
+        p = c.find_project(self.repo)
+        meta = c.read_meta(p)
+        meta["rsi_at"] = c.iso(c.time.time() - 3 * 3600)
+        c.write_meta(p, meta)
+        self.assertIn("self-improvement pass", nxt())
+
 
 if __name__ == "__main__":
     unittest.main()

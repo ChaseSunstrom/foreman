@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A self-improvement pass also waits 2 h after the last one (T-0154): the loop tuned itself after pass 2 came due 13 minutes after pass 1 with one new friction line.
 - A passing criterion check verifies the step it ran in (T-0149, from self-improvement pass 1): running a criterion's exact verify command was recorded for the criterion only, so the Stop gate kept asking for step evidence (the largest friction count, 32 nudges); a failing run still verifies nothing.
 - Guard backticks (T-0150, from self-improvement pass 1): a backtick counts as code execution only in ruby, perl and php, so markdown in a Python heredoc beside a quoted plugin-test command no longer blocks; a claude plugin/mcp/config call inside backticks is now caught there; and an unquoted shell backtick substitution (`` echo `claude plugin install …` ``) is split into its own command and checked (it went unread before, a gap found while checking this change).
 - One drive wait is one `drive_wait` event (T-0152, from self-improvement pass 1): it was logged on every Stop while background work ran, so `fm friction` counted one long wait many times.

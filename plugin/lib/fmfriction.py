@@ -11,6 +11,7 @@ import fmcore as c
 
 WINDOW_DAYS = 7  # the first pass looks back this far
 MAX_LINES = 6  # per section
+MIN_GAP_H = 2  # T-0154: a pass needs time to gather friction (pass 2 came due 13 min after pass 1 with one line)
 
 
 def _start(meta):
@@ -109,10 +110,11 @@ loop itself should change (how often it runs, what it reads). Skip anything you 
 
 
 def due(p):
-    """True at a task boundary once rsi_every tasks of this project closed since the last pass (0 or unset: off)."""
+    """True at a task boundary once rsi_every tasks of this project closed since the last pass, and at least MIN_GAP_H
+    hours after it (0 or unset: off)."""
     meta = c.read_meta(p)
     every = int(meta.get("rsi_every") or 0)
-    if every <= 0:
+    if every <= 0 or (meta.get("rsi_at") and (c.age_days(meta["rsi_at"]) or 0) * 24 < MIN_GAP_H):
         return False
     start = meta.get("rsi_at") or meta.get("created") or ""
     done = sum(1 for e in c.tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), 6000)
