@@ -1011,12 +1011,15 @@ def _bash_touches(pl, p):
         full = os.path.join(top, ent[3:])  # porcelain paths are relative to the repository's top
         rel = os.path.relpath(full, p.root)
         try:
-            fresh = os.path.getmtime(full) >= since and os.path.isfile(full)
+            mtime = os.path.getmtime(full)
+            fresh = mtime >= since and os.path.isfile(full)
         except OSError:
             continue  # deleted: the task's diff at finish still sees it
         if not fresh or rel.startswith(("..", ".foreman/")):
             continue
-        c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash"}, session=pl.get("session_id"))
+        # timed by the file, not by this async hook: a scope reason the same command logged comes after it (T-0164)
+        c.log_event(p, "touched", task=act.id, data={"file": full, "tool": "Bash", "at": c.iso(mtime)},
+                    session=pl.get("session_id"))
         if scope and not any(c.glob_match(rel, s) for s in scope):
             outside.append(full)
     noted = {(e.get("data") or {}).get("file") for e in c.ledger_tail(p, 300)

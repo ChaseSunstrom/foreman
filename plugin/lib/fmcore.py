@@ -1699,7 +1699,7 @@ def task_touches(p, tid):
     for e in ledger_tail(p, TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
-            files[os.path.relpath(f, p.root)] = e.get("ts", "")
+            files[os.path.relpath(f, p.root)] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
     return files
 
 
