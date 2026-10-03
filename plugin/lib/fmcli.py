@@ -1560,7 +1560,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
-    ("Reports", "digest cost usage repeats friction taste evals"),
+    ("Reports", "digest cost usage repeats friction taste evals replay"),
     ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -1768,6 +1768,10 @@ def build_parser():
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
+    s = add("replay", lazy("fmreplay", "cmd_replay"), help="the guard on the real shell commands of recent sessions: what "
+                                                           "it now blocks or lets through compared with the accepted run")
+    s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
+    s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
