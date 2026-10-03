@@ -400,7 +400,9 @@ _SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
-_INTERP = re.compile(r"(?:^|[\s;&|(/])(?:python[0-9.]*|py|perl|ruby|node|deno|bun|php)(?:\s|$|[;&|)])")
+_INTERP_NAMES = r"(?:python|perl|ruby|php)[0-9.]*|py|jruby|truffleruby|irb|node|nodejs|deno|bun"
+_INTERP = re.compile(rf"(?:^|[\s;&|(/`])({_INTERP_NAMES})(?=\s|$|[;&|)`])")
+_TEXT_TICKS = re.compile(r"(?:python[0-9.]*|py|node|nodejs|deno|bun)$")  # a backtick is only text in these
 _WRITE_API = re.compile(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
@@ -419,8 +421,6 @@ _CLAUDE_IN_CODE = re.compile(r"""['"]claude['"][^;\n]{0,40}?['"](?:plugins?|mcp|
                              r"""['"`]claude\s+(?:plugins?|mcp|config)\b|['"]\s*""" + _SLASH_BODY)
 _EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\b|\bPopen\b|child_process|"
                        r"\b(?:exec|execSync|spawn|spawnSync|system)\s*\(")
-# T-0150: a backtick runs a shell command only in these; in Python or JS it is text (markdown in a heredoc was blocked)
-_BACKTICK_EXEC = re.compile(r"(?:^|[\s;&|(/])(?:ruby|perl|php)(?:\s|$|[;&|)])")
 
 
 # Any Foreman module (fm*.py in plugin/lib), so new modules are covered without editing this list. Calls into the entry
@@ -436,6 +436,30 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
 
 
 _FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
+
+
+def _backtick_bodies(cmd):
+    """The bodies of `…` substitutions outside single quotes (bare or inside double quotes): a shell runs each. An
+    unterminated one runs to the end (read it all)."""
+    out, q, esc, start = [], None, False, None
+    for i, ch in enumerate(cmd):
+        if esc:
+            esc = False
+        elif ch == "\\" and q != "'":
+            esc = True
+        elif start is not None:
+            if ch == "`":
+                out.append(cmd[start:i])
+                start = None
+        elif q == "'":
+            q = None if ch == "'" else q
+        elif ch == "'" and q is None:
+            q = "'"
+        elif ch == '"':
+            q = None if q == '"' else '"'
+        elif ch == "`":
+            start = i + 1
+    return out + ([cmd[start:]] if start is not None else [])
 
 
 def _top_level(prefix):
@@ -486,7 +510,9 @@ def _interpreter_writes(cmd, ctx):
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     code = _interp_code(cmd)
-    if _CLAUDE_IN_CODE.search(code) and (_EXEC_API.search(code) or ("`" in code and _BACKTICK_EXEC.search(cmd))):
+    # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
+    ticks = "`" in code and any(not _TEXT_TICKS.match(m.group(1)) for m in _INTERP.finditer(cmd))
+    if _CLAUDE_IN_CODE.search(code) and (_EXEC_API.search(code) or ticks):
         return [("plugin", "interpreter code running claude's plugin, MCP or config commands" + plugin_mark("?"))]
     if not _WRITE_API.search(cmd):
         return []
@@ -528,8 +554,10 @@ def check_bash(cmd, ctx, depth=0):
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
-    # an unquoted backtick runs its body as a command, like $( ): split there (T-0150; quoted ones are read elsewhere)
-    cmds = _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; ").replace("`", " ; ")))
+    shell = _strip_heredocs(cmd)
+    for body in _backtick_bodies(shell):  # T-0150/T-0155: every `…` a shell runs, unquoted or in double quotes
+        found += check_bash(body, ctx, depth + 1)
+    cmds = _split(_tokens(shell.replace("\n", " ; ")))
     cwd, chain = ctx.cwd, []
     for idx, c in enumerate(cmds):
         argv, via_xargs = _strip_wrappers(c.argv)
@@ -543,7 +571,8 @@ def check_bash(cmd, ctx, depth=0):
                 cwd = _resolve(_expand(tgt, ctx), cwd)
         for tok in c.argv:
             for m in _SUBST.finditer(tok):
-                found += check_bash(m.group(1) or m.group(2) or "", ctx, depth + 1)
+                if m.group(1) is not None:  # $( … ); backticks are read once, by _backtick_bodies
+                    found += check_bash(m.group(1), ctx, depth + 1)
         if _SHELLS.match(name) and "-c" in args and args.index("-c") + 1 < len(args):
             inner = args[args.index("-c") + 1]
             found += check_bash(inner, ctx, depth + 1)

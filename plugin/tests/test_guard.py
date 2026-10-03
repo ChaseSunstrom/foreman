@@ -363,6 +363,12 @@ class InterpreterWrites(GuardCase):
                     # T-0150: backticks run a shell command in ruby, perl and php
                     "ruby -e '`claude plugin install x@y`'",
                     "perl -e 'print `claude mcp add x -- y`'",
+                    # T-0155 (security review): versioned and alternative names; backticks run unless known text-only
+                    "ruby3.2 -e '`claude plugin install x@y`'",
+                    "jruby -e '`claude plugin install x@y`'",
+                    "echo '`claude plugin install x@y`' | irb",
+                    "php8.3 -r 'echo `claude plugin install x@y`;'",
+                    "python3 -c 'print(1)'; ruby -e '`claude plugin install x@y`'",
                     "node -e \"require('child_process').execSync('claude plugin install x@y')\""):
             self.assertBlocked(self.bash(bad), "plugin", bad)
 
@@ -436,6 +442,8 @@ class PluginChanges(GuardCase):
         self.run_table([
             ("claude plugin install rust-analyzer-lsp@claude-plugins-official", "plugin"),
             ("echo `claude plugin install x@y`", "plugin"),  # T-0150: unquoted backtick substitution went unread
+            ('echo "`rm -rf ~`"', "rm-outside"),  # T-0155 review: T-0150's rewrite hid double-quoted backticks
+            ('echo "a `claude plugin install x@y` b"', "plugin"),
             ("python3 -c 'print(1)'; echo `claude mcp add a -- b`", "plugin"),
             ("claude plugin enable superpowers@claude-plugins-official", "plugin"),
             ("claude plugin disable ecc@ecc", "plugin"),
