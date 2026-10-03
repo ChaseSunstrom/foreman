@@ -770,7 +770,10 @@ def _track_vars(words, env):
         if m.group(1) == "IFS":                            # NAME+= or NAME[i]=, or one a command is handed
             return None
         env.pop(m.group(1), None)
-    name = _unquote(next((w for w in words if not _ASSIGNISH.match(w)), "")) or ""
+    word = next((w for w in words if not _ASSIGNISH.match(w)), "")
+    if re.search(r"[$`*?\[]", word):
+        return None  # T-0162: a name bash computes ($X, `…`, a glob) can turn out to be a builtin
+    name = _unquote(word) or ""
     return None if name in _BUILTINS and name not in _INERT else env
 
 
