@@ -890,8 +890,13 @@ def _tripwire_note(pl, p, act):
     if not _in_project(path, p):
         return None
     import fmrecall
-    hit = fmrecall.tripwire(p, os.path.relpath(path, p.root), act.id if act else None)
-    if not hit or not _first_time(pl.get("session_id"), f"trip-{hit[0]}"):
+    rel, sid = os.path.relpath(path, p.root), pl.get("session_id")
+    hit = fmrecall.tripwire(p, rel, act.id if act else None)
+    if not hit or not _first_time(sid, f"trip-{hit[0]}") or not _first_time(sid, f"tripfile-{rel}"):
+        return None
+    # T-0127: a task closed in this same session left its lesson in this context already
+    if sid and any(e.get("event") == "task_done" and e.get("task") == hit[0] and e.get("session_id") == sid
+                   for e in c.ledger_tail(p, 400)):
         return None
     return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
 

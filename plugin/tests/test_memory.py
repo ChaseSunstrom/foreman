@@ -60,6 +60,26 @@ class Memory(ForemanTestCase):
         self.assertNotIn("lesson", edit("shop/other.py"))
         self.assertIn("lesson", edit("shop/cache.py", sid="s2"))
 
+    def test_lesson_notes_never_repeat_what_this_session_already_knows(self):
+        # T-0127: every task touches CHANGELOG.md, so each newly closed one added a note on the next edit of it
+        self.finished("first", ["CHANGELOG.md"], lesson="keep entries short")
+        self.finished("second", ["CHANGELOG.md"], lesson="name the task id")
+        self.fm("task", "new", "third", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+
+        def edit(sid="s1"):
+            return self.hook("PreToolUse", {"tool_name": "Edit", "session_id": sid, "tool_input": {
+                "file_path": os.path.join(self.repo, "CHANGELOG.md"), "old_string": "a", "new_string": "b"}}).stdout
+        self.assertEqual(sum("lesson" in edit() for _ in range(3)), 1, "one note per file per session")
+        os.environ["FOREMAN_SESSION_ID"] = "s9"  # a task closed in this very session: its lesson is in context
+        try:
+            self.finished("fourth", ["src/x.py"], lesson="fresh in mind")
+        finally:
+            del os.environ["FOREMAN_SESSION_ID"]
+        self.fm("task", "new", "fifth", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+        note = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": "s9", "tool_input": {
+            "file_path": os.path.join(self.repo, "src/x.py"), "old_string": "a", "new_string": "b"}}).stdout
+        self.assertNotIn("fresh in mind", note)
+
     def test_decisions_have_kinds_and_reversals(self):
         self.fm("decide", "use sqlite for the queue", "--why", "simple", "--kind", "costly")
         self.fm("decide", "ship without a migration", "--why", "no users yet")
