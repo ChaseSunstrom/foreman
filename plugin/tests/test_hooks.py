@@ -1263,6 +1263,23 @@ class Reload(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "Continue the Foreman drive: the Foreman UI reloaded"}, env=env)
         self.assertIsNone(view(), "the resumed turn clears it")
 
+    def test_the_evidence_nudge_does_not_hold_a_turn_that_ends_for_a_reload(self):
+        # T-0147: twice the nudge blocked a turn ending on purpose; the resumed turn records the live evidence
+        self.fm("init")
+        self.task()
+        cfg = os.path.join(self.tmp, "cc")
+        env = {"CLAUDE_CONFIG_DIR": cfg}
+        self.hook("UserPromptSubmit", {"prompt": "go"}, env=env)
+        mod = os.path.join(cfg, "dev-mods", "sess-1", "ui", "hooks", "register.tsx")
+        os.makedirs(os.path.dirname(mod))
+        open(mod, "w").close()
+        os.utime(mod, (time.time() + 5, time.time() + 5))
+        out = parse(self.hook("Stop", {"stop_hook_active": False, "session_id": "sess-1",
+                                       "last_assistant_message": "Done: the changes are synced and gates pass.\n"
+                                                                 "✓ fm check → 547 tests OK"}, env=env)) or {}
+        self.assertIsNone(out.get("decision"), out.get("reason"))
+        self.assertIn("reload", out.get("systemMessage", ""))
+
     def test_a_session_whose_turn_start_was_never_recorded_uses_when_it_was_last_seen(self):
         # a session already running when this shipped: its last prompt went through the old hook
         self.fm("init")

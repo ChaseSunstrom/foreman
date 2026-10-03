@@ -1124,7 +1124,12 @@ def stop(pl):
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
         _scan_notices(pl, g)
-        reason = _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl) or _drive(p, sd, briefs, pl, g)
+        d0 = g["drive"].get(sid) or {}
+        # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
+        reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
+        nudge = None if reload_due else (_evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED})
+                                         or _question_nudge(pl))
+        reason = nudge or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
@@ -1277,10 +1282,7 @@ def _drive(p, sd, briefs, pl, g):
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
     except Exception:
         log_error("Stop", _tb())
-    seen = c.read_meta(p).get("session") or {}  # a turn start the old prompt hook never recorded: when last seen
-    age = c.age_days(seen.get("seen")) if seen.get("id") == sid else None
-    changed = _ui_changed(sid, d.get("turn_at") or (time.time() - age * 86400 if age is not None else None),
-                          d.get("ui_mtime"))
+    changed = _ui_changed(sid, _turn_began(p, sid, d), d.get("ui_mtime"))
     if changed:  # T-0145: Claude Code hot-reloads only at a real turn end; the reloaded mod resumes (fm ui --json)
         meta = c.read_meta(p)  # the caller holds the lock
         meta["resume_after_reload"] = {"session": sid, "at": c.now(), "task": work["id"]}
@@ -1291,6 +1293,13 @@ def _drive(p, sd, briefs, pl, g):
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
+
+
+def _turn_began(p, sid, d):
+    """When this session's turn began: the prompt hook's turn_at, else (a turn the old hook started) when it was seen."""
+    seen = c.read_meta(p).get("session") or {}
+    age = c.age_days(seen.get("seen")) if seen.get("id") == sid else None
+    return d.get("turn_at") or (time.time() - age * 86400 if age is not None else None)
 
 
 def _ui_changed(sid, since, handed):
