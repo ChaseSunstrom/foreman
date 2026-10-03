@@ -288,6 +288,64 @@ class Core(GuardCase):
     def test_bash_write_to_core(self):
         self.assertBlocked(self.bash("sed -i 's/x/y/' {fhome}/plugin/hooks/hooks.json"), "core")
 
+    def test_a_write_through_a_variable_is_checked(self):
+        # T-0175: a target with a $ in it was skipped, so `x=<core>; echo > $x` went through unchecked
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)  # a cd only goes into a real folder
+        self.run_table([
+            ("x={fhome}/plugin/lib/fmguard.py; echo hi > $x", "core"),
+            ('x={fhome}/plugin/lib/fmguard.py; echo hi > "$x"', "core"),
+            ("x={fhome}/plugin/lib/fmguard.py && echo hi > ${{x}}", "core"),
+            ("x={fhome}/plugin/lib/fmguard.py; cp /etc/hostname $x", "core"),
+            ("x={fhome}/plugin/lib/fmguard.py; tee $x < /dev/null", "core"),
+            ("echo hi > $HOME/.claude/foreman/plugin/lib/fmguard.py", "core"),
+            ("x={fhome}/plugin/lib; cd $x && echo hi > fmguard.py", "core"),
+            ("x={fhome}/plugin/lib; cd $x; echo hi > fmguard.py", "core"),
+            ("x={fhome}/state/projects/x; cp -r /tmp/a $x", "state-direct"),
+            # branchy or computed: the target stays unknown, so any protected path the command names counts
+            ("for x in {fhome}/plugin/lib/fmguard.py; do echo hi > $x; done", "core"),
+            ("echo hi > $(echo {fhome}/plugin/lib/fmguard.py)", "core"),
+            ("x={fhome}/state/projects/x/meta.json; true | tee $x", "state-direct"),
+            ("HOME=/tmp; true | tee $HOME/.claude/foreman/plugin/lib/fmguard.py", None),  # bash writes under /tmp
+            ("HOME={home}; true | tee $HOME/.claude/foreman/plugin/lib/fmguard.py", "core"),  # a named path in its place
+            ("x={fhome}/plugin; cd $x && echo hi > lib/fmguard.py", "core"),
+            ("cd {fhome}/plugin/lib && cd - && cd /tmp && echo hi > fmguard.py", None),  # an absolute cd is known again
+            ("cd {fhome}/plugin/lib; cd /nonexistent-T0175; echo hi > fmguard.py", "core"),  # ; runs on after a failed cd
+            # a known variable aimed somewhere harmless writes only there; nothing protected named, nothing blocked
+            ("x=/tmp/out; cat {fhome}/plugin/lib/fmguard.py > $x", None),
+            ("d=/tmp/probe && mkdir -p $d && cd $d && echo x > .foreman/x", None),  # the T-0175 friction
+            # the text after $( is also read on its own (T-0158), from the first folder: coarse, kept closed
+            ("cd $(mktemp -d) && echo x > .foreman/x", "state-direct"),
+            ("cd $(mktemp -d) && echo x > out.txt", None),
+            ("for f in a b; do echo $f > $f.txt; done", None),
+            ("x=/tmp/a; false && x={fhome}/plugin/lib/fmguard.py; echo hi > $x", "core"),  # mixed: unknown, named
+            # its review: a name set where the guard can't see it, and reads that only name a protected file
+            ("eval 'HO''ME={fhome}/plugin'; echo hi > $HOME/lib/fmguard.py", "core"),
+            ('read "HO""ME" <<< {fhome}/plugin; tee $HOME/lib/fmguard.py < /dev/null', "core"),
+            ("echo ${{X:={fhome}/plugin/lib/fmguard.py}}; echo hi > $X", "core"),
+            ('grep -n foo {fhome}/plugin/lib/fmcli.py > "$NOT_SET_HERE/out.txt"', None),
+            ('cd "$(mktemp -d)" && cp {fhome}/plugin/lib/fmguard.py out.txt', None),
+            ("sed -n 1,20p {fhome}/plugin/lib/fmcli.py | tee $NOT_SET_HERE", None),
+        ], self.bash)
+        self.run_table([  # its review: a cd that may not have happened, from Foreman's own folder
+            ("cd /tmp & echo hi > plugin/lib/fmguard.py", "core"),
+            ("(cd /tmp); echo hi > plugin/lib/fmguard.py", "core"),
+            ("cd /tmp | cat; echo hi > plugin/lib/fmguard.py", "core"),
+            ("false && cd /tmp; echo hi > plugin/lib/fmguard.py", "core"),
+            ("export CDPATH={fhome}/plugin; cd lib; echo hi > fmguard.py", "core"),
+            ("cd /tmp && echo hi > plugin/lib/fmguard.py", None),
+            ("cd /tmp; echo hi > plugin/lib/fmguard.py", None),  # a straight cd into a folder that exists happens
+            ("mkdir -p /tmp/probe-T0175\ncd /tmp/probe-T0175\necho x > plugin/lib/fmguard.py", None),  # or one it made
+            # its second review: a negated chain, pushd's stack forms, CDPATH set without its name, ~+
+            ("! cd /nonexistent && echo hi > plugin/lib/fmguard.py", "core"),
+            ("! cd {fhome}/state && cd .. && echo hi > plugin/lib/fmguard.py", "state-direct"),  # every place counts
+            ("pushd -n /tmp && echo hi > plugin/lib/fmguard.py", "core"),
+            ("pushd {fhome}/plugin/lib && pushd /tmp && pushd +1 && echo hi > fmguard.py", "core"),
+            ("a=CD; export ${{a}}PATH={fhome}/plugin; cd lib; echo hi > fmguard.py", "core"),
+            ("echo hi > ~+/plugin/lib/fmguard.py", "core"),
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        user = os.path.basename(os.path.expanduser("~"))
+        self.assertEqual(g._expand(f"~{user}/x", self.ctx()), os.path.join(os.path.expanduser("~"), "x"))  # ~user
+
     def test_symlinked_rules_resolve_to_core(self):
         target = os.path.join(self.fhome, "plugin", "rules", "foreman.md")
         os.makedirs(os.path.dirname(target), exist_ok=True)

@@ -115,11 +115,13 @@ def project_root_for(cwd, home):
 
 def _expand(tok, ctx):
     t = re.sub(r"^~(?=/|$)", lambda _: ctx.home, tok)
+    if re.match(r"~[\w.-]+(/|$)", t):  # ~user (T-0175 review)
+        t = os.path.expanduser(t)
     return t.replace("${HOME}", ctx.home).replace("$HOME", ctx.home)
 
 
 def _unresolvable(tok):
-    return "$" in tok or "`" in tok
+    return "$" in tok or "`" in tok or bool(re.match(r"~[+-]", tok))  # ~+ and ~- are $PWD and $OLDPWD
 
 
 def _resolve(tok, base):
@@ -785,11 +787,104 @@ _SHELL_SET = re.compile(r"^(?:_|PWD|OLDPWD|DIRSTACK|BASH\w*|RANDOM|SRANDOM|SECON
 
 
 def _straight_line(shell):
-    return not _BRANCHY.search(re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", " ", shell))  # ${VAR}, 2>&1 and &> aren't branches
+    s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", " ", shell)  # ${VAR}, 2>&1 and &> aren't branches
+    if "&&" in s:  # T-0175: in a chain joined only by &&, a command runs only after every earlier one ran; mixed with
+        s = s.replace("&&", " ")  # ; or a newline, one can be skipped and the next still run (false && D=x; rm $D)
+        if re.search(r"[;\n]", s.strip()):
+            return False
+    return not _BRANCHY.search(s)
 
 
 def _with_vars(tok, env):
     return re.sub(r"\$(?:\{(\w+)\}|(\w+))", lambda m: env.get(m.group(1) or m.group(2), m.group(0)), tok)
+
+
+_WORD = re.compile(r"[^\s'\"`;|&<>()=]+")
+_PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$")  # what a shell fills in at run time
+
+
+def _top(shell):
+    """(straight, and_chain) at the command's top level, command substitutions blanked: straight when every command
+    there runs in this shell, in order (no branch, subshell, pipe, background or !: `! cd BAD && x` runs x); and_chain
+    when only && joins them, so a failed cd stops the rest."""
+    s, prev = re.sub(r"`[^`]*`", "S", shell), None
+    while s != prev:
+        s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
+    straight = "!" not in s and _straight_line(s)
+    return straight, straight and "&&" in s
+
+
+def _outside(shell, cmds, ctx):
+    """T-0175 review: ({NAME: value} for the names this command can't set itself, as it inherits them; the names it may
+    set). It may set every name it writes bare (an assignment, read NAME, for NAME, ${NAME:=…}), and any name at all
+    (None) with a builtin that sets names indirectly (eval, read, declare, source…) or a computed command name. Values
+    are Claude Code's environment, HOME the user's; one a shell would split or expand stays unknown."""
+    for c in cmds:
+        argv, _ = _strip_wrappers(c.argv)
+        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0])):
+            return {}, None
+    bare = set(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
+    return {k: v for k, v in {**os.environ, "HOME": ctx.home}.items() if k not in bare and not _SHELL_SET.match(k)
+            and v and not re.search(r"[\s*?\[]", v) and not v.startswith("~")}, bare
+
+
+def _moved(cwds, lost, tgt, sure, cdpath, ctx):
+    """T-0175 review: the places the shell may be after a cd: cwds, the ones the guard can name, and lost, the paths
+    below a folder it can't name (a cd to a target it can't resolve, or a relative one CDPATH may send elsewhere). When
+    the cd surely happened (sure: an && chain stops at a failed one; a straight command's cd into an existing folder
+    can't fail) the new places replace the old; otherwise it may fail or run in a subshell, so they add to them."""
+    if _unresolvable(tgt):
+        new, tails = [], [""]
+    else:
+        t = _expand(tgt, ctx)
+        if os.path.isabs(t):
+            new, tails = [os.path.normpath(t)], []
+        else:
+            new = [_resolve(t, b) for b in cwds]
+            tails = [os.path.join(x, t) for x in lost] + ([t] if cdpath else [])
+    return list(dict.fromkeys(new if sure else cwds + new)), list(dict.fromkeys(tails if sure else lost + tails))
+
+
+def _possible(path):
+    """False when a folder in the path is an existing file: nothing can be written there."""
+    d = os.path.dirname(path)
+    while d not in ("", "/"):
+        if os.path.exists(d):
+            return os.path.isdir(d)
+        d = os.path.dirname(d)
+    return True
+
+
+def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note=""):
+    """(category, detail) for one write target, through the variables known here (T-0175: a target with a $ in it was
+    skipped), in every place the shell may be. A resolved one is named by its path, so a standing or trusted yes covers
+    it as usual. One the command itself makes unknown (a name it sets in a way the guard can't follow, a command
+    substitution) could be any path the command names, in the unknown part's place; a relative one after a cd the guard
+    couldn't follow, any folder the command names. Each counts, the way interpreter code is judged."""
+    here = cwds or [ctx.cwd]
+    t = re.sub(r"^~-(?=/|$)", "$OLDPWD", re.sub(r"^~\+(?=/|$)", "$PWD", target))  # review: ~+ and ~-
+    t = _with_vars(t, {**known, "PWD": cwds[0]} if len(cwds) == 1 and not lost else known)
+    found = []
+    if not _unresolvable(t):
+        e = _expand(t, ctx)
+        for path in dict.fromkeys(_resolve(e, b) for b in ([ctx.cwd] if os.path.isabs(e) else cwds)):
+            found += [(cat, f"{path if t != target else target}{note}") for cat in classify(path, ctx)]
+        if os.path.isabs(e) or not lost:
+            return found
+    elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
+                 or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
+        return found  # only names it neither sets nor inherits: nothing in it says where they point
+    words = [p for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(shell)) if not _unresolvable(w)
+             for p in dict.fromkeys(_resolve(_expand(w, ctx), b) for b in here)]
+    if _unresolvable(t):
+        guesses = [_resolve(_expand(_PART.sub(lambda _, w=w: w, t), ctx), b) for w in words for b in here]
+    else:  # relative, somewhere a cd went that the guard couldn't follow: only a folder that exists takes a cd
+        guesses = [os.path.join(w, x, _expand(t, ctx)) for w in words for x in lost if os.path.isdir(os.path.join(w, x))]
+    for path in dict.fromkeys(guesses):
+        if _possible(path):
+            found += [(cat, f"{target}{note} (not known before it runs: it could be {path})")
+                      for cat in classify(path, ctx) if cat in _GUARDED_BY_PATH]
+    return found
 
 
 def _raw_cmds(shell):
@@ -808,11 +903,11 @@ def _raw_cmds(shell):
             q = None if ch == q else q
         elif ch in "'\"":
             q = ch
-        elif ch in " \t\n;":
+        elif ch in " \t\n;" or text[i:i + 2] == "&&":
             words, cur = (words + [cur]) if cur else words, ""
             if ch != " " and ch != "\t" and words:
                 cmds, words = cmds + [words], []
-            i += 1
+            i += 2 if ch == "&" else 1
             continue
         cur += ch
         i += 1
@@ -875,19 +970,34 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
     raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
-    env = {} if raw is not None and len(raw) == len(cmds) else None  # VAR → literal, for rm targets (T-0151)
+    outside, bare = _outside(shell, cmds, ctx)  # T-0175: what it inherits and can't change
+    # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
+    env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
+    (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
+    cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
     for idx, c in enumerate(cmds):
         if env is not None:
             env = _track_vars(raw[idx], env)
+        known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
         if not c.piped:
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
-        if name in ("cd", "pushd"):
-            tgt = args[0] if args else ctx.home
-            if not _unresolvable(tgt):
-                cwd = _resolve(_expand(tgt, ctx), cwd)
+        if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists
+            made.update(os.path.normpath(_expand(a, ctx)) for a in args if os.path.isabs(_expand(a, ctx)))
+        if name in ("cd", "pushd", "popd"):
+            dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
+            if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
+                unknown = name == "popd" or dirs[:1] == ["-"] or (
+                    name == "pushd" and (not dirs or re.fullmatch(r"[+-]\d+", dirs[0])))  # rotations, a swap, cd -
+                tgt = "$OLDPWD" if unknown else _with_vars(dirs[0], known) if dirs else ctx.home
+                if not _unresolvable(tgt):
+                    cwd = _resolve(_expand(tgt, ctx), cwd)
+                d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
+                certain = and_chain or (straight and os.path.isabs(d) and (os.path.normpath(d) in made or (
+                    os.path.isdir(d) and os.access(d, os.X_OK))))
+                cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
         if _SHELLS.match(name) and "-c" in args and args.index("-c") + 1 < len(args):
             inner = args[args.index("-c") + 1]
             found += check_bash(inner, ctx, depth + 1)
@@ -920,12 +1030,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
             found.append(("system", "git with core.hooksPath set through the environment"))
         for target in c.redirs + _write_targets(name, args) + git_env:
-            if not _unresolvable(target):
-                found += [(cat, target) for cat in classify_write(_resolve(_expand(target, ctx), cwd), ctx)]
+            found += _target_cats(target, known, bare, cwds, lost, shell, ctx, classify_write)
         for target in _tree_targets(name, args) + git_env:
-            if not _unresolvable(target):
-                found += [(cat, f"{target} (a tree write over it)")
-                          for cat in classify_tree(_resolve(_expand(target, ctx), cwd), ctx)]
+            found += _target_cats(target, known, bare, cwds, lost, shell, ctx, classify_tree,
+                                  " (a tree write over it)")
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):

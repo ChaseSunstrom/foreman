@@ -47,7 +47,11 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'D=/tmp/x; >o read D <<< ~; rm -rf "$D"',
          # T-0162 (automated review of T-0161): a command name bash computes can turn out to be a builtin
          'D=/tmp/x; X=read; $X D <<< ~; rm -rf "$D"', 'D=/tmp/x; `echo read` D <<< ~; rm -rf "$D"',
-         'D=/tmp/x; touch read; rea? D <<< ~; rm -rf "$D"']
+         'D=/tmp/x; touch read; rea? D <<< ~; rm -rf "$D"',
+         # T-0175: a chain joined only by && is read in order too
+         'D=x && D=~ && rm -rf "$D"', 'D=~ && D=/tmp/x true && rm -rf "$D"', 'D=/tmp/x&&D=~&&rm -rf "$D"',
+         'D=~ && D=/tmp/x 2>/dev/null && rm -rf "$D"', 'D=/tmp/x && cd ~ && rm -rf "$PWD"',
+         'D=/tmp/x && D=~ & wait; rm -rf "$D"', 'D=~ && D=/tmp/x || true && rm -rf "$D"']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
