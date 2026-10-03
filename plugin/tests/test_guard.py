@@ -468,6 +468,14 @@ class PluginChanges(GuardCase):
             ("echo '$(rm -rf ~)'", None),  # single-quoted: never runs
             # T-0158 review: every way a substitution or a later line could go unread
             ("true # note\nrm -rf ~", "rm-outside"),  # a comment ends at its line, not at the end of the command
+            # T-0159: a shell keyword in front of a command hid it (found while tracing T-0151)
+            ("for f in a; do rm -rf ~; done", "rm-outside"),
+            ("if true; then rm -rf ~; fi", "rm-outside"),
+            ("if true; then :; else rm -rf ~; fi", "rm-outside"),
+            ("{{ rm -rf ~; }}", "rm-outside"),  # {{ }}: str.format
+            ("! rm -rf ~", "rm-outside"),
+            ("while rm -rf ~; do :; done", "rm-outside"),
+            ("for f in a; do git push --force origin main; done", "git-destructive"),
             ("echo $(date) $(date) $(date) $(date) $(date) $(date) $(date)", None),  # many substitutions aren't 'too deep'
             ("echo '$(' $'x' \"$(rm -rf ~)\"", "rm-outside"),
             ("cat <<EOF\n$(rm -rf ~)\nEOF", "rm-outside"),  # an unquoted heredoc runs its substitutions

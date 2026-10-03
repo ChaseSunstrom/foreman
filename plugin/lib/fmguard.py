@@ -368,13 +368,16 @@ def _split(tokens):
     return cmds
 
 
+_KEYWORDS = {"do", "then", "else", "elif", "if", "while", "until", "{", "!", "coproc"}  # words before a command
+
+
 def _strip_wrappers(argv):
     """Drop env assignments and exec wrappers (sudo, env, timeout, xargs, npx…). Returns (argv, via_xargs)."""
     i = 0
     while i < len(argv):
         a = argv[i]
         base = os.path.basename(a)
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", a):
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", a) or a in _KEYWORDS:  # T-0159: `do rm …` is rm, not a command `do`
             i += 1
         elif base in ("sudo", "doas"):
             i += 1
