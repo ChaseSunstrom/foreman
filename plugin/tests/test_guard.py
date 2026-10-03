@@ -347,8 +347,14 @@ class InterpreterWrites(GuardCase):
         self.assertFalse(r and "interpreter code running claude" in r.detail, r)
         for bad in ("fm task log T-0007 \"$(python3 -c \\\"import os; os.system('claude plugin install x@y')\\\")\"",
                     "fm task log T-0007 note; python3 -c \"import os; os.system('claude plugin install x@y')\"",
-                    "python3 -c \"import os; os.system('claude plugin install x@y')\" && fm task log T-0007 note"):
+                    "python3 -c \"import os; os.system('claude plugin install x@y')\" && fm task log T-0007 note",
+                    # automated review of T-0153: a script merely named fm is not Foreman's fm
+                    "printf 'import os; os.system(\"claude plugin install x@y\")' > /tmp/x/fm; python3 /tmp/x/fm",
+                    "printf 'import os; os.system(\"claude plugin install x@y\")' > fm; python3 ./fm"):
             self.assertBlocked(self.bash(bad), "plugin", bad)
+        real = os.path.join(self.fhome, "plugin", "bin", "fm")  # the real one, by full path: still data
+        r = self.bash(f"python3 {real} task new \"x\" --ac \"ruby subprocess beside 'claude plugin test' :: true\"")
+        self.assertFalse(r and "interpreter code running claude" in r.detail, r)
         # T-0150 (self-improvement pass 1): a backtick executes nothing in Python; markdown in a heredoc was blocked
         md = "python3 - <<'EOF'\nopen('CHANGELOG.md', 'a').write('run `fm check`, then \"claude plugin test mods/x\"')\nEOF"
         r = self.bash(md)
@@ -454,6 +460,24 @@ class PluginChanges(GuardCase):
             ('echo "`rm -rf ~`"', "rm-outside"),  # T-0155 review: T-0150's rewrite hid double-quoted backticks
             ('echo "a `claude plugin install x@y` b"', "plugin"),
             ("echo $'\\'' `rm -rf ~`", "rm-outside"),  # T-0157 review: $'\'' threw the backtick scan's quotes off
+            # T-0158: one reader for substitutions — nested, double-quoted with parentheses inside, in a fresh context
+            ('echo "$(echo $(rm -rf ~))"', "rm-outside"),
+            ("echo \"$(python3 -c \\\"print('(')\\\"; rm -rf ~)\"", "rm-outside"),
+            ("echo \"$(echo ')'; rm -rf ~)\"", "rm-outside"),
+            ("echo $'x' \"$(rm -rf ~)\"", "rm-outside"),
+            ("echo '$(rm -rf ~)'", None),  # single-quoted: never runs
+            # T-0158 review: every way a substitution or a later line could go unread
+            ("true # note\nrm -rf ~", "rm-outside"),  # a comment ends at its line, not at the end of the command
+            ("echo $(date) $(date) $(date) $(date) $(date) $(date) $(date)", None),  # many substitutions aren't 'too deep'
+            ("echo '$(' $'x' \"$(rm -rf ~)\"", "rm-outside"),
+            ("cat <<EOF\n$(rm -rf ~)\nEOF", "rm-outside"),  # an unquoted heredoc runs its substitutions
+            ("cat <<'EOF'\n$(rm -rf ~)\nEOF", None),  # a quoted one doesn't
+            ("echo \"$(case a in a) rm -rf ~;; esac)\"", "rm-outside"),
+            ("echo \"$(true # )\nrm -rf ~\n)\"", "rm-outside"),
+            ("echo \"$((rm -rf ~); echo)\"", "rm-outside"),
+            ("echo `echo \\`rm -rf ~\\` `", "rm-outside"),
+            ("fm task log T-0007 note # python3 -c \"import os; os.system('claude plugin install x@y')\"", "plugin"),  # closed
+            ("n=$((1+2)); echo $n", None),  # arithmetic, not a substitution
             ("echo $'\\'' `claude plugin install x@y` '", "plugin"),
             ("python3 -c 'print(1)'; echo `claude mcp add a -- b`", "plugin"),
             ("claude plugin enable superpowers@claude-plugins-official", "plugin"),

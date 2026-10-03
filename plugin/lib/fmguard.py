@@ -277,6 +277,29 @@ class Cmd:
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
 
 
+def _lines(text):
+    """Newlines as command separators for the tokenizer, placed after each line so a # comment ends at its line (it ran
+    to the end of the whole command, hiding every later line: T-0158)."""
+    return text.replace("\n", "\n;")
+
+
+def _live_heredocs(cmd):
+    """The bodies of heredocs with an unquoted delimiter: a shell runs their substitutions (T-0158)."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        for quote, delim in re.findall(_HEREDOC_START, line):
+            body = []
+            while i < len(lines) and lines[i].strip() != delim:
+                body.append(lines[i])
+                i += 1
+            i += 1
+            if not quote:
+                out.append("\n".join(body))
+    return out
+
+
 def _heredocs(cmd):
     """(the command without its heredoc bodies, the bodies)"""
     lines, out, bodies, i = cmd.split("\n"), [], [], 0
@@ -303,7 +326,7 @@ def _tokens(cmd):
         lex.commenters = "#"
         return list(lex)
     except ValueError:
-        return cmd.replace(";", " ; ").replace("|", " | ").split()
+        return re.sub(r"([;&|()])", r" \1 ", cmd).split()  # unbalanced quotes: still split commands apart
 
 
 def _split(tokens):
@@ -396,7 +419,6 @@ def _name(argv):
 
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
-_SUBST = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -438,47 +460,84 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
 _FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
 
 
-def _backtick_bodies(cmd):
-    """The bodies of `…` substitutions outside single quotes (bare or inside double quotes): a shell runs each. An
-    unterminated one runs to the end (read it all). With $'…' quoting (where \\' is a quote) the quote scan can't follow:
-    every span between backticks is read (T-0157, fails closed)."""
-    if "$'" in cmd:
-        return cmd.split("`")[1::2]
-    out, q, esc, start = [], None, False, None
-    for i, ch in enumerate(cmd):
+def _unescape_ticks(body):
+    """A backtick body as the shell runs it: \\`, \\$ and \\\\ lose their backslash (nested backticks: T-0158)."""
+    return re.sub(r"\\([`$\\])", r"\1", body)
+
+
+def _subst_bodies(text, tails=True):
+    """Every command-substitution body a shell would run in text (T-0158): `…` and $( … ), nested ones too, bare or
+    inside double quotes, never inside single quotes or after a backslash; $(( … )) is arithmetic. Each $( opens a fresh
+    quoting context, as in bash. With $'…' quoting (where \\' is a quote) the scan can't follow: every span between
+    backticks and every greedy $( … ) is returned instead (fails closed). An unterminated body runs to the end."""
+    if "$'" in text:
+        return [_unescape_ticks(b) for b in text.split("`")[1::2]] + [text[m.end():] for m in re.finditer(r"\$\(", text)]
+    ends = []  # every substitution is also read to the end: a case pattern's ) or a comment can close it early
+    bodies, ctx, tick, esc, i = [], [[None, 0, 0]], None, False, 0  # ctx: [quote, body start, paren depth]
+    while i < len(text):
+        ch, top = text[i], ctx[-1]
         if esc:
             esc = False
-        elif ch == "\\" and q != "'":
+        elif ch == "\\" and top[0] != "'":
             esc = True
-        elif start is not None:
+        elif top[0] == "'":
+            top[0] = None if ch == "'" else "'"
+        elif tick is not None:
             if ch == "`":
-                out.append(cmd[start:i])
-                start = None
-        elif q == "'":
-            q = None if ch == "'" else q
-        elif ch == "'" and q is None:
-            q = "'"
-        elif ch == '"':
-            q = None if q == '"' else '"'
+                bodies.append(_unescape_ticks(text[tick:i]))
+                tick = None
         elif ch == "`":
-            start = i + 1
-    return out + ([cmd[start:]] if start is not None else [])
+            tick = i + 1
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            ends.append(text[i + 2:])  # $(( … )) too: bash falls back to a subshell when )) doesn't close it
+            if text[i + 2:i + 3] != "(":
+                ctx.append([None, i + 2, 0])
+            i += 2
+            continue
+        elif ch == '"':
+            top[0] = None if top[0] == '"' else '"'
+        elif top[0] is None and ch == "'":
+            top[0] = "'"
+        elif top[0] is None and ch == "(" and len(ctx) > 1:
+            top[2] += 1
+        elif top[0] is None and ch == ")" and len(ctx) > 1:
+            if top[2]:
+                top[2] -= 1
+            else:
+                bodies.append(text[top[1]:i])
+                ctx.pop()
+        i += 1
+    return bodies + ([_unescape_ticks(text[tick:])] if tick is not None else []) + (ends if tails else [])
 
 
-def _mask_fm(cmd):
+def _real_fm(argv, ctx):
+    """argv runs Foreman's own fm: bare `fm` (the caller has ruled out PATH, alias and function changes), or its real
+    path, directly or as python's script. Anything else named fm is just a program (automated review of T-0153)."""
+    fm_bin = os.path.realpath(os.path.join(ctx.foreman_home, "plugin", "bin", "fm"))
+    same = lambda path: os.path.realpath(os.path.join(ctx.cwd, os.path.expanduser(path))) == fm_bin
+    if not argv:
+        return False
+    if argv[0] == "fm":
+        return True
+    if re.match(r"^python[0-9.]*$", os.path.basename(argv[0])):
+        return len(argv) > 1 and not argv[1].startswith("-") and same(argv[1])
+    return same(argv[0])
+
+
+def _mask_fm(cmd, ctx):
     """The command with each top-level fm command blanked to `fm`: its arguments are data to fm (its --run values are
     checked on their own, substitutions inside are read recursively), so an interpreter named in an fm task's text isn't
     interpreter code (T-0153). Heredoc bodies are kept; where the quote scan can't follow, nothing is blanked."""
     shell, bodies = _heredocs(cmd)
-    if "$'" in shell or len(re.findall(r"(?<!<)<<(?!<)", shell)) != len(re.findall(_HEREDOC_START, shell)):
-        return cmd
+    if ("$'" in shell or len(re.findall(r"(?<!<)<<(?!<)", shell)) != len(re.findall(_HEREDOC_START, shell))
+            or "#" in shell or re.search(r"\bPATH\b|\balias\b|\bhash\b|\bfunction\s+fm\b|\bfm\s*\(\s*\)", shell)):
+        return cmd  # the quote scan can't follow, or which program `fm` names could change: blank nothing
     out, seg, q, esc = [], [], None, False
 
     def flush():
         text = "".join(seg)
         argv, _ = _strip_wrappers(_tokens(text))
-        name = os.path.basename(argv[0]) if argv else ""
-        fm = name == "fm" or (re.match(r"^python[0-9.]*$", name) and argv[1:2] and argv[1].endswith("/fm"))
+        fm = _real_fm(argv, ctx)
         # a substitution in fm's arguments runs: keep that segment whole (the $( ) reader misses nested parentheses)
         out.append(" fm " if fm and "$(" not in text and "`" not in text else text)
         seg.clear()
@@ -497,7 +556,7 @@ def _mask_fm(cmd):
             continue
         seg.append(ch)
     flush()
-    return "".join(out) + "\n" + bodies
+    return cmd if q else "".join(out) + "\n" + bodies  # an unclosed quote: the scan lost track, blank nothing
 
 
 def _top_level(prefix):
@@ -543,7 +602,7 @@ def _interpreter_writes(cmd, ctx):
     Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
     imports Foreman's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
-    if not _INTERP.search(_mask_fm(cmd)):
+    if not _INTERP.search(_mask_fm(cmd, ctx)):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
@@ -565,7 +624,7 @@ def _interpreter_writes(cmd, ctx):
 def fm_calls(cmd):
     """The argument lists of every direct `fm …` (or `python3 …/fm …`) call in a shell command."""
     calls = []
-    for c in _split(_tokens(_strip_heredocs(cmd).replace("\n", " ; "))):
+    for c in _split(_tokens(_lines(_strip_heredocs(cmd)))):
         argv, _ = _strip_wrappers(c.argv)
         name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
         if name == "fm":
@@ -587,15 +646,17 @@ def lone_fm_ask(cmd):
     return calls[0] if len(calls) == 1 and calls[0][:1] == ["ask"] else None
 
 
-def check_bash(cmd, ctx, depth=0):
+def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     shell = _strip_heredocs(cmd)
-    for body in _backtick_bodies(shell):  # T-0150/T-0155: every `…` a shell runs, unquoted or in double quotes
-        found += check_bash(body, ctx, depth + 1)
-    cmds = _split(_tokens(shell.replace("\n", " ; ")))
+    # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
+    # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
+    for body in _subst_bodies(shell, tails) + [b for t in _live_heredocs(cmd) for b in _subst_bodies(t, tails)]:
+        found += check_bash(body, ctx, depth + 1, tails=False)
+    cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
     for idx, c in enumerate(cmds):
         argv, via_xargs = _strip_wrappers(c.argv)
@@ -607,10 +668,6 @@ def check_bash(cmd, ctx, depth=0):
             tgt = args[0] if args else ctx.home
             if not _unresolvable(tgt):
                 cwd = _resolve(_expand(tgt, ctx), cwd)
-        for tok in c.argv:
-            for m in _SUBST.finditer(tok):
-                if m.group(1) is not None:  # $( … ); backticks are read once, by _backtick_bodies
-                    found += check_bash(m.group(1), ctx, depth + 1)
         if _SHELLS.match(name) and "-c" in args and args.index("-c") + 1 < len(args):
             inner = args[args.index("-c") + 1]
             found += check_bash(inner, ctx, depth + 1)
