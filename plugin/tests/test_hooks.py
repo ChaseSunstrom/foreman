@@ -56,6 +56,25 @@ class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
 
+    def test_a_resumed_session_with_drive_and_full_autonomy_starts_its_own_turn(self):
+        # T-0138: "you weren't reprompted when the session just continued"
+        self.fm("init")
+        self.fm("autonomy", "full")
+        first = lambda p: ((parse(p) or {}).get("hookSpecificOutput") or {}).get("initialUserMessage")
+        self.assertIsNone(first(self.run_ss("resume")), "no open work: nothing to continue")
+        self.task()
+        msg = first(self.run_ss("resume"))
+        self.assertIn("Continue the Foreman drive", msg or "")
+        self.assertIn("T-0001", msg)
+        self.assertIsNone(first(self.run_ss("startup")), "a fresh start may be for something else")
+        self.fm("autonomy", "standard")
+        self.assertIsNone(first(self.run_ss("resume")), "standard autonomy waits for the person")
+        self.fm("autonomy", "full")
+        other = self.hook("SessionStart", {"source": "resume", "session_id": "sess-2"}, env={"CLAUDE_ENV_FILE": self.env_file})
+        self.assertIsNone(first(other), "another session was here minutes ago: two drivers on one task")
+        self.fm("drive", "off")
+        self.assertIsNone(first(self.run_ss("resume")))
+
     def test_a_state_fallback_in_use_is_named(self):
         self.fm("init")
         self.assertNotIn("fallback", self.ctx_of(self.run_ss()))

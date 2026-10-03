@@ -150,6 +150,7 @@ def session_start(pl):
         age = c.age_days(other.get("seen"))
         if other.get("id") and other["id"] != sid and age is not None and age < 15 / 1440:
             other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+        busy = other_note is not None
         offered = c.age_days(meta.get("digest_offered"))
         if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
             meta["digest_offered"] = c.now()  # checked once a week even when there was nothing to show
@@ -168,8 +169,23 @@ def session_start(pl):
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
     c.log_event(p, "session_start", data={"source": pl.get("source")}, session=sid)
-    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)},
-            "terminalSequence": _title_seq(sd)}
+    out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
+    if first:
+        out["initialUserMessage"] = first
+    return {"hookSpecificOutput": out, "terminalSequence": _title_seq(sd)}
+
+
+def _resume_turn(pl, sd):
+    """T-0138: `claude --continue` with drive on and full autonomy starts its own first turn instead of waiting for a
+    prompt. A fresh start may be for something else, and standard autonomy waits for the person."""
+    if (pl.get("source") != "resume" or not sd["drive"] or sd["paused"] or sd.get("autonomy") != "full"
+            or os.environ.get("FOREMAN_DRIVE_TASK")):
+        return None
+    waiting = [t for t in sd.get("pending") or [] if t]
+    work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"] + sd["inbox"]
+                 if w["id"] not in waiting), None)
+    return work and f"Continue the Foreman drive: {work['id']} — {work['title'][:100]}"
 
 
 def _sync_import(p):
