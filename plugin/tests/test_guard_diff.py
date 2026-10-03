@@ -25,10 +25,25 @@ FORMS = [
     "env {p}", "nohup {p} >/dev/null", "time {p}", "command {p}", "exec {p}", "timeout 5 {p}", "nice {p}",
     "setsid {p}", "trap '{p}' EXIT", "find . -maxdepth 0 -exec {p} \\;", "echo a | xargs -I@ {p}",
     "flock l {p}", "script -qc '{p}' /dev/null", "busybox sh -c '{p}'", "find . -maxdepth 0 -execdir {p} +",
+    "echo a#b; {p}", "echo a#b && {p}",  # T-0161 review: a # inside a word is no comment
 ]
 # whole commands (no payload slot): variables the guard resolves (T-0151) must still resolve the way bash does
 EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -rf "$D"', 'D=x; D=~; rm -rf "$D"',
-         'export D=~\nrm -rf "${D}"', 'D=~ ; rm -rf "$D/"']
+         'export D=~\nrm -rf "${D}"', 'D=~ ; rm -rf "$D/"',
+         # T-0161 (security review of T-0151): ways bash changes a variable that a plain NAME=value doesn't show
+         'D=x; D[0]=~; rm -rf "$D"', 'D=; D+=~; rm -rf "$D"', 'D=x; command export D=~; rm -rf "$D"',
+         'D=x; builtin declare D=~; rm -rf "$D"', 'D=x; ! D=~; rm -rf "$D"', 'D=x; time D=~; rm -rf "$D"',
+         'PWD=x; cd ~; rm -rf "$PWD"', 'OLDPWD=x; cd ~; cd /; rm -rf "$OLDPWD"', '_=x; true ~; rm -rf "$_"',
+         'D=x; trap \'D=~\' DEBUG; rm -rf "$D"', 'D="a /home/sb"; rm -rf $D', 'IFS=x; D=ax/home/sb; rm -rf $D',
+         'BASH_REMATCH=x; [[ ~ =~ .* ]]; rm -rf "$BASH_REMATCH"', 'D=x; D=~ :; rm -rf "$D"',
+         'D=x; D=~ export Y; rm -rf "$D"', 'D=x; set -o posix; D=~ :; rm -rf "$D"',
+         'shopt -s expand_aliases\nalias s=\'D=~\'\nD=x\ns\nrm -rf "$D"', 'D=x; wait -p D; rm -rf "$D"',
+         'D=x; DIRSTACK=x; pushd ~; rm -rf "$DIRSTACK"', 'D=x; local D=~; rm -rf "$D"',
+         # its review: words that read as an assignment once quotes are gone, but that bash runs as a command
+         'D=~; command D=/tmp/x; rm -rf "$D"', 'D=~; builtin D=/tmp/x; rm -rf "$D"', 'D=~; "D=/tmp/x"; rm -rf "$D"',
+         'D=~; \\D=/tmp/x; rm -rf "$D"', 'D=~; D"="/tmp/x; rm -rf "$D"', 'D=~; "time" D=/tmp/x; rm -rf "$D"',
+         'D=~; echo "x D=y"; "D=/tmp/x"; rm -rf "$D"', 'readonly D=~; D=/tmp/x; rm -rf "$D"',
+         'D=/tmp/x; >o read D <<< ~; rm -rf "$D"']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 

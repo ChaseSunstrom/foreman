@@ -83,6 +83,15 @@ class RmOutside(GuardCase):
             ('D=/; (D={repo}/build); rm -rf "$D"', "rm-outside"),  # a subshell's assignment stays there
             ('D={repo}/build; read D; rm -rf "$D"', "rm-outside"),
             ('FOO={repo}/build rm -rf "$FOO"', "rm-outside"),  # a prefix assignment isn't seen by its own arguments
+            # T-0161: inert builtins and other programs can't change it; any other builtin could
+            ('D={repo}/build; cd {repo}; echo hi; mkdir -p x; rm -rf "$D"', None),
+            ('D={repo}/build; printf x; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; D+=/x; rm -rf "$D"', "rm-outside"),
+            ('D="{repo} /etc"; rm -rf $D', "rm-outside"),
+            ('D=~; "D={repo}/b"; rm -rf "$D"', "rm-outside"),  # its review: a quoted word is a command, not an assignment
+            ("echo a#b; rm -rf ~", "rm-outside"),  # a # inside a word starts no comment
+            ("echo 'a # b'; rm -rf ~", "rm-outside"),
+            ("ls # rm -rf ~", None),  # a real comment hides only what bash ignores too
             ("FOO=1 rm --recursive ~/x", "rm-outside"),
             ("rm -rf build node_modules dist/*", None),
             ("rm -rf /tmp/claude-1000/proj/sess/scratchpad/out", None),

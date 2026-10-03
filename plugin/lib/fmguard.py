@@ -319,11 +319,37 @@ def _strip_heredocs(cmd):
     return _heredocs(cmd)[0]
 
 
+def _strip_comments(text):
+    """T-0161 review: a # starts a comment only at the start of a word outside quotes; shlex's own commenters also cut
+    at the # in `echo a#b; rm …` and hid the rest of the line. Under $'…' quoting nothing is cut (fails closed)."""
+    if "$'" in text:
+        return text
+    out, q, i = [], None, 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and q != "'":
+            out.append(text[i:i + 2])
+            i += 2
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|()<>"):
+            i = text.find("\n", i)
+            if i < 0:
+                break
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _tokens(cmd):
     try:
-        lex = shlex.shlex(cmd, posix=True, punctuation_chars=";&|()<>")
+        lex = shlex.shlex(_strip_comments(cmd), posix=True, punctuation_chars=";&|()<>")
         lex.whitespace_split = True
-        lex.commenters = "#"
+        lex.commenters = ""
         return list(lex)
     except ValueError:
         return re.sub(r"([;&|()])", r" \1 ", cmd).split()  # unbalanced quotes: still split commands apart
@@ -658,9 +684,19 @@ def lone_fm_ask(cmd):
 # T-0151: variables are resolved only in a straight-line command (simple commands joined by ; or newlines): a pipe, &&,
 # ||, &, a subshell, a group or a control keyword can make an assignment conditional or local, so then none are
 _BRANCHY = re.compile(r"[|&(){}]|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc)\b")
-_SETS_VARS = {"read", "readarray", "mapfile", "source", ".", "eval", "declare", "typeset", "local", "printf", "getopts",
-              "let", "unset"}
+# T-0161: only a builtin can change a variable of this shell (an alias or a function needs one first), so resolving stops
+# at any builtin outside the inert ones (cd and pushd set only names that are never resolved; [[ -eq assigns)
+_BUILTINS = set(". : [ [[ alias bg bind break builtin caller cd command compgen complete compopt continue declare dirs "
+                "disown echo enable eval exec exit export false fc fg getopts hash help history jobs kill let local logout "
+                "mapfile popd printf pushd pwd read readarray readonly return set shift shopt source suspend test times "
+                "trap true type typeset ulimit umask unalias unset wait".split())
+_INERT = set(": [ cd dirs echo exit false hash help jobs kill popd pushd pwd shift test times true type ulimit umask".split())
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
+_ASSIGNISH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=")  # NAME=, NAME+= and NAME[i]=
+# bash sets these itself, ignores an assignment to them or makes it fail (readonly)
+_SHELL_SET = re.compile(r"^(?:_|PWD|OLDPWD|DIRSTACK|BASH\w*|RANDOM|SRANDOM|SECONDS|LINENO|EPOCH\w+|HISTCMD|PPID|E?UID|"
+                        r"GROUPS|FUNCNAME|PIPESTATUS|OPT\w+|REPLY|MAPFILE|COPROC\w*|SHELLOPTS|SHLVL|HOST\w+|MACHTYPE|"
+                        r"OSTYPE|COMP_\w+|READLINE_\w+|COLUMNS|LINES)$")
 
 
 def _straight_line(shell):
@@ -669,6 +705,73 @@ def _straight_line(shell):
 
 def _with_vars(tok, env):
     return re.sub(r"\$(?:\{(\w+)\}|(\w+))", lambda m: env.get(m.group(1) or m.group(2), m.group(0)), tok)
+
+
+def _raw_cmds(shell):
+    """T-0161 review: a straight-line command's simple commands as written, quotes kept (shlex drops them, and
+    `"D=x"`, `\\D=x` and `D"="x` are commands in bash, not assignments). None when the quoting can't be read."""
+    if "$'" in shell:
+        return None
+    cmds, words, cur, q, i, text = [], [], "", None, 0, _strip_comments(shell)
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and q != "'":
+            cur += text[i:i + 2]
+            i += 2
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        elif ch in " \t\n;":
+            words, cur = (words + [cur]) if cur else words, ""
+            if ch != " " and ch != "\t" and words:
+                cmds, words = cmds + [words], []
+            i += 1
+            continue
+        cur += ch
+        i += 1
+    if q:
+        return None
+    words += [cur] if cur else []
+    return cmds + ([words] if words else [])
+
+
+def _unquote(word):
+    try:
+        return "".join(shlex.split(word))
+    except ValueError:
+        return None
+
+
+def _track_vars(words, env):
+    """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
+    words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
+             and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)", words[i - 1]))]
+    runner = False
+    while words and words[0] in ("!", "time", "command", "builtin"):  # unquoted: these keep the command in this shell
+        runner = runner or words[0] in ("command", "builtin")  # whose `command D=x` runs a program named D=x
+        words = words[1:]
+        while words and words[0].startswith("-"):
+            words = words[1:]
+    if words[:1] == ["export"] and all(_ASSIGN.match(w) or re.fullmatch(r"\w+", w) for w in words[1:]):
+        words, runner = [w for w in words[1:] if "=" in w], False  # a bare name keeps its value
+    if not runner and all(_ASSIGN.match(w) for w in words):
+        for w in words:
+            k, v = _ASSIGN.match(w).group(1), _unquote(w.partition("=")[2])
+            if k == "IFS":
+                return None  # word splitting changes: no expansion can be read
+            if _SHELL_SET.match(k) or v is None or _unresolvable(v) or re.search(r"[*?\[~\s]", v):
+                env.pop(k, None)  # a glob, a tilde form or a space is expanded or split later: leave it unknown
+            else:
+                env[k] = v
+        return env
+    for m in filter(None, map(_ASSIGNISH.match, words)):  # a prefix assignment (it can outlive a special builtin),
+        if m.group(1) == "IFS":                            # NAME+= or NAME[i]=, or one a command is handed
+            return None
+        env.pop(m.group(1), None)
+    name = _unquote(next((w for w in words if not _ASSIGNISH.match(w)), "")) or ""
+    return None if name in _BUILTINS and name not in _INERT else env
 
 
 def check_bash(cmd, ctx, depth=0, tails=True):
@@ -683,19 +786,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
-    env = {} if _straight_line(shell) else None  # VAR → literal, for rm targets (T-0151)
+    raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
+    env = {} if raw is not None and len(raw) == len(cmds) else None  # VAR → literal, for rm targets (T-0151)
     for idx, c in enumerate(cmds):
         if env is not None:
-            sets = c.argv[1:] if c.argv[:1] in (["export"], ["readonly"]) else c.argv
-            if sets and all(_ASSIGN.match(a) or c.argv[0] in ("export", "readonly") for a in sets):
-                for m in filter(None, map(_ASSIGN.match, sets)):
-                    k, v = m.groups()
-                    if _unresolvable(v) or re.search(r"[*?\[]", v):
-                        env.pop(k, None)
-                    else:
-                        env[k] = v
-            elif c.argv and os.path.basename(c.argv[0]) in _SETS_VARS:
-                env = None  # it could set anything: stop resolving
+            env = _track_vars(raw[idx], env)
         argv, via_xargs = _strip_wrappers(c.argv)
         if not c.piped:
             chain = []
