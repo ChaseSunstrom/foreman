@@ -13,6 +13,7 @@ import {
   agentColor,
   TONE_COLOR,
   changedLines,
+  replyBlocks,
   clean,
   ago,
   churnCells,
@@ -178,6 +179,10 @@ const took = new Map<string, number>() // tool_use_id → how long it ran (ms), 
 const agentCalls = new Map<string, string>() // running Agent call → its description
 const agentOf = new Map<string, string>() // running Agent call → the subagent's id
 let turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: -1, task: '' }
+let turnStartedAt = 0 // the working line's clock (T-0143)
+const seenReplies = new Set<string>() // reply texts drawn during a turn; the newest one's mark animates
+let newestReply = ''
+const DOING: Record<string, string> = { requesting: 'thinking', thinking: 'thinking', responding: 'writing', 'tool-input': 'preparing a tool call', 'tool-use': 'running tools' }
 
 async function fm($: EngineInterface): Promise<string> {
   if (fmPath) return fmPath
@@ -458,39 +463,77 @@ function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' 
   )
 }
 
-/** T-0137: a finished shell command as a Foreman row in the chat: status, the command, how long it ran, then its
- * output formatted inline (failures first, else the tail), errors included. fm's own commands keep their quiet row. */
+/** Changed lines of a diff as Foreman text: the file's line number dim, the +/- sign in ok/err, the text in the softer
+ * add/del colours (T-0143: the engine's whole-width red and green read 'weird in contrast'). */
+function diffLines($: EngineInterface, e: ResolveInput, changed: ReturnType<typeof changedLines>, key: string) {
+  const { Text } = $.ui.resolve(e)
+  const width = String(Math.max(0, ...changed.map(l => l.n))).length
+  return changed.map((l, i) => (
+    <Text key={`${key}-${i}`} wrap="truncate-end">
+      <Text color={hex(C.track)}>{'  │ '}</Text>
+      <Text color={hex(C.dim)}>{`${String(l.n).padStart(width)} `}</Text>
+      <Text color={hex(l.sign === '+' ? C.ok : C.err)}>{`${l.sign} `}</Text>
+      <Text color={hex(l.sign === '+' ? C.add : C.del)}>{l.text}</Text>
+    </Text>
+  ))
+}
+
+const more = (n: number, what: string) => `… ${n} more ${what}${n === 1 ? '' : 's'}`
+
+/** T-0137/T-0143: a finished shell command as a Foreman row that reads like the running one: its mark, `❯ Ran` and the
+ * description (or the command's first line), time and lines; the command under it, dim, whole up to three lines and
+ * never silently cut (a chained or multi-line command must not read as a plain one: the T-0095 review's HIGH
+ * finding); then the output (failures first when it failed, else the tail), the files it changed, a commit, a
+ * timeout. The engine's result block under it is blanked (ToolResult), so nothing draws twice. */
 function shellRow($: EngineInterface, e: ToolUseRender) {
   const { Box, Text } = $.ui.resolve(e)
-  const o = (e.props.output ?? {}) as { stdout?: unknown; stderr?: unknown; interrupted?: boolean; backgroundTaskId?: unknown }
-  // the command shown whole up to three lines, never silently cut: a chained or multi-line command must not read as
-  // a plain one (the T-0095 review's HIGH finding for the quiet fm row)
-  const lines = String((e.props.input as { command?: unknown } | null)?.command ?? '').split('\n')
-  const cmd = lines.slice(0, 3).map(clean).join('\n')
+  type Out = {
+    stdout?: unknown
+    stderr?: unknown
+    interrupted?: boolean
+    backgroundTaskId?: unknown
+    timedOutAfterMs?: unknown
+    gitOperation?: { commit?: { sha?: unknown; branch?: unknown } }
+    bashEditDiff?: { hunks?: unknown; skippedLarge?: unknown; restricted?: unknown } // Claude Code's own, untyped
+  }
+  const o = (e.props.output && typeof e.props.output === 'object' ? e.props.output : {}) as Out
+  const input = (e.props.input ?? {}) as { command?: unknown; description?: unknown }
+  const lines = String(input.command ?? '').split('\n').map(clean)
+  const desc = typeof input.description === 'string' ? clean(input.description).trim() : ''
+  const shown = desc ? lines.slice(0, 3) : lines.slice(1, 3) // without a description the first line is the title
   const bad = !!e.props.isErrored // the exit status decides, not words in the output
   const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
   const ms = took.get(e.props.tool_use_id)
   const bg = typeof o.backgroundTaskId === 'string'
-  const mark = e.props.isInterrupted || o.interrupted ? '■' : bg ? '◷' : bad ? '✗' : '✓'
+  const stopped = e.props.isInterrupted || o.interrupted
+  const mark = stopped ? '■' : bg ? '◷' : bad ? '✗' : '✓'
+  const meta = [ms !== undefined ? elapsed(ms) : '', bg ? 'in the background' : s.total ? `${s.total} line${s.total === 1 ? '' : 's'}` : '']
+  const files = Array.isArray(o.bashEditDiff?.hunks) ? (o.bashEditDiff.hunks as { path?: unknown; hunks?: unknown }[]) : []
+  const unshown = [o.bashEditDiff?.skippedLarge, o.bashEditDiff?.restricted].reduce<number>((n, x) => n + (Array.isArray(x) ? x.length : 0), 0)
+  let budget = DIFF_LINES
+  const commit = o.gitOperation?.commit
   return (
     <Box flexDirection="column" key="fm-shell">
-      {/* T-0141: the mark in a column of its own, so a long command wraps under itself */}
+      {/* the mark in a column of its own, so a long title wraps under itself (T-0141) */}
       <Box flexDirection="row" key="fm-shell-head">
-        <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : C.warn)}>
-          {mark}{' '}
+        <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn)}>
+          {`${mark} `}
         </Text>
         <Text wrap="wrap">
-          <Text color={hex(C.accent)}>
-            $ {cmd}
-            {lines.length > 3 ? ` … +${lines.length - 3} more line${lines.length === 4 ? '' : 's'}` : ''}
-          </Text>
-          <Text color={hex(C.dim)}>
-            {ms !== undefined ? `  ${elapsed(ms)}` : ''}
-            {!bg && s.total > 0 ? ` · ${s.total} line${s.total === 1 ? '' : 's'}` : ''}
-          </Text>
-          {bg && <Text color={hex(C.accent2)}> · in the background</Text>}
+          <Text color={hex(C.accent)}>{`❯ ${stopped ? 'Stopped' : bg ? 'Started' : bad ? 'Failed' : 'Ran'} `}</Text>
+          {desc ? <Text>{desc}</Text> : <Text color={hex(C.accent)}>{lines[0] ?? ''}</Text>}
+          <Text color={hex(C.dim)}>{meta.filter(Boolean).map(x => ` · ${x}`).join('')}</Text>
         </Text>
       </Box>
+      {shown.map((line, i) => (
+        <Box flexDirection="row" key={`fm-shell-cmd-${i}`}>
+          <Text color={hex(C.track)}>{'  ┆ '}</Text>
+          <Text wrap="wrap" color={hex(mix(C.accent, C.dim, 0.55))}>
+            {line}
+          </Text>
+        </Box>
+      ))}
+      {lines.length > 3 && <Text color={hex(C.dim)}>{`  ┆ ${more(lines.length - 3, 'command line')}`}</Text>}
       {s.lines.map((l, i) => (
         <Text key={`o-${i}`} color={hex(TONE_COLOR[l.tone])} wrap="truncate-end">
           <Text color={hex(C.track)}>{'  │ '}</Text>
@@ -499,9 +542,38 @@ function shellRow($: EngineInterface, e: ToolUseRender) {
       ))}
       {s.more > 0 && (
         <Text color={hex(C.dim)}>
-          {'  └ '}… {s.more} more line{s.more === 1 ? '' : 's'}
+          {`  └ ${more(s.more, 'line')}`}
           {s.failures ? ' (showing the failures)' : ''}
         </Text>
+      )}
+      {files.map((f, i) => {
+        const changed = changedLines(f.hunks)
+        const add = changed.filter(l => l.sign === '+').length
+        const take = changed.slice(0, Math.max(0, budget))
+        budget -= take.length
+        return (
+          <Box flexDirection="column" key={`fm-shell-file-${i}`}>
+            <Text wrap="truncate-start">
+              <Text color={hex(C.edit)}>{'  ✎ '}</Text>
+              <Text>{shortPath(clean(String(f.path ?? '')))}</Text>
+              <Text color={hex(C.ok)}>{` +${add}`}</Text>
+              {changed.length > add && <Text color={hex(C.err)}>{` −${changed.length - add}`}</Text>}
+            </Text>
+            {diffLines($, e, take, `fm-shell-diff-${i}`)}
+          </Box>
+        )
+      })}
+      {unshown > 0 && <Text color={hex(C.dim)}>{`  ✎ ${more(unshown, 'file')} changed (too large or private to show)`}</Text>}
+      {typeof commit?.sha === 'string' && (
+        <Text>
+          <Text color={hex(C.accent2)}>{'  ⎇ '}</Text>
+          <Text color={hex(C.dim)}>committed </Text>
+          <Text color={hex(C.accent)}>{commit.sha.slice(0, 7)}</Text>
+          {typeof commit.branch === 'string' && <Text color={hex(C.dim)}>{` on ${clean(commit.branch)}`}</Text>}
+        </Text>
+      )}
+      {typeof o.timedOutAfterMs === 'number' && (
+        <Text color={hex(C.warn)}>{`  ◷ timed out after ${elapsed(o.timedOutAfterMs)} · moved to the background`}</Text>
       )}
     </Box>
   )
@@ -518,9 +590,8 @@ function editChanges(tool: string, output: unknown) {
   return changed.length ? { changed, created, userModified: o.userModified === true } : null
 }
 
-/** T-0141: a finished Edit or Write as a Foreman row: the path, +added −removed, then the changed lines as coloured text
- * (the engine's row paints whole-width red and green backgrounds). Null without a patch to show: the engine's row then
- * says what happened. */
+/** T-0141: a finished Edit or Write as a Foreman row: the path, +added −removed, then the changed lines (diffLines).
+ * Null without a patch to show: the engine's row then says what happened. */
 function editRow($: EngineInterface, e: ToolUseRender) {
   const c = editChanges(e.props.tool, e.props.output)
   if (!c) return null
@@ -528,7 +599,6 @@ function editRow($: EngineInterface, e: ToolUseRender) {
   const add = changed.filter(l => l.sign === '+').length
   const del = changed.length - add
   const shown = changed.slice(0, DIFF_LINES)
-  const width = String(Math.max(...shown.map(l => l.n))).length
   const face = toolFace(e.props.tool, e.props.input, root)
   const { Box, Text } = $.ui.resolve(e)
   return (
@@ -548,20 +618,8 @@ function editRow($: EngineInterface, e: ToolUseRender) {
         {created && <Text color={hex(C.dim)}>new file</Text>}
         {c.userModified && <Text color={hex(C.dim)}>· you changed it</Text>}
       </Box>
-      {shown.map((l, i) => (
-        <Text key={`d-${i}`} wrap="truncate-end">
-          <Text color={hex(C.track)}>{'  │ '}</Text>
-          <Text color={hex(C.dim)}>{`${String(l.n).padStart(width)} `}</Text>
-          <Text color={hex(l.sign === '+' ? C.ok : C.err)}>
-            {l.sign} {l.text}
-          </Text>
-        </Text>
-      ))}
-      {changed.length > shown.length && (
-        <Text color={hex(C.dim)}>
-          {'  └ '}… {changed.length - shown.length} more changed line{changed.length - shown.length === 1 ? '' : 's'}
-        </Text>
-      )}
+      {diffLines($, e, shown, 'd')}
+      {changed.length > shown.length && <Text color={hex(C.dim)}>{`  └ ${more(changed.length - shown.length, 'changed line')}`}</Text>}
     </Box>
   )
 }
@@ -636,6 +694,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    if (!turns.size) turnStartedAt = await $.clock.now()
     turns.add(e.turnId)
     const a = (await read($, view))?.active
     turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: a ? a.steps.filter(s => s.done).length : -1, task: a?.id ?? '' }
@@ -735,8 +794,10 @@ export const register: Register = (on, options) => {
   // T-0141: under an edit row that already shows its diff, the engine's own result block ('⎿ Added 2 lines' and the
   // whole hunk again, on red and green backgrounds) is blanked; an error still draws the engine's
   on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
-    if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
+    // T-0143: a shell row draws its output, file changes, commit and timeout itself; the engine's block repeated them
     const { Box } = $.ui.resolve(e)
+    if (e.props.tool === 'Bash') return <Box key="fm-shell-result" />
+    if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
     return <Box key="fm-edit-shown" />
   })
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
@@ -813,6 +874,19 @@ export const register: Register = (on, options) => {
 
   // A background task's notification: one Foreman line (ctrl+o still shows the engine's full row).
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    const origin = e.props.origin as { kind?: string; name?: string } | undefined
+    if (origin?.kind === 'plugin' && origin.name === 'foreman-ui' && !e.props.isExpanded) {
+      // T-0143 live: our own resume prompt drew as a four-line grey block; one quiet line says it
+      const { Box, Text } = $.ui.resolve(e)
+      return (
+        <Box flexDirection="row" gap={1} key="fm-resumed">
+          <Text color={hex(C.accent)}>↻</Text>
+          <Text color={hex(C.dim)} wrap="truncate-end">
+            {clean(e.props.text.split('\n')[0] ?? '')}
+          </Text>
+        </Box>
+      )
+    }
     if (e.props.origin?.kind !== 'task-notification' || e.props.isExpanded) return next(e)
     const t = e.props.task ?? {}
     const status = t.status ?? 'completed'
@@ -828,13 +902,78 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // The working line keeps its animated word and gains the Foreman step it is on.
+  // T-0143: the working line is Foreman's ('get rid of … the "Seasoning" thing … and have it be a foreman thing'): an
+  // animated mark, the task and step, what the turn is doing, how long it has run. The desktop keeps its own row.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
+    if (e.surface !== 'terminal') return next(e)
     const a = (await read($, view))?.active
     const cur = a?.steps.find(s => s.current)
-    if (!a || !cur) return next(e)
-    const done = a.steps.filter(s => s.done).length
-    return next({ ...e, props: { ...e.props, suffix: `… · ${a.id} step ${done + 1}/${a.steps.length}: ${cur.text}`.slice(0, 90) } })
+    const f = await read($, frame)
+    const ms = turnStartedAt ? (await $.clock.now()) - turnStartedAt : 0
+    const doing = e.props.message ?? DOING[e.props.mode] ?? 'working'
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="row" gap={1} key="fm-working">
+        <Text color={hex(C.accent)}>{spin(f)}</Text>
+        <Text bold color={hex(C.accent)}>
+          {a ? a.id : 'Foreman'}
+        </Text>
+        {a && cur && (
+          <Text wrap="truncate-end">
+            <Text color={hex(C.dim)}>{`step ${a.steps.filter(s => s.done).length + 1}/${a.steps.length} `}</Text>
+            {cur.text}
+          </Text>
+        )}
+        <Text color={hex(C.dim)}>{`· ${doing} · ${elapsed(ms)}`}</Text>
+      </Box>
+    )
+  })
+
+  // T-0143: a reply opens with a Foreman mark (animated on the newest reply while the turn runs) and Foreman's report
+  // lines (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) are coloured like its rows; the rest stays the
+  // engine's markdown ('just your normal text output looks weird with everything else').
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    const text = e.props.text
+    // a Markdown element takes ≤10000 characters, tab and newline its only controls: beyond that the engine's own draws
+    if (e.surface !== 'terminal' || text.length > 9000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(text)) return next(e)
+    if (turns.size && e.props.isFirstOfReply && !seenReplies.has(text)) {
+      if (seenReplies.size > 400) seenReplies.clear()
+      seenReplies.add(text)
+      newestReply = text
+    }
+    const live = turns.size > 0 && e.props.isFirstOfReply && text === newestReply
+    const f = live ? await read($, frame) : 0
+    const { Box, Text, Markdown } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="row" key="fm-reply">
+        {e.props.isFirstOfReply ? (
+          <Box key="fm-reply-mark">
+            <Text color={hex(C.accent)}>{`${live ? spin(f) : '●'} `}</Text>
+          </Box>
+        ) : (
+          <Text>{'  '}</Text>
+        )}
+        <Box flexDirection="column" flexShrink={1}>
+          {replyBlocks(text).map((b, i) =>
+            b.kind === 'gap' ? (
+              <Box key={`gap-${i}`}>
+                <Text> </Text>
+              </Box>
+            ) : b.kind === 'md' ? (
+              <Markdown key={`md-${i}`} text={b.text} />
+            ) : (
+              <Text key={`ln-${i}`} wrap="wrap">
+                {b.parts.map((p, j) => (
+                  <Text key={j} bold={p.bold ?? false} {...(p.color !== undefined ? { color: hex(p.color) } : {})}>
+                    {p.text}
+                  </Text>
+                ))}
+              </Text>
+            ),
+          )}
+        </Box>
+      </Box>
+    )
   })
 
   // The line closing a turn says what the turn did.
@@ -844,9 +983,7 @@ export const register: Register = (on, options) => {
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box flexDirection="row" gap={1} key="fm-turn">
-        <Text dimColor>
-          ✻ {e.props.word} for {elapsed(e.props.durationMs)}
-        </Text>
+        <Text dimColor>✻ worked {elapsed(e.props.durationMs)}</Text>
         <Text color={hex(C.dim)}>· {summaryText(s)}</Text>
       </Box>
     )

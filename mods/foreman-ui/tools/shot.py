@@ -7,6 +7,7 @@ draw the screen, colours included, to a PNG, so a UI change can be looked at and
   shot.py keys TEXT [--enter]                  type into it: /fm, /reload-plugins, a digit for a dialog
   shot.py snap OUT.png                         the visible screen as a PNG (and OUT.txt, its plain text)
   shot.py self OUT.png [--back N]              the same for the tmux pane this session runs in (its own UI, live)
+  shot.py watch OUT.png [--every 5] [--for 7200]  self, again every few seconds (run it detached: setsid nohup … &)
   shot.py stop
   shot.py selftest                             checks the harness can't leak FOREMAN_* into anyone's tmux
 
@@ -128,7 +129,7 @@ def cells(line):
 
 def snap(a):
     from PIL import Image, ImageDraw, ImageFont
-    if a.cmd == "self":  # the pane this Claude Code session runs in, on the user's own tmux server (read-only)
+    if a.cmd in ("self", "watch"):  # the pane this Claude Code session runs in, on the user's own tmux server (read-only)
         if not os.environ.get("TMUX_PANE"):
             sys.exit("not inside tmux: snapshot the window instead (spectacle -b -n -a -o OUT.png)")
         raw = subprocess.run(["tmux", "capture-pane", "-p", "-e", "-t", os.environ["TMUX_PANE"], "-S", str(-a.back)],
@@ -172,6 +173,18 @@ def snap(a):
     print(f"{a.out} ({len(rows)} rows)")
 
 
+def watch(a):
+    """T-0143: snapshot this session's own pane every few seconds until --for runs out. Start it detached
+    (setsid nohup … &), never as a Claude Code background task: drive waits for those to finish."""
+    import time
+    end = time.time() + a.duration
+    while True:
+        snap(a)
+        if time.time() + a.every > end:
+            return
+        time.sleep(a.every)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -188,6 +201,11 @@ def main():
     s = sub.add_parser("self")
     s.add_argument("out")
     s.add_argument("--back", type=int, default=0, help="also this many lines of scrollback above the screen")
+    s = sub.add_parser("watch")
+    s.add_argument("out")
+    s.add_argument("--every", type=float, default=5)
+    s.add_argument("--for", dest="duration", type=float, default=7200, help="seconds, then it stops")
+    s.add_argument("--back", type=int, default=0)
     sub.add_parser("stop")
     sub.add_parser("selftest")
     a = ap.parse_args()
@@ -205,7 +223,7 @@ def main():
             sys.exit("FAIL: the harness session lost its FOREMAN_STATE")
         print("ok: FOREMAN_* only in the harness session, never the server")
     else:
-        {"start": start, "keys": keys, "snap": snap, "self": snap}[a.cmd](a)
+        {"start": start, "keys": keys, "snap": snap, "self": snap, "watch": watch}[a.cmd](a)
 
 
 if __name__ == "__main__":

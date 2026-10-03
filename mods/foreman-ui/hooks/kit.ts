@@ -11,6 +11,8 @@ export const C = {
   agent: 0xd787ff,
   web: 0x87d7af,
   dim: 0x6c7686,
+  add: 0xa8d5a2, // diff text: softer than ok/err, which stay on the +/- signs (T-0143: 'weird in contrast')
+  del: 0xe0a3a3,
   track: 0x30363f,
   white: 0xffffff,
 } as const
@@ -323,6 +325,59 @@ export function changedLines(hunks: unknown): { n: number; sign: '+' | '-'; text
       else (o++, n++)
     }
   }
+  return out
+}
+
+/** T-0143: one part of a Foreman report line in a reply (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) */
+export type ReplyPart = { text: string; color?: number; bold?: boolean }
+export type ReplyBlock = { kind: 'md'; text: string } | { kind: 'line'; parts: ReplyPart[] } | { kind: 'gap' }
+
+function reportLine(line: string): ReplyPart[] | null {
+  const t = line.replace(/`/g, '').trimEnd()
+  let m: RegExpExecArray | null
+  if ((m = /^Changed: (.+?) — (.+)$/.exec(t)))
+    return [{ text: '✎', color: C.edit }, { text: ' changed ', color: C.dim }, { text: m[1]!, color: C.accent }, { text: ` — ${m[2]}`, color: C.dim }]
+  if ((m = /^([✓✗]) (.+?)(?: → (.+))?$/.exec(t)))
+    return [{ text: m[1]!, color: m[1] === '✓' ? C.ok : C.err }, { text: ` ${m[2]}` }, ...(m[3] ? [{ text: ` → ${m[3]}`, color: C.dim }] : [])]
+  if ((m = /^⚑ Captured (T-\d+) — (.+)$/.exec(t)))
+    return [{ text: '⚑', color: C.warn }, { text: ' captured ', color: C.dim }, { text: m[1]!, color: C.accent }, { text: ` ${m[2]}` }]
+  if ((m = /^◆ Decided: (.+)$/.exec(t))) return [{ text: '◆', color: C.agent }, { text: ' decided ', color: C.dim }, { text: m[1]! }]
+  if ((m = /^Next: (.+)$/.exec(t))) return [{ text: '→', color: C.accent }, { text: ' next ', color: C.dim }, { text: m[1]! }]
+  if ((m = /^⚠ Needs you: (.+)$/.exec(t)))
+    return [{ text: '⚠', color: C.warn }, { text: ' needs you ', color: C.warn }, { text: m[1]!, bold: true }]
+  return null
+}
+
+/** A reply's text as markdown runs and Foreman report lines (outside code fences), in order; a blank line between
+ * two of them stays as a gap (live: the groups ran together without it) */
+export function replyBlocks(text: string): ReplyBlock[] {
+  const out: ReplyBlock[] = []
+  let md: string[] = []
+  let fence = false
+  let blank = false
+  const flush = () => {
+    const t = md.join('\n').trim()
+    if (t) out.push({ kind: 'md', text: t })
+    md = []
+  }
+  for (const raw of text.split('\n')) {
+    if (/^\s*```/.test(raw)) fence = !fence
+    const parts = fence ? null : reportLine(raw)
+    if (parts) {
+      flush()
+      if (blank && out.length) out.push({ kind: 'gap' })
+      out.push({ kind: 'line', parts })
+    } else if (!raw.trim() && !fence) {
+      if (md.length) md.push(raw) // a paragraph break inside markdown
+      blank = true
+      continue
+    } else {
+      if (!md.length && blank && out.length) out.push({ kind: 'gap' })
+      md.push(raw)
+    }
+    blank = false
+  }
+  flush()
   return out
 }
 
