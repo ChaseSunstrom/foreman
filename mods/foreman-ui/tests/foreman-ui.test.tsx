@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, C, changedLines, clawd, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
-import { askNote, guardReason, readSummary, summaryText, toasts } from '../hooks/register'
+import { activityCells, agentColor, C, changedLines, clawd, clean, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
+import { askNote, guardReason, lastLine, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -810,10 +810,21 @@ test('kit: an edit\'s changed lines, numbered per file, with tabs, control and b
     { oldStart: 40, newStart: 41, lines: ['+d'] },
   ])
   expect(got).toEqual([
-    { n: 4, sign: '-', text: '  b[31m' },
+    { n: 4, sign: '-', text: '  b' },
     { n: 4, sign: '+', text: 'cevil' },
     { n: 41, sign: '+', text: 'd' },
   ])
+})
+
+test('kit: drawn text loses every escape sequence, control and bidi character; a carriage return keeps what a terminal shows', () => {
+  // T-0144 (security review): only CSI colour codes were stripped from shell output
+  const evil = 'a\u001b]8;;http://x\u0007link\u001b]8;;\u0007b\u001b[2J\u001bPq\u001b\\c\u202ed\te'
+  expect(clean(evil)).toBe('alinkbcd  e') // the DCS string (ESC P … ESC \\) goes whole, not just its introducer
+  // review: 8-bit CSI/OSC, string forms (DCS, APC, PM, SOS), charset switches, zero-width and direction marks
+  expect(clean('\u009d0;title\u0007x\u009b31my\u001b_apc\u001b\\z\u001b(Bw‏​v؜u')).toBe('xyzwvu')
+  const out = outputSummary(`10%\r50%\r100% done\n${evil}`, '')
+  expect(out.lines.map(l => l.text)).toEqual(['100% done', 'alinkbcd  e'])
+  expect(lastLine({ stdout: `ok \u001b]0;title\u0007T-0001 done` })).toBe('ok T-0001 done')
 })
 
 test('a long task title gives way before the task id: the id never wraps', async ($, on) => {

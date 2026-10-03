@@ -13,6 +13,7 @@ import {
   agentColor,
   TONE_COLOR,
   changedLines,
+  clean,
   ago,
   churnCells,
   clawd,
@@ -147,7 +148,7 @@ export function readSummary(tool: string, output: unknown): string {
 export function lastLine(output: unknown): string {
   const o = (output && typeof output === 'object' ? output : {}) as { stdout?: unknown; stderr?: unknown }
   const text = [o.stdout, o.stderr].filter(x => typeof x === 'string').join('\n')
-  return (text.split('\n').map(l => l.trim()).filter(Boolean).at(-1) ?? '').slice(0, 100)
+  return (text.split('\n').map(l => clean(l).trim()).filter(Boolean).at(-1) ?? '').slice(0, 100)
 }
 
 /** Whether something waits on the person: a yes, or a plan to approve. */
@@ -464,7 +465,7 @@ function shellRow($: EngineInterface, e: ToolUseRender) {
   // the command shown whole up to three lines, never silently cut: a chained or multi-line command must not read as
   // a plain one (the T-0095 review's HIGH finding for the quiet fm row)
   const lines = String((e.props.input as { command?: unknown } | null)?.command ?? '').split('\n')
-  const cmd = lines.slice(0, 3).join('\n')
+  const cmd = lines.slice(0, 3).map(clean).join('\n')
   const bad = !!e.props.isErrored // the exit status decides, not words in the output
   const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
   const ms = took.get(e.props.tool_use_id)

@@ -274,17 +274,26 @@ class Cmd:
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
 
 
-def _strip_heredocs(cmd):
-    lines, out, i = cmd.split("\n"), [], 0
+_HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
+
+
+def _heredocs(cmd):
+    """(the command without its heredoc bodies, the bodies)"""
+    lines, out, bodies, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
         out.append(line)
         i += 1
-        for _, delim in re.findall(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line):
+        for _, delim in re.findall(_HEREDOC_START, line):
             while i < len(lines) and lines[i].strip() != delim:
+                bodies.append(lines[i])
                 i += 1
             i += 1
-    return "\n".join(out)
+    return "\n".join(out), "\n".join(bodies)
+
+
+def _strip_heredocs(cmd):
+    return _heredocs(cmd)[0]
 
 
 def _tokens(cmd):
@@ -427,12 +436,41 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
 _FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
 
 
+def _top_level(prefix):
+    """True when shell text ending here is outside every quote and escape (a quote scan: wrong only towards False)."""
+    q, esc = None, False
+    for ch in prefix:
+        if esc:
+            esc = False
+        elif ch == "\\" and q != "'":
+            esc = True
+        elif q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+    return q is None and not esc
+
+
 def _interp_code(cmd):
-    """What the interpreter-code checks read: the whole command but fm's `--run "<cmd>"` arguments, which are shell
-    commands checked on their own (check_bash recurses into them, interpreter checks included). T-0128 narrowed this to
-    heredoc and -c bodies; review found that fails open (code piped in beside any heredoc went unread), so only the
-    one span known to be checked elsewhere is left out."""
-    return _FM_RUN_ARG.sub(" ", cmd)
+    """What the interpreter claude-check reads: the whole command but the `--run "<cmd>"` arguments of real fm calls,
+    which check_bash reads on their own (interpreter checks included). A span is left out only when it starts at shell
+    top level, outside heredoc bodies, in a simple command whose word is fm; heredoc bodies are read whole. T-0144: the
+    T-0135 version stripped every match, so a fake `--run "` inside heredoc or -c code swallowed the call after it, and
+    --run handed to the interpreter itself hid its argument. Anything uncertain is kept, so mistakes fail closed."""
+    shell, bodies = _heredocs(cmd)
+    if "$'" in shell or len(re.findall(r"(?<!<)<<(?!<)", shell)) != len(re.findall(_HEREDOC_START, shell)):
+        return cmd  # $'…' quoting, or a heredoc form _heredocs doesn't know (<<\EOF): the scan can't follow, read all
+    out, last = [], 0
+    for m in _FM_RUN_ARG.finditer(shell):
+        before = shell[:m.start()]
+        if not _top_level(before):
+            continue
+        argv, _ = _strip_wrappers(_tokens(re.split(r"[;&|()\n`]", before)[-1]))
+        name = os.path.basename(argv[0]) if argv else ""
+        if name == "fm" or (re.match(r"^python[0-9.]*$", name) and argv[1:2] and argv[1].endswith("/fm")):
+            out.append(shell[last:m.start()] + " ")
+            last = m.end()
+    return "".join(out) + shell[last:] + "\n" + bodies
 
 
 def _interpreter_writes(cmd, ctx):

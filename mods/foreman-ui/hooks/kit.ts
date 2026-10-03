@@ -270,7 +270,16 @@ export function agentColor(id: string): number {
 
 // T-0123: a shell command's output as a summary. A line's tone: failures, warnings, passes, the rest.
 export type Tone = 'err' | 'warn' | 'ok' | 'plain'
-const ANSI = /\u001b\[[0-9;:]*[A-Za-z]/g
+// T-0144: every escape sequence, C0/C1 controls, bidi overrides and zero-width or direction marks
+// CSI (7- or 8-bit), the string forms OSC/DCS/SOS/PM/APC up to BEL or ST (a terminal swallows an unterminated one
+// the same way), then any other ESC form (charset switches, ESC c, a stray ST)
+const ESC_SEQ =
+  /(?:\u001b\[|\u009b)[0-?]*[ -\/]*[@-~]|(?:\u001b[\]PX^_]|[\u0090\u0098\u009d-\u009f])[^\u0007\u001b\u009c]*(?:\u0007|\u001b\\|\u009c)?|\u001b[ -\/]*[0-~]/g
+/** Text safe to draw: no escape sequences, control or bidi characters (a line could otherwise read as something else
+ * or be refused); tabs as two spaces */
+export const clean = (t: string) =>
+  t.replace(ESC_SEQ, '').replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+
 export function tone(line: string): Tone {
   if (/\b0 (?:errors?|fail(?:s|ed|ures?)?)\b/i.test(line)) return 'ok' // ' 0 fail' read as a failure (live render)
   if (/\b(?:error|errors|failed|failure|failures|fatal|panic(?:ked)?|traceback|exception)\b|✗|✘|\bFAIL\b/i.test(line)) return 'err'
@@ -285,9 +294,8 @@ export function outputSummary(stdout: unknown, stderr: unknown, keep = 6, failur
   const all = [stdout, stderr]
     .filter((x): x is string => typeof x === 'string')
     .join('\n')
-    .replace(ANSI, '')
     .split('\n')
-    .map(l => l.trimEnd())
+    .map(l => clean(l.replace(/\r$/, '').split('\r').at(-1) ?? '').trimEnd()) // after a \r: what a terminal shows
     .filter(l => l.trim())
   const bad = failuresFirst ? all.filter(l => tone(l) === 'err') : []
   const pick = bad.length ? bad.slice(0, keep) : all.slice(-keep)
@@ -304,14 +312,14 @@ export function outputSummary(stdout: unknown, stderr: unknown, keep = 6, failur
  * bidi overrides that could make a line read as something else) */
 export function changedLines(hunks: unknown): { n: number; sign: '+' | '-'; text: string }[] {
   const out: { n: number; sign: '+' | '-'; text: string }[] = []
-  const clean = (t: string) => t.replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 240)
+  const tidy = (t: string) => clean(t).slice(0, 240)
   for (const h of Array.isArray(hunks) ? (hunks as { oldStart?: unknown; newStart?: unknown; lines?: unknown }[]) : []) {
     let o = typeof h?.oldStart === 'number' ? h.oldStart : 1
     let n = typeof h?.newStart === 'number' ? h.newStart : 1
     for (const l of Array.isArray(h?.lines) ? h.lines : []) {
       if (typeof l !== 'string' || l.startsWith('\\')) continue // '\ No newline at end of file'
-      if (l.startsWith('-')) out.push({ n: o++, sign: '-', text: clean(l.slice(1)) })
-      else if (l.startsWith('+')) out.push({ n: n++, sign: '+', text: clean(l.slice(1)) })
+      if (l.startsWith('-')) out.push({ n: o++, sign: '-', text: tidy(l.slice(1)) })
+      else if (l.startsWith('+')) out.push({ n: n++, sign: '+', text: tidy(l.slice(1)) })
       else (o++, n++)
     }
   }

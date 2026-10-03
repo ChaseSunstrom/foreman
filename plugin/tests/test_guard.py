@@ -347,7 +347,15 @@ class InterpreterWrites(GuardCase):
                     # review of T-0128: a harmless heredoc beside piped code narrowed the scan to the heredoc
                     "echo \"import os; os.system('claude plugin install x@y')\" | python3; cat <<'EOF'\nhi\nEOF",
                     # and an interpreter inside fm's --run is a command of its own
-                    "fm task evidence T-0007 --run \"python3 -c \\\"import os; os.system('claude plugin install x@y')\\\"\""):
+                    "fm task evidence T-0007 --run \"python3 -c \\\"import os; os.system('claude plugin install x@y')\\\"\"",
+                    # T-0144 (security review of T-0135): a fake --run quote in the code swallowed the call after it
+                    "python3 - <<'EOF'\nx = '--run \"'\nimport os; os.system('claude plugin install x@y')  # \"\nEOF",
+                    "python3 -c \"x = \\\"--run '\\\"; import os; os.system(\\\"claude plugin install x@y\\\"); y = \\\"'\\\"\"",
+                    # and --run as an argument of the interpreter itself, not of fm
+                    "python3 -c \"import sys, subprocess; subprocess.run(sys.argv[2].split())\" --run \"claude plugin install x@y\"",
+                    # T-0144 review: $'…' quoting and a heredoc form the parser doesn't know threw the quote scan off
+                    "ruby -e $'#\\'\nfm --run \"#{{system(\\\"claude plugin install x\\\")}}\"'",  # {{ }}: str.format
+                    "python3 - <<\\EOF\ns = ''''\nfm --run \"x'''; import os; os.system('claude plugin install x@y') # \"\nEOF"):
             self.assertBlocked(self.bash(bad), "plugin", bad)
 
     def test_table(self):
