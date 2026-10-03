@@ -590,6 +590,14 @@ test('finished reads are one quiet line; background notifications too', async ($
   expect(await note.find({ type: 'Text', text: 'background local_bash completed' })).toBeDefined()
   expect(await note.find({ type: 'Text', text: '· 1m 05s' })).toBeDefined()
   await note.unmount()
+  // T-0182: 'my chats aren't [panelled] either': a typed prompt is a panel in the user's colour
+  const said = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage', props: {
+    text: 'make it smarter\nand better', origin: { kind: 'composer' }, isExpanded: false } })
+  const box = await said.find({ type: 'Box', key: 'fm-user' })
+  expect(box?.props.borderStyle).toBe('round')
+  expect(box?.props.borderColor).toBe(hex(C.accent2))
+  expect(await said.find({ type: 'Text', text: /make it smarter\nand better/ })).toBeDefined()
+  await said.unmount()
 })
 
 test('a background shell shows while Claude waits on it, and leaves on its notification or a stop', async ($, on) => {
@@ -1043,6 +1051,13 @@ test('a reply opens with a Foreman mark; Foreman report lines are coloured; the 
   expect(plain?.props.borderStyle).toBe('round') // every block is one, in a quiet grey
   expect(plain?.props.borderColor).toBe(hex(C.dim))
   await more.unmount()
+  // T-0182 live: the newest reply kept a frozen spinner frame ('· ok') once its turn ended; it settles on ●
+  await $.turn.start({ text: 'go', turnId: 'tz' })
+  const newest = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
+    props: { text: 'ok', isFirstOfReply: true } })
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 'tz', reason: 'answer' })
+  expect(await newest.find({ type: 'Text', text: '● ' })).toBeDefined()
+  await newest.unmount()
   const long = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'x'.repeat(12000), isFirstOfReply: true } })
   expect(await long.find({ type: 'Text', text: 'engine' })).toBeDefined() // too long for a Markdown element: the engine's

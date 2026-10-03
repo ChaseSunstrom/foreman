@@ -436,6 +436,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     turns.delete(e.turnId)
     isDirty = true
+    await update($, frame, n => n + 1) // T-0182 live: a reply drawn live redraws settled (●, its resting border)
     if (e.agentId) await update($, agents, list => list.map(a => (a.id === e.agentId ? { ...a, done: true } : a)))
     else {
       const fresh = await refresh($)
@@ -624,6 +625,21 @@ export const register: Register = (on, options) => {
           <Text color={hex(C.dim)} wrap="truncate-end">
             {clean(e.props.text.replace(ours, '').split('\n')[0] ?? '')}
           </Text>
+        </Box>
+      )
+    }
+    // T-0182: 'my chats aren't [panelled] either': the person's own prompt is a panel in their colour
+    if ((origin?.kind === 'composer' || origin?.kind === 'bridge') && e.props.text.length <= 9000 &&
+        !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(e.props.text)) {
+      const { Box, Text } = $.ui.resolve(e)
+      return (
+        <Box flexDirection="row" borderStyle="round" borderColor={hex(C.accent2)} paddingX={1} width="100%" key="fm-user">
+          <Text bold color={hex(C.accent2)}>
+            {'❯ '}
+          </Text>
+          <Box flexDirection="column" flexShrink={1}>
+            <Text wrap="wrap">{e.props.text}</Text>
+          </Box>
         </Box>
       )
     }
