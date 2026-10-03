@@ -333,6 +333,19 @@ class StateFallback(GuardCase):
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 
+    def test_the_claude_check_reads_only_the_code_the_interpreter_runs(self):
+        # T-0128: Markdown backticks in a heredoc, next to a shell `--run "claude plugin test …"`, read as interpreter
+        # code running claude plugin
+        ok = ("python3 - <<'EOF'\nopen('CHANGELOG.md', 'a').write('see `fm trust`')\nEOF\n"
+              "fm task evidence T-0007 --run \"claude plugin test mods/x\"")
+        r = self.bash(ok)
+        self.assertFalse(r and "interpreter code running claude" in r.detail, r)
+        for bad in ("python3 -c \"import subprocess; subprocess.run(['claude', 'plugin', 'install', 'x@y'])\"",
+                    "python3 - <<'EOF'\nimport os\nos.system('claude plugin install x@y')\nEOF",
+                    "CODE=\"import os; os.system('claude plugin install x@y')\"; python3 -c \"$CODE\"",
+                    "echo \"import os; os.system('claude plugin install x@y')\" | python3"):
+            self.assertBlocked(self.bash(bad), "plugin", bad)
+
     def test_table(self):
         self.run_table([
             ("python3 - <<'EOF'\nopen('{fhome}/plugin/lib/fmguard.py', 'w').write('x')\nEOF", "core"),

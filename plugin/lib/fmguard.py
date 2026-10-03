@@ -424,6 +424,26 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
                           rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}")
 
 
+def _interp_code(cmd):
+    """The code an interpreter in cmd runs (T-0128): heredoc bodies and -c/-e arguments, not the rest of the shell
+    command (a `--run "claude plugin test"` beside a heredoc isn't the heredoc's). A -c/-e taken from a variable
+    ($CODE) can't be read here, so then the whole command counts, as before."""
+    if re.search(r"\s-[ce]\s+[\"']?\$", cmd):
+        return cmd
+    lines, bodies, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        for _, delim in re.findall(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", line):
+            while i < len(lines) and lines[i].strip() != delim:
+                bodies.append(lines[i])
+                i += 1
+            i += 1
+    args = re.findall(r"""\s-[ce]\s+(?:'([^']*)'|"((?:\\.|[^"\\])*)")""", cmd)
+    # neither (code piped in, a script file): the whole command, as before
+    return "\n".join(bodies + [a or b for a, b in args]) if bodies or args else cmd
+
+
 def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
@@ -434,7 +454,8 @@ def _interpreter_writes(cmd, ctx):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
-    if _CLAUDE_IN_CODE.search(cmd) and _EXEC_API.search(cmd):
+    code = _interp_code(cmd)
+    if _CLAUDE_IN_CODE.search(code) and _EXEC_API.search(code):
         return [("plugin", "interpreter code running claude's plugin, MCP or config commands" + plugin_mark("?"))]
     if not _WRITE_API.search(cmd):
         return []
