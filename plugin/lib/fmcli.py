@@ -330,7 +330,8 @@ def task_finish(p, args):
             if not code:
                 x.check_ac(n) if kind == "ac" else x.mark_step(n)
         if not any(code for *_, code, _ in results):
-            for lens, result in lenses or [("self", args.result)]:
+            small = b.tier == "S" and all(lens != "self" for lens, _ in lenses)  # T-0129: --audit is S's self audit
+            for lens, result in lenses + ([("self", args.result)] if small else []):
                 x.add_audit(lens, args.audit, result, tree=tree)
             if args.docs:
                 x.set_section("Docs impact", c.redact(args.docs))
@@ -339,7 +340,30 @@ def task_finish(p, args):
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     args.task_cmd = "done"
-    return cmd_task(args)
+    rc = cmd_task(args)
+    if args.commit and not rc:
+        _commit_task(p, need_brief(p, b.id), args.commit)
+    return rc
+
+
+def _commit_task(p, b, message):
+    """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
+    nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it."""
+    import fmmap
+    import subprocess
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    if not base:
+        raise UsageError(f"{b.id} is done, but has no start point on record to tell its files apart: commit by hand")
+    files = fmmap.changed(p.root, base) + ([".foreman"] if os.path.isdir(os.path.join(p.root, ".foreman")) else [])
+    if not files:
+        print(f"{b.id}: nothing to commit.")
+        return
+    add = subprocess.run(["git", "-C", p.root, "add", "-A", "--", *files], capture_output=True, text=True)
+    done = add.returncode == 0 and subprocess.run(["git", "-C", p.root, "commit", "-q", "-m", message],
+                                                  capture_output=True, text=True)
+    if not done or done.returncode:
+        raise UsageError(f"{b.id} is done, but the commit failed: {((done and done.stderr) or add.stderr).strip()[:300]}")
+    print(f"{b.id}: committed {c._git(p.root, 'rev-parse', '--short', 'HEAD').strip()} ({len(files)} path(s)).")
 
 
 def task_prove(p, args):
@@ -1519,6 +1543,7 @@ def build_parser():
     t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
+    t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
     t.add_argument("--run", required=True, help="the test command")

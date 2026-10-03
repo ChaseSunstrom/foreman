@@ -77,6 +77,30 @@ class RoundI(ForemanTestCase):
         self.assertTrue(all(a.checked for a in b.acceptance()))
         self.assertEqual(b.section("Docs impact").strip(), "README.md")
 
+    def test_finish_commit_takes_only_the_tasks_files_and_only_after_a_close(self):
+        # T-0129: `fm task finish … | tail -1 && git commit` committed after a refused close, twice in one session
+        import os
+        import subprocess
+        self.fm("init")
+        with open(os.path.join(self.repo, "wip.txt"), "w") as f:
+            f.write("work from before the task\n")
+        self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "works :: python3 -c 'print(1)'",
+                "--step", "build", "--focus")
+        with open(os.path.join(self.repo, "feature.py"), "w") as f:
+            f.write("x = 1\n")
+        log = lambda: subprocess.run(["git", "-C", self.repo, "log", "--format=%s"], capture_output=True, text=True).stdout
+        bad = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'import sys; sys.exit(1)'", "--audit", "self",
+                      "--commit", "Add the feature", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertNotIn("Add the feature", log())
+        ok = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'print(0)'", "--audit", "self checklist",
+                     "--lens", "adversary: no input reaches a shell", "--commit", "Add the feature\n\nwhy", check=False)
+        self.assertEqual(ok.returncode, 0, ok.stderr)  # T-0129: extra lenses don't drop a small task's self audit
+        self.assertIn("Add the feature", log())
+        names = subprocess.run(["git", "-C", self.repo, "show", "--name-only", "--format="], capture_output=True,
+                               text=True).stdout.split()
+        self.assertEqual(names, ["feature.py"], "work from before the task stays out of its commit")
+
     def test_finish_on_an_m_task_refuses_an_unknown_lens(self):
         self.fm("init")
         self.fm("task", "new", "Mid", "--type", "FEATURE", "--tier", "M", "--interpretation", "x", "--approach", "y",
