@@ -291,6 +291,15 @@ class Cmd:
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
 
 
+def _heredoc_starts(seen, line):
+    """T-0178: the heredocs a line starts, only where a shell reads one: outside every quote, comments aside (seen: the
+    command's lines before it, bodies left out). A quoted marker is text; taken for a start, it made every later line
+    a body, so `echo '<<EOF'` hid the command after it from the guard."""
+    before = "".join(x + "\n" for x in seen)
+    return [(m.group(1), m.group(2)) for m in re.finditer(_HEREDOC_START, line)
+            if _top_level(_strip_comments(before + line[:m.start()]))]
+
+
 def _lines(text):
     """Newlines as command separators for the tokenizer, placed after each line so a # comment ends at its line (it ran
     to the end of the whole command, hiding every later line: T-0158)."""
@@ -299,11 +308,11 @@ def _lines(text):
 
 def _live_heredocs(cmd):
     """The bodies of heredocs with an unquoted delimiter: a shell runs their substitutions (T-0158)."""
-    lines, out, i = cmd.split("\n"), [], 0
+    lines, out, seen, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
         i += 1
-        for quote, delim in re.findall(_HEREDOC_START, line):
+        for quote, delim in _heredoc_starts(seen, line):
             body = []
             while i < len(lines) and lines[i].strip() != delim:
                 body.append(lines[i])
@@ -311,6 +320,7 @@ def _live_heredocs(cmd):
             i += 1
             if not quote:
                 out.append("\n".join(body))
+        seen.append(line)
     return out
 
 
@@ -319,9 +329,10 @@ def _heredocs(cmd):
     lines, out, bodies, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
-        out.append(line)
         i += 1
-        for _, delim in re.findall(_HEREDOC_START, line):
+        starts = _heredoc_starts(out, line)
+        out.append(line)
+        for _, delim in starts:
             while i < len(lines) and lines[i].strip() != delim:
                 bodies.append(lines[i])
                 i += 1
@@ -337,12 +348,14 @@ def _drop_data_heredocs(cmd):
     """T-0171: the command without the bodies of heredocs that only write text: cat or tee as the line's first word,
     a quoted delimiter (nothing in the body expands) and no pipe or substitution on the line. For the interpreter gate
     only: a script written with cat isn't run by writing it. Anything else keeps its body."""
-    lines, out, i = cmd.split("\n"), [], 0
+    lines, out, seen, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
-        out.append(line)
         i += 1
-        for quote, delim in re.findall(_HEREDOC_START, line):
+        starts = _heredoc_starts(seen, line)
+        out.append(line)
+        seen.append(line)
+        for quote, delim in starts:
             data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line)
             while i < len(lines) and lines[i].strip() != delim:
                 if not data:
@@ -662,11 +675,12 @@ _PLAIN_IMPORTS = {"re", "json", "os", "sys", "pathlib", "textwrap", "difflib", "
 def _python_units(cmd):
     """(the bodies of quoted heredocs fed straight to python, the rest of the command, the lines that feed them): a
     unit only when it's the line's one heredoc, on a `python - <<` line with no pipe, `;`, `&`, backtick or `$(`."""
-    lines, rest, units, starters, i = cmd.split("\n"), [], [], [], 0
+    lines, rest, units, starters, seen, i = cmd.split("\n"), [], [], [], [], 0
     while i < len(lines):
         line = lines[i]
         i += 1
-        starts = re.findall(_HEREDOC_START, line)
+        starts = _heredoc_starts(seen, line)
+        seen.append(line)
         fed = len(starts) == 1 and starts[0][0] and re.match(r"\s*python[0-9.]*\s+-\s*<<", line) and \
             not re.search(r"[|`;&]|\$\(", line)
         (starters if fed else rest).append(line)

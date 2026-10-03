@@ -480,6 +480,18 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_a_quoted_heredoc_marker_hides_nothing(self):
+        # T-0178: a quoted heredoc marker was taken for a heredoc, so every later line was a body the guard never read
+        for cmd in ("echo '<<EOF'\ngit push --force origin main\nEOF", 'echo "x <<EOF"\ngit push --force origin main',
+                    "# don't\ngit push --force origin main",
+                    "fm task log T-1 \"a script (python3 - <<'PY' …)\" \\\n&& git push --force origin main"):
+            self.assertBlocked(self.bash(cmd), "git-destructive", cmd)
+        # an fm command whose text quotes a heredoc and code is data to fm, its later lines included
+        self.assertIsNone(self.bash("fm task new \"T\" --interpretation \"an edit script (python3 - <<'PY' … "
+                                    "open('.foreman/x', 'w')) is blocked\" \\\n  --approach \"fed straight to python\""))
+        # a real heredoc after a comment with an apostrophe is still one: its body is data
+        self.assertIsNone(self.bash("# it's data\ncat <<'EOF' > /tmp/notes.txt\ngit push --force origin main\nEOF"))
+
     def test_a_provable_python_edit_counts_only_its_open_targets(self):
         # T-0176 (from T-0174's friction): an edit script whose strings name protected paths, writing only its own file
         py = lambda body: "python3 - <<'PY'\n" + body + "\nPY"
