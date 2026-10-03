@@ -33,10 +33,13 @@ def digest(p):
     ledger = list(_ledgers(start))
     out = {}
 
-    blocks = collections.Counter((e.get("category"), c.fit(c.plain(str(e.get("target") or "")), 110))
-                                 for e in events if e.get("kind") == "guard_block")
+    guard = [e for e in events if e.get("kind") == "guard_block"]
+    key = lambda e: (e.get("category"), c.fit(c.plain(str(e.get("target") or "")), 110))
+    blocks = collections.Counter(key(e) for e in guard)
+    example = {key(e): c.fit(c.plain(str(e["cmd"])), 160) for e in guard if e.get("cmd")}  # T-0172: the newest
     out["guard blocks (each a stop Claude had to work around; a false one costs a rewrite)"] = [
-        f"{n}× {cat}: {target}" for (cat, target), n in blocks.most_common(MAX_LINES)]
+        f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
+        for (cat, target), n in blocks.most_common(MAX_LINES)]
 
     fails = collections.Counter((e.get("tool"), c.fit(str(e.get("target") or ""), 90))
                                 for e in events if e.get("kind") == "tool_fail")

@@ -29,6 +29,7 @@ class Friction(ForemanTestCase):
         out = self.fm("friction").stdout
         for needle in ("publish", "steer: make it faster", "Gates by path"):
             self.assertIn(needle, out)
+        self.assertIn("e.g. `npm publish`", out)  # T-0172: the command itself, so a false block can be grounded
         path = self.fm("friction", "--brief").stdout.strip().split()[-1]
         with open(path, encoding="utf-8") as f:
             brief = f.read()

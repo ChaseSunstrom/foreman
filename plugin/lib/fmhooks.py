@@ -702,7 +702,8 @@ def _pre_tool_use(raw):
     if block:
         reason = guard.message(block, ctx)
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
-                "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None})
+                "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
+                "cmd": c.fit(c.redact(_target(pl.get("tool_input") or {})), 160)})  # T-0172: groundable later
         try:
             if p:
                 c.log_event(p, "guard_block", task=act.id if act else None,
