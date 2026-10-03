@@ -27,6 +27,23 @@ class Checks(unittest.TestCase):
             f.write(text)
         return path
 
+    def test_mod_release(self):
+        # T-0191: every other session draws the installed foreman-ui; it lagged this repo (0.4.0 vs 0.5.0) unnoticed
+        repo = os.path.join(self.t, "fhome")
+        self.write("fhome/mods/foreman-ui/.claude-plugin/plugin.json", json.dumps({"name": "foreman-ui", "version": "0.5.0"}))
+        self.write("fhome/mods/foreman-ui/hooks/register.tsx", "new panels\n")
+        inst = os.path.join(self.t, "cache", "foreman-ui", "0.4.0")
+        self.write("cache/foreman-ui/0.4.0/hooks/register.tsx", "old rows\n")
+        listing = self.write("home/.claude/plugins/installed_plugins.json", json.dumps(
+            {"plugins": {"foreman-ui@foreman": [{"installPath": inst, "version": "0.4.0"}]}}))
+        r = d.check_mod_release(repo, listing)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("0.4.0", r.detail)
+        self.assertIn("0.5.0", r.detail)
+        self.write("cache/foreman-ui/0.4.0/hooks/register.tsx", "new panels\n")  # released: the same code
+        self.assertEqual(d.check_mod_release(repo, listing).status, "PASS")
+        self.assertEqual(d.check_mod_release(repo, os.path.join(self.t, "none.json")).status, "PASS")  # not installed
+
     def test_settings_json(self):
         good = self.write("good.json", '{"a": 1}')
         bad = self.write("bad.json", "{nope")

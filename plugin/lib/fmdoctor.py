@@ -498,6 +498,26 @@ def check_plugins():
     return Result("plugins", "PASS", "no conflicts among enabled plugins")
 
 
+def check_mod_release(home=None, listing=None):
+    """T-0191: every other session draws the installed foreman-ui, which lags this repo until it is released (0.4.0
+    stayed installed while the repo reached 0.5.0). Its hooks are compared, so code changed without a version bump
+    counts too."""
+    import fmplugins
+    repo = os.path.join(home or c.foreman_home(), "mods", "foreman-ui")
+    entry = ((_load_json(listing or os.path.expanduser("~/.claude/plugins/installed_plugins.json")) or {})
+             .get("plugins") or {}).get("foreman-ui@foreman") or [{}]
+    inst = entry[0].get("installPath") if isinstance(entry[0], dict) else None
+    if not os.path.isdir(os.path.join(repo, "hooks")) or not inst or not os.path.isdir(inst):
+        return Result("foreman-ui release", "PASS", "not installed from this repo")
+    have = entry[0].get("version") or "?"
+    want = (_load_json(os.path.join(repo, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
+    if fmplugins._tree_hash(os.path.join(repo, "hooks")) == fmplugins._tree_hash(os.path.join(inst, "hooks")):
+        return Result("foreman-ui release", "PASS", f"the installed foreman-ui ({have}) matches this repo")
+    return Result("foreman-ui release", "WARN", f"the installed foreman-ui is {have}, this repo's is {want}"
+                  + (" with newer code" if have == want else "") + ": other sessions draw the old UI until it is "
+                  "released (bump its version, then a plugin yes to update it)")
+
+
 def check_serve(states):
     """fm serve units that aren't running (a dead one leaves its project in full autonomy with drive on)."""
     down = [f"{slug} {state}" for slug, state in states.items() if state != "active"]
@@ -528,7 +548,7 @@ def run_all(full=False):
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
-               check_serve(fmserve.states()), check_hook_events(), check_plugins()]
+               check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home)]
     try:
         bench, sizes = _bench_and_injection()
         results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
