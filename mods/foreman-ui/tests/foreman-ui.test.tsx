@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { MASCOT_COLORS, activityCells, elapsed, mascotCells, mascotFrame, progressCells, shortPath, sizeWord, textBar, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, clawd, elapsed, miniClawd, progressCells, shortPath, sizeWord, textBar, toolFace } from '../hooks/kit'
 import { askNote, guardReason, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
@@ -118,11 +118,17 @@ function world(on: On, views: FmView[]) {
   on('command.register', async ($, e) => ({ value: { command: e.name } }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async () => ({ text: '' }))
-  const answer = { deny: '', hold: 0 } // hold: ms the call stays open, as a permission dialog keeps it
+  // hold: ms the call stays open, as a permission dialog keeps it; result: what the tool answers
+  const answer: { deny: string; hold: number; result: object } = { deny: '', hold: 0, result: {} }
   on('tool.call', async () => {
     if (answer.hold) await clock.sleep(answer.hold)
-    return answer.deny ? { deny: answer.deny } : { result: {} }
+    return answer.deny ? { deny: answer.deny } : { result: answer.result }
   })
+  on('prompt.submit', async ($, e) => ({ text: e.text }))
+  const agentStatus = { now: 'running' } // what the engine's list says of every subagent
+  on('agent.list', async () => ({
+    value: ['ag1', 'ag2'].map(id => ({ id, description: 'map the parser', type: 'Explore', status: agentStatus.now })),
+  }))
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
     if (e.component === 'Spinner') return <Text>{`${e.props.word}${e.props.suffix}`}</Text>
@@ -130,7 +136,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -471,14 +477,17 @@ test('freshAt 0 turns it off', { options: { freshAt: 0 } }, async ($, on) => {
   expect(compacted).toEqual([])
 })
 
-test('kit: the mascot is 12x4 cells in every frame and moves between them; sizes read as words', () => {
-  const frames = ['rest', 'bob', 'blink', 'work', 'work2', 'happy']
-  const drawn = frames.map(f => decode(mascotCells(f, MASCOT_COLORS.blue!)))
-  for (const d of drawn) expect(d.length).toBe(48)
-  expect(new Set(drawn.map(d => JSON.stringify(d))).size).toBe(frames.length)
-  expect(mascotFrame('work', 0)).not.toBe(mascotFrame('work', 2))
-  expect(mascotFrame('idle', 3)).toBe('blink')
-  expect(mascotFrame('happy', 9)).toBe('happy')
+test('kit: the mascot is Claude Code own Claude, dancing in same-size frames; minis get their own colors', () => {
+  expect(clawd('idle', 0)).toEqual(['  ▐▛███▜▌  ', ' ▝▜█████▛▘ ', '   ▘▘ ▝▝   ']) // the welcome screen's
+  const dance = Array.from({ length: 24 }, (_, f) => clawd('work', f))
+  for (const rows of dance) expect(rows.map(r => [...r].length)).toEqual([11, 11, 11])
+  expect(new Set(dance.map(r => r.join('\n'))).size).toBeGreaterThan(3) // it moves: sways, waves, steps
+  expect(clawd('idle', 3)[0]).toBe('  ▐█████▌  ') // a blink
+  expect(clawd('happy', 1)[0]).toContain('▗▐▛███▜▌▖') // both arms up
+  expect(miniClawd(0).map(r => [...r].length)).toEqual([7, 7])
+  expect(miniClawd(0)).not.toEqual(miniClawd(1))
+  expect(agentColor('a1')).toBe(agentColor('a1')) // stable per subagent
+  expect(new Set(['a1', 'b2', 'c3', 'd4', 'e5'].map(agentColor)).size).toBeGreaterThan(2)
   expect([sizeWord('S'), sizeWord('M'), sizeWord('L')]).toEqual(['small', 'medium', 'large'])
 })
 
@@ -496,7 +505,7 @@ test('the pane wears the mascot top-right; a size legend explains the words', as
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-mascot')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: '  ▐▛███▜▌  ' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /sizes: small ≤30 lines/ })).toBeDefined()
   await ui.unmount()
   const desk = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
@@ -508,7 +517,7 @@ test('mascot off means no mascot', { options: { mascot: 'off' } }, async ($, on)
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-mascot')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /▐▛███▜▌/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -546,4 +555,52 @@ test('finished reads are one quiet line; background notifications too', async ($
   expect(await note.find({ type: 'Text', text: 'background local_bash completed' })).toBeDefined()
   expect(await note.find({ type: 'Text', text: '· 1m 05s' })).toBeDefined()
   await note.unmount()
+})
+
+test('a background shell shows while Claude waits on it, and leaves on its notification or a stop', async ($, on) => {
+  const { answer } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.result = { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bx1' }
+  await $.tool.call({ tool: 'Bash', command: 'cargo test --workspace', run_in_background: true })
+  answer.result = { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bx2' }
+  await $.tool.call({ tool: 'Bash', command: 'npm run build' }) // ctrl+b backgrounds a foreground call too
+  answer.result = {}
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /waiting on 2 background shells/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /cargo test --workspace/ })).toBeDefined()
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /▍Background shells/ })).toBeDefined()
+  await pane.unmount()
+  const text = '<task-notification><task-id>bx1</task-id><status>completed</status></task-notification>'
+  await $.prompt.submit({ text, origin: { kind: 'task-notification' }, wait: false })
+  expect(await ui.find({ type: 'Text', text: /waiting on 1 background shell\b/ })).toBeDefined()
+  await $.tool.call({ tool: 'TaskStop', task_id: 'bx2' })
+  expect(await ui.find({ type: 'Text', text: /waiting on/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('each running subagent gets a mini Claude of its own color beside the mascot', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
+  const inSubagent = { tool: 'Read' as const, file_path: '/repo/src/parse.py', agentId: 'ag1' } // the engine stamps agentId
+  await $.tool.call(inSubagent)
+  expect((await pane.findAll({ type: 'Text', text: /▐▛█▜▌/ })).length).toBe(1)
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't9', reason: 'answer', agentId: 'ag1' })
+  expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('a killed subagent sends no turn.complete; the engine list retires its mini Claude', async ($, on) => {
+  const { clock, agentStatus } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const inSubagent = { tool: 'Read' as const, file_path: '/repo/a.py', agentId: 'ag2' }
+  await $.tool.call(inSubagent)
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await pane.findAll({ type: 'Text', text: /▐▛█▜▌/ })).length).toBe(1)
+  agentStatus.now = 'killed'
+  await clock.advance(2000)
+  expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
+  await pane.unmount()
 })

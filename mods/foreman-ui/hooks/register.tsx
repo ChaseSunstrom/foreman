@@ -1,21 +1,20 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, ResolveInput } from 'claude-code'
 
-import type { FileChurn, FmItem, FmView, LiveAgent, TurnSummary } from '../types'
+import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
   C,
   MASCOT_COLORS,
-  MASCOT_COLS,
-  MASCOT_ROWS,
   SIZE_LEGEND,
   activityCells,
+  agentColor,
   ago,
   churnCells,
+  clawd,
   elapsed,
   fade,
   hex,
-  mascotCells,
-  mascotFrame,
+  miniClawd,
   mix,
   progressCells,
   pulse,
@@ -44,10 +43,12 @@ const agents = atom({ plugin: 'foreman-ui', key: 'agents' } as const, [])
 const ctx = atom({ plugin: 'foreman-ui', key: 'ctx' } as const, null)
 const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
 const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
+const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 
 const LIST = 6
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
+const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
 const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 const FRESH = [
   'Foreman task boundary: a task just closed.',
@@ -153,6 +154,8 @@ let checkpointed = false
 let freshAt = 40 // userConfig: compact at a task boundary from this context percent (0: never)
 let mascot = 'blue' // userConfig: the pane's mascot color, or off
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
+let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
+let calm = 0
 const turns = new Set<string>()
 const starts = new Map<string, number>() // tool_use_id → when it started (ms)
 const agentCalls = new Map<string, string>() // running Agent call → its description
@@ -212,6 +215,13 @@ async function refresh($: EngineInterface): Promise<boolean> {
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
   if (mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
+  if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
+  const running = (await read($, agents)).filter(a => !a.done)
+  if (running.length) {
+    // a subagent stopped or killed sends no turn.complete: the engine's own list says it ended
+    const ended = new Set((await $.agent.list().catch(() => [])).filter(a => a.status !== 'running').map(a => a.id))
+    if (running.some(a => ended.has(a.id))) await update($, agents, list => list.map(a => (ended.has(a.id) ? { ...a, done: true } : a)))
+  }
   const v = await read($, view)
   const stamps = await Promise.all(
     (v?.watch ?? []).map(p => $.fs.stat(p).then(s => `${s.mtimeMs}:${s.size}`, () => '-')),
@@ -281,8 +291,10 @@ async function wake($: EngineInterface) {
 async function advance($: EngineInterface) {
   const f = await read($, frame)
   if (starts.size) lastActive = f // a long build is live work: its row keeps moving (finally always clears starts)
-  if (!turns.size && !starts.size && f - lastActive > 2) return sleep()
-  if (f - lastActive > IDLE_FRAMES) return sleep()
+  const quiet = !turns.size && !starts.size
+  if (quiet && !bgLive && f - lastActive > 2) return sleep()
+  if (!bgLive && f - lastActive > IDLE_FRAMES) return sleep()
+  if (quiet && bgLive && ++calm % 4) return // only background work: a calmer pace (~2 frames a second)
   await update($, frame, n => n + 1)
 }
 
@@ -311,6 +323,15 @@ async function noteSubagent($: EngineInterface, agentId: string, last: string) {
     done: false,
   }
   await update($, agents, list => [...list.filter(a => !a.done).concat(list.filter(a => a.done).slice(-3)), fresh])
+}
+
+// Background shells: a Bash call that came back with a task id (run_in_background, ctrl+b, or its timeout) is running
+// until its notification arrives, TaskStop stops it, or it is older than any background command may run.
+async function noteShells($: EngineInterface, fn: (list: LiveShell[]) => LiveShell[]) {
+  const now = await $.clock.now()
+  await update($, shells, list => fn(list).filter(x => now - x.startedAt < SHELL_MAX_MS))
+  bgLive = (await read($, shells)).length
+  if (bgLive) await wake($)
 }
 
 async function noteEdit($: EngineInterface, path: string, add: number, del: number) {
@@ -376,16 +397,35 @@ function churn($: EngineInterface, e: ResolveInput, key: string, f: FileChurn, m
   return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
 }
 
-/** The mascot: a true-color pixel creature on the terminal, a tiny face elsewhere; null when turned off. */
-function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number) {
+/** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */
+function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number, subs: LiveAgent[]) {
   if (mascot === 'off') return null
   const color = MASCOT_COLORS[mascot] ?? MASCOT_COLORS.blue!
-  if (e.surface === 'terminal') {
-    const { Raster } = $.ui.resolve(e)
-    return <Raster key="fm-mascot" columns={MASCOT_COLS} rows={MASCOT_ROWS} cells={mascotCells(mascotFrame(state, n), color)} />
-  }
-  const { Text } = $.ui.resolve(e)
-  return <Text color={hex(color)}>{state === 'work' ? (n % 2 ? '(•̀ᴗ•́)و' : '(•̀ᴗ•́)ง') : state === 'happy' ? '\\(^ᴗ^)/' : '(•ᴗ•)'}</Text>
+  const { Box, Text } = $.ui.resolve(e)
+  if (e.surface !== 'terminal')
+    return <Text color={hex(color)}>{state === 'work' ? (n % 2 ? '(•̀ᴗ•́)و' : '(•̀ᴗ•́)ง') : state === 'happy' ? '\\(^ᴗ^)/' : '(•ᴗ•)'}</Text>
+  const running = subs.filter(s => !s.done)
+  return (
+    <Box key="fm-mascot" flexDirection="row" alignItems="flex-end" gap={1}>
+      {running.length > 4 && <Text color={hex(C.dim)}>+{running.length - 4}</Text>}
+      {running.slice(0, 4).map((s, i) => (
+        <Box key={`mini-${s.id}`} flexDirection="column">
+          {miniClawd(Math.floor(n / 4) + i).map((row, j) => (
+            <Text key={`mini-${s.id}-${j}`} color={hex(agentColor(s.id))}>
+              {row}
+            </Text>
+          ))}
+        </Box>
+      ))}
+      <Box flexDirection="column">
+        {clawd(state, n).map((row, j) => (
+          <Text key={`clawd-${j}`} color={hex(color)}>
+            {row}
+          </Text>
+        ))}
+      </Box>
+    </Box>
+  )
 }
 
 /** The quick-capture box (every surface with text input). */
@@ -473,6 +513,18 @@ export const register: Register = (on, options) => {
       const why = guardReason(r)
       if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
       else if (face.add !== undefined && r.deny === undefined && !r.isError) await noteEdit($, face.target, face.add, face.del ?? 0)
+      const bg = (r.result as { backgroundTaskId?: unknown } | undefined)?.backgroundTaskId
+      if (e.tool === 'Bash' && typeof bg === 'string' && !e.agentId) {
+        const startedAt = await $.clock.now()
+        const command = String(e.command).split('\n')[0]!.slice(0, 120)
+        await noteShells($, list => [...list.filter(x => x.id !== bg), { id: bg, command, startedAt }])
+      }
+      const stopped = ['TaskStop', 'KillShell', 'KillBash'].includes(String(e.tool))
+      if (stopped && r.deny === undefined && !r.isError) {
+        const input = e as { task_id?: unknown; shell_id?: unknown }
+        const gone = String(input.task_id ?? input.shell_id ?? '')
+        await noteShells($, list => list.filter(x => x.id !== gone))
+      }
       return r
     } finally {
       noteTimer?.cancel()
@@ -483,6 +535,15 @@ export const register: Register = (on, options) => {
       agentOf.delete(id)
       isDirty = true
     }
+  })
+
+  // A background task's notification (idle, or folded into a running turn) names the task that ended.
+  on('prompt.submit', async ($, e, next) => {
+    if (e.origin?.kind === 'task-notification') {
+      const ended = new Set([...e.text.matchAll(/<task-id>([^<]+)<\/task-id>/g)].map(m => m[1]!.trim()))
+      await noteShells($, list => list.filter(x => !ended.has(x.id)))
+    }
+    return next(e)
   })
 
   // While a tool runs: an animated row. A Foreman bookkeeping command that succeeded: one quiet line. Else the engine's.
@@ -603,10 +664,13 @@ export const register: Register = (on, options) => {
     const a = v.active
     const asks = v.approvals ?? []
     const plans = (v.queue ?? []).filter(q => q.waits === 'plan approval')
-    if (!a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0)) return next(e)
+    const bgs = await read($, shells)
+    if (!a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0) && !bgs.length) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
-    const f = working ? await read($, frame) : null
+    const f = working || bgs.length ? await read($, frame) : null
+    const subsBg = bgs.length ? (await read($, agents)).filter(x => !x.done).length : 0
+    const nowMs = bgs.length ? await $.clock.now() : 0
     const c = await read($, ctx)
     const m = v.mode
     const done = a ? a.steps.filter(s => s.done).length : 0
@@ -681,6 +745,20 @@ export const register: Register = (on, options) => {
             )}
           </Box>
         )}
+        {bgs.length > 0 && (
+          <Box flexDirection="row" gap={1} key="fm-band-wait">
+            <Text color={hex(C.accent2)}>{spin(f ?? 0)}</Text>
+            <Text color={hex(C.accent2)}>
+              ◷ waiting on {bgs.length} background shell{bgs.length === 1 ? '' : 's'}
+              {subsBg ? ` and ${subsBg} subagent${subsBg === 1 ? '' : 's'}` : ''}
+            </Text>
+            <Text wrap="truncate-end">{bgs[0]!.command}</Text>
+            <Text color={hex(C.dim)}>
+              {elapsed(nowMs - bgs[0]!.startedAt)}
+              {working ? '' : ' · Claude picks up when they finish'}
+            </Text>
+          </Box>
+        )}
         {!working && v.next && (
           <Text color={hex(C.dim)} wrap="truncate-end">
             → {v.next}
@@ -737,6 +815,8 @@ export const register: Register = (on, options) => {
     const width = Math.max(10, e.props.bodyColumns - 12)
     const touched = await read($, files)
     const subs = await read($, agents)
+    const bgShells = await read($, shells)
+    const fb = bgShells.length ? await read($, frame) : 0
     const isOn = await read($, sound)
     const now = live ? await $.clock.now() : 0
     const queue = v.queue ?? []
@@ -776,7 +856,7 @@ export const register: Register = (on, options) => {
               ✓ {v.today_done ?? 0} today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
             </Text>
           </Box>
-          {mascotTree($, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat)}
+          {mascotTree($, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
         </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
 
@@ -890,6 +970,19 @@ export const register: Register = (on, options) => {
                   {s.tools} tools · {s.last.slice(0, 30)}
                   {!s.done && now ? ` · ${elapsed(now - s.startedAt)}` : ''}
                 </Text>
+              </Box>
+            ))}
+          </Box>
+        )}
+
+        {bgShells.length > 0 && (
+          <Box key="card-shells" {...card(C.accent2)}>
+            {head('Background shells', C.accent2, `${bgShells.length} running · Claude picks up when they finish`)}
+            {bgShells.map((x, i) => (
+              <Box flexDirection="row" gap={1} key={`shell-${x.id}`}>
+                <Text color={hex(C.accent2)}>{spin(fb + i)}</Text>
+                <Text wrap="truncate-end">{x.command}</Text>
+                <Text color={hex(C.dim)}>{elapsed(clockNow - x.startedAt)}</Text>
               </Box>
             ))}
           </Box>

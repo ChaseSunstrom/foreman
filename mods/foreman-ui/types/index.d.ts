@@ -48,6 +48,8 @@ export type FmChecks = { at: string; results: FmCheck[] }
 // Live data the mod gathers itself from the session's tool calls.
 export type FileChurn = { path: string; add: number; del: number; edits: number }
 export type LiveAgent = { id: string; type: string; description: string; startedAt: number; tools: number; last: string; done: boolean }
+// A background shell Claude started (or ctrl+b moved there), until its notification or a stop.
+export type LiveShell = { id: string; command: string; startedAt: number }
 export type Ctx = { percent: number }
 
 // What one turn did, for the line that closes it (matched by its duration).
@@ -65,6 +67,7 @@ declare module 'claude-code' {
       ctx: Ctx | null
       sound: boolean
       beat: number
+      shells: LiveShell[]
     }
   }
 }

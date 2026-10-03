@@ -18,7 +18,7 @@
       "name": "foreman-ui",
       "source": "./mods/foreman-ui",
       "description": "Foreman inside Claude Code (mods): a band above the prompt, a docked dashboard pane, toasts and one-press approve/next/drive/inbox actions. Needs a Claude Code build with function-hook plugins.",
-      "version": "0.4.0"
+      "version": "0.5.0"
     }
   ]
 }

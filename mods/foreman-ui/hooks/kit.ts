@@ -221,42 +221,39 @@ export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
 export const SIZE_LEGEND = 'small ≤30 lines, 1–2 files · medium several files or a design choice · large cross-cutting or uncertain'
 
-// The mascot: a little pixel creature, 12×8 pixels drawn as 12×4 half-block cells. "#" body, "o" eye, "-" closed
-// eye, "a" arm, "." empty. Frames: rest, bob, blink, work (arms up), work 2 (arms down), happy (a jump).
-const SPRITES: Record<string, string[]> = {
-  rest: ['....####....', '..########..', '.##o####o##.', '.##########.', 'a##########a', '.##########.', '..#.#..#.#..', '..#.#..#.#..'],
-  bob: ['............', '....####....', '..########..', '.##o####o##.', 'a##########a', '.##########.', '.##########.', '..#.#..#.#..'],
-  blink: ['....####....', '..########..', '.##-####-##.', '.##########.', 'a##########a', '.##########.', '..#.#..#.#..', '..#.#..#.#..'],
-  work: ['a...####...a', 'a.########.a', '.##o####o##.', '.##########.', '.##########.', '.##########.', '..#.#..#.#..', '...#....#...'],
-  work2: ['....####....', '..########..', '.##o####o##.', 'a##########a', '.##########.', '.##########.', '...#....#...', '..#.#..#.#..'],
-  happy: ['a...####...a', 'a.########.a', '.##o####o##.', '.##########.', '.##########.', '..#.#..#.#..', '............', '............'],
+// The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
+const POSES: Record<string, [string, string, string]> = {
+  rest: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
+  blink: [' ▐█████▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
+  up: ['▗▐▛███▜▌▖', ' ▜█████▛ ', '  ▘▘ ▝▝  '],
+  waveL: ['▗▐▛███▜▌ ', ' ▜█████▛▘', '  ▘▘ ▝▝  '],
+  waveR: [' ▐▛███▜▌▖', '▝▜█████▛ ', '  ▘▘ ▝▝  '],
+  step: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▝▝ ▘▘  '],
 }
+// Working: a little dance, one move every three frames (~360 ms). [pose, sway]
+const DANCE: [string, number][] = [
+  ['rest', 0], ['waveL', -1], ['rest', 0], ['waveR', 1], ['up', 0], ['step', 0], ['up', 0], ['step', 0],
+]
 export const MASCOT_COLORS: Record<string, number> = { blue: 0x4f9dff, orange: 0xd97757, purple: 0xa88bfa, green: 0x5fd7a0 }
-export const MASCOT_COLS = 12
-export const MASCOT_ROWS = 4
 
-/** Which frame shows: working cycles arms and bob; idle rests and blinks now and then; a finished task is happy. */
-export function mascotFrame(state: 'work' | 'idle' | 'happy', beat: number): string {
-  if (state === 'happy') return 'happy'
-  if (state === 'work') return ['work', 'bob', 'work2', 'bob'][Math.floor(beat / 2) % 4]!
-  return beat % 7 === 3 ? 'blink' : beat % 7 === 5 ? 'bob' : 'rest'
+/** The mascot's three rows: working dances, idle rests and blinks now and then, a finished task cheers. */
+export function clawd(state: 'work' | 'idle' | 'happy', beat: number): string[] {
+  const [pose, dx] =
+    state === 'work' ? DANCE[Math.floor(beat / 3) % DANCE.length]!
+    : state === 'happy' ? (['up', beat % 2 ? 1 : -1] as [string, number])
+    : [beat % 7 === 3 ? 'blink' : 'rest', 0]
+  return POSES[pose]!.map(r => ' '.repeat(1 + dx) + r + ' '.repeat(1 - dx))
 }
 
-/** The sprite as Raster cells in a color: each cell packs two pixel rows (▀ fg = top, bg = bottom). */
-export function mascotCells(frame: string, color: number): string {
-  const rows = SPRITES[frame] ?? SPRITES.rest!
-  const shade = mix(color, 0x000000, 0.35)
-  const px = (ch: string): number | null =>
-    ch === '#' || ch === '-' ? color : ch === 'a' ? shade : ch === 'o' ? 0x14161c : null
-  const out: [string, number, number][] = []
-  for (let r = 0; r < 8; r += 2) {
-    for (let x = 0; x < 12; x++) {
-      const top = px(rows[r]![x]!)
-      const bottom = px(rows[r + 1]![x]!)
-      if (top === null && bottom === null) out.push([' ', DEFAULT_BG, DEFAULT_BG])
-      else if (top === null) out.push(['▄', bottom!, DEFAULT_BG])
-      else out.push(['▀', top, bottom ?? DEFAULT_BG])
-    }
-  }
-  return cells(out)
+/** A subagent's mini Claude (7 wide, 2 rows), flapping its arms on its own beat. */
+export function miniClawd(beat: number): string[] {
+  return beat % 2 ? ['▗▐▛█▜▌▖', ' ▜███▛ '] : [' ▐▛█▜▌ ', '▝▜███▛▘']
+}
+
+const MINI_COLORS = [0xff6b9d, 0xffd75f, 0x5fd7a0, 0xc792ea, 0xff9f43, 0x4fd1ff, 0xf368e0, 0x9be15d]
+/** A random-looking color that stays the same for one subagent. */
+export function agentColor(id: string): number {
+  let h = 0x811c9dc5 // FNV-1a: neighbouring ids land far apart
+  for (const ch of id) h = Math.imul(h ^ ch.charCodeAt(0), 16777619)
+  return MINI_COLORS[(h >>> 0) % MINI_COLORS.length]!
 }
