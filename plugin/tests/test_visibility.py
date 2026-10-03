@@ -160,6 +160,10 @@ class Watch(VisibilityCase):
                        "◆ keep the old API", "? T-0001 asked: publish"):
             self.assertIn(needle, out)
         self.assertIn("Waiting on you: reply yes = publish for T-0001", out)
+        # T-0195: the dashboard showed '✓ … → ✗ exit 1' for a red run, and output padded with runs of spaces
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "printf 'PASS  a        b'; exit 3", check=False)
+        out = self.fm("watch", "--once").stdout
+        self.assertRegex(out, r"✗ T-0001 step 1: printf .* → ✗ exit 3 · PASS a b")
 
     def test_once_shows_guard_blocks_and_latency(self):
         self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish"}})

@@ -79,7 +79,9 @@ def _recent(e):
     kind = e.get("event")
     if kind == "evidence":
         what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
-        text = f"✓ {t} {what}: {d.get('cmd', '')} → {d.get('result', '')}"
+        result, cmd = " ".join(str(d.get("result", "")).split()), " ".join(str(d.get("cmd", "")).split())
+        mark = "✗" if result.startswith("✗") else "✓"  # T-0195: a red run isn't a tick
+        text = f"{mark} {t} {what}: {c.fit(cmd, 60)} → {result}"
     elif kind == "audit":
         text = f"◇ {t} audit {d.get('lens')}: {d.get('result', '')}"
     elif kind in ("capture", "intake"):

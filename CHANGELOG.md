@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Dashboard activity (T-0195): a failed run shows ✗ instead of a tick beside its ✗ result, and each line collapses padded output and cuts a long command, so a row reads as one tidy line.
 - `fm cost` (T-0194): an image tool result (a screenshot read back) counts at its context cost, about 1,600 tokens, instead of its base64 length; screenshots had made Read look like 85% of what filled the context.
 - `fm next` (T-0193): moves past a step once it has evidence (only `fm task finish` marks steps, so it used to repeat step 1 for the whole task), advises `fm task evidence --step N --run` over typed evidence, and ends at `fm task finish`, which runs the criteria's checks; `fm usage` had it followed 2 of 7 times.
 - `fm tidy` sweeps stale lanes (T-0186): a closed task's lane is removed with `--apply` through `fm lane rm`'s own removal (a lane with uncommitted or ignored files stays, as a decision), and merged `foreman/T-*` branches no lane holds are deleted with `git branch -d`.
