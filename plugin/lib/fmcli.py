@@ -226,7 +226,11 @@ def cmd_task(args):
                     except OSError:  # deleted
                         touches[f] = c.now()
         files = list(touches)
-        risky = c.sensitive(files, c.task_diff(p.root, base) if base else "")
+        diff = c.task_diff(p.root, base) if base else None
+        risky = c.sensitive(files, diff or "")
+        recorded = pre.meta.get("base_tree") or pre.meta.get("base")  # never focused: no start point, as before
+        if diff is None and recorded and c.git_root(p.root):  # T-0078 review: what can't be read isn't passed as clean
+            risky.append("diff unavailable, so its content wasn't checked")
 
         def done(b):
             reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
@@ -570,8 +574,12 @@ def cmd_focus(args):
         target.meta["status"] = "active"
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
-        if not target.meta.get("base_tree") and (snap := c.worktree_tree(p.root)):
-            target.meta["base_tree"] = snap  # T-0078: its own changes are measured from the files as they are now
+        if not target.meta.get("base_tree") and c.git_root(p.root):
+            snap = c.worktree_tree(p.root)  # T-0078: its own changes are measured from the files as they are now
+            if snap:
+                target.meta["base_tree"] = snap
+            else:
+                target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
         target.append_log("focused")
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)

@@ -230,9 +230,10 @@ def task_base(root, b):
 
 
 def task_diff(root, base, *opts):
-    """git diff from base to the working files now, untracked included; "" outside git or on failure."""
+    """git diff from base to the working files now, untracked included; None when git can't produce it (an unreadable
+    file, a timeout), so callers can fail closed instead of reading an empty diff."""
     tree = worktree_tree(root)
-    return _git(root, "diff", *opts, base, tree, timeout=60) if tree else ""
+    return _git(root, "diff", *opts, base, tree, timeout=300, fail=None) if tree else None
 
 
 def run_command(root, cmd, timeout=600):
@@ -1606,7 +1607,7 @@ def glob_match(rel, pattern):
 
 # ---------------------------------------------------------------- checkpoint / resume
 
-def _git(root, *args, timeout=2):
+def _git(root, *args, timeout=2, fail=""):
     """git's stdout, or "" on any failure. Paths come raw (no quoting of spaces or non-ASCII), undecodable bytes are
     replaced, and GIT_* variables can't point it at another repository."""
     import subprocess
@@ -1614,9 +1615,9 @@ def _git(root, *args, timeout=2):
     try:  # never interactive: no terminal prompt, no stdin to wait on
         r = subprocess.run(["git", "-c", "core.quotePath=false", "-C", root, *args], capture_output=True, text=True,
                            errors="replace", timeout=timeout, env=env, stdin=subprocess.DEVNULL)
-        return r.stdout if r.returncode == 0 else ""
+        return r.stdout if r.returncode == 0 else fail
     except (OSError, subprocess.SubprocessError):
-        return ""
+        return fail
 
 
 def git_summary(root):

@@ -97,6 +97,22 @@ class DiffGates(ForemanTestCase):
         p = self.fm("task", "done", "T-0002", check=False)
         self.assertIn("security-sensitive: auth/session.py", p.stderr)
 
+    def test_a_diff_git_cannot_produce_fails_closed(self):
+        # T-0078 review: an unreadable file made git add fail, the diff came back "" and eval( went unchecked
+        if os.geteuid() == 0:
+            self.skipTest("root reads any file")
+        self.task()
+        self.touch("src/util.py", "x = eval(y)\n")  # fixture text for the detector; never run
+        locked = os.path.join(self.repo, "locked.bin")
+        self.write("locked.bin")
+        os.chmod(locked, 0)
+        try:
+            p = self.finish()
+        finally:
+            os.chmod(locked, 0o644)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("diff unavailable", p.stderr)
+
     def test_its_own_edit_to_an_already_dirty_sensitive_file_still_counts(self):
         self.write("auth/token.py", "a = 1\n")
         self.task()

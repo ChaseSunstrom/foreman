@@ -120,14 +120,18 @@ function world(on: On, views: FmView[]) {
   on('turn.complete', async () => ({ text: '' }))
   // hold: ms the call stays open, as a permission dialog keeps it; result: what the tool answers
   const answer: { deny: string; hold: number; result: object } = { deny: '', hold: 0, result: {} }
-  on('tool.call', async () => {
+  const tools: string[] = [] // every tool the plugin or the test called, with its task id when it has one
+  on('tool.call', async ($, e) => {
+    tools.push(`${e.tool}${(e as { task_id?: string }).task_id ? ` ${(e as { task_id?: string }).task_id}` : ''}`)
     if (answer.hold) await clock.sleep(answer.hold)
     return answer.deny ? { deny: answer.deny } : { result: answer.result }
   })
   on('prompt.submit', async ($, e) => ({ text: e.text }))
-  const agentStatus = { now: 'running' } // what the engine's list says of every subagent
+  const agentStatus = { now: 'running', listed: true } // what the engine's list says of every subagent
   on('agent.list', async () => ({
-    value: ['ag1', 'ag2'].map(id => ({ id, description: 'map the parser', type: 'Explore', status: agentStatus.now })),
+    value: agentStatus.listed
+      ? ['ag1', 'ag2'].map(id => ({ id, description: 'map the parser', type: 'Explore', status: agentStatus.now }))
+      : [],
   }))
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
@@ -136,7 +140,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -631,4 +635,22 @@ test('the band tallies what closed since the person last wrote, until they write
   await $.prompt.submit({ text: 'thanks', origin: { kind: 'composer' }, wait: false })
   expect(await ui.find({ type: 'Text', text: /since your last message/ })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a subagent the engine no longer lists leaves; a quiet one shows how long and can be stopped', async ($, on) => {
+  // T-0121: one stale entry read as a subagent 'running for almost 10 hours'
+  const { clock, agentStatus, tools } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const inSubagent = { tool: 'Read' as const, file_path: '/repo/a.py', agentId: 'ag2' }
+  await $.tool.call(inSubagent)
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  await clock.advance(11 * 60 * 1000)
+  expect(await pane.find({ type: 'Text', text: /quiet 11m/ })).toBeDefined()
+  await pane.press({ key: 'stop-ag2' })
+  expect(tools).toContain('TaskStop ag2')
+  agentStatus.listed = false // gone from the engine's list (ended while nobody was told)
+  await clock.advance(2000)
+  expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
+  expect(await pane.find({ key: 'stop-ag2' })).toBeUndefined()
+  await pane.unmount()
 })

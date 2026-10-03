@@ -50,6 +50,8 @@ const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks d
 const LIST = 6
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
+const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
+const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
 const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
 const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 const FRESH = [
@@ -221,10 +223,12 @@ async function tick($: EngineInterface) {
   if (mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
-  if (running.length) {
-    // a subagent stopped or killed sends no turn.complete: the engine's own list says it ended
-    const ended = new Set((await $.agent.list().catch(() => [])).filter(a => a.status !== 'running').map(a => a.id))
-    if (running.some(a => ended.has(a.id))) await update($, agents, list => list.map(a => (ended.has(a.id) ? { ...a, done: true } : a)))
+  const listed = running.length ? await $.agent.list().catch(() => null) : null
+  if (listed) {
+    // T-0121: one that ended without its turn.complete (killed, a compaction, a reload) is no longer running in the
+    // engine's own list, or not in it at all: it ends here instead of reading as running for hours
+    const live = new Set(listed.filter(a => a.status === 'running').map(a => a.id))
+    if (running.some(a => !live.has(a.id))) await update($, agents, list => list.map(a => (live.has(a.id) ? a : { ...a, done: true })))
   }
   const v = await read($, view)
   const stamps = await Promise.all(
@@ -310,8 +314,9 @@ function sleep() {
 // A subagent's tool calls carry its id: count them and tie the subagent to the Agent row that started it.
 async function noteSubagent($: EngineInterface, agentId: string, last: string) {
   const known = (await read($, agents)).find(a => a.id === agentId)
+  const lastAt = await $.clock.now()
   if (known) {
-    await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, tools: a.tools + 1, last } : a)))
+    await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, tools: a.tools + 1, last, lastAt } : a)))
     return
   }
   const info = (await $.agent.list()).find(a => a.id === agentId)
@@ -321,7 +326,8 @@ async function noteSubagent($: EngineInterface, agentId: string, last: string) {
     id: agentId,
     type: info?.type ?? 'subagent',
     description: info?.description ?? '',
-    startedAt: await $.clock.now(),
+    startedAt: lastAt,
+    lastAt,
     tools: 1,
     last,
     done: false,
@@ -336,6 +342,12 @@ async function noteShells($: EngineInterface, fn: (list: LiveShell[]) => LiveShe
   await update($, shells, list => fn(list).filter(x => now - x.startedAt < SHELL_MAX_MS))
   bgLive = (await read($, shells)).length
   if (bgLive) await wake($)
+}
+
+/** The pane's Stop on a subagent that has gone quiet: the same TaskStop Claude would call. */
+async function stopAgent($: EngineInterface, id: string) {
+  await $.tool.call({ tool: 'TaskStop', task_id: id }).catch(() => undefined)
+  await update($, agents, list => list.map(a => (a.id === id ? { ...a, done: true } : a)))
 }
 
 async function noteEdit($: EngineInterface, path: string, add: number, del: number) {
@@ -839,7 +851,6 @@ export const register: Register = (on, options) => {
     const bgShells = await read($, shells)
     const fb = bgShells.length ? await read($, frame) : 0
     const isOn = await read($, sound)
-    const now = live ? await $.clock.now() : 0
     const queue = v.queue ?? []
     const inbox = v.inbox ?? []
     const recent = (v.recent ?? []).slice(-LIST)
@@ -989,8 +1000,14 @@ export const register: Register = (on, options) => {
                 </Text>
                 <Text color={hex(C.dim)} wrap="truncate-end">
                   {s.tools} tools · {s.last.slice(0, 30)}
-                  {!s.done && now ? ` · ${elapsed(now - s.startedAt)}` : ''}
+                  {!s.done ? ` · ${elapsed(clockNow - s.startedAt)}` : ''}
                 </Text>
+                {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= QUIET_MS && (
+                  <Text color={hex(C.warn)}>quiet {elapsed(clockNow - (s.lastAt ?? s.startedAt))}</Text>
+                )}
+                {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= STOP_MS && (
+                  <Button key={`stop-${s.id}`} label="Stop" plain onPress={() => void stopAgent($, s.id)} />
+                )}
               </Box>
             ))}
           </Box>
