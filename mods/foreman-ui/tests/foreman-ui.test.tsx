@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, clawd, elapsed, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, C, changedLines, clawd, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tone, toolFace } from '../hooks/kit'
 import { askNote, guardReason, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
@@ -758,6 +758,84 @@ test('a finished shell command is a Foreman row in the chat: status, command, ti
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /▍Output/ })).toBeUndefined()
   await pane.unmount()
+})
+
+test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', async ($, on) => {
+  // T-0141: 'the text output and formatting is not formatted/clean, especially with the tool calls like update'
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const base = { tool: 'Edit', input: { file_path: '/repo/src/app.py', old_string: 'x', new_string: 'y' }, isRunning: false,
+    isErrored: false, isInterrupted: false }
+  const patch = (lines: string[]) => ({ filePath: '/repo/src/app.py', oldString: 'x', newString: 'y', originalFile: null,
+    userModified: false, replaceAll: false, structuredPatch: [{ oldStart: 10, oldLines: 3, newStart: 10, newLines: 4, lines }] })
+  const mount = (id: string, props: object) =>
+    $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: id, props: { tool_use_id: id, ...props } })
+  const row = await mount('e1', { ...base, output: patch([' keep', '-old one', '+new one', '+new two', ' keep']) })
+  expect(await row.find({ type: 'Text', text: /✓/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /Edited/ })).toBeDefined()
+  expect((await row.find({ type: 'Text', text: /src\/app\.py/ }))?.text).toBe('src/app.py') // relative to the project
+  expect(await row.find({ type: 'Text', text: /\+2 −1/ })).toBeDefined()
+  expect((await row.find({ type: 'Text', text: /^- old one$/ }))?.props.color).toBe(hex(C.err))
+  expect((await row.find({ type: 'Text', text: /^\+ new two$/ }))?.props.color).toBe(hex(C.ok))
+  expect(await row.find({ type: 'Text', text: /^ ?12 $/ })).toBeDefined() // 'new two' is line 12 of the new file
+  expect(await row.find({ type: 'Text', text: /keep/ })).toBeUndefined() // unchanged context stays out
+  expect(JSON.stringify(await row.drawn())).not.toContain('backgroundColor')
+  await row.unmount()
+  const many = await mount('e2', { ...base, output: patch(['-gone', ...Array.from({ length: 20 }, (_, i) => `+add ${i}`)]) })
+  expect(await many.find({ type: 'Text', text: /… 13 more changed lines/ })).toBeDefined()
+  await many.unmount()
+  const made = await mount('e3', { ...base, tool: 'Write', input: { file_path: '/repo/new.md', content: 'a\nb\nc' },
+    output: { type: 'create', filePath: '/repo/new.md', content: 'a\nb\nc', structuredPatch: [], originalFile: null } })
+  expect(await made.find({ type: 'Text', text: /Wrote/ })).toBeDefined()
+  expect(await made.find({ type: 'Text', text: /\+3/ })).toBeDefined()
+  expect(await made.find({ type: 'Text', text: /^\+ b$/ })).toBeDefined()
+  await made.unmount()
+  const failed = await mount('e4', { ...base, isErrored: true, output: 'String to replace not found in file.' })
+  expect(await failed.find({ type: 'Text', text: /Edited/ })).toBeUndefined() // the engine's row shows the error
+  await failed.unmount()
+  // the engine's own result block under the row ('⎿ Added 2 lines' and the whole hunk again) is blanked: one diff, not two
+  const result = (id: string, props: object) =>
+    $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: id, props: { tool_use_id: id, ...props } })
+  const shown = await result('r1', { tool: 'Edit', isErrored: false, output: patch(['-old one', '+new one']) })
+  expect(await shown.find({ type: 'Box', key: 'fm-edit-shown' })).toBeDefined()
+  await shown.unmount()
+  const error = await result('r2', { tool: 'Edit', isErrored: true, output: 'String to replace not found in file.' })
+  expect(await error.find({ type: 'Box', key: 'fm-edit-shown' })).toBeUndefined()
+  await error.unmount()
+})
+
+test('kit: an edit\'s changed lines, numbered per file, with tabs, control and bidi characters cleaned', () => {
+  const got = changedLines([
+    { oldStart: 3, newStart: 3, lines: [' a', '-\tb\u001b[31m', '+c\u202eevil', '\\ No newline at end of file'] },
+    { oldStart: 40, newStart: 41, lines: ['+d'] },
+  ])
+  expect(got).toEqual([
+    { n: 4, sign: '-', text: '  b[31m' },
+    { n: 4, sign: '+', text: 'cevil' },
+    { n: 41, sign: '+', text: 'd' },
+  ])
+})
+
+test('a long task title gives way before the task id: the id never wraps', async ($, on) => {
+  // T-0141: seen live, 'T-014' on one row and '1' on the next when the title filled the band
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  const id = await ui.find({ type: 'Box', key: 'fm-band-id' })
+  expect(id?.props.flexShrink).toBe(0)
+  expect(id?.text).toMatch(/T-0007/)
+  await ui.unmount()
+})
+
+test('a long shell command wraps under itself, not under the status mark', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'w1',
+    props: { tool_use_id: 'w1', tool: 'Bash', input: { command: 'grep -rn pattern src | head -40' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { stdout: 'src/a.py:1: x', stderr: '', interrupted: false } } })
+  expect((await row.find({ type: 'Box', key: 'fm-shell-head' }))?.props.flexDirection).toBe('row')
+  expect(await row.find({ type: 'Text', text: /^\$ grep -rn pattern src \| head -40/ })).toBeDefined() // its own column
+  await row.unmount()
 })
 
 test('a folded group with a shell command unfolds, so the command gets its own row; reads stay folded', async ($, on) => {

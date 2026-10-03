@@ -12,6 +12,7 @@ import {
   activityCells,
   agentColor,
   TONE_COLOR,
+  changedLines,
   ago,
   churnCells,
   clawd,
@@ -55,6 +56,7 @@ const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks d
 
 const LIST = 6
 const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
+const DIFF_LINES = 8 // a finished edit's row: this many changed lines
 const FRAME_MS = 120
 const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
 const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
@@ -164,6 +166,7 @@ let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
 let freshAt = 40 // userConfig: compact at a task boundary from this context percent (0: never)
 let mascot = 'blue' // userConfig: the pane's mascot color, or off
+let root = '' // the session's folder: rows show paths inside it relative to it
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
 let calm = 0
@@ -469,20 +472,23 @@ function shellRow($: EngineInterface, e: ToolUseRender) {
   const mark = e.props.isInterrupted || o.interrupted ? '■' : bg ? '◷' : bad ? '✗' : '✓'
   return (
     <Box flexDirection="column" key="fm-shell">
-      <Text wrap="wrap">
+      {/* T-0141: the mark in a column of its own, so a long command wraps under itself */}
+      <Box flexDirection="row" key="fm-shell-head">
         <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : C.warn)}>
-          {mark}
+          {mark}{' '}
         </Text>
-        <Text color={hex(C.accent)}>
-          {' '}$ {cmd}
-          {lines.length > 3 ? ` … +${lines.length - 3} more line${lines.length === 4 ? '' : 's'}` : ''}
+        <Text wrap="wrap">
+          <Text color={hex(C.accent)}>
+            $ {cmd}
+            {lines.length > 3 ? ` … +${lines.length - 3} more line${lines.length === 4 ? '' : 's'}` : ''}
+          </Text>
+          <Text color={hex(C.dim)}>
+            {ms !== undefined ? `  ${elapsed(ms)}` : ''}
+            {!bg && s.total > 0 ? ` · ${s.total} line${s.total === 1 ? '' : 's'}` : ''}
+          </Text>
+          {bg && <Text color={hex(C.accent2)}> · in the background</Text>}
         </Text>
-        <Text color={hex(C.dim)}>
-          {ms !== undefined ? `  ${elapsed(ms)}` : ''}
-          {!bg && s.total > 0 ? ` · ${s.total} line${s.total === 1 ? '' : 's'}` : ''}
-        </Text>
-        {bg && <Text color={hex(C.accent2)}> · in the background</Text>}
-      </Text>
+      </Box>
       {s.lines.map((l, i) => (
         <Text key={`o-${i}`} color={hex(TONE_COLOR[l.tone])} wrap="truncate-end">
           <Text color={hex(C.track)}>{'  │ '}</Text>
@@ -493,6 +499,65 @@ function shellRow($: EngineInterface, e: ToolUseRender) {
         <Text color={hex(C.dim)}>
           {'  └ '}… {s.more} more line{s.more === 1 ? '' : 's'}
           {s.failures ? ' (showing the failures)' : ''}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
+/** T-0141: the changed lines a finished Edit or Write shows, or null when its result has no patch to show */
+function editChanges(tool: string, output: unknown) {
+  const o = output as { type?: unknown; content?: unknown; structuredPatch?: unknown; userModified?: unknown } | null
+  if ((tool !== 'Edit' && tool !== 'Write') || !o || typeof o !== 'object' || !Array.isArray(o.structuredPatch)) return null
+  const created = o.type === 'create' && typeof o.content === 'string'
+  const changed = created
+    ? changedLines([{ oldStart: 1, newStart: 1, lines: String(o.content).replace(/\n$/, '').split('\n').map(l => `+${l}`) }])
+    : changedLines(o.structuredPatch)
+  return changed.length ? { changed, created, userModified: o.userModified === true } : null
+}
+
+/** T-0141: a finished Edit or Write as a Foreman row: the path, +added −removed, then the changed lines as coloured text
+ * (the engine's row paints whole-width red and green backgrounds). Null without a patch to show: the engine's row then
+ * says what happened. */
+function editRow($: EngineInterface, e: ToolUseRender) {
+  const c = editChanges(e.props.tool, e.props.output)
+  if (!c) return null
+  const { changed, created } = c
+  const add = changed.filter(l => l.sign === '+').length
+  const del = changed.length - add
+  const shown = changed.slice(0, DIFF_LINES)
+  const width = String(Math.max(...shown.map(l => l.n))).length
+  const face = toolFace(e.props.tool, e.props.input, root)
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box flexDirection="column" key="fm-edit">
+      <Box flexDirection="row" gap={1} key="fm-edit-head">
+        <Text bold color={hex(C.ok)}>
+          ✓
+        </Text>
+        <Text color={hex(C.edit)}>
+          {face.icon} {e.props.tool === 'Write' ? 'Wrote' : 'Edited'}
+        </Text>
+        <Text wrap="truncate-start">{face.target}</Text>
+        <Text>
+          <Text color={hex(C.ok)}>+{add}</Text>
+          {del > 0 && <Text color={hex(C.err)}> −{del}</Text>}
+        </Text>
+        {created && <Text color={hex(C.dim)}>new file</Text>}
+        {c.userModified && <Text color={hex(C.dim)}>· you changed it</Text>}
+      </Box>
+      {shown.map((l, i) => (
+        <Text key={`d-${i}`} wrap="truncate-end">
+          <Text color={hex(C.track)}>{'  │ '}</Text>
+          <Text color={hex(C.dim)}>{`${String(l.n).padStart(width)} `}</Text>
+          <Text color={hex(l.sign === '+' ? C.ok : C.err)}>
+            {l.sign} {l.text}
+          </Text>
+        </Text>
+      ))}
+      {changed.length > shown.length && (
+        <Text color={hex(C.dim)}>
+          {'  └ '}… {changed.length - shown.length} more changed line{changed.length - shown.length === 1 ? '' : 's'}
         </Text>
       )}
     </Box>
@@ -512,6 +577,7 @@ export const register: Register = (on, options) => {
   freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   on('session.start', async ($, e, next) => {
+    root = typeof e.cwd === 'string' ? e.cwd : ''
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
@@ -585,7 +651,7 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
     let noteTimer: { cancel: () => void } | null = null
-    const face = toolFace(String(e.tool), e)
+    const face = toolFace(String(e.tool), e, root)
     starts.set(id, await $.clock.now())
     try {
       if (face.icon === '◆') agentCalls.set(id, String((e as { description?: unknown }).description ?? ''))
@@ -652,6 +718,13 @@ export const register: Register = (on, options) => {
   })
 
   // While a tool runs: an animated row. A Foreman bookkeeping command that succeeded: one quiet line. Else the engine's.
+  // T-0141: under an edit row that already shows its diff, the engine's own result block ('⎿ Added 2 lines' and the
+  // whole hunk again, on red and green backgrounds) is blanked; an error still draws the engine's
+  on('ui.render', { component: 'ToolResult' }, async ($, e, next) => {
+    if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
+    const { Box } = $.ui.resolve(e)
+    return <Box key="fm-edit-shown" />
+  })
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
     const sub = e.props.tool === 'Bash' ? fmCommand((e.props.input as { command?: unknown } | null)?.command) : null
     if (sub && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
@@ -668,7 +741,7 @@ export const register: Register = (on, options) => {
     if (e.props.tool === 'Bash' && !e.props.isRunning) return shellRow($, e)
     const quiet = ['Read', 'WebFetch', 'WebSearch', 'Grep', 'Glob'].includes(e.props.tool)
     if (quiet && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
-      const face = toolFace(e.props.tool, e.props.input)
+      const face = toolFace(e.props.tool, e.props.input, root)
       const { Box, Text } = $.ui.resolve(e)
       const more = readSummary(e.props.tool, e.props.output)
       return (
@@ -680,9 +753,12 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
+    const done = !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted
+    const edited = done ? editRow($, e) : null
+    if (edited) return edited
     if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
     const f = await read($, frame)
-    const face = toolFace(e.props.tool, e.props.input)
+    const face = toolFace(e.props.tool, e.props.input, root)
     const since = starts.get(e.props.tool_use_id)
     const ms = since === undefined ? 0 : (await $.clock.now()) - since
     const agentId = agentOf.get(e.props.tool_use_id)
@@ -836,13 +912,16 @@ export const register: Register = (on, options) => {
           <Box flexDirection="row" gap={1} flexShrink={1}>
             {a ? (
               <Box flexDirection="row" gap={1} flexShrink={1}>
-                <Text bold color={typeColor(a.type)}>
-                  {a.type}
-                </Text>
-                <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>
-                <Text bold color={hex(C.accent)}>
-                  {a.id}
-                </Text>
+                {/* the title gives way first: the id never wraps (seen live: 'T-014' then '1' on the next row) */}
+                <Box flexDirection="row" gap={1} flexShrink={0} key="fm-band-id">
+                  <Text bold color={typeColor(a.type)}>
+                    {a.type}
+                  </Text>
+                  <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>
+                  <Text bold color={hex(C.accent)}>
+                    {a.id}
+                  </Text>
+                </Box>
                 <Text bold wrap={cut}>
                   {a.title}
                 </Text>
@@ -1043,10 +1122,12 @@ export const register: Register = (on, options) => {
           {a ? (
             <Box flexDirection="column">
               <Box flexDirection="row" gap={1}>
-                {chip(a)}
-                <Text bold color={hex(C.accent)}>
-                  {a.id}
-                </Text>
+                <Box flexDirection="row" gap={1} flexShrink={0}>
+                  {chip(a)}
+                  <Text bold color={hex(C.accent)}>
+                    {a.id}
+                  </Text>
+                </Box>
                 <Text bold wrap="wrap">
                   {a.title}
                 </Text>

@@ -2,9 +2,11 @@
 """foreman-ui snapshot tool (T-0131): run Claude Code in a detached tmux window with this mod loaded from its folder and
 draw the screen, colours included, to a PNG, so a UI change can be looked at and not only tested.
 
-  shot.py start DIR [--cols 200] [--rows 60]   claude --plugin-dir <this mod> in DIR (FOREMAN_STATE passes through)
+  shot.py start DIR [--cols 200] [--rows 60] [--model haiku]
+                                               claude --plugin-dir <this mod> in DIR (FOREMAN_STATE passes through)
   shot.py keys TEXT [--enter]                  type into it: /fm, /reload-plugins, a digit for a dialog
   shot.py snap OUT.png                         the visible screen as a PNG (and OUT.txt, its plain text)
+  shot.py self OUT.png [--back N]              the same for the tmux pane this session runs in (its own UI, live)
   shot.py stop
   shot.py selftest                             checks the harness can't leak FOREMAN_* into anyone's tmux
 
@@ -12,7 +14,7 @@ It runs on a tmux server of its own (-L fm-shot), started without FOREMAN_* in i
 FOREMAN_STATE is that session's alone (T-0138 fix: the first version started the user's default tmux server from a
 shell that had FOREMAN_STATE set, and the server's global environment handed it to every later session).
 
-Local commands only (/fm, /reload-plugins): nothing here sends the model a prompt.
+Local commands (/fm, /reload-plugins) send the model nothing; a typed prompt is a paid turn, so pair it with --model haiku.
 """
 import argparse
 import os
@@ -37,7 +39,7 @@ def start(a, cmd=None):
     env = ["-e", "COLORTERM=truecolor"] + (["-e", f"FOREMAN_STATE={os.environ['FOREMAN_STATE']}"]
                                           if os.environ.get("FOREMAN_STATE") else [])
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
-         cmd or f"claude --plugin-dir {MOD}")
+         cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else ""))
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
 
 
@@ -126,7 +128,14 @@ def cells(line):
 
 def snap(a):
     from PIL import Image, ImageDraw, ImageFont
-    raw = _OSC.sub("", tmux("capture-pane", "-p", "-e", "-t", SESSION).stdout)
+    if a.cmd == "self":  # the pane this Claude Code session runs in, on the user's own tmux server (read-only)
+        if not os.environ.get("TMUX_PANE"):
+            sys.exit("not inside tmux: snapshot the window instead (spectacle -b -n -a -o OUT.png)")
+        raw = subprocess.run(["tmux", "capture-pane", "-p", "-e", "-t", os.environ["TMUX_PANE"], "-S", str(-a.back)],
+                             capture_output=True, text=True, check=True).stdout
+    else:
+        raw = tmux("capture-pane", "-p", "-e", "-t", SESSION).stdout
+    raw = _OSC.sub("", raw)
     rows = raw.rstrip("\n").split("\n")
     with open(os.path.splitext(a.out)[0] + ".txt", "w") as f:
         f.write(_SGR.sub("", raw))
@@ -170,11 +179,15 @@ def main():
     s.add_argument("dir")
     s.add_argument("--cols", type=int, default=200)
     s.add_argument("--rows", type=int, default=60)
+    s.add_argument("--model", help="e.g. haiku: a cheap turn, without changing the saved default model as /model does")
     s = sub.add_parser("keys")
     s.add_argument("text")
     s.add_argument("--enter", action="store_true")
     s = sub.add_parser("snap")
     s.add_argument("out")
+    s = sub.add_parser("self")
+    s.add_argument("out")
+    s.add_argument("--back", type=int, default=0, help="also this many lines of scrollback above the screen")
     sub.add_parser("stop")
     sub.add_parser("selftest")
     a = ap.parse_args()
@@ -192,7 +205,7 @@ def main():
             sys.exit("FAIL: the harness session lost its FOREMAN_STATE")
         print("ok: FOREMAN_* only in the harness session, never the server")
     else:
-        {"start": start, "keys": keys, "snap": snap}[a.cmd](a)
+        {"start": start, "keys": keys, "snap": snap, "self": snap}[a.cmd](a)
 
 
 if __name__ == "__main__":

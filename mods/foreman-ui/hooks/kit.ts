@@ -124,9 +124,11 @@ const str = (o: Record<string, unknown>, k: string) => (typeof o[k] === 'string'
 export type Face = { icon: string; verb: string; target: string; color: number; delta?: string; add?: number; del?: number }
 
 /** How a tool call reads while it runs: an icon, a verb, its target, a color, and for edits the line delta. */
-export function toolFace(tool: string, input: unknown): Face {
+/** `cwd`: the session's folder; a path inside it is shown relative to it, as Claude Code's own rows do */
+export function toolFace(tool: string, input: unknown, cwd = ''): Face {
   const o = (input && typeof input === 'object' ? input : {}) as Record<string, unknown>
-  const file = shortPath(str(o, 'file_path') || str(o, 'notebook_path') || str(o, 'path'))
+  const raw = str(o, 'file_path') || str(o, 'notebook_path') || str(o, 'path')
+  const file = shortPath(cwd && raw.startsWith(`${cwd}/`) ? raw.slice(cwd.length + 1) : raw)
   const first = (s: string) => s.split('\n')[0]!.slice(0, 80)
   switch (tool) {
     case 'Edit':
@@ -295,6 +297,25 @@ export function outputSummary(stdout: unknown, stderr: unknown, keep = 6, failur
     more: all.length - pick.length,
     failures: bad.length > 0,
   }
+}
+
+/** T-0141: the changed lines of an edit's structuredPatch, numbered as the file is (removals by the old file, additions
+ * by the new), unchanged context left out; text cleaned for a Text (tabs as two spaces, no other control characters, no
+ * bidi overrides that could make a line read as something else) */
+export function changedLines(hunks: unknown): { n: number; sign: '+' | '-'; text: string }[] {
+  const out: { n: number; sign: '+' | '-'; text: string }[] = []
+  const clean = (t: string) => t.replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, 240)
+  for (const h of Array.isArray(hunks) ? (hunks as { oldStart?: unknown; newStart?: unknown; lines?: unknown }[]) : []) {
+    let o = typeof h?.oldStart === 'number' ? h.oldStart : 1
+    let n = typeof h?.newStart === 'number' ? h.newStart : 1
+    for (const l of Array.isArray(h?.lines) ? h.lines : []) {
+      if (typeof l !== 'string' || l.startsWith('\\')) continue // '\ No newline at end of file'
+      if (l.startsWith('-')) out.push({ n: o++, sign: '-', text: clean(l.slice(1)) })
+      else if (l.startsWith('+')) out.push({ n: n++, sign: '+', text: clean(l.slice(1)) })
+      else (o++, n++)
+    }
+  }
+  return out
 }
 
 export const TONE_COLOR: Record<Tone, number> = { err: C.err, warn: C.warn, ok: C.ok, plain: 0xc8ccd4 }
