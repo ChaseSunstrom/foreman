@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Task commits (T-0192): a file the task touched that was written in the same command that focused it (so already in its start snapshot) now goes into the task's commit; before, `fm task finish --commit` left it out silently (found when T-0181's test file stayed uncommitted).
 - `fm cost` says where the time went (T-0188, brainstorm round 4, the user's 'faster'): active time split between the model and each tool, shell commands by what they ran (fm's subcommand, an interpreter's script, else the program); waiting on you and gaps over 10 minutes left out. This week: 15 h active, model 55%, shell 44%.
 - Guard block messages name the rewrite that lets the guard read the target when it couldn't pin it down (T-0185, brainstorm round 4): an unknown target (name it literally or set its variable before any loop or pipe, chain a cd with &&), an unresolvable rm target, a script it couldn't prove (builtin open() on literal paths, or the Edit tool).
 - `fm doctor` warns when the installed foreman-ui lags this repo (T-0191, brainstorm round 4): its hooks are compared, so code changed without a version bump counts; right now it says 0.4.0 installed, 0.5.0 here.

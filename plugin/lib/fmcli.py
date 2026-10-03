@@ -373,7 +373,14 @@ def _commit_task(p, b, message):
     if not base:
         raise UsageError(f"{b.id} is done, but has no start point on record to tell its files apart: commit by hand")
     mirror = os.path.isdir(os.path.join(p.root, ".foreman")) and not c.mirror_ignored(p.root)
-    files = fmmap.changed(p.root, base) + ([".foreman"] if mirror else [])
+    files = fmmap.changed(p.root, base)
+    # T-0192: a file written in the command that focused the task is in the focus snapshot; the hooks saw it touched
+    touched = [f for f in c.task_touches(p, b.id) if f not in files]
+    if touched:
+        out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
+                     timeout=30)
+        files += [e[3:] for e in out.split("\0") if len(e) > 3]
+    files += [".foreman"] if mirror else []
     if not files:
         print(f"{b.id}: nothing to commit.")
         return
