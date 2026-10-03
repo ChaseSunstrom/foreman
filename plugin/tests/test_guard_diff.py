@@ -26,6 +26,9 @@ FORMS = [
     "setsid {p}", "trap '{p}' EXIT", "find . -maxdepth 0 -exec {p} \\;", "echo a | xargs -I@ {p}",
     "flock l {p}", "script -qc '{p}' /dev/null", "busybox sh -c '{p}'", "find . -maxdepth 0 -execdir {p} +",
 ]
+# whole commands (no payload slot): variables the guard resolves (T-0151) must still resolve the way bash does
+EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -rf "$D"', 'D=x; D=~; rm -rf "$D"',
+         'export D=~\nrm -rf "${D}"', 'D=~ ; rm -rf "$D/"']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
@@ -82,6 +85,10 @@ class GuardAgainstBash(unittest.TestCase):
                 ran += 1
                 if not g.check_bash(cmd, self.ctx):
                     bypasses.append(f"{kind}: {cmd!r} ran {calls[0]!r}")
+        for cmd in EXTRA:
+            calls = [c for c in self.run_in_sandbox(cmd) if dangerous(c)]
+            if calls and not g.check_bash(cmd, self.ctx):
+                bypasses.append(f"extra: {cmd!r} ran {calls[0]!r}")
         self.assertGreater(ran, len(FORMS), "the stand-ins logged too little: the corpus would be vacuous")
         self.assertEqual(bypasses, [], "\n" + "\n".join(bypasses))
 

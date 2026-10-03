@@ -655,6 +655,22 @@ def lone_fm_ask(cmd):
     return calls[0] if len(calls) == 1 and calls[0][:1] == ["ask"] else None
 
 
+# T-0151: variables are resolved only in a straight-line command (simple commands joined by ; or newlines): a pipe, &&,
+# ||, &, a subshell, a group or a control keyword can make an assignment conditional or local, so then none are
+_BRANCHY = re.compile(r"[|&(){}]|\b(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|select|function|coproc)\b")
+_SETS_VARS = {"read", "readarray", "mapfile", "source", ".", "eval", "declare", "typeset", "local", "printf", "getopts",
+              "let", "unset"}
+_ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
+
+
+def _straight_line(shell):
+    return not _BRANCHY.search(re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", " ", shell))  # ${VAR}, 2>&1 and &> aren't branches
+
+
+def _with_vars(tok, env):
+    return re.sub(r"\$(?:\{(\w+)\}|(\w+))", lambda m: env.get(m.group(1) or m.group(2), m.group(0)), tok)
+
+
 def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
@@ -667,7 +683,19 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
+    env = {} if _straight_line(shell) else None  # VAR → literal, for rm targets (T-0151)
     for idx, c in enumerate(cmds):
+        if env is not None:
+            sets = c.argv[1:] if c.argv[:1] in (["export"], ["readonly"]) else c.argv
+            if sets and all(_ASSIGN.match(a) or c.argv[0] in ("export", "readonly") for a in sets):
+                for m in filter(None, map(_ASSIGN.match, sets)):
+                    k, v = m.groups()
+                    if _unresolvable(v) or re.search(r"[*?\[]", v):
+                        env.pop(k, None)
+                    else:
+                        env[k] = v
+            elif c.argv and os.path.basename(c.argv[0]) in _SETS_VARS:
+                env = None  # it could set anything: stop resolving
         argv, via_xargs = _strip_wrappers(c.argv)
         if not c.piped:
             chain = []
@@ -734,7 +762,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
-        found += _check_rm(name, args, via_xargs, chain, cwd, ctx)
+        found += _check_rm(name, [_with_vars(a, env) for a in args] if env else args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)
         found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")

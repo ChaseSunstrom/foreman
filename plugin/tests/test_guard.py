@@ -73,6 +73,16 @@ class RmOutside(GuardCase):
             ("find / -exec rm -rf {{}} +", "rm-outside"),
             ("rm -r -f {repo}", "rm-outside"),
             ('rm -rf "$BUILD_DIR"', "rm-outside"),
+            # T-0151: a literal set earlier in a straight-line command is resolved; anything uncertain stays unknown
+            ('D={repo}/build; rm -rf "$D/out"', None),
+            ('export D={repo}/build\nrm -rf "${{D}}"', None),
+            ('D=~; rm -rf "$D"', "rm-outside"),
+            ('D=$HOME; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; D=$HOME; rm -rf "$D"', "rm-outside"),
+            ('D=/; false && D={repo}/build; rm -rf "$D"', "rm-outside"),  # a conditional assignment
+            ('D=/; (D={repo}/build); rm -rf "$D"', "rm-outside"),  # a subshell's assignment stays there
+            ('D={repo}/build; read D; rm -rf "$D"', "rm-outside"),
+            ('FOO={repo}/build rm -rf "$FOO"', "rm-outside"),  # a prefix assignment isn't seen by its own arguments
             ("FOO=1 rm --recursive ~/x", "rm-outside"),
             ("rm -rf build node_modules dist/*", None),
             ("rm -rf /tmp/claude-1000/proj/sess/scratchpad/out", None),
