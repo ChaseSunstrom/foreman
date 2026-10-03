@@ -3,7 +3,10 @@ fixes for the self-inbox, and the trigger fm next uses. A pass is recursive: the
 the self items, so a fix that didn't remove its friction shows up again. Reads the global events and every project's
 ledger; writes only this project's meta (rsi_at, rsi_every), under its lock."""
 import collections
+import glob
+import json
 import os
+import re
 import statistics
 import time
 
@@ -25,8 +28,52 @@ def _ledgers(start):
                 yield p, e
 
 
-def digest(p):
-    """{section: [lines]} of what went wrong or slow since the last pass, newest kinds first, each line bounded."""
+def _transcript_commands(sids):
+    """{(session id, command as the guard event shows it): (command, cwd)} from those sessions' transcripts."""
+    base = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "projects")
+    out = {}
+    for sid in sids:
+        for path in glob.glob(os.path.join(base, "*", f"{sid}.jsonl")) if re.fullmatch(r"[\w-]+", sid) else []:
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        if '"Bash"' not in line:
+                            continue
+                        try:
+                            entry = json.loads(line)
+                        except ValueError:
+                            continue
+                        content = (entry.get("message") or {}).get("content") if isinstance(entry, dict) else None
+                        for b in content if isinstance(content, list) else []:
+                            cmd = (b.get("input") or {}).get("command") if isinstance(b, dict) and \
+                                b.get("type") == "tool_use" and b.get("name") == "Bash" else None
+                            if isinstance(cmd, str):
+                                shown = c.fit(c.redact(cmd.replace("\n", " ")), 160)  # as the hook logs it
+                                out.setdefault((sid, shown), (cmd, entry.get("cwd") or ""))
+            except OSError:
+                continue
+    return out
+
+
+def _recheck(events):
+    """{event index: what today's guard says of the command it blocked then} (T-0187): a fix that removed the friction
+    shows as 'allows it'; a command no transcript holds any more gets no word."""
+    import fmreplay
+    bash = [(i, e) for i, e in enumerate(events) if e.get("tool") == "Bash" and e.get("cmd") and e.get("session_id")]
+    found = _transcript_commands({e["session_id"] for _, e in bash})
+    runs = {i: found[(e["session_id"], e["cmd"])] for i, e in bash if (e["session_id"], e["cmd"]) in found}
+    now = fmreplay.verdicts(runs.values())
+    return {i: "today's guard allows it" if now.get(fmreplay._key(*run)) == "allow" else "still blocks"
+            for i, run in runs.items()}
+
+
+def _rate(n, calls):
+    return f"{n * 100 / calls:.1f}".rstrip("0").rstrip(".")
+
+
+def digest(p, recheck=True):
+    """{section: [lines]} of what went wrong or slow since the last pass, newest kinds first, each line bounded, and the
+    window's counts (kept at --mark for the next digest's trend)."""
     meta = c.read_meta(p)
     start = _start(meta)
     events = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000) if (e.get("ts") or "") > start]
@@ -37,9 +84,12 @@ def digest(p):
     key = lambda e: (e.get("category"), c.fit(c.plain(str(e.get("target") or "")), 110))
     blocks = collections.Counter(key(e) for e in guard)
     example = {key(e): c.fit(c.plain(str(e["cmd"])), 160) for e in guard if e.get("cmd")}  # T-0172: the newest
+    shown = blocks.most_common(MAX_LINES)
+    newest = {key(e): e for e in guard}
+    now = _recheck([newest[k] for k, _ in shown]) if recheck else {}
     out["guard blocks (each a stop Claude had to work around; a false one costs a rewrite)"] = [
         f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
-        for (cat, target), n in blocks.most_common(MAX_LINES)]
+        + (f" — {now[i]}" if i in now else "") for i, ((cat, target), n) in enumerate(shown)]
 
     fails = collections.Counter((e.get("tool"), c.fit(str(e.get("target") or ""), 90))
                                 for e in events if e.get("kind") == "tool_fail")
@@ -81,7 +131,16 @@ def digest(p):
     out["self-inbox: what became of earlier passes"] = (
         [f"done since: {b.id} {c.fit(b.title, 90)}" for b in closed][:MAX_LINES] +
         [f"open: {b.id} {c.fit(b.title, 90)}" for b in open_][:MAX_LINES])
-    return {"since": start, "sections": {k: v for k, v in out.items() if v}}
+    kinds_ev = collections.Counter(e.get("kind") for e in events)
+    counts = {"tool calls": kinds_ev["tool"], "guard blocks": kinds_ev["guard_block"],
+              "failed tool calls": kinds_ev["tool_fail"],
+              "drive stops": kinds_ev["drive_wait"] + kinds_ev["drive_reload"] + kinds["stop_gate"], "steers": len(said)}
+    last = meta.get("rsi_counts") or {}
+    if last.get("tool calls") and counts["tool calls"]:  # T-0187: did the last pass's fixes make it better
+        out["trend: the last pass's window → this one, per 100 tool calls"] = [" · ".join(
+            f"{k} {_rate(last.get(k) or 0, last['tool calls'])} → {_rate(counts[k], counts['tool calls'])}"
+            for k in counts if k != "tool calls" and (last.get(k) or counts[k]))]
+    return {"since": start, "sections": {k: v for k, v in out.items() if v}, "counts": counts}
 
 
 def render(d):
@@ -107,8 +166,9 @@ Return at most 5 improvements, most valuable first. For each:
 - the cause, grounded in the code (file:line you read), not guessed;
 - the change, as small as works, and its type (FIX/PERFORMANCE/CLEAN/FEATURE/SECURITY) and size (S/M/L);
 - done when: one observable check.
-Also say whether an earlier pass's item (the self-inbox section) failed to remove its friction, and whether this
-loop itself should change (how often it runs, what it reads). For the guard, propose shell forms to add to FORMS in
+A guard block marked "today's guard allows it" was fixed since: leave it. The trend line compares the last pass's
+window with this one. Also say whether an earlier pass's item (the self-inbox section) failed to remove its friction,
+and whether this loop itself should change (how often it runs, what it reads). For the guard, propose shell forms to add to FORMS in
 plugin/tests/test_guard_diff.py (it runs them in real bash and fails on any the guard misses). Skip anything you
 can't ground; say so instead.
 """
@@ -146,6 +206,7 @@ def cmd_friction(args):
     if args.mark:
         with c.lock(p.dir):
             meta = c.read_meta(p)
+            meta["rsi_counts"] = digest(p, recheck=False)["counts"]
             meta["rsi_at"] = c.now()
             c.write_meta(p, meta)
         c.log_event(p, "rsi_pass")

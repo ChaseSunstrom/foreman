@@ -65,6 +65,35 @@ class Friction(ForemanTestCase):
         c.write_meta(p, meta)
         self.assertIn("self-improvement pass", nxt())
 
+    def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
+        # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
+        # through today's guard (its full command from the session's transcript); a mark keeps the window's counts
+        import fmcore as c
+        claude = os.path.join(self.tmp, "claude")
+        os.makedirs(os.path.join(claude, "projects", "x"))
+        cmds = {"ls -la\npwd": "state-direct", "npm publish": "publish"}  # a block a later fix cleared; a real one
+        with open(os.path.join(claude, "projects", "x", "s1.jsonl"), "w") as f:
+            for cmd in cmds:
+                f.write(json.dumps({"type": "assistant", "cwd": self.repo, "sessionId": "s1", "message": {"content": [
+                    {"type": "tool_use", "name": "Bash", "input": {"command": cmd}}]}}) + "\n")
+        at = lambda s: c.iso(c.time.time() + s)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for cmd, cat in cmds.items():
+                f.write(json.dumps({"ts": at(-60), "kind": "guard_block", "session_id": "s1", "category": cat,
+                                    "tool": "Bash", "target": cmd, "cmd": cmd.replace("\n", " ")}) + "\n")  # as logged
+            for i in range(10):
+                f.write(json.dumps({"ts": at(-60), "kind": "tool", "tool": "Bash", "target": "x"}) + "\n")
+        env = {"CLAUDE_CONFIG_DIR": claude}
+        out = self.fm("friction", env=env).stdout
+        self.assertIn("e.g. `ls -la pwd` — today's guard allows it", out)
+        self.assertRegex(out, r"publish: npm publish .*still blocks")
+        self.fm("friction", "--mark", env=env)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for i in range(10):
+                f.write(json.dumps({"ts": at(5), "kind": "tool", "tool": "Bash", "target": "x"}) + "\n")
+        out = self.fm("friction", env=env).stdout
+        self.assertIn("guard blocks 20 → 0", out)  # per 100 tool calls, the last pass's window against this one
+
 
 if __name__ == "__main__":
     unittest.main()
