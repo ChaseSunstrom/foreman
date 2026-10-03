@@ -4,16 +4,23 @@ import type { EngineInterface, Register, ResolveInput } from 'claude-code'
 import type { FileChurn, FmItem, FmView, LiveAgent, TurnSummary } from '../types'
 import {
   C,
+  MASCOT_COLORS,
+  MASCOT_COLS,
+  MASCOT_ROWS,
+  SIZE_LEGEND,
   activityCells,
   ago,
   churnCells,
   elapsed,
   fade,
   hex,
+  mascotCells,
+  mascotFrame,
   mix,
   progressCells,
   pulse,
   shortPath,
+  sizeWord,
   sparkCells,
   sparkText,
   spin,
@@ -36,6 +43,7 @@ const files = atom({ plugin: 'foreman-ui', key: 'files' } as const, [])
 const agents = atom({ plugin: 'foreman-ui', key: 'agents' } as const, [])
 const ctx = atom({ plugin: 'foreman-ui', key: 'ctx' } as const, null)
 const sound = atom({ plugin: 'foreman-ui', key: 'sound' } as const, true)
+const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 
 const LIST = 6
 const FRAME_MS = 120
@@ -99,6 +107,28 @@ export function fmCommand(command: unknown): string | null {
   return m && m[1]!.length <= 160 ? m[1]!.replace(/\s+/g, ' ') : null
 }
 
+/** A Foreman permission request (`fm ask ID cats --why "…"`), in plain words for a note under its dialog. */
+export function askNote(command: unknown): string | null {
+  if (typeof command !== 'string') return null
+  // the reason may hold no quote, $, backtick, backslash or newline: then the whole command is the one ask shown
+  const m = /^fm\s+ask\s+(T-\d{4,})\s+([\w\s-]+?)\s+(?:--pin\s+[\w@.:/-]+\s+)?--why\s+(?:"([^"$`\\\n]*)"|'([^'\n]*)')$/.exec(
+    command.trim(),
+  )
+  const why = m ? (m[3] ?? m[4] ?? '') : ''
+  if (!m || why.length > 160) return null // too long to show whole: no summary rather than a cut one
+  return `⚠ Foreman asks: a yes grants ${m[2]!.trim().split(/\s+/).join(' + ')} for ${m[1]} — ${why.replace(/\s+/g, ' ')}`
+}
+
+/** One line for a finished read: how much it read. */
+export function readSummary(tool: string, output: unknown): string {
+  const o = (output && typeof output === 'object' ? output : {}) as { file?: { numLines?: number; totalLines?: number } }
+  if (tool === 'Read' && typeof o.file?.numLines === 'number') {
+    const total = o.file.totalLines
+    return total && total > o.file.numLines ? `${o.file.numLines} of ${total} lines` : `${o.file.numLines} lines`
+  }
+  return ''
+}
+
 /** The last meaningful line a command printed. */
 export function lastLine(output: unknown): string {
   const o = (output && typeof output === 'object' ? output : {}) as { stdout?: unknown; stderr?: unknown }
@@ -121,6 +151,8 @@ let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
 let freshAt = 40 // userConfig: compact at a task boundary from this context percent (0: never)
+let mascot = 'blue' // userConfig: the pane's mascot color, or off
+let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 const turns = new Set<string>()
 const starts = new Map<string, number>() // tool_use_id → when it started (ms)
 const agentCalls = new Map<string, string>() // running Agent call → its description
@@ -160,7 +192,10 @@ async function refresh($: EngineInterface): Promise<boolean> {
     for (const line of lines) $.ui.toast(line)
     if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
     else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
-    if (lines.some(l => l.startsWith('✔'))) $.clock.after(500, () => void freshen($)) // outside this dispatch
+    if (lines.some(l => l.startsWith('✔'))) {
+      happyUntil = (await $.clock.now()) + 6000
+      $.clock.after(500, () => void freshen($)) // outside this dispatch
+    }
     await update($, view, () => next)
     await update($, error, () => null)
     lastFull = await $.clock.now()
@@ -176,6 +211,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
+  if (mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
   const v = await read($, view)
   const stamps = await Promise.all(
     (v?.watch ?? []).map(p => $.fs.stat(p).then(s => `${s.mtimeMs}:${s.size}`, () => '-')),
@@ -340,6 +376,18 @@ function churn($: EngineInterface, e: ResolveInput, key: string, f: FileChurn, m
   return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
 }
 
+/** The mascot: a true-color pixel creature on the terminal, a tiny face elsewhere; null when turned off. */
+function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number) {
+  if (mascot === 'off') return null
+  const color = MASCOT_COLORS[mascot] ?? MASCOT_COLORS.blue!
+  if (e.surface === 'terminal') {
+    const { Raster } = $.ui.resolve(e)
+    return <Raster key="fm-mascot" columns={MASCOT_COLS} rows={MASCOT_ROWS} cells={mascotCells(mascotFrame(state, n), color)} />
+  }
+  const { Text } = $.ui.resolve(e)
+  return <Text color={hex(color)}>{state === 'work' ? (n % 2 ? '(•̀ᴗ•́)و' : '(•̀ᴗ•́)ง') : state === 'happy' ? '\\(^ᴗ^)/' : '(•ᴗ•)'}</Text>
+}
+
 /** The quick-capture box (every surface with text input). */
 function captureBox($: EngineInterface, e: ResolveInput) {
   if (e.surface === 'mobile') return null
@@ -351,6 +399,7 @@ function captureBox($: EngineInterface, e: ResolveInput) {
 
 export const register: Register = (on, options) => {
   freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
+  mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     const stored = await $.store.get('sound').catch(() => undefined)
@@ -402,6 +451,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
+    let noteTimer: { cancel: () => void } | null = null
     const face = toolFace(String(e.tool), e)
     starts.set(id, await $.clock.now())
     try {
@@ -417,12 +467,15 @@ export const register: Register = (on, options) => {
         if (face.icon === '◆') turn.agents += 1
       }
       await wake($)
+      const note = e.tool === 'Bash' ? askNote(e.command) : null
+      noteTimer = note ? $.clock.after(150, () => $.ui.notice(id, note)) : null // under the dialog, once it is open
       const r = await next(e)
       const why = guardReason(r)
       if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
       else if (face.add !== undefined && r.deny === undefined && !r.isError) await noteEdit($, face.target, face.add, face.del ?? 0)
       return r
     } finally {
+      noteTimer?.cancel()
       const agent = agentOf.get(id)
       if (agent) await update($, agents, list => list.map(a => (a.id === agent ? { ...a, done: true } : a))).catch(() => undefined)
       starts.delete(id)
@@ -443,6 +496,20 @@ export const register: Register = (on, options) => {
           <Text color={hex(mix(C.dim, C.ok, 0.6))} wrap="truncate-end">
             ✓ {lastLine(e.props.output)}
           </Text>
+        </Box>
+      )
+    }
+    const quiet = ['Read', 'WebFetch', 'WebSearch'].includes(e.props.tool)
+    if (quiet && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
+      const face = toolFace(e.props.tool, e.props.input)
+      const { Box, Text } = $.ui.resolve(e)
+      const more = readSummary(e.props.tool, e.props.output)
+      return (
+        <Box flexDirection="row" gap={1} key="fm-read">
+          <Text color={hex(mix(face.color, C.dim, 0.4))}>{face.icon}</Text>
+          <Text color={hex(C.dim)}>{face.verb.replace(/ing\b/, '')}</Text>
+          <Text wrap="truncate-start">{face.target}</Text>
+          {more ? <Text color={hex(C.dim)}>· {more}</Text> : null}
         </Box>
       )
     }
@@ -471,6 +538,23 @@ export const register: Register = (on, options) => {
         )}
         {meter($, e, 'fm-tool-bar', 12, null, face.color, f)}
         <Text dimColor>{elapsed(ms)}</Text>
+      </Box>
+    )
+  })
+
+  // A background task's notification: one Foreman line (ctrl+o still shows the engine's full row).
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    if (e.props.origin?.kind !== 'task-notification' || e.props.isExpanded) return next(e)
+    const t = e.props.task ?? {}
+    const status = t.status ?? 'completed'
+    const color = status === 'completed' ? C.ok : status === 'failed' ? C.err : C.warn
+    const { Box, Text } = $.ui.resolve(e)
+    return (
+      <Box flexDirection="row" gap={1} key="fm-note">
+        <Text color={hex(color)}>{status === 'completed' ? '✓' : status === 'failed' ? '✗' : '■'}</Text>
+        <Text color={hex(C.dim)}>background {t.type ?? 'task'} {status}</Text>
+        <Text wrap="truncate-end">{e.props.text.split('\n')[0]}</Text>
+        {t.durationMs ? <Text color={hex(C.dim)}>· {elapsed(t.durationMs)}</Text> : null}
       </Box>
     )
   })
@@ -519,7 +603,7 @@ export const register: Register = (on, options) => {
     const a = v.active
     const asks = v.approvals ?? []
     const plans = (v.queue ?? []).filter(q => q.waits === 'plan approval')
-    if (!a && !asks.length && !plans.length && !(v.queue ?? []).length) return next(e)
+    if (!a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0)) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
     const f = working ? await read($, frame) : null
@@ -528,6 +612,10 @@ export const register: Register = (on, options) => {
     const done = a ? a.steps.filter(s => s.done).length : 0
     const cur = a?.steps.find(s => s.current)
     const width = Math.max(10, Math.min(28, e.props.bodyColumns - 70))
+    const queued = (v.queue ?? []).length
+    const inboxN = v.inbox_total ?? (v.inbox ?? []).length
+    const todayDone = v.today_done ?? 0
+    const upNext = (v.queue ?? [])[0] ?? (v.inbox ?? [])[0]
 
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
@@ -536,7 +624,7 @@ export const register: Register = (on, options) => {
             {a ? (
               <Box flexDirection="row" gap={1}>
                 <Text backgroundColor={typeColor(a.type)} color="#000000" bold>
-                  {` ${a.type} ${a.tier} `}
+                  {` ${a.type} · ${sizeWord(a.tier)} `}
                 </Text>
                 <Text bold color={hex(C.accent)}>
                   {a.id}
@@ -579,6 +667,20 @@ export const register: Register = (on, options) => {
             )}
           </Box>
         )}
+        {(queued > 0 || inboxN > 0) && (
+          <Box flexDirection="row" gap={1} key="fm-band-queue-row">
+            <Text color={hex(C.dim)}>today</Text>
+            {meter($, e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
+            <Text color={hex(C.dim)}>
+              ✓{todayDone} done · {queued} queued · {inboxN} in inbox
+            </Text>
+            {upNext && (
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                · next {upNext.id} {upNext.title}
+              </Text>
+            )}
+          </Box>
+        )}
         {!working && v.next && (
           <Text color={hex(C.dim)} wrap="truncate-end">
             → {v.next}
@@ -592,7 +694,7 @@ export const register: Register = (on, options) => {
         {plans.slice(0, 2).map(q => (
           <Box flexDirection="row" gap={1} key={`plan-${q.id}`}>
             <Text color={hex(C.warn)} wrap="truncate-end">
-              ⚠ {q.id} {q.tier} plan awaits approval: {q.title}
+              ⚠ {q.id} ({sizeWord(q.tier)}) plan awaits approval: {q.title}
             </Text>
             {/* consent is given in the pane, where the plan it approves is shown */}
             <Button key={`review-${q.id}`} label="Review" hotkey="v" onPress={() => void openPane($, true)} />
@@ -628,6 +730,8 @@ export const register: Register = (on, options) => {
     }
     const live = turns.size > 0 || starts.size > 0
     const f = live ? await read($, frame) : null
+    const idleBeat = live || mascot === 'off' ? 0 : await read($, beat)
+    const clockNow = await $.clock.now()
     const a = v.active
     const m = v.mode
     const width = Math.max(10, e.props.bodyColumns - 12)
@@ -651,7 +755,7 @@ export const register: Register = (on, options) => {
     )
     const chip = (it: FmItem) => (
       <Text backgroundColor={typeColor(it.type)} color="#000000">
-        {` ${it.type.slice(0, 4)} ${it.tier} `}
+        {` ${it.type.slice(0, 4)} · ${sizeWord(it.tier)} `}
       </Text>
     )
     const done = a ? a.steps.filter(s => s.done).length : 0
@@ -661,12 +765,18 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" key="fm-pane">
         <Box flexDirection="row" justifyContent="space-between">
-          <Text bold color={hex(C.accent)}>
-            {live ? spin(f ?? 0) : '▌'} {v.project}
-          </Text>
-          <Text color={hex(C.dim)}>
-            {m ? `${m.autonomy === 'full' ? '⚡ full auto' : '◇ standard'} · drive ${m.drive ? 'on' : 'off'}${m.sensitive ? ' · sensitive' : ''}` : ''}
-          </Text>
+          <Box flexDirection="column">
+            <Text bold color={hex(C.accent)}>
+              {live ? spin(f ?? 0) : '▌'} {v.project}
+            </Text>
+            <Text color={hex(C.dim)}>
+              {m ? `${m.autonomy === 'full' ? '⚡ full auto' : '◇ standard'} · drive ${m.drive ? 'on' : 'off'}${m.sensitive ? ' · sensitive' : ''}` : ''}
+            </Text>
+            <Text color={hex(C.dim)}>
+              ✓ {v.today_done ?? 0} today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
+            </Text>
+          </Box>
+          {mascotTree($, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat)}
         </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
 
@@ -709,6 +819,9 @@ export const register: Register = (on, options) => {
                 audits {'■'.repeat(a.audits.done)}
                 {'□'.repeat(Math.max(0, a.audits.need - a.audits.done))} {a.audits.done}/{a.audits.need}
                 {a.blockers.length ? ` · ${a.blockers.length} blocker(s) before done` : ''}
+              </Text>
+              <Text color={hex(mix(C.dim, C.track, 0.4))} wrap="truncate-end">
+                sizes: {SIZE_LEGEND}
               </Text>
             </Box>
           ) : (

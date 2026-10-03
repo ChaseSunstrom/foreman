@@ -212,6 +212,10 @@ def view(p):
 
     closed = sorted((b for b in briefs if b.status in c.CLOSED), key=lambda b: b.meta.get("updated") or "",
                     reverse=True)[:5]
+    today = time.strftime("%Y-%m-%d", time.gmtime())  # closed today by the ledger, not "saved today" (any later edit)
+    done_ids = {b.id for b in briefs if b.status == "done"}
+    today_done = len({e.get("task") for e in c.ledger_tail(p, 3000)
+                      if e.get("event") == "task_done" and str(e.get("ts") or "").startswith(today)} & done_ids)
     lat = [ms for vals in d["latency"].values() for ms in vals]
     return {
         "v": 1, "project": p.slug, "root": p.root,
@@ -223,6 +227,7 @@ def view(p):
         "approvals": [{"task": a.get("task"), "allow": list(a.get("allow") or []), "why": c.plain(a.get("why") or "")}
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "closed": [{"id": b.id, "status": b.status} for b in closed],
+        "today_done": today_done,
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors())},

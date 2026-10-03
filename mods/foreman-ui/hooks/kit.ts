@@ -41,12 +41,12 @@ export function mix(a: number, b: number, t: number): number {
 const DEFAULT_BG = 0x01000000
 
 /** Raster cells as RasterProps wants them: base64 of little-endian u32 [codePoint, fg, bg] per cell. */
-export function cells(list: readonly [string, number][]): string {
+export function cells(list: readonly (readonly [string, number] | readonly [string, number, number])[]): string {
   const view = new DataView(new ArrayBuffer(list.length * 12))
-  list.forEach(([ch, fg], i) => {
+  list.forEach(([ch, fg, bg], i) => {
     view.setUint32(i * 12, ch.codePointAt(0) ?? 0x20, true)
     view.setUint32(i * 12 + 4, fg, true)
-    view.setUint32(i * 12 + 8, DEFAULT_BG, true)
+    view.setUint32(i * 12 + 8, bg ?? DEFAULT_BG, true)
   })
   let bin = ''
   const bytes = new Uint8Array(view.buffer)
@@ -214,4 +214,49 @@ export function churnCells(add: number, del: number, max: number, width: number)
 export function ago(days: number | undefined): string {
   if (days === undefined) return ''
   return days < 1 ? 'today' : `${Math.round(days)}d`
+}
+
+/** What a tier letter means, in words people read (S/M/L meant nothing on screen). */
+export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
+export const sizeWord = (tier: string) => SIZE[tier] ?? tier
+export const SIZE_LEGEND = 'small ≤30 lines, 1–2 files · medium several files or a design choice · large cross-cutting or uncertain'
+
+// The mascot: a little pixel creature, 12×8 pixels drawn as 12×4 half-block cells. "#" body, "o" eye, "-" closed
+// eye, "a" arm, "." empty. Frames: rest, bob, blink, work (arms up), work 2 (arms down), happy (a jump).
+const SPRITES: Record<string, string[]> = {
+  rest: ['....####....', '..########..', '.##o####o##.', '.##########.', 'a##########a', '.##########.', '..#.#..#.#..', '..#.#..#.#..'],
+  bob: ['............', '....####....', '..########..', '.##o####o##.', 'a##########a', '.##########.', '.##########.', '..#.#..#.#..'],
+  blink: ['....####....', '..########..', '.##-####-##.', '.##########.', 'a##########a', '.##########.', '..#.#..#.#..', '..#.#..#.#..'],
+  work: ['a...####...a', 'a.########.a', '.##o####o##.', '.##########.', '.##########.', '.##########.', '..#.#..#.#..', '...#....#...'],
+  work2: ['....####....', '..########..', '.##o####o##.', 'a##########a', '.##########.', '.##########.', '...#....#...', '..#.#..#.#..'],
+  happy: ['a...####...a', 'a.########.a', '.##o####o##.', '.##########.', '.##########.', '..#.#..#.#..', '............', '............'],
+}
+export const MASCOT_COLORS: Record<string, number> = { blue: 0x4f9dff, orange: 0xd97757, purple: 0xa88bfa, green: 0x5fd7a0 }
+export const MASCOT_COLS = 12
+export const MASCOT_ROWS = 4
+
+/** Which frame shows: working cycles arms and bob; idle rests and blinks now and then; a finished task is happy. */
+export function mascotFrame(state: 'work' | 'idle' | 'happy', beat: number): string {
+  if (state === 'happy') return 'happy'
+  if (state === 'work') return ['work', 'bob', 'work2', 'bob'][Math.floor(beat / 2) % 4]!
+  return beat % 7 === 3 ? 'blink' : beat % 7 === 5 ? 'bob' : 'rest'
+}
+
+/** The sprite as Raster cells in a color: each cell packs two pixel rows (▀ fg = top, bg = bottom). */
+export function mascotCells(frame: string, color: number): string {
+  const rows = SPRITES[frame] ?? SPRITES.rest!
+  const shade = mix(color, 0x000000, 0.35)
+  const px = (ch: string): number | null =>
+    ch === '#' || ch === '-' ? color : ch === 'a' ? shade : ch === 'o' ? 0x14161c : null
+  const out: [string, number, number][] = []
+  for (let r = 0; r < 8; r += 2) {
+    for (let x = 0; x < 12; x++) {
+      const top = px(rows[r]![x]!)
+      const bottom = px(rows[r + 1]![x]!)
+      if (top === null && bottom === null) out.push([' ', DEFAULT_BG, DEFAULT_BG])
+      else if (top === null) out.push(['▄', bottom!, DEFAULT_BG])
+      else out.push(['▀', top, bottom ?? DEFAULT_BG])
+    }
+  }
+  return cells(out)
 }

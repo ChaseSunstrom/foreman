@@ -82,3 +82,22 @@ class UiView(ForemanTestCase):
         self.assertTrue(v["latency"] and all(isinstance(x, (int, float)) for x in v["latency"]))
         self.assertEqual([(r["cmd"], r["exit"]) for r in v["checks"]["results"]], [("python3 -c 'print(1)'", 0)])
         self.assertTrue(v["checks"]["at"])
+
+    def test_today_done_counts_tasks_closed_today(self):
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", "true")
+        self.fm("task", "step", "T-0001", "done", "2")
+        self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: fixture")
+        self.fm("task", "finish", "T-0001", "--audit", "self checklist")
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["today_done"], 1)
+
+    def test_today_done_ignores_tasks_closed_earlier_and_edited_today(self):
+        import fmcore as c
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:  # T-0002 was closed long ago…
+            f.write(json.dumps({"ts": "2000-01-01T00:00:00Z", "event": "task_done", "task": "T-0002", "data": {}}) + "\n")
+        b = c.find_brief(p, "T-0002")
+        with open(b.path) as f:
+            text = f.read()
+        with open(b.path, "w") as f:  # …and its brief, done, was saved today (an audit note, a lesson)
+            f.write(text.replace("status: planned", "status: done", 1))
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["today_done"], 0)

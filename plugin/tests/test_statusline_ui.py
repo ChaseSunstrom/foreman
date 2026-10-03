@@ -53,7 +53,7 @@ class StatuslineUi(ForemanTestCase):
         for needle in ("Opus 5.5", os.path.basename(self.repo), "ctx", "31%", "5h", "5%", "7d", "25%", "$12.89",
                        "+737", "−31"):
             self.assertIn(needle, lines[0])
-        for needle in ("▌T-0001", "FIX S", "executing", "━━━━━─────", "1/2", "fix", "audits 0/1", "q0 in0", "standard",
+        for needle in ("▌T-0001", "FIX · small", "executing", "━━━━━─────", "1/2", "fix", "audits 0/1", "q0 in0", "standard",
                        "guard on"):
             self.assertIn(needle, lines[1])
         self.assertIn("\x1b[38;2;", raw[0], "true color, not the old plain text")

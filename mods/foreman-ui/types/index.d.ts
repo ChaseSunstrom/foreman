@@ -40,6 +40,7 @@ export type FmView = {
   watch?: string[] // paths whose mtime moves when the record changes
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
+  today_done?: number // tasks closed as done today
 }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }
@@ -63,6 +64,7 @@ declare module 'claude-code' {
       agents: LiveAgent[]
       ctx: Ctx | null
       sound: boolean
+      beat: number
     }
   }
 }

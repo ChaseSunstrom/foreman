@@ -135,6 +135,9 @@ ACCENT, ACCENT2, OK, WARN, ERR, DIM, TRACK, BRANCH = (0x5fd7d7, 0x87afff, 0x87d7
                                                       0x3a414c, 0xd787ff)
 
 
+SIZE = {"S": "small", "M": "medium", "L": "large"}  # T-0108: letters meant nothing on screen
+
+
 def fg(c):
     return f"\x1b[38;2;{c >> 16 & 255};{c >> 8 & 255};{c & 255}m"
 
@@ -238,7 +241,7 @@ def read_status(c, p):
 def foreman_segs(st, mode):
     a, sep = st.get("active"), (" · ", fg(DIM))
     if a:
-        segs = [("▌", fg(ACCENT)), (a["id"], BOLD + fg(ACCENT)), (f" {a['type']} {a['tier']}", fg(ACCENT2)),
+        segs = [("▌", fg(ACCENT)), (a["id"], BOLD + fg(ACCENT)), (f" {a['type']} · {SIZE.get(a['tier'], a['tier'])}", fg(ACCENT2)),
                 ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
         if a["total"]:
             segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
