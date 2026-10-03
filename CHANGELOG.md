@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The scope refusal names the out-of-scope file edited last and says a `scope:` reason only covers edits before it (T-0168, self-improvement pass 2: a reason logged before a later edit left the finish refused without saying why).
 - Guard: a secret-sounding file name under the scratchpad or `/tmp` (`secrets.txt`) isn't a credential (T-0169, self-improvement pass 2: `fm secrets > <scratchpad>/secrets.txt` was blocked); `.env`, keys and credential folders still count there, and a scratch symlink is judged by its real path.
 - Guard: a script written with a quoted `cat`/`tee` heredoc is data, not interpreter code (T-0171, self-improvement pass 2): a shebang or a `python3 -m pytest` line in the text, beside a quoted credential path, blocked the write; piped or unquoted heredocs, and real interpreter heredocs, are read as before.
 - `fm run --parallel N` (T-0167, the user's 'allow things in parallel' with its steer): up to 3 independent tasks at once, each in its own lane and fresh session; only small or medium tasks with disjoint scopes and no dependencies between them; each lane is rebased, gated and fast-forwarded into a clean main checkout, or kept with the reason; a usage limit stops new lanes. Repos whose tasks all touch shared files (a CHANGELOG) run one at a time, as before.

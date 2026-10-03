@@ -237,8 +237,10 @@ def cmd_task(args):
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             outside = c.scope_drift(b, files)
             if outside and not c.scope_reason_covers(b, touches, outside):
+                latest = max(outside, key=lambda f: touches.get(f, ""))  # T-0168: a reason counts after this edit
                 reasons.append(f"edited outside scope [{', '.join(b.meta.get('scope') or [])}]: {', '.join(outside[:8])}"
-                               f"; widen it (fm task set {b.id} scope=…) or say why (fm task log {b.id} \"scope: <why>\")")
+                               f"; widen it (fm task set {b.id} scope=…) or say why after your last edit of {latest} "
+                               f"(fm task log {b.id} \"scope: <why>\"; a reason logged before an edit doesn't cover it)")
             if b.type == "CLEAN" and first_edit and not b.section("Behaviour lock").strip() and not any(
                     ts <= first_edit for ts in b.ran_times()):
                 reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (fm check "

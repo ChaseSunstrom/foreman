@@ -49,6 +49,7 @@ class DiffGates(ForemanTestCase):
         self.touch("Makefile")
         p = self.fm("task", "done", "T-0001", check=False)
         self.assertIn("Makefile", p.stderr, "an earlier reason doesn't cover a later out-of-scope edit")
+        self.assertIn("after your last edit of Makefile", p.stderr)  # T-0168: and it says so
         self.fm("task", "log", "T-0001", "scope: the Makefile builds it")
         self.fm("task", "audit", "T-0001", "self", "rechecked after the Makefile edit", "ok")
         self.assertEqual(self.fm("task", "done", "T-0001", check=False).returncode, 0)
