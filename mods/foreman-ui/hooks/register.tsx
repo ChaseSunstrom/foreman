@@ -625,6 +625,50 @@ function editRow($: EngineInterface, e: ToolUseRender) {
   )
 }
 
+type AgentOut = { status?: unknown; agentType?: unknown; content?: unknown; totalToolUseCount?: unknown; totalDurationMs?: unknown; totalTokens?: unknown }
+const agentOut = (tool: string, output: unknown) =>
+  (tool === 'Agent' || tool === 'Task') && output && typeof output === 'object' &&
+  ['completed', 'async_launched'].includes(String((output as AgentOut).status))
+    ? (output as AgentOut)
+    : null
+
+/** T-0148: a subagent call as a Foreman row: its type and task, tools · time · tokens, the first line of its report
+ * (the engine drew the name on a highlighted block); a background launch says so. Null for anything else. */
+function agentRow($: EngineInterface, e: ToolUseRender) {
+  const o = agentOut(e.props.tool, e.props.output)
+  if (!o) return null
+  const input = (e.props.input ?? {}) as { subagent_type?: unknown; description?: unknown }
+  const type = clean(String(input.subagent_type ?? o.agentType ?? 'agent')).replace(/^foreman:/, '')
+  const bg = o.status === 'async_launched'
+  const report = Array.isArray(o.content) ? o.content.map(x => String((x as { text?: unknown }).text ?? '')).join('\n') : ''
+  const first = clean(report.split('\n').find(l => l.trim()) ?? '').replace(/[*_`#>]/g, '').trim()
+  const n = Number(o.totalToolUseCount) || 0
+  const meta = bg
+    ? 'in the background'
+    : [`${n} tool${n === 1 ? '' : 's'}`, elapsed(Number(o.totalDurationMs) || 0), `${Math.round((Number(o.totalTokens) || 0) / 1000)}k tokens`].join(' · ')
+  const { Box, Text } = $.ui.resolve(e)
+  return (
+    <Box flexDirection="column" key="fm-agent">
+      <Box flexDirection="row" key="fm-agent-head">
+        <Text bold color={hex(bg ? C.accent2 : C.ok)}>
+          {`${bg ? '◷' : '✓'} `}
+        </Text>
+        <Text wrap="wrap">
+          <Text color={hex(C.agent)}>{`◆ ${type} `}</Text>
+          <Text>{clean(String(input.description ?? ''))}</Text>
+          <Text color={hex(C.dim)}>{` · ${meta}`}</Text>
+        </Text>
+      </Box>
+      {!bg && first && (
+        <Text color={hex(C.dim)} wrap="truncate-end">
+          <Text color={hex(C.track)}>{'  │ '}</Text>
+          {first.slice(0, 200)}
+        </Text>
+      )}
+    </Box>
+  )
+}
+
 /** T-0145: Claude Code hot-reloads this mod only when a turn really ends, so a driven turn that changed it ends on
  * purpose and leaves a resume record; the reloaded mod (session.start runs again) starts the next turn itself, once
  * per record and only in the session the record names. */
@@ -801,6 +845,7 @@ export const register: Register = (on, options) => {
     // T-0143: a shell row draws its output, file changes, commit and timeout itself; the engine's block repeated them
     const { Box } = $.ui.resolve(e)
     if (e.props.tool === 'Bash') return <Box key="fm-shell-result" />
+    if (!e.props.isErrored && agentOut(e.props.tool, e.props.output)) return <Box key="fm-agent-result" /> // T-0148
     if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
     return <Box key="fm-edit-shown" />
   })
@@ -833,7 +878,7 @@ export const register: Register = (on, options) => {
       )
     }
     const done = !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted
-    const edited = done ? editRow($, e) : null
+    const edited = done ? editRow($, e) ?? agentRow($, e) : null
     if (edited) return edited
     if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
     const f = await read($, frame)
@@ -879,14 +924,15 @@ export const register: Register = (on, options) => {
   // A background task's notification: one Foreman line (ctrl+o still shows the engine's full row).
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     const origin = e.props.origin as { kind?: string; name?: string } | undefined
-    if (origin?.kind === 'plugin' && origin.name === 'foreman-ui' && !e.props.isExpanded) {
+    const ours = /^The foreman-ui plugin sent a message:\n/ // how the model reads it; the row may carry that text
+    if (((origin?.kind === 'plugin' && origin.name === 'foreman-ui') || ours.test(e.props.text)) && !e.props.isExpanded) {
       // T-0143 live: our own resume prompt drew as a four-line grey block; one quiet line says it
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="row" gap={1} key="fm-resumed">
           <Text color={hex(C.accent)}>↻</Text>
           <Text color={hex(C.dim)} wrap="truncate-end">
-            {clean(e.props.text.split('\n')[0] ?? '')}
+            {clean(e.props.text.replace(ours, '').split('\n')[0] ?? '')}
           </Text>
         </Box>
       )

@@ -866,6 +866,42 @@ test('the resume prompt the mod submits draws as one quiet Foreman line', async 
   await row.unmount()
 })
 
+test('a subagent call is a Foreman row: type, task, tools, time, tokens, its report\'s first line; a background one says so', async ($, on) => {
+  // T-0148: the engine drew the agent's name on a highlighted block and 'Backgrounded agent (↓ to manage …)'
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const input = { subagent_type: 'foreman:fm-reviewer', description: 'Review T-0144 guard fix', prompt: 'x' }
+  const done = { status: 'completed', agentId: 'a1', agentType: 'foreman:fm-reviewer', prompt: 'x', usage: {},
+    content: [{ type: 'text', text: '**Verdict:** changes needed.\nmore' }], totalToolUseCount: 7, totalDurationMs: 80000, totalTokens: 32400 }
+  const mount = (component: 'ToolUse' | 'ToolResult', id: string, props: object) =>
+    $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component, requestId: id, props: { tool_use_id: id, tool: 'Agent', ...props } })
+  const row = await mount('ToolUse', 'g1', { input, isRunning: false, isErrored: false, isInterrupted: false, output: done })
+  expect(await row.find({ type: 'Text', text: /fm-reviewer/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /Review T-0144 guard fix/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /7 tools · 1m 20s · 32k tokens/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /Verdict: changes needed\./ })).toBeDefined() // markdown stars dropped
+  expect(JSON.stringify(await row.drawn())).not.toContain('backgroundColor')
+  await row.unmount()
+  const res = await mount('ToolResult', 'g1', { isErrored: false, output: done })
+  expect(await res.find({ type: 'Box', key: 'fm-agent-result' })).toBeDefined()
+  await res.unmount()
+  const bg = await mount('ToolUse', 'g2', { input: { ...input, run_in_background: true }, isRunning: false, isErrored: false,
+    isInterrupted: false, output: { status: 'async_launched', agentId: 'a2', description: 'First pass', prompt: 'x', outputFile: '/tmp/o' } })
+  expect(await bg.find({ type: 'Text', text: /in the background/ })).toBeDefined()
+  await bg.unmount()
+})
+
+test('the resume prompt is one quiet line even when its origin isn\'t marked as the plugin\'s', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const text = 'The foreman-ui plugin sent a message:\nContinue the Foreman drive: the Foreman UI reloaded (T-0143)\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns.'
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage',
+    props: { text, origin: { kind: 'unclassified' }, isExpanded: false } })
+  expect(await row.find({ type: 'Box', key: 'fm-resumed' })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /UI reloaded \(T-0143\)/ })).toBeDefined()
+  await row.unmount()
+})
+
 test('another session\'s resume record starts nothing here', async ($, on) => {
   const OTHER: FmView = { ...CALM, resume_after_reload: { session: 'sess-9', at: '2026-10-03T06:30:00Z', task: 'T-0007' } }
   const { submitted } = world(on, [OTHER])
