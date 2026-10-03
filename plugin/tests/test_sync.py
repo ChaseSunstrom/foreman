@@ -184,7 +184,7 @@ class Sync(ForemanTestCase):
         # round 4 (brainstorm, security): the mirror is committed, so no secret may reach it from any older note
         p = c.find_project(self.repo)
         with open(os.path.join(p.dir, "research", "old-note.md"), "w") as f:
-            f.write("deploy with token ghp_abcdefghijklmnopqrstuvwxyz0123456789AB\n")
+            f.write("deploy with token ghp_abcdefghijklmnopqrstuvwxyz0123456789AB\n")  # pragma: allowlist secret
         self.fm("sync", "on")
         text = read_text(os.path.join(self.mirror, "research", "old-note.md"))
         self.assertNotIn("ghp_", text)

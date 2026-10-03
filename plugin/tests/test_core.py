@@ -194,17 +194,17 @@ def _hold_lock(d, ready, secs):
 
 class Redaction(unittest.TestCase):
     CASES = [
-        "export ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnop",
-        "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",
+        "export ANTHROPIC_API_KEY=sk-ant-api03-abcdefghijklmnop",  # pragma: allowlist secret
+        "token: ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345",  # pragma: allowlist secret
         "curl -H 'Authorization: Bearer abc.def.ghi' https://x",
         "password=hunter2hunter2",
-        "aws AKIAABCDEFGHIJKLMNOP",
-        "git clone https://user:s3cretpass@github.com/x/y",
-        "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----",
-        "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",
+        "aws AKIAABCDEFGHIJKLMNOP",  # pragma: allowlist secret
+        "git clone https://user:s3cretpass@github.com/x/y",  # pragma: allowlist secret
+        "-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\n-----END OPENSSH PRIVATE KEY-----",  # pragma: allowlist secret
+        "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c",  # pragma: allowlist secret
     ]
-    SECRETS = ["sk-ant-api03-abcdefghijklmnop", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", "abc.def.ghi",
-               "hunter2hunter2", "AKIAABCDEFGHIJKLMNOP", "s3cretpass", "AAAA", "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"]
+    SECRETS = ["sk-ant-api03-abcdefghijklmnop", "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ012345", "abc.def.ghi",  # pragma: allowlist secret
+               "hunter2hunter2", "AKIAABCDEFGHIJKLMNOP", "s3cretpass", "AAAA", "SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"]  # pragma: allowlist secret
 
     def test_known_secret_shapes_are_redacted(self):
         for text, secret in zip(self.CASES, self.SECRETS):

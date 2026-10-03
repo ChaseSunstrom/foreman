@@ -138,7 +138,7 @@ class Checks(unittest.TestCase):
         self.assertIn("state/x.json", d.check_git_hygiene(repo).detail)
         subprocess.run(["git", "-C", repo, "rm", "-q", "--cached", "state/x.json"], check=True)
         subprocess.run(["git", "-C", repo, "commit", "-qm", "fix"], check=True)
-        self.write("r/config.py", "API_KEY = 'sk-ant-api03-abcdefghijklmnopqrstu'\n")
+        self.write("r/config.py", "API_KEY = 'sk-ant-api03-abcdefghijklmnopqrstu'\n")  # pragma: allowlist secret
         subprocess.run(["git", "-C", repo, "add", "config.py"], check=True)
         r = d.check_git_hygiene(repo)
         self.assertEqual(r.status, "FAIL")

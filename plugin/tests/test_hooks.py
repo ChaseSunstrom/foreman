@@ -1355,7 +1355,7 @@ class MessageDisplay(HookCase):
         self.assertEqual(self.disp(1, "more text\n").stdout.strip(), "")
 
     def test_secrets_masked_on_screen(self):
-        out = parse(self.disp(3, "key is sk-ant-api03-abcdefghijklmnop\n"))["hookSpecificOutput"]["displayContent"]
+        out = parse(self.disp(3, "key is sk-ant-api03-abcdefghijklmnop\n"))["hookSpecificOutput"]["displayContent"]  # pragma: allowlist secret
         self.assertNotIn("abcdefghijklmnop", out)
 
     def test_no_badge_when_idle(self):

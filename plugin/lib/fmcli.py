@@ -373,11 +373,26 @@ def _commit_task(p, b, message):
         print(f"{b.id}: nothing to commit.")
         return
     add = subprocess.run(["git", "-C", p.root, "add", "-A", "--", *files], capture_output=True, text=True)
-    done = add.returncode == 0 and subprocess.run(["git", "-C", p.root, "commit", "-q", "-m", message],
-                                                  capture_output=True, text=True)
+    if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
+        import fmsecrets
+        leaks = fmsecrets.staged_leaks(p.root, files)
+        if leaks is None or leaks:
+            subprocess.run(["git", "-C", p.root, "reset", "-q", "--", *files], capture_output=True)
+            raise UsageError(f"{b.id} is done, but not committed: git couldn't show the staged lines to check them"
+                             if leaks is None else
+                             f"{b.id} is done, but not committed: {len(leaks)} added line(s) look like a credential (not "
+                             f"printed): " + ", ".join(f"{f}:{n} ({k})" for f, n, k in leaks[:10])
+                             + f". Remove it (and rotate a real one), or mark a test fixture's line "
+                               f"`{fmsecrets.ALLOW}`, then commit.")
+    trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
+    # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
+    done = add.returncode == 0 and subprocess.run(["git", "-C", p.root, "commit", "-q", "-m", message, *trailer, "--",
+                                                   *files], capture_output=True, text=True)
     if not done or done.returncode:
         raise UsageError(f"{b.id} is done, but the commit failed: {((done and done.stderr) or add.stderr).strip()[:300]}")
-    print(f"{b.id}: committed {c._git(p.root, 'rev-parse', '--short', 'HEAD').strip()} ({len(files)} path(s)).")
+    sha = c._git(p.root, "rev-parse", "--short", "HEAD").strip()
+    mutate(p, b.id, lambda x: x.append_log(f"committed {sha} ({len(files)} path(s))"), "commit", {"sha": sha})
+    print(f"{b.id}: committed {sha} ({len(files)} path(s)).")
 
 
 def task_prove(p, args):
@@ -1611,6 +1626,9 @@ def build_parser():
     s.add_argument("id")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
+    s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
+                                                             "(--history) git history, by place and kind, never printed")
+    s.add_argument("--history", action="store_true", help="also every commit on every branch")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
