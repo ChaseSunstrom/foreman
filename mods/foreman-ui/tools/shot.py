@@ -6,6 +6,11 @@ draw the screen, colours included, to a PNG, so a UI change can be looked at and
   shot.py keys TEXT [--enter]                  type into it: /fm, /reload-plugins, a digit for a dialog
   shot.py snap OUT.png                         the visible screen as a PNG (and OUT.txt, its plain text)
   shot.py stop
+  shot.py selftest                             checks the harness can't leak FOREMAN_* into anyone's tmux
+
+It runs on a tmux server of its own (-L fm-shot), started without FOREMAN_* in its environment: a session's
+FOREMAN_STATE is that session's alone (T-0138 fix: the first version started the user's default tmux server from a
+shell that had FOREMAN_STATE set, and the server's global environment handed it to every later session).
 
 Local commands only (/fm, /reload-plugins): nothing here sends the model a prompt.
 """
@@ -17,20 +22,22 @@ import sys
 import unicodedata
 
 SESSION = "fmui"
+SOCKET = "fm-shot"
+CLEAN = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_") and k != "TMUX"}
 MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FG, BG = (208, 208, 208), (24, 26, 33)  # the terminal's default colours
 
 
 def tmux(*args, check=True):
-    return subprocess.run(["tmux", *args], capture_output=True, text=True, check=check)
+    return subprocess.run(["tmux", "-L", SOCKET, *args], capture_output=True, text=True, check=check, env=CLEAN)
 
 
-def start(a):
+def start(a, cmd=None):
     tmux("kill-session", "-t", SESSION, check=False)
     env = ["-e", "COLORTERM=truecolor"] + (["-e", f"FOREMAN_STATE={os.environ['FOREMAN_STATE']}"]
                                           if os.environ.get("FOREMAN_STATE") else [])
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
-         f"claude --plugin-dir {MOD}")
+         cmd or f"claude --plugin-dir {MOD}")
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
 
 
@@ -169,9 +176,21 @@ def main():
     s = sub.add_parser("snap")
     s.add_argument("out")
     sub.add_parser("stop")
+    sub.add_parser("selftest")
     a = ap.parse_args()
     if a.cmd == "stop":
         tmux("kill-session", "-t", SESSION, check=False)
+    elif a.cmd == "selftest":
+        start(argparse.Namespace(dir=".", cols=80, rows=24), cmd="sleep 30")
+        server = tmux("show-environment", "-g").stdout
+        session = tmux("show-environment", "-t", SESSION).stdout
+        tmux("kill-server", check=False)
+        leaked = [ln for ln in server.splitlines() if ln.startswith("FOREMAN_")]
+        if leaked:
+            sys.exit(f"FAIL: the harness server's global environment has {leaked}")
+        if os.environ.get("FOREMAN_STATE") and "FOREMAN_STATE=" not in session:
+            sys.exit("FAIL: the harness session lost its FOREMAN_STATE")
+        print("ok: FOREMAN_* only in the harness session, never the server")
     else:
         {"start": start, "keys": keys, "snap": snap}[a.cmd](a)
 
