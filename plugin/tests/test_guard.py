@@ -288,6 +288,17 @@ class Core(GuardCase):
     def test_bash_write_to_core(self):
         self.assertBlocked(self.bash("sed -i 's/x/y/' {fhome}/plugin/hooks/hooks.json"), "core")
 
+    def test_replay_found_false_positives(self):
+        # T-0190 (found by fm replay): a variable's own name became a guess, and rm ignored a literal set before a pipe
+        state = os.path.join(self.fhome, "state", "projects", "x")
+        self.assertIsNone(self.bash("S=/tmp/sx; cat > $S/notes.md <<'EOF'\nbody\nEOF\nls | head", cwd=state))
+        self.assertIsNone(self.bash("S=/tmp/sx && rm -rf $S/pre && mkdir -p $S/pre && ls | head"))
+        self.run_table([
+            ("S=~ && rm -rf $S/x && ls | head", "rm-outside"),  # a tilde stays unknown
+            ("S=/tmp/sx; for i in 1; do S=~; done; rm -rf $S", "rm-outside"),  # set twice
+            ("S=/tmp/sx; printf -v S %s ~; ls | head; rm -rf $S", "rm-outside"),  # set by a builtin
+        ], self.bash)
+
     def test_guesses_come_from_the_command_and_pair_up(self):
         # T-0183: T-0182's sync loop was blocked state-direct: a literal set before the loop counted as unknown, and the
         # word 'state' from fm's own text was guessed into both unknown parts (<fhome>/state/<fhome>/state)

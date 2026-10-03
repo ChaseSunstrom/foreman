@@ -1094,7 +1094,8 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
     elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
                  or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
         return found  # only names it neither sets nor inherits: nothing in it says where they point
-    raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(shell)) if not _unresolvable(w)]
+    text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)  # T-0190: a variable's name is no guess, its value is
+    raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
     if _unresolvable(t):
         # T-0183: words as written, one per unknown part, the first two paired (a word in every part guessed
         # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after
@@ -1203,8 +1204,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
     (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
-    if env is None and bare is not None:  # T-0183: a literal set once before the branches is known in them
-        outside = {**outside, **_prefix_vars(shell, cmds)}
+    fixed = _prefix_vars(shell, cmds) if env is None and bare is not None else {}  # T-0183: set once before the
+    outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
         if env is not None:
@@ -1285,7 +1286,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
-        found += _check_rm(name, [_with_vars(a, env) for a in args] if env else args, via_xargs, chain, cwd, ctx)
+        rm_vars = env or fixed  # T-0190: a literal set once before a branch holds for rm as for a write
+        found += _check_rm(name, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
         found += _check_git(name, args, cwd, ctx)
         found += _check_system(name, args)
         found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")

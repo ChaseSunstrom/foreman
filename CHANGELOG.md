@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard (T-0190, the first two findings of `fm replay`): a variable's own name is no longer a guess for an unknown target (`S=…; cat > $S/x` guessed `S/x`), and `rm` takes a literal set once before a branch (`S=<scratch> && rm -rf $S/x … | …` no longer reads as outside the project). The replay showed exactly that one real command flipping.
 - `fm replay` (T-0189, brainstorm round 4's top idea): the guard replayed on the real shell commands of recent sessions, reporting what a guard change now blocks (likely false positives) or lets through (possible bypasses) against the accepted run; a gate whenever the guard changes. Its first run (5000 commands, 7 s) found two false positives, captured as T-0190.
 - Guard (T-0183, found blocking this session's own sync loop): `D=<dir>; for f in …; do cp src/$f $D/$f; done` no longer reads as a write to Foreman state. A literal set once before a branch is known inside it; unknown-target guesses take only the command's own words (not the text of fm's arguments) and pair the first two unknown parts instead of repeating one word.
 - foreman-ui dashboard (T-0181): matches the chat's panels: header and controls are panels, cards share a quiet grey border with colour only in their headings, steps and done-when criteria line up under labels, audits are a bar; with the dashboard open, the band under the chat no longer repeats the task and only appears for something that needs you.

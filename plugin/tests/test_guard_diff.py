@@ -52,7 +52,10 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          # T-0175: a chain joined only by && is read in order too
          'D=x && D=~ && rm -rf "$D"', 'D=~ && D=/tmp/x true && rm -rf "$D"', 'D=/tmp/x&&D=~&&rm -rf "$D"',
          'D=~ && D=/tmp/x 2>/dev/null && rm -rf "$D"', 'D=/tmp/x && cd ~ && rm -rf "$PWD"',
-         'D=/tmp/x && D=~ & wait; rm -rf "$D"', 'D=~ && D=/tmp/x || true && rm -rf "$D"']
+         'D=/tmp/x && D=~ & wait; rm -rf "$D"', 'D=~ && D=/tmp/x || true && rm -rf "$D"',
+         # T-0190: rm takes a literal set before a branch only when nothing else can set it
+         'D=x; for i in 1; do D=~; done; rm -rf "$D"', 'D=~; true | cat; rm -rf "$D"',
+         'D=x; true | cat; printf -v D %s ~; rm -rf "$D"', 'D=x; echo ~ | while read D; do rm -rf "$D"; done']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
