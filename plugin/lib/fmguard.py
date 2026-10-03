@@ -5,6 +5,7 @@ active brief's `allow:` lists its category. `state-direct` is never authorizable
 exception as a block (fail closed). This is a speed bump with good coverage, not a sandbox: shell
 text can always be obfuscated; deny rules and git are the other layers.
 """
+import collections
 import os
 import re
 import shlex
@@ -1051,6 +1052,28 @@ def _possible(path):
     return True
 
 
+GUESS_WORDS = 48  # ponytail: words tried per unknown part (two parts: their pairs); a longer command is guessed this far
+
+
+def _prefix_vars(shell, cmds):
+    """T-0183: NAME=literal values a branchy command sets in its straight top-level prefix (the commands before its
+    first branch, pipe, subshell, group or keyword run first, in this shell), for names written bare nowhere else in
+    it; {} when nothing qualifies. Only where no builtin can set names indirectly (the caller checks)."""
+    s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell)
+    cut = next((m.start() for m in re.finditer(r"&&|\|\|?|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
+                                                r"done|case|esac|select|function|coproc)\b", s) if m.group(0) != "&&"), len(s))
+    ends = [m.start() for m in re.finditer(r";|\n|&&", s[:cut])]
+    prefix = shell[:ends[-1]] if ends and cut < len(s) else ""
+    raw = _raw_cmds(prefix) if prefix and _straight_line(prefix) else None
+    env = {}
+    for words in raw or []:
+        env = _track_vars(words, env)
+        if env is None:
+            return {}
+    counts = collections.Counter(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
+    return {k: v for k, v in env.items() if counts[k] == 1}
+
+
 def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note=""):
     """(category, detail) for one write target, through the variables known here (T-0175: a target with a $ in it was
     skipped), in every place the shell may be. A resolved one is named by its path, so a standing or trusted yes covers
@@ -1071,11 +1094,19 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
     elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
                  or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
         return found  # only names it neither sets nor inherits: nothing in it says where they point
-    words = [p for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(shell)) if not _unresolvable(w)
-             for p in dict.fromkeys(_resolve(_expand(w, ctx), b) for b in here)]
+    raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(shell)) if not _unresolvable(w)]
     if _unresolvable(t):
-        guesses = [_resolve(_expand(_PART.sub(lambda _, w=w: w, t), ctx), b) for w in words for b in here]
+        # T-0183: words as written, one per unknown part, the first two paired (a word in every part guessed
+        # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after
+        raw, pair = raw[:GUESS_WORDS], len(list(_PART.finditer(t))) > 1
+        guesses = []
+        for a in raw:
+            for b in raw if pair else [None]:
+                vals = iter((a, b))
+                guess = _PART.sub(lambda _: next(vals, None) or "x", t)
+                guesses += [_resolve(_expand(guess, ctx), base) for base in here]
     else:  # relative, somewhere a cd went that the guard couldn't follow: only a folder that exists takes a cd
+        words = [p for w in raw for p in dict.fromkeys(_resolve(_expand(w, ctx), b) for b in here)]
         guesses = [os.path.join(w, x, _expand(t, ctx)) for w in words for x in lost if os.path.isdir(os.path.join(w, x))]
     for path in dict.fromkeys(guesses):
         if _possible(path):
@@ -1172,6 +1203,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
     (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
+    if env is None and bare is not None:  # T-0183: a literal set once before the branches is known in them
+        outside = {**outside, **_prefix_vars(shell, cmds)}
+    scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
         if env is not None:
             env = _track_vars(raw[idx], env)
@@ -1228,9 +1262,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
             found.append(("system", "git with core.hooksPath set through the environment"))
         for target in c.redirs + _write_targets(name, args) + git_env:
-            found += _target_cats(target, known, bare, cwds, lost, shell, ctx, classify_write)
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_write)
         for target in _tree_targets(name, args) + git_env:
-            found += _target_cats(target, known, bare, cwds, lost, shell, ctx, classify_tree,
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,
                                   " (a tree write over it)")
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args

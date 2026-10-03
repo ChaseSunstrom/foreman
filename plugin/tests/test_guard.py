@@ -288,6 +288,20 @@ class Core(GuardCase):
     def test_bash_write_to_core(self):
         self.assertBlocked(self.bash("sed -i 's/x/y/' {fhome}/plugin/hooks/hooks.json"), "core")
 
+    def test_guesses_come_from_the_command_and_pair_up(self):
+        # T-0183: T-0182's sync loop was blocked state-direct: a literal set before the loop counted as unknown, and the
+        # word 'state' from fm's own text was guessed into both unknown parts (<fhome>/state/<fhome>/state)
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        at_home = lambda cmd: self.bash(cmd, cwd=self.fhome)
+        self.run_table([
+            ("D=/tmp/dev/ui; for f in a.tsx b.tsx; do cp src/$f $D/$f; done; fm task log T-1 'a resting state'", None),
+            ("D=$(pwd); for f in a; do cp x $D/$f; done; fm task log T-1 'state'", None),  # fm's text gives no guess
+            ("D={fhome}/plugin/lib; for f in a; do echo hi > $D/fmguard.py; done", "core"),  # known before the loop
+            ("for a in plugin; do for b in lib/fmguard.py; do echo hi > $a/$b; done; done", "core"),  # parts pair up
+            ("D=/tmp/x; for f in a; do D={fhome}/plugin/lib; echo hi > $D/fmguard.py; done", "core"),  # set twice
+            ("D=/tmp/x; eval 'D={fhome}/plugin/lib'; for f in a; do echo hi > $D/fmguard.py; done", "core"),
+        ], at_home)
+
     def test_a_standing_or_trusted_yes_covers_plain_paths_only(self):
         # T-0180 (self-improvement pass 3): a relative shell write was named as typed, so a standing yes never covered
         # it; and an annotated detail sat string-wise under lib/, so a standing yes covered a script writing the guard
