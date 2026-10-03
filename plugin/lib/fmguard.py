@@ -335,7 +335,7 @@ def _strip_comments(text):
             q = None if ch == q else q
         elif ch in "'\"":
             q = ch
-        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|()<>"):
+        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):  # after ) it may end a $(…) word (T-0163)
             i = text.find("\n", i)
             if i < 0:
                 break
