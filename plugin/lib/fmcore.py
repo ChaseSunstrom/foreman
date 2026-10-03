@@ -219,6 +219,22 @@ def git_head(root):
     return r.stdout.strip() or None
 
 
+def trust_path():
+    """T-0120: the trust record. Only the foreman-ui mod's /fm-trust, typed by the user, writes it (straight to disk, not
+    a tool call); it lives in Foreman state, which no tool call may write, and fm can only remove it."""
+    return os.path.join(state_dir(), "trust.json")
+
+
+def trusted():
+    """The trust record's {"on": true, "at": …}, or None."""
+    try:
+        with open(trust_path(), encoding="utf-8") as f:
+            rec = json.load(f)
+        return rec if isinstance(rec, dict) and rec.get("on") is True else None
+    except (OSError, ValueError):
+        return None
+
+
 def task_base(root, b):
     """Where a task's own changes start (T-0078): the snapshot of the working files taken at focus, so uncommitted
     work from before the task isn't its change (no commit needed); else its start commit. None when neither exists

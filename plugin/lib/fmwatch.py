@@ -246,7 +246,8 @@ def view(p):
     lat = [ms for vals in d["latency"].values() for ms in vals]
     return {
         "v": 1, "project": p.slug, "root": p.root,
-        "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"])},
+        "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"]),
+                 "trust": bool(c.trusted()), "standing": sorted(meta.get("standing") or {})},
         "active": active,
         "next": c.plain(c.next_for(p, briefs)[2]),
         "queue": [item(s) for s in sd["queue"]][:20],
@@ -255,6 +256,7 @@ def view(p):
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "closed": [{"id": b.id, "status": b.status} for b in closed],
         "today_done": today_done,
+        "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         "typical": typical(events),
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),

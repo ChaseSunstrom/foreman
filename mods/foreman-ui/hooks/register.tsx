@@ -458,6 +458,10 @@ export const register: Register = (on, options) => {
   mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
+    await $.command.register({
+      name: 'fm-trust',
+      description: 'Foreman: let Claude edit the guard and Claude Code settings (on | off); works only when you type it',
+    })
     const stored = await $.store.get('sound').catch(() => undefined)
     if (stored === false) await update($, sound, () => false)
     await refresh($)
@@ -476,6 +480,24 @@ export const register: Register = (on, options) => {
     await refresh($)
     const opened = await openPane($, true)
     return { text: opened.isPlaced ? 'Foreman pane opened.' : `Foreman pane: ${opened.reason}` }
+  })
+
+  // T-0120: only the person's own Enter (or their phone, via the bridge) turns trust on; a prompt the agent scheduled, a
+  // skill call or another plugin's run is refused. On writes the record into Foreman state straight from here (no tool
+  // call may write there, and fm has no "on"); fm trust then records it in the ledger, and off is fm's.
+  on('command.run', { command: 'fm-trust' }, async ($, e) => {
+    const kind = e.origin?.kind
+    if (kind !== 'composer' && kind !== 'bridge') return { text: 'Foreman: /fm-trust works only when you type it.' }
+    const arg = e.args.trim()
+    if (arg === 'on') {
+      const home = (await $.env.get('CLAUDE_CONFIG_DIR')) ?? `${(await $.env.get('HOME')) ?? ''}/.claude`
+      const path = (await read($, view))?.trust_file ?? `${home}/foreman/state/trust.json`
+      await $.fs.write(path, JSON.stringify({ on: true, at: new Date(await $.clock.now()).toISOString().slice(0, 19) + 'Z', via: kind }))
+    }
+    const r = await run($, ['trust', ...(arg === 'off' ? ['off'] : [])])
+    isDirty = true
+    await refresh($)
+    return { text: `${r.stdout.trim() || r.stderr.trim()}`.split('\n').at(-1) ?? '' }
   })
 
   on('turn.start', async ($, e, next) => {
@@ -685,7 +707,7 @@ export const register: Register = (on, options) => {
     const bgs = await read($, shells)
     const doneSince = await read($, away)
     const idle = !a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0)
-    if (idle && !bgs.length && !doneSince.length) return next(e)
+    if (idle && !bgs.length && !doneSince.length && !v.mode?.trust) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
     const f = working || bgs.length ? await read($, frame) : null
@@ -772,6 +794,11 @@ export const register: Register = (on, options) => {
               </Text>
             )}
           </Box>
+        )}
+        {m?.trust && (
+          <Text color={hex(C.warn)} wrap="truncate-end" key="fm-band-trust">
+            ⚠ trust on: Claude may edit the guard and Claude Code settings · /fm-trust off
+          </Text>
         )}
         {doneSince.length > 0 && (
           <Text color={hex(C.ok)} wrap="truncate-end" key="fm-band-away">

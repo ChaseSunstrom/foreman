@@ -22,12 +22,13 @@ DEFAULT_BRANCHES = {"main", "master", "trunk"}
 # when the rest of the library is broken, and dataclasses would cost every hook ~9 ms of import.
 class Ctx:
     def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
-                 state_fallbacks=(), standing=()):
+                 state_fallbacks=(), standing=(), trusted=False):
         self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
         self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
         self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
         self.standing = set(standing)  # T-0119: the project's standing yeses (core only)
+        self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
 
 
 class Block:
@@ -54,7 +55,8 @@ def check(tool_name, tool_input, ctx, found=None):
     for cat in CATEGORIES:
         for got, detail in found:
             if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
-                if got == "core" and "core" in ctx.standing and _standing_covers(detail, ctx):
+                if got == "core" and ("core" in ctx.standing and _standing_covers(detail, ctx)
+                                      or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
                 return Block(got, detail)
     if sum(1 for got, _ in found if got == "plugin") > 1:  # a plugin yes is used up by one change (fmhooks)
@@ -181,6 +183,15 @@ def _standing_covers(path, ctx):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
     return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
         _strictly_under(path, os.path.join(fh, "plugin", d)) for d in ("lib", "bin", "hooks", "evals"))
+
+
+def _trust_covers(path, ctx):
+    """/fm-trust on (T-0120) covers every core file, the guard and Claude Code settings included; never Foreman state
+    (only fm writes it) or a whole-tree write."""
+    if not isinstance(path, str) or not path.startswith("/") or " (a tree write" in path:
+        return False
+    states = [os.path.join(ctx.foreman_home, "state"), ctx.state_dir, *ctx.state_fallbacks]
+    return not any(d and _under(path, d) for d in states)
 
 
 _SHELL_RC = {".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",

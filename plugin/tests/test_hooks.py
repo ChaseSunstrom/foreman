@@ -493,6 +493,58 @@ class PromptApprovals(HookCase):
         self.assertIn("core", self.allow())
 
 
+class Trust(HookCase):
+    """T-0120: /fm-trust, typed by the user, lets Claude edit the guard and Claude Code settings; never the agent."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.tid = self.task()
+
+    def bash(self, cmd):
+        return self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}})
+
+    def write(self, path):
+        return self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x"}})
+
+    def trust_file(self):
+        return os.path.join(self.home, "state", "trust.json")
+
+    def test_the_agent_cannot_turn_trust_on(self):
+        # fm has no "on" (only the mod's /fm-trust, typed by the user, writes the record), and the record is Foreman
+        # state, which no tool call may write (T-0120 review: no forgeable marker left to spell around)
+        p = self.fm("trust", "on", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(self.write(self.trust_file()).returncode, 2)
+        for cmd in (f"echo '{{\"on\": true}}' > {self.trust_file()}", f"tee {self.trust_file()} < /dev/null",
+                    f"cp /tmp/x {self.trust_file()}"):
+            self.assertEqual(self.bash(cmd).returncode, 2, cmd)
+        self.assertEqual(self.bash("fm trust off").returncode, 0, "turning it off is always fine")
+        self.assertEqual(self.bash("fm trust").returncode, 0)
+
+    def test_trusted_the_guard_and_settings_are_editable_and_state_never(self):
+        guard = os.path.join(self.home, "plugin", "lib", "fmguard.py")
+        settings = os.path.join(self.tmp, "u", ".claude", "settings.json")
+        self.assertEqual(self.write(guard).returncode, 2)
+        self.assertEqual(self.write(settings).returncode, 2)
+        with open(self.trust_file(), "w") as f:  # what the mod's /fm-trust on writes
+            json.dump({"on": True, "at": "2026-10-03T05:00:00Z"}, f)
+        self.assertIn("Trust on", self.fm("trust").stdout)
+        self.assertEqual(self.write(guard).returncode, 0)
+        self.assertEqual(self.write(settings).returncode, 0)
+        self.assertEqual(self.write(os.path.join(self.home, "state", "x.json")).returncode, 2, "state: only through fm")
+        self.assertIn("Trust: on", self.ctx_of(self.hook("SessionStart", {"source": "startup"})))
+        v = json.loads(self.fm("ui", "--json").stdout)
+        self.assertTrue(v["mode"]["trust"])
+        self.assertEqual(v["trust_file"], self.trust_file())
+        self.fm("trust", "off")
+        self.assertFalse(os.path.exists(self.trust_file()))
+        self.assertEqual(self.write(guard).returncode, 2)
+        kinds = [e["event"] for e in c.ledger_tail(self.project())]
+        self.assertIn("trust_on", kinds)
+        self.assertIn("trust_off", kinds)
+
+
 class PluginPins(HookCase):
     """T-0036: a yes to install or enable a plugin names the plugin, and holds only for the content it saw."""
 

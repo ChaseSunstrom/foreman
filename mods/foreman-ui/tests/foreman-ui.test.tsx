@@ -654,3 +654,27 @@ test('a subagent the engine no longer lists leaves; a quiet one shows how long a
   expect(await pane.find({ key: 'stop-ag2' })).toBeUndefined()
   await pane.unmount()
 })
+
+test('/fm-trust works only when the person types it; it writes the trust record itself; the band warns', async ($, on) => {
+  // T-0120: no tool call may write Foreman state and fm has no "on": the typed command is the only way in
+  const { calls } = world(on, [{ ...CALM, mode: { ...CALM.mode!, trust: true }, trust_file: '/h/foreman/state/trust.json' }])
+  const written: { path: string; text: string }[] = []
+  on('fs.write', async ($, e) => {
+    written.push({ path: e.path, text: e.text })
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const presentation = { isFullscreen: false, columns: 120 }
+  const refused = await $.command.run({ command: 'fm-trust', args: 'on', origin: { kind: 'scheduled-trigger' }, presentation })
+  expect(refused.text).toMatch(/only when you type it/)
+  expect(written).toEqual([])
+  await $.command.run({ command: 'fm-trust', args: 'on', origin: { kind: 'composer' }, presentation })
+  expect(written.map(w => w.path)).toEqual(['/h/foreman/state/trust.json'])
+  expect(JSON.parse(written[0]!.text)).toMatchObject({ on: true, via: 'composer' })
+  expect(calls.some(c => c[1] === 'trust' && c.length === 2)).toBe(true) // fm trust: records it in the ledger
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /trust on: Claude may edit the guard and Claude Code settings/ })).toBeDefined()
+  await ui.unmount()
+  await $.command.run({ command: 'fm-trust', args: 'off', origin: { kind: 'composer' }, presentation })
+  expect(calls.at(-2)).toEqual(['fm', 'trust', 'off'])
+})

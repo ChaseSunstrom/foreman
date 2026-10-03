@@ -28,7 +28,7 @@ export type FmView = {
   v: number
   project: string | null
   root?: string
-  mode?: { autonomy: string; drive: boolean; sensitive: boolean }
+  mode?: { autonomy: string; drive: boolean; sensitive: boolean; trust?: boolean; standing?: string[] }
   active?: FmActive | null
   next?: string | null
   queue?: FmItem[]
@@ -42,6 +42,7 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }

@@ -837,6 +837,30 @@ def cmd_ask(args):
         f"message decides: a reply starting with yes grants it, anything else cancels it.")
 
 
+def cmd_trust(args):
+    """T-0120: whether Claude may edit the guard and Claude Code settings. Only the foreman-ui mod's /fm-trust on,
+    typed by the user (its command.run checks the origin), turns it on, by writing the trust record into Foreman state
+    itself; no tool call may write there, and fm has no "on". Off removes it, from anywhere. Status records each new
+    trust in the ledger (the mod asks right after writing it)."""
+    p = resolve(args)
+    rec = c.trusted()
+    if args.state == "off" and rec:
+        os.remove(c.trust_path())
+        c.log_event(p, "trust_off", session=session())
+        rec = None
+    elif rec:
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            if meta.get("trust_seen") != rec.get("at"):
+                meta["trust_seen"] = rec.get("at")
+                c.write_meta(p, meta)
+                c.log_event(p, "trust_on", data={"at": rec.get("at")}, session=session())
+    return out(args, {"trust": bool(rec)},
+               "Trust on: Claude may edit the guard and Claude Code settings (Foreman state only through fm); "
+               "/fm-trust off or fm trust off ends it." if rec else
+               "Trust off: the guard and Claude Code settings need your yes per task (/fm-trust on, typed by you).")
+
+
 def cmd_standing(args):
     """T-0119: show the project's standing yeses, or turn them off. Turning on happens only through the user's answer
     to `fm ask ID core --standing` in Claude Code's permission prompt."""
@@ -1401,6 +1425,9 @@ def build_parser():
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
     s.add_argument("--standing", action="store_true",
                    help="core only: the yes covers every later task in this project until fm standing off")
+
+    s = add("trust", cmd_trust, help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
+    s.add_argument("state", nargs="?", choices=["off"])
 
     s = add("standing", cmd_standing, help="the project's standing yeses (fm ask … core --standing); off revokes them")
     s.add_argument("state", nargs="?", choices=["off"])

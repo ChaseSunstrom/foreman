@@ -195,12 +195,18 @@ def _sync_import(p):
         res["conflicts"] else None
 
 
+def _grants_note(meta):
+    return ((" Standing yes: core (Foreman's code; fm standing off revokes)." if "core" in (meta.get("standing") or {})
+             else "") + (" Trust: on (Claude may edit the guard and Claude Code settings; /fm-trust off ends it)."
+                         if c.trusted() else ""))
+
+
 def session_context(p, sd, other_note=None):
     a = sd["active"]
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
             + (" Autonomy: full." if sd.get("autonomy") == "full" else "")
-            + (" Standing yes: core (Foreman's code; fm standing off revokes)." if "core" in (c.read_meta(p).get("standing") or {}) else "")
+            + _grants_note(c.read_meta(p))
             + (f" State: fallback {c.state_dir()} (fm doctor)." if c.fallback_marker() else "")]
     focus, resume = [], []
     if a:
@@ -677,14 +683,14 @@ def _guard_ctx(pl, fmguard):
             log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
     try:
-        standing = set(c.read_meta(p).get("standing") or {}) if p else set()
+        meta = c.read_meta(p) if p else {}
     except Exception:
-        standing = set()  # unreadable: no standing yes, the guard asks as before
+        meta = {}  # unreadable: no standing yes or trust, the guard asks as before
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(),
                       state_fallbacks=c.state_fallbacks(), scratch=scratch,
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None,
-                      standing=standing)
+                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
     return ctx, p, act
 
 
