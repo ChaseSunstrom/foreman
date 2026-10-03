@@ -179,11 +179,20 @@ def _is_core(path, ctx):
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
 
 
+def _plain_path(detail):
+    """T-0180: the one file a finding names, for a standing or trusted yes to cover: the path itself, or written from
+    interpreter code; None for anything else (a tree write, a target not known before it runs, a relative path)."""
+    if not isinstance(detail, str):
+        return None
+    path = detail.removesuffix(" (written from interpreter code)")
+    return path if path.startswith("/") and " (" not in path else None
+
+
 def _standing_covers(path, ctx):
     """A standing core yes (T-0119) covers Foreman's own code, rules, evals and spec; never this guard file, Claude
     Code's settings or Foreman state, which still ask each time."""
-    fh = ctx.foreman_home
-    if not isinstance(path, str) or not path.startswith("/") or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
+    fh, path = ctx.foreman_home, _plain_path(path)
+    if path is None or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
     return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
         _strictly_under(path, os.path.join(fh, "plugin", d)) for d in ("lib", "bin", "hooks", "evals"))
@@ -192,7 +201,8 @@ def _standing_covers(path, ctx):
 def _trust_covers(path, ctx):
     """/fm-trust on (T-0120) covers every core file, the guard and Claude Code settings included; never Foreman state
     (only fm writes it) or a whole-tree write."""
-    if not isinstance(path, str) or not path.startswith("/") or " (a tree write" in path:
+    path = _plain_path(path)
+    if path is None:
         return False
     states = [os.path.join(ctx.foreman_home, "state"), ctx.state_dir, *ctx.state_fallbacks]
     return not any(d and _under(path, d) for d in states)
@@ -1040,7 +1050,7 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
     if not _unresolvable(t):
         e = _expand(t, ctx)
         for path in dict.fromkeys(_resolve(e, b) for b in ([ctx.cwd] if os.path.isabs(e) else cwds)):
-            found += [(cat, f"{path if t != target else target}{note}") for cat in classify(path, ctx)]
+            found += [(cat, f"{path}{note}") for cat in classify(path, ctx)]  # T-0180: its real path, as Edit's
             found += [(cat, f"{p}{note}") for p in _expansions(path) if p != path for cat in classify(p, ctx)]
         if os.path.isabs(e) or not lost:
             return found

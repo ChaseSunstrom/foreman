@@ -288,6 +288,26 @@ class Core(GuardCase):
     def test_bash_write_to_core(self):
         self.assertBlocked(self.bash("sed -i 's/x/y/' {fhome}/plugin/hooks/hooks.json"), "core")
 
+    def test_a_standing_or_trusted_yes_covers_plain_paths_only(self):
+        # T-0180 (self-improvement pass 3): a relative shell write was named as typed, so a standing yes never covered
+        # it; and an annotated detail sat string-wise under lib/, so a standing yes covered a script writing the guard
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+
+        def run(cmd, **kw):
+            ctx = g.Ctx(cwd=self.fhome, project_root=None, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                        task_id="T-0007", **kw)
+            return g.check("Bash", {"command": self.sub(cmd)}, ctx)
+        self.assertIsNone(run("sed -i s/a/b/ plugin/lib/fmcore.py", standing={"core"}))
+        for cmd in ("sed -i s/a/b/ plugin/lib/fmguard.py",
+                    "python3 - <<'PY'\nopen('{fhome}/plugin/lib/fmguard.py', 'w').write('x')\nPY",
+                    "python3 -c \"open('{fhome}/plugin/lib/fmguard.py', 'w')\"",
+                    "x=$(cat f); echo hi > {fhome}/plugin/lib/$x",
+                    "cp -r /tmp/a {fhome}/plugin"):  # a tree write over the folder holding the guard
+            self.assertBlocked(run(cmd, standing={"core"}), "core", cmd)
+        self.assertIsNone(run("cp -r /tmp/a {fhome}/plugin/lib/sub", standing={"core"}))  # one place, not the guard
+        self.assertIsNone(run("sed -i s/a/b/ plugin/lib/fmguard.py", trusted=True))
+        self.assertBlocked(run("cp -r /tmp/a {fhome}/plugin", trusted=True), "core")
+
     def test_glob_and_brace_targets_are_checked(self):
         # T-0177: a target was classified as written; bash expands a glob to the existing file and braces to each word
         lib = os.path.join(self.fhome, "plugin", "lib")
