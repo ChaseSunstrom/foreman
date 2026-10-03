@@ -727,6 +727,20 @@ class AutoEvidence(HookCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": ok})
         self.assertEqual(len(c.find_brief(self.project(), tid).evidence()), n, "other commands record nothing")
 
+    def test_a_passing_criterion_check_also_verifies_the_current_step(self):
+        # T-0149 (self-improvement pass 1): it was tagged (ac N) only, so the Stop gate kept asking for step evidence
+        self.fm("init")
+        tid = self.task()
+        self.fm("task", "ac", tid, "add", "slow login passes", "--verify", "pytest -k slow")
+        self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "pytest -k slow"},
+                                         "error": "Exit code 1\n1 failed"})
+        self.assertFalse(c.find_brief(self.project(), tid).has_evidence(step=1), "a failing run verifies nothing")
+        ok = {"stdout": "3 passed", "stderr": "", "interrupted": False}
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest -k slow"}, "tool_response": ok})
+        self.assertTrue(c.find_brief(self.project(), tid).has_evidence(step=1))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step 1 is done: the test passes."})
+        self.assertNotIn("no recorded verification evidence", p.stdout)
+
 
 class PreToolUse(HookCase):
     def pre(self, tool, tool_input):

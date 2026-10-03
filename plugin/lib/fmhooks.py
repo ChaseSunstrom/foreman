@@ -1005,8 +1005,12 @@ def _auto_evidence(pl, p, ok):
         b = c.find_brief(p, act.id)
         for n in hits:
             b.add_evidence(cmd, result, ac=n, tree=tree, ran=True)
+        cur = b.current_step()
+        step = cur.n if code == 0 and cur and not b.has_evidence(step=cur.n) else None
+        if step:  # T-0149: a passing criterion check verifies the step it ran in (the Stop gate asks per step)
+            b.add_evidence(cmd, result, step=step, tree=tree, ran=True)
         c.save_brief(p, b)
-        c.log_event(p, "evidence", task=b.id, data={"ac": hits, "cmd": cmd[:200], "auto": True},
+        c.log_event(p, "evidence", task=b.id, data={"ac": hits, "step": step, "cmd": cmd[:200], "auto": True},
                     session=pl.get("session_id"))
 
 
