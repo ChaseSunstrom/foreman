@@ -252,7 +252,15 @@ test('pane is organized cards; a waiting plan shows what a yes approves, and its
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...PANE })
     for (const key of ['card-task', 'card-queue', 'card-inbox', 'card-activity']) expect(await ui.find({ key })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /▸ 2\. raise the timeout/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /○ AC1 slow wifi logs in/ })).toBeDefined()
+    // T-0181: 'the AC and audits thing not matching': criteria in the steps' column under their own label
+    expect(await ui.find({ type: 'Text', text: /○ 1\. slow wifi logs in/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'done when' })).toBeDefined()
+    expect(await ui.find({ key: 'fm-pane-audits' })).toBeDefined()
+    // 'the top of the panels with foreman etc look weird and the buttons aren't pannelled': both are panels; cards
+    // are quiet grey like the chat's, the task card in the accent
+    expect((await ui.find({ key: 'fm-pane-head' }))?.props.borderStyle).toBe('round')
+    expect((await ui.find({ key: 'fm-pane-controls' }))?.props.borderStyle).toBe('round')
+    expect((await ui.find({ key: 'card-inbox' }))?.props.borderColor).toBe(hex(C.dim))
     expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /csv module vs pandas: csv module/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /write the exporter/ })).toBeDefined()
@@ -946,7 +954,18 @@ test('with the pane open the band stops repeating it; trust is a word beside the
   expect(await ui.find({ type: 'Text', text: /queued/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: /^→ / })).toBeUndefined()
   expect(await ui.find({ type: 'Button', text: 'dashboard' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /T-0007/ })).toBeDefined() // the task line stays
+  // T-0181: 'the dashboard is duplicated at the bottom of the chat even though there's a pannel on the top right'
+  expect(await ui.find({ key: 'fm-band' })).toBeUndefined() // nothing the open dashboard doesn't show
+  await ui.unmount()
+})
+
+test('with the dashboard open, the band only says what needs the person', async ($, on) => {
+  const { panes } = world(on, [VIEW]) // a plan waits for a yes
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  panes.shown = true
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ key: 'fm-band-head' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /plan awaits approval/ })).toBeDefined()
   await ui.unmount()
 })
 
