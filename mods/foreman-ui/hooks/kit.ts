@@ -270,7 +270,7 @@ export function agentColor(id: string): number {
 export type Tone = 'err' | 'warn' | 'ok' | 'plain'
 const ANSI = /\u001b\[[0-9;:]*[A-Za-z]/g
 export function tone(line: string): Tone {
-  if (/\b0 (?:errors?|failures?|failed)\b/i.test(line)) return 'ok'
+  if (/\b0 (?:errors?|fail(?:s|ed|ures?)?)\b/i.test(line)) return 'ok' // ' 0 fail' read as a failure (live render)
   if (/\b(?:error|errors|failed|failure|failures|fatal|panic(?:ked)?|traceback|exception)\b|✗|✘|\bFAIL\b/i.test(line)) return 'err'
   if (/\bwarn(?:ing)?s?\b|⚠/i.test(line)) return 'warn'
   if (/\b(?:ok|passed|success(?:ful)?|done)\b|✓|✔|\bPASS\b/i.test(line)) return 'ok'

@@ -127,6 +127,8 @@ def cmd_ideas(args):
         system = f.read()
     out_dir = os.path.join(p.dir, "research", "brainstorm-" + time.strftime("%Y%m%d-%H%M%S"))
     os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "status.json"), "w", encoding="utf-8") as f:  # T-0124: the dashboard's progress
+        json.dump({"lenses": lenses, "rounds": max(1, args.rounds), "started": c.now()}, f)
     if len(pack.split()) > PACK_WORDS:
         print(f"fm: warning: the pack is {len(pack.split())} words; every lens and round pays for it (aim for "
               f"≤ {PACK_WORDS})", file=sys.stderr)

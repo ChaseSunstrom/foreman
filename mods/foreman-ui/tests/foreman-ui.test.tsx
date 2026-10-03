@@ -711,6 +711,7 @@ test('kit: a command output, short: failures first, else the tail, each line ton
   // T-0123: a summary instead of the raw output panel
   expect(tone('FAILED (failures=2)')).toBe('err')
   expect(tone('0 failed, 12 passed')).toBe('ok')
+  expect(tone(' 0 fail')).toBe('ok') // claude plugin test's own summary line, seen red in the live terminal
   expect(tone('warning: unused import')).toBe('warn')
   expect(tone('compiling foo')).toBe('plain')
   const long = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
@@ -744,4 +745,22 @@ test('a finished shell command is a summary with its key lines; the pane keeps t
   expect(await pane.find({ type: 'Text', text: /\$ python3 -m unittest/ })).toBeDefined()
   expect(await pane.find({ type: 'Text', text: /test 29 \.\.\. ok/ })).toBeDefined()
   await pane.unmount()
+})
+
+test('the pane shows a brainstorm while it runs, then its ideas', async ($, on) => {
+  // T-0124: 'I want to be able to see brainstorm ideas'
+  const running = { name: 'brainstorm-20261003', running: true, answers: 3, expected: 12, count: 41, ideas: ['Faster gates', 'A mascot'] }
+  world(on, [{ ...CALM, brainstorm: running }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /▍Brainstorm/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /3\/12 answers · 41 ideas so far/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /Faster gates/ })).toBeDefined()
+  await pane.unmount()
+  // and in the chat: the running fm ideas call carries the same progress under its row
+  const props = { tool_use_id: 'i1', tool: 'Bash', input: { command: 'fm ideas --pack p.md --rounds 2' }, isRunning: true,
+    isErrored: false, isInterrupted: false }
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'i1', props })
+  expect(await row.find({ type: 'Text', text: /✦ 3\/12 answers · 41 ideas so far · A mascot/ })).toBeDefined()
+  await row.unmount()
 })

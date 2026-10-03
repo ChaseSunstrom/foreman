@@ -665,8 +665,11 @@ export const register: Register = (on, options) => {
     const agent = agentId ? (await read($, agents)).find(a => a.id === agentId) : undefined
     const { Box, Text } = $.ui.resolve(e)
     const width = Math.max(30, e.viewport?.columns ?? 100)
+    // T-0124: a brainstorm running inside this call shows its progress right here in the chat
+    const ideasRun = e.props.tool === 'Bash' && /^ideas\b/.test(fmCommand((e.props.input as { command?: unknown } | null)?.command) ?? '')
+    const bs = ideasRun ? (await read($, view))?.brainstorm : null
 
-    return (
+    const row = (
       <Box flexDirection="row" gap={1} key="fm-tool">
         <Text color={hex(face.color)}>{spin(f)}</Text>
         <Text bold color={hex(face.color)}>
@@ -681,6 +684,15 @@ export const register: Register = (on, options) => {
         )}
         {meter($, e, 'fm-tool-bar', 12, null, face.color, f)}
         <Text dimColor>{elapsed(ms)}</Text>
+      </Box>
+    )
+    if (!bs?.running) return row
+    return (
+      <Box flexDirection="column" key="fm-tool-ideas">
+        {row}
+        <Text color={hex(C.agent)} wrap="truncate-end">
+          {'  '}✦ {bs.answers}/{bs.expected ?? '?'} answers · {bs.count} ideas so far{bs.ideas.length ? ` · ${bs.ideas.at(-1)}` : ''}
+        </Text>
       </Box>
     )
   })
@@ -1134,6 +1146,23 @@ export const register: Register = (on, options) => {
                 <Text wrap="truncate-end">{x.command}</Text>
                 <Text color={hex(C.dim)}>{elapsed(clockNow - x.startedAt)}</Text>
               </Box>
+            ))}
+          </Box>
+        )}
+
+        {v.brainstorm && (
+          <Box key="card-brainstorm" {...card(v.brainstorm.running ? C.agent : C.track)}>
+            {head(
+              'Brainstorm',
+              C.agent,
+              v.brainstorm.running
+                ? `${spin(fb + clockNow / 300)} ${v.brainstorm.answers}/${v.brainstorm.expected ?? '?'} answers · ${v.brainstorm.count} ideas so far`
+                : `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`,
+            )}
+            {v.brainstorm.ideas.map((idea, i) => (
+              <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
+                {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
+              </Text>
             ))}
           </Box>
         )}

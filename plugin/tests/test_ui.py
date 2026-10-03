@@ -120,3 +120,25 @@ class UiView(ForemanTestCase):
         self.assertEqual(v["typical"], {"FIX/S": 30}, "one FEATURE/M sample is too few to call typical")
         self.assertGreaterEqual(v["active"]["on_task_s"], 0)
         self.assertLess(v["active"]["on_task_s"], 600)
+
+    def test_the_newest_brainstorm_shows_while_it_runs_and_after(self):
+        # T-0124: brainstorms ran unseen inside one long Bash call until it ended
+        import fmcore as c
+        p = c.find_project(self.repo)
+        d = os.path.join(p.dir, "research", "brainstorm-20261003-010203")
+        os.makedirs(d)
+        with open(os.path.join(d, "status.json"), "w") as f:
+            json.dump({"lenses": ["user value", "delight"], "rounds": 2, "started": c.now()}, f)
+        with open(os.path.join(d, "r1-01-user-value.md"), "w") as f:
+            f.write("# Brainstorm — lens: user value\n\n- **Faster gates** — PERF — value 5\n- **A mascot** — FEATURE\n")
+        b = json.loads(self.fm("ui", "--json").stdout)["brainstorm"]
+        self.assertEqual((b["running"], b["answers"], b["expected"]), (True, 1, 4))
+        self.assertEqual(b["ideas"], ["Faster gates", "A mascot"])
+        with open(os.path.join(d, "ideas.md"), "w") as f:
+            f.write("# Ideas by round\n\n## Round 1\n- Faster gates\n- A mascot\n- Wild: talk to it\n\n"
+                    "## New ideas per lens\n- user value: 3\n")
+        b = json.loads(self.fm("ui", "--json").stdout)["brainstorm"]
+        self.assertFalse(b["running"])
+        self.assertEqual(b["count"], 3)
+        self.assertEqual(b["ideas"][:2], ["Faster gates", "A mascot"])
+        self.assertEqual(b["name"], "brainstorm-20261003-010203")

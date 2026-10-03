@@ -42,9 +42,12 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
   trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
+// A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
+export type FmBrainstorm = { name: string; running: boolean; answers: number; expected?: number; count: number; ideas: string[] }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }
 

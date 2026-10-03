@@ -201,6 +201,38 @@ def typical(events):
     return {k: round(statistics.median(v)) for k, v in groups.items() if len(v) >= 3}
 
 
+def brainstorm(p):
+    """The newest brainstorm (T-0124): while fm ideas runs, how many lens answers are in and the ideas so far; after,
+    how many ideas and the first ones. None when the project has none. A run that never wrote ideas.md and started
+    over an hour ago counts as stopped."""
+    import re
+    root = os.path.join(p.dir, "research")
+    try:
+        name = max(d for d in os.listdir(root) if d.startswith("brainstorm-") and os.path.isdir(os.path.join(root, d)))
+    except (OSError, ValueError):
+        return None
+    d = os.path.join(root, name)
+    try:
+        with open(os.path.join(d, "status.json"), encoding="utf-8") as f:
+            st = json.load(f)
+    except (OSError, ValueError):
+        st = {}
+    answers = sorted(f for f in os.listdir(d) if f.endswith(".md") and f != "ideas.md")
+    if os.path.exists(os.path.join(d, "ideas.md")):
+        with open(os.path.join(d, "ideas.md"), encoding="utf-8") as f:
+            body = f.read().split("## New ideas per lens")[0]
+        ideas = [ln[2:].strip() for ln in body.splitlines() if ln.startswith("- ")]
+        return {"name": name, "running": False, "answers": len(answers), "count": len(ideas), "ideas": ideas[:8]}
+    ideas = []
+    for a in answers:
+        with open(os.path.join(d, a), encoding="utf-8") as f:
+            ideas += [c.plain(t).strip() for t in re.findall(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*", f.read())]
+    ideas = list(dict.fromkeys(ideas))
+    running = (c.age_days(st.get("started")) or 1) * 24 < 1
+    return {"name": name, "running": running, "answers": len(answers),
+            "expected": len(st.get("lenses") or []) * int(st.get("rounds") or 1), "count": len(ideas), "ideas": ideas[:8]}
+
+
 def view(p):
     """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
     surface to render, built from gather() so it shows what fm watch shows."""
@@ -244,6 +276,7 @@ def view(p):
     today_done = len({e.get("task") for e in events
                       if e.get("event") == "task_done" and str(e.get("ts") or "").startswith(today)} & done_ids)
     lat = [ms for vals in d["latency"].values() for ms in vals]
+    bs = brainstorm(p)
     return {
         "v": 1, "project": p.slug, "root": p.root,
         "mode": {"autonomy": autonomy, "drive": bool(sd["drive"]), "sensitive": bool(sd["sensitive"]),
@@ -258,10 +291,12 @@ def view(p):
         "today_done": today_done,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         "typical": typical(events),
+        "brainstorm": bs,
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors())},
-        "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")],
+        "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
+        + ([os.path.join(p.dir, "research", bs["name"])] if bs and bs["running"] else []),  # each lens answer moves it
         "latency": [round(ms) for ms in d["series"]],
         "checks": d["checks"] and {"at": d["checks"].get("ts"), "results": [
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
