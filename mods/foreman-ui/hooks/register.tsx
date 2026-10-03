@@ -1,7 +1,6 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderInput, ResolveInput } from 'claude-code'
 
-type ToolUseRender = RenderInput<'ToolUse'>
 
 import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
@@ -39,12 +38,8 @@ import {
   toolFace,
   typeColor,
 } from './kit'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, LIST, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, cfg, starts, took } from './state'
 
-// Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
-// every rule and gate stays in fm and its classic hooks (which still run under claude -p and older builds); buttons
-// only run fm commands or submit a prompt the person pressed for. While work is live a frame clock animates the band,
-// the cards and every running tool row; a finished row goes back to the engine, which draws its result as always.
-const PANE = 'foreman'
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
 const frame = atom({ plugin: 'foreman-ui', key: 'frame' } as const, 0)
@@ -57,25 +52,12 @@ const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
+import { agentOut, agentRow, churn, editChanges, editRow, mascotTree, meter, more, shellRow, spark } from './rows'
 
-const LIST = 6
-const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
-const DIFF_LINES = 8 // a finished edit's row: this many changed lines
-const FRAME_MS = 120
-const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost turn.complete stops the clock after 15 min
-const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
-const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
-const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
-const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
-const FRESH = [
-  'Foreman task boundary: a task just closed.',
-  "Keep: the user's standing requests and preferences, decisions still in force, and what the next queued task needs.",
-  "Drop: finished tasks' file contents, diffs, logs and back-and-forth.",
-  "Foreman's record (fm state, the briefs) is the source of truth for tasks: after this, check `fm next` and re-read",
-  'files before editing them, since what was read earlier may be out of date.',
-].join(' ')
-
-/** What changed between two snapshots that deserves a toast. */
+// Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
+// every rule and gate stays in fm and its classic hooks (which still run under claude -p and older builds); buttons
+// only run fm commands or submit a prompt the person pressed for. While work is live a frame clock animates the band,
+// the cards and every running tool row; a finished row goes back to the engine, which draws its result as always.
 export function toasts(prev: FmView | null, next: FmView): string[] {
   if (!prev?.project || prev.project !== next.project) return []
   const out: string[] = []
@@ -168,15 +150,10 @@ let poll: { cancel: () => void } | null = null
 let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
-let freshAt = 40 // userConfig: compact at a task boundary from this context percent (0: never)
-let mascot = 'blue' // userConfig: the pane's mascot color, or off
-let root = '' // the session's folder: rows show paths inside it relative to it
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
 let calm = 0
 const turns = new Set<string>()
-const starts = new Map<string, number>() // tool_use_id → when it started (ms)
-const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 const agentCalls = new Map<string, string>() // running Agent call → its description
 const agentOf = new Map<string, string>() // running Agent call → the subagent's id
 let turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: -1, task: '' }
@@ -239,7 +216,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
-  if (mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
+  if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
   const listed = running.length ? await $.agent.list().catch(() => null) : null
@@ -282,9 +259,9 @@ async function gauge($: EngineInterface) {
 
 // A task just closed: with the context past freshAt, compact so the next task starts on what still matters (T-0098).
 async function freshen($: EngineInterface) {
-  if (!freshAt) return
+  if (!cfg.freshAt) return
   const percent = (await $.session.usage().catch(() => null))?.context.percent
-  if (typeof percent !== 'number' || percent < freshAt) return
+  if (typeof percent !== 'number' || percent < cfg.freshAt) return
   $.ui.toast(`Task closed at context ${Math.round(percent)}% · compacting so the next task starts fresh`, { timeoutMs: 8000 })
   await $.session.compact({ instructions: FRESH }).catch(() => undefined)
 }
@@ -378,297 +355,6 @@ async function noteEdit($: EngineInterface, path: string, add: number, del: numb
   })
 }
 
-/** A bar: a true-color Raster on the terminal, its text twin elsewhere. `fraction` null draws an activity comet. */
-function meter(
-  $: EngineInterface,
-  e: ResolveInput,
-  key: string,
-  width: number,
-  fraction: number | null,
-  color: number,
-  f: number | null,
-) {
-  if (e.surface === 'terminal') {
-    const { Raster } = $.ui.resolve(e)
-    const cells =
-      fraction === null ? activityCells(width, color, f ?? 0) : progressCells(width, fraction, mix(color, C.accent2, 0.6), color, f)
-    return <Raster key={key} columns={width} rows={1} cells={cells} />
-  }
-  const { Box, Text } = $.ui.resolve(e)
-  if (fraction === null) {
-    const [a, b, c] = textComet(width, f ?? 0)
-    return (
-      <Box key={key} flexDirection="row">
-        <Text color={hex(C.track)}>{a}</Text>
-        <Text color={hex(color)}>{b}</Text>
-        <Text color={hex(C.track)}>{c}</Text>
-      </Box>
-    )
-  }
-  const [done, rest] = textBar(width, fraction)
-  return (
-    <Box key={key} flexDirection="row">
-      <Text color={hex(color)}>{done}</Text>
-      <Text color={hex(C.track)}>{rest}</Text>
-    </Box>
-  )
-}
-
-/** A sparkline (Raster on the terminal, block characters elsewhere) and a lines-added/removed bar. */
-function spark($: EngineInterface, e: ResolveInput, key: string, values: readonly number[], width: number) {
-  if (e.surface === 'terminal') {
-    const { Raster } = $.ui.resolve(e)
-    return <Raster key={key} columns={width} rows={1} cells={sparkCells(values, width)} />
-  }
-  const { Text } = $.ui.resolve(e)
-  return <Text color={hex(C.accent2)}>{sparkText(values, width)}</Text>
-}
-
-function churn($: EngineInterface, e: ResolveInput, key: string, f: FileChurn, max: number) {
-  if (e.surface === 'terminal') {
-    const { Raster } = $.ui.resolve(e)
-    return <Raster key={key} columns={10} rows={1} cells={churnCells(f.add, f.del, max, 10)} />
-  }
-  const { Text } = $.ui.resolve(e)
-  return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
-}
-
-/** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */
-function mascotTree($: EngineInterface, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number, subs: LiveAgent[]) {
-  if (mascot === 'off') return null
-  const color = MASCOT_COLORS[mascot] ?? MASCOT_COLORS.blue!
-  const { Box, Text } = $.ui.resolve(e)
-  if (e.surface !== 'terminal')
-    return <Text color={hex(color)}>{state === 'work' ? (n % 2 ? '(•̀ᴗ•́)و' : '(•̀ᴗ•́)ง') : state === 'happy' ? '\\(^ᴗ^)/' : '(•ᴗ•)'}</Text>
-  const running = subs.filter(s => !s.done)
-  return (
-    <Box key="fm-mascot" flexDirection="row" alignItems="flex-end" gap={1}>
-      {running.length > 4 && <Text color={hex(C.dim)}>+{running.length - 4}</Text>}
-      {running.slice(0, 4).map((s, i) => (
-        <Box key={`mini-${s.id}`} flexDirection="column">
-          {miniClawd(Math.floor(n / 4) + i).map((row, j) => (
-            <Text key={`mini-${s.id}-${j}`} color={hex(agentColor(s.id))}>
-              {row}
-            </Text>
-          ))}
-        </Box>
-      ))}
-      <Box flexDirection="column">
-        {clawd(state, n).map((row, j) => (
-          <Text key={`clawd-${j}`} color={hex(color)}>
-            {row}
-          </Text>
-        ))}
-      </Box>
-    </Box>
-  )
-}
-
-/** Changed lines of a diff as Foreman text: the file's line number dim, the +/- sign in ok/err, the text in the softer
- * add/del colours (T-0143: the engine's whole-width red and green read 'weird in contrast'). */
-function diffLines($: EngineInterface, e: ResolveInput, changed: ReturnType<typeof changedLines>, key: string) {
-  const { Text } = $.ui.resolve(e)
-  const width = String(Math.max(0, ...changed.map(l => l.n))).length
-  return changed.map((l, i) => (
-    <Text key={`${key}-${i}`} wrap="truncate-end">
-      <Text color={hex(C.track)}>{'  │ '}</Text>
-      <Text color={hex(C.dim)}>{`${String(l.n).padStart(width)} `}</Text>
-      <Text color={hex(l.sign === '+' ? C.ok : C.err)}>{`${l.sign} `}</Text>
-      <Text color={hex(l.sign === '+' ? C.add : C.del)}>{l.text}</Text>
-    </Text>
-  ))
-}
-
-const more = (n: number, what: string) => `… ${n} more ${what}${n === 1 ? '' : 's'}`
-
-/** T-0137/T-0143: a finished shell command as a Foreman row that reads like the running one: its mark, `❯ Ran` and the
- * description (or the command's first line), time and lines; the command under it, dim, whole up to three lines and
- * never silently cut (a chained or multi-line command must not read as a plain one: the T-0095 review's HIGH
- * finding); then the output (failures first when it failed, else the tail), the files it changed, a commit, a
- * timeout. The engine's result block under it is blanked (ToolResult), so nothing draws twice. */
-function shellRow($: EngineInterface, e: ToolUseRender) {
-  const { Box, Text } = $.ui.resolve(e)
-  type Out = {
-    stdout?: unknown
-    stderr?: unknown
-    interrupted?: boolean
-    backgroundTaskId?: unknown
-    timedOutAfterMs?: unknown
-    gitOperation?: { commit?: { sha?: unknown; branch?: unknown } }
-    bashEditDiff?: { hunks?: unknown; skippedLarge?: unknown; restricted?: unknown } // Claude Code's own, untyped
-  }
-  const o = (e.props.output && typeof e.props.output === 'object' ? e.props.output : {}) as Out
-  const input = (e.props.input ?? {}) as { command?: unknown; description?: unknown }
-  const lines = String(input.command ?? '').split('\n').map(clean)
-  const desc = typeof input.description === 'string' ? clean(input.description).trim() : ''
-  const shown = desc ? lines.slice(0, 3) : lines.slice(1, 3) // without a description the first line is the title
-  const bad = !!e.props.isErrored // the exit status decides, not words in the output
-  const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
-  const ms = took.get(e.props.tool_use_id)
-  const bg = typeof o.backgroundTaskId === 'string'
-  const stopped = e.props.isInterrupted || o.interrupted
-  const mark = stopped ? '■' : bg ? '◷' : bad ? '✗' : '✓'
-  const meta = [ms !== undefined ? elapsed(ms) : '', bg ? 'in the background' : s.total ? `${s.total} line${s.total === 1 ? '' : 's'}` : '']
-  const files = Array.isArray(o.bashEditDiff?.hunks) ? (o.bashEditDiff.hunks as { path?: unknown; hunks?: unknown }[]) : []
-  const unshown = [o.bashEditDiff?.skippedLarge, o.bashEditDiff?.restricted].reduce<number>((n, x) => n + (Array.isArray(x) ? x.length : 0), 0)
-  let budget = DIFF_LINES
-  const commit = o.gitOperation?.commit
-  return (
-    <Box flexDirection="column" key="fm-shell">
-      {/* the mark in a column of its own, so a long title wraps under itself (T-0141) */}
-      <Box flexDirection="row" key="fm-shell-head">
-        <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn)}>
-          {`${mark} `}
-        </Text>
-        <Text wrap="wrap">
-          <Text color={hex(C.accent)}>{`❯ ${stopped ? 'Stopped' : bg ? 'Started' : bad ? 'Failed' : 'Ran'} `}</Text>
-          {desc ? <Text>{desc}</Text> : <Text color={hex(C.accent)}>{lines[0] ?? ''}</Text>}
-          <Text color={hex(C.dim)}>{meta.filter(Boolean).map(x => ` · ${x}`).join('')}</Text>
-        </Text>
-      </Box>
-      {shown.map((line, i) => (
-        <Box flexDirection="row" key={`fm-shell-cmd-${i}`}>
-          <Text color={hex(C.track)}>{'  ┆ '}</Text>
-          <Text wrap="wrap" color={hex(mix(C.accent, C.dim, 0.55))}>
-            {line}
-          </Text>
-        </Box>
-      ))}
-      {lines.length > 3 && <Text color={hex(C.dim)}>{`  ┆ ${more(lines.length - 3, 'command line')}`}</Text>}
-      {s.lines.map((l, i) => (
-        <Text key={`o-${i}`} color={hex(TONE_COLOR[l.tone])} wrap="truncate-end">
-          <Text color={hex(C.track)}>{'  │ '}</Text>
-          {l.text}
-        </Text>
-      ))}
-      {s.more > 0 && (
-        <Text color={hex(C.dim)}>
-          {`  └ ${more(s.more, 'line')}`}
-          {s.failures ? ' (showing the failures)' : ''}
-        </Text>
-      )}
-      {files.map((f, i) => {
-        const changed = changedLines(f.hunks)
-        const add = changed.filter(l => l.sign === '+').length
-        const take = changed.slice(0, Math.max(0, budget))
-        budget -= take.length
-        return (
-          <Box flexDirection="column" key={`fm-shell-file-${i}`}>
-            <Text wrap="truncate-start">
-              <Text color={hex(C.edit)}>{'  ✎ '}</Text>
-              <Text>{shortPath(clean(String(f.path ?? '')))}</Text>
-              <Text color={hex(C.ok)}>{` +${add}`}</Text>
-              {changed.length > add && <Text color={hex(C.err)}>{` −${changed.length - add}`}</Text>}
-            </Text>
-            {diffLines($, e, take, `fm-shell-diff-${i}`)}
-          </Box>
-        )
-      })}
-      {unshown > 0 && <Text color={hex(C.dim)}>{`  ✎ ${more(unshown, 'file')} changed (too large or private to show)`}</Text>}
-      {typeof commit?.sha === 'string' && (
-        <Text>
-          <Text color={hex(C.accent2)}>{'  ⎇ '}</Text>
-          <Text color={hex(C.dim)}>committed </Text>
-          <Text color={hex(C.accent)}>{commit.sha.slice(0, 7)}</Text>
-          {typeof commit.branch === 'string' && <Text color={hex(C.dim)}>{` on ${clean(commit.branch)}`}</Text>}
-        </Text>
-      )}
-      {typeof o.timedOutAfterMs === 'number' && (
-        <Text color={hex(C.warn)}>{`  ◷ timed out after ${elapsed(o.timedOutAfterMs)} · moved to the background`}</Text>
-      )}
-    </Box>
-  )
-}
-
-/** T-0141: the changed lines a finished Edit or Write shows, or null when its result has no patch to show */
-function editChanges(tool: string, output: unknown) {
-  const o = output as { type?: unknown; content?: unknown; structuredPatch?: unknown; userModified?: unknown } | null
-  if ((tool !== 'Edit' && tool !== 'Write') || !o || typeof o !== 'object' || !Array.isArray(o.structuredPatch)) return null
-  const created = o.type === 'create' && typeof o.content === 'string'
-  const changed = created
-    ? changedLines([{ oldStart: 1, newStart: 1, lines: String(o.content).replace(/\n$/, '').split('\n').map(l => `+${l}`) }])
-    : changedLines(o.structuredPatch)
-  return changed.length ? { changed, created, userModified: o.userModified === true } : null
-}
-
-/** T-0141: a finished Edit or Write as a Foreman row: the path, +added −removed, then the changed lines (diffLines).
- * Null without a patch to show: the engine's row then says what happened. */
-function editRow($: EngineInterface, e: ToolUseRender) {
-  const c = editChanges(e.props.tool, e.props.output)
-  if (!c) return null
-  const { changed, created } = c
-  const add = changed.filter(l => l.sign === '+').length
-  const del = changed.length - add
-  const shown = changed.slice(0, DIFF_LINES)
-  const face = toolFace(e.props.tool, e.props.input, root)
-  const { Box, Text } = $.ui.resolve(e)
-  return (
-    <Box flexDirection="column" key="fm-edit">
-      <Box flexDirection="row" gap={1} key="fm-edit-head">
-        <Text bold color={hex(C.ok)}>
-          ✓
-        </Text>
-        <Text color={hex(C.edit)}>
-          {face.icon} {e.props.tool === 'Write' ? 'Wrote' : 'Edited'}
-        </Text>
-        <Text wrap="truncate-start">{face.target}</Text>
-        <Text>
-          <Text color={hex(C.ok)}>+{add}</Text>
-          {del > 0 && <Text color={hex(C.err)}> −{del}</Text>}
-        </Text>
-        {created && <Text color={hex(C.dim)}>new file</Text>}
-        {c.userModified && <Text color={hex(C.dim)}>· you changed it</Text>}
-      </Box>
-      {diffLines($, e, shown, 'd')}
-      {changed.length > shown.length && <Text color={hex(C.dim)}>{`  └ ${more(changed.length - shown.length, 'changed line')}`}</Text>}
-    </Box>
-  )
-}
-
-type AgentOut = { status?: unknown; agentType?: unknown; content?: unknown; totalToolUseCount?: unknown; totalDurationMs?: unknown; totalTokens?: unknown }
-const agentOut = (tool: string, output: unknown) =>
-  (tool === 'Agent' || tool === 'Task') && output && typeof output === 'object' &&
-  ['completed', 'async_launched'].includes(String((output as AgentOut).status))
-    ? (output as AgentOut)
-    : null
-
-/** T-0148: a subagent call as a Foreman row: its type and task, tools · time · tokens, the first line of its report
- * (the engine drew the name on a highlighted block); a background launch says so. Null for anything else. */
-function agentRow($: EngineInterface, e: ToolUseRender) {
-  const o = agentOut(e.props.tool, e.props.output)
-  if (!o) return null
-  const input = (e.props.input ?? {}) as { subagent_type?: unknown; description?: unknown }
-  const type = clean(String(input.subagent_type ?? o.agentType ?? 'agent')).replace(/^foreman:/, '')
-  const bg = o.status === 'async_launched'
-  const report = Array.isArray(o.content) ? o.content.map(x => String((x as { text?: unknown }).text ?? '')).join('\n') : ''
-  const first = clean(report.split('\n').find(l => l.trim()) ?? '').replace(/[*_`#>]/g, '').trim()
-  const n = Number(o.totalToolUseCount) || 0
-  const meta = bg
-    ? 'in the background'
-    : [`${n} tool${n === 1 ? '' : 's'}`, elapsed(Number(o.totalDurationMs) || 0), `${Math.round((Number(o.totalTokens) || 0) / 1000)}k tokens`].join(' · ')
-  const { Box, Text } = $.ui.resolve(e)
-  return (
-    <Box flexDirection="column" key="fm-agent">
-      <Box flexDirection="row" key="fm-agent-head">
-        <Text bold color={hex(bg ? C.accent2 : C.ok)}>
-          {`${bg ? '◷' : '✓'} `}
-        </Text>
-        <Text wrap="wrap">
-          <Text color={hex(C.agent)}>{`◆ ${type} `}</Text>
-          <Text>{clean(String(input.description ?? ''))}</Text>
-          <Text color={hex(C.dim)}>{` · ${meta}`}</Text>
-        </Text>
-      </Box>
-      {!bg && first && (
-        <Text color={hex(C.dim)} wrap="truncate-end">
-          <Text color={hex(C.track)}>{'  │ '}</Text>
-          {first.slice(0, 200)}
-        </Text>
-      )}
-    </Box>
-  )
-}
-
 /** T-0145: Claude Code hot-reloads this mod only when a turn really ends, so a driven turn that changed it ends on
  * purpose and leaves a resume record; the reloaded mod (session.start runs again) starts the next turn itself, once
  * per record and only in the session the record names. */
@@ -690,10 +376,10 @@ function captureBox($: EngineInterface, e: ResolveInput) {
 }
 
 export const register: Register = (on, options) => {
-  freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
-  mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
+  cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
+  cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   on('session.start', async ($, e, next) => {
-    root = typeof e.cwd === 'string' ? e.cwd : ''
+    cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
@@ -769,7 +455,7 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const id = e.tool_use_id
     let noteTimer: { cancel: () => void } | null = null
-    const face = toolFace(String(e.tool), e, root)
+    const face = toolFace(String(e.tool), e, cfg.root)
     starts.set(id, await $.clock.now())
     try {
       if (face.icon === '◆') agentCalls.set(id, String((e as { description?: unknown }).description ?? ''))
@@ -862,10 +548,10 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    if (e.props.tool === 'Bash' && !e.props.isRunning) return shellRow($, e)
+    if (e.props.tool === 'Bash' && !e.props.isRunning) return shellRow($.ui.resolve(e), e)
     const quiet = ['Read', 'WebFetch', 'WebSearch', 'Grep', 'Glob'].includes(e.props.tool)
     if (quiet && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
-      const face = toolFace(e.props.tool, e.props.input, root)
+      const face = toolFace(e.props.tool, e.props.input, cfg.root)
       const { Box, Text } = $.ui.resolve(e)
       const more = readSummary(e.props.tool, e.props.output)
       return (
@@ -878,11 +564,11 @@ export const register: Register = (on, options) => {
       )
     }
     const done = !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted
-    const edited = done ? editRow($, e) ?? agentRow($, e) : null
+    const edited = done ? editRow($.ui.resolve(e), e) ?? agentRow($.ui.resolve(e), e) : null
     if (edited) return edited
     if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
     const f = await read($, frame)
-    const face = toolFace(e.props.tool, e.props.input, root)
+    const face = toolFace(e.props.tool, e.props.input, cfg.root)
     const since = starts.get(e.props.tool_use_id)
     const ms = since === undefined ? 0 : (await $.clock.now()) - since
     const agentId = agentOf.get(e.props.tool_use_id)
@@ -906,7 +592,7 @@ export const register: Register = (on, options) => {
             {agent.tools} tools · {agent.last.slice(0, 40)}
           </Text>
         )}
-        {meter($, e, 'fm-tool-bar', 12, null, face.color, f)}
+        {meter($.ui.resolve(e), e, 'fm-tool-bar', 12, null, face.color, f)}
         <Text dimColor>{elapsed(ms)}</Text>
       </Box>
     )
@@ -1100,7 +786,7 @@ export const register: Register = (on, options) => {
         {a && a.steps.length > 0 && (
           <Box flexDirection="row" gap={1}>
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
-            {meter($, e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
+            {meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             <Text wrap={cut}>
               <Text bold>
                 {done}/{a.steps.length}
@@ -1138,7 +824,7 @@ export const register: Register = (on, options) => {
           </Box>
           <Box flexDirection="row" gap={1} flexShrink={0}>
             {c && <Text color={hex(C.dim)}>context</Text>}
-            {c && meter($, e, 'fm-band-ctx', 6, c.percent / 100, c.percent >= CHECKPOINT_AT ? C.err : c.percent >= 60 ? C.warn : C.ok, null)}
+            {c && meter($.ui.resolve(e), e, 'fm-band-ctx', 6, c.percent / 100, c.percent >= CHECKPOINT_AT ? C.err : c.percent >= 60 ? C.warn : C.ok, null)}
             {c && <Text color={hex(C.dim)}>{Math.round(c.percent)}%</Text>}
             {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
             {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
@@ -1149,7 +835,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="row" gap={1}>
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
             <Text color={hex(C.dim)}>{a.stage}</Text>
-            {a.steps.length > 0 && meter($, e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
+            {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             {a.steps.length > 0 && (
               <Text bold>
                 {done}/{a.steps.length}
@@ -1178,7 +864,7 @@ export const register: Register = (on, options) => {
         {!paneOpen && (queued > 0 || inboxN > 0) && (
           <Box flexDirection="row" gap={1} key="fm-band-queue-row">
             {!narrow && <Text color={hex(C.dim)}>today</Text>}
-            {!narrow && meter($, e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
+            {!narrow && meter($.ui.resolve(e), e, 'fm-band-queue', 10, todayDone / Math.max(1, todayDone + queued + inboxN + (a ? 1 : 0)), C.accent2, null)}
             <Text color={hex(C.dim)} wrap={cut}>
               ✓{todayDone} done · {queued} queued · {inboxN} in inbox
               {upNext && !narrow ? ` · next ${upNext.id} ${upNext.title}` : ''}
@@ -1259,13 +945,13 @@ export const register: Register = (on, options) => {
     }
     const live = turns.size > 0 || starts.size > 0
     const f = live ? await read($, frame) : null
-    const idleBeat = live || mascot === 'off' ? 0 : await read($, beat)
+    const idleBeat = live || cfg.mascot === 'off' ? 0 : await read($, beat)
     const clockNow = await $.clock.now()
     const a = v.active
     const m = v.mode
     const width = Math.max(10, e.props.bodyColumns - 12)
     const touched = await read($, files)
-    const base = `${v.root || root}/` // T-0146: the project's files, relative; scratch files elsewhere aren't this card's
+    const base = `${v.root || cfg.root}/` // T-0146: the project's files, relative; scratch files elsewhere aren't this card's
     const mine = touched.filter(t => t.path.startsWith(base))
     const subs = await read($, agents)
     const bgShells = await read($, shells)
@@ -1322,7 +1008,7 @@ export const register: Register = (on, options) => {
               <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
             </Text>
           </Box>
-          {mascotTree($, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
+          {mascotTree($.ui.resolve(e), e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
         </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
 
@@ -1347,7 +1033,7 @@ export const register: Register = (on, options) => {
               </Text>
               {a.steps.length > 0 && (
                 <Box flexDirection="row" gap={1}>
-                  {meter($, e, 'fm-pane-bar', Math.min(40, width - 8), done / a.steps.length, C.ok, f)}
+                  {meter($.ui.resolve(e), e, 'fm-pane-bar', Math.min(40, width - 8), done / a.steps.length, C.ok, f)}
                   <Text bold>
                     {done}/{a.steps.length}
                   </Text>
@@ -1490,7 +1176,7 @@ export const register: Register = (on, options) => {
               .reverse()
               .map((t, i) => (
                 <Box flexDirection="row" gap={1} key={`file-${i}`}>
-                  {churn($, e, `file-bar-${i}`, t, maxChurn)}
+                  {churn($.ui.resolve(e), e, `file-bar-${i}`, t, maxChurn)}
                   <Text color={hex(C.ok)}>+{t.add}</Text>
                   <Text color={hex(C.err)}>−{t.del}</Text>
                   <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
@@ -1507,7 +1193,7 @@ export const register: Register = (on, options) => {
             <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
               <Text color={hex(fade(LIST - 1 - i, LIST, C.accent2))}>{i + 1}.</Text>
               {chip(q)}
-              {q.steps_total ? meter($, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
+              {q.steps_total ? meter($.ui.resolve(e), e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
               {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
                 <Box key={`q-typ-${q.id}`} flexShrink={0}>
                   <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
@@ -1584,7 +1270,7 @@ export const register: Register = (on, options) => {
           {v.health && (
             <Box flexDirection="row" gap={1}>
               <Text color={hex(C.dim)}>hooks</Text>
-              {(v.latency ?? []).length > 1 && spark($, e, 'fm-latency', v.latency ?? [], 24)}
+              {(v.latency ?? []).length > 1 && spark($.ui.resolve(e), e, 'fm-latency', v.latency ?? [], 24)}
               <Text color={hex(v.health.hook_errors ? C.err : C.dim)}>
                 p95 {v.health.hook_p95_ms ?? '–'} ms · guard blocks {v.health.guard_blocks}
                 {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
