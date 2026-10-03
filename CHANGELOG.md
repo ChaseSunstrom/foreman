@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm next` (T-0193): moves past a step once it has evidence (only `fm task finish` marks steps, so it used to repeat step 1 for the whole task), advises `fm task evidence --step N --run` over typed evidence, and ends at `fm task finish`, which runs the criteria's checks; `fm usage` had it followed 2 of 7 times.
 - `fm tidy` sweeps stale lanes (T-0186): a closed task's lane is removed with `--apply` through `fm lane rm`'s own removal (a lane with uncommitted or ignored files stays, as a decision), and merged `foreman/T-*` branches no lane holds are deleted with `git branch -d`.
 - Self-improvement scoreboard (T-0187): `fm friction` rechecks each guard block it lists against today's guard ("today's guard allows it" when a fix cleared it, "still blocks" otherwise), and after a pass shows the trend per 100 tool calls against the last pass's window, so the loop can tell whether its fixes removed their friction.
 - Task commits (T-0192): a file the task touched that was written in the same command that focused it (so already in its start snapshot) now goes into the task's commit; before, `fm task finish --commit` left it out silently (found when T-0181's test file stayed uncommitted).

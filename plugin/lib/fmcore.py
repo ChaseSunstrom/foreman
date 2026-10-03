@@ -1489,13 +1489,20 @@ def next_action(b, autonomy="standard", since=None):
         return f"{tid}: plan is missing {', '.join(plan_gaps(b, autonomy))} (fm task set/ac/step; /foreman:intake)"
     if st == "ready":
         return f"{tid}: fm focus {tid}"
-    if st == "executing":
+    finish = f"fm task finish {tid} --audit \"<how>\"" + (" --lens … --docs … --lesson …" if b.tier != "S" else "")
+    if st == "executing":  # T-0193: a step with evidence is behind us; fm task finish marks it and checks its runs
         steps = b.steps()
-        cur = next((s for s in steps if s.current), None) or next(s for s in steps if not s.done)
-        return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, verify, then fm task step {tid} done "
-                f"{cur.n} --evidence \"<cmd>\" \"<result>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
+        left = [s for s in steps if not s.done and not b.has_evidence(step=s.n)]
+        if not left:
+            return f"{tid}: every step has its evidence — {finish} (it marks them, runs the criteria and closes)"
+        cur = next((s for s in left if s.current), None) or left[0]
+        return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, then fm task evidence {tid} --step {cur.n} "
+                f"--run \"<verify cmd>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
     if st == "verifying":
         a = next(a for a in b.acceptance() if not a.checked)
+        cmd = dict(b.verify_cmds(unchecked=True)).get(a.n)
+        if cmd:
+            return f"{tid}: {finish} (it runs criterion {a.n}'s check: {cmd[:80]})"
         return f"{tid}: fm task ac {tid} check {a.n} --evidence \"<cmd>\" \"<result>\" ({a.text[:80]})"
     if st == "documenting":
         return (f"{tid}: record the Docs impact — the docs this change updated, or 'none: <why>' "

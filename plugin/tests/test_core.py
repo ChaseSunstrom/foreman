@@ -462,7 +462,7 @@ class Stages(unittest.TestCase):
         b.add_evidence("pytest -k slow", "1 failed as expected", step=1, ts="2026-01-01T10:00:00Z")
         b.mark_step(1)
         self.assertEqual(c.stage(b), "verifying")
-        self.assertIn("fm task ac T-0001 check 1", c.next_action(b))
+        self.assertIn("fm task finish T-0001", c.next_action(b), "finish runs the criterion's own check")
         b.add_evidence("pytest -k slow", "1 passed", ac=1)
         b.check_ac(1)
         self.assertEqual(c.stage(b), "documenting")
@@ -474,6 +474,20 @@ class Stages(unittest.TestCase):
         b.add_audit("edge", "fm-reviewer", "ok", ts="2026-01-01T11:00:00Z")
         self.assertEqual(c.stage(b), "closing")
         self.assertIn("fm task done T-0001", c.next_action(b))
+
+
+    def test_next_moves_past_a_step_with_evidence_and_ends_at_finish(self):
+        # T-0193: fm next said 'step 1/2 … fm task step done' until fm task finish marked the steps, with typed
+        # evidence; fm usage: followed 2 of 7 times
+        b = self.plan(self.brief("S"))
+        b.add_step("fix it")
+        b.meta["status"] = "active"
+        b.add_evidence("pytest -k slow", "✗ exit 1", step=1)
+        nxt = c.next_action(b)
+        self.assertIn("step 2/2", nxt)
+        self.assertIn("fm task evidence T-0001 --step 2 --run", nxt)
+        b.add_evidence("pytest -k slow", "exit 0", step=2)
+        self.assertIn("fm task finish T-0001", c.next_action(b))
 
 
 class WorkRequests(unittest.TestCase):
