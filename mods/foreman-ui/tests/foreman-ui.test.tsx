@@ -91,10 +91,10 @@ function world(on: On, views: FmView[]) {
   })
   const suggested: string[] = []
   const played: string[] = []
-  const usage = { percent: 30 }
+  const usage = { percent: 30, limits: [] as { kind: string; percentUsed: number }[] }
   mock.store(on)
   on('session.usage', async () => ({
-    value: { startedAt: 0, context: { window: 1000, percent: usage.percent }, rateLimits: [], cost: { usd: 1.5 } },
+    value: { startedAt: 0, context: { window: 1000, percent: usage.percent }, rateLimits: usage.limits, cost: { usd: 1.5 } },
   }))
   const compacted: string[] = []
   const noticed: string[] = []
@@ -411,6 +411,29 @@ test('the band shows context; at 85% Foreman checkpoints once', async ($, on) =>
   await clock.advance(2000)
   expect(calls.filter(c => c[1] === 'checkpoint').length).toBe(2)
   await ui.unmount()
+})
+
+const FACTS = { model: 'claude-opus-5-5', promptModel: 'claude-opus-5-5', surfaces: ['terminal' as const], tools: [],
+  outputStyle: null, traits: [] }
+
+test('past 80% weekly usage Claude is told to work leaner, and a toast says so once', async ($, on) => {
+  // T-0198: 'faster, way more token efficient, this one session has burned 20% of my weekly usage'
+  const { toasted, clock, usage } = world(on, [VIEW])
+  on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'You are Claude.', scope: 'shared' as const }] }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const economy = async () => (await $.prompt.compose(FACTS)).sections.find(s => s.id === 'foreman-ui:economy')
+  usage.limits = [{ kind: 'seven_day', percentUsed: 41 }, { kind: 'five_hour', percentUsed: 6 }]
+  expect(await economy()).toBeUndefined()
+  usage.limits = [{ kind: 'seven_day', percentUsed: 84.5 }, { kind: 'five_hour', percentUsed: 6 }]
+  const section = await economy()
+  expect(section?.scope).toBe('session')
+  expect(section?.text).toMatch(/weekly usage is past 80%/)
+  expect(section?.text).toMatch(/no brainstorms/)
+  usage.limits = [{ kind: 'seven_day', percentUsed: 86 }, { kind: 'five_hour', percentUsed: 7 }]
+  expect((await economy())?.text).toBe(section?.text) // the threshold, not the live figure: the prompt cache holds
+  await clock.advance(2000)
+  await clock.advance(2000)
+  expect(toasted.filter(t => /economy/i.test(t)).length).toBe(1)
 })
 
 test('ghost text offers /foreman:next only when nothing waits on the person', async ($, on) => {

@@ -150,6 +150,7 @@ let poll: { cancel: () => void } | null = null
 let clock: { cancel: () => void } | null = null
 let lastActive = 0 // the frame of the last turn or tool activity
 let checkpointed = false
+let economyOn = false
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
 let calm = 0
@@ -239,6 +240,9 @@ async function tick($: EngineInterface) {
 // The context meter; at CHECKPOINT_AT% Foreman checkpoints the active task once, so a compaction loses nothing.
 async function gauge($: EngineInterface) {
   const u = await $.session.usage().catch(() => null)
+  const eco = economyText(u?.rateLimits ?? [])
+  if (eco && !economyOn) $.ui.toast('Usage is high · Foreman economy mode: leaner work until the window resets', { timeoutMs: 10000 })
+  economyOn = !!eco
   const percent = u?.context.percent
   if (typeof percent !== 'number') return
   const prev = await read($, ctx)
@@ -255,6 +259,23 @@ async function gauge($: EngineInterface) {
       { timeoutMs: 10000 },
     )
   }
+}
+
+// T-0198: the person is usage-sensitive; past these shares of a usage window Claude works leaner until it resets.
+const ECONOMY: Record<string, [number, string]> = { seven_day: [80, 'weekly'], five_hour: [90, '5-hour'] }
+
+// The economy section, or null: it names the threshold, not the live figure, so the prompt (and its cache) changes
+// only when a window crosses it.
+function economyText(limits: readonly { kind: string; percentUsed: number }[]): string | null {
+  const hot = limits.filter(l => ECONOMY[l.kind] && l.percentUsed >= ECONOMY[l.kind][0])
+  if (!hot.length) return null
+  const what = hot.map(l => `${ECONOMY[l.kind][1]} usage is past ${ECONOMY[l.kind][0]}%`).join(' and ')
+  return (
+    `# Foreman economy mode\nThis account's ${what}. Work leaner until it resets: no brainstorms or multi-round ` +
+    `fm ideas, at most one combined reviewer pass per task (none for S), no other subagents unless the task can't ` +
+    `go on without one, targeted reads (grep, fm outline, line ranges), fm check --affected while iterating, short ` +
+    `replies. Correctness, evidence and the guard's rules don't change.`
+  )
 }
 
 // A task just closed: with the context past freshAt, compact so the next task starts on what still matters (T-0098).
@@ -512,6 +533,13 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
     if (e.props.isExpanded || !e.props.calls.some(x => x.tool === 'Bash')) return next(e)
     return next({ ...e, props: { ...e.props, isExpanded: true } })
+  })
+
+  // T-0198: economy mode, one session section after the engine's while a usage window is past its threshold.
+  on('prompt.compose', async ($, e, next) => {
+    const r = await next(e)
+    const text = economyText((await $.session.usage().catch(() => null))?.rateLimits ?? [])
+    return text ? { ...r, sections: [...r.sections, { id: 'foreman-ui:economy', text, scope: 'session' }] } : r
   })
 
   // A background task's notification (idle, or folded into a running turn) names the task that ended.

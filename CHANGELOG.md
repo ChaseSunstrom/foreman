@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Economy mode (T-0198): past 80% weekly usage (or 90% of the 5-hour window), foreman-ui adds one section to the system prompt telling Claude to work leaner (no brainstorms, one reviewer pass, no extra subagents, targeted reads, short replies) and toasts once; it lifts when the window resets.
 - Foreman's own gates (T-0197): the test suite runs when a file the tests read changes (plugin/, mods/, the docs and install scripts), so a CHANGELOG-only edit no longer re-runs it.
 - Dashboard brainstorm card (T-0196): once a brainstorm's ideas are grounded into a recorded slate, the card folds to "N ideas · grounded" instead of listing ideas already built or dropped.
 - Dashboard activity (T-0195): a failed run shows ✗ instead of a tick beside its ✗ result, and each line collapses padded output and cuts a long command, so a row reads as one tidy line.
