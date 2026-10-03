@@ -13,6 +13,17 @@ SHORT = {"input_tokens": "input", "cache_creation_input_tokens": "cache writes",
          "cache reads", "output_tokens": "output"}
 
 
+IMAGE_CHARS = 6400  # ponytail: an image is at most ~1,600 tokens (≈4 chars each); read its size if that matters
+
+
+def _size(content):
+    """A tool result's context cost in characters: an image its token cost, not its base64 length (T-0194)."""
+    if isinstance(content, list):
+        return sum(IMAGE_CHARS if isinstance(x, dict) and x.get("type") == "image" else len(json.dumps(x))
+                   for x in content)
+    return len(json.dumps(content))
+
+
 def transcripts_dir(root):
     """Claude Code keeps a project's transcripts under ~/.claude/projects/<its path, non-alphanumerics as '-'>."""
     base = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
@@ -53,7 +64,7 @@ def scan(folder, since):
                             if x.get("type") == "tool_use":
                                 names[x.get("id")] = x.get("name") or "?"
                             elif x.get("type") == "tool_result":
-                                tools[names.get(x.get("tool_use_id"), "?")] += len(json.dumps(x.get("content")))
+                                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
                         if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
                             msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
             except OSError:

@@ -83,7 +83,12 @@ class Speed(ForemanTestCase):
                 {"type": "assistant", "timestamp": c.now(), "sessionId": "abcdef123",  # same message, second block
                  "message": {"id": "m1", "usage": usage, "content": [{"type": "text", "text": "x"}]}},
                 {"type": "user", "timestamp": c.now(), "message": {"content": [
-                    {"type": "tool_result", "tool_use_id": "t1", "content": "y" * 5000}]}}]
+                    {"type": "tool_result", "tool_use_id": "t1", "content": "y" * 5000}]}},
+                {"type": "assistant", "timestamp": c.now(), "sessionId": "abcdef123", "message": {"id": "m2", "content": [
+                    {"type": "tool_use", "id": "t2", "name": "Shot"}]}},
+                {"type": "user", "timestamp": c.now(), "message": {"content": [  # T-0194: a screenshot
+                    {"type": "tool_result", "tool_use_id": "t2", "content": [
+                        {"type": "image", "source": {"type": "base64", "data": "A" * 400000}}]}]}}]
         with open(os.path.join(folder, "abcdef123.jsonl"), "w") as f:
             f.write("\n".join(json.dumps(r) for r in rows) + "\n")
         data = self.fm_json("cost", env={"CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "claude")})
@@ -91,6 +96,7 @@ class Speed(ForemanTestCase):
         self.assertEqual(data["tokens"]["input_tokens"], 1000)
         self.assertEqual(data["input_equivalent"], 1000 + 1000 + 1000)
         self.assertIn("Read", data["tool_result_chars"])
+        self.assertLess(data["tool_result_chars"]["Shot"], 10000, "an image costs its tokens, not its base64 length")
 
     def test_cost_says_where_the_time_went(self):
         # T-0188 (brainstorm round 4, the user's 'faster'): the model's time against each tool's, a shell command by
