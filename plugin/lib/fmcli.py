@@ -767,10 +767,44 @@ def cmd_resume(args):
     out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}\nBrief: {r['path']}")
 
 
+def _queue_preview(p, args, order, briefs):
+    """T-0114: the queue and the ranked inbox with this project's usual minutes for each type and size, and what each
+    will need from the user under the current autonomy (a plan yes, an open fm ask, a core yes its scope implies),
+    gathered first so they can be answered together before a long run."""
+    import fmguard
+    import fmwatch
+    meta = c.read_meta(p)
+    autonomy, pending, standing = meta.get("autonomy", "standard"), c.pending_tasks(meta), set(meta.get("standing") or {})
+    usual = fmwatch.typical(c.ledger_tail(p, 5000))
+    ctx = fmguard.Ctx(cwd=p.root, project_root=p.root, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
+                      state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks())
+    act = c.active_brief(briefs, p.lane)
+    items = []
+    for b in [x for x in order if x is not act] + c.rank_inbox(briefs):
+        needs = [w for w in [c.waits_on_user(b, pending, autonomy)] if w]
+        core = any("core" in fmguard.classify_write(os.path.join(p.root, re.split(r"[*?\[]", g)[0]), ctx)
+                   for g in b.meta.get("scope") or [])
+        if core and "core" not in standing:
+            needs.append("core yes")
+        items.append({"id": b.id, "type": b.type, "tier": b.tier, "title": b.title, "status": b.status,
+                      "minutes": usual.get(f"{b.type}/{b.tier}"), "needs": needs})
+    known = [i["minutes"] for i in items if i["minutes"] is not None]
+    asks = [i for i in items if i["needs"]]
+    lines = [f"Queue preview ({autonomy} autonomy): {len(items)} item(s), about {sum(known)} min for the {len(known)} "
+             f"with history here; {len(asks)} need you" + (" — answer these together:" if asks else ".")]
+    lines += [f"  ✋ {i['id']} {i['type']} {i['tier']} {c.fit(i['title'], 60)} — {', '.join(i['needs'])}" for i in asks]
+    lines += [f"{n}. {i['id']} {i['type']} {i['tier']} [{i['status']}] "
+              f"{'~' + str(i['minutes']) + ' min' if i['minutes'] is not None else '~? min'} — {c.fit(i['title'], 70)}"
+              for n, i in enumerate(items, 1)]
+    return out(args, {"autonomy": autonomy, "items": items, "minutes_known": sum(known)}, "\n".join(lines))
+
+
 def cmd_queue(args):
     p = resolve(args)
     briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: another lane's work isn't this side's queue
     order, cycles, dangling = c.order_queue(briefs)
+    if args.preview:
+        return _queue_preview(p, args, order, briefs)
     if args.replan:
         with c.lock(p.dir):
             c.log_event(p, "replan", data={"order": [b.id for b in order]}, session=session())
@@ -1746,6 +1780,7 @@ def build_parser():
 
     s = add("queue", cmd_queue, help="ordered queue")
     s.add_argument("--replan", action="store_true")
+    s.add_argument("--preview", action="store_true", help="usual time per item here, and what each will need from you")
 
     s = add("log", cmd_log, help="append a ledger event")
     s.add_argument("event")

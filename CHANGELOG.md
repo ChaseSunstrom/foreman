@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm queue --preview` (T-0114, from the brainstorm's overnight dry-run idea): each queued and inbox item with the usual time for its type and size here, and what will need you (plan yeses, open asks, a core yes its scope implies), gathered at the top so they can be answered together before a long run.
 - Lanes (T-0134, toward parallel work): a git worktree of the repo is a lane with its own active task, so two sessions can each work a task without pausing or touching the other's; each side's next and queue skip the other's work, the edit gate holds in a lane, and commits land on the lane's branch. `fm lane new|list|rm` manages them (rm never discards uncommitted work). Before, a worktree wasn't Foreman's project at all.
 - foreman-ui split (T-0130): the transcript rows moved to `rows.tsx` and the shared constants to `state.ts` (register.tsx 1637 → 1323 lines), behaviour locked by the 57 mod tests and `claude plugin validate`. Two engine rules shape any further split: `$` can't be passed across an import, and an atom is read only in the file that declares it.
 - Gates by path (T-0126): `fm check paths N GLOB…` lets a gate declare what it covers; `fm check` skips it while nothing under those paths changed since its last pass, and says so. This repo's mod tests, hook bench and e2e roundtrip now run only when their files changed.
