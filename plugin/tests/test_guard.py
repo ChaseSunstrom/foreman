@@ -364,6 +364,28 @@ class ScratchNames(GuardCase):
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 
+    def test_driving_foremans_modules_means_real_imports(self):
+        # T-0170 (self-improvement pass 2): an edit script whose strings mention `import fmhooks` was blocked
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        self.assertFalse(driving("python3 - <<'PY'\nnew = \"import fmsecrets\\nfmsecrets.write_atomic(p, s)\"\n"
+                                 "print(len(new))\nPY"))
+        for cmd in ("python3 - <<'PY'\nimport fmhooks\nfmhooks.save_brief(x)\nPY",
+                    "python3 - <<'PY'\nexec(\"import fmsecrets; write_atomic(1)\")\nPY",
+                    "python3 - <<'PY'\nimport fmcore\nfmcore.write_meta(\nPY",  # doesn't parse: as before
+                    "python3 -c 'import fmcore; fmcore.write_meta(p, {{}})'",
+                    "cat > x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {{}})\nEOF\npython3 x.py",
+                    "python3 - <<'PY'\nfrom fmcore import write_meta as w\nw(p, {{}})\nPY"):
+            self.assertTrue(driving(cmd), cmd)
+        # the text a parsed script holds can still run: a process, a module it just wrote, pickle, dunder walking
+        code = "s = 'import fmcore; fmcore.write_meta(p, {{}})'\n"
+        for run in ("import os\nos.system('python3 -c \"' + s + '\"')\n",
+                    "import subprocess\nsubprocess.run(['python3', '-c', s])\n",
+                    "open('m.py', 'w').write(s)\nimport m\n",
+                    "import pickle\npickle.loads(b'')\n",
+                    "().__class__.__base__.__subclasses__()\n"):
+            self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
+        self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
+
     def test_a_quoted_cat_heredoc_is_data_not_code(self):
         # T-0171 (self-improvement pass 2): a test file written with cat that names python and a credential path
         body = f"#!/usr/bin/env python3\nopen('{self.home}/.ssh/config', 'w')\n"  # a script written, not run

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: "interpreter code driving Foreman's modules" reads real Python imports (T-0170, self-improvement pass 2): an edit script whose strings mention `import fmhooks` was blocked; quoted python heredocs are parsed, and everything the parser can't prove (other interpreters, -c code, data heredocs, dynamic code) is read as text as before. A writer imported under an alias (`from fmcore import write_meta as w`) now counts too.
 - The scope refusal names the out-of-scope file edited last and says a `scope:` reason only covers edits before it (T-0168, self-improvement pass 2: a reason logged before a later edit left the finish refused without saying why).
 - Guard: a secret-sounding file name under the scratchpad or `/tmp` (`secrets.txt`) isn't a credential (T-0169, self-improvement pass 2: `fm secrets > <scratchpad>/secrets.txt` was blocked); `.env`, keys and credential folders still count there, and a scratch symlink is judged by its real path.
 - Guard: a script written with a quoted `cat`/`tee` heredoc is data, not interpreter code (T-0171, self-improvement pass 2): a shebang or a `python3 -m pytest` line in the text, beside a quoted credential path, blocked the write; piped or unquoted heredocs, and real interpreter heredocs, are read as before.

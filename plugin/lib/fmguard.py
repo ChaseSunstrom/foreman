@@ -512,7 +512,10 @@ _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|
                           r"restore_default_state)\s*\(|"
                           rf"\bgetattr\s*\(\s*{_FM_ENTRY}\b|"
                           rf"\b{_FM_ENTRY}\s*\.\s*\w+\s*\(|\bfrom\s+{_FM_ENTRY}\s+import\b|\bimport\s+{_FM_ENTRY}\s+as\b|"
-                          rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}")
+                          rf"(?:__import__|import_module)\s*\(\s*['\"]{_FM_ENTRY}|"
+                          # T-0170: a writer imported by name, then called under an alias (from fmcore import x as w)
+                          r"\bfrom\s+fm[a-z]+\s+import\s+[^\n;]*\b(?:save_brief|write_meta|update_meta|write_atomic|"
+                          r"log_event|regen_views|init_project|checkpoint|mutate|restore_default_state)\b")
 
 
 _FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
@@ -632,6 +635,65 @@ def _top_level(prefix):
     return q is None and not esc
 
 
+_DYNAMIC = {"exec", "eval", "compile", "getattr", "__import__", "import_module", "importlib", "globals", "vars",
+            "__builtins__", "builtins", "setattr",
+            # code in a string can also run in another process (T-0170, own adversary pass)
+            "system", "popen", "Popen", "run", "call", "check_call", "check_output", "getoutput", "getstatusoutput",
+            "startfile", "posix_spawn", "posix_spawnp", "fork", "forkpty", "spawnl", "spawnle", "spawnlp", "spawnlpe",
+            "spawnv", "spawnve", "spawnvp", "spawnvpe", "execl", "execle", "execlp", "execlpe", "execv", "execve",
+            "execvp", "execvpe"}
+# a parsed script that imports only these can't load or run the code its strings hold (anything else: read as text)
+_PLAIN_IMPORTS = {"re", "json", "os", "sys", "pathlib", "textwrap", "difflib", "collections", "itertools", "functools",
+                  "string", "datetime", "time", "shutil", "glob", "fnmatch", "math"}
+
+
+def _drives_fm(cmd):
+    """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
+    python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
+    of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
+    that doesn't parse, and dynamic code (exec, eval, getattr, importlib…). It only relaxes what it can prove."""
+    if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
+        return False
+    lines, rest, units, i = cmd.split("\n"), [], [], 0
+    while i < len(lines):
+        line = lines[i]
+        rest.append(line)
+        i += 1
+        starts = re.findall(_HEREDOC_START, line)
+        for quote, delim in starts:
+            body = []
+            while i < len(lines) and lines[i].strip() != delim:
+                body.append(lines[i])
+                i += 1
+            if i < len(lines):
+                rest.append(lines[i])
+                i += 1
+            fed = quote and len(starts) == 1 and re.match(r"\s*python[0-9.]*\s+-\s*<<", line) and not re.search(r"[|`;&]|\$\(", line)
+            (units if fed else rest).append("\n".join(body))
+    if _FM_INTERNALS.search("\n".join(rest)):
+        return True
+    import ast
+    for code in units:
+        if not _FM_INTERNALS.search(code):
+            continue
+        try:
+            tree = ast.parse(code)
+        except (SyntaxError, ValueError):
+            return True
+        names = {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)} | \
+                {n.attr for n in ast.walk(tree) if isinstance(n, ast.Attribute)}
+        modules = [a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names] + \
+                  [n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)]
+        if names & _DYNAMIC or any(x.startswith("__") for x in names) or \
+                any(m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm") for m in modules):
+            return True  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
+        fm_from = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("fm")]
+        fm_import = [a for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name.startswith("fm")]
+        if fm_from or (fm_import and _FM_MUTATORS.search(code)):
+            return True
+    return False
+
+
 def _interp_code(cmd):
     """What the interpreter claude-check reads: the whole command but the `--run "<cmd>"` arguments of real fm calls,
     which check_bash reads on their own (interpreter checks included). A span is left out only when it starts at shell
@@ -662,7 +724,7 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
+    if _drives_fm(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     code = _interp_code(cmd)
     # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
