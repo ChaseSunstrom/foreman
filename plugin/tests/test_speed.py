@@ -92,6 +92,33 @@ class Speed(ForemanTestCase):
         self.assertEqual(data["input_equivalent"], 1000 + 1000 + 1000)
         self.assertIn("Read", data["tool_result_chars"])
 
+    def test_cost_says_where_the_time_went(self):
+        # T-0188 (brainstorm round 4, the user's 'faster'): the model's time against each tool's, a shell command by
+        # what it ran; time waiting on the person and gaps over 10 minutes left out
+        folder = os.path.join(self.tmp, "claude", "projects", "".join(ch if ch.isalnum() else "-" for ch in self.repo))
+        os.makedirs(folder)
+        t0 = c.time.time() - 3600
+        at = lambda s: c.iso(t0 + s)
+        usage = {"input_tokens": 1, "output_tokens": 1}
+        rows = [{"type": "user", "timestamp": at(0), "message": {"content": "go"}},  # the person's prompt
+                {"type": "assistant", "timestamp": at(5), "sessionId": "s1", "message": {"id": "m1", "usage": usage,
+                 "content": [{"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "cd /x && fm check"}}]}},
+                {"type": "user", "timestamp": at(25), "message": {"content": [{"type": "tool_result", "tool_use_id": "b1"}]}},
+                {"type": "assistant", "timestamp": at(30), "sessionId": "s1", "message": {"id": "m2", "usage": usage,
+                 "content": [{"type": "text", "text": "done"}]}},
+                {"type": "user", "timestamp": at(3000), "message": {"content": "next"}},  # an hour away: not counted
+                {"type": "assistant", "timestamp": at(3004), "sessionId": "s1", "message": {"id": "m3", "usage": usage,
+                 "content": [{"type": "text", "text": "ok"}]}}]
+        with open(os.path.join(folder, "s1.jsonl"), "w") as f:
+            f.write("\n".join(json.dumps(r) for r in rows) + "\n")
+        r = self.fm("cost", env={"CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "claude")})
+        data = self.fm_json("cost", env={"CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "claude")})
+        self.assertEqual(data["time"]["model_s"], 14)  # 5 + 5 + 4
+        self.assertEqual(data["time"]["tools_s"], {"Bash": 20})
+        self.assertEqual(data["time"]["shell_s"], {"fm check": 20})
+        self.assertIn("Time", r.stdout)
+        self.assertIn("fm check", r.stdout)
+
     def test_usage_counts_skills_and_lists_the_unused(self):
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             for tool, target in (("Skill", "foreman:intake"), ("Bash", "fm task new x"), ("Bash", "fm check")):

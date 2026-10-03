@@ -61,6 +61,72 @@ def scan(folder, since):
     return list(msgs.values()), tools
 
 
+IDLE_S = 600  # a gap longer than this between two entries is time away, not work
+
+
+def _dur(s):
+    s = int(round(s))
+    return f"{s // 3600}h {s % 3600 // 60:02d}m" if s >= 3600 else f"{s // 60}m {s % 60:02d}s" if s >= 60 else f"{s}s"
+
+
+def _program(cmd):
+    """What a shell command ran, for the time split: fm's subcommand, an interpreter's script, else the program; leading
+    cd, set and NAME=value parts skipped."""
+    for part in re.split(r"&&|\|\|?|;|\n", cmd or ""):
+        words = [w for w in part.split() if not re.match(r"[A-Za-z_]\w*=", w)]
+        if not words or words[0] in ("cd", "set", "export", "true", ":"):
+            continue
+        name = os.path.basename(words[0])
+        if len(words) > 1 and not words[1].startswith("-") and (name == "fm" or re.fullmatch(r"python[0-9.]*|node|bash|sh", name)):
+            return f"{name} {os.path.basename(words[1]) if name != 'fm' else words[1]}"
+        return name
+    return "shell"
+
+
+def timing(folder, since):
+    """(seconds to the model, {tool: seconds}, {shell program: seconds}) since the cutoff (T-0188). In each session the
+    stretch between two entries goes to what ended it: a tool result to its tool, a reply to the model; a prompt ends
+    time spent waiting on the person, and a gap over IDLE_S is time away: neither counts."""
+    model, tools, shell = 0.0, collections.Counter(), collections.Counter()
+    for dirpath, _, files in os.walk(folder):
+        for n in files:
+            if not n.endswith(".jsonl"):
+                continue
+            rows = []
+            try:
+                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        try:
+                            e = json.loads(line)
+                            ts = str(e.get("timestamp") or "")
+                            t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+                        except (ValueError, AttributeError):
+                            continue
+                        if ts[:19] >= since:
+                            rows.append((t, e))
+            except OSError:
+                continue
+            names, cmds, prev = {}, {}, None
+            for t, e in sorted(rows, key=lambda r: r[0]):
+                m = e.get("message") if isinstance(e.get("message"), dict) else {}
+                content = [x for x in (m.get("content") if isinstance(m.get("content"), list) else []) if isinstance(x, dict)]
+                for x in content:
+                    if x.get("type") == "tool_use":
+                        names[x.get("id")] = x.get("name") or "?"
+                        cmds[x.get("id")] = (x.get("input") or {}).get("command") if isinstance(x.get("input"), dict) else None
+                results = [x for x in content if x.get("type") == "tool_result"]
+                if prev is not None and 0 < t - prev <= IDLE_S:
+                    if e.get("type") == "assistant":
+                        model += t - prev
+                    for x in results:
+                        name, share = names.get(x.get("tool_use_id"), "?"), (t - prev) / len(results)
+                        tools[name] += share
+                        if name == "Bash":
+                            shell[_program(cmds.get(x.get("tool_use_id")))] += share
+                prev = t
+    return model, tools, shell
+
+
 def _task_at(timeline, ts):
     """The task of the newest ledger event at or before ts (events carry the task they were recorded for)."""
     task = None
@@ -99,9 +165,19 @@ def cmd_cost(args):
         first.setdefault(sid, sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens",
                                                                "cache_read_input_tokens")))
     base = sorted(first.values())[len(first) // 2] if first else 0
+    model_s, tool_s, shell_s = timing(folder, _since(args.days))
+    active = model_s + sum(tool_s.values())
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
-            "tool_result_chars": dict(tools.most_common()), "session_start_context": base}
+            "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
+            "time": {"active_s": round(active), "model_s": round(model_s),
+                     "tools_s": {k: round(v) for k, v in tool_s.most_common()},
+                     "shell_s": {k: round(v) for k, v in shell_s.most_common()}}}
+    pct = lambda v: f"{100 * v / (active or 1):.0f}%"
+    when = (f"\nTime, active ({c.fit(_dur(active), 12)}; waiting on you and gaps over {IDLE_S // 60} min left out): "
+            f"model {pct(model_s)} · " + " · ".join(
+                f"{k} {pct(v)}" + (" (" + ", ".join(f"{p} {pct(s)}" for p, s in shell_s.most_common(4)) + ")"
+                                    if k == "Bash" and shell_s else "") for k, v in tool_s.most_common(5))) if active else ""
     text = (f"Tokens, last {args.days} day(s), {len(by_session)} session(s), {len(msgs)} replies: "
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
@@ -110,7 +186,7 @@ def cmd_cost(args):
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
             + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
             + (f"\nContext at the first reply of a session (median): {_human(base)} tokens, re-read every turn"
-               if base else ""))
+               if base else "") + when)
     fmcli.out(args, data, text)
 
 

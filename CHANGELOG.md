@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm cost` says where the time went (T-0188, brainstorm round 4, the user's 'faster'): active time split between the model and each tool, shell commands by what they ran (fm's subcommand, an interpreter's script, else the program); waiting on you and gaps over 10 minutes left out. This week: 15 h active, model 55%, shell 44%.
 - Guard block messages name the rewrite that lets the guard read the target when it couldn't pin it down (T-0185, brainstorm round 4): an unknown target (name it literally or set its variable before any loop or pipe, chain a cd with &&), an unresolvable rm target, a script it couldn't prove (builtin open() on literal paths, or the Edit tool).
 - `fm doctor` warns when the installed foreman-ui lags this repo (T-0191, brainstorm round 4): its hooks are compared, so code changed without a version bump counts; right now it says 0.4.0 installed, 0.5.0 here.
 - Guard (T-0190, the first two findings of `fm replay`): a variable's own name is no longer a guess for an unknown target (`S=…; cat > $S/x` guessed `S/x`), and `rm` takes a literal set once before a branch (`S=<scratch> && rm -rf $S/x … | …` no longer reads as outside the project). The replay showed exactly that one real command flipping.
