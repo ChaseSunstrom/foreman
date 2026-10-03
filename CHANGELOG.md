@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The inbox is ranked by value for effort (T-0111): within the intake type order, items are ordered by who asked, how many items wait on them and how long they waited, per tier; dependencies come first. It was oldest-first.
 - Fix (T-0164, a regression from T-0086 found closing T-0087): a Bash edit's touch is timed by the file's mtime, not by the async hook that logs it after the command, so a `scope:` reason logged in the same command covers the edit instead of reading as older and refusing the finish.
 - `fm help` (T-0094): every command once, in six tiers with the everyday ones first; bare `fm` prints it instead of a usage error. `fm help` used to be an error and `fm -h` one unordered list of 51 commands.
 - Hook circuit breaker (T-0087): a hook that fails 3 times in a row pauses for 10 minutes instead of failing on every event, and says so in the band (a warning row), the dashboard's hooks line, `fm doctor` and hooks.log; one success clears it, and the guard (PreToolUse) never pauses.

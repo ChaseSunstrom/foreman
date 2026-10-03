@@ -1079,6 +1079,32 @@ def _key(b):
             RANK.get(b.type, 99), id_num(b.id))
 
 
+SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
+
+
+def rank_inbox(briefs):
+    """T-0111: captured items by value for effort inside the intake order: urgent first, then type (RANK), then value
+    (who asked, 2 per item depending on it, up to 2 for waiting two weeks) per tier; an item follows any captured
+    item it depends on."""
+    wanted = defaultdict(int)
+    for b in briefs:
+        for d in b.meta.get("depends_on") or []:
+            wanted[d] += 1
+
+    def key(b):
+        value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min((age_days(b.meta.get("created")) or 0) / 7, 2)
+        return (0 if b.priority == "urgent" else 1, RANK.get(b.type, 99), -value / TIER_EFFORT.get(b.tier, 2), id_num(b.id))
+    pending = sorted((b for b in briefs if b.status == "captured"), key=key)
+    ids, out, placed = {b.id for b in pending}, [], set()
+    while pending:  # ponytail: O(n²), fine for an inbox
+        b = next((x for x in pending if all(d in placed or d not in ids for d in x.meta.get("depends_on") or [])),
+                 pending[0])  # a cycle: as ranked
+        pending.remove(b)
+        out.append(b)
+        placed.add(b.id)
+    return out
+
+
 def order_queue(briefs):
     """Runnable briefs in canonical order with dependencies respected. Returns (queue, cycles, dangling)."""
     by_id = {b.id: b for b in briefs}
@@ -1460,15 +1486,14 @@ def last_change(p, tid):
 
 
 def next_for(p, briefs=None):
-    """(brief or None, stage, action): the active task, else the first queued, else the oldest captured item."""
+    """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111)."""
     briefs = load_briefs(p) if briefs is None else briefs
     autonomy = read_meta(p).get("autonomy", "standard")
     if not active_brief(briefs):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
             return None, "reflect", fmfriction.ACTION
-    b = active_brief(briefs) or next(iter(order_queue(briefs)[0]), None) or \
-        next((x for x in briefs if x.status == "captured"), None)
+    b = active_brief(briefs) or next(iter(order_queue(briefs)[0]), None) or next(iter(rank_inbox(briefs)), None)
     if not b:
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)
@@ -1500,7 +1525,7 @@ def state_dict(p, briefs=None):
         "project": p.slug, "root": p.root,
         "active": active,
         "queue": [brief_summary(b) for b in queue if b is not act],
-        "inbox": [brief_summary(b) for b in briefs if b.status == "captured"],
+        "inbox": [brief_summary(b) for b in rank_inbox(briefs)],
         "blocked": [dict(brief_summary(b), reason=_last_log(b)) for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
