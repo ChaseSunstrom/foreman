@@ -210,6 +210,35 @@ def worktree_tree(root):
     return tree or None
 
 
+def rebase_snapshot(root, base, paused, now):
+    """T-0136: a paused task's start point moved past the work done meanwhile: the files now (tree `now`) with the
+    task's own changes (base → paused) taken back out. None when they don't come apart (the same lines changed), False
+    when a snapshot is gone (git pruned it)."""
+    top = git_root(root)
+    if any(_git(top, "cat-file", "-t", rev, timeout=10).strip() != "tree" for rev in (base, paused)):
+        return False
+    with tempfile.TemporaryDirectory() as t:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(t, "index"))
+        try:
+            diff = subprocess.run(["git", "-C", top, "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "diff",
+                                   "--binary", "--full-index", "--no-color", "--no-ext-diff", "--no-textconv", base, paused],
+                                  capture_output=True, timeout=120, check=True).stdout
+            subprocess.run(["git", "-C", top, "read-tree", now], env=env, capture_output=True, timeout=60, check=True)
+            if diff.strip():
+                subprocess.run(["git", "-C", top, "apply", "--cached", "-R", "--binary"], input=diff, env=env,
+                               capture_output=True, timeout=120, check=True)
+            return subprocess.run(["git", "-C", top, "write-tree"], env=env, capture_output=True, text=True, timeout=60,
+                                  check=True).stdout.strip() or None
+        except (OSError, subprocess.SubprocessError):
+            return None
+
+
+def pause_snapshot(root, b):
+    """Before a task stops being active: the files as it leaves them, so a re-focus can tell later work apart."""
+    if b.meta.get("base_tree") and (tree := worktree_tree(root)):
+        b.meta["paused_tree"] = tree
+
+
 def git_head(root):
     try:
         r = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "-q", "HEAD"], capture_output=True, text=True,

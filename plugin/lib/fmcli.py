@@ -283,6 +283,8 @@ def cmd_task(args):
         reason = getattr(args, "reason", None) or ""
 
         def change(b):
+            if status != "dropped" and b.status in ("active", "verifying"):
+                c.pause_snapshot(p.root, b)  # T-0136
             b.meta["status"] = status
             b.append_log(f"{status}: {reason}" if reason else status)
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
@@ -621,12 +623,24 @@ def cmd_focus(args):
                                 f"(fm task set/ac/step, or /foreman:intake; fm next says what's next)")
         for b in c.load_briefs(p):
             if b.status in ("active", "verifying") and b.id != target.id:
+                c.pause_snapshot(p.root, b)  # T-0136
                 b.meta["status"] = "planned"
                 b.append_log(f"paused: focus moved to {target.id}")
                 c.save_brief(p, b)
+        resumed = target.status not in ("active", "verifying")  # set active by hand: its pause point is stale (review)
         target.meta["status"] = "active"
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
+        paused = target.meta.pop("paused_tree", None)
+        if resumed and paused and target.meta.get("base_tree") and (now := c.worktree_tree(p.root)) and now != paused:
+            moved = c.rebase_snapshot(p.root, target.meta["base_tree"], paused, now)  # T-0136
+            if moved:
+                target.meta["base_tree"] = moved
+                target.append_log("re-based: what other work changed while it was paused isn't its own change")
+            else:
+                target.append_log("its pause snapshot is gone (git pruned it): its diff may include work done meanwhile"
+                                  if moved is False else
+                                  "other work changed the same lines while it was paused: its diff still includes that work")
         if not target.meta.get("base_tree") and c.git_root(p.root):
             snap = c.worktree_tree(p.root)  # T-0078: its own changes are measured from the files as they are now
             if snap:
