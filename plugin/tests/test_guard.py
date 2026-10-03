@@ -444,6 +444,8 @@ class PluginChanges(GuardCase):
             ("echo `claude plugin install x@y`", "plugin"),  # T-0150: unquoted backtick substitution went unread
             ('echo "`rm -rf ~`"', "rm-outside"),  # T-0155 review: T-0150's rewrite hid double-quoted backticks
             ('echo "a `claude plugin install x@y` b"', "plugin"),
+            ("echo $'\\'' `rm -rf ~`", "rm-outside"),  # T-0157 review: $'\'' threw the backtick scan's quotes off
+            ("echo $'\\'' `claude plugin install x@y` '", "plugin"),
             ("python3 -c 'print(1)'; echo `claude mcp add a -- b`", "plugin"),
             ("claude plugin enable superpowers@claude-plugins-official", "plugin"),
             ("claude plugin disable ecc@ecc", "plugin"),

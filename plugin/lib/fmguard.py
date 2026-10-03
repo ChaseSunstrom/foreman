@@ -440,7 +440,10 @@ _FM_RUN_ARG = re.compile(r"""--run(?:=|\s+)(?:"(?:\\.|[^"\\])*"|'[^']*')""")
 
 def _backtick_bodies(cmd):
     """The bodies of `…` substitutions outside single quotes (bare or inside double quotes): a shell runs each. An
-    unterminated one runs to the end (read it all)."""
+    unterminated one runs to the end (read it all). With $'…' quoting (where \\' is a quote) the quote scan can't follow:
+    every span between backticks is read (T-0157, fails closed)."""
+    if "$'" in cmd:
+        return cmd.split("`")[1::2]
     out, q, esc, start = [], None, False, None
     for i, ch in enumerate(cmd):
         if esc:
