@@ -460,6 +460,46 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_a_provable_python_edit_counts_only_its_open_targets(self):
+        # T-0176 (from T-0174's friction): an edit script whose strings name protected paths, writing only its own file
+        py = lambda body: "python3 - <<'PY'\n" + body + "\nPY"
+        core = "{fhome}/plugin/lib/fmguard.py"
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        edit = ("s = open('notes.txt').read()\ns = s.replace('.foreman/x', '.env')\ns = s.replace('" + core + "', 'y')\n"
+                "open('notes.txt', 'w').write(s)")
+        self.run_table([
+            (py(edit), None),
+            (py("import re, json\np = 'notes.txt'\nopen(p, 'w').write(re.sub('a', 'b', '" + core + "'))"), None),
+            (py("p = '" + core + "'\nopen(p, 'w').write('x')"), "core"),  # the one file it writes is still checked
+            (py("p = 'a'\np = '" + core + "'\nopen(p, 'w').write('x')"), "core"),
+            (py("m = input()\nopen('" + core + "', mode=m).write('x')"), "core"),  # a mode it can't read: a write
+            (py("open('" + core + "').read()"), None),  # reading isn't writing
+            # anything it can't prove keeps the coarse rule: every quoted path counts
+            (py("import os\nos.replace('notes.txt', '" + core + "')"), "core"),
+            (py("import re\nre.enum.bltns.open('" + core + "', 'w')"), "core"),
+            (py("g = (x for x in [1])\ng.gi_frame.f_globals['__builtins__'].open('" + core + "', 'w')"), "core"),
+            (py("def f(p):\n    open(p, 'w')\nf('" + core + "')"), "core"),
+            (py("locals()['__builtins__'].open('" + core + "', 'w')"), "core"),
+            ("PYTHONPATH=/tmp/e \\\n" + py("import json\nopen('notes.txt', 'w').write('" + core + "')"), "core"),
+            ("cd {fhome}/plugin/lib\n" + py("s = 'x'\nopen('fmguard.py', 'w').write(s)"), "core"),  # after a cd
+            ("python3 -c \"open('notes.txt', 'w').write('" + core + "')\"", "core"),  # -c code: coarse, as before
+        ], self.bash)
+        # its reviews: ways to write that the proof must refuse to vouch for (the coarse rule then decides)
+        for code in ("type(open('a').buffer.raw)('/x', 'w')", "locals()['__builtins__'].open('/x', 'w')",
+                     "b = locals()['__bui' + 'ltins__']\nb.open('/x', 'w')", "p = '/ok'\nlocals()['p'] = '/x'\nopen(p, 'w')",
+                     "p = '/ok'\nlocals().update(p='/x')\nopen(p, 'w')", "import sys\nf = sys.stdout\nf.buffer",
+                     "import re\nc = re.compile\nc('x')", "import re\nre.enum.bltns.open('/x', 'w')",
+                     "g = (x for x in [1])\ng.gi_frame", "x = {}\nx['__builtins__']", "f = open('a')\nf.open"):
+            self.assertIsNone(g._open_targets(code), code)
+        self.assertEqual(g._open_targets("import re\np = 'a' + '.txt'\nopen(p, 'w').write(re.sub('x', 'y', 's'))"),
+                         ["a.txt"])
+        shadow = os.path.join(self.repo, "json.py")  # python - imports the current folder's json.py first
+        open(shadow, "w").close()
+        try:
+            self.assertBlocked(self.bash(py("import json\nopen('notes.txt', 'w').write('" + core + "')")), "core")
+        finally:
+            os.remove(shadow)
+
     def test_a_quoted_cat_heredoc_is_data_not_code(self):
         # T-0171 (self-improvement pass 2): a test file written with cat that names python and a credential path
         body = f"#!/usr/bin/env python3\nopen('{self.home}/.ssh/config', 'w')\n"  # a script written, not run

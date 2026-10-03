@@ -649,19 +649,17 @@ _PLAIN_IMPORTS = {"re", "json", "os", "sys", "pathlib", "textwrap", "difflib", "
                   "string", "datetime", "time", "shutil", "glob", "fnmatch", "math"}
 
 
-def _drives_fm(cmd):
-    """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
-    python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
-    of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
-    that doesn't parse, and dynamic code (exec, eval, getattr, importlib…). It only relaxes what it can prove."""
-    if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
-        return False
-    lines, rest, units, i = cmd.split("\n"), [], [], 0
+def _python_units(cmd):
+    """(the bodies of quoted heredocs fed straight to python, the rest of the command, the lines that feed them): a
+    unit only when it's the line's one heredoc, on a `python - <<` line with no pipe, `;`, `&`, backtick or `$(`."""
+    lines, rest, units, starters, i = cmd.split("\n"), [], [], [], 0
     while i < len(lines):
         line = lines[i]
-        rest.append(line)
         i += 1
         starts = re.findall(_HEREDOC_START, line)
+        fed = len(starts) == 1 and starts[0][0] and re.match(r"\s*python[0-9.]*\s+-\s*<<", line) and \
+            not re.search(r"[|`;&]|\$\(", line)
+        (starters if fed else rest).append(line)
         for quote, delim in starts:
             body = []
             while i < len(lines) and lines[i].strip() != delim:
@@ -670,9 +668,143 @@ def _drives_fm(cmd):
             if i < len(lines):
                 rest.append(lines[i])
                 i += 1
-            fed = quote and len(starts) == 1 and re.match(r"\s*python[0-9.]*\s+-\s*<<", line) and not re.search(r"[|`;&]|\$\(", line)
             (units if fed else rest).append("\n".join(body))
-    if _FM_INTERNALS.search("\n".join(rest)):
+    return units, rest, starters
+
+
+# module → (functions it may call, values it may name: flags, exception classes, argv); nothing that holds a module
+_PY_PURE = {"re": (set("sub subn search match fullmatch findall finditer split compile escape".split()),
+                   set("error I IGNORECASE M MULTILINE S DOTALL X VERBOSE A ASCII".split())),
+            "json": ({"loads", "dumps", "load", "dump"}, {"JSONDecodeError"}),
+            "textwrap": ({"dedent", "indent", "fill", "wrap", "shorten"}, set()),
+            "sys": ({"exit"}, {"argv"})}
+_FRAME_ATTR = re.compile(r"(?:gi|cr|ag|f|tb)_")
+_PY_PATH_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONPLATLIBDIR", "PYTHONSTARTUP")  # what imports load
+# review: the only builtins a proved script may name (not type: type(f.buffer.raw) is FileIO, which opens files; not
+# locals: locals()['__builtins__'].open, or a name rebound behind the binding count)
+_PY_BUILTINS = set("""print len str int float bool bytes bytearray list dict set frozenset tuple range enumerate zip
+    sorted reversed min max sum any all abs round repr isinstance map filter chr ord hex oct bin format hash iter next
+    divmod pow slice input exit Exception ValueError KeyError IndexError TypeError OSError FileNotFoundError
+    RuntimeError AssertionError NotImplementedError StopIteration SystemExit UnicodeDecodeError""".split())
+
+
+def _open_targets(code):
+    """T-0176: the paths a python script can write, or None when that can't be proved. Proved when nothing in it can
+    reach a module that writes: no import but the pure functions of _PY_PURE (used as module.function only), nothing
+    dynamic (_DYNAMIC, breakpoint, help), no dunder or frame attribute, the builtin open never rebound or passed on.
+    Builtin open is then its only writer, and every open with a write mode (or one it can't read) must name a literal,
+    or a name bound once at the top level to one (+ joins them)."""
+    import ast
+    import collections
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
+        return None
+    nodes = list(ast.walk(tree))
+    parent = {c: n for n in nodes for c in ast.iter_child_nodes(n)}
+    names = {n.id for n in nodes if isinstance(n, ast.Name)}
+    if names & _DYNAMIC or any(x.startswith("__") for x in names) or any(
+            isinstance(n, ast.Attribute) and (n.attr in _DYNAMIC or n.attr.startswith("__") or n.attr == "open"
+                                              or _FRAME_ATTR.match(n.attr)) for n in nodes) or any(
+            isinstance(n, ast.Constant) and isinstance(n.value, str) and n.value.startswith("__") for n in nodes) or \
+            any(isinstance(n, (ast.ImportFrom, ast.Match, ast.Global, ast.Nonlocal)) for n in nodes):
+        return None
+    mods = {a.name for n in nodes if isinstance(n, ast.Import) for a in n.names}
+    if any(a.name not in _PY_PURE or a.asname for n in nodes if isinstance(n, ast.Import) for a in n.names):
+        return None
+    bound = collections.Counter()
+    for n in nodes:
+        if isinstance(n, ast.Name) and not isinstance(n.ctx, ast.Load):
+            bound[n.id] += 1
+        elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            bound[n.name] += 1
+        elif isinstance(n, ast.arg):
+            bound[n.arg] += 1
+        elif isinstance(n, ast.alias):
+            bound[n.name] += 1
+        elif isinstance(n, ast.ExceptHandler) and n.name:
+            bound[n.name] += 1
+    if bound["open"] or any(bound[m] != 1 for m in mods):
+        return None
+    if {n.id for n in nodes if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)} - set(bound) - _PY_BUILTINS \
+            - {"open"}:
+        return None  # a builtin outside the plain list
+    for n in nodes:
+        p = parent.get(n)
+        if isinstance(n, ast.Name) and n.id in mods:
+            calls, values = _PY_PURE[n.id]
+            called = isinstance(parent.get(p), ast.Call) and parent[p].func is p
+            if not (isinstance(p, ast.Attribute) and p.value is n and (
+                    p.attr in values or (p.attr in calls and called))):
+                return None  # the module passed on, a part outside the list (re.enum.bltns…), a function not called
+        if isinstance(n, ast.Name) and n.id == "open" and not (isinstance(p, ast.Call) and p.func is n):
+            return None
+    top = {s.targets[0].id: s.value for s in tree.body if isinstance(s, ast.Assign) and len(s.targets) == 1
+           and isinstance(s.targets[0], ast.Name) and bound[s.targets[0].id] == 1}
+
+    def text(e, depth=0):
+        if isinstance(e, ast.Constant) and isinstance(e.value, str):
+            return e.value
+        if isinstance(e, ast.Name) and e.id in top and depth < 20:
+            return text(top[e.id], depth + 1)
+        if isinstance(e, ast.BinOp) and isinstance(e.op, ast.Add) and depth < 20:
+            a, b = text(e.left, depth + 1), text(e.right, depth + 1)
+            return None if a is None or b is None else a + b
+        return None
+
+    targets = []
+    for n in nodes:
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "open":
+            if any(k.arg is None for k in n.keywords) or any(isinstance(a, ast.Starred) for a in n.args):
+                return None
+            kw = {k.arg: k.value for k in n.keywords}
+            mode = n.args[1] if len(n.args) > 1 else kw.get("mode")
+            m = "r" if mode is None else text(mode)
+            if m is None or set(m) & set("wax+"):
+                path = text(n.args[0] if n.args else kw.get("file"))
+                if path is None:
+                    return None
+                targets.append(path)
+    return targets
+
+
+def _proved_writes(cmd, ctx):
+    """T-0176: the files a command's python can write, as paths, when every interpreter in it is a quoted heredoc fed
+    straight to python whose writes _open_targets proves; None otherwise (the coarse rule decides). A relative path
+    after a cd counts in every folder the command names too."""
+    units, rest, _ = _python_units(cmd)
+    shell = "\n".join(rest)
+    if not units or _INTERP.search(_mask_fm(_drop_data_heredocs(shell), ctx)):
+        return None
+    # review: python's own settings (PYTHONPATH on a continued line, or inherited) choose what an import runs
+    if "PYTHON" in shell or re.search(r"\\\s*$", shell, re.M) or any(os.environ.get(k) for k in _PY_PATH_VARS):
+        return None
+    targets = []
+    for code in units:
+        found = _open_targets(code)
+        if found is None:
+            return None
+        targets += found
+    bases = [ctx.cwd]
+    if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", shell):
+        bases += [d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(shell) if not _unresolvable(w))
+                  if os.path.isdir(d)]
+    import ast
+    mods = {a.name for code in units for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Import) for a in n.names}
+    if any(os.path.exists(os.path.join(b, m + x)) for b in bases for m in mods for x in (".py", "")):
+        return None  # python - searches the current folder first: a json.py there would be what runs
+    return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
+
+
+def _drives_fm(cmd):
+    """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
+    python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
+    of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
+    that doesn't parse, and dynamic code (exec, eval, getattr, importlib…). It only relaxes what it can prove."""
+    if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
+        return False
+    units, rest, starters = _python_units(cmd)
+    if _FM_INTERNALS.search("\n".join(rest + starters)):
         return True
     import ast
     for code in units:
@@ -733,11 +865,12 @@ def _interpreter_writes(cmd, ctx):
     ticks = "`" in code and any(not _TEXT_TICKS.match(m.group(1)) for m in _INTERP.finditer(cmd))
     if _CLAUDE_IN_CODE.search(code) and (_EXEC_API.search(code) or ticks):
         return [("plugin", "interpreter code running claude's plugin, MCP or config commands" + plugin_mark("?"))]
-    if not _WRITE_API.search(cmd):
+    proved = _proved_writes(cmd, ctx)  # T-0176: a script that provably writes only its open() files
+    if proved is None and not _WRITE_API.search(cmd):
         return []
     found = []
-    for m in _QUOTED.finditer(cmd):
-        path = _resolve(_expand(m.group(2), ctx), ctx.cwd)
+    for path in proved if proved is not None else [_resolve(_expand(m.group(2), ctx), ctx.cwd)
+                                                   for m in _QUOTED.finditer(cmd)]:
         found += [(cat, f"{path} (written from interpreter code)") for cat in classify_write(path, ctx)
                   if cat in _GUARDED_BY_PATH]
     return found
@@ -875,6 +1008,13 @@ def _expansions(path):
     import itertools
     return list(dict.fromkeys(out + [g for p in out if re.search(r"[*?\[]", p)
                                      for g in itertools.islice(glob.iglob(p), EXPANSIONS_MAX)]))
+
+
+def _makeable(d):
+    """mkdir -p d can succeed: its nearest existing folder is a folder this user may write and enter."""
+    while not os.path.exists(d):
+        d = os.path.dirname(d)
+    return os.path.isdir(d) and os.access(d, os.W_OK | os.X_OK)
 
 
 def _possible(path):
@@ -1017,8 +1157,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
-        if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists
-            made.update(os.path.normpath(_expand(a, ctx)) for a in args if os.path.isabs(_expand(a, ctx)))
+        if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
+            made.update(d for d in (os.path.normpath(_expand(a, ctx)) for a in args)  # when its nearest existing
+                        if os.path.isabs(d) and _makeable(d))                       # folder lets it be made (review)
         if name in ("cd", "pushd", "popd"):
             dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
             if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
