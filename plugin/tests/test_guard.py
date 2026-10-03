@@ -349,6 +349,18 @@ class StateFallback(GuardCase):
                 self.assertBlocked(g.check("Bash", {"command": f"cp /etc/hostname {path}"}, ctx), "state-direct")
 
 
+class ScratchNames(GuardCase):
+    def test_a_secret_sounding_name_in_scratch_is_not_a_credential(self):
+        # T-0169 (self-improvement pass 2): `fm secrets > <scratchpad>/secrets.txt` was blocked as a credential
+        self.assertFalse(self.bash("fm secrets > /tmp/claude-1000/proj/sess/scratchpad/secrets.txt"))
+        self.assertBlocked(self.bash(f"echo x > {self.repo}/secrets.txt"), "credentials")
+        self.assertBlocked(self.bash(f"echo x > {self.home}/secrets.txt"), "credentials")
+        self.assertBlocked(self.bash("echo x > /tmp/claude-1000/proj/sess/scratchpad/.env"), "credentials")
+        with tempfile.TemporaryDirectory(dir="/tmp") as d:
+            os.symlink(self.home, os.path.join(d, "l"))  # its real path is in home
+            self.assertBlocked(self.bash(f"echo x > {d}/l/secrets.txt"), "credentials")
+
+
 class InterpreterWrites(GuardCase):
     """Writes made from interpreter code (heredocs, -c/-e) to protected paths count as writes to those paths."""
 

@@ -162,6 +162,8 @@ def _is_credential(path, ctx):
         return True
     if re.search(r"\.(pem|key|p12|pfx|keystore|jks)$", base) or re.match(r"id_(rsa|dsa|ecdsa|ed25519)(?!.*\.pub$)", base):
         return True
+    if any(_under(path, s) for s in getattr(ctx, "scratch", ()) or ()):
+        return False  # T-0169: a scratch file's name says nothing of its contents (its real path is checked too)
     stem, ext = os.path.splitext(base)
     return bool(re.search(r"(^|[._-])(tokens?|secrets?|credentials?)([._-]|$)", stem.lower())) and ext.lower() not in _DOC_EXT
 
