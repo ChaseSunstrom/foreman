@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: an fm command's own arguments are data (T-0153, self-inbox): naming interpreters in a task's text beside a quoted plugin-test command blocked `fm task new` live; top-level fm commands are now blanked before the interpreter gate, except where their arguments hold a substitution or the quote scan can't follow (both read as before).
 - Guard: with `$'…'` quoting in a command, every backtick span is checked (T-0157, from the automated security review): `$'\''` made the backtick scan think a live backtick was single-quoted; the scan now gives up there and reads every span (fails closed, as T-0144 does for `--run`).
 - Guard backticks, corrected (T-0155, from the automated security review): T-0150's rewrite of backticks into separators hid backtick substitutions inside double quotes (`` echo "`rm -rf ~`" `` passed); now every `…` body outside single quotes is extracted by a quote-aware scan and checked as a command of its own. A backtick counts as code execution unless every interpreter in the command treats it as text (Python, Node, Deno, Bun), and versioned or alternative interpreter names (`ruby3.2`, `jruby`, `irb`, `php8.3`, `perl5.36`) are recognised.
 - A self-improvement pass also waits 2 h after the last one (T-0154): the loop tuned itself after pass 2 came due 13 minutes after pass 1 with one new friction line.

@@ -340,6 +340,15 @@ class InterpreterWrites(GuardCase):
               "fm task evidence T-0007 --run \"claude plugin test mods/x\"")
         r = self.bash(ok)
         self.assertFalse(r and "interpreter code running claude" in r.detail, r)
+        # T-0153: an fm command's own text is data; naming interpreters there blocked filing a task (live)
+        data = ("fm task new \"Guard fix\" --ac \"a heredoc beside a quoted 'claude plugin test' passes; ruby, perl, "
+                "python subprocess and node execSync forms stay blocked :: true\"")
+        r = self.bash(data)
+        self.assertFalse(r and "interpreter code running claude" in r.detail, r)
+        for bad in ("fm task log T-0007 \"$(python3 -c \\\"import os; os.system('claude plugin install x@y')\\\")\"",
+                    "fm task log T-0007 note; python3 -c \"import os; os.system('claude plugin install x@y')\"",
+                    "python3 -c \"import os; os.system('claude plugin install x@y')\" && fm task log T-0007 note"):
+            self.assertBlocked(self.bash(bad), "plugin", bad)
         # T-0150 (self-improvement pass 1): a backtick executes nothing in Python; markdown in a heredoc was blocked
         md = "python3 - <<'EOF'\nopen('CHANGELOG.md', 'a').write('run `fm check`, then \"claude plugin test mods/x\"')\nEOF"
         r = self.bash(md)

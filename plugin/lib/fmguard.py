@@ -465,6 +465,41 @@ def _backtick_bodies(cmd):
     return out + ([cmd[start:]] if start is not None else [])
 
 
+def _mask_fm(cmd):
+    """The command with each top-level fm command blanked to `fm`: its arguments are data to fm (its --run values are
+    checked on their own, substitutions inside are read recursively), so an interpreter named in an fm task's text isn't
+    interpreter code (T-0153). Heredoc bodies are kept; where the quote scan can't follow, nothing is blanked."""
+    shell, bodies = _heredocs(cmd)
+    if "$'" in shell or len(re.findall(r"(?<!<)<<(?!<)", shell)) != len(re.findall(_HEREDOC_START, shell)):
+        return cmd
+    out, seg, q, esc = [], [], None, False
+
+    def flush():
+        text = "".join(seg)
+        argv, _ = _strip_wrappers(_tokens(text))
+        name = os.path.basename(argv[0]) if argv else ""
+        fm = name == "fm" or (re.match(r"^python[0-9.]*$", name) and argv[1:2] and argv[1].endswith("/fm"))
+        # a substitution in fm's arguments runs: keep that segment whole (the $( ) reader misses nested parentheses)
+        out.append(" fm " if fm and "$(" not in text and "`" not in text else text)
+        seg.clear()
+    for ch in shell:
+        if esc:
+            esc = False
+        elif ch == "\\" and q != "'":
+            esc = True
+        elif q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        elif ch in ";&|\n()`":
+            flush()
+            out.append(ch)
+            continue
+        seg.append(ch)
+    flush()
+    return "".join(out) + "\n" + bodies
+
+
 def _top_level(prefix):
     """True when shell text ending here is outside every quote and escape (a quote scan: wrong only towards False)."""
     q, esc = None, False
@@ -508,7 +543,7 @@ def _interpreter_writes(cmd, ctx):
     Coarse on purpose: a script that names a protected path and writes anything is treated as writing it. Code that
     imports Foreman's modules and calls their writers bypasses fm (the only state writer): that needs core, i.e. the
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
-    if not _INTERP.search(cmd):
+    if not _INTERP.search(_mask_fm(cmd)):
         return []
     if _FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
