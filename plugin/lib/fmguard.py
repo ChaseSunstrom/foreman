@@ -75,7 +75,24 @@ def _is_allow(arg):
 _ASK = "fm ask {id} {cat} --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
 
 
+def _hint(detail):
+    """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
+    if "(not known before it runs" in detail:
+        return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
+                "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes.")
+    if "unresolvable target" in detail:
+        return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+    if detail.endswith("(written from interpreter code)"):
+        return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
+                "re, json, textwrap or sys, so only those count, or use the Edit tool.")
+    return ""
+
+
 def message(block, ctx):
+    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "")
+
+
+def _message(block, ctx):
     cat, detail = block.category, block.detail
     tid = ctx.task_id or "<ID>"
     if cat == "self-authorize":

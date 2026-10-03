@@ -447,6 +447,23 @@ class Authorization(GuardCase):
         self.assertIn("fm task new", msg)
         self.assertIn("state-direct", g.message(self.write("{fhome}/state/projects/x/a.md"), self.ctx()))
 
+    def test_an_uncertain_block_names_its_rewrite(self):
+        # T-0185 (brainstorm round 4): a false block cost a guessed rewrite; when the guard couldn't pin the target
+        # down, its message says the rewrite that lets it
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
+        for cmd, hint in (("for f in a; do echo hi > {fhome}/plugin/lib/$f; done", "set its variable once before"),
+                          ("ls | head; rm -rf $X/old", "name the path literally"),
+                          ("python3 - <<'PY'\nimport os\nos.replace('a', '{fhome}/plugin/lib/fmguard.py')\nPY",
+                           "builtin open() on literal paths"),
+                          ("cd $(mktemp -d); echo x > {fhome}/plugin/lib/fmguard.py", None)):  # certain: no hint
+            r = self.bash(cmd)
+            self.assertIsNotNone(r, cmd)
+            msg = g.message(r, self.ctx())
+            if hint:
+                self.assertIn(hint, msg, cmd)
+            else:
+                self.assertNotIn("If ", msg, cmd)
+
 
 class StateFallback(GuardCase):
     def test_fallback_state_dir_is_state_direct(self):
