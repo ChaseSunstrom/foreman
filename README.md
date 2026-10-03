@@ -92,7 +92,7 @@ local/ state/ backups/   machine-specific, gitignored
 ## Tests
 
 ```bash
-python3 -m unittest discover -s plugin/tests -t plugin/tests   # unit + behaviour
+python3 plugin/tests/run.py                                     # unit + behaviour, one test class per core (~20 s)
 python3 plugin/tests/bench_hooks.py --runs 50                   # hook latency
 python3 plugin/tests/e2e/roundtrip.py                           # install/uninstall/reinstall in a sandbox HOME
 python3 plugin/tests/e2e/scenarios.py                           # live §12 scenarios (uses claude -p; costs tokens)
