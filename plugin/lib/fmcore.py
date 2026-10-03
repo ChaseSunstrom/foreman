@@ -949,7 +949,8 @@ class Brief:
             reasons.append(f"docs impact not recorded (fm task set {self.id} --section \"Docs impact\" --text "
                            f"\"<docs updated | none: why>\")")
         if self.type == "FIX" and not self.red_green() and not self.section("Regression test").strip():
-            reasons.append(f"no red→green proof: record the regression test failing before the fix and passing after "
+            reasons.append(f"no red→green proof: fm task prove {self.id} --run \"<test cmd>\" (runs it on the start tree "
+                           f"with this task's tests, then now), or record it failing before the fix and passing after "
                            f"(fm task evidence {self.id} --run \"<test cmd>\", both times), or say why there is none "
                            f"(fm task set {self.id} --section \"Regression test\" --text \"none: <why>\")")
         if self.type == "PERFORMANCE" and not self.section("Measurements").strip():

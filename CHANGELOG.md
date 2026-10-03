@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Rules diet (T-0085): the always-on rules drop what a gate already says when it refuses (planning needed to focus, `fm gates`/`fm task prove`, each tier's audits, how each guard category is granted, the state folder): 5881 → 5566 characters loaded in every session. The red→green refusal now names `fm task prove`.
 - `FOREMAN_QUIET=1` (T-0077): a session an orchestrator drives (jarvis-code had to disable the plugin with `--settings`) gets no Foreman context, nudges or brief requirement; the guard still runs.
 - Guard: a `#` right after a closing `)` is mid-word, not a comment (T-0163, automated security review of T-0161): `echo $(true)#x; rm -rf ~` and `$((1))#x` hid the rest of the line with any payload; the differential test now has those forms and the backtick and `${…}` ones.
 - Work done while a task was paused isn't its own change (T-0136): re-focusing a task after another task committed a file (or the user edited one) counted those files as the task's, so its finish was refused for edits outside its scope, and audit diffs and `fm check --affected` included them. A pause now snapshots the files; a re-focus moves the start point past the work done meanwhile (the task's own changes reverse-applied in a throwaway index), or keeps it and logs why when the same lines changed.

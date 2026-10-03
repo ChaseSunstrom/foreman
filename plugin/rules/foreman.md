@@ -5,7 +5,7 @@ Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). Sy
 ## The loop — every request, however terse
 capture → expand → ground → plan → execute → verify → reflect → record.
 - A plain request is intake: classify it and say so in one line ("Treating this as FIX, tier S.").
-- No edits without a brief (hooks refuse them): `fm task new "<title>" --type T --tier S --ac "<done when> :: <verify cmd>" --step "<step>" --focus`, or `/foreman:intake` for more. `fm focus` refuses a brief not planned for its tier.
+- No edits without a brief (hooks refuse them): `fm task new "<title>" --type T --tier S --ac "<done when> :: <verify cmd>" --step "<step>" --focus`, or `/foreman:intake` for more.
 - Follow `fm next` (injected each turn as "Next: …"): the one next required action and its procedure.
 - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice; compare two approaches) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
 - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended ("super improve it") → `/foreman:brainstorm`.
@@ -25,16 +25,16 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
 ## Evidence and state
-- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. `fm gates` lists what `fm task done` will require (FIX red→green: `fm task prove`); every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
-- All state through `fm`; never write under ~/.claude/foreman/state. Checkpoint before switching or risky steps.
+- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
+- All state through `fm`. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
-- Before `fm task done`: audits (`references/audit.md`). S `self` · M `intent` + riskiest lens · L all five; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
+- Before `fm task done`: the audits `fm gates` names (`references/audit.md`); `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
 - End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
 
 ## Autonomy and drive
 - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
 - full: never ask mid-run; decide with your default (`fm decide`; `--kind costly|outward` ones go in the final report via `fm decide --review`), self-approve after self-critique, keep going. What only the user can grant (`core`, destructive categories, merging Foreman changes) → `fm ask` at the end.
-- Drive on: continue open Foreman work when the Stop hook says so. `core`, `remote`, `plugin` come only from the user's answer to `fm ask`; other categories: `fm task set ID --allow <category>` when the brief needs it.
+- Drive on: continue open Foreman work when the Stop hook says so; a guard block says how its category is granted.
 
 ## Subagents
 Default none. Read-only recon, research or audits via `foreman:fm-recon` / `foreman:fm-reviewer`, self-contained brief, ≤3 in parallel. Save with `fm research add NAME --from-agent <output file>`; spot-check two claims. Brainstorms run tool-less via `fm ideas`.

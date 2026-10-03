@@ -93,6 +93,7 @@ class RedGreen(ForemanTestCase):
         p = self.close(tid)
         self.assertEqual(p.returncode, 2)
         self.assertIn("red→green", p.stderr)
+        self.assertIn(f"fm task prove {tid}", p.stderr)  # T-0085: the rules no longer say it, so the refusal does
 
     def test_fail_then_pass_of_the_same_command_proves_it(self):
         tid = self.fix()
