@@ -1193,7 +1193,8 @@ def _drive(p, sd, briefs, pl, g):
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
-    running = _running(sid)
+    bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
+    running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else _running(sid)
     if running:  # background work is out; its completion notification wakes the session
         _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
         return None

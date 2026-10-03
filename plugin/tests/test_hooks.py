@@ -970,6 +970,19 @@ class Stop(HookCase):
         self.hook("PostToolUse", {"tool_name": "TaskStop", "tool_input": {"task_id": "bq2"}, "tool_response": "stopped"})
         self.assertEqual(self.decision(self.stop("Stopped the slow run.")), "block")
 
+    def test_the_engines_background_list_wins_over_the_event_scan(self):
+        # T-0115: Claude Code's Stop input lists in-flight background work; the events can miss a start or an end
+        self.fm("init")
+        self.task()
+        self.bg("bq3")  # the events say it runs, a lost notice; the engine says nothing is in flight
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Gate passed.",
+                               "session_id": "sess-1", "background_tasks": []})
+        self.assertEqual(self.decision(p), "block")
+        shell = {"id": "bz9", "type": "shell", "status": "running", "description": "Run tests", "command": "cargo test"}
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the tests.",
+                               "session_id": "sess-1", "background_tasks": [shell]})
+        self.assertIsNone(self.decision(p), "a shell the events never saw (ctrl+b) holds drive")
+
     def test_a_start_older_than_two_hours_no_longer_holds_drive(self):
         self.fm("init")
         self.task()
