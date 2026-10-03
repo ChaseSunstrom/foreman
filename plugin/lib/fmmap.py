@@ -335,7 +335,11 @@ def pre_audit(root, diff, files, m=None):
 
 
 def changed(root, base):
-    """Files changed since base (committed or not) plus untracked ones, relative to root."""
+    """Files changed since base (a commit, or a task's snapshot of the working files: T-0078), committed or not,
+    untracked included, relative to root."""
+    tree = c.worktree_tree(root)
+    if tree:
+        return sorted(set(_git(root, "diff", "--name-only", base, tree).splitlines()))
     return sorted(set(_git(root, "diff", "--name-only", base).splitlines())
                   | set(_git(root, "ls-files", "--others", "--exclude-standard").splitlines()))
 

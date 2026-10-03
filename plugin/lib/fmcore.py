@@ -219,6 +219,22 @@ def git_head(root):
     return r.stdout.strip() or None
 
 
+def task_base(root, b):
+    """Where a task's own changes start (T-0078): the snapshot of the working files taken at focus, so uncommitted
+    work from before the task isn't its change (no commit needed); else its start commit. None when neither exists
+    any more (git may prune an unreferenced snapshot after about two weeks)."""
+    for rev in (b.meta.get("base_tree"), b.meta.get("base")):
+        if rev and _git(root, "cat-file", "-t", rev, timeout=10).strip() in ("tree", "commit"):
+            return rev
+    return None
+
+
+def task_diff(root, base, *opts):
+    """git diff from base to the working files now, untracked included; "" outside git or on failure."""
+    tree = worktree_tree(root)
+    return _git(root, "diff", *opts, base, tree, timeout=60) if tree else ""
+
+
 def run_command(root, cmd, timeout=600):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on

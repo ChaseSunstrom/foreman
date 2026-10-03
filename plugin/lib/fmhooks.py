@@ -200,6 +200,7 @@ def session_context(p, sd, other_note=None):
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
             + (" Autonomy: full." if sd.get("autonomy") == "full" else "")
+            + (" Standing yes: core (Foreman's code; fm standing off revokes)." if "core" in (c.read_meta(p).get("standing") or {}) else "")
             + (f" State: fallback {c.state_dir()} (fm doctor)." if c.fallback_marker() else "")]
     focus, resume = [], []
     if a:
@@ -675,10 +676,15 @@ def _guard_ctx(pl, fmguard):
         except Exception:
             log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
+    try:
+        standing = set(c.read_meta(p).get("standing") or {}) if p else set()
+    except Exception:
+        standing = set()  # unreadable: no standing yes, the guard asks as before
     ctx = fmguard.Ctx(cwd=cwd, project_root=fmguard.project_root_for(cwd, home), home=home,
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(),
                       state_fallbacks=c.state_fallbacks(), scratch=scratch,
-                      allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None)
+                      allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None,
+                      standing=standing)
     return ctx, p, act
 
 
@@ -692,7 +698,7 @@ def _record_asks(pl, p, fmguard):
     dialog = bool(fmguard.lone_fm_ask(cmd)) and not os.environ.get("FOREMAN_DRIVE_TASK")  # PreToolUse asks for one
     for args in fmguard.fm_calls(cmd):
         if len(args) > 2 and args[0] == "ask":
-            task, cats, _, _, _ = _ask_target(args)
+            task, cats, *_ = _ask_target(args)
             asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
@@ -704,8 +710,8 @@ def _record_asks(pl, p, fmguard):
 
 
 def _ask_target(args):
-    """(task, sorted categories, why, problems, plugin pin) from `fm ask` arguments, read by fm's own parser so the dialog and
-    the grant can't drift from what the command means."""
+    """(task, sorted categories, why, problems, plugin pin, standing) from `fm ask` arguments, read by fm's own parser so
+    the dialog and the grant can't drift from what the command means."""
     import contextlib
     import io
     import fmcli
@@ -713,8 +719,8 @@ def _ask_target(args):
         with contextlib.redirect_stderr(io.StringIO()), contextlib.redirect_stdout(io.StringIO()):  # -h prints
             ns = fmcli.build_parser().parse_args(args)
     except SystemExit:
-        return "", [], "", ["arguments fm ask doesn't accept"], None
-    return ns.id, sorted(set(ns.categories)), ns.why or "", [], ns.pin
+        return "", [], "", ["arguments fm ask doesn't accept"], None, False
+    return ns.id, sorted(set(ns.categories)), ns.why or "", [], ns.pin, bool(ns.standing)
 
 
 _plain = c.plain  # dialog text (fm ask): see fmcore.plain
@@ -755,12 +761,14 @@ def _ask_prompt(pl, p, fmguard):
     if not args:
         return ("deny", "Foreman: run fm ask as its own Bash command (nothing chained, piped or substituted), so the "
                         "permission prompt approves exactly that request")
-    task, cats, why, bad, pin = _ask_target(args)
+    task, cats, why, bad, pin, standing = _ask_target(args)
     unknown = [x for x in cats if x not in fmguard.CATEGORIES or x in fmguard.NOT_AUTHORIZABLE]
     if pin:
         import fmplugins
         if "plugin" not in cats or not fmguard.PLUGIN_ID.fullmatch(pin) or fmplugins.content_hash(pin) is None:
             bad = bad + [f"--pin {_plain(pin)[:60]} (a known plugin, with the plugin category)"]
+    if standing and cats != ["core"]:
+        bad = bad + ["--standing with anything but core alone"]
     if bad or unknown or not cats or not re.fullmatch(r"T-\d{4,}", task):
         return ("deny", f"Foreman: fm ask takes an id, categories ({', '.join(x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE)}) "
                         f"and --why; not {', '.join(bad + unknown) or 'this'}")
@@ -768,6 +776,12 @@ def _ask_prompt(pl, p, fmguard):
         return ("deny", f"Foreman: nobody can answer a permission prompt in this headless session. Record it with "
                         f"fm task block {task} \"needs {', '.join(cats)} from the user\" and stop.")
     b = c.find_brief(p, task)
+    if standing:
+        return ("ask", f"Foreman asks for a standing yes: core for {task} and every later task in this project, "
+                       f"until you say stop (fm standing off). It covers Foreman's own code, rules and evals; Claude "
+                       f"Code settings, Foreman state and the guard file still ask each time"
+                       + (f": {c.redact(_plain(why))[:200]}" if why else "")
+                       + ". Yes grants it; No refuses. Only your answer here can grant it.")
     return ("ask", f"Foreman asks you to grant {', '.join(cats)} for {task}"
                    + (f" ({_plain(b.title)[:70]})" if b else "") + (f": {c.redact(_plain(why))[:200]}" if why else "")
                    + (f". The plugin yes holds only for installing or enabling {pin} as its content is now"
@@ -788,7 +802,7 @@ def permission_request(pl):
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
         return None
-    task, cats, _, _, _ = _ask_target(args)
+    task, cats, *_ = _ask_target(args)
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = [a for a in _load_list(_prompts_path(p)) if time.time() - a.get("at", 0) < c.APPROVAL_TTL]
         seen.append({"task": task, "allow": cats, "session": pl["session_id"], "tool_use_id": pl.get("tool_use_id"),
@@ -804,7 +818,7 @@ def _grant_prompted(pl, p):
     sid, tuid = pl.get("session_id"), pl.get("tool_use_id")
     if not args or not sid:
         return
-    task, cats, _, _, pin = _ask_target(args)
+    task, cats, why, _, pin, standing = _ask_target(args)
     ok = [x for x in cats if x in fmguard.CATEGORIES and x not in fmguard.NOT_AUTHORIZABLE]
     h = _pin_hashes([pin]).get(pin)
     with c.lock(p.dir, timeout=LOCK_SLOW):
@@ -821,6 +835,9 @@ def _grant_prompted(pl, p):
         c.write_atomic(_prompts_path(p), json.dumps(seen))
         _grant(p, b, cats, sid, "prompt", pin=pin, h=h, bound=bool(tuid and hit.get("tool_use_id")))
         meta = c.read_meta(p)
+        if standing and cats == ["core"]:  # T-0119: the dialog said "every later task"; fm standing off revokes
+            meta["standing"] = dict(meta.get("standing") or {}, core={"at": c.now(), "task": task, "why": why[:200]})
+            c.log_event(p, "standing_granted", task=task, data={"allow": ["core"], "why": why[:200]}, session=sid)
         meta["pending_approvals"] = [a for a in meta.get("pending_approvals") or []
                                      if not (isinstance(a, dict) and a.get("task") == task)]
         c.write_meta(p, meta)

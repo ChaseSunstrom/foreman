@@ -22,11 +22,12 @@ DEFAULT_BRANCHES = {"main", "master", "trunk"}
 # when the rest of the library is broken, and dataclasses would cost every hook ~9 ms of import.
 class Ctx:
     def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
-                 state_fallbacks=()):
+                 state_fallbacks=(), standing=()):
         self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
         self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
         self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
+        self.standing = set(standing)  # T-0119: the project's standing yeses (core only)
 
 
 class Block:
@@ -53,6 +54,8 @@ def check(tool_name, tool_input, ctx, found=None):
     for cat in CATEGORIES:
         for got, detail in found:
             if got == cat and (got in NOT_AUTHORIZABLE or got not in ctx.allow):
+                if got == "core" and "core" in ctx.standing and _standing_covers(detail, ctx):
+                    continue
                 return Block(got, detail)
     if sum(1 for got, _ in found if got == "plugin") > 1:  # a plugin yes is used up by one change (fmhooks)
         return Block("plugin", "more than one plugin change in one command; one yes covers one change: run each as "
@@ -168,6 +171,16 @@ def _is_core(path, ctx):
     dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
         bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
+
+
+def _standing_covers(path, ctx):
+    """A standing core yes (T-0119) covers Foreman's own code, rules, evals and spec; never this guard file, Claude
+    Code's settings or Foreman state, which still ask each time."""
+    fh = ctx.foreman_home
+    if not isinstance(path, str) or not path.startswith("/") or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
+        return False  # not a path, the guard itself, or a whole-tree write that includes it
+    return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
+        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in ("lib", "bin", "hooks", "evals"))
 
 
 _SHELL_RC = {".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zprofile", ".zshenv",

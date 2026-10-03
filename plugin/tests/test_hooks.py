@@ -431,6 +431,51 @@ class PromptApprovals(HookCase):
         grants = [e for e in c.ledger_tail(self.project()) if e["event"] == "approval_granted"]
         self.assertEqual(grants[-1]["data"]["via"], "prompt")
 
+    STANDING = "fm ask {tid} core --standing --why 'work on Foreman without a yes per task'"
+
+    def write(self, path):
+        return self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x"}})
+
+    def standing_yes(self, tuid="toolu_s"):
+        cmd = self.STANDING.format(tid=self.tid)
+        out = parse(self.call("PreToolUse", tuid=tuid, cmd=cmd))["hookSpecificOutput"]
+        self.call("PermissionRequest", tuid=tuid, cmd=cmd)
+        self.call("PostToolUse", tuid=tuid, cmd=cmd)
+        return out
+
+    def test_a_standing_core_yes_covers_foremans_code_for_later_tasks_until_turned_off(self):
+        # T-0119: "make it so when you're working on foreman you don't have to ask to edit it"
+        lib = os.path.join(self.home, "plugin", "lib", "fmcore.py")
+        self.assertEqual(self.write(lib).returncode, 2)
+        out = self.standing_yes()
+        self.assertEqual(out["permissionDecision"], "ask")
+        self.assertIn("every later task", out["permissionDecisionReason"])
+        self.assertIn("fm standing off", out["permissionDecisionReason"])
+        self.task("Another change")  # a later task: no yes of its own
+        self.assertEqual(self.write(lib).returncode, 0)
+        self.assertEqual(self.write(os.path.join(self.home, "plugin", "rules", "foreman.md")).returncode, 0)
+        self.assertEqual(self.write(os.path.join(self.home, "plugin", "lib", "fmguard.py")).returncode, 2,
+                         "the guard itself still asks")
+        self.assertEqual(self.write(os.path.join(self.tmp, "u", ".claude", "settings.json")).returncode, 2,
+                         "Claude Code settings still ask")
+        wipe = self.hook("PreToolUse", {"tool_name": "Bash",
+                                        "tool_input": {"command": f"rm -rf {os.path.join(self.home, 'plugin', 'lib')}"}})
+        self.assertEqual(wipe.returncode, 2, "a whole-tree write that takes the guard with it still asks")
+        self.assertIn("core", self.fm("standing").stdout)
+        self.fm("standing", "off")
+        self.assertEqual(self.write(lib).returncode, 2)
+        kinds = [e["event"] for e in c.ledger_tail(self.project())]
+        self.assertIn("standing_granted", kinds)
+        self.assertIn("standing_off", kinds)
+
+    def test_standing_is_for_core_only_and_only_from_the_dialog(self):
+        cmd = f"fm ask {self.tid} core remote --standing --why x"
+        self.assertEqual(parse(self.call("PreToolUse", cmd=cmd))["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.call("PreToolUse", tuid="toolu_n", cmd=self.STANDING.format(tid=self.tid))
+        self.call("PostToolUse", tuid="toolu_n", cmd=self.STANDING.format(tid=self.tid))  # no dialog: no grant
+        self.task("Another change")
+        self.assertEqual(self.write(os.path.join(self.home, "plugin", "lib", "fmcore.py")).returncode, 2)
+
     def test_a_refused_prompt_cannot_be_reused_after_the_user_speaks(self):
         self.call("PreToolUse", tuid="toolu_4")
         self.call("PermissionRequest", tuid="toolu_4")  # the user says No: the tool never runs

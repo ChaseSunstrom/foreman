@@ -63,6 +63,48 @@ class DiffGates(ForemanTestCase):
         self.fm("task", "audit", "T-0001", "adversary", "abuse cases", "ok")
         self.assertEqual(self.fm("task", "done", "T-0001", check=False).returncode, 0)
 
+    def write(self, rel, text="x = 1\n"):  # edited before or outside Foreman: no ledger record
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
+
+    def test_uncommitted_work_from_before_the_task_is_not_its_change(self):
+        # T-0078/T-0079: work in progress (or a never-committed repo) made every task own every file
+        self.write("auth/login.py")
+        self.write("poetry.lock", "pinned = 1\n")
+        self.task("--scope", "src/**")
+        self.touch("src/app.py")
+        p = self.finish()
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_a_repo_with_no_commits_still_judges_the_task_by_its_own_changes(self):
+        # T-0079: no start commit, so before this nothing was judged at all, or everything was
+        import shutil
+        import subprocess
+        shutil.rmtree(os.path.join(self.repo, ".git"))
+        subprocess.run(["git", "init", "-q", "-b", "main", self.repo], check=True)
+        self.write("auth/login.py")
+        self.task("--scope", "src/**")
+        self.touch("src/app.py")
+        self.assertEqual(self.finish().returncode, 0)
+        self.fm("task", "new", "two", "--type", "FEATURE", "--tier", "S", "--step", "do it", "--ac", "works", "--focus")
+        self.write("auth/session.py")  # through the shell: no ledger record, the snapshot still sees it
+        self.fm("task", "evidence", "T-0002", "--ac", "1", "pytest", "ok")
+        self.fm("task", "ac", "T-0002", "check", "1")
+        self.fm("task", "step", "T-0002", "done", "1", "--evidence", "pytest", "ok")
+        self.fm("task", "audit", "T-0002", "self", "checked", "ok")
+        p = self.fm("task", "done", "T-0002", check=False)
+        self.assertIn("security-sensitive: auth/session.py", p.stderr)
+
+    def test_its_own_edit_to_an_already_dirty_sensitive_file_still_counts(self):
+        self.write("auth/token.py", "a = 1\n")
+        self.task()
+        self.touch("auth/token.py", "a = 1\nb = eval(x)\n")  # fixture text for the detector; never run
+        p = self.finish()
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("security-sensitive: auth/token.py", p.stderr)
+
     def test_plain_change_needs_only_the_tier_audits(self):
         self.task()
         self.touch("docs/notes.py")

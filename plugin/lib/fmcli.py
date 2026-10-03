@@ -216,16 +216,17 @@ def cmd_task(args):
 
         lesson = c.plain(args.lesson or "").strip()
         touches = c.task_touches(p, pre.id)
-        if pre.meta.get("base") and c.git_root(p.root):  # R1: edits made through the shell or outside Claude count too
+        base = c.task_base(p.root, pre) if c.git_root(p.root) else None
+        if base:  # R1: edits made through the shell or outside Claude count too
             import fmmap
-            for f in fmmap.changed(p.root, pre.meta["base"]):
+            for f in fmmap.changed(p.root, base):
                 if f not in touches and not f.startswith(".foreman/"):
                     try:
                         touches[f] = c.iso(os.path.getmtime(os.path.join(p.root, f)))
                     except OSError:  # deleted
                         touches[f] = c.now()
         files = list(touches)
-        risky = c.sensitive(files, c._git(p.root, "diff", pre.meta["base"], timeout=30) if pre.meta.get("base") else "")
+        risky = c.sensitive(files, c.task_diff(p.root, base) if base else "")
 
         def done(b):
             reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
@@ -569,6 +570,8 @@ def cmd_focus(args):
         target.meta["status"] = "active"
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
+        if not target.meta.get("base_tree") and (snap := c.worktree_tree(p.root)):
+            target.meta["base_tree"] = snap  # T-0078: its own changes are measured from the files as they are now
         target.append_log("focused")
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
@@ -791,6 +794,8 @@ def cmd_ask(args):
         ok = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE]
         raise UsageError(f"can't ask for {', '.join(bad)}; askable: {', '.join(ok)}")
     why = c.redact(args.why)
+    if args.standing and cats != ["core"]:
+        raise UsageError("--standing is for core alone: fm ask ID core --standing --why \"…\"")
     if args.pin:
         import fmplugins
         if "plugin" not in cats or fmplugins.content_hash(args.pin) is None:
@@ -822,6 +827,25 @@ def cmd_ask(args):
     out(args, {"task": b.id, "allow": cats, "why": why},
         f"Pending: {b.id} {', '.join(cats)} ({why}).{reload} Ask the user one yes/no question for it now; their next "
         f"message decides: a reply starting with yes grants it, anything else cancels it.")
+
+
+def cmd_standing(args):
+    """T-0119: show the project's standing yeses, or turn them off. Turning on happens only through the user's answer
+    to `fm ask ID core --standing` in Claude Code's permission prompt."""
+    p = resolve(args)
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        had = dict(meta.get("standing") or {})
+        if args.state == "off" and had:
+            meta.pop("standing", None)
+            c.write_meta(p, meta)
+            c.log_event(p, "standing_off", data={"was": sorted(had)}, session=session())
+    if args.state == "off":
+        return out(args, {"standing": {}}, "Standing yeses off: Foreman's core asks per task again." if had
+                   else "No standing yes to turn off.")
+    return out(args, {"standing": had}, "\n".join(f"Standing yes: {k} since {v.get('at')} ({v.get('why') or 'no reason'}); "
+                                                 f"fm standing off revokes it" for k, v in had.items())
+               or "No standing yes: Foreman's core asks per task.")
 
 
 def cmd_decide(args):
@@ -1110,7 +1134,7 @@ def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     import fmmap
     act = c.active_brief(c.load_briefs(p))
-    base = (act.meta.get("base") if act else None) or "HEAD"
+    base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
     tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
@@ -1206,7 +1230,7 @@ def cmd_audit(args):
     if not args.id:
         raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
-    base = args.base or b.meta.get("base")
+    base = args.base or c.task_base(p.root, b)
     if not base:
         raise UsageError(f"{b.id} has no start commit on record (focused before fm kept one): "
                          f"fm audit prep {b.id} --base <rev>")
@@ -1367,6 +1391,11 @@ def build_parser():
     s.add_argument("categories", nargs="+")
     s.add_argument("--why", default="")
     s.add_argument("--pin", help="plugin id: the plugin yes holds only for installing or enabling it, as it is now")
+    s.add_argument("--standing", action="store_true",
+                   help="core only: the yes covers every later task in this project until fm standing off")
+
+    s = add("standing", cmd_standing, help="the project's standing yeses (fm ask … core --standing); off revokes them")
+    s.add_argument("state", nargs="?", choices=["off"])
 
     s = add("decide", cmd_decide, help="record a decision in decisions.md")
     s.add_argument("decision", nargs="?")
