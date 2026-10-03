@@ -393,7 +393,7 @@ def user_prompt_submit(pl):
     r = c.parse_intake(text)
     if _CORRECTION.match(text):  # R2: the user's corrections, for /foreman:reflect to turn into durable preferences
         try:
-            act = c.active_brief(c.load_briefs(p))
+            act = c.active_brief(c.load_briefs(p), p.lane)
             c.log_event(p, "correction", task=act.id if act else None, data={"text": c.fit(c.plain(text), 300)},
                         session=sid)
         except Exception:
@@ -742,14 +742,15 @@ def _guard_ctx(pl, fmguard):
     p = act = None
     try:
         p = c.find_project(cwd)
-        act = c.active_brief(c.load_briefs(p)) if p else None
+        act = c.active_brief(c.load_briefs(p), p.lane) if p else None
     except Exception:
         log_error("PreToolUse", "the working copy of fmcore failed to read the task; trying the committed fmcore "
                                 "(fix plugin/lib/fmcore.py):\n" + _tb())
         try:  # a bug in the library mustn't hide the active task's grants (the fix itself would be refused)
             cc = _committed("fmcore")
             p = cc.find_project(cwd) if cc else None
-            act = cc.active_brief(cc.load_briefs(p)) if p else None
+            lane = getattr(p, "lane", None)  # a committed copy from before lanes only finds main checkouts
+            act = (cc.active_brief(cc.load_briefs(p), lane) if lane else cc.active_brief(cc.load_briefs(p))) if p else None
         except Exception:
             log_error("PreToolUse", _tb())  # unreadable state: no authorizations, guard still runs
     scratch = [s for s in (pl.get("scratchpad_dir"), "/tmp", "/var/tmp", os.environ.get("TMPDIR")) if s]
@@ -993,7 +994,7 @@ def _bash_touches(pl, p):
     """T-0086: files a Bash command changed (git status entries whose mtime falls inside the call) are the active
     task's touches, as an Edit's are, and one outside its scope gets the scope note (once per file)."""
     import subprocess
-    act, top = c.active_brief(c.load_briefs(p)), c.git_root(p.root)
+    act, top = c.active_brief(c.load_briefs(p), p.lane), c.git_root(p.root)
     if not act or not top:
         return None
     since = time.time() - (pl.get("duration_ms") or 0) / 1000 - 2  # mtime granularity and hook latency
@@ -1072,7 +1073,7 @@ def post_tool_use(pl, ok=True):
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     if ok and p and tool in FILE_TOOLS:
-        act = c.active_brief(c.load_briefs(p))
+        act = c.active_brief(c.load_briefs(p), p.lane)
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
@@ -1088,7 +1089,7 @@ def _auto_evidence(pl, p, ok):
     evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
     cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
-    act = c.active_brief(c.load_briefs(p)) if cmd else None
+    act = c.active_brief(c.load_briefs(p), p.lane) if cmd else None
     hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
     if not hits:
         return
@@ -1123,7 +1124,7 @@ def post_tool_use_failure(pl):
         if not p:
             return None
         import fmrecall
-        act = c.active_brief(c.load_briefs(p))
+        act = c.active_brief(c.load_briefs(p), p.lane)
         note = fmrecall.note_failure(p, act.id if act else None, str(pl.get("error") or ""))
     except Exception:
         log_error("PostToolUseFailure", _tb())
@@ -1222,7 +1223,7 @@ def stop(pl):
         return None
     briefs = c.load_briefs(p)
     sd = c.state_dict(p, briefs)
-    act = c.active_brief(briefs)
+    act = c.active_brief(briefs, p.lane)
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
@@ -1450,7 +1451,7 @@ def subagent_stop(pl):
             "agent_type": pl.get("agent_type")})
     p = c.find_project(_cwd(pl))
     if p and pl.get("agent_type"):
-        act = c.active_brief(c.load_briefs(p))
+        act = c.active_brief(c.load_briefs(p), p.lane)
         c.log_event(p, "subagent", task=act.id if act else None,
                     data={"agent_type": pl.get("agent_type"), "agent_id": pl.get("agent_id"),
                           "transcript": pl.get("agent_transcript_path"),

@@ -44,7 +44,7 @@ def _latest_session(project):
 def gather(p):
     briefs = c.load_briefs(p)
     sd = c.state_dict(p, briefs)
-    act = c.active_brief(briefs)
+    act = c.active_brief(briefs, p.lane)
     events = _tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"))
     mine = [e for e in events if e.get("project") in (p.slug, None)]
     running = {}

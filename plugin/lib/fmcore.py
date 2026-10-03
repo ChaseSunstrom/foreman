@@ -368,8 +368,9 @@ def record(cls):
 @record
 class Project:
     slug: str
-    root: str
+    root: str  # where its files are: the lane's worktree when lane is set
     dir: str
+    lane: str = None  # T-0134: a linked worktree of the project's repo, with its own active task
 
 
 def _project(slug, root):
@@ -454,12 +455,25 @@ def project_by_slug(slug):
     return None
 
 
+def main_worktree(gr):
+    """T-0134: the main checkout of a linked worktree (the parent of the repo's common .git folder), or None for a
+    main checkout (a .git folder, not a file) or a submodule (its common dir isn't a .git folder)."""
+    if not os.path.isfile(os.path.join(gr, ".git")):
+        return None
+    common = _git(gr, "rev-parse", "--path-format=absolute", "--git-common-dir", timeout=10).strip()
+    return os.path.realpath(os.path.dirname(common)) if os.path.basename(common) == ".git" else None
+
+
 def find_project(cwd, create=False):
     gr = git_root(cwd)
     if gr:
         p = _project(slug_for(gr), gr)
         if os.path.exists(os.path.join(p.dir, "meta.json")):
             return p
+        main = main_worktree(gr)
+        m = _project(slug_for(main), main) if main else None
+        if m and os.path.exists(os.path.join(m.dir, "meta.json")):
+            return Project(m.slug, gr, m.dir, lane=gr)  # the project's state, this worktree's files
         return init_project(gr) if create else None
     cwd = os.path.realpath(cwd)
     best = None
@@ -1491,21 +1505,32 @@ def last_change(p, tid):
 
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111)."""
-    briefs = load_briefs(p) if briefs is None else briefs
+    briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = read_meta(p).get("autonomy", "standard")
-    if not active_brief(briefs):
+    if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
             return None, "reflect", fmfriction.ACTION
-    b = active_brief(briefs) or next(iter(order_queue(briefs)[0]), None) or next(iter(rank_inbox(briefs)), None)
+    b = active_brief(briefs, p.lane) or next(iter(order_queue(briefs)[0]), None) or next(iter(rank_inbox(briefs)), None)
     if not b:
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)
     return b, stage(b, autonomy, since), next_action(b, autonomy, since)
 
 
-def active_brief(briefs):
-    return next((b for b in briefs if b.status in ("active", "verifying")), None)
+def active_brief(briefs, lane=None):
+    """The active task of the main checkout (lane None) or of one lane (T-0134)."""
+    return next((b for b in briefs if b.status in ("active", "verifying") and b.meta.get("lane") == lane), None)
+
+
+def held_elsewhere(b, lane=None):
+    """T-0134: the task belongs to another lane (given to it, or active there), or, seen from a lane, is active in
+    the main checkout: this side's next, queue and focus leave it alone."""
+    return b.meta.get("lane") != lane and bool(b.meta.get("lane") or b.status in ("active", "verifying"))
+
+
+def lane_view(briefs, lane=None):
+    return [b for b in briefs if not held_elsewhere(b, lane)]
 
 
 def _last_log(b):
@@ -1514,10 +1539,11 @@ def _last_log(b):
 
 
 def state_dict(p, briefs=None):
-    briefs = load_briefs(p) if briefs is None else briefs
+    everything = load_briefs(p) if briefs is None else briefs
+    briefs = lane_view(everything, p.lane)  # T-0134: another lane's work shows only under "lanes"
     meta = read_meta(p)
     queue, cycles, dangling = order_queue(briefs)
-    act = active_brief(briefs)
+    act = active_brief(briefs, p.lane)
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)
     autonomy = meta.get("autonomy", "standard")
@@ -1529,6 +1555,8 @@ def state_dict(p, briefs=None):
         "project": p.slug, "root": p.root,
         "active": active,
         "queue": [brief_summary(b) for b in queue if b is not act],
+        "lanes": [dict(brief_summary(b), lane=b.meta.get("lane") or "main") for b in everything
+                  if held_elsewhere(b, p.lane) and b.status not in ("done", "dropped")],
         "inbox": [brief_summary(b) for b in rank_inbox(briefs)],
         "blocked": [dict(brief_summary(b), reason=_last_log(b)) for b in briefs if b.status == "blocked"],
         "deferred": [b.id for b in briefs if b.status == "deferred"],
@@ -1604,7 +1632,14 @@ def state_line(sd):
     return " · ".join(parts)
 
 
+def main_view(p):
+    """T-0134: the project as its main checkout sees it: the shared view files (status.json, STATE.md…) and the
+    repo's .foreman mirror belong to it, whichever lane wrote last (a lane's own view is fm ui, computed live)."""
+    return Project(p.slug, main_worktree(p.root) or p.root, p.dir) if p.lane else p
+
+
 def regen_views(p, briefs=None):
+    p = main_view(p)
     sd = state_dict(p, briefs)
     ts = now()
     write_atomic(os.path.join(p.dir, "STATE.md"), render_state(sd, ts))
@@ -1851,7 +1886,7 @@ def ruled_out(p, b):
 def checkpoint(p, note=None, auto=False, session=None):
     """Flush the exact resume point into the active brief and STATE. Caller holds the lock."""
     briefs = load_briefs(p)
-    b = active_brief(briefs)
+    b = active_brief(briefs, p.lane)
     data = {"auto": auto}
     if b:
         steps = b.steps()
@@ -1876,7 +1911,7 @@ def checkpoint(p, note=None, auto=False, session=None):
 
 
 def resume_info(p):
-    b = active_brief(load_briefs(p))
+    b = active_brief(load_briefs(p), p.lane)
     if not b:
         return {"id": None}
     s = brief_summary(b)

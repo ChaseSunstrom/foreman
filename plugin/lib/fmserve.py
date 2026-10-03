@@ -244,10 +244,10 @@ def _fingerprint(b):
 
 
 def _next_runnable(p, skip, told):
-    briefs = c.load_briefs(p)
+    briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: never another lane's task
     meta = c.read_meta(p)
     pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
-    act = c.active_brief(briefs)
+    act = c.active_brief(briefs, p.lane)
     for b in ([act] if act else []) + c.order_queue(briefs)[0]:
         if b.id in skip:
             continue

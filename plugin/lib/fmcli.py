@@ -540,6 +540,9 @@ def task_set(p, args):
             raise UsageError("--section needs --text or --file")
 
     def apply(b):
+        if changes.get("status") in ("active", "verifying") and b.status not in ("active", "verifying"):
+            raise c.PolicyError(f"{b.id}: start a task with fm focus {b.id}, which keeps one active task per checkout "
+                                f"(T-0134 review)")
         tiers = "SML"
         if "tier" in changes and changes["tier"] in tiers and b.tier in tiers and \
                 tiers.index(changes["tier"]) < tiers.index(b.tier) and b.evidence():
@@ -621,8 +624,16 @@ def cmd_focus(args):
         if gaps:
             raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
                                 f"(fm task set/ac/step, or /foreman:intake; fm next says what's next)")
+        if c.held_elsewhere(target, p.lane):  # T-0134: one checkout works a task at a time
+            where = target.meta.get("lane") or "the main checkout"
+            raise c.PolicyError(f"{target.id} is held by {'lane ' if target.meta.get('lane') else ''}{where}: work on it "
+                                f"there (fm lane list), or fm lane rm it first")
+        if target.meta.get("lane") != p.lane:  # moving between checkouts: its start point is taken here, afresh
+            for k in ("base", "base_tree", "paused_tree"):
+                target.meta.pop(k, None)
+        target.meta.pop("lane", None) if not p.lane else target.meta.update(lane=p.lane)
         for b in c.load_briefs(p):
-            if b.status in ("active", "verifying") and b.id != target.id:
+            if b.status in ("active", "verifying") and b.id != target.id and b.meta.get("lane") == p.lane:
                 c.pause_snapshot(p.root, b)  # T-0136
                 b.meta["status"] = "planned"
                 b.append_log(f"paused: focus moved to {target.id}")
@@ -720,7 +731,7 @@ def gates(type_, tier):
 
 def cmd_gates(args):
     p = resolve(args)
-    act = c.active_brief(c.load_briefs(p))
+    act = c.active_brief(c.load_briefs(p), p.lane)
     type_, tier = args.type or (act.type if act else "FEATURE"), args.tier or (act.tier if act else "S")
     need = gates(type_, tier)
     out(args, {"type": type_, "tier": tier, "gates": [{"gate": g, "how": h} for g, h in need]},
@@ -758,7 +769,7 @@ def cmd_resume(args):
 
 def cmd_queue(args):
     p = resolve(args)
-    briefs = c.load_briefs(p)
+    briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: another lane's work isn't this side's queue
     order, cycles, dangling = c.order_queue(briefs)
     if args.replan:
         with c.lock(p.dir):
@@ -1083,7 +1094,7 @@ def cmd_check(args):
             pass
         raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
     import time
-    act = c.active_brief(c.load_briefs(p))
+    act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
     cached = None if args.fresh else _cached_pass(p, checks, tree)
     if cached:  # the same gates already passed on this exact tree: rerunning them only costs time
@@ -1282,7 +1293,7 @@ def _cached_pass(p, checks, tree):
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     import fmmap
-    act = c.active_brief(c.load_briefs(p))
+    act = c.active_brief(c.load_briefs(p), p.lane)
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
@@ -1508,7 +1519,7 @@ HELP_TIERS = [
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction evals"),
-    ("Running elsewhere", "serve run ui watch"),
+    ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -1825,6 +1836,10 @@ def build_parser():
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
 
+    s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
+                                                       "new <id>, list, rm <id> (never discards uncommitted work)")
+    s.add_argument("action", choices=["new", "list", "rm"])
+    s.add_argument("id", nargs="?")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")

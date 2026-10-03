@@ -37,7 +37,7 @@ _AUDIT_LINE = re.compile(r"(?m)^(-\s+\(audit\s+[a-z]+)\)")
 
 
 def mirror(p):
-    return os.path.join(p.root, DIR)
+    return os.path.join(c.main_view(p).root, DIR)  # T-0134: one mirror, the main checkout's, never a lane's copy
 
 
 def _sha(text):
@@ -240,7 +240,7 @@ def status(p):
 
 def _ignored(p):
     try:
-        return subprocess.run(["git", "-C", p.root, "check-ignore", "-q", DIR + "/README.md"],
+        return subprocess.run(["git", "-C", c.main_view(p).root, "check-ignore", "-q", DIR + "/README.md"],
                               capture_output=True, timeout=10).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
