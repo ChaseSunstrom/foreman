@@ -1884,6 +1884,8 @@ def build_parser():
     s.add_argument("id", nargs="?")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
+    s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
+                                                           "its own lane, merged back when gated and clean (max 3)")
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)

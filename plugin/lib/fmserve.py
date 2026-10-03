@@ -261,6 +261,145 @@ def _next_runnable(p, skip, told):
     return None
 
 
+PARALLEL_MAX = 3  # T-0167: lanes at once at most (each is a full session: usage adds up)
+FM_BIN = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fm")
+
+
+def _fm(cwd, *args, timeout=600):
+    return subprocess.run([sys.executable, FM_BIN, *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+
+
+def _literal(glob):
+    """A scope's literal part, normalised: ./a, a//b and a/ name what a, a/b and a name (T-0167 review)."""
+    lit = re.split(r"[*?\[{]", glob)[0]
+    norm = os.path.normpath(lit) if lit else ""
+    return "" if norm == "." else norm
+
+
+def _overlap(a, b):
+    """Two scope globs might name the same file (conservative: one's literal part starts the other's)."""
+    x, y = _literal(a), _literal(b)
+    return x.startswith(y) or y.startswith(x)
+
+
+def _batch(p, head, skip, n):
+    """T-0167: head plus queued tasks that can't collide with it or each other: S or M, planned, explicit scopes that
+    are pairwise disjoint, nothing unfinished they depend on, nothing waiting on the user. One task: run as before."""
+    briefs = c.lane_view(c.load_briefs(p), p.lane)
+    by_id, meta = {b.id: b for b in c.load_briefs(p)}, c.read_meta(p)
+    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
+
+    def free(b):
+        return (b.tier in ("S", "M") and b.status == "planned" and b.meta.get("scope") and b.id not in skip
+                and not c.waits_on_user(b, pending, autonomy)
+                and all(d in by_id and by_id[d].status in c.CLOSED for d in b.meta.get("depends_on") or []))
+    if n < 2 or not free(head):
+        return [head]
+    batch = [head]
+    for b in c.order_queue(briefs)[0]:
+        if len(batch) < n and b.id != head.id and free(b) and not any(
+                _overlap(g, h) for x in batch for g in x.meta["scope"] for h in b.meta["scope"]):
+            batch.append(b)
+    return batch
+
+
+def _claude_cmd(p, b, args, models):
+    model = models.get(b.tier)
+    return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
+                                              else []) + (["--model", model] if model else [])
+
+
+def _run_lanes(p, batch, args, models, log):
+    """A fresh session per task, each in its own lane (fm lane new), all at once; waits for every one (output to
+    files, so no pipe fills while another is read). {id: (lane path, exit code or None on timeout, output)}; a task
+    whose lane couldn't be made is {id: (None, None, why)}."""
+    import signal
+    import tempfile
+    runs, results = {}, {}
+    try:
+        for b in batch:
+            made = _fm(p.root, "lane", "new", b.id, "--json")
+            if made.returncode:
+                results[b.id] = (None, None, made.stderr.strip()[:200])
+                continue
+            path, out = json.loads(made.stdout)["path"], tempfile.TemporaryFile("w+", errors="replace")
+            proc = subprocess.Popen(_claude_cmd(p, b, args, models), cwd=path, stdout=out, stderr=subprocess.STDOUT,
+                                    env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), text=True, start_new_session=True)
+            runs[b.id] = (path, proc, out, time.monotonic())
+    except BaseException:  # claude missing, or interrupted: no session is left running unwatched
+        for _, proc, out, _ in runs.values():
+            _stop(proc, signal)
+            out.close()
+        raise
+    deadline = time.monotonic() + args.timeout * 60
+    for tid, (path, proc, out, t0) in runs.items():
+        try:
+            code = proc.wait(timeout=max(1, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            _stop(proc, signal)  # the whole process group: tools the session started go too
+            code = None
+        out.seek(0)
+        text = out.read()
+        out.close()
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(f"== {c.now()} {tid} (lane {path}) exit {code}\n{c.redact(text)}\n")
+        c.log_event(p, "run_session", task=tid, data={"lane": path, "minutes": round((time.monotonic() - t0) / 60, 1),
+                                                       "parallel": len(runs)})
+        results[tid] = (path, code, text)
+    return results
+
+
+def _stop(proc, signal):
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except OSError:
+        proc.kill()
+    proc.wait()
+
+
+def _lane_has_work(p, path):
+    """Anything uncommitted in the lane, or commits on it the main checkout's HEAD doesn't have (then it is kept)."""
+    git = lambda root, *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, timeout=60)
+    try:
+        head = git(p.root, "rev-parse", "HEAD").stdout.strip()
+        return bool(git(path, "status", "--porcelain").stdout.strip()
+                    or git(path, "log", "--oneline", f"{head}..HEAD").stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return True
+
+
+def _integrate(p, tid, path):
+    """One finished lane into the main checkout, serially: rebase it on the main branch, run the gates there, then a
+    fast-forward and fm lane rm. Any doubt keeps the lane and its branch, and says why."""
+    try:
+        return _integrate_lane(p, tid, path)
+    except (OSError, subprocess.SubprocessError) as e:  # a slow gate or git: keep it, finish the others
+        return f"kept in {path}: {type(e).__name__} while integrating ({str(e)[:120]})"
+
+
+def _integrate_lane(p, tid, path):
+    git = lambda root, *a: subprocess.run(["git", "-C", root, *a], capture_output=True, text=True, timeout=600)
+    branch = git(p.root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+    if not branch or branch == "HEAD":
+        return f"kept in {path}: the main checkout isn't on a branch"
+    if git(p.root, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        return f"kept in {path}: the main checkout has uncommitted changes"
+    if not git(path, "log", "--oneline", f"{branch}..HEAD").stdout.strip():
+        _fm(p.root, "lane", "rm", tid)
+        return "nothing to merge"
+    rebase = git(path, "rebase", "-q", branch)
+    if rebase.returncode:
+        git(path, "rebase", "--abort")
+        why = (rebase.stderr.strip().splitlines() or ["conflicts"])[-1][:160]
+        return f"kept in {path}: rebasing on {branch} failed ({why})"
+    if c.read_meta(p).get("checks") and _fm(path, "check", timeout=3600).returncode:
+        return f"kept in {path}: the gates failed after rebasing on {branch}"
+    if git(p.root, "merge", "-q", "--ff-only", f"foreman/{tid}").returncode:
+        return f"kept in {path}: {branch} moved on; rebase the lane again"
+    rm = _fm(p.root, "lane", "rm", tid)
+    return f"merged into {branch}" + ("" if rm.returncode == 0 else f" (lane left: {rm.stderr.strip()[:120]})")
+
+
 def _prompt(p, b):
     nxt = c.next_action(b, "full", c.last_change(p, b.id))
     title = re.sub(r"[\x00-\x1f\"]", " ", b.title)[:200]  # task text is data: one quoted line
@@ -350,10 +489,39 @@ def cmd_run(args):
         b = _next_runnable(p, skip, told)
         if not b:
             break
+        batch = _batch(p, b, skip, min(args.parallel, PARALLEL_MAX, args.max - finished))
+        if len(batch) > 1:  # T-0167: independent tasks at once, each in its lane, merged back one by one
+            print(f"running {len(batch)} at once: {', '.join(x.id for x in batch)}", flush=True)
+            limited = False
+            try:
+                ran = _run_lanes(p, batch, args, models, log)
+            except FileNotFoundError:
+                raise fmcli.UsageError("claude isn't on PATH")
+            for tid, (path, code, text) in ran.items():
+                if path is None:  # review: never retry a lane that can't be made, or the run loops forever
+                    skip.add(tid)
+                    print(f"{tid}: no lane ({text}); skipped this run", flush=True)
+                    continue
+                last = text.strip().splitlines()[-1:]
+                limited = limited or bool(code and last and USAGE_LIMIT.search(last[0]))
+                after = c.find_brief(p, tid)
+                if after.status == "done":
+                    finished += 1
+                    how = _integrate(p, tid, path)
+                    print(f"{tid} done; {how}", flush=True)
+                    _notify(p, f"{tid} done ({how}): {after.title[:80]}")
+                else:
+                    skip.add(tid)  # not this run again; an empty lane frees the task for the next
+                    freed = not _lane_has_work(p, path) and _fm(p.root, "lane", "rm", tid).returncode == 0
+                    print(f"{tid} not finished in its lane ({after.status}, exit {code}); "
+                          + ("lane removed, back in the queue" if freed else f"lane kept with its work: {path}"), flush=True)
+            if limited:
+                args.parallel = 1  # one at a time from here, which waits a usage limit out
+                print("usage limit hit: no more lanes this run; one task at a time from here", flush=True)
+            continue
         before = _fingerprint(b)
         model = models.get(b.tier)
-        cmd = ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode]
-                                               if args.permission_mode else []) + (["--model", model] if model else [])
+        cmd = _claude_cmd(p, b, args, models)
         started, t0 = c.now(), time.monotonic()
         try:
             r = subprocess.run(cmd, cwd=p.root, env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), capture_output=True,
