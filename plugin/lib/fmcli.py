@@ -1664,6 +1664,13 @@ def build_parser():
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
 
+    s = add("friction", lazy("fmfriction", "cmd_friction"),
+            help="Foreman's own friction since the last self-improvement pass: a digest, or a brief for one subagent")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
+    g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
+    g.add_argument("--every", type=int, help="fm next calls for a pass every N closed tasks (0: off)")
+
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])

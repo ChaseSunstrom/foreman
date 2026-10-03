@@ -1433,6 +1433,10 @@ def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the oldest captured item."""
     briefs = load_briefs(p) if briefs is None else briefs
     autonomy = read_meta(p).get("autonomy", "standard")
+    if not active_brief(briefs):
+        import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
+        if fmfriction.due(p):
+            return None, "reflect", fmfriction.ACTION
     b = active_brief(briefs) or next(iter(order_queue(briefs)[0]), None) or \
         next((x for x in briefs if x.status == "captured"), None)
     if not b:
