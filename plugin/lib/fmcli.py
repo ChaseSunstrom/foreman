@@ -1452,6 +1452,27 @@ class _Parser(argparse.ArgumentParser):
         super().__init__(*args, **kw)
 
 
+# T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
+HELP_TIERS = [
+    ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
+    ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
+    ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
+    ("Reports", "digest cost usage repeats friction evals"),
+    ("Running elsewhere", "serve run ui watch"),
+    ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
+]
+
+
+def cmd_help(args):
+    sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+    helps = {a.dest: " ".join((a.help or "").split()) for a in sub._choices_actions}
+    lines = []
+    for title, names in HELP_TIERS:
+        lines += [title] + [f"  {n:<15}{c.fit(helps.get(n, ''), 100)}" for n in names.split()] + [""]
+    out(args, {"tiers": [{"title": t, "commands": n.split()} for t, n in HELP_TIERS]},
+        "\n".join(lines) + "fm <command> -h for its options.")
+
+
 def build_parser():
     ap = _Parser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
@@ -1464,6 +1485,7 @@ def build_parser():
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
+    add("help", cmd_help, help="every command, in tiers: the everyday ones first")
     s = add("init", cmd_init, help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
@@ -1790,7 +1812,8 @@ def build_parser():
 
 
 def main(argv=None):
-    args = build_parser().parse_args(argv)
+    argv = sys.argv[1:] if argv is None else argv
+    args = build_parser().parse_args(argv or ["help"])  # bare fm: the tiers, not a usage error
     _sync_in(args)
     try:
         rc = args.fn(args)

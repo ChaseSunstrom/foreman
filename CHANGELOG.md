@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm help` (T-0094): every command once, in six tiers with the everyday ones first; bare `fm` prints it instead of a usage error. `fm help` used to be an error and `fm -h` one unordered list of 51 commands.
 - Hook circuit breaker (T-0087): a hook that fails 3 times in a row pauses for 10 minutes instead of failing on every event, and says so in the band (a warning row), the dashboard's hooks line, `fm doctor` and hooks.log; one success clears it, and the guard (PreToolUse) never pauses.
 - Bash edits are attributed (T-0086): after each Bash call during a task, `git status` (about 2 ms, in the async PostToolUse hook) names the files whose mtime falls inside the call; they count as the task's touches and one outside its scope gets the live scope note an Edit gets (once per file). `sed -i` and generators were invisible until the task's finish.
 - Rules diet (T-0085): the always-on rules drop what a gate already says when it refuses (planning needed to focus, `fm gates`/`fm task prove`, each tier's audits, how each guard category is granted, the state folder): 5881 → 5566 characters loaded in every session. The red→green refusal now names `fm task prove`.
