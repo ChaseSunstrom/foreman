@@ -74,6 +74,31 @@ class Hypotheses(ForemanTestCase):
                 self.assertEqual(b.category, "rm-outside")
 
 
+class ApiMisuse(ForemanTestCase):
+    def failure(self, err):
+        out = self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"},
+                                               "error": "Exit code 1\n" + err})
+        data = json.loads(out.stdout or "null") or {}
+        return (data.get("hookSpecificOutput") or {}).get("additionalContext", "")
+
+    def test_an_api_that_does_not_exist_points_to_the_docs_once(self):
+        # T-0211: a hallucinated API is fixed by reading the real one, not by another guess
+        self.fm("init")
+        for err in ("AttributeError: module 'requests' has no attribute 'fetch'",
+                    "TypeError: Session.get() got an unexpected keyword argument 'retries'",
+                    "ModuleNotFoundError: No module named 'yaml'",
+                    "error[E0599]: no method named `try_lock_for` found for struct `Mutex<T>`",
+                    "SyntaxError: The requested module 'zod' does not provide an export named 'zz'"):
+            with self.subTest(err=err):
+                ctx = self.failure(err)
+                self.assertIn("context7", ctx)
+                self.assertIn("fm research ask", ctx)
+                self.assertNotIn("context7", self.failure(err), "once per failure")
+        self.assertNotIn("context7", self.failure("AssertionError: 3 != 4"))
+        self.assertNotIn("context7", self.failure("AttributeError: 'NoneType' object has no attribute 'x'"),
+                         "a None in our own code isn't a library's API")
+
+
 class Debugger(ForemanTestCase):
     def test_the_agent_is_read_only_and_the_thrash_hint_names_it(self):
         agent = read_text(os.path.join(c.PLUGIN_ROOT, "agents", "fm-debugger.md"))

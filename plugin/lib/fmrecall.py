@@ -178,6 +178,13 @@ def render(hits, tier=None):
 
 _ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing")
 REPEATS = 3  # the same failure this often in one task: a thrash note
+# T-0211: errors that say an API isn't what Claude assumed: a missing module or export, a library attribute, keyword or
+# method that doesn't exist. Another guess rarely fixes these; the real docs do.
+API_MISUSE = re.compile(
+    r"ModuleNotFoundError|No module named|ImportError: cannot import name|module '[\w.]+' has no attribute|"
+    r"unexpected keyword argument|does not provide an export named|has no exported member|Cannot find module '[^.]|"
+    r"no method named|unresolved import|cannot find (function|type|crate|macro|value)|undefined: \w+\.\w+|"
+    r"no member named '\w+' in namespace|cannot find symbol")
 FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 
 
@@ -198,14 +205,15 @@ def note_failure(p, task, text):
         return None
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
-    same, hinted = 0, True
+    same, hinted, first = 0, True, False
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
             if os.path.exists(path) and os.path.getsize(path) > 1_000_000:
                 keep = c.tail_jsonl(path, FAILURES_KEEP)
                 c.write_atomic(path, "".join(json.dumps(r) + "\n" for r in keep))
-            mine = [r for r in c.tail_jsonl(path, FAILURES_KEEP) if task and r.get("task") == task
-                    and r.get("sig") == sig]
+            recs = c.tail_jsonl(path, FAILURES_KEEP)
+            mine = [r for r in recs if task and r.get("task") == task and r.get("sig") == sig]
+            first = not any(r.get("sig") == sig and r.get("task") == task for r in recs)  # with or without a task
             same, hinted = 1 + sum(not r.get("hinted") for r in mine), any(r.get("hinted") for r in mine)
             with open(path, "a", encoding="utf-8") as f:
                 f.write(json.dumps({"sig": sig, "task": task, "at": c.now()}) + "\n")
@@ -213,6 +221,12 @@ def note_failure(p, task, text):
                     f.write(json.dumps({"sig": sig, "task": task, "at": c.now(), "hinted": True}) + "\n")
     except (OSError, c.LockTimeout):
         pass
+    api = API_MISUSE.search(text or "")
+    if api and first:  # T-0211: the first time, before the second guess
+        hint = " ".join(filter(None, [hint, f"Foreman: \"{c.fit(api.group(0), 60)}\" says the API isn't what was "
+                                            f"assumed. Read the real one before another guess: context7 "
+                                            f"(resolve-library-id, then get-library-docs), the installed package's "
+                                            f"own source, or fm research ask \"<library> <symbol> in <version>\"."]))
     if task and same >= REPEATS and not hinted:  # R1 thrash: once per task and failure, when it becomes a pattern
         hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
                                              f"retrying variations, diagnose the cause first "
