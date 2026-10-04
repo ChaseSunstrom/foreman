@@ -580,31 +580,51 @@ def integrity_roots(projects=None):
     return list(dict.fromkeys([c.foreman_home()] + [p.root for p in projects]))
 
 
-def check_integrity(roots, projects):
-    """T-0268: crash damage — empty git objects, zero-byte briefs, state JSON that no longer parses."""
+def check_integrity(roots, projects, current=None):
+    """T-0268: crash damage — empty git objects, zero-byte briefs, state JSON that no longer parses. T-0293: damage in
+    Foreman's own repo or the current project fails; another project's only warns (its own doctor run fails it), so
+    one broken repo doesn't fail every project's gate."""
     bad, scanned = [], 0
+    # current: the project doctor runs in (a lane counts as its main checkout); None: every finding fails (direct
+    # callers); False: run from no project, so only Foreman's own repo fails (review)
+    mine = {c.foreman_home()} | ({current.root, c.main_worktree(current.root) or current.root} if current else set())
     for root in roots:
         empty = _empty_objects(root)
         scanned += empty is not None
         n = len(empty or [])
         if n:
-            bad.append(f"{n} empty git object{'s' * (n != 1)} in {root} (a crash mid-write; fm doctor --repair moves "
-                       f"them aside, and git rewrites any the working files still hold)")
+            bad.append((current is None or root in mine, f"{n} empty git object{'s' * (n != 1)} in {root} (a crash mid-write; fm doctor "
+                                      f"--repair moves them aside, and git rewrites any the working files still hold)"))
     for p in projects:
+        here = current is None or bool(current) and p.slug == current.slug
         for path in sorted(glob.glob(os.path.join(p.dir, "tasks", "*.md"))):
             try:
                 empty = os.path.getsize(path) == 0
             except OSError:  # removed since the listing
                 continue
             if empty:
-                bad.append(f"{p.slug}: empty brief {os.path.basename(path)} (fm doctor --restore-state or a backup)")
+                bad.append((here, f"{p.slug}: empty brief {os.path.basename(path)} (fm doctor --restore-state or a backup)"))
         for path in sorted(glob.glob(os.path.join(p.dir, "*.json"))):
             try:
                 with open(path, encoding="utf-8") as f:
                     json.load(f)
             except (OSError, ValueError):
-                bad.append(f"{p.slug}: {os.path.basename(path)} doesn't parse (truncated?)")
-    return Result("integrity", "FAIL" if bad else "PASS", "; ".join(bad) or f"{scanned} repo(s) and state intact")
+                bad.append((here, f"{p.slug}: {os.path.basename(path)} doesn't parse (truncated?)"))
+    status = "FAIL" if any(m for m, _ in bad) else "WARN" if bad else "PASS"
+    return Result("integrity", status, "; ".join(d for _, d in bad) or f"{scanned} repo(s) and state intact")
+
+
+def check_routing(path=None):
+    """T-0293: skills/routing.json as routing_problem judges it — c.routing() quietly returns {} for a broken file, so
+    hints and --split review groups would vanish with no word."""
+    path = path or os.path.join(PLUGIN, "skills", "routing.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        return Result("routing", "FAIL", f"{path}: {e}")
+    why = c.routing_problem(data)
+    return Result("routing", "FAIL" if why else "PASS", f"{path}: {why}" if why else "routing tables sound")
 
 
 def repair(roots):
@@ -652,7 +672,8 @@ def run_all(full=False):
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
-                check_integrity(integrity_roots(projects), projects)]
+                check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
+                check_routing()]
     return results
 
 

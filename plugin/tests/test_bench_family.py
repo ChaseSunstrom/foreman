@@ -159,6 +159,15 @@ class Judged(_Bench):
 
 
 class Duel(_Bench):
+    def setUp(self):
+        super().setUp()
+        rival = os.path.join(self.tmp, "rival")  # T-0294: a duel's rival must be an installed plugin
+        cc = os.path.join(self.tmp, "cc")
+        os.makedirs(os.path.join(cc, "plugins"))
+        with open(os.path.join(cc, "plugins", "installed_plugins.json"), "w") as f:
+            json.dump({"version": 2, "plugins": {"rival@m": [{"scope": "user", "installPath": rival}]}}, f)
+        self.env = dict(self.env, CLAUDE_CONFIG_DIR=cc)
+
     def test_both_arms_and_the_gate(self):
         self.fm("bench", "build", env=self.env)
         rival = os.path.join(self.tmp, "rival")

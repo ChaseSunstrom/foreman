@@ -27,22 +27,22 @@ import fmcore as c
 TEST_FILE = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)test_[^/]*\.py$|_test\.\w+$|\.(test|spec)\.\w+$")
 
 
+LFS_DRIVER = {"clean": "git-lfs clean -- %f", "smudge": "git-lfs smudge -- %f", "process": "git-lfs filter-process"}
+
+
 def _git(root, *args, timeout=120):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # nothing points it at another repo
     # T-0280 review: a replay runs in bypass mode in a worktree that shares the repo's config, so git run after it
     # (grading, judging, cleanup) must not run a command the session configured: no fsmonitor, no hooks — and
     # (T-0290) no filter driver, from any config file (a session may have written one anywhere), whatever
-    # .gitattributes names it — but git-lfs's own driver, so LFS repos still check out content
-    found = {}
-    for ln in subprocess.run(["git", "-C", root, "config", "--get-regexp", r"^filter\."], capture_output=True,
-                             text=True, timeout=timeout, env=env).stdout.split("\n"):
-        m = re.match(r"filter\.(.+)\.(\w+) ?(.*)$", ln)
-        if m:
-            found.setdefault(m.group(1), []).append((m.group(2), m.group(3)))
-    drivers = {d for d, kv in found.items()
-               if not (d == "lfs" and all(k == "required" or v.startswith("git-lfs ") for k, v in kv))}
-    neutral = [x for d in sorted(drivers) for k in ("clean=", "smudge=", "process=", "required=false")
+    # .gitattributes names it — but git-lfs, so LFS repos still check out content: its driver is always git-lfs's own
+    # fixed commands, never the configured values (T-0299: a prefix check let `git-lfs smudge -- %f; <cmd>` run)
+    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in subprocess.run(
+        ["git", "-C", root, "config", "--get-regexp", r"^filter\."], capture_output=True, text=True, timeout=timeout,
+        env=env).stdout.split("\n")) if m}
+    neutral = [x for d in sorted(drivers - {"lfs"}) for k in ("clean=", "smudge=", "process=", "required=false")
                for x in ("-c", f"filter.{d}.{k}")]
+    neutral += [x for k, v in LFS_DRIVER.items() for x in ("-c", f"filter.lfs.{k}={v}")]
     return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral,
                            *args], capture_output=True, text=True, timeout=timeout, env=env)
 
@@ -509,13 +509,14 @@ def _summary(res):
 
 
 def _contender(spec):
-    """(folder, short name) of a plugin folder or an installed plugin's id (name@marketplace or the name alone)."""
+    """(folder, short name) of an installed plugin — its id (name@marketplace or the name alone) or its folder — else
+    (None, None). T-0294: a duel loads the rival into a bypass-mode replay, so only a plugin the user installed (one
+    that runs in their own sessions already) may be one; an arbitrary folder may not."""
     import fmplugins
-    if os.path.isfile(os.path.join(spec, ".claude-plugin", "plugin.json")):
-        path = os.path.abspath(spec)
-        return path, os.path.basename(path)
     inst = fmplugins.installed()
-    pid = spec if spec in inst else next((k for k in inst if k.split("@")[0] == spec), None)
+    real = os.path.realpath(spec) if os.path.isdir(spec) else None
+    pid = spec if spec in inst else next((k for k in inst if k.split("@")[0] == spec), None) or next(
+        (k for k, v in inst.items() if real and v.get("path") and os.path.realpath(v["path"]) == real), None)
     path = (inst.get(pid) or {}).get("path")
     return (path, pid.split("@")[0]) if path and os.path.isdir(path) else (None, None)
 
@@ -571,8 +572,8 @@ def _contest(p, args):
         if args.bench_cmd == "duel":
             rival, name = _contender(args.plugin)
             if not rival:
-                raise fmcli.UsageError(f"{args.plugin}: not a plugin folder (.claude-plugin/plugin.json) or an "
-                                       f"installed plugin's id")
+                raise fmcli.UsageError(f"{args.plugin}: not an installed plugin (its id, or its folder) — a duel runs "
+                                       f"the rival in bypass mode, so install it first (fm plugins install)")
             name = re.sub(r"[^A-Za-z0-9._-]", "-", name)[:30]
             a = run_arm(p, cases, plugin, f"duel-{name}-without-{stamp}", **arm)
             b = run_arm(p, cases, plugin, f"duel-{name}-with-{stamp}", extra=[rival], **arm)

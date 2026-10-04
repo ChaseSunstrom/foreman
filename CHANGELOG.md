@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Follow-ups (T-0296): `fm doctor` now notices a broken routing table and no longer fails every project over one damaged repo elsewhere; flags that did nothing are refused; `fm bench duel` only pits Foreman against plugins you installed; MASTER caught up with the new commands.
 - Builders (T-0234): an independent S/M task can be handed to a `foreman:fm-builder` subagent that works it test-first in its own git worktree and returns a commit; `fm lane brief ID` writes its brief and the Agent call (isolation worktree), at most two at once; the main thread reviews, merges, takes the task back with `fm lane rm` and closes it.
 - Security (T-0291, from the session-wide review): `fm export agents --out` can no longer write outside the project; requests `fm second session` finds in an old transcript always wait for your yes, even in full autonomy; bench replays can't make Foreman's own git calls run a filter command a replayed session configured.
 - Self-improvement pass 5 (T-0287): `fm replay --cmd '<command>'` says what the guard would do with one command without running it; docs that mention a security pattern no longer make the pre-audit demand the adversary lens.

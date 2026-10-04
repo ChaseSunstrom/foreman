@@ -614,8 +614,8 @@ def _definitions(root, tree, f):
 def task_prove_hunks(p, b, args):
     """T-0271: revert each code hunk of the task's diff alone, in a detached worktree of the current tree, and run the
     check: a hunk whose removal still passes is unproven — the check doesn't test that part of the change."""
-    # ponytail: git -U0 hunks, so a whole new function is one hunk (removing it fails anything that calls it); split
-    # big added hunks into statements if coarse hunks start hiding untested branches
+    # ponytail: git -U0 hunks (a new Python file per top-level definition), so a whole changed function body is one
+    # hunk; split big added hunks into statements if coarse hunks start hiding untested branches
     import tempfile
     base, tree = c.task_base(p.root, b), c.worktree_tree(p.root)
     if not base or not tree:
@@ -2266,7 +2266,7 @@ def build_parser():
     s.add_argument("what", choices=["plan", "debate", "session"])
     s.add_argument("id", nargs="?", help="plan, debate: the task")
     s.add_argument("--review", help="debate: the research note holding the earlier review")
-    s.add_argument("--model", default="sonnet", help="plan, session: the child's model (another than the main one)")
+    s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--timeout", type=float, default=300)

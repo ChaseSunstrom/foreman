@@ -194,17 +194,19 @@ def cmd_second(args):
     try:
         if args.what == "plan":
             b = fmcli.need_brief(p, args.id)
-            objections, verdict = plan(p, b, args.model, args.timeout)
+            objections, verdict = plan(p, b, args.model or "sonnet", args.timeout)
             return fmcli.out(args, {"objections": objections, "verdict": verdict},
                              f"{b.id}: plan review saved\n" + "".join(f"  - {x}\n" for x in objections) + f"  {verdict}")
         if args.what == "debate":
+            if args.model:  # T-0293: a debate brief is for a foreman:fm-reviewer the main thread runs, not a child
+                raise fmcli.UsageError("fm second debate takes no --model: it writes a brief for a foreman:fm-reviewer")
             b = fmcli.need_brief(p, args.id)
             path = debate(p, b, args.review)
             return fmcli.out(args, {"brief": path},
                              f"Debate brief: {path}\nRun one foreman:fm-reviewer subagent with the prompt \"Read {path} "
                              f"and do the review it describes.\"; save its reply (fm research add {b.id}-debate "
                              f"--from-agent <its output file>) and record only the CONFIRMED findings as that lens.")
-        captured, msg = session(p, args.exclude or os.environ.get("FOREMAN_SESSION_ID"), args.if_due, args.model,
+        captured, msg = session(p, args.exclude or os.environ.get("FOREMAN_SESSION_ID"), args.if_due, args.model or "sonnet",
                                 args.timeout)
         return fmcli.out(args, {"captured": captured}, msg)
     except ValueError as e:

@@ -84,6 +84,8 @@ def _baseline_path():
 
 def cmd_replay(args):
     import fmcli
+    if args.cwd and not args.cmd:  # T-0293: accepted and ignored was worse than refused
+        raise fmcli.UsageError("--cwd goes with --cmd: the folder that one command would run in")
     if args.cmd:  # T-0287: one command's verdict, asked and never run (no grants: what the guard says by default)
         import fmguard as g
         b = g.check("Bash", {"command": args.cmd}, _ctx(os.path.abspath(args.cwd or os.getcwd())))
