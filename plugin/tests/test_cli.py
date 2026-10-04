@@ -2,6 +2,7 @@
 import json
 import subprocess
 import os
+import re
 import threading
 import time
 import unittest
@@ -584,6 +585,28 @@ class NewTaskCriteria(ForemanTestCase):
 
 class AuditPrep(ForemanTestCase):
     """T-0026: the diff since the task started, frozen, plus one ready reviewer brief per lens."""
+
+    def test_split_writes_parallel_briefs_by_lens_group(self):
+        # T-0216: an L review in up to three fresh contexts (claudekit-style), opt-in for usage
+        self.fm("init")
+        self.fm("task", "new", "Big change", "--type", "FEATURE", "--tier", "L", "--step", "do it")
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "big.py"), "w") as f:
+            f.write("".join(f"X{i} = {i}\n" for i in range(900)))
+        one = self.fm("audit", "prep", "T-0001").stdout
+        self.assertIn("Run one foreman:fm-reviewer", one)
+        self.assertIn("--split", one, "a big L diff gets the suggestion")
+        out = self.fm("audit", "prep", "T-0001", "--split").stdout
+        briefs = sorted(set(re.findall(r"\S+T-0001\.review-\d\.md", out)))
+        self.assertEqual(len(briefs), 3, out)
+        self.assertIn("in parallel", out)
+        lenses = [re.findall(r"(?m)^## (\w+)$", read_text(b)) for b in briefs]
+        self.assertEqual(sorted(sum(lenses, [])), sorted(["intent", "adversary", "edge", "operator", "maintainer"]))
+        self.assertTrue(all(lenses), "no empty group")
 
     def test_prep_freezes_the_diff_and_prints_lens_briefs(self):
         self.fm("init")
