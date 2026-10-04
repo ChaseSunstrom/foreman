@@ -899,6 +899,9 @@ def _ask_prompt(pl, p, fmguard):
         return ("deny", f"Foreman: nobody can answer a permission prompt in this headless session. Record it with "
                         f"fm task block {task} \"needs {', '.join(cats)} from the user\" and stop.")
     b = c.find_brief(p, task)
+    if b and b.status in c.CLOSED and not standing:  # T-0302: the guard reads grants off the active task only
+        return ("deny", f"Foreman: {task} is closed ({b.status}), and a grant works only while its task is active: "
+                        f"ask on an open task (fm task new …, then fm ask NEW-ID …)")
     if standing:
         return ("ask", f"Foreman asks for a standing yes: core for {task} and every later task in this project, "
                        f"until you say stop (fm standing off). It covers Foreman's own code, rules and evals; Claude "

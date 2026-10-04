@@ -833,5 +833,26 @@ class DecisionsResearchSelf(ForemanTestCase):
         self.assertIsNone(c.find_project(self.repo))
 
 
+class AskClosed(ForemanTestCase):
+    """T-0302: a grant only works while its task is active, so a yes on a closed task would be a yes for nothing."""
+
+    def test_a_closed_task_gets_no_dialog_and_no_request(self):
+        self.fm("init")
+        tid = json.JSONDecoder().raw_decode(self.fm("task", "new", "Release", "--type", "CLEAN", "--tier", "S", "--ac",
+                                                    "ok :: true", "--step", "a", "--focus", "--json").stdout)[0]["id"]
+        self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
+        cmd = f"fm ask {tid} plugin --why 'install it'"
+        out = json.loads(self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}}).stdout)
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("closed", out["hookSpecificOutput"]["permissionDecisionReason"])
+        r = self.fm("ask", tid, "plugin", "--why", "install it", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("closed", r.stderr)
+        self.assertFalse(c.read_meta(c.find_project(self.repo)).get("pending_approvals"))
+        cmd = f"fm ask {tid} core --standing --why 'every task'"  # standing covers later tasks: any id will do
+        out = json.loads(self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}}).stdout)
+        self.assertEqual(out["hookSpecificOutput"]["permissionDecision"], "ask")
+
+
 if __name__ == "__main__":
     unittest.main()

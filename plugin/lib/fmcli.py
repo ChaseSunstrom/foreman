@@ -1326,6 +1326,9 @@ def cmd_ask(args):
                              f"isn't in the known marketplaces or installed (fm plugins find <need>)")
     with c.lock(p.dir):
         b = need_brief(p, args.id)
+        if b.status in c.CLOSED and not args.standing:  # T-0302: a yes on a closed task would grant nothing
+            raise UsageError(f"{b.id} is closed ({b.status}): a grant works only while its task is active; ask on "
+                             f"an open task")
         if _prompted(p, b.id, cats):
             return out(args, {"task": b.id, "allow": cats, "via": "prompt"},
                        f"Approved in Claude Code's permission prompt: the hook records the grant of {', '.join(cats)} "
