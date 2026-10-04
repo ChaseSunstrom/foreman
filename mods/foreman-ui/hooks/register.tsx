@@ -1065,6 +1065,11 @@ export const register: Register = (on, options) => {
             <Text color={hex(C.dim)}>
               <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
             </Text>
+            {(v.vetoes ?? []).length > 0 && (
+              <Text key="fm-pane-vetoes" color={hex(C.dim)} wrap="truncate-end">
+                ✋ you said: {v.vetoes![0]}{v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}
+              </Text>
+            )}
             {(v.revisit ?? []).length > 0 && (
               <Text key="fm-pane-revisit" color={hex(C.warn)} wrap="truncate-end">
                 ◆ revisit: {v.revisit![0].decision} ({v.revisit![0].why}){v.revisit!.length > 1 ? ` · ${v.revisit!.length - 1} more` : ''}

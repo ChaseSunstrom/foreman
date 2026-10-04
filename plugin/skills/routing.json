@@ -1,0 +1,13 @@
+{
+  "stage_words": {
+    "CLEAN": ["simplif", "over-engineer", "bloat", "dead code", "refactor", "clean up", "cleanup"],
+    "SECURITY": ["security", "vulnerab", "threat model", "secret scan"],
+    "PERFORMANCE": ["performance", "profil", "latency"],
+    "FIX": ["debug", "root cause"],
+    "RESEARCH": ["research", "investigat", "library documentation"],
+    "FEATURE": ["test-driven", "tdd"]
+  },
+  "ui_words": ["frontend", "front-end", "web interface", "user interface", "ui design"],
+  "builtin_skills": {"SECURITY": ["security-review"], "CLEAN": ["simplify"]},
+  "review_groups": [["adversary", "edge"], ["intent", "operator"], ["maintainer"]]
+}

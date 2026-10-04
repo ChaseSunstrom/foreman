@@ -381,6 +381,7 @@ def view(p):
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
+        "vetoes": _guarded(lambda: [c.plain(str(v.get("said", "")))[:200] for v in c.vetoes(p)][::-1][:3]) or [],  # T-0251
         "revisit": _guarded(lambda: [{"date": dt, "decision": c.plain(x)[:200], "why": c.plain(w)}  # T-0247
                                      for dt, x, w in c.fired_decisions(p)]) or [],
         "recent": d["recent"],

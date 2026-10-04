@@ -237,6 +237,18 @@ def task_assume(p, args):
         f"{b.id}: assumption {n} is false — re-check the plan, and log it: fm surprise \"<expected> → <observed>\"."))
 
 
+def cmd_vetoes(args):
+    """T-0251: what the user said never to do, as checked before matching calls; rm N drops one that no longer holds."""
+    p = resolve(args)
+    if args.action == "rm":
+        if args.n is None or not c.drop_veto(p, args.n):
+            raise UsageError("fm vetoes rm N (N from fm vetoes)")
+        return out(args, {"removed": args.n}, f"Veto {args.n} removed.")
+    v = c.vetoes(p)
+    out(args, v, "\n".join(f"{i}. {x.get('said', '')} — key words: {' '.join(x['words'])} ({str(x.get('at', ''))[:10]})"
+                           for i, x in enumerate(v, 1)) or "No vetoes recorded.")
+
+
 def cmd_surprise(args):
     """T-0253: fm surprise "<expected> → <observed>": where the model of the code was wrong; friction and recall bring it back."""
     p = resolve(args)
@@ -1617,7 +1629,8 @@ def _audit_scan(p, args):
     return 1 if found else 0
 
 
-SPLIT_GROUPS = (("adversary", "edge"), ("intent", "operator"), ("maintainer",))  # T-0216: --split's reviewers
+# T-0216: --split's reviewers, from skills/routing.json (T-0252); lenses in no group share one more reviewer
+SPLIT_GROUPS = tuple(tuple(g) for g in c.routing().get("review_groups") or ())
 SPLIT_SUGGEST = 800  # diff lines past which an L review suggests --split
 
 
@@ -1775,7 +1788,7 @@ class _Parser(argparse.ArgumentParser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall surprise why outline impact map tour secrets quiet audit research ideas oracle pr "
+    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit research ideas oracle pr "
                          "export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -2034,6 +2047,9 @@ def build_parser():
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
+    s = add("vetoes", cmd_vetoes, help="what the user said never to do, checked before matching commands and edits")
+    s.add_argument("action", nargs="?", choices=["list", "rm"], default="list")
+    s.add_argument("n", nargs="?", type=int)
     s = add("surprise", cmd_surprise, help="log where the model of the code was wrong: \"<expected> → <observed>\"")
     s.add_argument("text", nargs="+")
     s.add_argument("--task", help="the task it came up in (default: the active one)")

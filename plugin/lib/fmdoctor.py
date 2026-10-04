@@ -154,6 +154,8 @@ def check_frontmatter(plugin=PLUGIN):
     bad = []
     skills = os.path.join(plugin, "skills")
     for name in sorted(os.listdir(skills)) if os.path.isdir(skills) else []:
+        if not os.path.isdir(os.path.join(skills, name)):
+            continue  # a skill is a folder; skills/routing.json (T-0252) is data
         meta = _frontmatter(os.path.join(skills, name, "SKILL.md"))
         if meta is None or not meta.get("name") or not meta.get("description"):
             bad.append(f"skill {name}: missing frontmatter name/description")

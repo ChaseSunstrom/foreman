@@ -249,17 +249,12 @@ def check(only=None):
 
 # T-0205: words in a skill's name or description that say it fits a stage, for fm next's hint. Claude Code's own
 # skills for a stage come after the installed ones.
-STAGE_WORDS = {
-    "CLEAN": ("simplif", "over-engineer", "bloat", "dead code", "refactor", "clean up", "cleanup"),
-    "SECURITY": ("security", "vulnerab", "threat model", "secret scan"),
-    "PERFORMANCE": ("performance", "profil", "latency"),
-    "FIX": ("debug", "root cause"),
-    "RESEARCH": ("research", "investigat", "library documentation"),
-    "FEATURE": ("test-driven", "tdd"),
-}
-UI_WORDS = ("frontend", "front-end", "web interface", "user interface", "ui design")
+# T-0252: the tables live in skills/routing.json, where fm evolve can tune them against the bench
+_ROUTES = c.routing()
+STAGE_WORDS = {k: tuple(v) for k, v in (_ROUTES.get("stage_words") or {}).items()}
+UI_WORDS = tuple(_ROUTES.get("ui_words") or ())
 UI_FILES = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|html)\b")
-BUILTIN = {"SECURITY": ("security-review",), "CLEAN": ("simplify",)}
+BUILTIN = {k: tuple(v) for k, v in (_ROUTES.get("builtin_skills") or {}).items()}
 INDEX_VERSION = 2  # bump when what the index keeps changes
 
 

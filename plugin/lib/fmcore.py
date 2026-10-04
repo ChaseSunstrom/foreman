@@ -1627,6 +1627,95 @@ def last_change(p, tid):
                default="")
 
 
+def routing():
+    """T-0252: the routing tables (stage words, UI words, built-in skills, review groups) from skills/routing.json, where
+    fm evolve can tune them; {} when it is missing or broken, so a bad file costs hints, never work."""
+    try:
+        with open(os.path.join(PLUGIN_ROOT, "skills", "routing.json"), encoding="utf-8") as f:
+            r = json.load(f)
+        return r if not routing_problem(r) else {}
+    except (OSError, ValueError, RecursionError):
+        return {}
+
+
+def routing_problem(r):
+    """What is wrong with a routing table's shape (None when it's sound): every value a list of short strings, or a
+    mapping of stage names to such lists; built-in skill names plain names, since they reach the Next line."""
+    strs = lambda v: isinstance(v, list) and all(isinstance(x, str) and 0 < len(x) <= 60 for x in v)
+    if not isinstance(r, dict):
+        return "not a JSON object"
+    for key in ("stage_words", "builtin_skills"):
+        v = r.get(key, {})
+        if not isinstance(v, dict) or not all(isinstance(k, str) and strs(x) for k, x in v.items()):
+            return f"{key} must map stage names to lists of strings"
+    if any(not re.fullmatch(r"[\w:.-]+", x) for x in sum((r.get("builtin_skills") or {}).values(), [])):
+        return "builtin_skills must be plain skill names"
+    if not strs(r.get("ui_words", [])):
+        return "ui_words must be a list of strings"
+    groups = r.get("review_groups", [])
+    if not isinstance(groups, list) or not all(strs(g) and g for g in groups):
+        return "review_groups must be a list of non-empty lists of lens names"
+    return None
+
+
+# T-0251: the user's "no" as data — a correction that says never/don't/stop X is kept as X's key words and checked
+# before a matching tool call (a note, not a block: a phrase match can be wrong)
+_VETO = re.compile(r"(?i)\b(?:never|don['’]?t|do not|stop)\s+(?:ever\s+)?([^.,;!?\n]{3,120})")
+_NOT_A_VETO = {"think", "know", "want", "like", "care", "mind", "worry", "understand", "see", "need", "get", "mean",
+               "believe", "remember", "forget", "bother"}  # "don't think so" is an opinion, not a standing rule
+_VETO_STOP = set("""without asking ask me you the a an it its that this these those any anything ever first again please
+before being told unless until and or to of in on for with from my your our just so too also all again yet
+make do does doing done be is are was were get got have has had use using there here then""".split())
+VETOES_KEEP = 30
+
+
+def _vetoes_path(p):
+    return os.path.join(p.dir, "vetoes.json")
+
+
+def vetoes(p):
+    try:
+        with open(_vetoes_path(p), encoding="utf-8") as f:
+            v = json.load(f)
+        return [x for x in v if isinstance(x, dict) and isinstance(x.get("words"), list) and x["words"]
+                and all(isinstance(w, str) for w in x["words"])] if isinstance(v, list) else []
+    except (OSError, ValueError):
+        return []
+
+
+def add_veto(p, text):
+    """Record the veto in a correction (the newest VETOES_KEEP, one per set of key words); None when it has none."""
+    words = []
+    for m in _VETO.finditer(text or ""):  # each clause on its own: "I don't think so, never push" is about pushing
+        found = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(1).lower()) if w not in _VETO_STOP]
+        if found and found[0] not in _NOT_A_VETO:
+            words = found[:3]
+            break
+    if not words:
+        return None
+    rec = {"words": words, "said": fit(defang(plain(text.strip())).replace('"', "'"), 200), "at": now()}
+    with lock(p.dir, timeout=2):
+        keep = [x for x in vetoes(p) if x["words"] != words][-(VETOES_KEEP - 1):] + [rec]
+        write_atomic(_vetoes_path(p), json.dumps(keep))
+    return rec
+
+
+def drop_veto(p, n):
+    """Remove the n-th recorded veto (1 = the oldest, as fm vetoes lists them); False when there is none."""
+    with lock(p.dir, timeout=2):
+        v = vetoes(p)
+        if not 1 <= n <= len(v):
+            return False
+        write_atomic(_vetoes_path(p), json.dumps(v[:n - 1] + v[n:]))
+    return True
+
+
+def veto_hits(p, text):
+    """The recorded vetoes whose every key word starts a word of text (a command, or an edit's tool and path)."""
+    have = re.findall(r"[a-z0-9]+", (text or "").lower())
+    return [v for v in vetoes(p) if all(any(h.startswith(str(w)) for h in have) for w in v["words"])]
+
+
 QUIET_AFTER = 6  # T-0250: a hint shown this many times running without being used loses its detail
 HINT_MARKS = {"batch": "fm batch ", "skills": "skills that fit"}  # in the full and the quiet form alike
 _REVISIT_TAG = re.compile(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")

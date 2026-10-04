@@ -270,6 +270,7 @@ const NEWS: FmView = {
   },
   research: [{ name: 'ask-tomllib-since-which-version-20261004-0000', claims: 8, verified: 7, not_found: 1, unchecked: 0 }],
   revisit: [{ date: '2026-09-01', decision: 'keep the 60s token TTL', why: 'auth.py changed' }],
+  vetoes: ['never push without asking', "don't touch the lockfile"],
 }
 
 test('the pane shows spend, the bench and evolve, research asks, and the task ledger', async ($, on) => {
@@ -291,6 +292,7 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
     /✗ dropped .*SKILL\.md · tighter verify lines/,
     /tomllib-since-which-version/,
     /◆ revisit: keep the 60s token TTL \(auth\.py changed\)/,
+    /✋ you said: never push without asking · 1 more/,
   ])
     if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
   expect(missing).toEqual([])

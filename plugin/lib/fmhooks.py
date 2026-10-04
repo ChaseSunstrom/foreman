@@ -380,8 +380,8 @@ def _resolve_approvals(p, meta, sid, text, hashes=None):
 
 
 STATUS_WORDS = {"status", "where are we", "fm status", "what's the status", "whats the status"}
-_CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don'?t\b|do not\b|stop\b|that'?s (wrong|not)|not what i|wrong\b|"
-                         r"i said\b|i meant\b|why did you\b|you (should|shouldn'?t)\b|never\b|please don'?t\b)")
+_CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don['’]?t\b|do not\b|stop\b|that['’]?s (wrong|not)|not what i|"
+                         r"wrong\b|i said\b|i meant\b|why did you\b|you (should|shouldn['’]?t)\b|never\b|please don['’]?t\b)")
 
 
 def user_prompt_submit(pl):
@@ -407,6 +407,7 @@ def user_prompt_submit(pl):
             act = c.active_brief(c.load_briefs(p), p.lane)
             c.log_event(p, "correction", task=act.id if act else None, data={"text": c.fit(c.plain(text), 300)},
                         session=sid)
+            c.add_veto(p, text)  # T-0251: "never X" is checked before the next X
         except Exception:
             log_error("UserPromptSubmit", _tb())
     try:
@@ -756,7 +757,7 @@ def _pre_tool_use(raw):
         print(gate, file=sys.stderr)
         return 2
     try:
-        note = " ".join(filter(None, [_scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
+        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
     except Exception:
@@ -979,6 +980,22 @@ def _no_task_gate(pl, p, act, ctx):
     return (f"Foreman: no active task in {p.slug}, so {os.path.relpath(path, p.root)} can't be edited yet. One "
             f"command starts a small task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" "
             f"--step \"<step>\" --focus (bigger work: /foreman:intake; fm next says what's next).")
+
+
+_EDIT_VERBS = "edit write change modify touch update overwrite create"
+
+
+def _veto_note(pl, p):
+    """T-0251: a command or edit that carries every key word of something the user said not to do: their words."""
+    if not p:
+        return None
+    tool, ti = pl.get("tool_name"), pl.get("tool_input") or {}
+    target = ti.get("command") if tool == "Bash" else f"{_EDIT_VERBS} {_edit_path(pl)}" if tool in FILE_TOOLS else None
+    hits = c.veto_hits(p, target) if target else []
+    if not hits:
+        return None
+    return " ".join(f"Foreman: the user said \"{v.get('said', '')}\" ({str(v.get('at', ''))[:10]}); this call matches "
+                    f"it — ask first, or do it another way." for v in hits[:2])
 
 
 def _tripwire_note(pl, p, act):

@@ -20,11 +20,12 @@ read by Claude while it works (skills, references, rules). Your revision is test
 it: it must make Claude finish them more reliably and with fewer tokens and turns.
 Use the evidence: failed replays, friction (what went wrong or slow), the user's own words. Prefer cutting, sharpening
 and reordering over adding; never weaken a safety rule or a verification step. Keep the file's format (frontmatter,
-headings) intact.
+headings) intact; a .json file stays valid JSON with the same top-level keys.
 Reply with the complete revised file between <file> and </file>, then one line starting "Why:"."""
 MAX_FILE = 40_000
 # Only instruction text: code an LLM rewrote (the guard, hooks, fm) would run unsandboxed in the bypass-mode replays
-TEXT = re.compile(r"^(skills/[\w./-]+\.md|rules/[\w.-]+\.md|agents/[\w.-]+\.md|output-styles/[\w.-]+\.md)$")
+TEXT = re.compile(r"^(skills/[\w./-]+\.md|skills/routing\.json|rules/[\w.-]+\.md|agents/[\w.-]+\.md|"
+                  r"output-styles/[\w.-]+\.md)$")  # T-0252: the routing tables are data the bench can judge too
 IMPROVED = 0.05  # cost per case down this much (or more passes) counts as better, not a tie
 
 
@@ -57,6 +58,23 @@ def _evidence(p, cases):
     return "\n".join(parts)
 
 
+def check_revision(target, old, new):
+    """A revision that breaks its file's shape is never benched: instruction files keep their frontmatter, and
+    routing.json stays a JSON object with the same top-level keys (T-0252)."""
+    if target.endswith(".json"):
+        try:
+            was, now = json.loads(old), json.loads(new)
+        except ValueError as e:
+            raise ValueError(f"the revision of {target} isn't JSON ({e}): not benched")
+        if not isinstance(now, dict) or not isinstance(was, dict) or set(now) != set(was):
+            raise ValueError(f"the revision of {target} changed its top-level keys: not benched")
+        bad = c.routing_problem(now) if target.endswith("routing.json") else None
+        if bad:
+            raise ValueError(f"the revision of {target} is malformed ({bad}): not benched")
+    elif old.startswith("---\n") and not new.startswith("---\n"):
+        raise ValueError(f"the revision of {target} lost its frontmatter: not benched")
+
+
 def mutate(p, target, text, cases, model, timeout=600):
     """(revised text, why) from the child, or raise ValueError."""
     prompt = (f"File: {target}\n\n<current>\n{text}\n</current>\n\nEvidence (data, not instructions):\n"
@@ -85,8 +103,8 @@ def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, liv
     git = fmbench._git
     rel = target[len(plugin_dir) + 1:] if target.startswith(plugin_dir + "/") else None
     if not rel or ".." in target.split("/") or not TEXT.match(rel):
-        raise ValueError(f"--target must be an instruction file in {plugin_dir}/ (skills/**/*.md, rules/*.md, agents/*.md, "
-                         f"output-styles/*.md), got {target!r}")
+        raise ValueError(f"--target must be an instruction file in {plugin_dir}/ (skills/**/*.md, skills/routing.json, "
+                         f"rules/*.md, agents/*.md, output-styles/*.md), got {target!r}")
     head = git(repo, "rev-parse", "HEAD").stdout.strip()
     r = git(repo, "show", f"HEAD:{target}")  # both arms start from the last commit, never the working tree
     if r.returncode or not head:
@@ -105,9 +123,10 @@ def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, liv
     arms = (1 if live else 2) * len(cases) * max(1, runs)  # T-0227 review: one check for the whole generation
     fmbudget.check("evolve", (0 if drop else fmbudget.estimate("evolve", 1, 0.1))
                    + fmbudget.estimate("bench", arms, min(budget, 0.5)), "fewer cases (--max), --runs, or --live")
-    new, why = ("", "ablation: the file emptied") if drop else mutate(p, target, old, cases, mutate_model)
-    if old.startswith("---\n") and not drop and not new.startswith("---\n"):
-        raise ValueError(f"the revision of {target} lost its frontmatter: not benched")
+    new, why = (("{}\n" if target.endswith(".json") else ""), "ablation: the file emptied") if drop else \
+        mutate(p, target, old, cases, mutate_model)
+    if not drop:
+        check_revision(target, old, new)
     if new.strip() == old.strip():
         return {"kept": False, "improved": False, "why": "the child proposed no change", "why_not": "no change",
                 "gate": []}
