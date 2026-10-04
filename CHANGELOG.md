@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- No edits without a task, for shell writes too (T-0308): with no task active, the guard refuses a write into the project through Bash (redirect, `sed -i`, `cp`, `tee`, python `open()`) with the same one-command fix as Edit/Write. In bypass mode Claude Code steers edits to the shell, and a court replay (R-T-0218) changed code that way without ever opening a task. Reads, `fm`, scratch, state and checkout-wide git operations are unaffected; a bare file name in `python -c` is still not seen (the coarse rule needs a path).
 - `fm second session` (T-0307): reads the newest session the user typed in. A newer SDK or `claude -p` transcript in the same project (a background security review, a child run) is skipped. Before, it was read as the user's last session and its prompt captured as a missed request.
 - `fm ask` (T-0302): asking on a closed task is refused, by the permission hook (no dialog) and by fm ask itself. The guard reads grants only from the active task, so a yes there granted nothing. A standing core ask still takes any id.
 - `fm friction` (T-0301): failed tool calls are grouped by why they failed (the error, with the newest command or file as an example) instead of by file, so five failed Reads of different files read as one cause; a turn the drive ends to wait on background work is no longer listed as friction.

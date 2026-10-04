@@ -765,12 +765,6 @@ def _pre_tool_use(raw):
         return 2 if decision[0] == "deny" else 0
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
-    gate = _no_task_gate(pl, p, act, ctx)
-    if gate:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": gate}}))
-        print(gate, file=sys.stderr)
-        return 2
     try:
         note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
         if note:
@@ -807,7 +801,8 @@ def _guard_ctx(pl, fmguard):
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None,
                       standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()),
                       confine=(p.lane, c.main_worktree(p.lane)) if p and getattr(p, "lane", None) and act
-                      and act.meta.get("builder") else None)
+                      and act.meta.get("builder") else None,
+                      unbriefed=p.root if p and not act and not _quiet() else None)  # T-0308: Bash writes too
     return ctx, p, act
 
 
@@ -987,19 +982,6 @@ def _edit_path(pl):
 
 def _in_project(path, p):
     return bool(path) and path.startswith(p.root.rstrip("/") + "/")
-
-
-def _no_task_gate(pl, p, act, ctx):
-    """File edits inside a Foreman project need an active task (rules: never edit without a brief)."""
-    if not p or act or pl.get("tool_name") not in FILE_TOOLS:
-        return None
-    path = _edit_path(pl)
-    exempt = [pl.get("scratchpad_dir"), os.path.join(ctx.home, ".claude", "projects")]  # session scratch, auto memory
-    if not _in_project(path, p) or any(e and path.startswith(e.rstrip("/") + "/") for e in exempt):
-        return None
-    return (f"Foreman: no active task in {p.slug}, so {os.path.relpath(path, p.root)} can't be edited yet. One "
-            f"command starts a small task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" "
-            f"--step \"<step>\" --focus (bigger work: /foreman:intake; fm next says what's next).")
 
 
 _EDIT_VERBS = "edit write change modify touch update overwrite create"

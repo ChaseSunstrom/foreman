@@ -365,6 +365,34 @@ class NoTaskGate(HookCase):
         self.task()
         self.assertEqual(self.pre(os.path.join(self.repo, "app.py")).returncode, 0)
 
+    def bash(self, cmd, env=None):
+        return self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd},
+                                        "scratchpad_dir": os.path.join(self.tmp, "scratch")}, env=env)
+
+    def test_shell_writes_need_a_task_too(self):
+        # T-0308: in bypass mode Claude Code steers edits to sed and heredocs; the court replay R-T-0218 edited code
+        # through Bash with no task at all
+        self.fm("init")
+        app = os.path.join(self.repo, "app.py")
+        for cmd in (f"echo x > {app}", "echo x >> app.py", "sed -i s/a/b/ app.py", "cp /etc/hostname app.py",
+                    "printf x | tee app.py", "python3 -c \"open('./app.py', 'w').write('x')\"",
+                    "python3 - <<'EOF'\nopen('app.py', 'w').write('x')\nEOF",
+                    "cat > app.py <<'EOF'\nx\nEOF"):
+            with self.subTest(cmd=cmd):
+                p = self.bash(cmd)
+                self.assertEqual(p.returncode, 2, p.stdout)
+                reason = parse(p)["hookSpecificOutput"]["permissionDecisionReason"]
+                self.assertIn("no active task", reason)
+                self.assertIn("--focus", reason)
+        for cmd in ("cat app.py", "grep -n x app.py > /tmp/fm-probe.txt",
+                    f"echo x > {os.path.join(self.tmp, 'scratch', 'n.md')}", "fm capture 'later'", "git status",
+                    "python3 -m pytest -q", "git merge --ff-only main"):
+            with self.subTest(cmd=cmd):
+                self.assertEqual(self.bash(cmd).returncode, 0)
+        self.assertEqual(self.bash("echo x > app.py", env={"FOREMAN_QUIET": "1"}).returncode, 0)  # T-0077
+        self.task()
+        self.assertEqual(self.bash("echo x > app.py").returncode, 0)
+
     def test_unregistered_directory_is_not_gated(self):
         plain = os.path.join(self.tmp, "plain")
         os.makedirs(plain)
