@@ -161,7 +161,7 @@ def compact(p, limit=500):
     except (OSError, ValueError):
         m = None
     head = _git(p.root, "rev-parse", "HEAD").strip()
-    if not m or m.get("head") != head:
+    if (not m or m.get("head") != head) and not os.environ.get("FOREMAN_NO_BACKGROUND"):
         try:
             subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "map", "--json"], cwd=p.root,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,

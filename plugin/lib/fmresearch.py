@@ -21,6 +21,7 @@ import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
+import fmbudget
 import fmcore as c
 
 NO_MCP = ["--strict-mcp-config", "--mcp-config", json.dumps({"mcpServers": {}})]
@@ -148,7 +149,8 @@ def verify(claims, fetch=fetch):
 
 
 def _child(model, tools, system):
-    return ["claude", "-p", "--model", model, "--no-session-persistence", "--setting-sources", "project,local",
+    return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+            "--setting-sources", "project,local",
             "--tools", tools, *(["--allowed-tools", tools] if tools else []), *NO_MCP, "--append-system-prompt", system]
 
 
@@ -172,11 +174,14 @@ def _run(jobs, timeout):
         for pr in procs:
             try:
                 so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                so, usd = fmbudget.result(so)  # T-0227
+                fmbudget.record("research", usd)
                 out.append((so, None) if pr.returncode == 0 and so.strip() else
                            (None, f"exit {pr.returncode}: {c.fit((se or so).strip(), 160)}"))
             except subprocess.TimeoutExpired:
                 pr.kill()
                 pr.communicate()
+                fmbudget.record("research", None, detail="timed out: cost unknown")
                 out.append((None, f"timed out after {timeout}s"))
         return out
 
@@ -199,6 +204,12 @@ def cmd_ask(args):
     # most of the question's words, or it isn't known yet
     known = [h for h in fmrecall.recall(p, q, n=5, cover=0.67) if h[1] in ("research", "brief", "decision")]
     subs = [s.strip() for s in args.sub or [] if s.strip()]
+    try:
+        fmbudget.check("research", fmbudget.estimate("research", (0 if subs else 1) + min(len(subs) or args.fanout,
+                                                                                          args.fanout), 0.2),
+                       "a smaller --fanout")
+    except fmbudget.BudgetError as e:
+        raise fmcli.UsageError(str(e))
     try:
         if not subs:
             [(plan, err)] = _run([(_child(args.model, "", PLANNER.format(n=args.fanout)), f"Question: {q}\n")],

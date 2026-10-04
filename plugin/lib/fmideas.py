@@ -11,6 +11,7 @@ import sys
 import tempfile
 import time
 
+import fmbudget
 import fmcore as c
 import fmrecall
 
@@ -28,7 +29,8 @@ NO_TOOLS = ["--setting-sources", "project,local", "--tools", "", "--strict-mcp-c
 
 def child_cmd(model, system):
     """The prompt (lens + pack) goes in on stdin: packs can exceed the per-argument size limit."""
-    return ["claude", "-p", "--model", model, "--no-session-persistence", *NO_TOOLS, "--append-system-prompt", system]
+    return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json", *NO_TOOLS,
+            "--append-system-prompt", system]
 
 
 def child_prompt(lens, pack):
@@ -134,13 +136,16 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
         for i, (lens, pr) in enumerate(procs, 1):
             try:
                 out, err = pr.communicate(timeout=max(1, deadline - time.time()))
+                out, usd = fmbudget.result(out)  # T-0227: the text, and what it cost
+                fmbudget.record("ideas", usd, detail=lens)
                 ok = pr.returncode == 0 and bool(out.strip())
                 why = "" if ok else f"exit {pr.returncode}: {(err or out).strip()[-200:]}"
             except subprocess.TimeoutExpired:
                 pr.kill()
                 out, _ = pr.communicate()
                 ok, why = False, f"timed out after {args.timeout}s"
-            slug = re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
+                fmbudget.record("ideas", None, detail=f"{lens} (timed out: cost unknown)")
+            slug =re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
             path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
             text = c.redact(out.strip()) if ok else ""
             if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
@@ -161,6 +166,11 @@ def cmd_ideas(args):
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack += user_voice(p)
     lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
+    runs = len(lenses) * max(1, args.rounds) + max(0, getattr(args, "deepen", 0) or 0)
+    try:
+        fmbudget.check("ideas", fmbudget.estimate("ideas", runs, 0.06), "fewer --lens, --rounds or --deepen")
+    except fmbudget.BudgetError as e:
+        raise fmcli.UsageError(str(e))
     with open(PROMPT, encoding="utf-8") as f:
         system = f.read()
     out_dir = os.path.join(p.dir, "research", "brainstorm-" + time.strftime("%Y%m%d-%H%M%S"))
@@ -260,15 +270,21 @@ def cmd_oracle(args):
     spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in
                         ("Raw request", "Interpretation", "Acceptance criteria", "Non-goals") if b.section(name).strip())
     spec = f"Task: {b.title} ({b.type})\n\n{spec or b.title}\n"
+    try:
+        fmbudget.check("oracle", fmbudget.estimate("oracle", 1, 0.05))
+    except fmbudget.BudgetError as e:
+        raise fmcli.UsageError(str(e))
     with tempfile.TemporaryDirectory(prefix="fm-oracle-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
         try:
             r = subprocess.run(child_cmd(args.model, ORACLE), input=spec, cwd=cwd, capture_output=True, text=True,
                                timeout=args.timeout)
         except (OSError, subprocess.TimeoutExpired) as e:
             raise fmcli.UsageError(f"the oracle child didn't run: {e} (is `claude` on PATH and logged in?)")
+    text_out, usd = fmbudget.result(r.stdout)
+    fmbudget.record("oracle", usd, project=p.slug, detail=b.id)
     parts = {k: [] for k in ("Examples", "Ambiguities")}
     head = None
-    for line in r.stdout.splitlines():
+    for line in text_out.splitlines():
         m = re.match(r"#+\s*(Examples|Ambiguities)\b", line.strip(), re.I)
         if m:
             head = m.group(1).capitalize()

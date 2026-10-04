@@ -114,7 +114,9 @@ class SessionStart(HookCase):
         # T-0215: a compact map from the cache, so a new session skips its discovery searches
         self.fm("init")
         path = os.path.join(self.project().dir, "map.json")
-        self.assertNotIn("Map (", self.ctx_of(self.run_ss()), "no map cached yet: none, and no wait for one")
+        start = self.hook("SessionStart", {"source": "startup"}, env={"CLAUDE_ENV_FILE": self.env_file,
+                                                                      "FOREMAN_NO_BACKGROUND": ""})
+        self.assertNotIn("Map (", self.ctx_of(start), "no map cached yet: none, and no wait for one")
         for _ in range(100):  # the hook started a background build instead
             if os.path.exists(path):
                 break

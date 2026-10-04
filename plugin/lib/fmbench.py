@@ -21,6 +21,7 @@ import subprocess
 import tempfile
 import time
 
+import fmbudget
 import fmcore as c
 
 TEST_FILE = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)test_[^/]*\.py$|_test\.\w+$|\.(test|spec)\.\w+$")
@@ -226,6 +227,7 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30):
             error = f"can't start claude: {e}"
         graded = _grade(wt, case, env)
         diag = _diagnose(state)
+    fmbudget.record("bench", res.get("total_cost_usd"), project=p.slug, detail=case["id"])  # T-0227
     return {"id": case["id"], "pass": not error and all(code == 0 for _, code, _ in graded), "diag": diag,
             "verify": [{"cmd": x, "exit": code, "tail": tail} for x, code, tail in graded],
             "cost_usd": res.get("total_cost_usd"), "turns": res.get("num_turns"),
@@ -296,6 +298,8 @@ def recommend(by_model, cases):
 def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None):
     """Every case on one plugin, results written after each case (a crash or Ctrl-C keeps what was paid for). Refuses a
     plugin without the guard here, so no caller can skip it (replays run in bypass mode)."""
+    fmbudget.check("bench", fmbudget.estimate("bench", len(cases) * max(1, runs), min(budget, 0.5)),
+                   "fewer cases (--max) or --runs")
     if not has_guard(plugin):
         raise ValueError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
                          f"replays run in bypass mode, so they never run without it")
@@ -399,6 +403,11 @@ def cmd_bench(args):
         models = [m.strip() for m in args.models.split(",") if m.strip()]
         if not cases or not models or not all(re.fullmatch(r"[\w.:-]+", m) for m in models):
             raise fmcli.UsageError("fm bench models needs cases (fm bench build) and --models like haiku,sonnet,opus")
+        try:
+            fmbudget.check("bench", fmbudget.estimate("bench", len(cases) * len(models) * max(1, args.runs),
+                                                      min(args.budget, 0.5)), "fewer --models or --max")
+        except fmbudget.BudgetError as e:
+            raise fmcli.UsageError(str(e))
         stamp, by_model = time.strftime("%Y%m%d-%H%M%S"), {}
         os.makedirs(_results_dir(p), exist_ok=True)
         _git(p.root, "worktree", "prune")

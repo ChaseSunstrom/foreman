@@ -46,8 +46,9 @@ class ForemanTestCase(unittest.TestCase):
         self.home = os.path.join(self.tmp, "fhome")
         os.makedirs(self.home)
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
-                                                     "FOREMAN_STATE", "XDG_STATE_HOME")}
+                                                     "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND")}
         os.environ["FOREMAN_HOME"] = self.home
+        os.environ["FOREMAN_NO_BACKGROUND"] = "1"  # a detached child writing into a test's folder races its cleanup
         for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE"):
             os.environ.pop(k, None)
         os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")  # a state fallback never reaches the real one

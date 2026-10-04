@@ -683,6 +683,16 @@ def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
+        if tool in ("Agent", "Task"):  # T-0227: subagents run within the day's token budget
+            try:
+                import fmbudget
+                fmbudget.check_subagent()
+            except ValueError as e:  # BudgetError: over the cap
+                print(f"Foreman {e}", file=sys.stderr)
+                return 2
+            except Exception:  # a spend cap, not a safety check: a broken budget never blocks work
+                log_error("PreToolUse", _tb())
+            return 0
         if tool not in GUARDED:
             return 0
         try:
@@ -1462,6 +1472,15 @@ def subagent_start(pl):
 def subagent_stop(pl):
     _event({"kind": "subagent_stop", "session_id": pl.get("session_id"), "agent_id": pl.get("agent_id"),
             "agent_type": pl.get("agent_type")})
+    if pl.get("agent_transcript_path"):  # T-0227: what the subagent used, against the day's cap
+        try:
+            import fmbudget
+            tokens = fmbudget.transcript_tokens(pl["agent_transcript_path"])
+            if tokens:
+                fmbudget.record(f"subagent:{pl.get('agent_type') or '?'}", tokens=tokens,
+                                detail=pl.get("agent_id") or "")
+        except Exception:  # the ledger is bookkeeping: never the subagent's log event
+            log_error("SubagentStop", _tb())
     p = c.find_project(_cwd(pl))
     if p and pl.get("agent_type"):
         act = c.active_brief(c.load_briefs(p), p.lane)

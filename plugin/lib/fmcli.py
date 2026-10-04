@@ -1617,7 +1617,7 @@ class _Parser(argparse.ArgumentParser):
 HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas oracle pr"),
-    ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
+    ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -1985,6 +1985,15 @@ def build_parser():
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")
+
+    s = add("budget", lazy("fmbudget", "cmd_budget"), help="spend on child runs and subagents today, and the caps that "
+                                                            "bound it (T-0227)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
+    s.add_argument("--day", type=float, help="set: USD per day for everything fm spawns")
+    s.add_argument("--run", type=float, help="set: USD per command")
+    s.add_argument("--subagent-tokens", type=int, help="set: Agent subagent tokens per day")
+    s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
+    s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
     s = add("evolve", lazy("fmevolve", "cmd_evolve"), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
