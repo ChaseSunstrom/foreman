@@ -1949,7 +1949,7 @@ def build_parser():
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
     bsp = s.add_subparsers(dest="bench_cmd", required=True)
-    for name in ("build", "list", "run", "show", "compare"):
+    for name in ("build", "list", "run", "show", "compare", "gate"):
         b = bsp.add_parser(name)
         b.add_argument("--json", action="store_true")
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
@@ -1964,8 +1964,13 @@ def build_parser():
             b.add_argument("--budget", type=float, default=3.0, help="USD per case (claude --max-budget-usd)")
             b.add_argument("--timeout", type=int, default=30, help="minutes per case")
             b.add_argument("--label", help="name for these results (default: the time)")
+            b.add_argument("--runs", type=int, default=1, help="attempts per case: a pass rate instead of one sample")
         if name == "show":
             b.add_argument("label")
+        if name == "gate":
+            b.add_argument("a", help="the reference results (live)")
+            b.add_argument("b", help="the candidate's results")
+            b.add_argument("--cost-tolerance", type=float, default=0.15, help="allowed rise in mean cost per case")
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")

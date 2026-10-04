@@ -205,6 +205,50 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30):
             "seconds": round(time.monotonic() - t0), "error": error or (res.get("result") if res.get("is_error") else None)}
 
 
+def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1):
+    """T-0221: a case run `runs` times: pass rate, mean cost, turns and time; the first attempt's details kept."""
+    tries = [run_case(p, case, plugin, model, budget, timeout) for _ in range(max(1, runs))]
+    rate = sum(t["pass"] for t in tries) / len(tries)
+
+    def mean(k):
+        vals = [t[k] for t in tries if t[k] is not None]
+        return round(sum(vals) / len(vals), 4) if vals else None
+    return dict(tries[0], runs=len(tries), pass_rate=rate, cost_usd=mean("cost_usd"), turns=mean("turns"),
+                seconds=mean("seconds"), **{"pass": rate >= 0.5},
+                attempts=[{k: t[k] for k in ("pass", "cost_usd", "turns", "seconds", "error")} for t in tries])
+
+
+def _rate(x):
+    return x.get("pass_rate", 1.0 if x.get("pass") else 0.0)
+
+
+def gate(a, b, tolerance=0.15):
+    """(ok, lines): candidate b is no worse than a on their shared cases — no fewer passes in total, and mean cost per
+    case at most `tolerance` higher. Old results without repeats count each pass as 1.0."""
+    shared = sorted({x["id"] for x in a["cases"]} & {x["id"] for x in b["cases"]})
+    if not shared:
+        return False, ["no shared cases: run both on the same cases (fm bench run --ids …)"]
+    A, B = ({x["id"]: x for x in r["cases"]} for r in (a, b))
+    sa, sb = sum(_rate(A[i]) for i in shared), sum(_rate(B[i]) for i in shared)
+    lost = [i for i in shared if _rate(B[i]) < _rate(A[i])]
+    costs = [[r[i]["cost_usd"] for i in shared if r[i].get("cost_usd") is not None] for r in (A, B)]
+    ca, cb = (sum(x) / len(x) if x else None for x in costs)
+    lines, ok = [f"{a['label']} → {b['label']}: passes {sa:g} → {sb:g} over {len(shared)} shared case(s)"
+                 + (f"; cost/case ${ca:.2f} → ${cb:.2f}" if ca is not None and cb is not None else "")], True
+    if sb < sa:
+        ok = False
+        lines.append(f"✗ fewer passes (lost ground on {', '.join(lost)})")
+    elif lost:
+        lines.append(f"  (lost ground on {', '.join(lost)}, made up elsewhere)")
+    if ca and cb is not None and cb > ca * (1 + tolerance):
+        ok = False
+        lines.append(f"✗ cost per case up {round(100 * (cb / ca - 1))}% (over {round(100 * tolerance)}%)")
+    if all(r[i].get("runs", 1) == 1 for r in (A, B) for i in shared):
+        lines.append("  single runs: a flipped case may be noise (--runs 3 measures it)")
+    lines.append("✓ no worse: may be proposed" if ok else "✗ not proposed")
+    return ok, lines
+
+
 def _results_dir(p):
     return os.path.join(p.dir, "bench", "results")
 
@@ -271,7 +315,7 @@ def cmd_bench(args):
         for case in cases:
             print(f"bench {label}: {case['id']} …", flush=True) if not args.json else None
             try:
-                results.append(run_case(p, case, plugin, args.model, args.budget, args.timeout))
+                results.append(run_case_n(p, case, plugin, args.model, args.budget, args.timeout, args.runs))
             except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
                 results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
                                 "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
@@ -283,6 +327,17 @@ def cmd_bench(args):
             f"  {'✓' if x['pass'] else '✗'} {x['id']} · {x['turns']} turns · ${x['cost_usd'] or 0:.2f} · {x['seconds']} s"
             + (f" · {x['error']}" if x["error"] else "") for x in results))
         return 0 if all(x["pass"] for x in results) else 1
+    if args.bench_cmd == "gate":
+        runs = []
+        for label in (args.a, args.b):
+            try:
+                with open(os.path.join(_results_dir(p), label + ".json"), encoding="utf-8") as f:
+                    runs.append(json.load(f))
+            except (OSError, ValueError):
+                raise fmcli.UsageError(f"no bench results named {label!r} (fm bench list)")
+        ok, lines = gate(runs[0], runs[1], args.cost_tolerance)
+        fmcli.out(args, {"ok": ok, "lines": lines}, "\n".join(lines))
+        return 0 if ok else 1
     if args.bench_cmd == "show":
         try:
             with open(os.path.join(_results_dir(p), args.label + ".json"), encoding="utf-8") as f:

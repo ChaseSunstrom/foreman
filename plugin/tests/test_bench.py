@@ -21,6 +21,12 @@ if os.environ.get("STUB_DIAG"):  # behave a little like a Foreman session: a tas
     subprocess.run(["fm", "task", "new", "Fix double", "--type", "FIX", "--tier", "S"], capture_output=True)
     with open(os.path.join(os.environ["FOREMAN_STATE"], "events.jsonl"), "a") as f:
         f.write(json.dumps({"kind": "guard_block", "category": "rm-outside", "tool": "Bash"}) + "\n")
+if os.environ.get("STUB_ALTERNATE"):  # solve every other attempt: a flaky candidate
+    n = os.path.join(os.path.dirname(os.environ["STUB_LOG"]), "attempts")
+    k = int(open(n).read()) if os.path.exists(n) else 0
+    open(n, "w").write(str(k + 1))
+    if k % 2 == 0:
+        os.environ["STUB_SOLVE"] = "1"
 if os.environ.get("STUB_SOLVE"):
     with open("calc.py", "w") as f:
         f.write("def double(x):\n    return 2 * x\n")
@@ -141,6 +147,36 @@ class Bench(ForemanTestCase):
         out = self.fm("bench", "show", "diag", env=self.env).stdout
         self.assertIn("FIX S planned", out)
         self.assertIn("rm-outside", out)
+
+    def test_repeats_give_a_pass_rate(self):
+        # T-0221: one run per arm is noise; a pass rate is a measurement
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--runs", "2", "--label", "flaky", "--json",
+                                 env=dict(self.env, STUB_ALTERNATE="1"), check=False).stdout)
+        case = res["cases"][0]
+        self.assertEqual((case["runs"], case["pass_rate"]), (2, 0.5))
+        self.assertEqual(case["cost_usd"], 0.42)
+        self.assertEqual(len(case["attempts"]), 2)
+
+    def write_result(self, label, cases):
+        folder = os.path.join(c.find_project(self.repo).dir, "bench", "results")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, label + ".json"), "w") as f:
+            json.dump({"label": label, "cases": [dict(id=i, pass_rate=r, cost_usd=cost, turns=10, runs=2,
+                                                      **{"pass": r >= 0.5}) for i, r, cost in cases]}, f)
+
+    def test_the_gate_lets_through_only_no_worse_candidates(self):
+        self.write_result("live", [("T-1", 1.0, 1.0), ("T-2", 0.5, 1.0)])
+        self.write_result("same", [("T-1", 1.0, 1.1), ("T-2", 0.5, 1.0)])
+        self.write_result("worse", [("T-1", 0.5, 1.0), ("T-2", 0.5, 1.0)])
+        self.write_result("pricey", [("T-1", 1.0, 1.5), ("T-2", 1.0, 1.5)])
+        self.assertEqual(self.fm("bench", "gate", "live", "same", env=self.env, check=False).returncode, 0)
+        worse = self.fm("bench", "gate", "live", "worse", env=self.env, check=False)
+        self.assertEqual(worse.returncode, 1)
+        self.assertIn("T-1", worse.stdout)
+        pricey = self.fm("bench", "gate", "live", "pricey", env=self.env, check=False)
+        self.assertEqual(pricey.returncode, 1, "more passes don't buy 50% more cost")
+        self.assertIn("cost", pricey.stdout)
 
     def test_a_plugin_without_the_guard_or_credentials_never_runs(self):
         # security review: replays run in bypass mode like the user's sessions, so the guard must come with them
