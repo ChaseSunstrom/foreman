@@ -2019,7 +2019,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run night ui watch"),
+    ("Running elsewhere", "lane serve run night mcp ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2270,6 +2270,8 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--timeout", type=float, default=300)
+    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
+                                                 "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
     s = add("night", lazy("fmnight", "cmd_night"),
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
                  "refused at high usage; fm digest reports it")
