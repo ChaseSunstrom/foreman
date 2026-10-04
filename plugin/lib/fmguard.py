@@ -1283,6 +1283,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         git_env = [a.split("=", 1)[1] for a in c.argv if name == "git" and a.startswith(("GIT_DIR=", "GIT_WORK_TREE="))]
         if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
             found.append(("system", "git with core.hooksPath set through the environment"))
+        if name == "git":  # T-0269 review: a command git itself runs (pager, external diff, alias, …) is checked as typed
+            for why, code in _git_code(c.argv, args):
+                found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
         for target in c.redirs + _write_targets(name, args) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_write)
         for target in _tree_targets(name, args) + git_env:
@@ -1351,6 +1354,54 @@ _GIT_WORKTREE_WRITES = {"pull", "checkout", "switch", "reset", "merge", "rebase"
                         "am", "cherry-pick", "revert", "clean", "rm", "mv"}
 
 
+_GIT_EXEC_KEYS = re.compile(r"(?i)^(core\.(pager|editor|fsmonitor|sshcommand|askpass|gitproxy|alternaterefscommand)|"
+                            r"pager\..+|sequence\.editor|diff\.external|diff\..+\.(command|textconv)|merge\..+\.driver|"
+                            r"filter\..+\.(clean|smudge|process)|credential\..*helper|gpg\.program|gpg\..+\.program|"
+                            r"interactive\.difffilter|uploadpack\.packobjectshook|remote\..+\.(uploadpack|receivepack)|"
+                            r"(mergetool|difftool)\..+\.cmd|trailer\..+\.command|submodule\..+\.update)$")
+_GIT_VALUED = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env")  # global options taking a value
+_GIT_EXEC_ENV = {"GIT_PAGER", "PAGER", "GIT_EXTERNAL_DIFF", "GIT_SSH_COMMAND", "GIT_SSH", "GIT_EDITOR", "EDITOR", "VISUAL",
+                 "GIT_SEQUENCE_EDITOR", "GIT_ASKPASS", "SSH_ASKPASS", "GIT_PROXY_COMMAND"}
+
+
+def _git_code(argv, args):
+    """[(why, shell code or None)] for the commands a git invocation will run on its own: exec variables set before it,
+    `-c key=value` for keys whose value is a command, and a `-c alias.NAME=…` it then calls. None: can't be read
+    (set through the environment's config or --config-env), so it's refused outright."""
+    out = []
+    for a in argv:
+        var, eq, val = a.partition("=")
+        if eq and var in _GIT_EXEC_ENV and val.strip():
+            out.append((f"git with {var} set", val))
+        elif eq and var == "GIT_EXEC_PATH":
+            out.append(("git with GIT_EXEC_PATH set (its subcommands run from there)", None))
+        elif eq and re.fullmatch(r"(?i)GIT_CONFIG_(KEY_\d+|VALUE_\d+|PARAMETERS|COUNT)", var) and any(
+                _GIT_EXEC_KEYS.match(k) or k.lower().startswith(("alias.", "include")) or k.lower() == "protocol.ext.allow"
+                for k in (x.strip("'\" ").partition("=")[0] for x in re.split(r"'\s+'|\s+", val))):  # review: key=value
+            out.append(("git config that runs a command, set through the environment", None))
+    i, aliases = 0, {}
+    while i < len(args) and args[i].startswith("-"):
+        opt, eq, val = args[i].partition("=")
+        if opt == "-c" and i + 1 < len(args):
+            key, _, value = args[i + 1].partition("=")
+            if key.lower().startswith("alias."):
+                aliases[key[6:].lower()] = value
+            elif _GIT_EXEC_KEYS.match(key) and value.strip():
+                out.append((f"git -c {key}", value.lstrip("!")))
+        elif opt == "--exec-path" and eq:
+            out.append(("git --exec-path=DIR (its subcommands run from there)", None))
+        elif opt == "--config-env":
+            key = (val if eq else (args[i + 1] if i + 1 < len(args) else "")).partition("=")[0]
+            if _GIT_EXEC_KEYS.match(key) or key.lower().startswith("alias."):
+                out.append((f"git --config-env {key}", None))
+        i += 2 if args[i] in _GIT_VALUED else 1
+    sub, rest = (args[i].lower() if i < len(args) else ""), " ".join(shlex.quote(x) for x in args[i + 1:])
+    if sub in aliases:  # the expansion keeps the global options (-C DIR …) the alias ran under
+        value, opts = aliases[sub], " ".join(shlex.quote(x) for x in args[:i])
+        out.append((f"git alias {sub}", value[1:] + " " + rest if value.startswith("!") else f"git {opts} {value} {rest}"))
+    return out
+
+
 def _tree_targets(name, args):
     """Directories a command rewrites as a whole (checkouts, extractions, recursive copies, rsync): whatever they
     contain can change, so classify_tree checks what lies under them."""
@@ -1390,14 +1441,19 @@ def _write_targets(name, args):
                 where.append(val)
             elif opt in ("--git-dir", "--work-tree"):
                 trees.append(val)
-            i += 2 if args[i] in ("-C", "-c", "--git-dir", "--work-tree") else 1
+            i += 2 if args[i] in _GIT_VALUED else 1
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
             return [rest[-1]] if len(rest) >= 2 else ["."]
-        if i < len(args) and (args[i] in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
-                args[i] == "fetch" and ({"-u", "--update-head-ok"} & set(args[i + 1:])))):  # fetch can move HEAD then
-            base = os.path.join(*where) if where else "."
-            return [os.path.join(base, t) for t in trees] or [base]
+        base, sub, rest = os.path.join(*where) if where else ".", args[i] if i < len(args) else "", args[i + 1:]
+        # T-0269 review: --output=FILE writes a file from any diff-family subcommand (diff, log, show, stash show)
+        outs = [os.path.join(base, a.split("=", 1)[1]) for a in rest if a.startswith("--output=")] + \
+            [os.path.join(base, b) for a, b in zip(rest, rest[1:]) if a == "--output" or (a == "-o" and sub == "format-patch")]
+        read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
+        if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
+                sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
+            return ([os.path.join(base, t) for t in trees] or [base]) + outs
+        return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
         return pos if any(a in ("-e", "-f") for a in args) else pos[1:]
     if name == "dd":
@@ -1493,7 +1549,7 @@ def _check_git(name, args, cwd, ctx):
         if args[i] == "-C" and i + 1 < len(args):
             gcwd = _resolve(_expand(args[i + 1], ctx), cwd)
             i += 2
-        elif args[i] in ("-c", "--git-dir", "--work-tree", "--namespace") and i + 1 < len(args):
+        elif args[i] in _GIT_VALUED and i + 1 < len(args):
             i += 2
         else:
             i += 1

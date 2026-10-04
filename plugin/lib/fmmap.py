@@ -11,7 +11,7 @@ import fmcore as c
 
 _TEST = re.compile(r"(^|/)(tests?/|test_[^/]+$|[^/]+_test\.\w+$|[^/]+\.(test|spec)\.\w+$)")
 _ENTRY = re.compile(r"(^|/)(__main__\.py|main\.\w+|cli\.\w+|app\.\w+|index\.\w+|manage\.py|bin/[^/]+)$")
-_CODE = re.compile(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
+_CODE = c.CODE
 HOT = 8
 OUT_MAX = 1500
 
@@ -205,7 +205,6 @@ def cmd_impact(args):
                                  f"'{stem}': {', '.join(users[:15]) or 'none'}"))
 
 
-_TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
 _COMMON_STEMS = {"index", "main", "init", "__init__", "utils", "util", "types", "setup", "config", "common", "helpers"}
 
 
@@ -232,7 +231,7 @@ def tour(p, b):
                 texts[f] = fh.read(200_000)
         except OSError:
             texts[f] = ""  # deleted
-    usable = [g for g in files if not _TESTISH.search(g) and len(_name_stem(g)) >= 4
+    usable = [g for g in files if not c.TESTISH.search(g) and len(_name_stem(g)) >= 4
               and _name_stem(g).lower() not in _COMMON_STEMS]  # a test uses code; "index" or "ui" names everything
     uses = {f: sorted(g for g in usable if g != f and re.search(rf"\b{re.escape(_name_stem(g))}\b", texts[f]))
             if _CODE.search(f) else [] for f in files}

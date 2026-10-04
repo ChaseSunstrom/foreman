@@ -34,7 +34,9 @@ def child_cmd(model, system):
 
 
 def child_prompt(lens, pack):
-    return f"Lens: {lens}\n\nContext pack:\n{pack}\n\nReturn 8-12 ideas in the required format, at least 3 of them wild."
+    """The shared pack first, the lens last (T-0267): siblings and later rounds then share a prefix the prompt cache
+    can reuse."""
+    return f"Context pack:\n{pack}\n\nLens: {lens}\n\nReturn 8-12 ideas in the required format, at least 3 of them wild."
 
 
 def user_voice(p, n=20):

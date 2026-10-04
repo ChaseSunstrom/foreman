@@ -1716,6 +1716,8 @@ def veto_hits(p, text):
     return [v for v in vetoes(p) if all(any(h.startswith(str(w)) for h in have) for w in v["words"])]
 
 
+CODE = re.compile(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
+TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
 QUIET_AFTER = 6  # T-0250: a hint shown this many times running without being used loses its detail
 HINT_MARKS = {"batch": "fm batch ", "skills": "skills that fit"}  # in the full and the quiet form alike
 _REVISIT_TAG = re.compile(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")
@@ -1864,6 +1866,14 @@ def _next_for(p, briefs=None):
             ids = ' '.join(sorted((x.id for x in small), key=id_num))
             action += (f" — or fm batch {ids}" if "batch" in hints_quiet(p) else  # T-0250: ignored often: just the command
                        f" — or batch the small {b.type} items: fm batch {ids} (one plan, gate run, review and commit)")
+    if st == "executing" and b.tier == "S":  # T-0266: S is 1–2 files; past that it skips M's plan and lens audits
+        try:  # review: runs on every prompt — a short ledger window, code files only (docs and tests don't grow it)
+            grown = [f for f in task_touches(p, b.id, window=2000) if CODE.search(f) and not TESTISH.search(f)]
+        except Exception:
+            grown = []
+        if len(grown) >= 3:
+            action += (f" · it has outgrown S ({len(grown)} files: {', '.join(grown[:3])}…): fm task set {b.id} tier=M, "
+                       f"then add its Interpretation and Approach (M gets lens audits)")
     if st == "executing":
         try:
             import fmplugins  # T-0205: other plugins' skills, at the moment they fit
@@ -2114,11 +2124,11 @@ def touched_since_checkpoint(p, tid):
 TASK_WINDOW = 50000  # ledger events read for a task's edits at done (a fm command, not a hook: it can afford it)
 
 
-def task_touches(p, tid):
+def task_touches(p, tid, window=None):
     """{relative path: timestamp of its last edit} for the project files the hooks saw this task edit, in first-edit
     order: Edit/Write targets, and files a Bash call changed (T-0086)."""
     files = {}
-    for e in ledger_tail(p, TASK_WINDOW):
+    for e in ledger_tail(p, window or TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
             files[os.path.relpath(f, p.root)] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
