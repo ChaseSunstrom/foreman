@@ -80,3 +80,33 @@ class Evidence(_Case):
         self.fm("task", "prove", self.tid, "--hunks", "--run", CHECK, "--step", "1", "--max", "1", check=False)
         last = [x for x in self.fm("task", "show", self.tid).stdout.splitlines() if "--max" in x][-1]
         self.assertIn("[inconclusive]", last)  # a cut-short run is never a pass
+
+
+class Fallback(ForemanTestCase):
+    """T-0297: in Foreman's own checkout, a mutation that crashes the hook falls back to HEAD's code — which in the
+    proof worktree must be the task's base, not the unmutated tree, or the crash is masked."""
+
+    def test_head_is_the_tasks_base_while_checks_run(self):
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "plugin", "hooks"))
+        with open(os.path.join(self.repo, "plugin", "hooks", "hook"), "w") as f:
+            f.write("# Foreman's hook: def committed_library(): ...\n")
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:
+            f.write(BEFORE)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "calc"], check=True)
+        tid = json.loads(self.fm("task", "new", "Return 2", "--type", "FIX", "--tier", "S", "--ac", "x :: true",
+                                 "--step", "change it", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:
+            f.write(AFTER)
+        log = os.path.join(self.tmp, "heads.log")
+        check = (f"git rev-parse 'HEAD^{{tree}}' >> {log} && python3 -c 'import calc; "
+                 f"assert calc.f() == 2 and calc.g() == 2'")
+        res = json.loads(self.fm("task", "prove", tid, "--hunks", "--run", check, "--json", check=False).stdout)
+        self.assertEqual((res["total"], res["proven"]), (2, 2))  # restores between hunks still work
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        base_tree = subprocess.run(["git", "-C", self.repo, "rev-parse", f"{meta.get('base_tree') or meta['base']}^{{tree}}"],
+                                   capture_output=True, text=True, check=True).stdout.strip()
+        heads = set(open(log).read().split())
+        self.assertEqual(heads, {base_tree})  # every check, baseline included, ran with HEAD at the base

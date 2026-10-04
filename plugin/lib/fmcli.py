@@ -642,8 +642,8 @@ def task_prove_hunks(p, b, args):
         if os.path.exists(path):
             os.utime(path, (tick[0], tick[0]))
 
-    def restore(wt, f):  # tracked files back to the commit, and a deleted file that -R recreated removed again
-        ok = c._git(wt, "reset", "-q", "--hard", fail=None, timeout=60) is not None
+    def restore(wt, f):  # files and index back to the scratch commit (HEAD may be the base: T-0297), new files gone
+        ok = c._git(wt, "read-tree", "-u", "--reset", commit, fail=None, timeout=60) is not None
         ok = c._git(wt, "clean", "-fdq", fail=None, timeout=60) is not None and ok
         touch(os.path.join(wt, f))
         return ok
@@ -652,6 +652,20 @@ def task_prove_hunks(p, b, args):
         c._git(p.root, "worktree", "add", "--detach", "-q", wt, commit, timeout=120)
         if not os.path.isdir(wt):
             raise UsageError("git worktree add for the current tree failed")
+        hook = os.path.join(wt, "plugin", "hooks", "hook")
+        try:
+            with open(hook, encoding="utf-8", errors="replace") as fh:
+                foreman = "committed_library" in fh.read()
+        except OSError:
+            foreman = False
+        if foreman:  # T-0297: Foreman's hook falls back to HEAD's library when the working copy crashes; HEAD must be
+            # the task's base, or a crashing mutation runs the unmutated code and passes (the scratch commit stays in
+            # the index and the files)
+            base_commit = c._git(p.root, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost",
+                                 "commit-tree", "--no-gpg-sign", f"{base}^{{tree}}", "-m", "fm prove --hunks base",
+                                 timeout=60).strip()
+            if not base_commit or c._git(wt, "reset", "-q", "--soft", base_commit, fail=None, timeout=60) is None:
+                raise UsageError("couldn't point the scratch worktree's HEAD at the task's base")
         try:
             code, output = c.run_command(wt, args.run, args.timeout)  # review: a check that fails anyway proves nothing
             if code:

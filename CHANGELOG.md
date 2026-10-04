@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task prove --hunks` (T-0297): in Foreman's own checkout, a mutation that crashes the hook can no longer pass by the hook falling back to the unmutated code.
 - `fm mcp` (T-0245): Foreman's state, next action, recall, research notes and briefs as read-only MCP tools over stdio, so other agents and clients can use its memory; register it with `claude mcp add foreman -- fm mcp`.
 - Unattended checks (T-0298): `fm bench stranger` lets a newcomer session try Foreman from the README alone and files what tripped it up as Foreman's own inbox items; `fm night` runs budgeted background work (the landscape scan, the daily second read, the court of your steers) while you're away, refuses when usage is high, and the morning `fm digest` says what ran.
 - Follow-ups (T-0296): `fm doctor` now notices a broken routing table and no longer fails every project over one damaged repo elsewhere; flags that did nothing are refused; `fm bench duel` only pits Foreman against plugins you installed; MASTER caught up with the new commands.
