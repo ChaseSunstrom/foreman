@@ -9,6 +9,7 @@ from helpers import PLUGIN, read_text, read_json
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm"]
 USER_ONLY = {"capture"}  # everything else Claude may start itself when the user asks in plain words
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
+EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"}}  # T-0234: the one exception, worktree-bound
 HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PreCompact",
                "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd", "PermissionRequest"}
 OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md", "audit.md"}
@@ -101,7 +102,8 @@ class Agents(unittest.TestCase):
                 meta, body = frontmatter(os.path.join(PLUGIN, "agents", a))
                 tools = {t.strip() for t in meta["tools"].split(",") if t.strip()}
                 self.assertTrue(tools, "an empty tools list means every tool")
-                self.assertTrue(tools <= READ_ONLY_TOOLS, tools - READ_ONLY_TOOLS)
+                allowed = READ_ONLY_TOOLS | EDITING_AGENTS.get(a, set())
+                self.assertTrue(tools <= allowed, tools - allowed)
                 self.assertIn("400 words", body)
 
 

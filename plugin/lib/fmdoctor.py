@@ -21,6 +21,7 @@ SKILL_MAX = 10000  # chars of one SKILL.md body: loaded whole whenever the skill
 RULES_CHARS_MAX = 6000  # chars (~1.5k tokens) of always-on rules: denser lines cost as much as more lines
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
+EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"}}  # T-0234: the one bounded exception, in its own worktree
 EXPECTED_EXIT = {"PreToolUse:Bash:block": [2], "TaskCompleted": [2]}  # fixtures that are designed to block
 SCRIPTS = ["install.sh", "setup-plugins.sh", "configure-repo.sh", "reset-claude.sh", "plugin/uninstall.sh"]
 
@@ -170,8 +171,8 @@ def check_frontmatter(plugin=PLUGIN):
         tools = {t.strip() for t in meta.get("tools", "").strip("[]").split(",") if t.strip()}
         if not tools:  # Claude Code: an omitted or empty tools list inherits every tool
             bad.append(f"agent {f}: not read-only (empty or missing tools list = every tool)")
-        elif tools - READ_ONLY_TOOLS:
-            bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS))})")
+        elif tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set()):
+            bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set())))})")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 

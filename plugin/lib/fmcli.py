@@ -285,6 +285,11 @@ def cmd_surprise(args):
 def cmd_task(args):
     p = resolve(args)
     sub = args.task_cmd
+    if sub in ("done", "finish", "audit", "drop") and getattr(p, "lane", None) and getattr(args, "id", None):
+        own = c.find_brief(p, args.id)  # T-0234 review: a builder hands back a commit; the main thread closes the task
+        if own and own.meta.get("builder"):
+            raise c.PolicyError(f"{own.id} is a builder's task: the main thread reviews, merges and closes it (fm lane "
+                                f"rm {own.id}, then fm task {sub} from the main checkout); report back instead")
     if sub == "new":
         return task_new(p, args)
     if sub == "show":
@@ -1007,7 +1012,11 @@ def cmd_focus(args):
         if target.meta.get("lane") != p.lane:  # moving between checkouts: its start point is taken here, afresh
             for k in ("base", "base_tree", "paused_tree"):
                 target.meta.pop(k, None)
-        target.meta.pop("lane", None) if not p.lane else target.meta.update(lane=p.lane)
+        if p.lane:  # T-0234 review: the branch it was bound on is the one fm lane rm may delete later
+            target.meta.update(lane=p.lane, lane_branch=(c._git(p.lane, "branch", "--show-current", fail=None,
+                                                                 timeout=10) or "").strip() or None)
+        else:
+            target.meta.pop("lane", None)
         for b in c.load_briefs(p):
             if b.status in ("active", "verifying") and b.id != target.id and b.meta.get("lane") == p.lane:
                 c.pause_snapshot(p.root, b)  # T-0136

@@ -805,7 +805,9 @@ def _guard_ctx(pl, fmguard):
                       foreman_home=c.foreman_home(), state_dir=c.state_dir(),
                       state_fallbacks=c.state_fallbacks(), scratch=scratch,
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None,
-                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
+                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()),
+                      confine=(p.lane, c.main_worktree(p.lane)) if p and getattr(p, "lane", None) and act
+                      and act.meta.get("builder") else None)
     return ctx, p, act
 
 

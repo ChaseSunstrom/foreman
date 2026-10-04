@@ -12,8 +12,8 @@ import shlex
 import subprocess
 
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
-              "git-destructive", "pipe-shell", "publish", "confirm"]
-NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
+              "git-destructive", "pipe-shell", "publish", "confirm", "confine"]
+NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine"}  # confine (T-0234): a builder writes in its worktree only
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -24,13 +24,16 @@ DEFAULT_BRANCHES = {"main", "master", "trunk"}
 # when the rest of the library is broken, and dataclasses would cost every hook ~9 ms of import.
 class Ctx:
     def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
-                 state_fallbacks=(), standing=(), trusted=False):
+                 state_fallbacks=(), standing=(), trusted=False, confine=None):
         self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
         self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
         self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
         self.standing = set(standing)  # T-0119: the project's standing yeses (core only)
         self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
+        # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
+        # scratch, and the main checkout is never scratch (even under /tmp)
+        self.confine = confine
 
 
 class Block:
@@ -104,6 +107,9 @@ def _message(block, ctx):
         return (f"Foreman guard: blocked self-authorize: {detail}. Protected core (Foreman code, rules, evals, "
                 f"BUILD_PROMPT.md, settings) and remote sessions need the user's approval, which an agent can't grant: "
                 + _ASK.format(id=tid, cat="<" + "|".join(sorted(USER_ONLY)) + ">") + ".")
+    if cat == "confine":
+        return (f"Foreman guard: blocked confine: {detail} is outside this builder's worktree ({ctx.confine[0]}). A builder "
+                f"writes only there (and in scratch); report what needs changing elsewhere to the main thread.")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -301,6 +307,10 @@ def classify_write(path, ctx):
             cats.append("system")  # device files; persistence that outlives the session
         if _under(p, os.path.join(ctx.home, ".claude", "plugins")) or _new_context_file(p, ctx):
             cats.append("plugin")  # installed plugins, or a new skill/agent/command: what runs in every session
+        lane, main = getattr(ctx, "confine", None) or (None, None)
+        if lane and not _under(p, lane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) and (
+                _under(p, main or "/nonexistent") or not any(_under(p, s) for s in ctx.scratch)):
+            cats.append("confine")
     return list(dict.fromkeys(cats))
 
 
