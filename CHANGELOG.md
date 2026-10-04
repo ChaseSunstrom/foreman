@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- foreman-ui 0.6.0 (T-0300): released so other sessions get this run's pane changes: bench verdicts, judged scores and repeats on the Bench card, and the earlier catch-up cards (spend, research, hypotheses, oracle, batch).
 - `fm task prove --hunks` (T-0297): in Foreman's own checkout, a mutation that crashes the hook can no longer pass by the hook falling back to the unmutated code.
 - `fm mcp` (T-0245): Foreman's state, next action, recall, research notes and briefs as read-only MCP tools over stdio, so other agents and clients can use its memory; register it with `claude mcp add foreman -- fm mcp`.
 - Unattended checks (T-0298): `fm bench stranger` lets a newcomer session try Foreman from the README alone and files what tripped it up as Foreman's own inbox items; `fm night` runs budgeted background work (the landscape scan, the daily second read, the court of your steers) while you're away, refuses when usage is high, and the morning `fm digest` says what ran.
