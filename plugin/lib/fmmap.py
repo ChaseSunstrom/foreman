@@ -205,6 +205,67 @@ def cmd_impact(args):
                                  f"'{stem}': {', '.join(users[:15]) or 'none'}"))
 
 
+_TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
+_COMMON_STEMS = {"index", "main", "init", "__init__", "utils", "util", "types", "setup", "config", "common", "helpers"}
+
+
+def tour(p, b):
+    """T-0248: the task's changed files in reading order — a file before the files that name it (fm impact's name-stem
+    heuristic) — each with its +/- lines, the files it uses, and the step being worked when it was last edited."""
+    import graphlib
+    commits = _git(p.root, "log", "--format=%H", "-F", f"--grep=({b.id}").split() if b.status == "done" else []
+    if len(commits) == 1:  # finished and committed: its own commit, not everything since
+        numstat = _git(p.root, "show", "--numstat", "--no-renames", "--format=", commits[0])
+    else:
+        base = c.task_base(p.root, b)
+        numstat = (c.task_diff(p.root, base, "--numstat", "--no-renames") or "") if base else ""
+    sizes = {}
+    for line in numstat.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 3:
+            sizes[parts[2]] = (int(parts[0]) if parts[0].isdigit() else 0, int(parts[1]) if parts[1].isdigit() else 0)
+    files = sorted(sizes)
+    texts = {}
+    for f in files:  # ponytail: today's text of each file; read it at the commit if old tours start to mislead
+        try:
+            with open(os.path.join(p.root, f), encoding="utf-8", errors="replace") as fh:
+                texts[f] = fh.read(200_000)
+        except OSError:
+            texts[f] = ""  # deleted
+    usable = [g for g in files if not _TESTISH.search(g) and len(_name_stem(g)) >= 4
+              and _name_stem(g).lower() not in _COMMON_STEMS]  # a test uses code; "index" or "ui" names everything
+    uses = {f: sorted(g for g in usable if g != f and re.search(rf"\b{re.escape(_name_stem(g))}\b", texts[f]))
+            if _CODE.search(f) else [] for f in files}
+    try:
+        order = list(graphlib.TopologicalSorter(uses).static_order())
+    except graphlib.CycleError:  # a cycle: the most-used first
+        order = sorted(files, key=lambda f: (-sum(f in u for u in uses.values()), f))
+    order = [f for f in order if _CODE.search(f)] + [f for f in order if not _CODE.search(f)]  # docs and data last
+    first, touched = sorted(b.first_evidence().items()), c.task_touches(p, b.id)
+    rows = []
+    for f in order:
+        at = touched.get(f)
+        step = next((n for n, ts in first if at and ts >= at), None) if at else None
+        add, rm = sizes.get(f, (0, 0))
+        rows.append({"path": f, "add": add, "del": rm, "uses": uses[f], "step": step,
+                     "deleted": not os.path.exists(os.path.join(p.root, f))})
+    return rows
+
+
+def cmd_tour(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    b = fmcli.need_brief(p, args.id)
+    rows = tour(p, b)
+    text = "\n".join(
+        f"{i}. {r['path']}  +{r['add']} −{r['del']}" + (" (deleted)" if r["deleted"] else "")
+        + (f"  step {r['step']}" if r["step"] else "") + (f"  — uses {', '.join(r['uses'])}" if r["uses"] else "")
+        for i, r in enumerate(rows, 1))
+    fmcli.out(args, {"id": b.id, "files": rows},
+              c.plain_lines(f"{b.id} reading order (a file before the files that use it):\n{text}") if rows
+              else f"{b.id}: no changes since it was focused.")
+
+
 _DEF = re.compile(r"^(\s*)(?:(?:export|default|pub(?:\([\w:]+\))?|async|static|public|private|protected|abstract|final|"
                   r"override|inline|unsafe|extern)\s+)*(def|class|function|fn|func|struct|enum|trait|impl|interface|"
                   r"module|type|object)\s+([\w.$:<>]+)")

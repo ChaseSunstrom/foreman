@@ -1775,7 +1775,8 @@ class _Parser(argparse.ArgumentParser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall surprise why outline impact map secrets quiet audit research ideas oracle pr"),
+    ("Finding your way", "help recall surprise why outline impact map tour secrets quiet audit research ideas oracle pr "
+                         "export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
@@ -2011,8 +2012,16 @@ def build_parser():
     s = add("gates", cmd_gates, help="what fm task done will require for a type and tier (default: the active task)")
     s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
-    s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief (printed only)")
+    s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief, with its proof "
+                                                  "(red→green, lens verdicts, assumptions, bench replays; printed only)")
     s.add_argument("id")
+    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
+    s.add_argument("id")
+    s = add("export", lazy("fmcost", "cmd_export"),
+            help="AGENTS.md for other harnesses: working rules, corrections, map, lessons, decisions, playbooks")
+    s.add_argument("what", choices=["agents"])
+    s.add_argument("--out", metavar="PATH", help="where to write it (default: AGENTS.md at the project root)")
+    s.add_argument("--force", action="store_true", help="replace an AGENTS.md fm export didn't write")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "

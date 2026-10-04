@@ -1072,6 +1072,10 @@ class Brief:
 
     def red_green(self):
         """A command fm ran that failed and later passed (T-0045): the test proves the fix."""
+        return self.red_green_cmd() is not None
+
+    def red_green_cmd(self):
+        """The first command fm ran that failed and later passed, or None (fm pr shows it: T-0263)."""
         failed = set()
         for line in self.evidence():
             if _RAN_MARK not in line or "`" not in line:
@@ -1080,8 +1084,17 @@ class Brief:
             if "` → ✗ exit" in line:
                 failed.add(cmd)
             elif cmd in failed:
-                return True
-        return False
+                return cmd
+        return None
+
+    def first_evidence(self):
+        """{step n: timestamp of its first evidence}: when each step's work was first checked."""
+        out = {}
+        for line in self.evidence():
+            m, t = _EV_RE.match(line), _TS_TAIL.search(line)
+            if m and t and m.group(1) == "step":
+                out.setdefault(int(m.group(2)), t.group(1))
+        return out
 
     def docs_gap(self):
         """M/L changes say which docs they updated (or why none): out-of-date docs are the drift T-0013 targets."""
