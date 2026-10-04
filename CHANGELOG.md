@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Outside view (T-0278, batch of T-0237/T-0238): `fm landscape` researches what people want from coding-agent harnesses now and says what's new since the last scan, what's gone, and which new wants an fm command already covers (`--if-due`: monthly); `fm deps` lists dependencies a major version behind their registry (PyPI, npm, crates.io) with the migration question to research, and `--research` asks it.
 - Research rigor (T-0277, batch of T-0239/T-0229): pages are cached per day; `fm research ask --file` batches questions; notes mark single-source claims and flag contradictions between sub-questions; `--quorum MODEL` checks what a second model also finds. The pane's research card shows conflicts and single-source counts.
 - `fm second` (T-0276, batch of T-0230/T-0232/T-0233/T-0235): one primitive for an independent second read — `plan` (another model critiques a plan before execution), `debate` (a rebuttal brief: only findings a second reviewer confirms count), `session` (once a day, the last session's messages read for requests nobody answered, captured as self items); `fm audit prep` names installed review skills per lens.
 - Flake ledger and typo help (T-0274): `fm check` names tests that failed and then passed on the same tree (or on its one rerun) as flaky, and calls out a known flake failing again; a mistyped fm command or flag gets "did you mean …?".

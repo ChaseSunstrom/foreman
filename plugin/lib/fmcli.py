@@ -1930,7 +1930,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research ideas "
-                         "oracle pr export"),
+                         "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
@@ -2184,6 +2184,20 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--timeout", type=float, default=300)
+    s = add("landscape", lazy("fmoutside", "cmd_landscape"),
+            help="research what people want from coding-agent harnesses now: what's new since the last scan, what "
+                 "Foreman lacks")
+    s.add_argument("--if-due", action="store_true", help="only when the last scan is 30+ days old")
+    s.add_argument("--fanout", type=int, default=3)
+    s.add_argument("--model", default="sonnet")
+    s.add_argument("--no-verify", action="store_true", help="don't fetch the cited pages")
+    s.add_argument("--timeout", type=int, default=600)
+    s = add("deps", lazy("fmoutside", "cmd_deps"),
+            help="dependencies a major version behind their registry's latest, with the migration question to research")
+    s.add_argument("--research", type=int, nargs="?", const=3, default=0, metavar="N",
+                   help="research the first N migrations now (default 3; each budget-checked)")
+    s.add_argument("--model", default="sonnet")
+    s.add_argument("--timeout", type=int, default=600)
     s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
     s.add_argument("id")
     s = add("export", lazy("fmcost", "cmd_export"),
