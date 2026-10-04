@@ -473,7 +473,7 @@ def _strip_wrappers(argv):
     while i < len(argv):
         a = argv[i]
         base = os.path.basename(a)
-        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", a) or a in _KEYWORDS:  # T-0159: `do rm …` is rm, not a command `do`
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*\+?=", a) or a in _KEYWORDS:  # T-0159: `do rm …` is rm; T-0270: NAME+=v
             i += 1
         elif base in ("sudo", "doas"):
             i += 1
@@ -1283,10 +1283,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         git_env = [a.split("=", 1)[1] for a in c.argv if name == "git" and a.startswith(("GIT_DIR=", "GIT_WORK_TREE="))]
         if name == "git" and any(re.match(r"(?i)GIT_CONFIG_(KEY_\d+|PARAMETERS)=.*core\.hookspath", a) for a in c.argv):
             found.append(("system", "git with core.hooksPath set through the environment"))
-        if name == "git":  # T-0269 review: a command git itself runs (pager, external diff, alias, …) is checked as typed
-            for why, code in _git_code(c.argv, args):
-                found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
-        for target in c.redirs + _write_targets(name, args) + git_env:
+        # T-0269/T-0270: a command git (or a program) will run on its own is checked as if typed; config it would load
+        # from elsewhere is refused; a file a variable makes it write is a write target
+        for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
+            found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
+        for target in c.redirs + _write_targets(name, args) + git_env + _env_files(c.argv):
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_write)
         for target in _tree_targets(name, args) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,
@@ -1358,27 +1359,126 @@ _GIT_EXEC_KEYS = re.compile(r"(?i)^(core\.(pager|editor|fsmonitor|sshcommand|ask
                             r"pager\..+|sequence\.editor|diff\.external|diff\..+\.(command|textconv)|merge\..+\.driver|"
                             r"filter\..+\.(clean|smudge|process)|credential\..*helper|gpg\.program|gpg\..+\.program|"
                             r"interactive\.difffilter|uploadpack\.packobjectshook|remote\..+\.(uploadpack|receivepack)|"
-                            r"(mergetool|difftool)\..+\.cmd|trailer\..+\.command|submodule\..+\.update)$")
+                            r"(mergetool|difftool|browser|man)\..+\.(cmd|path)|trailer\..+\.command|"
+                            r"submodule\..+\.update|sendemail\.(sendmailcmd|smtpserver))$")
 _GIT_VALUED = ("-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env")  # global options taking a value
 _GIT_EXEC_ENV = {"GIT_PAGER", "PAGER", "GIT_EXTERNAL_DIFF", "GIT_SSH_COMMAND", "GIT_SSH", "GIT_EDITOR", "EDITOR", "VISUAL",
                  "GIT_SEQUENCE_EDITOR", "GIT_ASKPASS", "SSH_ASKPASS", "GIT_PROXY_COMMAND"}
 
 
-def _git_code(argv, args):
-    """[(why, shell code or None)] for the commands a git invocation will run on its own: exec variables set before it,
-    `-c key=value` for keys whose value is a command, and a `-c alias.NAME=…` it then calls. None: can't be read
-    (set through the environment's config or --config-env), so it's refused outright."""
+_GIT_CONFIG_SOURCES = {"GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM", "GIT_CONFIG", "GIT_TEMPLATE_DIR", "GIT_EXEC_PATH"}
+_GIT_FILE_ENV = re.compile(r"^(GIT_TRACE\w*|GIT_INDEX_FILE)$")  # a path value: git writes that file
+# T-0270: options whose value is a command git runs (a short flag's value may also be attached: -O'cmd')
+_GIT_EXEC_FLAGS = {"rebase": ("-x", "--exec"), "difftool": ("-x", "--extcmd"), "grep": ("-O", "--open-files-in-pager"),
+                   "fetch": ("--upload-pack",), "pull": ("--upload-pack",), "clone": ("--upload-pack", "-u"),
+                   "ls-remote": ("--upload-pack",), "fetch-pack": ("--upload-pack", "--exec"), "archive": ("--exec",),
+                   "push": ("--receive-pack", "--exec"), "send-pack": ("--receive-pack", "--exec"),
+                   "filter-branch": ("--tree-filter", "--index-filter", "--msg-filter", "--env-filter", "--commit-filter",
+                                     "--parent-filter", "--tag-name-filter")}
+_GIT_CONFIG_READS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l", "--unset", "--unset-all",
+                     "--remove-section", "--rename-section", "--show-origin", "--show-scope", "--edit", "-e"}
+
+
+def _git_writes(sub, rest):
+    """T-0270: the files and folders a git subcommand writes, relative to where it runs."""
+    if sub == "format-patch":
+        return _opt_values(rest, "-o", "--output-directory")
+    if sub == "archive":
+        return _opt_values(rest, "-o")
+    if sub == "config":
+        return _opt_values(rest, "-f", "--file")
+    if sub == "checkout-index":
+        return _opt_values(rest, "--prefix")
+    if sub == "bundle" and rest[:1] == ["create"]:
+        return _git_pos(rest[1:], ())[:1]
+    if sub == "worktree" and rest[:1] == ["add"]:
+        return _git_pos(rest[1:], ("-b", "-B", "--reason"))[:1]
+    if sub == "init":
+        return _git_pos(rest, ("--template", "-b", "--initial-branch", "--object-format", "--ref-format",
+                               "--separate-git-dir"))[:1] or ["."]
+    if sub in ("fast-export", "fast-import"):
+        return _opt_values(rest, "--export-marks")
+    if sub in ("index-pack", "bugreport", "diagnose"):
+        return _opt_values(rest, "-o", "--output-directory")
+    if sub == "pack-objects" and "--stdout" not in rest:
+        return _git_pos(rest, ())[:1]
+    if sub == "submodule" and rest[:1] == ["add"]:
+        pos = _git_pos(rest[1:], ("-b", "--branch", "--name", "--reference", "--depth"))
+        if pos:  # <repo> [<path>]; without a path, the repo's name
+            return pos[1:2] or [re.sub(r"\.git$", "", pos[0].rstrip("/").rsplit("/", 1)[-1])]
+    return []
+
+
+def _git_pos(args, valued):
+    """Positionals of a git subcommand's arguments, without the values of the options in `valued`."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in valued:
+            skip = True
+        elif not a.startswith("-"):
+            out.append(a)
+    return out
+
+
+_ASSIGN_ANY = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\+?=(.*)$", re.S)  # NAME=v and NAME+=v
+
+
+def _assignments(argv):
+    """(NAME, value) for what a simple command sets: every assignment before its real command — wherever the
+    wrappers and keywords _strip_wrappers skips put it (timeout 5 env X=…, do X=…, env -u H X=…) — and
+    export/declare's arguments."""
+    words = list(argv)
+    stripped, _ = _strip_wrappers(words)
+    cand = words[:len(words) - len(stripped)]
+    if stripped and os.path.basename(stripped[0]) in ("export", "declare", "typeset", "readonly", "local"):
+        cand += stripped[1:]
+    return [m.groups() for m in map(_ASSIGN_ANY.match, cand) if m]
+
+
+def _env_channels(argv, name):
+    """[(why, code or None)] for variables a command sets that make git (or any program) run a command, or that point
+    git at config, templates or programs from elsewhere (None: refused, it can't be read here)."""
     out = []
-    for a in argv:
-        var, eq, val = a.partition("=")
-        if eq and var in _GIT_EXEC_ENV and val.strip():
-            out.append((f"git with {var} set", val))
-        elif eq and var == "GIT_EXEC_PATH":
-            out.append(("git with GIT_EXEC_PATH set (its subcommands run from there)", None))
-        elif eq and re.fullmatch(r"(?i)GIT_CONFIG_(KEY_\d+|VALUE_\d+|PARAMETERS|COUNT)", var) and any(
+    for var, val in _assignments(argv):
+        if var in _GIT_EXEC_ENV and val.strip():
+            out.append((f"{var} set to a command", val))
+        elif var in _GIT_CONFIG_SOURCES and val not in ("", "/dev/null"):
+            out.append((f"{var} points git at config, templates or programs from elsewhere", None))
+        elif var in ("HOME", "XDG_CONFIG_HOME") and name == "git":
+            out.append((f"git with {var} moved (its config is read from there)", None))
+        elif re.fullmatch(r"(?i)GIT_CONFIG_(KEY_\d+|VALUE_\d+|PARAMETERS|COUNT)", var) and any(
                 _GIT_EXEC_KEYS.match(k) or k.lower().startswith(("alias.", "include")) or k.lower() == "protocol.ext.allow"
                 for k in (x.strip("'\" ").partition("=")[0] for x in re.split(r"'\s+'|\s+", val))):  # review: key=value
             out.append(("git config that runs a command, set through the environment", None))
+    return out
+
+
+def _env_files(argv):
+    """Files git writes because of a variable (GIT_TRACE=/path, GIT_INDEX_FILE=/path); 1, 2, true… mean stderr."""
+    return [val for var, val in _assignments(argv) if _GIT_FILE_ENV.match(var)
+            and not re.fullmatch(r"\d*|true|false|yes|no|on|off", val.lower())]
+
+
+def _git_config_code(var, value):
+    """(why, code or None) for a config key whose value git will run, load or alias; None when it is harmless."""
+    key = var.lower()
+    if key.startswith("alias."):  # an alias to a git subcommand can't be followed into the commands that use it later
+        return (f"git alias {var[6:]}", value[1:]) if value.startswith("!") else (f"a git alias ({var})", None)
+    if key.startswith("include") or key in ("core.hookspath", "protocol.ext.allow", "init.templatedir"):
+        return (f"git config {var} (config, hooks or transports from elsewhere)", None)
+    if _GIT_EXEC_KEYS.match(var) and value.strip():
+        return (f"git config {var}", value.lstrip("!"))
+    return None
+
+
+def _git_code(args):
+    """[(why, shell code or None)] for the commands a git invocation will run on its own (T-0269/T-0270): `-c` keys
+    whose value is a command, a `-c alias.NAME=…` it then calls, `git config` setting such a key, subcommand options
+    that take a command (rebase -x, bisect run, submodule foreach, …). None: refused outright, it can't be read here
+    (--exec-path, --config-env, --template, config included from a file)."""
+    out = []
     i, aliases = 0, {}
     while i < len(args) and args[i].startswith("-"):
         opt, eq, val = args[i].partition("=")
@@ -1386,19 +1486,60 @@ def _git_code(argv, args):
             key, _, value = args[i + 1].partition("=")
             if key.lower().startswith("alias."):
                 aliases[key[6:].lower()] = value
-            elif _GIT_EXEC_KEYS.match(key) and value.strip():
-                out.append((f"git -c {key}", value.lstrip("!")))
+            else:
+                hit = _git_config_code(key, value)
+                out += [hit] if hit else []
         elif opt == "--exec-path" and eq:
             out.append(("git --exec-path=DIR (its subcommands run from there)", None))
         elif opt == "--config-env":
             key = (val if eq else (args[i + 1] if i + 1 < len(args) else "")).partition("=")[0]
-            if _GIT_EXEC_KEYS.match(key) or key.lower().startswith("alias."):
+            if _GIT_EXEC_KEYS.match(key) or key.lower().startswith(("alias.", "include")):
                 out.append((f"git --config-env {key}", None))
         i += 2 if args[i] in _GIT_VALUED else 1
-    sub, rest = (args[i].lower() if i < len(args) else ""), " ".join(shlex.quote(x) for x in args[i + 1:])
+    sub, tail = (args[i].lower() if i < len(args) else ""), args[i + 1:]
+    rest = " ".join(shlex.quote(x) for x in tail)
     if sub in aliases:  # the expansion keeps the global options (-C DIR …) the alias ran under
         value, opts = aliases[sub], " ".join(shlex.quote(x) for x in args[:i])
         out.append((f"git alias {sub}", value[1:] + " " + rest if value.startswith("!") else f"git {opts} {value} {rest}"))
+    longs = [f for f in _GIT_EXEC_FLAGS.get(sub, ()) if f.startswith("--")]  # git takes --exe for --exec: expand
+    tail = [next((f + a[len(a.partition("=")[0]):] for f in longs if len(a.partition("=")[0]) >= 5
+                  and f.startswith(a.partition("=")[0])), a) if a.startswith("--") else a for a in tail]
+    if sub == "clone":  # clone -c/--config writes the key into the new repo, and git uses it during the clone
+        for kv in _opt_values(tail, "-c", "--config"):
+            hit = _git_config_code(*kv.partition("=")[::2])
+            out += [hit] if hit else []
+    for flag in _GIT_EXEC_FLAGS.get(sub, ()):
+        if flag in ("-O", "--open-files-in-pager"):  # an optional value: attached only (-Ocmd, --open-files-in-pager=cmd)
+            vals = [a[len(flag) + (flag.startswith("--")):] for a in tail
+                    if a.startswith(flag + "=" if flag.startswith("--") else flag) and len(a) > len(flag)]
+        else:
+            vals = _opt_values(tail, flag)
+        out += [(f"git {sub} {flag}", v) for v in vals if v.strip()]
+    if sub == "bisect" and tail[:1] == ["run"] and tail[1:]:
+        out.append(("git bisect run", " ".join(shlex.quote(x) for x in tail[1:])))
+    if sub == "submodule" and "foreach" in tail:
+        words = [x for x in tail[tail.index("foreach") + 1:] if x not in ("--recursive", "--quiet", "-q")]
+        out += [("git submodule foreach", " ".join(words))] if words else []
+    if sub in ("init", "clone") and (_opt_values(tail, "--template") or any(a.startswith("--template=") for a in tail)):
+        out.append((f"git {sub} --template (hooks from a template folder)", None))
+    if sub == "config" and not (_GIT_CONFIG_READS & {a.partition("=")[0] for a in tail}):
+        pos, skip = [], False
+        for a in tail:  # positionals, without the values of options that take one
+            if skip:
+                skip = False
+            elif a in ("-f", "--file", "--blob", "--type", "--default", "--comment", "--value"):
+                skip = True
+            elif not a.startswith("-"):
+                pos.append(a)
+        if pos[:1] == ["set"]:
+            pos = pos[1:]
+        elif pos[:1] and pos[0] in ("get", "list", "unset", "rename-section", "remove-section", "edit"):
+            pos = []
+        if len(pos) >= 2:
+            hit = _git_config_code(pos[0], pos[1])
+            out += [hit] if hit else []
+        elif pos[:1] and pos[0].lower().startswith("include"):
+            out.append((f"git config {pos[0]}", None))
     return out
 
 
@@ -1444,11 +1585,14 @@ def _write_targets(name, args):
             i += 2 if args[i] in _GIT_VALUED else 1
         if i < len(args) and args[i] == "clone":
             rest = _positionals(args[i + 1:])
-            return [rest[-1]] if len(rest) >= 2 else ["."]
+            return ([rest[-1]] if len(rest) >= 2 else ["."]) + _opt_values(args[i + 1:], "--separate-git-dir")
         base, sub, rest = os.path.join(*where) if where else ".", args[i] if i < len(args) else "", args[i + 1:]
-        # T-0269 review: --output=FILE writes a file from any diff-family subcommand (diff, log, show, stash show)
-        outs = [os.path.join(base, a.split("=", 1)[1]) for a in rest if a.startswith("--output=")] + \
-            [os.path.join(base, b) for a, b in zip(rest, rest[1:]) if a == "--output" or (a == "-o" and sub == "format-patch")]
+        # T-0269 review: --output=FILE writes a file from any diff-family subcommand (diff, log, show, stash show);
+        # T-0270: the files and folders other subcommands write
+        outs = [a.split("=", 1)[1] for a in rest if a.startswith("--output=")] + \
+            [b for a, b in zip(rest, rest[1:]) if a == "--output"] + _opt_values(rest, "--separate-git-dir")
+        outs += _git_writes(sub, rest)
+        outs = [os.path.join(base, o) for o in outs]
         read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
