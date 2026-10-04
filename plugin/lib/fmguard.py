@@ -328,6 +328,40 @@ def _lines(text):
     return text.replace("\n", "\n;")
 
 
+def _ends_body(text, delim, starter):
+    """Whether a line ends a heredoc body as bash reads it (T-0286 review): only the exact delimiter, leading tabs
+    dropped for <<-. `X ` or ` X` is still body — taken for the end, the lines after it hid from the guard."""
+    return text == delim or text.lstrip("\t") == delim and bool(
+        re.search(r"<<-\s*(['\"]?)" + re.escape(delim) + r"\1", starter))
+
+
+def _join_continued(cmd):
+    """Lines as bash reads a command (T-0286 review): one ending in an unescaped backslash outside quotes and comments
+    is joined with the next before heredoc bodies are read, so `python3 - <<'X' \\` + `1>FILE` is a redirect on the
+    command line, not the first body line. Bodies are kept as they are."""
+    lines, out, i = cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        while i < len(lines):
+            code = _strip_comments("\n".join(out + [line]))
+            tail = len(code) - len(code.rstrip("\\"))
+            if not (code.endswith("\\") and tail % 2 and _top_level(code[:-1])):
+                break
+            line = line[:-1] + lines[i]
+            i += 1
+        starts = _heredoc_starts(out, line)
+        out.append(line)
+        for _, delim in starts:
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
+                out.append(lines[i])
+                i += 1
+            if i < len(lines):
+                out.append(lines[i])
+                i += 1
+    return "\n".join(out)
+
+
 def _live_heredocs(cmd):
     """The bodies of heredocs with an unquoted delimiter: a shell runs their substitutions (T-0158)."""
     lines, out, seen, i = cmd.split("\n"), [], [], 0
@@ -336,7 +370,7 @@ def _live_heredocs(cmd):
         i += 1
         for quote, delim in _heredoc_starts(seen, line):
             body = []
-            while i < len(lines) and lines[i].strip() != delim:
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
                 body.append(lines[i])
                 i += 1
             i += 1
@@ -355,7 +389,7 @@ def _heredocs(cmd):
         starts = _heredoc_starts(out, line)
         out.append(line)
         for _, delim in starts:
-            while i < len(lines) and lines[i].strip() != delim:
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
                 bodies.append(lines[i])
                 i += 1
             i += 1
@@ -379,7 +413,7 @@ def _drop_data_heredocs(cmd):
         seen.append(line)
         for quote, delim in starts:
             data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line)
-            while i < len(lines) and lines[i].strip() != delim:
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
                     out.append(lines[i])
                 i += 1
@@ -696,19 +730,23 @@ _PLAIN_IMPORTS = {"re", "json", "os", "sys", "pathlib", "textwrap", "difflib", "
 
 def _python_units(cmd):
     """(the bodies of quoted heredocs fed straight to python, the rest of the command, the lines that feed them): a
-    unit only when it's the line's one heredoc, on a `python - <<` line with no pipe, `;`, `&`, backtick or `$(`."""
+    unit only when it's the line's one heredoc, on a `python - <<` line with no pipe, `;`, `&`, backtick or `$(` —
+    after a chain of plain `cd DIR &&` (T-0282: a working directory doesn't change what the code does)."""
     lines, rest, units, starters, seen, i = cmd.split("\n"), [], [], [], [], 0
     while i < len(lines):
         line = lines[i]
         i += 1
         starts = _heredoc_starts(seen, line)
         seen.append(line)
-        fed = len(starts) == 1 and starts[0][0] and re.match(r"\s*python[0-9.]*\s+-\s*<<", line) and \
-            not re.search(r"[|`;&]|\$\(", line)
+        run = re.match(r"\s*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*(python[0-9.]*\s+-\s*<<.*)$", line)
+        # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
+        # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
+        fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \
+            len(re.findall(r"(?<!<)<<(?!<)", line)) == 1
         (starters if fed else rest).append(line)
         for quote, delim in starts:
             body = []
-            while i < len(lines) and lines[i].strip() != delim:
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
                 body.append(lines[i])
                 i += 1
             if i < len(lines):
@@ -818,8 +856,9 @@ def _proved_writes(cmd, ctx):
     """T-0176: the files a command's python can write, as paths, when every interpreter in it is a quoted heredoc fed
     straight to python whose writes _open_targets proves; None otherwise (the coarse rule decides). A relative path
     after a cd counts in every folder the command names too."""
-    units, rest, _ = _python_units(cmd)
+    units, rest, starters = _python_units(cmd)
     shell = "\n".join(rest)
+    around = "\n".join(rest + starters)  # review (T-0286): a cd on the python line itself picks the folder too
     if not units or _INTERP.search(_mask_fm(_drop_data_heredocs(shell), ctx)):
         return None
     # review: python's own settings (PYTHONPATH on a continued line, or inherited) choose what an import runs
@@ -832,8 +871,8 @@ def _proved_writes(cmd, ctx):
             return None
         targets += found
     bases = [ctx.cwd]
-    if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", shell):
-        bases += [d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(shell) if not _unresolvable(w))
+    if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", around):
+        bases += [d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
                   if os.path.isdir(d)]
     import ast
     mods = {a.name for code in units for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Import) for a in n.names}
@@ -842,7 +881,16 @@ def _proved_writes(cmd, ctx):
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
 
 
-def _drives_fm(cmd):
+def _run_dir(starter, cwd):
+    """The folder `python -` runs in (its sys.path[0]) after the starter's `cd` chain, or None when it can't be known."""
+    d = cwd
+    for target in re.findall(r"\bcd\s+([\w./~@+:=,-]+)\s*&&", starter):
+        target = os.path.expanduser(target)
+        d = target if os.path.isabs(target) else os.path.join(d, target) if d else None
+    return d
+
+
+def _drives_fm(cmd, cwd=None):
     """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
     python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
     of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
@@ -853,7 +901,7 @@ def _drives_fm(cmd):
     if _FM_INTERNALS.search("\n".join(rest + starters)):
         return True
     import ast
-    for code in units:
+    for code, starter in zip(units, starters):
         if not _FM_INTERNALS.search(code):
             continue
         try:
@@ -867,6 +915,10 @@ def _drives_fm(cmd):
         if names & _DYNAMIC or any(x.startswith("__") for x in names) or \
                 any(m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm") for m in modules):
             return True  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
+        run = _run_dir(starter, cwd)  # review (T-0286): python - imports from its folder first — a json.py there runs
+        if modules and (run is None or any(os.path.exists(os.path.join(run, m.split(".")[0] + x))
+                                           for m in modules for x in (".py", ""))):
+            return True
         fm_from = [n for n in ast.walk(tree) if isinstance(n, ast.ImportFrom) and (n.module or "").startswith("fm")]
         fm_import = [a for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names if a.name.startswith("fm")]
         if fm_from or (fm_import and _FM_MUTATORS.search(code)):
@@ -904,7 +956,7 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(cmd):
+    if _drives_fm(cmd, ctx.cwd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
     code = _interp_code(cmd)
     # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
@@ -1211,6 +1263,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
+    cmd = _join_continued(cmd)
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own

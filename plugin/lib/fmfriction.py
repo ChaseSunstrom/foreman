@@ -122,6 +122,11 @@ def digest(p, recheck=True):
                                                   str((e.get("data") or {}).get("text") or "").startswith("steer:"))]
     out["what the user corrected or steered (their words)"] = said[-MAX_LINES:]
 
+    out["escapes: defects found after a task closed (the lenses that passed it)"] = [  # T-0285: review recall over time
+        f"{e.get('task')} ({', '.join((e.get('data') or {}).get('lenses') or []) or 'no lens'}) → "
+        f"{(e.get('data') or {}).get('by')} {c.fit(c.plain(str((e.get('data') or {}).get('title') or '')), 140)}"
+        for _, e in ledger if e.get("event") == "escape"][-MAX_LINES:]
+
     out["surprises: where the model of the code was wrong (fm surprise)"] = [
         f"{e.get('task') or '-'}: {c.fit(c.plain(str((e.get('data') or {}).get('text') or '')), 200)}" for _, e in ledger
         if e.get("event") == "surprise"][-MAX_LINES:]

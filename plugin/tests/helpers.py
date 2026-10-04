@@ -1,6 +1,8 @@
 """Shared test helpers: isolated FOREMAN_HOME, scratch git repos, running the CLI."""
+import atexit
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,6 +14,16 @@ FM = os.path.join(PLUGIN, "bin", "fm")
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
 if LIB not in sys.path:
     sys.path.insert(0, LIB)
+
+# T-0283: tests never reach the real claude. A stub dir a test puts first on PATH still wins; a stub that can't run (no
+# shebang: ENOEXEC) makes the PATH lookup move on — to this lockout, not to the paid binary further along.
+_LOCKOUT = tempfile.mkdtemp(prefix="fm-test-lockout-")
+with open(os.path.join(_LOCKOUT, "claude"), "w") as _f:
+    _f.write("#!/bin/sh\necho 'fm tests: the real claude is locked out (a stub on PATH is missing or could not run)' >&2"
+             "\nexit 97\n")
+os.chmod(os.path.join(_LOCKOUT, "claude"), 0o755)
+os.environ["PATH"] = _LOCKOUT + os.pathsep + os.environ.get("PATH", "")
+atexit.register(shutil.rmtree, _LOCKOUT, True)
 
 
 def read_text(path, encoding="utf-8", limit=-1):

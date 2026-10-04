@@ -166,8 +166,25 @@ def cmd_capture(args):
                     priority="urgent" if args.urgent else "normal")
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
+    _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
         + _covered_note(p, b.id, args.text))
+
+
+def _note_escapes(p, b, text):
+    """T-0285: a FIX or SECURITY request that names a finished task is a defect that got past that task's gates and
+    reviews: an escape, logged against it with the audit lenses it closed with (fm friction lists them)."""
+    named = [t for t in dict.fromkeys(re.findall(r"\bT-\d{4,}\b", text or "")) if t != b.id]
+    if b.type not in ("FIX", "SECURITY") or not named:
+        return
+    briefs = {x.id: x for x in c.load_briefs(p, include_archive=True)}  # an escape may surface after the archive
+    for tid in named:
+        done = briefs.get(tid)
+        if done and done.status == "done":
+            with c.lock(p.dir):
+                c.log_event(p, "escape", task=tid, data={"by": b.id, "type": b.type, "title": c.fit(b.title, 160),
+                                                         "lenses": sorted({x[0] for x in done.audits()})},
+                            session=session())
 
 
 def _covered_note(p, tid, text):
@@ -538,12 +555,62 @@ def _hunks(diff):
     return out
 
 
+def _revert_hunk(path, head, hunk):
+    """Put one -U0 hunk back where the diff says it is (T-0286: git apply -R --unidiff-zero picked the nearest identical
+    line from the old file's position, so a hunk after an insertion mutated another line): its + lines, found at
+    their place in the new file, become its - lines. None, or why it couldn't."""
+    m = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", hunk)
+    if not m:
+        return "no hunk header"
+    start, count = int(m.group(1)), int(m.group(2) if m.group(2) is not None else 1)
+    body = [x for x in hunk.split("\n")[1:] if x[:1] in ("+", "-")]
+    old, new = [x[1:] for x in body if x[0] == "-"], [x[1:] for x in body if x[0] == "+"]
+    try:
+        with open(path, encoding="utf-8", errors="surrogateescape") as fh:
+            lines = fh.read().split("\n")
+    except FileNotFoundError:  # a file the task deleted comes back
+        lines = [""]
+    at = start - 1 if count else start  # +c,0: the old lines go after line c
+    if lines[at:at + count] != new:
+        return "its lines aren't where the diff puts them"
+    lines[at:at + count] = old
+    if "\nnew file mode" in head and lines == [""]:
+        os.remove(path)
+        return None
+    with open(path, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write("\n".join(lines))
+    return None
+
+
+def _definitions(root, tree, f):
+    """T-0279: a new Python file as mutations, one per top-level definition or statement (decorators included; the
+    docstring and imports left alone): [(file, label, first line, (first, last line))], or None to keep the one
+    whole-file hunk (not Python, or it doesn't parse)."""
+    import ast
+    if not f.endswith(".py"):
+        return None
+    src = c._git(root, "show", f"{tree}:{f}", fail=None, timeout=60)
+    try:
+        body = ast.parse(src or "").body
+    except (SyntaxError, ValueError):
+        return None
+    lines = (src or "").split("\n")
+    out = []
+    for i, node in enumerate(body):
+        if isinstance(node, (ast.Import, ast.ImportFrom)) or i == 0 and isinstance(node, ast.Expr) and \
+                isinstance(getattr(node, "value", None), ast.Constant) and isinstance(node.value.value, str):
+            continue
+        first = min([node.lineno] + [d.lineno for d in getattr(node, "decorator_list", [])])
+        out.append((f, f"@@ new file, lines {first}-{node.end_lineno} @@", c.fit(c.plain(" ".join(
+            x.strip() for x in lines[first - 1:node.end_lineno] if x.strip())), 120), (first, node.end_lineno)))
+    return out or None
+
+
 def task_prove_hunks(p, b, args):
     """T-0271: revert each code hunk of the task's diff alone, in a detached worktree of the current tree, and run the
     check: a hunk whose removal still passes is unproven — the check doesn't test that part of the change."""
     # ponytail: git -U0 hunks, so a whole new function is one hunk (removing it fails anything that calls it); split
     # big added hunks into statements if coarse hunks start hiding untested branches
-    import subprocess
     import tempfile
     base, tree = c.task_base(p.root, b), c.worktree_tree(p.root)
     if not base or not tree:
@@ -552,6 +619,9 @@ def task_prove_hunks(p, b, args):
              if c.CODE.search(f) and not c.TESTISH.search(f)]
     hunks = _hunks(c._git(p.root, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0",
                           base, tree, "--", *files, timeout=120)) if files else []
+    hunks = [m for f, head, h in hunks for m in (_definitions(p.root, tree, f) if "\nnew file mode" in head else None)
+             or [(f, h.split("\n", 1)[0], c.fit(c.plain(" ".join(x[1:].strip() for x in h.splitlines()[1:]
+                                                                if x[:1] in "+-")), 120), (head, h))]]
     if not hunks:
         return out(args, {"total": 0, "proven": 0, "unproven": []}, f"{b.id}: no code hunks to prove (tests and docs "
                                                                     f"aren't mutated)")
@@ -582,22 +652,26 @@ def task_prove_hunks(p, b, args):
             if code:
                 raise UsageError(f"the check fails on the unchanged tree in the scratch worktree ({c.run_result(code, output)})"
                                  f": fix it first — ignored files (.venv, node_modules, builds) aren't copied there")
-            for f, head, h in shown:
-                r = subprocess.run(["git", "-C", wt, "apply", "-R", "--unidiff-zero", "-"], input=head + h, text=True,
-                                   capture_output=True, timeout=60)
-                if r.returncode:
-                    skipped.append(f"{f}: not applied ({r.stderr.strip()[:80]})")
-                    continue
+            for f, at, text, patch in shown:
+                if isinstance(patch[0], int):  # T-0279: one top-level definition of a new file, cut out
+                    with open(os.path.join(wt, f), encoding="utf-8") as fh:
+                        lines = fh.read().split("\n")
+                    with open(os.path.join(wt, f), "w", encoding="utf-8") as fh:
+                        fh.write("\n".join(lines[:patch[0] - 1] + lines[patch[1]:]))
+                else:
+                    why = _revert_hunk(os.path.join(wt, f), *patch)
+                    if why:
+                        skipped.append(f"{f} {at}: not applied ({why})")
+                        continue
                 touch(os.path.join(wt, f))
                 code, _ = c.run_command(wt, args.run, args.timeout)
                 if not restore(wt, f):
                     skipped.append(f"{f}: the scratch tree couldn't be restored; stopped")
                     break
                 if code == 124:  # a timeout isn't a failure the check caught
-                    skipped.append(f"{f} {h.split(chr(10), 1)[0]}: the check timed out")
+                    skipped.append(f"{f} {at}: the check timed out")
                 elif code == 0:
-                    unproven.append({"file": f, "at": h.split("\n", 1)[0], "text": c.fit(c.plain(
-                        " ".join(x[1:].strip() for x in h.splitlines()[1:] if x[:1] in "+-")), 120)})
+                    unproven.append({"file": f, "at": at, "text": text})
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
@@ -799,6 +873,8 @@ def task_new(p, args):
                 b.add_step(text)
         b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
         _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    if not args.from_id:
+        _note_escapes(p, b, " ".join(filter(None, [args.title, args.raw])))
     out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})"
         + ("" if args.from_id else _covered_note(p, b.id, " ".join(filter(None, [args.title, args.raw])))))
     if args.focus:

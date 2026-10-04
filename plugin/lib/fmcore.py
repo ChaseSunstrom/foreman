@@ -2235,7 +2235,9 @@ _SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|token|passw|credential|ses
                              r"sandbox|guard|sudo|security|keyring|signing)")
 _SENSITIVE_CODE = re.compile(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
                              r"os\.system\(|verify=False|innerHTML|dangerouslySetInnerHTML|\bmd5\(|\bsha1\(|"
-                             r"deseriali[sz]e)")
+                             r"deseriali[sz]e|"
+                             # T-0284: network and ingest — untrusted text arrives here
+                             r"urlopen\(|requests\.(?:get|post|request)\(|http\.client|\bfetch\(|axios\.)")
 # ponytail: one-line quotes only; a pattern inside a multi-line string or a docstring still counts. f-strings are
 # kept: their {fields} are code
 _STRING_LITERAL = re.compile(r"""(?<![fF])(?<![fF][rR])(["'])(?:\\.|(?!\1).)*\1""")
