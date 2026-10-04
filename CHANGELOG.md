@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Headless runs (T-0310): in `claude -p` (or `fm run`), the Stop hook holds a turn that would end with background work still running, once, and says to wait for it in this turn. A headless run ends with the turn, so the notification an interactive session waits for never arrives (the court's R-T-0201 ended on "the suite is still running"). Interactive sessions still end the turn and wake on the notification.
 - `fm bench` (T-0309): a replay whose spend reaches `--budget` reports "hit the $X budget cap before finishing (inconclusive)" and pays no judge. Before, a session cut off mid-task (the court's R-T-0205: $0.5055 of $0.50) was judged as if it had finished.
 - No edits without a task, for shell writes too (T-0308): with no task active, the guard refuses a write into the project through Bash (redirect, `sed -i`, `cp`, `tee`, python `open()`) with the same one-command fix as Edit/Write. In bypass mode Claude Code steers edits to the shell, and a court replay (R-T-0218) changed code that way without ever opening a task. Reads, `fm`, scratch, state and checkout-wide git operations are unaffected; a bare file name in `python -c` is still not seen (the coarse rule needs a path).
 - `fm second session` (T-0307): reads the newest session the user typed in. A newer SDK or `claude -p` transcript in the same project (a background security review, a child run) is skipped. Before, it was read as the user's last session and its prompt captured as a missed request.

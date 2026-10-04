@@ -1283,7 +1283,7 @@ def stop(pl):
         # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
         nudge = None if reload_due else (_evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED})
-                                         or _question_nudge(pl))
+                                         or _question_nudge(pl) or _headless_wait(pl))
         reason = nudge or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
@@ -1314,6 +1314,22 @@ def _question_nudge(pl):
             "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
             "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
             "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
+
+
+def _headless_wait(pl):
+    """T-0310: claude -p (and fm run) ends with the turn, so a background task's notification never arrives: wait for
+    it in this turn. Once per stop chain."""
+    headless = os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
+    if pl.get("stop_hook_active") or not headless:
+        return None
+    bg = pl.get("background_tasks")
+    running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else \
+        _running(pl.get("session_id"))
+    if not running:
+        return None
+    return (f"Foreman: this is a headless run (claude -p): it ends with this turn, so the background work still running "
+            f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "
+            f"rerun it in the foreground), then finish with its result.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):
