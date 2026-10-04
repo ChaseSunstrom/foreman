@@ -163,6 +163,32 @@ def cmd_capture(args):
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source}).")
 
 
+HYPO_STATUS = {"ruled-out": "ruled out", "confirmed": "confirmed", "open": "open"}
+
+
+def task_hypo(p, args):
+    """T-0207: the debugging ledger. A probe that fails is a result, recorded like any other, not an error."""
+    if args.action == "add":
+        claim = " ".join(args.args).strip()
+        if not claim:
+            raise UsageError("a hypothesis needs a claim")
+        b, n = mutate(p, args.id, lambda b: b.add_hypothesis(claim, args.probe), "hypothesis",
+                      {"claim": c.redact(claim)[:200]})
+        return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: H{n} added (open).")
+    if len(args.args) != 2 or not args.args[0].isdigit() or args.args[1] not in HYPO_STATUS:
+        raise UsageError("fm task hypo ID mark N ruled-out|confirmed|open [--run CMD]")
+    n, status = int(args.args[0]), HYPO_STATUS[args.args[1]]
+    if n not in {h[0] for h in need_brief(p, args.id).hypotheses()}:
+        raise UsageError(f"{args.id} has no H{n}")
+    result, shown = None, ""
+    if args.run:
+        code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
+        result, shown = c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
+    b, _ = mutate(p, args.id, lambda b: b.mark_hypothesis(n, status, args.run, result), "hypothesis",
+                  {"n": n, "status": status, "ran": c.redact(f"{args.run or ''} → {result or ''}")[:300]})
+    return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
+
+
 def cmd_task(args):
     p = resolve(args)
     sub = args.task_cmd
@@ -182,6 +208,8 @@ def cmd_task(args):
     if sub == "log":
         b, _ = mutate(p, args.id, lambda b: b.append_log(args.text), "note", {"text": args.text[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
+    if sub == "hypo":
+        return task_hypo(p, args)
     if sub == "evidence":
         code, shown = 0, ""
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
@@ -1742,6 +1770,13 @@ def build_parser():
     t = tadd("log")
     t.add_argument("id")
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
+    t = tadd("hypo")
+    t.add_argument("id")
+    t.add_argument("action", choices=["add", "mark"])
+    t.add_argument("args", nargs="+", help="add: CLAIM · mark: N ruled-out|confirmed|open")
+    t.add_argument("--probe", help="add: the command that would tell (recorded, not run)")
+    t.add_argument("--run", metavar="CMD", help="mark: run the probe now and record its exit code and output")
+    t.add_argument("--timeout", type=float, default=600)
     t = tadd("done")
     t.add_argument("id")
     t.add_argument("--lesson", help="what the next similar task should know (M/L: required; 'none: why' allowed)")

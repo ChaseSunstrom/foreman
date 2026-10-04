@@ -6,6 +6,7 @@ Allowed only for:
 1. read-only recon of a large codebase area → `foreman:fm-recon`
 2. web or documentation research → first `fm recall "<question>"` (it may already be known), then `fm research ask "<question>"` (T-0206: parallel web-only researchers per sub-question, every quoted claim re-fetched and checked, one note saved; ✗ claims are unverified); `foreman:fm-recon` when the answer also needs the codebase
 3. dependency or security audits → `foreman:fm-recon`
+3b. a failure that keeps coming back → `foreman:fm-debugger` (read-only; ranked hypotheses with discriminating probes, ready for `fm task hypo`)
 4. optional independent read-only review of L-tier changes → `foreman:fm-reviewer` (or `/code-review`)
 
 Contract for every delegation:

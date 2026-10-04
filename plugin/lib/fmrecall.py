@@ -216,7 +216,11 @@ def note_failure(p, task, text):
     if task and same >= REPEATS and not hinted:  # R1 thrash: once per task and failure, when it becomes a pattern
         hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
                                              f"retrying variations, diagnose the cause first "
-                                             f"(skills/intake/references/debugging.md) and log what is ruled out."]))
+                                             f"(skills/intake/references/debugging.md): write each suspicion down "
+                                             f"(fm task hypo {task} add \"<claim>\" --probe \"<cmd>\") and test it "
+                                             f"(fm task hypo {task} mark N ruled-out|confirmed --run \"<cmd>\"), or "
+                                             f"get fresh eyes: foreman:fm-debugger with the failure, what is ruled "
+                                             f"out and the files."]))
     return hint
 
 

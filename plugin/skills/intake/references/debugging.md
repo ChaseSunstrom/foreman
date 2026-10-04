@@ -142,7 +142,7 @@ You MUST complete each phase before proceeding to the next.
 
 1. **Form Single Hypothesis**
    - State clearly: "I think X is the root cause because Y"
-   - Write it down
+   - Write it down in the brief: `fm task hypo ID add "<claim>" --probe "<cmd that would tell>"` (it survives a compaction, and `fm next` keeps you on it)
    - Be specific, not vague
 
 2. **Test Minimally**
@@ -151,6 +151,7 @@ You MUST complete each phase before proceeding to the next.
    - Don't fix multiple things at once
 
 3. **Verify Before Continuing**
+   - Record the result: `fm task hypo ID mark N ruled-out|confirmed --run "<probe>"`
    - Did it work? Yes → Phase 4
    - Didn't work? Form NEW hypothesis
    - DON'T add more fixes on top
@@ -158,7 +159,7 @@ You MUST complete each phase before proceeding to the next.
 4. **When You Don't Know**
    - Say "I don't understand X"
    - Don't pretend to know
-   - Ask for help
+   - Get fresh eyes: `foreman:fm-debugger` with the exact failure, the hypotheses ruled out, and the suspect files; its hypotheses come back as `fm task hypo` lines
    - Research more
 
 ### Phase 4: Implementation

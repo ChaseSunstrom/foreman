@@ -639,10 +639,17 @@ def _parse_value(raw):
 
 _STEP_RE = re.compile(r"^(\d+)\.\s+\[([ xX])\]\s+(.*?)(\s+<- CURRENT)?\s*$")
 _AC_RE = re.compile(r"^-\s+\[([ xX])\]\s+(.*?)\s*$")
+_HYPO_RE = re.compile(r"^- H(\d+) \[(open|ruled out|confirmed)\] (.*)$")
 _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
 _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
 _TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
 _RAN_MARK = " [ran]"  # evidence fm produced by running the command (fm task evidence --run, fm check)
+
+
+def _ledger(text, code=False):
+    """T-0207 review: ledger text is one line, redacted, defanged and unmarked like evidence; code keeps no backtick."""
+    text = _unmarked(redact(str(text)).replace("\r", " ").replace("\n", " ").strip())
+    return text.replace("`", "'") if code else defang(text)
 
 
 def _unmarked(text):
@@ -837,6 +844,30 @@ class Brief:
             if nxt:
                 nxt.current = True
         self._write_steps(steps)
+
+    # --- debugging ledger (T-0207): what is suspected, how to tell, what the probe said; survives a compaction
+    def hypotheses(self):
+        """[(n, status, text)] from the Hypotheses section."""
+        return [(int(m.group(1)), m.group(2), m.group(3)) for m in
+                (_HYPO_RE.match(x) for x in self.section("Hypotheses").splitlines()) if m]
+
+    def add_hypothesis(self, claim, probe=None):
+        n = max((h[0] for h in self.hypotheses()), default=0) + 1
+        self._append_line("Hypotheses", f"- H{n} [open] {_ledger(claim)}"
+                          + (f" — probe: `{_ledger(probe, code=True)}`" if probe else ""))
+        return n
+
+    def mark_hypothesis(self, n, status, cmd=None, result=None):
+        lines = self.section("Hypotheses").splitlines()
+        for i, x in enumerate(lines):
+            m = _HYPO_RE.match(x)
+            if m and int(m.group(1)) == n:
+                ran = f"`{_ledger(cmd, code=True)}` → {_ledger(result)}" if cmd else None
+                text = m.group(3).split(" · ran `", 1)[0] if ran else m.group(3)  # a new result replaces the old
+                lines[i] = f"- H{n} [{status}] {text}" + (f" · ran {ran}" if ran else "")
+                self.set_section("Hypotheses", "\n".join(lines) + "\n")
+                return True
+        return False
 
     # --- evidence
     def evidence(self):
@@ -1495,6 +1526,11 @@ def next_action(b, autonomy="standard", since=None):
         left = [s for s in steps if not s.done and not b.has_evidence(step=s.n)]
         if not left:
             return f"{tid}: every step has its evidence — {finish} (it marks them, runs the criteria and closes)"
+        hyps = b.hypotheses()  # T-0207: an open suspicion is tested before more fixing, until one is confirmed
+        suspect = next((h for h in hyps if h[1] == "open"), None) if all(h[1] != "confirmed" for h in hyps) else None
+        if suspect:
+            return (f"{tid}: test hypothesis H{suspect[0]} before more fixes: {suspect[2][:140]} — fm task hypo {tid} "
+                    f"mark {suspect[0]} ruled-out|confirmed --run \"<probe>\" (skills/intake/references/debugging.md)")
         cur = next((s for s in left if s.current), None) or left[0]
         return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, then fm task evidence {tid} --step {cur.n} "
                 f"--run \"<verify cmd>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
