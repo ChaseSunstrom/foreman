@@ -66,6 +66,7 @@ export type FmView = {
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
   bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
   research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
+  revisit?: { date: string; decision: string; why: string }[] // T-0247: decisions whose revisit trigger fired
   trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
   /** T-0145: a driven turn ended so this session's mod could reload; the reloaded mod starts the next turn */
   resume_after_reload?: { session: string; at: string; task?: string } | null

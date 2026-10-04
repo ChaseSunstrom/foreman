@@ -480,6 +480,10 @@ def user_prompt_submit(pl):
         nxt = next((x[6:] for x in state if x.startswith("Next: ")), None)
         if nxt:  # T-0051: fm usage compares it with what ran next
             _event({"kind": "next", "session_id": pl.get("session_id"), "project": p.slug, "action": nxt[:200]})
+            try:
+                c.hints_shown(p, nxt)  # T-0250: what was shown and not used gets quieter
+            except Exception:
+                log_error("UserPromptSubmit", _tb())
     out = {"terminalSequence": _title_seq(sd)}
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
@@ -1080,6 +1084,11 @@ def post_tool_use(pl, ok=True):
     if p and tool == "Bash":
         try:
             _auto_evidence(pl, p, ok)
+        except Exception:
+            log_error("PostToolUse", _tb())
+    if ok and p and tool == "Skill":
+        try:
+            c.hint_used(p, "skills")  # T-0250: the skills hint was worth showing
         except Exception:
             log_error("PostToolUse", _tb())
     if ok and tool in ("TaskStop", "KillShell", "KillBash"):  # a stopped task sends no completion notice

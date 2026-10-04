@@ -381,6 +381,8 @@ def view(p):
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
+        "revisit": _guarded(lambda: [{"date": dt, "decision": c.plain(x)[:200], "why": c.plain(w)}  # T-0247
+                                     for dt, x, w in c.fired_decisions(p)]) or [],
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors()), "paused_hooks": fmdoctor.paused_hooks()},

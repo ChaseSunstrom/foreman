@@ -165,7 +165,21 @@ def cmd_capture(args):
                     priority="urgent" if args.urgent else "normal")
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
-    out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source}).")
+    out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
+        + _covered_note(p, b.id, args.text))
+
+
+def _covered_note(p, tid, text):
+    """T-0256: the request may already be an fm command; say so before anything is built."""
+    try:
+        import fmrecall
+        hits = fmrecall.covered(text)
+    except Exception:
+        return ""
+    if not hits:
+        return ""
+    return ("\nAlready covered? " + "; ".join(f"fm {name} — {help_}" for name, help_ in hits)
+            + f". If it is, use it and drop this: fm task drop {tid} \"covered by fm {hits[0][0]}\".")
 
 
 HYPO_STATUS = {"ruled-out": "ruled out", "confirmed": "confirmed", "open": "open"}
@@ -572,6 +586,7 @@ def cmd_batch(args):
     one commit — with every member's criteria and a step each; the members leave the inbox and queue while batched and
     are closed done-in the host when it is done (handed back if it is dropped)."""
     p = resolve(args)
+    c.hint_used(p, "batch")  # T-0250
     ids = list(dict.fromkeys(x.upper() for x in args.ids))
     if len(ids) < 2:
         raise UsageError("a batch is two or more items")
@@ -673,7 +688,8 @@ def task_new(p, args):
                 b.add_step(text)
         b, _ = mutate(p, b.id, plan, "task_plan", {"ac": len(args.ac or []), "step": len(args.step or [])})
         _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
-    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})")
+    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})"
+        + ("" if args.from_id else _covered_note(p, b.id, " ".join(filter(None, [args.title, args.raw])))))
     if args.focus:
         cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
 
@@ -1185,9 +1201,17 @@ def cmd_decide(args):
 
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
-    tags = ("" if args.kind == "reversible" else f"[{args.kind}] ") + (f"[reverses: {cell(args.reverses)}] "
-                                                                       if args.reverses else "")
-    row = f"| {c.now()[:10]} | {tags}{cell(args.decision)} | {cell(args.why)} | {cell(args.rejected)} |\n"
+    trigger, settles = getattr(args, "revisit", None), getattr(args, "revisited", None)  # callers build their own args
+    try:
+        revisit = c.revisit_tag(p.root, trigger) + " " if trigger else ""
+    except ValueError as e:
+        raise UsageError(str(e))
+    words = lambda v: cell(v).replace("]", ")")  # a tag's words can't close the tag early
+    tags = ("" if args.kind == "reversible" else f"[{args.kind}] ") + (
+        f"[reverses: {words(args.reverses)}] " if args.reverses else "") + (
+        f"[revisited: {words(settles)}] " if settles else "") + revisit
+    text = re.sub(r"^\[", "(", cell(args.decision))  # review: free text can't open with a tag fm would read
+    row = f"| {c.now()[:10]} | {tags}{text} | {cell(args.why)} | {cell(args.rejected)} |\n"
     with c.lock(p.dir):
         cur = open(path, encoding="utf-8").read() if os.path.exists(path) else \
             "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
@@ -1350,6 +1374,8 @@ def cmd_check(args):
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
     tree = after or tree
     failed = sum(1 for _, code, _, _ in results if code)
+    if failed:
+        c.hints_reset(p)  # T-0250: a quieted hint gets its detail back when a gate fails
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **skipped.get(cmd, {})} for cmd, code, _, s in results]})
@@ -1823,6 +1849,9 @@ def build_parser():
     s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
                    help="costly/outward: listed for the user's review (fm decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
+    s.add_argument("--revisit", metavar="TRIGGER",
+                   help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
+    s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
     s.add_argument("--list", action="store_true")
     s.add_argument("--review", action="store_true", help="only costly/outward decisions")
     s.add_argument("-n", type=int, default=30)

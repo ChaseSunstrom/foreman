@@ -78,6 +78,7 @@ class UiView(ForemanTestCase):
         self.assertEqual(a["oracle"], {"examples": 1, "ambiguities": ["which timeout?"]})
         self.assertEqual(a["batch"], [])
         self.assertEqual((a["inconclusive"], a["unverified"]), (1, ["the timeout lives in x.py"]))
+        self.assertEqual(v["revisit"], [])
         self.assertTrue(any("≈" in x and "true" in x for x in v["recent"]), v["recent"])
 
     def test_step_text_is_plain(self):

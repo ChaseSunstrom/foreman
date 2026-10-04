@@ -1065,6 +1065,11 @@ export const register: Register = (on, options) => {
             <Text color={hex(C.dim)}>
               <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
             </Text>
+            {(v.revisit ?? []).length > 0 && (
+              <Text key="fm-pane-revisit" color={hex(C.warn)} wrap="truncate-end">
+                ◆ revisit: {v.revisit![0].decision} ({v.revisit![0].why}){v.revisit!.length > 1 ? ` · ${v.revisit!.length - 1} more` : ''}
+              </Text>
+            )}
           </Box>
           {mascotTree($.ui.resolve(e), e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
         </Box>

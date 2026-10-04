@@ -1614,8 +1614,137 @@ def last_change(p, tid):
                default="")
 
 
+QUIET_AFTER = 6  # T-0250: a hint shown this many times running without being used loses its detail
+HINT_MARKS = {"batch": "fm batch ", "skills": "skills that fit"}  # in the full and the quiet form alike
+_REVISIT_TAG = re.compile(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")
+
+
+def _hints(p):
+    try:
+        with open(os.path.join(p.dir, "hints.json"), encoding="utf-8") as f:
+            h = json.load(f)
+        return h if isinstance(h, dict) and isinstance(h.get("ignored", {}), dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_hints(p, h):
+    # ponytail: unlocked read-modify-write; a racing session can lose one count, which only delays a quieting
+    try:
+        write_atomic(os.path.join(p.dir, "hints.json"), json.dumps(h))
+    except OSError:
+        pass  # review: a hint counter must never cost fm batch, fm check or a hook
+
+
+def hints_quiet(p):
+    return {k for k, n in _hints(p).get("ignored", {}).items() if isinstance(n, int) and n >= QUIET_AFTER}
+
+
+def hints_shown(p, action):
+    """Where Next is injected: a hint shown last time and not used since counts as ignored once more."""
+    h = _hints(p)
+    shown = [k for k, mark in HINT_MARKS.items() if mark in action]
+    if not shown and not h.get("shown"):
+        return  # nothing shown then or now: no write on this prompt
+    ign = h.setdefault("ignored", {})
+    for k in h.get("shown") or []:
+        if k in HINT_MARKS:
+            ign[k] = (ign.get(k) if isinstance(ign.get(k), int) else 0) + 1
+    h["shown"] = shown
+    _save_hints(p, h)
+
+
+def hint_used(p, kind):
+    h = _hints(p)
+    if h.get("ignored", {}).get(kind) or kind in (h.get("shown") or []):
+        h.setdefault("ignored", {})[kind] = 0
+        h["shown"] = [k for k in h.get("shown") or [] if k != kind]
+        _save_hints(p, h)
+
+
+def hints_reset(p):
+    """A failed gate: every quieted hint gets its detail back (ignoring it may be what it cost)."""
+    h = _hints(p)
+    if any(h.get("ignored", {}).values()):
+        h["ignored"] = {}
+        _save_hints(p, h)
+
+
+def file_digest(path):
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()[:12]
+
+
+def revisit_tag(root, trigger):
+    """T-0247: the decisions.md tag for --revisit "after YYYY-MM-DD" | "when PATH changes" (a path inside the project,
+    its content hash kept so a later change can be told); ValueError when it is neither."""
+    m = re.fullmatch(r"after (\d{4}-\d\d-\d\d)|when ([^\s\]|]+) changes", trigger.strip())
+    if not m:
+        raise ValueError('--revisit takes "after YYYY-MM-DD" or "when PATH changes"')
+    if m.group(1):
+        datetime.date.fromisoformat(m.group(1))  # ValueError on 2020-13-45
+        return f"[revisit: after {m.group(1)}]"
+    path, top = os.path.realpath(os.path.join(root, m.group(2))), os.path.realpath(root)
+    if not path.startswith(top + os.sep) or not os.path.isfile(path):
+        raise ValueError(f"--revisit: {m.group(2)} is not a file in this project")
+    return f"[revisit: when {os.path.relpath(path, top)} changes @{file_digest(path)}]"
+
+
+def fired_decisions(p):
+    """T-0247: [(date, decision, why)] for decisions whose revisit trigger fired and no later row settled
+    (fm decide … --revisited WORDS, or --reverses WORDS)."""
+    try:
+        with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
+            rows = [x for x in f if x.startswith("| 2")]
+    except OSError:
+        return []
+    out, today, top = [], now()[:10], os.path.realpath(p.root)
+    parsed = []  # (date, leading tags, decision): only the tag run fm wrote counts, never words in the free text
+    for row in rows:
+        cells = re.split(r"(?<!\\)\|", row)
+        if len(cells) >= 3:
+            tags, decision = re.match(r"^((?:\[[^\]]*\] )*)(.*)$", cells[2].strip()).groups()
+            parsed.append((cells[1].strip(), tags, decision))
+    for i, (date, tags, decision) in enumerate(parsed):
+        m = _REVISIT_TAG.search(tags)
+        if not m:
+            continue
+        words = [w.strip().lower() for _, t, _ in parsed[i + 1:]
+                 for w in re.findall(r"\[(?:revisited|reverses): ([^\]]+)\]", t)]
+        if any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", decision.lower()) for w in words):
+            continue  # settled by a later row naming it (whole words, 4+ characters)
+        if m.group(1):
+            why = f"due {m.group(1)}" if today >= m.group(1) else None
+        else:
+            path = os.path.realpath(os.path.join(top, m.group(2)))
+            if not path.startswith(top + os.sep):
+                continue  # a hand-edited tag pointing outside the project is never read
+            try:
+                why = f"{m.group(2)} changed" if file_digest(path) != m.group(3) else None
+            except OSError:
+                why = f"{m.group(2)} is gone"
+        if why:
+            out.append((date, decision, why))
+    return out
+
+
 def next_for(p, briefs=None):
-    """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111)."""
+    """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
+    T-0247: a decision whose revisit trigger fired rides along."""
+    b, st, action = _next_for(p, briefs)
+    try:
+        fired = fired_decisions(p)
+    except Exception:
+        fired = []  # a broken decisions file must never cost the next action
+    if fired:
+        date, decision, why = fired[0]
+        action += (f" · revisit decision {date}: {decision[:100]} ({why}"
+                   + (f"; {len(fired) - 1} more" if len(fired) > 1 else "") + ") — still holds: fm decide \"<it>\" "
+                   f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
+    return b, st, action
+
+
+def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = read_meta(p).get("autonomy", "standard")
     if not active_brief(briefs, p.lane):
@@ -1630,14 +1759,16 @@ def next_for(p, briefs=None):
     if st == "captured" and b.tier == "S":  # T-0257: small ones of a kind pay the fixed overhead once, together
         small = [x for x in rank_inbox(briefs) if x.tier == "S" and x.type == b.type][:5]
         if len(small) >= 3 and b in small:
-            action += (f" — or batch the small {b.type} items: fm batch {' '.join(sorted((x.id for x in small), key=id_num))} "
-                       f"(one plan, gate run, review and commit)")
+            ids = ' '.join(sorted((x.id for x in small), key=id_num))
+            action += (f" — or fm batch {ids}" if "batch" in hints_quiet(p) else  # T-0250: ignored often: just the command
+                       f" — or batch the small {b.type} items: fm batch {ids} (one plan, gate run, review and commit)")
     if st == "executing":
         try:
             import fmplugins  # T-0205: other plugins' skills, at the moment they fit
             fit = fmplugins.stage_skills(p, b)
             if fit:
-                action += f" · installed skills that fit this stage: {', '.join(fit)} (use one if it helps)"
+                action += (f" · skills that fit: {', '.join(fit)}" if "skills" in hints_quiet(p) else
+                           f" · installed skills that fit this stage: {', '.join(fit)} (use one if it helps)")
         except Exception:
             pass  # a broken plugin registry must never cost the next action
     return b, st, action
