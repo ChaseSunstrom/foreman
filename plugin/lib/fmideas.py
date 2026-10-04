@@ -33,6 +33,70 @@ def child_cmd(model, system):
             "--append-system-prompt", system]
 
 
+def _tail(s, n):
+    """The end of a child's output (claude puts its error last), on one safe line."""
+    s = c.plain(" ".join((s or "").split()))
+    return s if len(s) <= n else "…" + s[1 - n:]
+
+
+def _child_env():
+    return dict(os.environ, FOREMAN_NO_BACKGROUND="1")  # a child never starts Foreman's own background reviews
+
+
+def run_child(feature, system, prompt, model, timeout, project=None, detail="", fallback=0.05):
+    """T-0295: one tool-less child, budget-checked, run in a scratch folder and recorded: its text. ValueError when
+    it can't run, fails or says nothing."""
+    try:
+        fmbudget.check(feature, fmbudget.estimate(feature, 1, fallback))
+    except fmbudget.BudgetError as e:
+        raise ValueError(str(e))
+    with tempfile.TemporaryDirectory(prefix=f"fm-{feature}-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
+        try:
+            r = subprocess.run(child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
+                               timeout=timeout, env=_child_env())
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+    text, usd = fmbudget.result(r.stdout)
+    fmbudget.record(feature, usd, project=project, detail=detail)
+    if r.returncode or not (text or "").strip():
+        raise ValueError(f"nothing came back (exit {r.returncode}: {_tail(r.stderr or r.stdout, 160)})")
+    return text
+
+
+def run_children(jobs, timeout, feature):
+    """T-0295: [(argv, stdin, detail)] run in parallel in one scratch folder under one deadline, each recorded:
+    [(text or None, error)]. OSError when one can't start (the started ones are stopped)."""
+    with tempfile.TemporaryDirectory(prefix=f"fm-{feature}-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
+        procs = []
+        try:
+            for argv, stdin, detail in jobs:
+                pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, env=_child_env())
+                procs.append((pr, detail))
+                pr.stdin.write(stdin)
+                pr.stdin.close()
+        except OSError as e:
+            for pr, _ in procs:
+                pr.kill()
+                pr.communicate()
+            raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
+        deadline, out = time.time() + timeout, []
+        for pr, detail in procs:
+            try:
+                so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
+                fmbudget.record(feature, usd, detail=detail)
+                out.append((text, None) if pr.returncode == 0 and text.strip() else
+                           (None, f"exit {pr.returncode}: {_tail(se or so, 200)}"))
+            except subprocess.TimeoutExpired:
+                pr.kill()
+                pr.communicate()
+                fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
+                                else "timed out: cost unknown")
+                out.append((None, f"timed out after {timeout}s"))
+    return out
+
+
 def child_prompt(lens, pack):
     """The shared pack first, the lens last (T-0267): siblings and later rounds then share a prefix the prompt cache
     can reuse."""
@@ -120,43 +184,23 @@ def later_round_pack(pack, titles, n):
 
 def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
     results = []
-    with tempfile.TemporaryDirectory(prefix="fm-ideas-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
-        procs = []
-        try:
-            for lens in lenses:
-                pr = subprocess.Popen(child_cmd(args.model, system), cwd=cwd, text=True, stdin=subprocess.PIPE,
-                                      stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                procs.append((lens, pr))
-                pr.stdin.write(child_prompt(lens, pack))
-                pr.stdin.close()
-        except OSError as e:
-            for _, pr in procs:
-                pr.kill()
-                pr.communicate()
-            raise fmcli.UsageError(f"can't start the brainstorm children: {e} (is `claude` on PATH and logged in?)")
-        deadline = time.time() + args.timeout
-        for i, (lens, pr) in enumerate(procs, 1):
-            try:
-                out, err = pr.communicate(timeout=max(1, deadline - time.time()))
-                out, usd = fmbudget.result(out)  # T-0227: the text, and what it cost
-                fmbudget.record("ideas", usd, detail=lens)
-                ok = pr.returncode == 0 and bool(out.strip())
-                why = "" if ok else f"exit {pr.returncode}: {(err or out).strip()[-200:]}"
-            except subprocess.TimeoutExpired:
-                pr.kill()
-                out, _ = pr.communicate()
-                ok, why = False, f"timed out after {args.timeout}s"
-                fmbudget.record("ideas", None, detail=f"{lens} (timed out: cost unknown)")
-            slug =re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
-            path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
-            text = c.redact(out.strip()) if ok else ""
-            if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
-                ok, why = False, f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(f"# Brainstorm — lens: {lens}\n\n" + (text if ok else f"FAILED: {why}") + "\n")
-            results.append({"lens": lens, "file": path, "ok": ok, "error": why,
-                            "titles": [c.plain(t).strip() for t in _TITLE.findall(text)],
-                            "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)}})
+    try:
+        answers = run_children([(child_cmd(args.model, system), child_prompt(lens, pack), lens) for lens in lenses],
+                               args.timeout, "ideas")
+    except OSError as e:
+        raise fmcli.UsageError(str(e))
+    for i, (lens, (out, why)) in enumerate(zip(lenses, answers), 1):
+        ok, why = out is not None, why or ""
+        slug = re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
+        path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
+        text = c.redact(out.strip()) if ok else ""
+        if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
+            ok, why = False, f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(f"# Brainstorm — lens: {lens}\n\n" + (text if ok else f"FAILED: {why}") + "\n")
+        results.append({"lens": lens, "file": path, "ok": ok, "error": why,
+                        "titles": [c.plain(t).strip() for t in _TITLE.findall(text)],
+                        "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)}})
     return results
 
 
@@ -273,17 +317,9 @@ def cmd_oracle(args):
                         ("Raw request", "Interpretation", "Acceptance criteria", "Non-goals") if b.section(name).strip())
     spec = f"Task: {b.title} ({b.type})\n\n{spec or b.title}\n"
     try:
-        fmbudget.check("oracle", fmbudget.estimate("oracle", 1, 0.05))
-    except fmbudget.BudgetError as e:
+        text_out = run_child("oracle", ORACLE, spec, args.model, args.timeout, project=p.slug, detail=b.id)
+    except ValueError as e:
         raise fmcli.UsageError(str(e))
-    with tempfile.TemporaryDirectory(prefix="fm-oracle-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
-        try:
-            r = subprocess.run(child_cmd(args.model, ORACLE), input=spec, cwd=cwd, capture_output=True, text=True,
-                               timeout=args.timeout)
-        except (OSError, subprocess.TimeoutExpired) as e:
-            raise fmcli.UsageError(f"the oracle child didn't run: {e} (is `claude` on PATH and logged in?)")
-    text_out, usd = fmbudget.result(r.stdout)
-    fmbudget.record("oracle", usd, project=p.slug, detail=b.id)
     parts = {k: [] for k in ("Examples", "Ambiguities")}
     head = None
     for line in text_out.splitlines():
@@ -294,8 +330,8 @@ def cmd_oracle(args):
             parts[head].append(c.fit(c.defang(c.redact(line.strip()[2:].strip())), 300))
     examples = parts["Examples"]
     ambiguities = [x for x in parts["Ambiguities"] if x.lower().strip(". ") != "none"]
-    if r.returncode or not examples:
-        raise fmcli.UsageError(f"no examples came back (exit {r.returncode}: {c.fit((r.stderr or r.stdout).strip(), 160)})")
+    if not examples:
+        raise fmcli.UsageError(f"no examples came back ({c.fit(c.plain(text_out), 160)})")
     text = ("Examples from the request alone, before the code was read (write tests from these):\n"
             + "".join(f"- {x}\n" for x in examples)
             + ("Ambiguities (decide each with fm decide, or ask, before the tests):\n" + "".join(f"- {x}\n" for x in ambiguities)

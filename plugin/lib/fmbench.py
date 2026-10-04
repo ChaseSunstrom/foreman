@@ -24,7 +24,7 @@ import time
 import fmbudget
 import fmcore as c
 
-TEST_FILE = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)test_[^/]*\.py$|_test\.\w+$|\.(test|spec)\.\w+$")
+TEST_FILE = c.TESTISH  # T-0295: one test-file pattern
 
 
 LFS_DRIVER = {"clean": "git-lfs clean -- %f", "smudge": "git-lfs smudge -- %f", "process": "git-lfs filter-process"}

@@ -9,7 +9,7 @@ import re
 
 import fmcore as c
 
-_TEST = re.compile(r"(^|/)(tests?/|test_[^/]+$|[^/]+_test\.\w+$|[^/]+\.(test|spec)\.\w+$)")
+_TEST = c.TESTISH  # T-0295: one test-file pattern
 _ENTRY = re.compile(r"(^|/)(__main__\.py|main\.\w+|cli\.\w+|app\.\w+|index\.\w+|manage\.py|bin/[^/]+)$")
 _CODE = c.CODE
 HOT = 8

@@ -15,9 +15,7 @@ import os
 import re
 import shutil
 import socket
-import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -236,35 +234,9 @@ def _child(model, tools, system):
 
 
 def _run(jobs, timeout):
-    """[(stdout or None, error)] for [(argv, stdin)], run in parallel in a scratch folder."""
-    with tempfile.TemporaryDirectory(prefix="fm-research-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
-        procs = []
-        try:
-            for argv, stdin in jobs:
-                pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE)
-                procs.append(pr)
-                pr.stdin.write(stdin)
-                pr.stdin.close()
-        except OSError as e:
-            for pr in procs:
-                pr.kill()
-                pr.communicate()
-            raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
-        deadline, out = time.time() + timeout, []
-        for pr in procs:
-            try:
-                so, se = pr.communicate(timeout=max(1, deadline - time.time()))
-                so, usd = fmbudget.result(so)  # T-0227
-                fmbudget.record("research", usd)
-                out.append((so, None) if pr.returncode == 0 and so.strip() else
-                           (None, f"exit {pr.returncode}: {c.fit((se or so).strip(), 160)}"))
-            except subprocess.TimeoutExpired:
-                pr.kill()
-                pr.communicate()
-                fmbudget.record("research", None, detail="timed out: cost unknown")
-                out.append((None, f"timed out after {timeout}s"))
-        return out
+    """[(text or None, error)] for [(argv, stdin)], run in parallel in a scratch folder (T-0295: fmideas' runner)."""
+    import fmideas
+    return fmideas.run_children([(argv, stdin, "") for argv, stdin in jobs], timeout, "research")
 
 
 MARK = {"verified": "✓", "not found": "✗", "unchecked": "?"}

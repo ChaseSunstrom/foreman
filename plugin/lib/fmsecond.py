@@ -6,10 +6,7 @@ import glob
 import json
 import os
 import re
-import subprocess
-import tempfile
 
-import fmbudget
 import fmcore as c
 import fmideas
 
@@ -42,21 +39,7 @@ Diff: {diff}
 
 
 def _child(p, feature, system, prompt, model, timeout):
-    try:
-        fmbudget.check(feature, fmbudget.estimate(feature, 1, 0.05))
-    except fmbudget.BudgetError as e:
-        raise ValueError(str(e))
-    with tempfile.TemporaryDirectory(prefix="fm-second-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
-        try:
-            r = subprocess.run(fmideas.child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout, env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"))  # no nested reviews
-        except (OSError, subprocess.TimeoutExpired) as e:
-            raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
-    text, usd = fmbudget.result(r.stdout)
-    fmbudget.record(feature, usd, project=p.slug)
-    if r.returncode or not (text or "").strip():
-        raise ValueError(f"nothing came back (exit {r.returncode}: {c.fit((r.stderr or r.stdout).strip(), 160)})")
-    return text
+    return fmideas.run_child(feature, system, prompt, model, timeout, project=p.slug)  # T-0295: one runner
 
 
 def _bullets(text, head):
