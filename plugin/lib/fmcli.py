@@ -1833,8 +1833,18 @@ def cmd_audit(args):
            f"fm task audit {b.id} <lens> …" + (f" (a {r.stdout.count(chr(10))}-line L diff: fm audit prep {b.id} --split "
                                                f"gives each lens group a fresh reviewer, in parallel)" if big else "")
            if sections else f"Record it with fm task audit {b.id} self …")
+    try:  # T-0276: installed review skills that fit a lens; their findings count as that lens
+        import fmplugins
+        fit = fmplugins.lens_skills(p, [x for x in lenses if x != "self"])
+    except Exception:
+        fit = {}
+    if fit and not args.print:
+        how += ("\nInstalled review skills that fit a lens (run one on the diff and record what it finds as that lens):"
+                + "".join(f"\n  {lens}: {', '.join(names)} — fm task audit {b.id} {lens} \"{names[0]}\" \"<result>\""
+                          for lens, names in fit.items()))
     # the brief goes to a file: printed, it would be paid for twice (here and in the reviewer's prompt)
-    out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief, "briefs": briefs, "pre_audit": found},
+    out(args, {"diff": path, "base": base, "lenses": lenses, "brief": brief, "briefs": briefs, "pre_audit": found,
+               "lens_skills": fit},
         ("\n\n".join(blocks) + f"\n\nDiff: {path}\n" if args.print else
          f"Review brief ({', '.join(lenses)}; {sum(map(len, blocks))} chars): {brief}\nDiff: {path}\n"
          + "".join(f"Pre-audit: {x}\n" for x in found)) + how)
@@ -1919,8 +1929,8 @@ def _all_parsers(parser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit research ideas oracle pr "
-                         "export"),
+    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research ideas "
+                         "oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
@@ -2162,6 +2172,15 @@ def build_parser():
     s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief, with its proof "
                                                   "(red→green, lens verdicts, assumptions, bench replays; printed only)")
     s.add_argument("id")
+    s = add("second", lazy("fmsecond", "cmd_second"),
+            help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
+    s.add_argument("what", choices=["plan", "debate", "session"])
+    s.add_argument("id", nargs="?", help="plan, debate: the task")
+    s.add_argument("--review", help="debate: the research note holding the earlier review")
+    s.add_argument("--model", default="sonnet", help="plan, session: the child's model (another than the main one)")
+    s.add_argument("--if-due", action="store_true", help="session: only once a day")
+    s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
+    s.add_argument("--timeout", type=float, default=300)
     s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
     s.add_argument("id")
     s = add("export", lazy("fmcost", "cmd_export"),

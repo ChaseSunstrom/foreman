@@ -255,6 +255,8 @@ STAGE_WORDS = {k: tuple(v) for k, v in (_ROUTES.get("stage_words") or {}).items(
 UI_WORDS = tuple(_ROUTES.get("ui_words") or ())
 UI_FILES = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|html)\b")
 BUILTIN = {k: tuple(v) for k, v in (_ROUTES.get("builtin_skills") or {}).items()}
+LENS_WORDS = {k: tuple(v) for k, v in (_ROUTES.get("lens_words") or {}).items()}  # T-0276: review skills per lens
+LENS_BUILTIN = {k: tuple(v) for k, v in (_ROUTES.get("lens_builtin") or {}).items()}
 INDEX_VERSION = 2  # bump when what the index keeps changes
 
 
@@ -313,6 +315,24 @@ def stage_skills(p, b, n=3):
             hits.append((-idx["uses"].get(e["name"][1:], 0), -score, e["name"]))
     names = [h[2] for h in sorted(hits)][:n]
     return names + [f"/{x}" for x in BUILTIN.get(b.type, ()) if f"/{x}" not in names][:max(0, n - len(names))]
+
+
+def lens_skills(p, lenses, n=2):
+    """T-0230/T-0276: {lens: [skill names]} — installed review skills whose name or description fits each audit lens,
+    then Claude Code's own; their findings can be recorded as that lens."""
+    idx = _skill_index(p)
+    owned = [k for keys in FOREMAN_OWNS.values() for k in keys]
+    out = {}
+    for lens in lenses:
+        words = LENS_WORDS.get(lens, ())
+        hits = sorted((-sum(w in e["text"] for w in words), e["name"]) for e in idx.get("skills") or []
+                      if any(w in e["text"] for w in words) and not re.search(r"skill|plugin", e["name"].lower())
+                      and not any(k in e["name"].lower() for k in owned))
+        names = [h[1] for h in hits][:n]
+        names += [f"/{x}" for x in LENS_BUILTIN.get(lens, ()) if f"/{x}" not in names]
+        if names:
+            out[lens] = names
+    return out
 
 
 def _manifest(key, add=None, drop=None):

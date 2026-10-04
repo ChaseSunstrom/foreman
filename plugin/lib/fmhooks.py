@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -220,11 +221,25 @@ def session_start(pl):
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
     c.log_event(p, "session_start", data={"source": pl.get("source")}, session=sid)
+    if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time
+        try:
+            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "second", "session", "--if-due",
+                              "--exclude", sid or ""], cwd=p.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        except Exception:  # a review that can't start must never cost the session its start
+            log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:
         out["initialUserMessage"] = first
     return {"hookSpecificOutput": out, "terminalSequence": _title_seq(sd)}
+
+
+def second_due(pl, meta, busy=False):
+    """T-0276: a new session (not a compaction or /clear) in a project not reviewed today, not sensitive, and no other
+    session active minutes ago (its transcript would be read as the "previous" one while it is still answering)."""
+    return (not busy and pl.get("source") in (None, "startup", "resume") and meta.get("second_session") != c.now()[:10]
+            and not meta.get("sensitive"))
 
 
 def _resume_turn(pl, sd):

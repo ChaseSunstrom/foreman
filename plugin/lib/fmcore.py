@@ -1644,11 +1644,11 @@ def routing_problem(r):
     strs = lambda v: isinstance(v, list) and all(isinstance(x, str) and 0 < len(x) <= 60 for x in v)
     if not isinstance(r, dict):
         return "not a JSON object"
-    for key in ("stage_words", "builtin_skills"):
+    for key in ("stage_words", "builtin_skills", "lens_words", "lens_builtin"):
         v = r.get(key, {})
         if not isinstance(v, dict) or not all(isinstance(k, str) and strs(x) for k, x in v.items()):
             return f"{key} must map stage names to lists of strings"
-    if any(not re.fullmatch(r"[\w:.-]+", x) for x in sum((r.get("builtin_skills") or {}).values(), [])):
+    if any(not re.fullmatch(r"[\w:.-]+", x) for k in ("builtin_skills", "lens_builtin") for x in sum((r.get(k) or {}).values(), [])):
         return "builtin_skills must be plain skill names"
     if not strs(r.get("ui_words", [])):
         return "ui_words must be a list of strings"

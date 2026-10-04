@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm second` (T-0276, batch of T-0230/T-0232/T-0233/T-0235): one primitive for an independent second read — `plan` (another model critiques a plan before execution), `debate` (a rebuttal brief: only findings a second reviewer confirms count), `session` (once a day, the last session's messages read for requests nobody answered, captured as self items); `fm audit prep` names installed review skills per lens.
 - Flake ledger and typo help (T-0274): `fm check` names tests that failed and then passed on the same tree (or on its one rerun) as flaky, and calls out a known flake failing again; a mistyped fm command or flag gets "did you mean …?".
 - `fm task prove ID --hunks` (T-0271): removes each code hunk of a task's change on its own and runs the check; hunks the check doesn't notice are named and recorded as inconclusive — a check that passes for the wrong reason now shows.
 - `fm doctor` now notices crash damage (T-0268): empty git objects in Foreman's or a project's repo, empty briefs, state JSON that no longer parses; `fm doctor --repair` quarantines the empty objects.
