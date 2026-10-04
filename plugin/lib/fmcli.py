@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import time
 
 import fmcore as c
 
@@ -523,6 +524,102 @@ def _commit_task(p, b, message):
     print(f"{b.id}: committed {sha} ({len(files)} path(s)).")
 
 
+def _hunks(diff):
+    """[(file, header, hunk)] from a -U0 git diff: each hunk with its file's header, so it applies on its own."""
+    out = []
+    for block in re.split(r"(?m)^(?=diff --git )", diff):
+        head, _, body = block.partition("\n@@")
+        m = re.search(r"(?m)^\+\+\+ b/(.+?)\t?$", head) or re.search(r"(?m)^--- a/(.+?)\t?$", head)  # a\tb: spaces
+        if not m or not body:
+            continue
+        for h in re.split(r"(?m)^(?=@@)", "@@" + body):
+            if h.startswith("@@"):
+                out.append((m.group(1), head + "\n", h if h.endswith("\n") else h + "\n"))
+    return out
+
+
+def task_prove_hunks(p, b, args):
+    """T-0271: revert each code hunk of the task's diff alone, in a detached worktree of the current tree, and run the
+    check: a hunk whose removal still passes is unproven — the check doesn't test that part of the change."""
+    # ponytail: git -U0 hunks, so a whole new function is one hunk (removing it fails anything that calls it); split
+    # big added hunks into statements if coarse hunks start hiding untested branches
+    import subprocess
+    import tempfile
+    base, tree = c.task_base(p.root, b), c.worktree_tree(p.root)
+    if not base or not tree:
+        raise UsageError(f"{b.id} has no start snapshot or the working tree can't be read: prove --hunks needs both")
+    files = [f for f in c._git(p.root, "diff", "--name-only", "--no-renames", base, tree, timeout=60).splitlines()
+             if c.CODE.search(f) and not c.TESTISH.search(f)]
+    hunks = _hunks(c._git(p.root, "--literal-pathspecs", "diff", "--no-color", "--no-ext-diff", "--no-renames", "-U0",
+                          base, tree, "--", *files, timeout=120)) if files else []
+    if not hunks:
+        return out(args, {"total": 0, "proven": 0, "unproven": []}, f"{b.id}: no code hunks to prove (tests and docs "
+                                                                    f"aren't mutated)")
+    shown = hunks[:args.max]
+    commit = c._git(p.root, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
+                    "commit-tree", "--no-gpg-sign", tree, "-m", "fm prove --hunks", timeout=60).strip()
+    if not commit:
+        raise UsageError("git commit-tree of the current tree failed: prove --hunks needs a scratch commit of it")
+    unproven, skipped, tick = [], [], [time.time() + 2]
+
+    def touch(path):  # each version gets its own whole second: caches keyed on mtime + size (Python's .pyc, make)
+        tick[0] += 2  # would otherwise reuse the other version's build when the edit keeps the size
+        if os.path.exists(path):
+            os.utime(path, (tick[0], tick[0]))
+
+    def restore(wt, f):  # tracked files back to the commit, and a deleted file that -R recreated removed again
+        ok = c._git(wt, "reset", "-q", "--hard", fail=None, timeout=60) is not None
+        ok = c._git(wt, "clean", "-fdq", fail=None, timeout=60) is not None and ok
+        touch(os.path.join(wt, f))
+        return ok
+    with tempfile.TemporaryDirectory(prefix="fm-hunks-") as t:
+        wt = os.path.join(t, "wt")
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, commit, timeout=120)
+        if not os.path.isdir(wt):
+            raise UsageError("git worktree add for the current tree failed")
+        try:
+            code, output = c.run_command(wt, args.run, args.timeout)  # review: a check that fails anyway proves nothing
+            if code:
+                raise UsageError(f"the check fails on the unchanged tree in the scratch worktree ({c.run_result(code, output)})"
+                                 f": fix it first — ignored files (.venv, node_modules, builds) aren't copied there")
+            for f, head, h in shown:
+                r = subprocess.run(["git", "-C", wt, "apply", "-R", "--unidiff-zero", "-"], input=head + h, text=True,
+                                   capture_output=True, timeout=60)
+                if r.returncode:
+                    skipped.append(f"{f}: not applied ({r.stderr.strip()[:80]})")
+                    continue
+                touch(os.path.join(wt, f))
+                code, _ = c.run_command(wt, args.run, args.timeout)
+                if not restore(wt, f):
+                    skipped.append(f"{f}: the scratch tree couldn't be restored; stopped")
+                    break
+                if code == 124:  # a timeout isn't a failure the check caught
+                    skipped.append(f"{f} {h.split(chr(10), 1)[0]}: the check timed out")
+                elif code == 0:
+                    unproven.append({"file": f, "at": h.split("\n", 1)[0], "text": c.fit(c.plain(
+                        " ".join(x[1:].strip() for x in h.splitlines()[1:] if x[:1] in "+-")), 120)})
+        finally:
+            c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
+            c._git(p.root, "worktree", "prune", timeout=30)
+    tested = len(shown) - len(skipped)
+    proven = tested - len(unproven)
+    left = len(hunks) - len(shown)
+    summary = f"{proven}/{tested} hunks proven" + (f", {len(skipped)} not tested" if skipped else "") + (
+        f", {left} more not run (--max)" if left else "")
+    complete = not unproven and not skipped and not left and tested > 0  # review: only a full run is a pass
+    detail = "; unproven: " + "; ".join(f"{u['file']} {u['at']}" for u in unproven) if unproven else ""
+    mutate(p, b.id, lambda x: x.add_evidence(f"fm task prove --hunks: {args.run}",
+                                             ("exit 0 · " if complete else "") + summary + detail,
+                                             step=args.step, ac=args.ac, tree=c.worktree_id(p.root), ran=True,
+                                             inconclusive=not complete),
+           "prove", {"cmd": args.run[:200], "hunks": tested, "proven": proven})
+    out(args, {"total": tested, "proven": proven, "unproven": unproven, "skipped": skipped, "not_run": left},
+        f"{b.id}: {summary}" + "".join(f"\n  unproven: {u['file']} {u['at']} — {u['text']}" for u in unproven)
+        + "".join(f"\n  not tested: {x}" for x in skipped)
+        + ("\n  Each unproven hunk can be removed without the check noticing: test it, or say why not." if unproven else ""))
+    return 0 if complete else 1
+
+
 def task_prove(p, args):
     """T-0059: run a test on the tree the task started from with only this task's test files brought over (it must
     fail there) and on the current tree (it must pass). Both runs are recorded, so red→green holds for FIX tasks."""
@@ -530,6 +627,8 @@ def task_prove(p, args):
     import tempfile
     import fmmap
     b = need_brief(p, args.id)
+    if args.hunks:
+        return task_prove_hunks(p, b, args)
     base = b.meta.get("base")
     if not base:
         raise UsageError(f"{b.id} has no start commit on record: prove needs the tree the task started from")
@@ -1964,6 +2063,9 @@ def build_parser():
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
     t.add_argument("--run", required=True, help="the test command")
+    t.add_argument("--hunks", action="store_true",
+                   help="revert each code hunk of the task's diff alone: name the ones the check doesn't notice")
+    t.add_argument("--max", type=int, default=20, help="--hunks: at most this many hunks (one check run each)")
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
