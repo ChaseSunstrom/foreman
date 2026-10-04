@@ -237,3 +237,53 @@ def cmd_ideas(args):
               + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else ""))
     if failed:
         raise fmcli.UsageError(f"brainstorm lens(es) failed: {', '.join(failed)} (the others are saved)")
+
+
+ORACLE = """You write the test oracle for one software change from its specification alone: you never see the code,
+so your examples can't mirror an implementation. Describe observable behaviour only (inputs, outputs, files, exit
+codes, messages), never internal APIs or names you'd have to guess.
+Reply in exactly this shape:
+## Examples
+- GIVEN <state> WHEN <action> THEN <observable result>
+(5-12 lines: the main path, edge cases, errors and the criteria's own checks)
+## Ambiguities
+- <question> — <the readings, and how the tests would differ>
+(or a single line "- none")"""
+
+
+def cmd_oracle(args):
+    """T-0226: behaviour examples and ambiguities for a task from its request, interpretation and criteria only (a
+    tool-less child in a scratch folder: no code, no repo), saved in the brief's Oracle section before tests are written."""
+    import fmcli
+    p = fmcli.resolve(args)
+    b = fmcli.need_brief(p, args.id)
+    spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in
+                        ("Raw request", "Interpretation", "Acceptance criteria", "Non-goals") if b.section(name).strip())
+    spec = f"Task: {b.title} ({b.type})\n\n{spec or b.title}\n"
+    with tempfile.TemporaryDirectory(prefix="fm-oracle-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
+        try:
+            r = subprocess.run(child_cmd(args.model, ORACLE), input=spec, cwd=cwd, capture_output=True, text=True,
+                               timeout=args.timeout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            raise fmcli.UsageError(f"the oracle child didn't run: {e} (is `claude` on PATH and logged in?)")
+    parts = {k: [] for k in ("Examples", "Ambiguities")}
+    head = None
+    for line in r.stdout.splitlines():
+        m = re.match(r"#+\s*(Examples|Ambiguities)\b", line.strip(), re.I)
+        if m:
+            head = m.group(1).capitalize()
+        elif head and line.strip().startswith("- "):
+            parts[head].append(c.fit(c.defang(c.redact(line.strip()[2:].strip())), 300))
+    examples = parts["Examples"]
+    ambiguities = [x for x in parts["Ambiguities"] if x.lower().strip(". ") != "none"]
+    if r.returncode or not examples:
+        raise fmcli.UsageError(f"no examples came back (exit {r.returncode}: {c.fit((r.stderr or r.stdout).strip(), 160)})")
+    text = ("Examples from the request alone, before the code was read (write tests from these):\n"
+            + "".join(f"- {x}\n" for x in examples)
+            + ("Ambiguities (decide each with fm decide, or ask, before the tests):\n" + "".join(f"- {x}\n" for x in ambiguities)
+               if ambiguities else "Ambiguities: none found.\n"))
+    fmcli.mutate(p, b.id, lambda br: br.set_section("Oracle", text), "oracle",
+                 {"examples": len(examples), "ambiguities": len(ambiguities)})
+    fmcli.out(args, {"examples": examples, "ambiguities": ambiguities},
+              f"{b.id}: oracle saved — {len(examples)} example(s), {len(ambiguities)} ambiguit"
+              f"{'y' if len(ambiguities) == 1 else 'ies'}\n" + text)

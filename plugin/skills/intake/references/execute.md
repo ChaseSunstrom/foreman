@@ -1,6 +1,7 @@
 # Execute loop (reference)
 
 ## Per step
+0. M/L FEATURE or FIX, before reading the code for the tests: `fm oracle ID` (T-0226) writes behaviour examples and ambiguities from the request alone into the brief's Oracle section. Write the tests from those examples, so they check what was asked rather than mirror what you build; settle each ambiguity with `fm decide` first.
 1. `fm resume` if you are not sure where you are. Work only on the CURRENT step.
 2. Do the work. Stay in scope; out-of-scope edits → widen scope (`fm task set ID scope=…`) or log why (`fm task log ID "scope: <why>"`; `fm task done` asks for one), or `fm capture`. Big file: `fm outline PATH`, then Read only the range you need.
 3. Verify with a fresh command (tests, build, lint, a reproduction). Read the whole output.

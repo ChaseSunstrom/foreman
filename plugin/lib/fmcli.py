@@ -1616,7 +1616,7 @@ class _Parser(argparse.ArgumentParser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
+    ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas oracle pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
@@ -2000,6 +2000,12 @@ def build_parser():
     s.add_argument("--live", help="reuse these earlier live results instead of replaying live again")
     s.add_argument("--budget", type=float, default=3.0)
     s.add_argument("--timeout", type=int, default=30)
+
+    s = add("oracle", lazy("fmideas", "cmd_oracle"), help="behaviour examples and ambiguities from the task's spec alone, "
+                                                           "before the code is read (T-0226)")
+    s.add_argument("id")
+    s.add_argument("--model", default="sonnet")
+    s.add_argument("--timeout", type=int, default=300)
 
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
