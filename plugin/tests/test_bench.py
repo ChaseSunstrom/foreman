@@ -178,6 +178,28 @@ class Bench(ForemanTestCase):
         self.assertEqual(pricey.returncode, 1, "more passes don't buy 50% more cost")
         self.assertIn("cost", pricey.stdout)
 
+    def test_any_commit_with_a_test_and_a_fix_is_a_case(self):
+        # T-0222: bench from a repo's own history, no Foreman brief needed
+        self.write("calc.py", "def double(x):\n    return x * 2\n\n\ndef half(x):\n    return x / 2\n")
+        self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.")
+        sha = git(self.repo, "rev-parse", "HEAD")
+        self.write("tests/test_more.py", "print('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "more tests")
+        res = json.loads(self.fm("bench", "build", "--commits", "HEAD~2..HEAD", "--verify",
+                                 "PYTHONPATH=. python3 {tests}", "--json", env=self.env).stdout)
+        self.assertEqual([x["id"] for x in res["cases"]], [f"C-{sha[:10]}"])
+        case = res["cases"][0]
+        self.assertEqual(case["verify"], ["PYTHONPATH=. python3 tests/test_half.py"])
+        self.assertIn("half(x) divides by two", case["prompt"])
+        self.assertIn("tests only", " ".join(res["skipped"]))
+        self.fm("bench", "build", env=self.env)
+        ids = [x["id"] for x in json.loads(self.fm("bench", "list", "--json", env=self.env).stdout)["cases"]]
+        self.assertIn(f"C-{sha[:10]}", ids, "a brief build keeps the commit cases")
+        self.assertIn(self.tid, ids)
+
     def test_a_plugin_without_the_guard_or_credentials_never_runs(self):
         # security review: replays run in bypass mode like the user's sessions, so the guard must come with them
         self.fm("bench", "build", env=self.env)

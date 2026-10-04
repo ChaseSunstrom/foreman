@@ -1957,6 +1957,10 @@ def build_parser():
             b.add_argument("--ids", nargs="+", help="only these task ids")
         if name == "build":
             b.add_argument("--last", type=int, default=30, help="finished tasks to consider, newest first")
+            b.add_argument("--commits", metavar="RANGE", help="cases from this git range's commits instead of briefs "
+                                                                "(any repo; needs --verify)")
+            b.add_argument("--verify", metavar="CMD", help="with --commits: the command that grades a case; {tests} "
+                                                            "becomes its test files")
         if name == "run":
             b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
             b.add_argument("--max", type=int, default=3, help="cases to run")

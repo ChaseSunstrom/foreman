@@ -15,6 +15,7 @@ import glob
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -117,6 +118,32 @@ def build(p, ids=None, last=30):
                 "tests": tests, "verify": verify, "prompt": prompt}
         why = validate(p, case)
         (skipped.append(f"{b.id}: {why}") if why else cases.append(case))
+    return cases, skipped
+
+
+DOC_FILE = re.compile(r"\.(md|rst|txt|adoc)$|(^|/)(docs?|CHANGELOG|LICENSE)", re.I)
+
+
+def build_commits(p, rng, verify, last=30):
+    """T-0222: (cases, skipped) from a repo's own commits: one that adds or changes test files and source becomes a
+    case (prompt: its message; verify: the given command, {tests} → its test files), validated fail-to-pass."""
+    cases, skipped = [], []
+    for sha in _git(p.root, "rev-list", "--no-merges", f"--max-count={last}", rng).stdout.split():
+        cid = f"C-{sha[:10]}"
+        base = _git(p.root, "rev-parse", "-q", "--verify", f"{sha}^").stdout.strip()
+        files = [f for f in _git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha)
+                 .stdout.split("\0") if f]
+        tests = sorted(f for f in files if TEST_FILE.search(f))
+        src = [f for f in files if not TEST_FILE.search(f) and not DOC_FILE.search(f)]
+        msg = _git(p.root, "log", "-1", "--format=%B", sha).stdout.strip()
+        if not base or not tests or not src:
+            skipped.append(f"{cid}: " + ("a root commit" if not base else "no test files" if not tests else "tests only"))
+            continue
+        case = {"id": cid, "title": c.fit(msg.splitlines()[0] if msg else sha, 100), "tier": "?", "type": "COMMIT",
+                "commit": sha, "base": base, "tests": tests, "prompt": c.plain(msg) or cid,
+                "verify": [verify.replace("{tests}", " ".join(shlex.quote(t) for t in tests))]}
+        why = validate(p, case)
+        (skipped.append(f"{cid}: {why}") if why else cases.append(case))
     return cases, skipped
 
 
@@ -274,9 +301,18 @@ def cmd_bench(args):
     import fmcli
     p = fmcli.resolve(args)
     if args.bench_cmd == "build":
-        cases, skipped = build(p, ids=set(args.ids or []) or None, last=args.last)
-        if args.ids:  # --ids adds or refreshes those cases; the rest stay
-            cases += [x for x in _load_cases(p) if x["id"] not in {y["id"] for y in cases} | set(args.ids)]
+        if bool(args.commits) != bool(args.verify):
+            raise fmcli.UsageError("--commits RANGE and --verify CMD go together (CMD may use {tests})")
+        if args.commits:
+            cases, skipped = build_commits(p, args.commits, args.verify, args.last)
+        else:
+            cases, skipped = build(p, ids=set(args.ids or []) or None, last=args.last)
+        new = {y["id"] for y in cases}
+        # --ids and --commits add or refresh their cases; a full rebuild from briefs keeps the commit cases
+        keep = (lambda x: x["id"] not in new) if args.commits else \
+            (lambda x: x["id"] not in new | set(args.ids)) if args.ids else \
+            (lambda x: x["id"].startswith("C-") and x["id"] not in new)
+        cases += [x for x in _load_cases(p) if keep(x)]
         os.makedirs(os.path.dirname(_cases_path(p)), exist_ok=True)
         c.write_atomic(_cases_path(p), json.dumps(cases, indent=1))
         return fmcli.out(args, {"cases": cases, "skipped": skipped},
