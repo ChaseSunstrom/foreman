@@ -1339,6 +1339,8 @@ export const register: Register = (on, options) => {
               <Text key={`research-${r.name}`} wrap="truncate-end">
                 <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
                 <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
+                {(r.conflicts ?? 0) > 0 && <Text color={hex(C.warn)}> · ⟷{r.conflicts} conflict{r.conflicts === 1 ? '' : 's'}</Text>}
+                {(r.single ?? 0) > 0 && <Text color={hex(C.dim)}> · {r.single} single-source</Text>}
               </Text>
             ))}
           </Box>

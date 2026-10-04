@@ -42,7 +42,7 @@ export type FmBench = {
   last: { label: string; passed: number; total: number; cost_usd: number; at?: string | null } | null
   evolve: { kept: boolean | null; branch: string | null; target: string | null; why: string | null; at?: string }[]
 }
-export type FmResearchAsk = { name: string; claims: number; verified: number; not_found: number; unchecked: number; at?: string }
+export type FmResearchAsk = { name: string; claims: number; verified: number; not_found: number; unchecked: number; at?: string; conflicts?: number; single?: number }
 export type FmApproval = { task: string; allow: string[]; why: string }
 export type FmView = {
   v: number

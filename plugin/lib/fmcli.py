@@ -2023,7 +2023,10 @@ def build_parser():
     r = rsp.add_parser("ask", help="recall first, then parallel web researchers per sub-question; every quoted claim "
                                    "is checked against the page it cites; one note saved (T-0206)")
     r.set_defaults(fn=lazy("fmresearch", "cmd_ask"))
-    r.add_argument("question")
+    r.add_argument("question", nargs="?")
+    r.add_argument("--file", help="a file of questions, one per line: one note each (T-0239)")
+    r.add_argument("--quorum", metavar="MODEL", help="research each sub-question on this second model too; claims both "
+                                                      "models make are marked (T-0229)")
     r.add_argument("--sub", action="append", help="a sub-question (repeatable); default: a planner child splits it")
     r.add_argument("--fanout", type=int, default=3, help="most sub-questions researched at once")
     r.add_argument("--model", default="sonnet")

@@ -268,7 +268,7 @@ const NEWS: FmView = {
     last: { label: 'evolve-20261004-001230-cand', passed: 1, total: 1, cost_usd: 0.13 },
     evolve: [{ kept: false, branch: 'evolve/20261004-001230', target: 'plugin/skills/intake/SKILL.md', why: 'tighter verify lines' }],
   },
-  research: [{ name: 'ask-tomllib-since-which-version-20261004-0000', claims: 8, verified: 7, not_found: 1, unchecked: 0 }],
+  research: [{ name: 'ask-tomllib-since-which-version-20261004-0000', claims: 8, verified: 7, not_found: 1, unchecked: 0, conflicts: 2, single: 3 }],
   revisit: [{ date: '2026-09-01', decision: 'keep the 60s token TTL', why: 'auth.py changed' }],
   vetoes: ['never push without asking', "don't touch the lockfile"],
 }
@@ -291,6 +291,8 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
     /\? 1 unverified assumption: the delimiter is always a comma/,
     /✗ dropped .*SKILL\.md · tighter verify lines/,
     /tomllib-since-which-version/,
+    /⟷2 conflicts/,
+    /3 single-source/,
     /◆ revisit: keep the 60s token TTL \(auth\.py changed\)/,
     /✋ you said: never push without asking · 1 more/,
   ])

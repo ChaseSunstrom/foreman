@@ -297,7 +297,8 @@ def _bench(p, events):
 def _research_asks(events):
     """T-0228: the newest fm research ask notes with their claim counts."""
     return [{"name": d.get("name"), "claims": d.get("claims"), "verified": d.get("verified"),
-             "not_found": d.get("not found"), "unchecked": d.get("unchecked"), "at": e.get("ts")}
+             "not_found": d.get("not found"), "unchecked": d.get("unchecked"), "at": e.get("ts"),
+             "conflicts": d.get("conflicts") or 0, "single": d.get("single") or 0}  # T-0277
             for e in reversed(events) if e.get("event") == "research" and "claims" in (d := e.get("data") or {})][:3]
 
 

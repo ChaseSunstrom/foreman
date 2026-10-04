@@ -70,7 +70,7 @@ class UiView(ForemanTestCase):
         self.assertIn("day", v["budget"]["caps"])
         self.assertEqual(v["budget"]["top"][0]["feature"], "bench")
         self.assertEqual(v["research"][0], {"name": "ask-parser-speed", "claims": 5, "verified": 3, "not_found": 1,
-                                            "unchecked": 1, "at": v["research"][0]["at"]})
+                                            "unchecked": 1, "at": v["research"][0]["at"], "conflicts": 0, "single": 0})
         self.assertEqual(v["bench"]["evolve"][0]["target"], "plugin/rules/foreman.md")
         a = v["active"]
         self.assertEqual(a["hypotheses"], [{"n": 1, "status": "open",
