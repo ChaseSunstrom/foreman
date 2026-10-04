@@ -97,7 +97,10 @@ def cmd_landscape(args):
 # ---------------------------------------------------------------- deps
 
 _REQ = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*(===|==|>=|~=|>)\s*v?([0-9][^\s,;#]*)([^;#\n]*)")
-_NPM_NAME = re.compile(r"^(?:@[a-z0-9][\w.-]*/)?[a-z0-9][\w.-]*$", re.I)
+# T-0281: a cloned repo's manifest and a registry's answer are untrusted: names and versions reach the terminal and the
+# research question only in these shapes
+_NAME = re.compile(r"^(?:@[A-Za-z0-9][\w.-]*/)?[A-Za-z0-9][\w.-]{0,100}$")
+_VERSION = re.compile(r"^v?\d[\w.+-]{0,40}$")
 
 
 def _pip(m):
@@ -142,7 +145,7 @@ def dependencies(root):
         pkg = {}
     for key in ("dependencies", "devDependencies"):
         for n, v in (pkg.get(key) or {}).items() if isinstance(pkg, dict) else []:
-            if isinstance(v, str) and re.match(r"^[\^~>=<v ]*\d", v) and _NPM_NAME.match(n):  # not git:, file:, *
+            if isinstance(v, str) and re.match(r"^[\^~>=<v ]*\d", v):  # not git:, file:, workspace:, *, latest
                 out.append(("npm", n, re.sub(r"^[\^~>=<v ]*", "", v), _capped(v)))
     cargo = _toml(os.path.join(root, "Cargo.toml"))
     for key in ("dependencies", "dev-dependencies"):
@@ -150,6 +153,8 @@ def dependencies(root):
             v = v.get("version", "") if isinstance(v, dict) else v
             if isinstance(v, str) and re.search(r"\d", v):
                 out.append(("crates", n, re.sub(r"^[^\d]*", "", v), _capped(v)))
+    out = [(e, n, m.group(0), cap) for e, n, v, cap in out
+           if isinstance(n, str) and _NAME.match(n) and (m := re.search(r"\d[\w.+-]{0,40}", v))]
     return list(dict.fromkeys(out))[:200]
 
 
@@ -162,8 +167,12 @@ def latest(eco, name, timeout=10):
     """(version, None) or (None, why) from the ecosystem's registry (its base URL overridable by environment)."""
     env, base, path, keys = REGISTRY[eco]
     url = os.environ.get(env, base).rstrip("/") + path.format(name=urllib.parse.quote(name, safe=""))
-    if env not in os.environ and not fmresearch.public_https(url):  # an override (a mirror, a test) is the user's call
-        return None, "not a public https URL"
+    u = urllib.parse.urlsplit(url)
+    # an override (a mirror, a test) may be any https host or loopback http; nothing else (T-0281: no metadata or LAN
+    # endpoint over plain http, no file:). ponytail: an https override isn't resolved and checked; pin it if it matters
+    if not (fmresearch.public_https(url) or env in os.environ and (
+            u.scheme == "https" or u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1"))):
+        return None, "not a public https URL (or a loopback override)"
     req = urllib.request.Request(url, headers={"User-Agent": "Foreman fm deps (dependency release check)",
                                                "Accept": "application/json"})
     try:  # review: redirects re-checked as public https, like fm research's fetch
@@ -171,11 +180,11 @@ def latest(eco, name, timeout=10):
             data = json.loads(resp.read(2_000_000))
         for k in keys:
             data = data.get(k) if isinstance(data, dict) else None
-        return (data, None) if isinstance(data, str) and data else (None, "no version in the answer")
+        return (data, None) if isinstance(data, str) and _VERSION.match(data) else (None, "no usable version in the answer")
     except urllib.error.HTTPError as e:
         return None, f"HTTP {e.code}"
     except (urllib.error.URLError, OSError, ValueError, http.client.HTTPException) as e:
-        return None, c.fit(str(getattr(e, "reason", e)), 60)
+        return None, c.fit(c.plain(str(getattr(e, "reason", e))), 60)
 
 
 def cmd_deps(args):
