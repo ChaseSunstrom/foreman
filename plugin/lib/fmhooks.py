@@ -444,7 +444,8 @@ def user_prompt_submit(pl):
         tags = ", ".join(i.type + ("!" if i.urgent else "") + ("?" if i.explore else "") for i in r.items)
         n = len(r.items)
         parts.append(f"Message has {n} intake item{'s' if n > 1 else ''} ({tags})"
-                     + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip else "")
+                     + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip
+                        or any(i.own for i in r.items) else "")
                      + "; canonical order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE (fm intake prints it)")
     if c.is_plan_only(text):
         parts.append("Plan-only request: drive won't start implementation until the next message")

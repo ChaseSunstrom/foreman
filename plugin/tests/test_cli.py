@@ -61,6 +61,23 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertEqual(clean.priority, "urgent")
         self.assertTrue(c.find_brief(p, res["created"][3]["id"]).meta.get("explore"))
 
+    def test_lines_between_items_belong_to_the_item_above(self):
+        # T-0259: a 30-item block gave every item every item's CONTEXT and DONE-WHEN
+        block = ("CONTEXT: shared repo note\nFEATURE: export CSV\nCONTEXT: reports.py\nDONE-WHEN: the CSV opens\n"
+                 "FIX: login timeout\nCONTEXT: auth/session.py\nDONE-WHEN: login works on 3G\nSKIP: OAuth\n")
+        res = json.loads(self.fm("intake", "--json", input=block).stdout)
+        p = c.find_project(self.repo)
+        feat, fix = (c.find_brief(p, x["id"]) for x in res["created"])
+        for b in (feat, fix):
+            self.assertIn("shared repo note", b.section("Raw request"), "lines before the first item are for all")
+        self.assertIn("the CSV opens", feat.section("Raw request"))
+        self.assertNotIn("login works", feat.section("Raw request"))
+        self.assertNotIn("auth/session.py", feat.section("Raw request"))
+        self.assertIn("login works on 3G", fix.section("Raw request"))
+        self.assertNotIn("reports.py", fix.section("Raw request"))
+        self.assertIn("OAuth", fix.section("Non-goals"))
+        self.assertNotIn("OAuth", feat.section("Non-goals"))
+
     def test_intake_ref_becomes_dependency(self):
         self.fm("task", "new", "Base work", "--type", "CLEAN", "--tier", "S")
         res = json.loads(self.fm("intake", "--json", input="FEATURE: build on it #T-0001\n").stdout)

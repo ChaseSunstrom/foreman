@@ -92,12 +92,17 @@ def cmd_state(args):
         print(text.rstrip("\n"))
 
 
+def _block(item, r, key):
+    """The block's lines for every item, then the item's own (T-0259)."""
+    return getattr(r, key) + (item.own or {}).get(key, [])
+
+
 def _raw_with_block(item, r):
     lines = [item.raw.strip() or f"{item.type}: {item.text}"]
-    lines += [f"CONTEXT: {v}" for v in r.context]
-    lines += [v if v.startswith(("MUST:", "NEVER:")) else f"CONSTRAINT: {v}" for v in r.constraints]
-    lines += [f"DONE-WHEN: {v}" for v in r.done_when]
-    lines += [f"SKIP: {v}" for v in r.skip]
+    lines += [f"CONTEXT: {v}" for v in _block(item, r, "context")]
+    lines += [v if v.startswith(("MUST:", "NEVER:")) else f"CONSTRAINT: {v}" for v in _block(item, r, "constraints")]
+    lines += [f"DONE-WHEN: {v}" for v in _block(item, r, "done_when")]
+    lines += [f"SKIP: {v}" for v in _block(item, r, "skip")]
     return "\n".join(lines)
 
 
@@ -125,8 +130,8 @@ def cmd_intake(args):
             b = _create(p, _title(item.text), item.type, c.guess_tier(item.type, item.text), "captured",
                         raw=_raw_with_block(item, r), scope=item.scopes, depends=item.refs,
                         priority="urgent" if item.urgent else "normal", explore=item.explore)
-            if r.skip:
-                b.set_section("Non-goals", "".join(f"- {s}\n" for s in r.skip))
+            if _block(item, r, "skip"):
+                b.set_section("Non-goals", "".join(f"- {s}\n" for s in _block(item, r, "skip")))
                 c.save_brief(p, b, touch=False)
             created.append(b)
         c.log_event(p, "intake", data={"created": [b.id for b in created], "overrides": r.overrides,

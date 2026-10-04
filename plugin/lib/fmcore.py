@@ -1257,6 +1257,7 @@ class IntakeItem:
     scopes: list = []
     refs: list = []
     raw: str = ""
+    own: dict = {}  # T-0259: block lines (context, constraints, done_when, skip) that belong to this item alone
 
 
 @record
@@ -1348,7 +1349,7 @@ def parse_intake(text):
         r.overrides.append("STANDARD")
     elif re.match(r"^that(?:'s| is) for the current task\b", whole):
         r.overrides.append("STEER")
-    untagged, current = [], None
+    untagged, current, lines = [], None, []  # lines: [key, value, index of the item above or -1]
     for line in text.splitlines():
         if not line.strip():
             current = None
@@ -1360,7 +1361,7 @@ def parse_intake(text):
                 current.scopes = _SCOPE_RE.findall(current.text)
                 current.refs = _REF_RE.findall(current.text)
             else:
-                getattr(r, current)[-1] += " " + line.strip()
+                current[1] += " " + line.strip()
             continue
         body, is_now = line.strip(), False
         m_now = re.match(r"^NOW:\s*(.*)$", body, re.I)
@@ -1377,13 +1378,22 @@ def parse_intake(text):
             r.items.append(item)
             current = item
         elif tag in BLOCK_TAGS:
-            key = BLOCK_TAGS[tag]
             val = m.group("text").strip()
-            getattr(r, key).append(f"{tag}: {val}" if tag in ("MUST", "NEVER") else val)
-            current = key
+            current = [BLOCK_TAGS[tag], f"{tag}: {val}" if tag in ("MUST", "NEVER") else val, len(r.items) - 1]
+            lines.append(current)
         else:
             untagged.append(body)
             current = None
+    # T-0259: lines between items belong to the item above; lines that all trail the items (the README's form) and
+    # lines before the first item are for every item
+    interleaved = any(0 <= idx < len(r.items) - 1 for _, _, idx in lines)
+    for item in r.items:
+        item.own = {}
+    for key, val, idx in lines:
+        if interleaved and idx >= 0:
+            r.items[idx].own.setdefault(key, []).append(val)
+        else:
+            getattr(r, key).append(val)
     r.untagged = "\n".join(untagged)
     return r
 
