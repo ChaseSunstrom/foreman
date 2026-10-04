@@ -1618,7 +1618,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
-    ("Reports", "digest cost usage repeats friction taste evals replay bench"),
+    ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -1985,6 +1985,21 @@ def build_parser():
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")
+
+    s = add("evolve", lazy("fmevolve", "cmd_evolve"), help="one bench-gated generation: revise (or --drop) one Foreman "
+                                                            "instruction file on an evolve branch, bench both, gate (T-0224)")
+    s.add_argument("--target", required=True, help="the file to revise, relative to the repo (e.g. plugin/skills/x/SKILL.md)")
+    s.add_argument("--drop", action="store_true", help="empty the file instead (ablation)")
+    s.add_argument("--repo", help="Foreman's repo (default: the one holding this plugin)")
+    s.add_argument("--plugin-dir", default="plugin", help="the plugin folder inside the repo")
+    s.add_argument("--ids", nargs="+", help="only these bench cases")
+    s.add_argument("--max", type=int, default=3)
+    s.add_argument("--runs", type=int, default=1)
+    s.add_argument("--model", help="the model the replays run on")
+    s.add_argument("--mutate-model", default="sonnet")
+    s.add_argument("--live", help="reuse these earlier live results instead of replaying live again")
+    s.add_argument("--budget", type=float, default=3.0)
+    s.add_argument("--timeout", type=int, default=30)
 
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")

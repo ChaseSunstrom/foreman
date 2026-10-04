@@ -293,6 +293,27 @@ def recommend(by_model, cases):
     return out
 
 
+def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None):
+    """Every case on one plugin, results written after each case (a crash or Ctrl-C keeps what was paid for). Refuses a
+    plugin without the guard here, so no caller can skip it (replays run in bypass mode)."""
+    if not has_guard(plugin):
+        raise ValueError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
+                         f"replays run in bypass mode, so they never run without it")
+    results = []
+    res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results}
+    os.makedirs(_results_dir(p), exist_ok=True)
+    _git(p.root, "worktree", "prune")  # a killed earlier run's worktree
+    for case in cases:
+        print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
+        try:
+            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs))
+        except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
+            results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
+                            "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
+        c.write_atomic(os.path.join(_results_dir(p), label + ".json"), json.dumps(res, indent=1))
+    return res
+
+
 def _results_dir(p):
     return os.path.join(p.dir, "bench", "results")
 
@@ -361,18 +382,11 @@ def cmd_bench(args):
         label = args.label or time.strftime("%Y%m%d-%H%M%S")
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,60}", label):
             raise fmcli.UsageError(f"label must be a plain name, got {label!r}")
-        results = []
-        res = {"label": label, "plugin": plugin, "model": args.model, "at": c.now(), "cases": results}
-        os.makedirs(_results_dir(p), exist_ok=True)
-        _git(p.root, "worktree", "prune")  # a killed earlier run's worktree
-        for case in cases:
-            print(f"bench {label}: {case['id']} …", flush=True) if not args.json else None
-            try:
-                results.append(run_case_n(p, case, plugin, args.model, args.budget, args.timeout, args.runs))
-            except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
-                results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
-                                "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
-            c.write_atomic(os.path.join(_results_dir(p), label + ".json"), json.dumps(res, indent=1))
+        try:
+            res = run_arm(p, cases, plugin, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
+        except ValueError as e:
+            raise fmcli.UsageError(str(e))
+        results = res["cases"]
         with c.lock(p.dir):
             c.log_event(p, "bench", data={"label": label, "passed": sum(x["pass"] for x in results),
                                           "cases": len(results)}, session=fmcli.session())
