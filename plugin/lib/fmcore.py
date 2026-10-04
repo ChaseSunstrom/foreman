@@ -1569,7 +1569,16 @@ def next_for(p, briefs=None):
     if not b:
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)
-    return b, stage(b, autonomy, since), next_action(b, autonomy, since)
+    st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
+    if st == "executing":
+        try:
+            import fmplugins  # T-0205: other plugins' skills, at the moment they fit
+            fit = fmplugins.stage_skills(p, b)
+            if fit:
+                action += f" · installed skills that fit this stage: {', '.join(fit)} (use one if it helps)"
+        except Exception:
+            pass  # a broken plugin registry must never cost the next action
+    return b, st, action
 
 
 def active_brief(briefs, lane=None):

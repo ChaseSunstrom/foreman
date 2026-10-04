@@ -172,7 +172,7 @@ Precedence: your current message > project CLAUDE.md and rules > `rules/foreman.
 | design, figma (synced) | turned off locally | not doing design work |
 | Grafana/InfluxDB/telegraf | history | `plugin/observability/`; enable once the collector endpoint is known |
 
-Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists what Foreman disabled.
+`fm next` also names, while a task executes, up to three installed skills that fit its stage (T-0205): enabled plugins', the user's and the project's skills whose name or first description sentence carries the stage's words (UI words when the scope has UI files), ones invoked before in this project first, then Claude Code's own (`/security-review`, `/simplify`); skills for authoring skills or plugins and ones duplicating Foreman's process are left out. The index is cached in the project's state until the plugin registry, settings or a skills folder changes. Re-enable anything with `claude plugin enable <id>`; `plugin/uninstall.sh` lists what Foreman disabled.
 
 ## 8. Relationship to BUILD_PROMPT.md and the repo
 

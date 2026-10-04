@@ -247,6 +247,79 @@ def check(only=None):
     return found
 
 
+# T-0205: words in a skill's name or description that say it fits a stage, for fm next's hint. Claude Code's own
+# skills for a stage come after the installed ones.
+STAGE_WORDS = {
+    "CLEAN": ("simplif", "over-engineer", "bloat", "dead code", "refactor", "clean up", "cleanup"),
+    "SECURITY": ("security", "vulnerab", "threat model", "secret scan"),
+    "PERFORMANCE": ("performance", "profil", "latency"),
+    "FIX": ("debug", "root cause"),
+    "RESEARCH": ("research", "investigat", "library documentation"),
+    "FEATURE": ("test-driven", "tdd"),
+}
+UI_WORDS = ("frontend", "front-end", "web interface", "user interface", "ui design")
+UI_FILES = re.compile(r"\.(tsx|jsx|vue|svelte|css|scss|html)\b")
+BUILTIN = {"SECURITY": ("security-review",), "CLEAN": ("simplify",)}
+INDEX_VERSION = 2  # bump when what the index keeps changes
+
+
+def _gist(name, desc):
+    """What a skill is for: its name and its description's first sentence (later sentences list side uses: a skill
+    creator "benchmarks skill performance" without being a performance tool)."""
+    return f"{name} {re.split(r'(?<=[.!?])\s', desc.strip(), maxsplit=1)[0]}".lower()
+
+
+def _skill_index(p):
+    """[{name, text}] for the skills and commands Claude can invoke here (enabled plugins', the user's, the project's)
+    and how often each was invoked in this project, cached in the project's state until the plugin registry, the
+    settings or a skills folder changes, or the day does."""
+    root = p.root
+    watch = [os.path.join(claude_dir(), "plugins", "installed_plugins.json"), os.path.join(claude_dir(), "settings.json"),
+             os.path.join(root, ".claude", "settings.json"), os.path.join(root, ".claude", "settings.local.json"),
+             os.path.join(claude_dir(), "skills"), os.path.join(root, ".claude", "skills")]
+    key = [INDEX_VERSION, c.now()[:10]] + [os.path.getmtime(f) if os.path.exists(f) else 0 for f in watch]
+    path = os.path.join(p.dir, "skill-index.json")
+    cached = _json(path, {}) or {}
+    if cached.get("key") == key:
+        return cached
+    skills = []
+    for pid, info in sorted(installed().items()):
+        if info["enabled"] and not pid.startswith("foreman@"):
+            prof = profile(info["path"])
+            skills += [{"name": f"/{pid.split('@')[0]}:{n}", "text": _gist(n, d)} for n, d in prof["skills"] + prof["commands"]]
+    for base in watch[4:]:
+        for f in sorted(glob.glob(os.path.join(base, "*", "SKILL.md"))):
+            fm = _frontmatter(f)
+            name = fm.get("name") or os.path.basename(os.path.dirname(f))
+            skills.append({"name": f"/{name}", "text": _gist(name, fm.get("description", ""))})
+    uses = {}
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 5000):
+        if e.get("tool") == "Skill" and e.get("kind") == "tool" and e.get("project") == p.slug:
+            uses[str(e.get("target"))] = uses.get(str(e.get("target")), 0) + 1
+    data = {"key": key, "skills": skills, "uses": uses}
+    try:
+        c.write_atomic(path, json.dumps(data))
+    except OSError:
+        pass
+    return data
+
+
+def stage_skills(p, b, n=3):
+    """The installed skills that fit a task's stage, ones used before first, then Claude Code's own (T-0205)."""
+    idx = _skill_index(p)
+    words = STAGE_WORDS.get(b.type, ())
+    ui = UI_WORDS if any(UI_FILES.search(str(s)) for s in b.meta.get("scope") or []) else ()
+    owned = [k for keys in FOREMAN_OWNS.values() for k in keys]  # Foreman's own process stays Foreman's
+    hits = []
+    for e in idx.get("skills") or []:
+        score = sum(w in e["text"] for w in words + ui)
+        meta = re.search(r"skill|plugin", e["name"].lower())  # tools for authoring Claude extensions, not the work
+        if score and not meta and not any(k in e["name"].lower() for k in owned):
+            hits.append((-idx["uses"].get(e["name"][1:], 0), -score, e["name"]))
+    names = [h[2] for h in sorted(hits)][:n]
+    return names + [f"/{x}" for x in BUILTIN.get(b.type, ()) if f"/{x}" not in names][:max(0, n - len(names))]
+
+
 def _manifest(key, add=None, drop=None):
     """uninstall-user's record of what fm plugins added (`plugins_installed`, `marketplaces_added`). True if changed."""
     path = os.path.join(c.state_dir(), "install-manifest.json")
