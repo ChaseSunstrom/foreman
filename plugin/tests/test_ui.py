@@ -55,6 +55,8 @@ class UiView(ForemanTestCase):
         fmbudget.record("bench", 0.4, runs=2)
         fmbudget.record("subagent:foreman:fm-reviewer", tokens=12000)
         self.fm("task", "hypo", "T-0001", "add", "the timeout is per request", "--probe", "grep -n timeout x.py")
+        self.fm("task", "assume", "T-0001", "add", "the timeout lives in x.py")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true", "--inconclusive")
         self.fm("task", "set", "T-0001", "--section", "Oracle", "--text",
                 "Examples from the request alone:\n- GIVEN a WHEN b THEN c\nAmbiguities (decide each):\n- which timeout?\n")
         p = c.find_project(self.repo)
@@ -75,6 +77,8 @@ class UiView(ForemanTestCase):
                                             "text": "the timeout is per request — probe: `grep -n timeout x.py`"}])
         self.assertEqual(a["oracle"], {"examples": 1, "ambiguities": ["which timeout?"]})
         self.assertEqual(a["batch"], [])
+        self.assertEqual((a["inconclusive"], a["unverified"]), (1, ["the timeout lives in x.py"]))
+        self.assertTrue(any("≈" in x and "true" in x for x in v["recent"]), v["recent"])
 
     def test_step_text_is_plain(self):
         self.fm("task", "step", "T-0001", "add", "bell\x07 and \x1b[31mred")

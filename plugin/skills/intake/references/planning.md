@@ -17,7 +17,7 @@ When unsure, go one tier up; tiers may change after R2 (`fm task set ID tier=M`,
 ## Brief (created by fm from templates/brief.md)
 Frontmatter: id, type, tier, status (captured|planned|active|verifying|done|blocked|deferred|dropped), priority, scope, depends_on, source, allow (guard authorizations), approved, explore, created, updated.
 Sections: Raw request · Interpretation · Assumptions (confidence) · Acceptance criteria · Non-goals · Approach (options → choice → why) · Risks and rollback · Execution prompt · Steps · Resume here · Verification evidence · Log · Follow-ups captured.
-Edit sections with `fm task set ID --section "<Name>" --text "…"` (or `--file`). Steps with `fm task step`, criteria with `fm task ac`, evidence with `fm task evidence`.
+Assumptions: one bullet per fact, `fm task assume ID add "<fact>"` (`[assumed]`) and `fm task assume ID verify N` once checked (`[verified: how]` / `[false: how]`). Edit sections with `fm task set ID --section "<Name>" --text "…"` (or `--file`). Steps with `fm task step`, criteria with `fm task ac`, evidence with `fm task evidence`.
 
 ## Rubric (self-critique before executing M/L and before any gate; at most two revisions)
 - Every acceptance criterion has a verification command?

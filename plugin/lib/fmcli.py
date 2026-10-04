@@ -194,6 +194,50 @@ def task_hypo(p, args):
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
+def task_assume(p, args):
+    """T-0254: the brief's assumptions say whether they were checked. A check that fails marks it false, not an error."""
+    if args.action == "add":
+        fact = " ".join(args.args).strip()
+        if not fact:
+            raise UsageError("an assumption needs its text")
+        b, n = mutate(p, args.id, lambda b: b.add_assumption(fact), "assumption", {"text": c.redact(fact)[:200]})
+        return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed].")
+    if len(args.args) != 1 or not args.args[0].isdigit() or (args.run is None) == (args.evidence is None):
+        raise UsageError("fm task assume ID verify N --run CMD | --evidence \"<how it was checked>\"")
+    n = int(args.args[0])
+    if not any(a[0] == n for a in need_brief(p, args.id).assumptions()):
+        raise UsageError(f"{args.id} has no assumption {n}")
+    code, shown, how = 0, "", args.evidence
+    if args.run is not None:
+        code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
+        shown = "\n".join(output.rstrip().splitlines()[-20:])
+        how = "`" + args.run.replace("`", "'") + f"` → {c.run_result(code, output)}"
+    status = "verified" if code == 0 else "false"
+    def mark(b):
+        if not b.mark_assumption(n, status, how):  # review: removed since the check above
+            raise UsageError(f"{b.id} has no assumption {n}")
+    b, _ = mutate(p, args.id, mark, "assumption",
+                  {"n": n, "status": status, "how": c.redact(how)[:300]})
+    return out(args, dict(c.brief_summary(b), status=status), (shown + "\n" if shown else "") + (
+        f"{b.id}: assumption {n} verified." if status == "verified" else
+        f"{b.id}: assumption {n} is false — re-check the plan, and log it: fm surprise \"<expected> → <observed>\"."))
+
+
+def cmd_surprise(args):
+    """T-0253: fm surprise "<expected> → <observed>": where the model of the code was wrong; friction and recall bring it back."""
+    p = resolve(args)
+    text = c.redact(c.plain(" ".join(args.text))).strip()
+    if not text:
+        raise UsageError('fm surprise "<expected> → <observed>"')
+    task = need_brief(p, args.task).id if args.task else getattr(c.active_brief(c.load_briefs(p), p.lane), "id", None)
+    rec = {"at": c.now(), "task": task, "text": text[:500]}
+    with c.lock(p.dir):
+        with open(os.path.join(p.dir, "surprises.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+    c.log_event(p, "surprise", task=task, data={"text": text[:300]})
+    return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: fm friction and fm recall will bring it back.")
+
+
 def cmd_task(args):
     p = resolve(args)
     sub = args.task_cmd
@@ -215,6 +259,8 @@ def cmd_task(args):
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "hypo":
         return task_hypo(p, args)
+    if sub == "assume":
+        return task_assume(p, args)
     if sub == "evidence":
         code, shown = 0, ""
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
@@ -229,10 +275,12 @@ def cmd_task(args):
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
         b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree,
-                                                            ran=args.run is not None),
-                      "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300]})
+                                                            ran=args.run is not None, inconclusive=args.inconclusive),
+                      "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300],
+                                   **({"inconclusive": True} if args.inconclusive else {})})
         out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
-            + (f" ({result})." if args.run is not None else "."))
+            + (f" ({result})" if args.run is not None else "")
+            + (" as inconclusive: it never counts as passing; a sharper check is next." if args.inconclusive else "."))
         return code
     if sub == "audit":
         if args.lens not in c.AUDIT_LENSES:
@@ -304,8 +352,12 @@ def cmd_task(args):
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
         grade, why = b.grade()
-        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade),
+        guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
+        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed),
                    f"{b.id} done (verification: {grade} — {why})." + (
+            f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
+            f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
+            if guessed else "") + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
@@ -1697,7 +1749,7 @@ class _Parser(argparse.ArgumentParser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas oracle pr"),
+    ("Finding your way", "help recall surprise why outline impact map secrets quiet audit research ideas oracle pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run ui watch"),
@@ -1846,6 +1898,8 @@ def build_parser():
     t.add_argument("result", nargs="?")
     t.add_argument("--run", metavar="CMD", help="run CMD (bash, repo root) and record its real exit code and output")
     t.add_argument("--timeout", type=float, default=600, help="--run limit in seconds")
+    t.add_argument("--inconclusive", action="store_true",
+                   help="the check neither proves nor disproves: recorded, never counted as passing (exits with the run's code)")
     g = t.add_mutually_exclusive_group()
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
@@ -1880,6 +1934,14 @@ def build_parser():
     t.add_argument("args", nargs="+", help="add: CLAIM · mark: N ruled-out|confirmed|open")
     t.add_argument("--probe", help="add: the command that would tell (recorded, not run)")
     t.add_argument("--run", metavar="CMD", help="mark: run the probe now and record its exit code and output")
+    t.add_argument("--timeout", type=float, default=600)
+    t = tadd("assume")
+    t.add_argument("id")
+    t.add_argument("action", choices=["add", "verify"])
+    t.add_argument("args", nargs="+", help="add: FACT · verify: N (its number in the Assumptions section)")
+    g = t.add_mutually_exclusive_group()
+    g.add_argument("--run", metavar="CMD", help="verify: run CMD; exit 0 marks it verified, anything else false")
+    g.add_argument("--evidence", metavar="HOW", help="verify: how it was checked, when it can't run (file:line read…)")
     t.add_argument("--timeout", type=float, default=600)
     t = tadd("done")
     t.add_argument("id")
@@ -1933,6 +1995,10 @@ def build_parser():
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
+
+    s = add("surprise", cmd_surprise, help="log where the model of the code was wrong: \"<expected> → <observed>\"")
+    s.add_argument("text", nargs="+")
+    s.add_argument("--task", help="the task it came up in (default: the active one)")
 
     s = add("recall", lazy("fmrecall", "cmd_recall"), help="related past work: briefs, decisions, research")
     s.add_argument("text", nargs="*")

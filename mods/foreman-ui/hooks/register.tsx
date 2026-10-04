@@ -1138,6 +1138,17 @@ export const register: Register = (on, options) => {
                   batch of {(a.batch ?? []).join(', ')}
                 </Text>
               )}
+              {/* T-0261: a run that proved nothing, and the assumptions the plan rests on unchecked */}
+              {(a.inconclusive ?? 0) > 0 && (
+                <Text key="fm-pane-inconclusive" color={hex(C.warn)} wrap="truncate-end">
+                  ≈ {a.inconclusive} inconclusive run{a.inconclusive === 1 ? '' : 's'}: a sharper check is next
+                </Text>
+              )}
+              {(a.unverified ?? []).length > 0 && (
+                <Text key="fm-pane-unverified" color={hex(C.dim)} wrap="truncate-end">
+                  ? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}
+                </Text>
+              )}
               {a.audits.need > 0 && (
                 <Box flexDirection="row" gap={1} key="fm-pane-audits">
                   <Text color={hex(C.dim)}>audits</Text>

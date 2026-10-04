@@ -256,6 +256,8 @@ const NEWS: FmView = {
     ],
     oracle: { examples: 6, ambiguities: ['is the delimiter configurable?'] },
     batch: ['T-0012', 'T-0013'],
+    inconclusive: 1,
+    unverified: ['the delimiter is always a comma'],
   },
   budget: {
     today_usd: 2.4, subagent_tokens: 120000, caps: { day: 15, run: 6, subagent_tokens: 4000000 }, halved: 'weekly usage 85%',
@@ -283,6 +285,8 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
     /\? H2\. the input is truncated/,
     /oracle: 6 examples · 1 open question: is the delimiter configurable\?/,
     /batch of T-0012, T-0013/,
+    /≈ 1 inconclusive run: a sharper check is next/,
+    /\? 1 unverified assumption: the delimiter is always a comma/,
     /✗ dropped .*SKILL\.md · tighter verify lines/,
     /tomllib-since-which-version/,
   ])

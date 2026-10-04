@@ -122,6 +122,10 @@ def digest(p, recheck=True):
                                                   str((e.get("data") or {}).get("text") or "").startswith("steer:"))]
     out["what the user corrected or steered (their words)"] = said[-MAX_LINES:]
 
+    out["surprises: where the model of the code was wrong (fm surprise)"] = [
+        f"{e.get('task') or '-'}: {c.fit(c.plain(str((e.get('data') or {}).get('text') or '')), 200)}" for _, e in ledger
+        if e.get("event") == "surprise"][-MAX_LINES:]
+
     out["lessons recorded"] = [f"{e.get('task')}: {c.fit(c.plain(str(e['data']['lesson'])), 160)}" for _, e in ledger
                                if e.get("event") == "task_done" and (e.get("data") or {}).get("lesson")][-MAX_LINES:]
 

@@ -80,8 +80,10 @@ def _recent(e):
     if kind == "evidence":
         what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
         result, cmd = " ".join(str(d.get("result", "")).split()), " ".join(str(d.get("cmd", "")).split())
-        mark = "✗" if result.startswith("✗") else "✓"  # T-0195: a red run isn't a tick
+        mark = "≈" if d.get("inconclusive") else "✗" if result.startswith("✗") else "✓"  # T-0195: a red run isn't a tick
         text = f"{mark} {t} {what}: {c.fit(cmd, 60)} → {result}"
+    elif kind == "surprise":  # T-0253
+        text = f"! {t} surprise: {c.fit(c.plain(str(d.get('text', ''))), 80)}"
     elif kind == "audit":
         text = f"◇ {t} audit {d.get('lens')}: {d.get('result', '')}"
     elif kind in ("capture", "intake"):
@@ -300,7 +302,8 @@ def _research_asks(events):
 
 
 def _ledger_lines(b):
-    """T-0228: the active task's hypotheses, its oracle (example count, open questions) and batch members."""
+    """T-0228: the active task's hypotheses, its oracle (example count, open questions) and batch members; T-0261: its
+    inconclusive runs and the assumptions nobody checked."""
     hyps = [{"n": n, "status": status, "text": c.plain(text)[:200]} for n, status, text in b.hypotheses()]
     oracle = None
     sec = b.section("Oracle")
@@ -308,7 +311,8 @@ def _ledger_lines(b):
         head, _, tail = sec.partition("\nAmbiguities")
         oracle = {"examples": sum(1 for x in head.splitlines() if x.startswith("- ")),
                   "ambiguities": [c.plain(x[2:])[:200] for x in tail.splitlines() if x.startswith("- ")]}
-    return {"hypotheses": hyps, "oracle": oracle, "batch": list(b.meta.get("batch") or [])}
+    return {"hypotheses": hyps, "oracle": oracle, "batch": list(b.meta.get("batch") or []),
+            "inconclusive": len(b.inconclusive()), "unverified": [c.plain(x)[:200] for x in b.unverified()][:5]}
 
 
 def view(p):

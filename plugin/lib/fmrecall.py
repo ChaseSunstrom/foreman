@@ -73,6 +73,10 @@ def _documents(p, skip=None):
                            {"age": _age(m.group(1))})
     except OSError:
         pass
+    for r in c.tail_jsonl(os.path.join(p.dir, "surprises.jsonl"), 500):  # T-0253: where the model was wrong
+        text = c.plain(str(r.get("text") or ""))
+        yield "surprise", f"surprise {str(r.get('at') or '')[:10]} ({r.get('task') or '-'}): {c.fit(text, 200)}", text, \
+            None, {"age": _age(r.get("at"))}
     folder = os.path.join(p.dir, "research")
     try:
         names = sorted(n for n in os.listdir(folder) if n.endswith(".md"))

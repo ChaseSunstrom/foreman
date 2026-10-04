@@ -644,6 +644,8 @@ _EV_RE = re.compile(r"^-\s+\((step|ac)\s+(\d+)\)")
 _AUDIT_RE = re.compile(r"^-\s+\(audit\s+([a-z]+)\)")
 _TREE_MARK = re.compile(r"\[tree ([0-9a-f]+)\]")
 _RAN_MARK = " [ran]"  # evidence fm produced by running the command (fm task evidence --run, fm check)
+_INCONCLUSIVE = " [inconclusive]"  # T-0255: a run that neither proves nor disproves: kept, never counted
+_ASSUME_RE = re.compile(r"^- (?:\[(assumed|verified|false)(?:: (.*?))?\] )?(.*)$")  # T-0254
 
 
 def _ledger(text, code=False):
@@ -654,7 +656,7 @@ def _ledger(text, code=False):
 
 def _unmarked(text):
     """Typed text can't carry the marks fm appends ([tree …], [ran]): they would forge a worktree id or a run."""
-    return re.sub(r"\[(tree|ran)\b", r"(\1", text)
+    return re.sub(r"\[(tree|ran|inconclusive)\b", r"(\1", text)
 _TS_TAIL = re.compile(r"\((\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\)\s*$")
 AUDIT_LENSES = ("self", "intent", "adversary", "edge", "operator", "maintainer")
 # Per tier: each set is satisfied by one audit with any lens in it (skills/intake/references/audit.md).
@@ -835,7 +837,9 @@ class Brief:
         if s is None:
             raise KeyError(f"no step {n}")
         if not self.has_evidence(step=n):
-            raise PolicyError(f"{self.id} step {n} has no verification evidence; record it with "
+            why = "only inconclusive runs (they prove nothing); design a sharper check and record" \
+                if self.inconclusive(step=n) else "no verification evidence; record"
+            raise PolicyError(f"{self.id} step {n} has {why} it with "
                               f"`fm task evidence {self.id} --step {n} --run \"<cmd>\"`")
         self._refuse_failed_run(step=n)
         was_current, s.done, s.current = s.current, True, False
@@ -869,9 +873,41 @@ class Brief:
                 return True
         return False
 
+    # --- assumptions (T-0254): each line says whether it was checked: [assumed], [verified: how] or [false: how]
+    ASSUMPTIONS = "Assumptions (confidence)"
+
+    def assumptions(self):
+        """[(n, tag or None, how, text)] for the Assumptions section's bullets, untagged ones included."""
+        return [(i, m.group(1), m.group(2), m.group(3)) for i, m in enumerate(
+            (_ASSUME_RE.match(x) for x in self.section(self.ASSUMPTIONS).splitlines() if x.startswith("- ")), 1)]
+
+    def add_assumption(self, text):
+        self._append_line(self.ASSUMPTIONS, f"- [assumed] {_ledger(text)}")
+        return len(self.assumptions())
+
+    def mark_assumption(self, n, status, how):
+        lines, k = self.section(self.ASSUMPTIONS).splitlines(), 0
+        for i, x in enumerate(lines):
+            if x.startswith("- "):
+                k += 1
+                if k == n:
+                    lines[i] = f"- [{status}: {_ledger(how).replace(']', ')')}] {_ASSUME_RE.match(x).group(3)}"
+                    self.set_section(self.ASSUMPTIONS, "\n".join(lines) + "\n")
+                    return True
+        return False
+
+    def unverified(self):
+        return [text for _, tag, _, text in self.assumptions() if tag != "verified" and text.strip()]
+
     # --- evidence
     def evidence(self):
-        return [l for l in self.section("Verification evidence").splitlines() if l.startswith("- ")]
+        """The evidence that counts: an inconclusive run (T-0255) proves nothing, so no caller sees it."""
+        return [l for l in self.section("Verification evidence").splitlines()
+                if l.startswith("- ") and _INCONCLUSIVE not in l]
+
+    def inconclusive(self, step=None):
+        return [l for l in self.section("Verification evidence").splitlines() if _INCONCLUSIVE in l
+                and (step is None or ((m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == ("step", step)))]
 
     def has_evidence(self, step=None, ac=None):
         lines = self.evidence()
@@ -884,12 +920,12 @@ class Brief:
                 return True
         return False
 
-    def add_evidence(self, cmd, result, step=None, ac=None, ts=None, tree=None, ran=False):
+    def add_evidence(self, cmd, result, step=None, ac=None, ts=None, tree=None, ran=False, inconclusive=False):
         tag = f"(step {step}) " if step is not None else f"(ac {ac}) " if ac is not None else ""
         cmd = _unmarked(redact(str(cmd)).replace("`", "'").strip())
         result = defang(_unmarked(redact(str(result)).replace("\n", " ").strip()))
         # [ran]: fm ran it (only runs decide pass/fail); [tree]: the files it was recorded against (audit_blockers)
-        mark = (_RAN_MARK if ran else "") + (f" [tree {tree}]" if tree else "")
+        mark = (_INCONCLUSIVE if inconclusive else "") + (_RAN_MARK if ran else "") + (f" [tree {tree}]" if tree else "")
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result}{mark} ({ts or now()})")
 
     def _refuse_failed_run(self, step=None, ac=None):
@@ -1550,6 +1586,9 @@ def next_action(b, autonomy="standard", since=None):
             return (f"{tid}: test hypothesis H{suspect[0]} before more fixes: {suspect[2][:140]} — fm task hypo {tid} "
                     f"mark {suspect[0]} ruled-out|confirmed --run \"<probe>\" (skills/intake/references/debugging.md)")
         cur = next((s for s in left if s.current), None) or left[0]
+        if b.inconclusive(step=cur.n):  # T-0255: the same check again would prove nothing again
+            return (f"{tid} step {cur.n}/{len(steps)}: its last check was inconclusive — design a sharper check (one "
+                    f"that fails if the step is wrong), then fm task evidence {tid} --step {cur.n} --run \"<cmd>\"")
         return (f"{tid} step {cur.n}/{len(steps)}: {cur.text[:100]} — do it, then fm task evidence {tid} --step {cur.n} "
                 f"--run \"<verify cmd>\" (procedure: {STAGE_REFERENCE.get(b.type, 'execute.md')})")
     if st == "verifying":

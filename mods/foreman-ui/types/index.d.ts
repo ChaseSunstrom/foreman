@@ -25,6 +25,8 @@ export type FmActive = FmItem & {
   hypotheses?: FmHypothesis[] // T-0207/T-0228: the debugging ledger
   oracle?: { examples: number; ambiguities: string[] } | null // T-0226: examples from the spec alone
   batch?: string[] // T-0257: the requests this task works as one batch
+  inconclusive?: number // T-0255: runs recorded as proving nothing (never counted)
+  unverified?: string[] // T-0254: assumptions not tagged [verified: …], the first five
 }
 export type FmHypothesis = { n: number; status: 'open' | 'ruled out' | 'confirmed'; text: string }
 // T-0228: what fm budget, fm bench/evolve and fm research ask add
