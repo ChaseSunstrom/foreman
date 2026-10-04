@@ -1142,6 +1142,13 @@ def _key(b):
 SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
 
 
+def batched(b, by_id):
+    """T-0257: held by a batch host that is still open; a host that is gone, done or dropped holds nothing, so no
+    path (a crash, drop --done-in) can hide a member for good."""
+    h = by_id.get(b.meta.get("batched_in") or "")
+    return bool(h) and h.status not in CLOSED
+
+
 def rank_inbox(briefs):
     """T-0111: captured items by value for effort inside the intake order: urgent first, then type (RANK), then value
     (who asked, 2 per item depending on it, up to 2 for waiting two weeks) per tier; an item follows any captured
@@ -1154,7 +1161,8 @@ def rank_inbox(briefs):
     def key(b):
         value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min((age_days(b.meta.get("created")) or 0) / 7, 2)
         return (0 if b.priority == "urgent" else 1, RANK.get(b.type, 99), -value / TIER_EFFORT.get(b.tier, 2), id_num(b.id))
-    pending = sorted((b for b in briefs if b.status == "captured"), key=key)
+    by_id = {b.id: b for b in briefs}
+    pending = sorted((b for b in briefs if b.status == "captured" and not batched(b, by_id)), key=key)
     ids, out, placed = {b.id for b in pending}, [], set()
     while pending:  # ponytail: O(n²), fine for an inbox
         b = next((x for x in pending if all(d in placed or d not in ids for d in x.meta.get("depends_on") or [])),
@@ -1168,7 +1176,7 @@ def rank_inbox(briefs):
 def order_queue(briefs):
     """Runnable briefs in canonical order with dependencies respected. Returns (queue, cycles, dangling)."""
     by_id = {b.id: b for b in briefs}
-    runnable = [b for b in briefs if b.status in RUNNABLE]
+    runnable = [b for b in briefs if b.status in RUNNABLE and not batched(b, by_id)]  # T-0257: its host runs
     rid = {b.id for b in runnable}
     deps, dangling = {}, []
     for b in runnable:
@@ -1580,6 +1588,11 @@ def next_for(p, briefs=None):
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
+    if st == "captured" and b.tier == "S":  # T-0257: small ones of a kind pay the fixed overhead once, together
+        small = [x for x in rank_inbox(briefs) if x.tier == "S" and x.type == b.type][:5]
+        if len(small) >= 3 and b in small:
+            action += (f" — or batch the small {b.type} items: fm batch {' '.join(sorted((x.id for x in small), key=id_num))} "
+                       f"(one plan, gate run, review and commit)")
     if st == "executing":
         try:
             import fmplugins  # T-0205: other plugins' skills, at the moment they fit

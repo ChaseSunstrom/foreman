@@ -8,6 +8,9 @@
 4. Record: `fm task step ID done N --evidence "<cmd>" "<result>"` (or `fm task evidence` first). fm refuses without evidence.
 5. Acceptance criteria: `fm task ac ID check N --evidence "<cmd>" "<result>"`.
 
+## Batches (T-0257)
+Small related requests (the same type, nearby files) are faster as one: `fm batch ID ID …` makes one host task with every member's criteria and one step each. Plan its verify commands, work the steps, run `fm check` once for the whole batch, one review pass, one commit; the members close done in the host. `fm next` suggests it when three or more small items of one type lead the inbox.
+
 ## Checkpoints and git
 - `fm checkpoint --note "<exact resume point>"` before switching tasks, before risky or destructive-but-authorized steps, and at natural pauses. PreCompact does an automatic checkpoint; a note is better.
 - Commit in small conventional commits on the task branch. Before a destructive-but-authorized step, commit or stash (`git stash push -m foreman/T-NNNN`) so git and rewind both cover it.

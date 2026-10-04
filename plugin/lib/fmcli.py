@@ -294,6 +294,8 @@ def cmd_task(args):
             b.append_log("done")
         first_edit = c.first_touch(p, pre.id)
         b, _ = mutate(p, args.id, done, "task_done", {"lesson": lesson[:300]} if lesson else None)
+        if b.meta.get("batch"):
+            _settle_batch(p, b, done=True)
         try:
             import fmrecall
             fmrecall.write_tripwires(p)
@@ -323,6 +325,8 @@ def cmd_task(args):
             b.meta["status"] = status
             b.append_log(f"{status}: {reason}" if reason else status)
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
+        if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
+            _settle_batch(p, b, done=False)
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
     raise UsageError(f"unknown task subcommand {sub}")
 
@@ -506,6 +510,78 @@ def task_done_in(p, args):
         c.log_event(p, "task_done_in", task=b.id, data={"host": h.id, "reason": args.reason or ""}, session=session())
         c.regen_views(p)
     out(args, c.brief_summary(b), f"{b.id} done in {h.id}.")
+
+
+_DONE_WHEN = re.compile(r"(?m)^>?\s*DONE-WHEN:\s*(.+)$")
+
+
+def cmd_batch(args):
+    """T-0257: several requests not started yet worked as one host task — one plan read, one gate run, one review,
+    one commit — with every member's criteria and a step each; the members leave the inbox and queue while batched and
+    are closed done-in the host when it is done (handed back if it is dropped)."""
+    p = resolve(args)
+    ids = list(dict.fromkeys(x.upper() for x in args.ids))
+    if len(ids) < 2:
+        raise UsageError("a batch is two or more items")
+    with c.lock(p.dir):
+        members = [need_brief(p, i) for i in ids]
+        everything = c.load_briefs(p)
+        act, by_id = c.active_brief(everything, p.lane), {x.id: x for x in everything}
+        bad = [f"{b.id} ({'explore: confirm it first' if b.meta.get('explore') else b.status})" for b in members
+               if b.status not in ("captured", "planned") or b.evidence() or (act and act.id == b.id)
+               or c.batched(b, by_id) or b.meta.get("batch") or b.meta.get("explore")]
+        if bad:
+            raise UsageError("only items not started, not batched and not waiting on the user can be batched: "
+                             + ", ".join(bad))
+        types = [b.type for b in members]
+        type_ = max(sorted(set(types)), key=types.count)
+        tiers = {b.tier for b in members}
+        tier = "L" if "L" in tiers else "M" if "M" in tiers or len(members) > 2 else "S"
+        title = args.title or "Batch: " + "; ".join(c.fit(b.title, 40) for b in members)
+        raw = "\n".join(f"{b.id}: " + re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip() for b in members)
+        source = "user" if any(b.meta.get("source") == "user" for b in members) else members[0].meta.get("source", "user")
+        h = _create(p, c.fit(title, 120), type_, tier, "planned", raw=raw, source=source,
+                    priority="urgent" if any(b.priority == "urgent" for b in members) else "normal",
+                    scope=sorted({s for b in members for s in b.meta.get("scope") or []}),
+                    depends=sorted({d for b in members for d in b.meta.get("depends_on") or []} - set(ids)))
+        h.set_section("Interpretation", f"Do {', '.join(ids)} as one batch: one plan read, one gate run, one review and "
+                                        f"one commit; each keeps its own criteria and is closed done in {h.id}.")
+        for b in members:
+            crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
+                [(x.strip(), None) for x in _DONE_WHEN.findall(b.section("Raw request"))] or [(f"{b.title} works", None)]
+            for text, verify in crit:
+                h.add_ac(f"{b.id}: {text}", verify)
+            for s in b.steps() or [None]:  # a planned member's own steps, else one step for it
+                h.add_step(f"{b.id}: {s.text if s else b.title}")
+        h.meta["batch"] = ids
+        c.save_brief(p, h)
+        for b in members:
+            b.meta["batched_in"] = h.id
+            b.append_log(f"batched into {h.id}")
+            c.save_brief(p, b)
+        c.log_event(p, "batch", task=h.id, data={"members": ids}, session=session())
+        c.regen_views(p)
+    out(args, dict(c.brief_summary(h), members=ids),
+        f"{h.id} [{h.type} {h.tier}] {h.title} — batch of {', '.join(ids)} (plan its verify commands, then fm focus "
+        f"{h.id}; each member closes done in {h.id})")
+
+
+def _settle_batch(p, h, done):
+    """A batch host finished: its members are done in it; dropped: they go back to the inbox or queue."""
+    with c.lock(p.dir):
+        for mid in h.meta.get("batch") or []:
+            b = c.find_brief(p, mid)
+            if not b or b.status == "done" or b.meta.get("batched_in") != h.id:
+                continue
+            b.meta.pop("batched_in", None)
+            if done:
+                b.meta["status"], b.meta["done_in"] = "done", h.id
+                b.append_log(f"done in {h.id} (batch)")
+                c.log_event(p, "task_done_in", task=b.id, data={"host": h.id, "reason": "batch"}, session=session())
+            else:
+                b.append_log(f"unbatched: {h.id} was dropped")
+            c.save_brief(p, b)
+        c.regen_views(p)
 
 
 def task_new(p, args):
@@ -1620,7 +1696,7 @@ class _Parser(argparse.ArgumentParser):
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
-    ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
+    ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas oracle pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -1990,6 +2066,11 @@ def build_parser():
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")
+
+    s = add("batch", cmd_batch, help="work several not-yet-started requests as one task: one plan, gate run, review and "
+                                     "commit; each closes done in it (T-0257)")
+    s.add_argument("ids", nargs="+")
+    s.add_argument("--title")
 
     s = add("budget", lazy("fmbudget", "cmd_budget"), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
