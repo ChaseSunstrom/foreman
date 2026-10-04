@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm friction` (T-0301): failed tool calls are grouped by why they failed (the error, with the newest command or file as an example) instead of by file, so five failed Reads of different files read as one cause; a turn the drive ends to wait on background work is no longer listed as friction.
 - foreman-ui 0.6.0 (T-0300): released so other sessions get this run's pane changes: bench verdicts, judged scores and repeats on the Bench card, and the earlier catch-up cards (spend, research, hypotheses, oracle, batch).
 - `fm task prove --hunks` (T-0297): in Foreman's own checkout, a mutation that crashes the hook can no longer pass by the hook falling back to the unmutated code.
 - `fm mcp` (T-0245): Foreman's state, next action, recall, research notes and briefs as read-only MCP tools over stdio, so other agents and clients can use its memory; register it with `claude mcp add foreman -- fm mcp`.

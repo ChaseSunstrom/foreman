@@ -40,6 +40,19 @@ class Friction(ForemanTestCase):
         self.assertNotIn("steer: make it faster", out)  # the next pass starts after this one
         self.assertIn("Gates by path", out)  # and reports what became of the last pass's self items (open)
 
+    def test_failed_calls_say_why_and_a_background_wait_isnt_a_stop(self):
+        # T-0301: five failed Reads of different scratch files read as one cause, and a wait isn't friction
+        for i in range(3):
+            self.hook("PostToolUseFailure", {"tool_name": "Read", "tool_input": {"file_path": f"/tmp/scratch{i}.md"},
+                                             "error": "File does not exist."})
+        self.fm("task", "new", "Fix login", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "a", "--focus")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer", "session_id": "sess-1"})
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting for the audit.",
+                           "session_id": "sess-1"})
+        out = self.fm("friction").stdout
+        self.assertIn("3× Read: File does not exist.", out)
+        self.assertNotIn("wait on background work", out)
+
     def test_fm_next_calls_for_a_pass_every_n_closed_tasks_at_a_task_boundary(self):
         nxt = lambda: self.fm("next").stdout
         self.close_one(1)

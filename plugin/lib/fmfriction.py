@@ -91,15 +91,18 @@ def digest(p, recheck=True):
         f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
         + (f" — {now[i]}" if i in now else "") for i, ((cat, target), n) in enumerate(shown)]
 
-    fails = collections.Counter((e.get("tool"), c.fit(str(e.get("target") or ""), 90))
-                                for e in events if e.get("kind") == "tool_fail")
-    out["failed tool calls"] = [f"{n}× {tool}: {target}" for (tool, target), n in fails.most_common(MAX_LINES)]
+    failed = [e for e in events if e.get("kind") == "tool_fail"]  # T-0301: grouped by why, not by which file
+    why = lambda e: (e.get("tool"), c.fit(c.plain(str(e.get("error") or "no error recorded")), 90))
+    fails = collections.Counter(why(e) for e in failed)
+    target = {why(e): c.fit(c.plain(str(e.get("target") or "")), 90) for e in failed}  # the newest example
+    out["failed tool calls"] = [f"{n}× {k[0]}: {k[1]}" + (f" — e.g. {target[k]}" if target[k] else "")
+                                for k, n in fails.most_common(MAX_LINES)]
 
     kinds = collections.Counter(e.get("event") for _, e in ledger)
-    waits = collections.Counter(e.get("kind") for e in events if e.get("kind") in ("drive_wait", "drive_reload"))
+    waits = collections.Counter(e.get("kind") for e in events if e.get("kind") == "drive_reload")  # T-0301: a wait on
+    # background work is the drive working as meant (the notification resumes it), not a stop
     out["nudges and drive stops"] = [x for x in (
         f"{kinds['stop_gate']}× the Stop hook held a turn for missing evidence" if kinds["stop_gate"] else "",
-        f"{waits['drive_wait']}× the drive ended a turn to wait on background work" if waits["drive_wait"] else "",
         f"{waits['drive_reload']}× the drive ended a turn for a mod reload" if waits["drive_reload"] else "",
         f"{kinds['task_block']}× a task was blocked" if kinds["task_block"] else "") if x]
 
@@ -143,7 +146,7 @@ def digest(p, recheck=True):
     kinds_ev = collections.Counter(e.get("kind") for e in events)
     counts = {"tool calls": kinds_ev["tool"], "guard blocks": kinds_ev["guard_block"],
               "failed tool calls": kinds_ev["tool_fail"],
-              "drive stops": kinds_ev["drive_wait"] + kinds_ev["drive_reload"] + kinds["stop_gate"], "steers": len(said)}
+              "drive stops": kinds_ev["drive_reload"] + kinds["stop_gate"], "steers": len(said)}
     last = meta.get("rsi_counts") or {}
     if last.get("tool calls") and counts["tool calls"]:  # T-0187: did the last pass's fixes make it better
         out["trend: the last pass's window → this one, per 100 tool calls"] = [" · ".join(
