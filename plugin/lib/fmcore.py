@@ -292,11 +292,11 @@ def task_diff(root, base, *opts):
     return _git(root, "diff", *opts, base, tree, timeout=300, fail=None) if tree else None
 
 
-def run_command(root, cmd, timeout=600):
+def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True)
+                              stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)
     except OSError as e:  # no bash on PATH, or the repo root is gone
         return 127, f"could not run bash: {e}"
     try:

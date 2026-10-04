@@ -1595,7 +1595,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake task focus check gates checkpoint resume queue state log ask decide"),
     ("Finding your way", "help recall why outline impact map secrets quiet audit research ideas pr"),
     ("Project and settings", "init autonomy drive sensitive trust standing sync share notify plugins docs doctor tidy"),
-    ("Reports", "digest cost usage repeats friction taste evals replay"),
+    ("Reports", "digest cost usage repeats friction taste evals replay bench"),
     ("Running elsewhere", "lane serve run ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -1920,6 +1920,28 @@ def build_parser():
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
+
+    s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
+                                                         "them with a candidate plugin, compare runs (T-0212)")
+    bsp = s.add_subparsers(dest="bench_cmd", required=True)
+    for name in ("build", "list", "run", "compare"):
+        b = bsp.add_parser(name)
+        b.add_argument("--json", action="store_true")
+        b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+        if name in ("build", "run"):
+            b.add_argument("--ids", nargs="+", help="only these task ids")
+        if name == "build":
+            b.add_argument("--last", type=int, default=30, help="finished tasks to consider, newest first")
+        if name == "run":
+            b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
+            b.add_argument("--max", type=int, default=3, help="cases to run")
+            b.add_argument("--model")
+            b.add_argument("--budget", type=float, default=3.0, help="USD per case (claude --max-budget-usd)")
+            b.add_argument("--timeout", type=int, default=30, help="minutes per case")
+            b.add_argument("--label", help="name for these results (default: the time)")
+        if name == "compare":
+            b.add_argument("a")
+            b.add_argument("b")
 
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")

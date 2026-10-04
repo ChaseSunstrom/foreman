@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when the user asks to improve Foreman itself, or when Foreman's self-inbox has items and the queue is empty. Proposes and tests improvements from the self-inbox (source self), bounded and eval-gated — builds candidates in a git worktree, compares them with the live plugin using claude plugin eval, and needs the user's yes before any merge.
+description: Use when the user asks to improve Foreman itself, or when Foreman's self-inbox has items and the queue is empty. Proposes and tests improvements from the self-inbox (source self), bounded and eval-gated — builds candidates in a git worktree, compares them with the live plugin using claude plugin eval and fm bench (replays of finished tasks), and needs the user's yes before any merge.
 ---
 
 # Foreman: improve (bounded, eval-gated)
@@ -14,6 +14,7 @@ Foreman improves its own skills, rules, hooks and scripts — never the model �
 5. **Referee.** Run the eval suite against both, with a cost ceiling:
    `claude plugin eval ~/.claude/foreman/plugin --max-cost-usd 5 --json <tmp>/live.json`
    `claude plugin eval ~/.claude/foreman-improve-<date>/plugin --max-cost-usd 5 --json <tmp>/candidate.json`
-   Compare per-category scores and per-case results. A candidate qualifies only if it scores at least as well in every category, regresses no case, stays within the §2.8 budgets (`python3 plugin/tests/bench_hooks.py`, rules ≤ 80 lines) and `fm doctor` is green in the worktree.
+   Then the real-work referee (T-0212): `fm bench run --label live-<date>` and `fm bench run --plugin ~/.claude/foreman-improve-<date>/plugin --label cand-<date>` replay finished Foreman tasks (cases from `fm bench build`, each validated fail-to-pass) and `fm bench compare live-<date> cand-<date>` shows pass rate, cost and turns side by side. Use the same cases and model for both; one run per arm is noisy, so a single flipped case is a hint, not a verdict.
+   Compare per-category scores and per-case results. A candidate qualifies only if it scores at least as well in every category, regresses no case (eval or bench), costs no more per bench case, stays within the §2.8 budgets (`python3 plugin/tests/bench_hooks.py`, rules ≤ 80 lines) and `fm doctor` is green in the worktree.
 6. **Ask for the merge** with a table: change → evidence → eval delta → budgets, and one yes/no question. Merging is always the user's call, whatever the autonomy setting (in full autonomy it waits for the final report).
 7. After the user's yes: merge to main, bump `plugin/.claude-plugin/plugin.json` version (and marketplace.json), update MASTER.md and CHANGELOG.md in the same commit, `claude plugin tag plugin`. Rollback: `git revert` + `/reload-plugins`.
