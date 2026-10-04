@@ -1321,9 +1321,16 @@ export const register: Register = (on, options) => {
                 <Text color={hex(C.dim)}>
                   {' '}
                   · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
+                  {v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}
+                  {v.bench.last.repeats != null ? ` · ${v.bench.last.repeats} repeat${v.bench.last.repeats === 1 ? '' : 's'}` : ''}
                 </Text>
               </Text>
             )}
+            {(v.bench.verdicts ?? []).map((x, i) => (
+              <Text key={`verdict-${i}`} color={hex(x.ok ? C.ok : C.warn)} wrap="truncate-end">
+                {x.ok ? '✓' : '✗'} {x.kind}: {x.verdict ?? ''}
+              </Text>
+            ))}
             {v.bench.evolve.map((x, i) => (
               <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
                 {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}

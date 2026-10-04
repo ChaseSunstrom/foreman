@@ -287,11 +287,20 @@ def _bench(p, events):
             last = {"label": r.get("label") or newest[:-5], "passed": sum(1 for x in rows if x.get("pass")),
                     "total": len(rows), "cost_usd": round(sum(x.get("cost_usd") or 0 for x in rows), 2),
                     "at": r.get("at")}
-        except (OSError, ValueError, AttributeError):
+            scores = [x["score"] for x in rows if isinstance(x.get("score"), (int, float))]
+            if scores:  # T-0280: judged cases' mean score
+                last["score"] = round(sum(scores) / len(scores), 1)
+            if any("complaints" in x for x in rows):  # a soak: what the shadow user had to repeat
+                last["repeats"] = sum(len(x.get("complaints") or []) for x in rows)
+        except (OSError, ValueError, AttributeError, TypeError):
             pass
     evolve = [dict({k: (e.get("data") or {}).get(k) for k in ("kept", "branch", "target", "why")}, at=e.get("ts"))
               for e in reversed(events) if e.get("event") == "evolve"][:3]
-    return {"cases": cases, "last": last, "evolve": evolve} if cases or last or evolve else None
+    verdicts = [{"kind": e["event"][6:], "ok": (e.get("data") or {}).get("ok"),
+                 "verdict": (e.get("data") or {}).get("verdict"), "at": e.get("ts")}
+                for e in reversed(events) if e.get("event") in ("bench_duel", "bench_versions")][:2]
+    return ({"cases": cases, "last": last, "evolve": evolve, "verdicts": verdicts}
+            if cases or last or evolve or verdicts else None)
 
 
 def _research_asks(events):

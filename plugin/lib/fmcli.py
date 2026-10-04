@@ -2340,6 +2340,8 @@ def build_parser():
                                                                 "(any repo; needs --verify)")
             b.add_argument("--verify", metavar="CMD", help="with --commits: the command that grades a case; {tests} "
                                                             "becomes its test files")
+            b.add_argument("--judged", action="store_true", help="work whose commit has no tests (docs, UI, prose) "
+                                                                 "becomes a case a judge grades against its criteria")
         if name == "run":
             b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
             b.add_argument("--max", type=int, default=3, help="cases to run")
@@ -2357,6 +2359,35 @@ def build_parser():
         if name == "compare":
             b.add_argument("a")
             b.add_argument("b")
+    contests = {"duel": "replay cases with Foreman alone and with another plugin beside it, and gate the two (T-0240)",
+                "versions": "replay cases on Foreman at an earlier git revision and on this one, and gate the two (T-0241)",
+                "court": "turn the user's steers and corrections into judged cases and replay them (T-0242)",
+                "soak": "replay a case as a conversation with a child playing the user; report what they had to repeat "
+                        "(T-0243)"}
+    for name, text in contests.items():
+        b = bsp.add_parser(name, help=text, description=text)
+        b.add_argument("--json", action="store_true")
+        b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+        if name == "duel":
+            b.add_argument("plugin", help="a plugin folder, or an installed plugin's id")
+        if name == "versions":
+            b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
+            b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")
+        if name in ("court", "soak"):
+            b.add_argument("--plugin", dest="plugin_dir", help="the plugin folder to test (default: this Foreman)")
+        if name != "court":
+            b.add_argument("--ids", nargs="+", help="only these case ids")
+        if name == "soak":
+            b.add_argument("--turns", type=int, default=3, help="the user's replies at most")
+        b.add_argument("--max", type=int, default=1 if name == "soak" else 3 if name != "court" else 8,
+                       help="cases to run")
+        b.add_argument("--model")
+        b.add_argument("--budget", type=float, default=3.0, help="USD per session (claude --max-budget-usd)")
+        b.add_argument("--timeout", type=int, default=30, help="minutes per session")
+        if name in ("duel", "versions"):
+            b.add_argument("--cost-tolerance", type=float, default=0.15, help="allowed rise in mean cost per case")
+        if name == "court":
+            b.add_argument("--label", help="name for these results (default: court-<time>)")
 
     s = add("batch", cmd_batch, help="work several not-yet-started requests as one task: one plan, gate run, review and "
                                      "commit; each closes done in it (T-0257)")

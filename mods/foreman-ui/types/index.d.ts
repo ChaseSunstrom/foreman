@@ -39,8 +39,9 @@ export type FmBudget = {
 }
 export type FmBench = {
   cases: number
-  last: { label: string; passed: number; total: number; cost_usd: number; at?: string | null } | null
+  last: { label: string; passed: number; total: number; cost_usd: number; at?: string | null; score?: number; repeats?: number } | null
   evolve: { kept: boolean | null; branch: string | null; target: string | null; why: string | null; at?: string }[]
+  verdicts?: { kind: string; ok: boolean | null; verdict: string | null; at?: string }[] // T-0280: fm bench duel / versions
 }
 export type FmResearchAsk = { name: string; claims: number; verified: number; not_found: number; unchecked: number; at?: string; conflicts?: number; single?: number }
 export type FmApproval = { task: string; allow: string[]; why: string }
