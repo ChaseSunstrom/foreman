@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm second session` (T-0307): reads the newest session the user typed in. A newer SDK or `claude -p` transcript in the same project (a background security review, a child run) is skipped. Before, it was read as the user's last session and its prompt captured as a missed request.
 - `fm ask` (T-0302): asking on a closed task is refused, by the permission hook (no dialog) and by fm ask itself. The guard reads grants only from the active task, so a yes there granted nothing. A standing core ask still takes any id.
 - `fm friction` (T-0301): failed tool calls are grouped by why they failed (the error, with the newest command or file as an example) instead of by file, so five failed Reads of different files read as one cause; a turn the drive ends to wait on background work is no longer listed as friction.
 - foreman-ui 0.6.0 (T-0300): released so other sessions get this run's pane changes: bench verdicts, judged scores and repeats on the Bench card, and the earlier catch-up cards (spend, research, hypotheses, oracle, batch).

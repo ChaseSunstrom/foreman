@@ -77,14 +77,27 @@ class Debate(_Stubbed):
 
 
 class Session(_Stubbed):
-    def transcript(self, sid, messages):
+    def transcript(self, sid, messages, entrypoint=None):
         import fmcost
         d = fmcost.transcripts_dir(self.repo).replace(os.path.expanduser("~/.claude"), self.cc, 1)
         d = os.path.join(self.cc, "projects", os.path.basename(d))
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f"{sid}.jsonl"), "w") as f:
             for m in messages:
-                f.write(json.dumps({"type": "user", "message": {"role": "user", "content": m}}) + "\n")
+                f.write(json.dumps(dict({"type": "user", "message": {"role": "user", "content": m}},
+                                        **({"entrypoint": entrypoint} if entrypoint else {}))) + "\n")
+        return os.path.join(d, f"{sid}.jsonl")
+
+    def test_Interactive_sessions_only(self):
+        # T-0307: a newer SDK or claude -p run (a background review, a child) isn't a session the user typed in
+        import time
+        self.transcript("old-session", ["export the report as CSV please"], entrypoint="cli")
+        for i, ep in enumerate(("sdk-py", "sdk-cli")):
+            path = self.transcript(f"robot-{i}", ["Review this change for security vulnerabilities"], entrypoint=ep)
+            os.utime(path, (time.time() + 10 + i, time.time() + 10 + i))
+        self.fm("second", "session", env=dict(self.env, FOREMAN_SESSION_ID="new-session"))
+        self.assertIn("export the report as CSV please", self.calls()[0]["stdin"])
+        self.assertNotIn("security vulnerabilities", self.calls()[0]["stdin"])
 
     def test_a_missed_request_is_captured_once(self):
         self.transcript("old-session", ["export the report as CSV please", "<task-notification>x</task-notification>",
