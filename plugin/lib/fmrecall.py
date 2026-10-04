@@ -103,9 +103,10 @@ def _documents(p, skip=None):
                 f"{rel[:-3].replace('-', ' ').replace('/', ' ')} {text}", None, {"age": 0.0}
 
 
-def recall(p, query, skip=None, n=HITS):
+def recall(p, query, skip=None, n=HITS, cover=0.0):
     """The n most related documents to query: [(score, kind, label, tier, extra)], best first; a hit shares ≥ 2
-    words. Older history counts less (half at HALF_LIFE days)."""
+    words, and at least `cover` of the query's words (T-0206: research asks for 2/3). Older history counts less (half
+    at HALF_LIFE days)."""
     q = set(_tokens(query))
     if not q:
         return []
@@ -124,7 +125,7 @@ def recall(p, query, skip=None, n=HITS):
         for w in words:
             if w in q:
                 tf[w] = tf.get(w, 0) + 1
-        if len(tf) < 2:
+        if len(tf) < max(2, math.ceil(cover * len(q))):
             continue
         s = sum(math.log(1 + (len(docs) - df[w] + 0.5) / (df[w] + 0.5)) * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * len(words) / avg))
                 for w, f in tf.items())

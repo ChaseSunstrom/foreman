@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- `fm research ask` (T-0206): web research as an engine. What the project already knows comes first (recall, now with a coverage floor), the question is split into sub-questions (or `--sub`), each is researched in parallel by a `claude -p` child that can only search and fetch the web, every claim must cite a page and quote it, and each cited page is fetched (public https only, redirects re-checked) to mark the claim ✓ quote found, ✗ not on the page, or ? unchecked. One note is saved under research/. fm-recon's brief now asks for quoted, dated, tiered web claims and a search for counter-evidence; delegate.md sends web questions to recall and `fm research ask` first.
+- `fm ideas` (T-0208): each new idea in ideas.md names the finished task it most resembles (`near T-… (done)`), so already-built ideas are spotted before grounding; `--seen` strips the note.
+- Drive (T-0203): a change to a mod's tests or docs no longer ends the turn for a reload.
+- Guard (T-0201): refreshing marketplaces before one `claude plugin update` counts as that one plugin change, so one yes covers it; a refresh before an install or enable still needs its own.
 - Economy mode (T-0198): past 80% weekly usage (or 90% of the 5-hour window), foreman-ui adds one section to the system prompt telling Claude to work leaner (no brainstorms, one reviewer pass, no extra subagents, targeted reads, short replies) and toasts once; it lifts when the window resets.
 - Foreman's own gates (T-0197): the test suite runs when a file the tests read changes (plugin/, mods/, the docs and install scripts), so a CHANGELOG-only edit no longer re-runs it.
 - Dashboard brainstorm card (T-0196): once a brainstorm's ideas are grounded into a recorded slate, the card folds to "N ideas · grounded" instead of listing ideas already built or dropped.
