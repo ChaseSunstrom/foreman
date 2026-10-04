@@ -112,6 +112,8 @@ export function elapsed(ms: number): string {
 export const about = (min: number) => (min < 60 ? `~${Math.max(1, Math.round(min))}m` : `~${(min / 60).toFixed(1).replace(/\.0$/, '')}h`)
 /** '9h ago', '3d ago' */
 export const hoursAgo = (h: number) => (h < 24 ? `${Math.max(1, Math.round(h))}h ago` : `${Math.round(h / 24)}d ago`)
+// T-0228: token counts as words a glance reads: 950 · 12k · 4.0M
+export const tokensWord = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : `${n}`)
 
 export function shortPath(path: string, max = 48): string {
   if (path.length <= max) return path

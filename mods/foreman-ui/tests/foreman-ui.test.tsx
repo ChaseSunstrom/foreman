@@ -245,6 +245,61 @@ test('while a turn runs the band animates; when it ends the clock stops', async 
   await ui.unmount()
 })
 
+// T-0228: 'make the foreman-ui match everything that you add too'
+const NEWS: FmView = {
+  ...VIEW,
+  active: {
+    ...VIEW.active!,
+    hypotheses: [
+      { n: 1, status: 'ruled out', text: 'the cache is shared · ran `grep cache` → ✗ exit 1' },
+      { n: 2, status: 'open', text: 'the input is truncated — probe: `wc -c in.txt`' },
+    ],
+    oracle: { examples: 6, ambiguities: ['is the delimiter configurable?'] },
+    batch: ['T-0012', 'T-0013'],
+  },
+  budget: {
+    today_usd: 2.4, subagent_tokens: 120000, caps: { day: 15, run: 6, subagent_tokens: 4000000 }, halved: 'weekly usage 85%',
+    top: [{ feature: 'bench', usd: 1.9, runs: 4, tokens: 0 }, { feature: 'subagent:foreman:fm-reviewer', usd: 0, runs: 1, tokens: 120000 }],
+  },
+  bench: {
+    cases: 8,
+    last: { label: 'evolve-20261004-001230-cand', passed: 1, total: 1, cost_usd: 0.13 },
+    evolve: [{ kept: false, branch: 'evolve/20261004-001230', target: 'plugin/skills/intake/SKILL.md', why: 'tighter verify lines' }],
+  },
+  research: [{ name: 'ask-tomllib-since-which-version-20261004-0000', claims: 8, verified: 7, not_found: 1, unchecked: 0 }],
+}
+
+test('the pane shows spend, the bench and evolve, research asks, and the task ledger', async ($, on) => {
+  world(on, [NEWS])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const missing: string[] = []
+  for (const key of ['card-budget', 'card-bench', 'card-research'])
+    if (!(await ui.find({ key }))) missing.push(key)
+  for (const text of [
+    /\$2\.40 of \$15 · subagents 120k of 4\.0M/,
+    /caps halved: weekly usage 85%/,
+    /✗ H1\. the cache is shared/,
+    /\? H2\. the input is truncated/,
+    /oracle: 6 examples · 1 open question: is the delimiter configurable\?/,
+    /batch of T-0012, T-0013/,
+    /✗ dropped .*SKILL\.md · tighter verify lines/,
+    /tomllib-since-which-version/,
+  ])
+    if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
+  expect(missing).toEqual([])
+  expect((await ui.find({ key: 'in-age-T-0011' }))?.props.flexShrink).toBe(0) // the title truncates, the age never wraps
+  await ui.unmount()
+})
+
+test('a quiet day shows no spend, bench or research cards', async ($, on) => {
+  world(on, [{ ...VIEW, budget: { ...NEWS.budget!, today_usd: 0, subagent_tokens: 0, halved: null }, bench: null, research: [] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (const key of ['card-budget', 'card-bench', 'card-research']) expect(await ui.find({ key })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('pane is organized cards; a waiting plan shows what a yes approves, and its buttons run fm', async ($, on) => {
   const { calls } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })

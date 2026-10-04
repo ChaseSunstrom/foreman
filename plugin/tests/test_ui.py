@@ -48,6 +48,34 @@ class UiView(ForemanTestCase):
         self.assertEqual([a["text"] for a in plan["criteria"]], ["csv opens"])
         self.assertNotIn("plan", q.get("T-0003", {}))
 
+    def test_the_view_carries_budget_bench_research_and_the_tasks_ledger(self):
+        # T-0228: what the last sessions added, for the pane
+        import fmbudget
+        import fmcore as c
+        fmbudget.record("bench", 0.4, runs=2)
+        fmbudget.record("subagent:foreman:fm-reviewer", tokens=12000)
+        self.fm("task", "hypo", "T-0001", "add", "the timeout is per request", "--probe", "grep -n timeout x.py")
+        self.fm("task", "set", "T-0001", "--section", "Oracle", "--text",
+                "Examples from the request alone:\n- GIVEN a WHEN b THEN c\nAmbiguities (decide each):\n- which timeout?\n")
+        p = c.find_project(self.repo)
+        with c.lock(p.dir):
+            c.log_event(p, "research", data={"name": "ask-parser-speed", "claims": 5, "verified": 3, "not found": 1,
+                                             "unchecked": 1})
+            c.log_event(p, "evolve", data={"kept": False, "branch": "evolve/x", "target": "plugin/rules/foreman.md",
+                                           "why": "shorter"})
+        v = json.loads(self.fm("ui", "--json").stdout)
+        self.assertEqual((v["budget"]["today_usd"], v["budget"]["subagent_tokens"]), (0.4, 12000))
+        self.assertIn("day", v["budget"]["caps"])
+        self.assertEqual(v["budget"]["top"][0]["feature"], "bench")
+        self.assertEqual(v["research"][0], {"name": "ask-parser-speed", "claims": 5, "verified": 3, "not_found": 1,
+                                            "unchecked": 1, "at": v["research"][0]["at"]})
+        self.assertEqual(v["bench"]["evolve"][0]["target"], "plugin/rules/foreman.md")
+        a = v["active"]
+        self.assertEqual(a["hypotheses"], [{"n": 1, "status": "open",
+                                            "text": "the timeout is per request — probe: `grep -n timeout x.py`"}])
+        self.assertEqual(a["oracle"], {"examples": 1, "ambiguities": ["which timeout?"]})
+        self.assertEqual(a["batch"], [])
+
     def test_step_text_is_plain(self):
         self.fm("task", "step", "T-0001", "add", "bell\x07 and \x1b[31mred")
         steps = json.loads(self.fm("ui", "--json").stdout)["active"]["steps"]

@@ -22,7 +22,25 @@ export type FmActive = FmItem & {
   audits: { done: number; need: number }
   blockers: string[]
   on_task_s?: number | null // seconds since the task was first focused, when the view was built
+  hypotheses?: FmHypothesis[] // T-0207/T-0228: the debugging ledger
+  oracle?: { examples: number; ambiguities: string[] } | null // T-0226: examples from the spec alone
+  batch?: string[] // T-0257: the requests this task works as one batch
 }
+export type FmHypothesis = { n: number; status: 'open' | 'ruled out' | 'confirmed'; text: string }
+// T-0228: what fm budget, fm bench/evolve and fm research ask add
+export type FmBudget = {
+  today_usd: number
+  subagent_tokens: number
+  caps: { day: number; run: number; subagent_tokens: number }
+  halved: string | null
+  top: { feature: string; usd: number; runs: number; tokens: number }[]
+}
+export type FmBench = {
+  cases: number
+  last: { label: string; passed: number; total: number; cost_usd: number; at?: string | null } | null
+  evolve: { kept: boolean | null; branch: string | null; target: string | null; why: string | null; at?: string }[]
+}
+export type FmResearchAsk = { name: string; claims: number; verified: number; not_found: number; unchecked: number; at?: string }
 export type FmApproval = { task: string; allow: string[]; why: string }
 export type FmView = {
   v: number
@@ -43,6 +61,9 @@ export type FmView = {
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
+  budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
+  bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
+  research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
   trust_file?: string // where /fm-trust on writes the trust record (Foreman state)
   /** T-0145: a driven turn ended so this session's mod could reload; the reloaded mod starts the next turn */
   resume_after_reload?: { session: string; at: string; task?: string } | null

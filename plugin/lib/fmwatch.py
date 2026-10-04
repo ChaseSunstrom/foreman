@@ -241,6 +241,76 @@ def brainstorm(p):
             "age_h": age_h}
 
 
+def _guarded(fn):
+    """A pane section that fails is left out, never the whole view (the mod renders what it gets)."""
+    try:
+        return fn()
+    except Exception:
+        return None
+
+
+def _budget():
+    """T-0228: today's spend against the caps (fm budget), for the pane."""
+    import fmbudget
+    rows = fmbudget.ledger()
+    usd, tokens = fmbudget.spent(rows)
+    cur, high = fmbudget.effective()
+    by = {}
+    for e in rows:
+        f = by.setdefault(str(e.get("feature")), {"feature": str(e.get("feature")), "usd": 0.0, "runs": 0, "tokens": 0})
+        f["usd"] = round(f["usd"] + (e.get("usd") or 0), 4)
+        f["runs"] += e.get("runs") or 0
+        f["tokens"] += e.get("tokens") or 0
+    top = sorted(by.values(), key=lambda f: -(f["usd"] + f["tokens"] / 1e6))[:4]
+    return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high, "top": top}
+
+
+def _bench(p, events):
+    """T-0228: the bench's case count, its newest run and the latest fm evolve generations, or None."""
+    folder = os.path.join(p.dir, "bench")
+    try:
+        with open(os.path.join(folder, "cases.json"), encoding="utf-8") as f:
+            cases = len(json.load(f))
+    except (OSError, ValueError, TypeError):
+        cases = 0
+    last = None
+    results = os.path.join(folder, "results")
+    names = [n for n in (os.listdir(results) if os.path.isdir(results) else []) if n.endswith(".json")]
+    if names:
+        newest = max(names, key=lambda n: os.path.getmtime(os.path.join(results, n)))
+        try:
+            with open(os.path.join(results, newest), encoding="utf-8") as f:
+                r = json.load(f)
+            rows = r.get("cases") or []
+            last = {"label": r.get("label") or newest[:-5], "passed": sum(1 for x in rows if x.get("pass")),
+                    "total": len(rows), "cost_usd": round(sum(x.get("cost_usd") or 0 for x in rows), 2),
+                    "at": r.get("at")}
+        except (OSError, ValueError, AttributeError):
+            pass
+    evolve = [dict({k: (e.get("data") or {}).get(k) for k in ("kept", "branch", "target", "why")}, at=e.get("ts"))
+              for e in reversed(events) if e.get("event") == "evolve"][:3]
+    return {"cases": cases, "last": last, "evolve": evolve} if cases or last or evolve else None
+
+
+def _research_asks(events):
+    """T-0228: the newest fm research ask notes with their claim counts."""
+    return [{"name": d.get("name"), "claims": d.get("claims"), "verified": d.get("verified"),
+             "not_found": d.get("not found"), "unchecked": d.get("unchecked"), "at": e.get("ts")}
+            for e in reversed(events) if e.get("event") == "research" and "claims" in (d := e.get("data") or {})][:3]
+
+
+def _ledger_lines(b):
+    """T-0228: the active task's hypotheses, its oracle (example count, open questions) and batch members."""
+    hyps = [{"n": n, "status": status, "text": c.plain(text)[:200]} for n, status, text in b.hypotheses()]
+    oracle = None
+    sec = b.section("Oracle")
+    if sec.strip():
+        head, _, tail = sec.partition("\nAmbiguities")
+        oracle = {"examples": sum(1 for x in head.splitlines() if x.startswith("- ")),
+                  "ambiguities": [c.plain(x[2:])[:200] for x in tail.splitlines() if x.startswith("- ")]}
+    return {"hypotheses": hyps, "oracle": oracle, "batch": list(b.meta.get("batch") or [])}
+
+
 def view(p):
     """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
     surface to render, built from gather() so it shows what fm watch shows."""
@@ -258,7 +328,7 @@ def view(p):
         prog = c.audit_progress(act, changed)
         active = dict(c.brief_detail(act), stage=c.stage(act, autonomy, changed), stages=list(c.STAGES),
                       audits={"done": prog["done"], "need": prog["required"]},
-                      blockers=act.done_blockers(changed)[:6])
+                      blockers=act.done_blockers(changed)[:6], **_ledger_lines(act))
     events = c.ledger_tail(p, 5000)
     if active:
         focused = next((e.get("ts") for e in events if e.get("event") == "focus" and e.get("task") == act.id), None)
@@ -304,6 +374,9 @@ def view(p):
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
+        "budget": _guarded(_budget),  # T-0228
+        "bench": _guarded(lambda: _bench(p, events)),
+        "research": _guarded(lambda: _research_asks(events)) or [],
         "recent": d["recent"],
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors()), "paused_hooks": fmdoctor.paused_hooks()},

@@ -9,6 +9,7 @@ import {
   SIZE_LEGEND,
   about,
   hoursAgo,
+  tokensWord,
   activityCells,
   agentColor,
   TONE_COLOR,
@@ -1112,6 +1113,31 @@ export const register: Register = (on, options) => {
                   {c.checked ? '✓' : '○'} {c.n}. {c.text}
                 </Text>
               ))}
+              {/* T-0228: the debugging ledger, the oracle's open questions and a batch's members, where the task is */}
+              {(a.hypotheses ?? []).length > 0 && <Text color={hex(C.dim)}>hypotheses</Text>}
+              {(a.hypotheses ?? []).map(hy => (
+                <Text
+                  key={`hyp-${hy.n}`}
+                  color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)}
+                  wrap="truncate-end"
+                >
+                  {'  '}
+                  {hy.status === 'confirmed' ? '✓' : hy.status === 'ruled out' ? '✗' : '?'} H{hy.n}. {hy.text}
+                </Text>
+              ))}
+              {a.oracle && (
+                <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
+                  oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
+                  {a.oracle.ambiguities.length
+                    ? ` · ${a.oracle.ambiguities.length} open question${a.oracle.ambiguities.length === 1 ? '' : 's'}: ${a.oracle.ambiguities[0]}`
+                    : ' · no open questions'}
+                </Text>
+              )}
+              {(a.batch ?? []).length > 0 && (
+                <Text key="fm-pane-batch" color={hex(C.dim)} wrap="truncate-end">
+                  batch of {(a.batch ?? []).join(', ')}
+                </Text>
+              )}
               {a.audits.need > 0 && (
                 <Box flexDirection="row" gap={1} key="fm-pane-audits">
                   <Text color={hex(C.dim)}>audits</Text>
@@ -1242,6 +1268,61 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
+        {/* T-0228: spend against fm budget's caps, the bench and evolve, research asks — each only when it has news */}
+        {v.budget && (v.budget.today_usd > 0 || v.budget.subagent_tokens > 0 || v.budget.halved) && (
+          <Box key="card-budget" {...card(v.budget.halved ? C.warn : null)}>
+            {head(
+              'Spend today',
+              C.accent2,
+              `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)} of ${tokensWord(v.budget.caps.subagent_tokens)}`,
+            )}
+            <Box flexDirection="row" gap={1}>
+              {meter($.ui.resolve(e), e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
+              {v.budget.halved && <Text color={hex(C.warn)}>caps halved: {v.budget.halved}</Text>}
+            </Box>
+            {v.budget.top.map(t => (
+              <Text key={`spend-${t.feature}`} color={hex(C.dim)} wrap="truncate-end">
+                {'  '}
+                {t.feature} · {t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`} · {t.runs} run{t.runs === 1 ? '' : 's'}
+              </Text>
+            ))}
+          </Box>
+        )}
+
+        {v.bench && (
+          <Box key="card-bench" {...card()}>
+            {head('Bench', C.agent, `${v.bench.cases} case${v.bench.cases === 1 ? '' : 's'}`)}
+            {v.bench.last && (
+              <Text wrap="truncate-end">
+                <Text color={hex(v.bench.last.passed === v.bench.last.total ? C.ok : C.warn)}>
+                  {v.bench.last.passed}/{v.bench.last.total} passed
+                </Text>
+                <Text color={hex(C.dim)}>
+                  {' '}
+                  · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
+                </Text>
+              </Text>
+            )}
+            {v.bench.evolve.map((x, i) => (
+              <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
+                {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}
+              </Text>
+            ))}
+          </Box>
+        )}
+
+        {(v.research ?? []).length > 0 && (
+          <Box key="card-research" {...card()}>
+            {head('Research', C.accent2, 'quotes checked against their pages')}
+            {(v.research ?? []).map(r => (
+              <Text key={`research-${r.name}`} wrap="truncate-end">
+                <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
+                <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
+              </Text>
+            ))}
+          </Box>
+        )}
+
         {mine.length > 0 && (
           <Box key="card-files" {...card()}>
             {head('Files this session', C.edit, `${mine.length}`)}
@@ -1290,7 +1371,12 @@ export const register: Register = (on, options) => {
               <Text wrap="truncate-end">
                 {it.id} {it.title}
               </Text>
-              {it.age_days !== undefined && <Text color={hex(C.dim)}>{ago(it.age_days)}</Text>}
+              {it.age_days !== undefined && (
+                // T-0228: the title gives way, never the age ('today' had wrapped to 'to/da/y' in a 70-column pane)
+                <Box flexShrink={0} key={`in-age-${it.id}`}>
+                  <Text color={hex(C.dim)}>{ago(it.age_days)}</Text>
+                </Box>
+              )}
               <Button
                 key={`start-${it.id}`}
                 label="▸ start"
