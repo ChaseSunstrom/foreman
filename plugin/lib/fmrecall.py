@@ -134,6 +134,20 @@ def recall(p, query, skip=None, n=HITS):
     return [x for x in ranked if x[1] != "playbook" or x is book][:n]
 
 
+def nearest_done(p, titles):
+    """T-0208: {title: (id, title)} of the finished brief that shares at least half a title's words (2 or more), from
+    one pass over the briefs for many titles at once (fm ideas marks ideas that may already be built)."""
+    done = [(set(_tokens(" ".join([b.title, b.section("Raw request"), b.section("Interpretation")]))), b.id, b.title)
+            for b in c.load_briefs(p, include_archive=True) if b.status == "done"]
+    out = {}
+    for t in titles:
+        q = set(_tokens(t))
+        best = max(((len(q & words), bid, title) for words, bid, title in done), default=None)
+        if best and best[0] >= max(2, (len(q) + 1) // 2):
+            out[t] = best[1:]
+    return out
+
+
 def brief_query(b):
     return " ".join([b.title, b.section("Raw request"), b.section("Interpretation"), " ".join(b.meta.get("scope") or [])])
 

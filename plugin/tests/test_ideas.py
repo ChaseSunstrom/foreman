@@ -125,6 +125,27 @@ class Ideas(ForemanTestCase):
         self.assertIn("- Cache the parser", stdin)
         self.assertNotIn("- user value: 2", stdin, "the per-lens tally isn't an idea")
 
+    def test_ideas_name_the_finished_task_they_resemble(self):
+        # T-0208: most ideas in a dry run were already built; say which before the main thread greps for it
+        tid = json.loads(self.fm("task", "new", "Idea for user value", "--type", "FEATURE", "--tier", "S", "--ac",
+                                 "works :: true", "--step", "do it", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        self.fm("task", "step", tid, "done", "1", "--evidence", "true", "ok")
+        self.fm("task", "ac", tid, "check", "1", "--evidence", "true", "ok")
+        self.fm("task", "audit", tid, "self", "x", "ok")
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
+        self.fm("task", "done", tid)
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "user value", "--lens", "bold bets",
+                                 "--json", env=self.env).stdout)
+        index = read_text(os.path.join(res["dir"], "ideas.md"))
+        self.assertIn(f"- Idea for user value — near {tid} (done)", index)
+        self.assertRegex(index, r"(?m)^- Idea for bold bets$", "no finished task shares its words")
+        self.env["STUB_VARY"] = ""
+        again = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "user value", "--seen",
+                                   os.path.join(res["dir"], "ideas.md"), "--json", env=self.env).stdout)
+        self.assertIn("- Idea for user value\n", self.calls()[-1]["stdin"], "the note isn't part of the title")
+        self.assertEqual(again["ideas"], 0)
+
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
         self.assertEqual(len(self.calls()), 6)  # T-0061 four; T-0099 adds unspoken needs and delight

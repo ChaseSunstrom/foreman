@@ -12,6 +12,7 @@ import tempfile
 import time
 
 import fmcore as c
+import fmrecall
 
 LENSES = ["user value", "unspoken needs", "delight", "reliability", "performance", "security and safety", "simplicity",
           "bold bets"]
@@ -87,6 +88,7 @@ _CATEGORY = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*.*?category:?\s*([\w][\w &/
 
 
 _TITLE = re.compile(r"(?m)^\s*[-*]\s*\*\*(.+?)\*\*")
+NEAR = re.compile(r" — near T-\d+ \(done\).*$")
 _WORD = re.compile(r"[a-z0-9]{3,}")
 
 
@@ -172,7 +174,7 @@ def cmd_ideas(args):
     for path in args.seen or []:  # earlier brainstorms' ideas.md: don't repeat them, go past them (recursion)
         try:
             with open(path, encoding="utf-8") as f:
-                old = [m.group(1).strip() for m in re.finditer(r"(?m)^- (?!\w[\w ]*: \d+$)(.+)$", f.read())]
+                old = [NEAR.sub("", m.group(1)).strip() for m in re.finditer(r"(?m)^- (?!\w[\w ]*: \d+$)(.+)$", f.read())]
         except OSError as e:
             raise fmcli.UsageError(f"can't read --seen {path}: {e.strerror}")
         for t in old:
@@ -216,10 +218,13 @@ def cmd_ideas(args):
                 seen.append(_words(t))
             titles += new
             deepened[r["category"]] = new
+    near = fmrecall.nearest_done(p, titles[known:])  # T-0208: what may already be built, before grounding
+    item = lambda t: f"- {t}" + (f" — near {near[t][0]} (done): {c.fit(near[t][1], 60)}" if t in near else "") + "\n"
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
-        f.write("# Ideas by round (deduplicated titles; details in the lens files)\n"
-                + "".join(f"\n## Round {i}\n" + "".join(f"- {t}\n" for t in ts) for i, ts in enumerate(by_round, 1))
-                + "".join(f"\n## Deepened: {cat}\n" + "".join(f"- {t}\n" for t in ts) for cat, ts in deepened.items())
+        f.write("# Ideas by round (deduplicated titles; details in the lens files; \"near T-…\" names a finished task "
+                "that shares most of an idea's words)\n"
+                + "".join(f"\n## Round {i}\n" + "".join(map(item, ts)) for i, ts in enumerate(by_round, 1))
+                + "".join(f"\n## Deepened: {cat}\n" + "".join(map(item, ts)) for cat, ts in deepened.items())
                 + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items()))
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
