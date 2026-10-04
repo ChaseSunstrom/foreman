@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Stale research (T-0210): a research note that names repo files (`path` or `path:line`) is labelled `[stale: <file> changed since it was written]` wherever recall shows it, once git shows one of those files changing after the note — a lead to re-check, not an answer.
 - Split reviews (T-0216): `fm audit prep ID --split` writes one brief per lens group (adversary+edge, intent+operator, maintainer) for up to three fm-reviewer subagents run in parallel, each with a fresh context; the default stays one reviewer reading the diff once, and an L task whose diff passes 800 lines is told about `--split`.
 - API reality check (T-0211): the first time a command fails with an error that says a library API isn't what was assumed (a missing module or export, a module attribute, keyword argument or method that doesn't exist, an unresolved import), the failure hint says to read the real API — context7, the installed package's source, or `fm research ask` — before another guess.
 - Session map (T-0215): a new or compacted session's context carries one line of the project map (gates, entry points, layout, test links; ≤ 500 chars) from the cache, so Claude skips discovery searches. The hook never builds the map itself (1.5 s on a 7k-file repo): a missing or stale map starts a background `fm map`, and the line is the first thing dropped when the context is over budget.

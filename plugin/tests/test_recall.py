@@ -34,6 +34,31 @@ class Recall(ForemanTestCase):
         self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture")
         return self.fm("task", "done", tid, *(["--lesson", lesson] if lesson else []), check=False)
 
+    def test_a_note_whose_cited_file_changed_is_marked_stale(self):
+        # T-0210: research about code goes stale when that code changes after it
+        import os
+        import subprocess
+        import time
+        path = os.path.join(self.repo, "auth", "session.py")
+        os.makedirs(os.path.dirname(path))
+        with open(path, "w") as f:
+            f.write("TIMEOUT = 30\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "session"], check=True)
+        note = os.path.join(c.find_project(self.repo).dir, "research", "auth-notes.md")
+        os.utime(note, (time.time() + 60, time.time() + 60))  # written after that commit
+        out = self.fm("recall", "session renewal timeout on login").stdout
+        self.assertIn("auth-notes", out)
+        self.assertNotIn("stale", out, "the file didn't change after the note")
+        os.utime(note, (time.time() - 3600, time.time() - 3600))
+        with open(path, "w") as f:
+            f.write("TIMEOUT = 60\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "longer"], check=True)
+        out = self.fm("recall", "session renewal timeout on login").stdout
+        line = next(x for x in out.splitlines() if "auth-notes" in x)
+        self.assertIn("stale", line)
+        self.assertIn("auth/session.py", line)
+
     def test_related_past_work_is_recalled_for_a_similar_request(self):
         out = self.fm("recall", "login timeout on 3G").stdout
         self.assertIn(self.old, out)

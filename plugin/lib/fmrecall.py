@@ -5,6 +5,7 @@ import json
 import math
 import os
 import re
+import subprocess
 
 import fmcore as c
 
@@ -89,7 +90,8 @@ def _documents(p, skip=None):
         first = next((x.strip("-* ").strip() for x in text.splitlines()
                       if x.strip("-* ").strip() and not x.lstrip().startswith(("{", "#"))), "")
         yield "research", f"research {n[:-3]}: {first}", f"{n[:-3].replace('-', ' ')} {text}", None, {
-            "age": max(0.0, (__import__("time").time() - os.path.getmtime(path)) / 86400)}
+            "age": max(0.0, (__import__("time").time() - os.path.getmtime(path)) / 86400),
+            "at": os.path.getmtime(path), "cites": _cites(p.root, text)}
     for group, _, names in sorted(os.walk(PLAYBOOKS)):  # the ported procedures: a request about profiling should
         for n in sorted(x for x in names if x.endswith(".md")):  # surface the profiling playbook (no age)
             rel = os.path.relpath(os.path.join(group, n), PLAYBOOKS)
@@ -101,6 +103,33 @@ def _documents(p, skip=None):
             title = next((x[2:].strip() for x in text.splitlines() if x.startswith("# ")), n[:-3])
             yield "playbook", f"playbook {title} (skills/playbooks/references/{rel})", \
                 f"{rel[:-3].replace('-', ' ').replace('/', ' ')} {text}", None, {"age": 0.0}
+
+
+_PATH = re.compile(r"(?<![\w/.-])((?:[\w.-]+/)+[\w.-]+\.\w{1,6})(?::\d+)?")
+
+
+def _cites(root, text):
+    """Repo files a note names (path or path:line), up to 12 that exist."""
+    out = []
+    for m in _PATH.finditer(text):
+        rel = m.group(1)
+        if rel not in out and not os.path.isabs(rel) and os.path.isfile(os.path.join(root, rel)):
+            out.append(rel)
+            if len(out) == 12:
+                break
+    return out
+
+
+def _stale(root, at, cites):
+    """The cited files that git shows changing after the note was written (T-0210)."""
+    if not cites:
+        return []
+    try:
+        r = subprocess.run(["git", "-C", root, "log", f"--since=@{int(at)}", "--name-only", "--format=", "--", *cites],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    return sorted({x for x in r.stdout.split() if x in cites})
 
 
 def recall(p, query, skip=None, n=HITS, cover=0.0):
@@ -132,7 +161,12 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
         scored.append((s / (1 + extra.get("age", 0) / HALF_LIFE), kind, label, tier, extra))
     ranked = sorted(scored, key=lambda x: -x[0])
     book = next((x for x in ranked if x[1] == "playbook"), None)  # one procedure at most: history comes first
-    return [x for x in ranked if x[1] != "playbook" or x is book][:n]
+    hits = [x for x in ranked if x[1] != "playbook" or x is book][:n]
+    for i, (score, kind, label, tier, extra) in enumerate(hits):
+        gone = _stale(p.root, extra["at"], extra["cites"]) if kind == "research" else []
+        if gone:  # T-0210: research about code that has changed since is a lead, not an answer
+            hits[i] = (score, kind, f"{label} [stale: {', '.join(gone[:3])} changed since it was written]", tier, extra)
+    return hits
 
 
 def nearest_done(p, titles):
