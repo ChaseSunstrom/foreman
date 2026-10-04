@@ -1453,7 +1453,7 @@ def cmd_check(args):
             f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)")
         return 0
     before = _last_check_results(p, act.id if act else None)
-    results, notes, skipped = [], {}, {}
+    results, notes, skipped, reruns = [], {}, {}, []
     for cmd in checks:  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
         skip = None if args.fresh else _paths_unchanged(p, cmd, check_paths.get(cmd), tree)
         if skip:  # T-0126: recorded as a pass carrying its real run's time and tree
@@ -1467,6 +1467,7 @@ def cmd_check(args):
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
+                reruns.append((cmd, code, output))  # T-0274 review: the names from the failing first run
                 code, output, notes[cmd] = 0, output2, "flaky: failed, then passed on a rerun"
             elif before.get(cmd):
                 notes[cmd] = "pre-existing: it also failed before this task"
@@ -1487,6 +1488,11 @@ def cmd_check(args):
     failed = sum(1 for _, code, _, _ in results if code)
     if failed:
         c.hints_reset(p)  # T-0250: a quieted hint gets its detail back when a gate fails
+    try:  # T-0272: which tests failed, and which failed then passed on this same tree (a note; the verdict stands)
+        flaky = c.note_flakes(p, reruns + [(cmd, code, output) for cmd, code, output, _ in results if cmd not in skipped],
+                              tree, commands=checks)
+    except Exception:
+        flaky = []
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **skipped.get(cmd, {})} for cmd, code, _, s in results]})
@@ -1504,6 +1510,7 @@ def cmd_check(args):
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
+    lines += [f"! {x}" for x in flaky]
     if wrote:
         lines.append("! the gates changed the working tree: one of them writes files (a check should only read)")
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
@@ -1876,12 +1883,37 @@ def lazy(module, func):
 
 # ---------------------------------------------------------------- parser
 
+_ARGV = []  # the arguments main() is parsing
+
+
 class _Parser(argparse.ArgumentParser):
     """No abbreviated long options (subparsers inherit the class): `--allo core` must not slip past the guard."""
 
     def __init__(self, *args, **kw):
         kw["allow_abbrev"] = False
         super().__init__(*args, **kw)
+
+    def error(self, message):
+        """T-0273: an unknown command or flag names the nearest real one (a wrong guess costs a retry otherwise)."""
+        import difflib
+        flags = sorted({o for prs in _all_parsers(build_parser()) for o in prs._option_string_actions})  # every
+        # command's and the root's (-p); sorted, so the nearest match doesn't depend on set order
+        unknown = [t.partition("=")[0] for t in _ARGV if re.match(r"--?[A-Za-z]", t) and t.partition("=")[0] not in flags]
+        near = [m for t in unknown for m in difflib.get_close_matches(t, flags, n=1)][:1]  # a mistyped flag shifts the
+        bad = re.search(r"invalid choice: '([^']*)' \(choose from (.+)\)", message)    # positionals: name it first
+        if bad and not near:
+            near = difflib.get_close_matches(bad.group(1), re.findall(r"'?([\w-]+)'?", bad.group(2)), n=1)
+        super().error(message + (f" — did you mean {near[0]}?" if near else ""))
+
+
+def _all_parsers(parser):
+    """The parser and every subparser under it (for the nearest flag to an unrecognized one)."""
+    out = [parser]
+    for a in parser._actions:
+        if isinstance(a, argparse._SubParsersAction):
+            for sub in dict.fromkeys(a.choices.values()):
+                out += _all_parsers(sub)
+    return out
 
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
@@ -2390,6 +2422,8 @@ def build_parser():
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    global _ARGV
+    _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     args = build_parser().parse_args(argv or ["help"])  # bare fm: the tiers, not a usage error
     _sync_in(args)
     try:

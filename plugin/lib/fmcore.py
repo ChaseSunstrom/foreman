@@ -1718,6 +1718,55 @@ def veto_hits(p, text):
 
 CODE = re.compile(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
 TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
+# T-0272: the names of failing tests in a gate's output (unittest, pytest, go test, cargo test)
+_FAILING_TEST = re.compile(r"(?m)^(?:(?:FAIL|ERROR): \S+ \(([A-Za-z_]\w*(?:\.\w+)+)\)|FAILED (\S+::\S+)|--- FAIL: (\S+)|"
+                           r"test (\S+) \.\.\. FAILED)")  # unittest's (module.Class.test): dotted, not "ERROR: x (30)"
+FLAKY_KEEP = 500
+
+
+def failing_tests(output):
+    return sorted({next(g for g in m.groups() if g) for m in _FAILING_TEST.finditer(output or "")})[:200]
+
+
+def note_flakes(p, runs, tree, commands=None):
+    """Record each gate's failing tests against (command, tree); the same command passing on the same tree later turns
+    them flaky. Returns the lines fm check adds: flakes found now, and known flakes failing again. Never a pass."""
+    path = os.path.join(p.dir, "flakes.json")
+    with lock(p.dir, timeout=5):
+        try:
+            with open(path, encoding="utf-8") as f:
+                led = json.load(f)
+        except (OSError, ValueError):
+            led = {}
+        pending = led.get("pending") if isinstance(led.get("pending"), dict) else {}
+        flaky = {k: v for k, v in (led.get("flaky") if isinstance(led.get("flaky"), dict) else {}).items()
+                 if isinstance(v, dict)}  # a damaged entry is dropped, never the whole ledger
+        if commands is not None:  # gates removed since: their pending names go
+            pending = {k: v for k, v in pending.items() if k in {str(x)[:300] for x in commands}}
+        lines = []
+        for cmd, code, output in runs:
+            key = str(cmd)[:300]
+            if code:
+                ids = failing_tests(output)
+                known = [i for i in ids if isinstance(flaky.get(i), dict)]
+                if known:
+                    lines.append("known flaky, failing again: " + ", ".join(
+                        f"{i} ({flaky[i].get('count', 1)}× before)" for i in known[:5]))
+                pending[key] = {"tree": tree, "tests": ids}
+            else:
+                was = pending.pop(key, None)
+                if isinstance(was, dict) and tree and was.get("tree") == tree and was.get("tests"):
+                    for i in was["tests"]:
+                        f = flaky.get(i) if isinstance(flaky.get(i), dict) else {"count": 0}
+                        flaky[i] = dict(f, count=int(f.get("count") or 0) + 1, last=now(), cmd=key[:120])
+                    lines.append(f"flaky: {', '.join(was['tests'][:5])} failed on this same tree and now pass "
+                                 f"({fit(key, 60)}); fix the race, don't rerun past it")
+        if len(flaky) > FLAKY_KEEP:
+            flaky = dict(sorted(flaky.items(), key=lambda kv: str(kv[1].get("last") or ""))[-FLAKY_KEEP:])
+        write_atomic(path, json.dumps({"pending": pending, "flaky": flaky}))
+    return lines
+
+
 QUIET_AFTER = 6  # T-0250: a hint shown this many times running without being used loses its detail
 HINT_MARKS = {"batch": "fm batch ", "skills": "skills that fit"}  # in the full and the quiet form alike
 _REVISIT_TAG = re.compile(r"\[revisit: (?:after (\d{4}-\d\d-\d\d)|when (\S+) changes @([0-9a-f]+))\]")

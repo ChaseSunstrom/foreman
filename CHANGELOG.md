@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Flake ledger and typo help (T-0274): `fm check` names tests that failed and then passed on the same tree (or on its one rerun) as flaky, and calls out a known flake failing again; a mistyped fm command or flag gets "did you mean …?".
 - `fm task prove ID --hunks` (T-0271): removes each code hunk of a task's change on its own and runs the check; hunks the check doesn't notice are named and recorded as inconclusive — a check that passes for the wrong reason now shows.
 - `fm doctor` now notices crash damage (T-0268): empty git objects in Foreman's or a project's repo, empty briefs, state JSON that no longer parses; `fm doctor --repair` quarantines the empty objects.
 - Guard (T-0270, security): git's remaining ways to write files or run commands are covered — `git config` exec keys and aliases, subcommand options that take a command (rebase -x, bisect run, submodule foreach, difftool -x, grep -O, upload/receive-pack, filter-branch filters), config or templates loaded from elsewhere, exported exec variables, and the files archive/bundle/worktree/init/format-patch/checkout-index/submodule write. Replayed over 5,000 real commands: nothing newly blocked.
