@@ -16,6 +16,11 @@ with open(os.environ["STUB_LOG"], "a") as f:
                         "path": os.environ.get("PATH", "").split(os.pathsep)[0],
                         "creds": [k for k in ("GITHUB_TOKEN", "AWS_SECRET_ACCESS_KEY") if k in os.environ],
                         "login": os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")}) + "\n")
+if os.environ.get("STUB_DIAG"):  # behave a little like a Foreman session: a task, and one guard block
+    import subprocess
+    subprocess.run(["fm", "task", "new", "Fix double", "--type", "FIX", "--tier", "S"], capture_output=True)
+    with open(os.path.join(os.environ["FOREMAN_STATE"], "events.jsonl"), "a") as f:
+        f.write(json.dumps({"kind": "guard_block", "category": "rm-outside", "tool": "Bash"}) + "\n")
 if os.environ.get("STUB_SOLVE"):
     with open("calc.py", "w") as f:
         f.write("def double(x):\n    return 2 * x\n")
@@ -123,6 +128,19 @@ class Bench(ForemanTestCase):
         self.assertTrue(res["cases"][0]["error"], "no bin/fm: recorded as the case's error, not a crash")
         self.assertIn("broken", self.fm("bench", "list", env=self.env).stdout, "the results file was written")
         self.assertEqual(git(self.repo, "worktree", "list").count("\n"), 0)
+
+    def test_a_replay_says_what_its_foreman_did(self):
+        # T-0220: a failure pinned to a stage: did it plan, verify, get blocked?
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--label", "diag", "--json", env=dict(self.env, STUB_DIAG="1"),
+                                 check=False).stdout)
+        diag = res["cases"][0]["diag"]
+        self.assertEqual(list(diag["tasks"].values()), ["FIX S planned"])
+        self.assertEqual(diag["guard_blocks"], {"rm-outside": 1})
+        self.assertGreaterEqual(diag["ledger"].get("capture", 0) + diag["ledger"].get("task_new", 0), 1)
+        out = self.fm("bench", "show", "diag", env=self.env).stdout
+        self.assertIn("FIX S planned", out)
+        self.assertIn("rm-outside", out)
 
     def test_a_plugin_without_the_guard_or_credentials_never_runs(self):
         # security review: replays run in bypass mode like the user's sessions, so the guard must come with them

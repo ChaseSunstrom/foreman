@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Replay diagnostics (T-0220): each `fm bench run` case keeps what the replay's own Foreman did — its tasks' type, tier and final status, ledger events by kind, guard blocks by category, the tools used most — and `fm bench show LABEL` prints it beside the verify results, so a failed case can be pinned to a stage (never planned, never verified, blocked).
 - Stale research (T-0210): a research note that names repo files (`path` or `path:line`) is labelled `[stale: <file> changed since it was written]` wherever recall shows it, once git shows one of those files changing after the note — a lead to re-check, not an answer.
 - Split reviews (T-0216): `fm audit prep ID --split` writes one brief per lens group (adversary+edge, intent+operator, maintainer) for up to three fm-reviewer subagents run in parallel, each with a fresh context; the default stays one reviewer reading the diff once, and an L task whose diff passes 800 lines is told about `--split`.
 - API reality check (T-0211): the first time a command fails with an error that says a library API isn't what was assumed (a missing module or export, a module attribute, keyword argument or method that doesn't exist, an unresolved import), the failure hint says to read the real API — context7, the installed package's source, or `fm research ask` — before another guess.

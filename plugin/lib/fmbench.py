@@ -9,7 +9,9 @@ full autonomy and drive on), `claude -p` with the candidate plugin (--plugin-dir
 installed Foreman doesn't load beside it); then the hidden tests are restored and the verify commands decide. Cost,
 turns and time come from claude's JSON result. Results are kept per label; `compare` sets two side by side, which is
 how /foreman:improve judges a candidate on real past work instead of synthetic cases."""
+import collections
 import contextlib
+import glob
 import json
 import os
 import re
@@ -132,6 +134,29 @@ def validate(p, case):
     return None if any(code for _, code, _ in before) else "its verify commands already pass before the change"
 
 
+def _diagnose(state):
+    """T-0220: what the replay's own Foreman did, from its state before the worktree goes: ledger events by kind, its
+    tasks' type, tier and final status, guard blocks by category, and the tools used most."""
+    ledger, blocks, tools, tasks = collections.Counter(), collections.Counter(), collections.Counter(), {}
+    for path in glob.glob(os.path.join(state, "projects", "*", "ledger.jsonl")):
+        ledger.update(str(e.get("event")) for e in c.tail_jsonl(path, 20000))
+    for path in sorted(glob.glob(os.path.join(state, "projects", "*", "tasks", "*.md"))):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                head = f.read(2000)
+        except OSError:
+            continue
+        meta = dict(re.findall(r"(?m)^(id|type|tier|status): *(\S+)", head))
+        if meta.get("id"):
+            tasks[meta["id"]] = f"{meta.get('type', '?')} {meta.get('tier', '?')} {meta.get('status', '?')}"
+    for e in c.tail_jsonl(os.path.join(state, "events.jsonl"), 50000):
+        if e.get("kind") == "guard_block":
+            blocks[str(e.get("category"))] += 1
+        elif e.get("kind") == "tool":
+            tools[str(e.get("tool"))] += 1
+    return {"ledger": dict(ledger), "tasks": tasks, "guard_blocks": dict(blocks), "tools": dict(tools.most_common(8))}
+
+
 def _result_json(text):
     """claude -p --output-format json's result object (the last JSON line that has one)."""
     for line in reversed((text or "").strip().splitlines()):
@@ -173,7 +198,8 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30):
         except OSError as e:
             error = f"can't start claude: {e}"
         graded = _grade(wt, case, env)
-    return {"id": case["id"], "pass": not error and all(code == 0 for _, code, _ in graded),
+        diag = _diagnose(state)
+    return {"id": case["id"], "pass": not error and all(code == 0 for _, code, _ in graded), "diag": diag,
             "verify": [{"cmd": x, "exit": code, "tail": tail} for x, code, tail in graded],
             "cost_usd": res.get("total_cost_usd"), "turns": res.get("num_turns"),
             "seconds": round(time.monotonic() - t0), "error": error or (res.get("result") if res.get("is_error") else None)}
@@ -257,6 +283,25 @@ def cmd_bench(args):
             f"  {'✓' if x['pass'] else '✗'} {x['id']} · {x['turns']} turns · ${x['cost_usd'] or 0:.2f} · {x['seconds']} s"
             + (f" · {x['error']}" if x["error"] else "") for x in results))
         return 0 if all(x["pass"] for x in results) else 1
+    if args.bench_cmd == "show":
+        try:
+            with open(os.path.join(_results_dir(p), args.label + ".json"), encoding="utf-8") as f:
+                res = json.load(f)
+        except (OSError, ValueError):
+            raise fmcli.UsageError(f"no bench results named {args.label!r} (fm bench list)")
+        lines = [f"bench {res['label']}: {_summary(res)}"]
+        for x in res["cases"]:
+            d = x.get("diag") or {}
+            led = d.get("ledger") or {}
+            lines.append(f"{'✓' if x['pass'] else '✗'} {x['id']} · {x['turns']} turns · ${x['cost_usd'] or 0:.2f}"
+                         + (f" · {x['error']}" if x.get("error") else ""))
+            lines.append("  tasks: " + (", ".join(f"{k} {v}" for k, v in (d.get("tasks") or {}).items()) or "none made"))
+            lines.append("  ledger: " + (", ".join(f"{k} {v}" for k, v in sorted(led.items(), key=lambda kv: -kv[1])[:10])
+                                         or "nothing recorded"))
+            if d.get("guard_blocks"):
+                lines.append("  guard blocks: " + ", ".join(f"{k} {v}" for k, v in d["guard_blocks"].items()))
+            lines += [f"  verify: {v['cmd']} → exit {v['exit']} · {v['tail']}" for v in x.get("verify") or []]
+        return fmcli.out(args, res, "\n".join(lines))
     # compare
     runs = []
     for label in (args.a, args.b):
