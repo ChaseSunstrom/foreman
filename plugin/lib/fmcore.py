@@ -2253,8 +2253,12 @@ def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
     why = [f for f in files if _SENSITIVE_PATH.search(f) or _MANIFEST.search(f)][:5]
+    blocks = re.split(r"(?m)^(?=diff --git )", diff)
+    if any(b.startswith("diff --git ") for b in blocks):  # docs that name a pattern aren't code (T-0287); all else is
+        blocks = [b for b in blocks if not re.search(r"(?i)\.(md|markdown|rst|txt|adoc)$", (
+            re.search(r"(?m)^\+\+\+ b/(.+?)\t?$", b) or re.search(r"^diff --git a/.+ b/(.+)$", b, re.M) or [""] * 2)[1])]
     added = "\n".join(_REGEX_EXEC.sub("", _STRING_LITERAL.sub('""', line[1:]))
-                      for line in diff.splitlines() if line.startswith("+"))
+                      for b in blocks for line in b.splitlines() if line.startswith("+") and not line.startswith("+++"))
     why += sorted({m.group(1) for m in _SENSITIVE_CODE.finditer(added)})[:5]
     return why
 

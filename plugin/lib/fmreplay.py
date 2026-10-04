@@ -54,14 +54,22 @@ def _key(cmd, cwd):
     return hashlib.sha256(f"{cwd}\0{cmd}".encode("utf-8", "replace")).hexdigest()[:20]
 
 
+def _ctx(cwd):
+    """The guard's context with no grants, in the folder a command runs in."""
+    import fmguard as g
+    home = os.path.expanduser("~")
+    cwd = cwd or home
+    return g.Ctx(cwd=cwd, project_root=g.project_root_for(cwd, home), home=home, foreman_home=c.foreman_home(),
+                 state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=["/tmp", "/var/tmp"])
+
+
 def verdicts(cmds):
     """{key: the category the guard blocks it with, or 'allow'} with no grants, each in the folder it ran in."""
     import fmguard as g
     home, out = os.path.expanduser("~"), {}
     for cmd, cwd in cmds:
         cwd = cwd or home
-        ctx = g.Ctx(cwd=cwd, project_root=g.project_root_for(cwd, home), home=home, foreman_home=c.foreman_home(),
-                    state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=["/tmp", "/var/tmp"])
+        ctx = _ctx(cwd)
         try:
             b = g.check("Bash", {"command": cmd}, ctx)
             out[_key(cmd, cwd)] = b.category if b else "allow"
@@ -76,6 +84,11 @@ def _baseline_path():
 
 def cmd_replay(args):
     import fmcli
+    if args.cmd:  # T-0287: one command's verdict, asked and never run (no grants: what the guard says by default)
+        import fmguard as g
+        b = g.check("Bash", {"command": args.cmd}, _ctx(os.path.abspath(args.cwd or os.getcwd())))
+        return fmcli.out(args, {"verdict": b.category if b else "allow", "detail": b.detail if b else None},
+                         f"blocked {b.category}: {c.plain(b.detail)}" if b else "allow")
     t0 = time.monotonic()
     cmds = corpus(args.days)
     now = verdicts(cmds)

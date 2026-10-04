@@ -2290,6 +2290,8 @@ def build_parser():
                                                            "it now blocks or lets through compared with the accepted run")
     s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
+    s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
+    s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
 
