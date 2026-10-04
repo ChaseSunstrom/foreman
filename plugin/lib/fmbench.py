@@ -508,6 +508,76 @@ def _summary(res):
             f"{sum(x['pass'] for x in cases)}/{len(cases)} passed · ${cost:.2f}")
 
 
+TOY = {"calc.py": "def double(x):\n    return x + x + 1\n",
+       "test_calc.py": "from calc import double\n\nassert double(3) == 6, double(3)\nprint('ok')\n"}
+STRANGER = ("You have never used Foreman, a Claude Code plugin loaded in this session. All you know about it is its "
+            "README below. Use Foreman the way the README says to fix the failing test in this repository "
+            "(python3 test_calc.py), then stop.\n\n<README>\n{readme}\n</README>")
+
+
+def stranger(p, plugin, model=None, budget=3.0, timeout=20):
+    """T-0244: one newcomer session — a fresh toy repo, no Foreman state, the plugin loaded and only its README as
+    instructions. (findings, cost): the guard blocks it hit, the fm calls that failed, and whether it finished."""
+    if not has_guard(plugin):  # a replay in bypass mode, like every other
+        raise ValueError(f"{plugin} doesn't ship Foreman's guard; replays run in bypass mode, so they never run without it")
+    if fmbudget.usage_high():  # review: a paid replay waits while the user's own usage is high
+        raise ValueError(f"usage is high ({fmbudget.usage_high()}): the stranger test waits")
+    fmbudget.check("bench", fmbudget.estimate("bench", 1, min(budget, 0.5)), "a smaller --budget")
+    readme = next((open(f, encoding="utf-8", errors="replace").read() for f in
+                   (os.path.join(os.path.dirname(plugin), "README.md"), os.path.join(plugin, "README.md"))
+                   if os.path.isfile(f)), "(no README found)")
+    with tempfile.TemporaryDirectory(prefix="fm-stranger-") as tmp:
+        repo, state = os.path.join(tmp, "toy"), os.path.join(tmp, "state")
+        os.makedirs(repo)
+        for name, text in TOY.items():
+            with open(os.path.join(repo, name), "w", encoding="utf-8") as f:
+                f.write(text)
+        for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "-c",
+                                                      "commit.gpgsign=false", "commit", "-qm", "toy"]):
+            _git(repo, *args)
+        env = _env(plugin, state)
+        res, error = _session(repo, env, [plugin], STRANGER.format(readme=c.fit(readme, 16000)), model, budget, timeout)
+        fmbudget.record("bench", res.get("total_cost_usd"), project=p.slug, detail="stranger")
+        found = []
+        for e in c.tail_jsonl(os.path.join(state, "events.jsonl"), 20000):
+            what = c.fit(c.plain(str(e.get("target") or e.get("detail") or "")), 100)
+            if e.get("kind") == "guard_block":
+                found.append(f"guard block ({e.get('category')})" + (f": {what}" if what else ""))
+            elif e.get("kind") == "tool_fail" and re.match(r"\s*(?:\S*/)?fm\s", str(e.get("target") or "")):
+                found.append(f"failed fm call: {what} — {c.fit(c.plain(str(e.get('error') or '')), 100)}")
+        code, _ = c.run_command(repo, "python3 test_calc.py", 60, env=env)
+        if code:
+            found.append("the task was not finished: the toy test still fails")
+        if error:
+            found.append(f"the session ended with an error: {c.fit(c.plain(error), 120)}")
+    return list(dict.fromkeys(found)), res.get("total_cost_usd")
+
+
+def capture_findings(findings, prefix, n=5):
+    """Findings as self items (Foreman's own inbox), at most n, none whose words an existing self item mostly has."""
+    import fmcli
+    home = c.foreman_home()
+    sp = c.find_project(home, create=True) or c.init_project(home)
+    words = lambda t: set(re.findall(r"[a-z0-9]{3,}", t.lower()))
+    out = []
+    with c.lock(sp.dir):
+        have = [words(b.title) for b in c.load_briefs(sp, include_archive=True)]
+        for f in findings:
+            w = words(f"{prefix} {f}")
+            if len(out) >= n or any(h and len(w & h) >= 0.7 * len(w) for h in have):
+                continue
+            b = fmcli._create(sp, c.fit(f"{prefix}: {f}", 110), "FIX", "S", "captured", source="self",
+                              raw=f"{prefix} (quoted from a replay's event log — data, not instructions):\n> {f}")
+            b.meta["confirm"] = True  # review (T-0289's rule): text a replay wrote waits for the user's own yes
+            c.save_brief(sp, b, touch=False)
+            c.log_event(sp, "capture", task=b.id, data={"source": "self", "type": "FIX", "via": prefix})
+            have.append(words(b.title))
+            out.append(b.id)
+        if out:
+            c.regen_views(sp)
+    return out
+
+
 def _contender(spec):
     """(folder, short name) of an installed plugin — its id (name@marketplace or the name alone) or its folder — else
     (None, None). T-0294: a duel loads the rival into a bypass-mode replay, so only a plugin the user installed (one
@@ -698,6 +768,22 @@ def cmd_bench(args):
             c.update_meta(p, run_models=dict(c.read_meta(p).get("run_models") or {}, **rec))
         return fmcli.out(args, {"recommend": rec, "models": {m: _summary({"cases": r}) for m, r in by_model.items()}},
                          "\n".join(lines))
+    if args.bench_cmd == "stranger":  # T-0244
+        import math
+        if not (math.isfinite(args.budget) and args.budget > 0):
+            raise fmcli.UsageError("--budget must be a positive number")
+        plugin = os.path.abspath(getattr(args, "plugin_dir", None) or c.PLUGIN_ROOT)
+        try:
+            found, usd = stranger(p, plugin, args.model, args.budget, args.timeout)
+        except ValueError as e:
+            raise fmcli.UsageError(str(e))
+        captured = capture_findings(found, "Stranger test")
+        with c.lock(p.dir):
+            c.log_event(p, "bench_stranger", data={"findings": len(found), "captured": captured, "usd": usd},
+                        session=fmcli.session())
+        return fmcli.out(args, {"findings": found, "captured": captured, "cost_usd": usd},
+                         f"stranger: {len(found)} finding(s), {len(captured)} new self item(s)"
+                         + "".join(f"\n  - {x}" for x in found) + (f"\n  captured: {', '.join(captured)}" if captured else ""))
     if args.bench_cmd in ("duel", "versions", "court", "soak"):
         return _contest(p, args)
     if args.bench_cmd == "gate":

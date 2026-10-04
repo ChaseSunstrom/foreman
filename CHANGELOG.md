@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Unattended checks (T-0298): `fm bench stranger` lets a newcomer session try Foreman from the README alone and files what tripped it up as Foreman's own inbox items; `fm night` runs budgeted background work (the landscape scan, the daily second read, the court of your steers) while you're away, refuses when usage is high, and the morning `fm digest` says what ran.
 - Follow-ups (T-0296): `fm doctor` now notices a broken routing table and no longer fails every project over one damaged repo elsewhere; flags that did nothing are refused; `fm bench duel` only pits Foreman against plugins you installed; MASTER caught up with the new commands.
 - Builders (T-0234): an independent S/M task can be handed to a `foreman:fm-builder` subagent that works it test-first in its own git worktree and returns a commit; `fm lane brief ID` writes its brief and the Agent call (isolation worktree), at most two at once; the main thread reviews, merges, takes the task back with `fm lane rm` and closes it.
 - Security (T-0291, from the session-wide review): `fm export agents --out` can no longer write outside the project; requests `fm second session` finds in an old transcript always wait for your yes, even in full autonomy; bench replays can't make Foreman's own git calls run a filter command a replayed session configured.

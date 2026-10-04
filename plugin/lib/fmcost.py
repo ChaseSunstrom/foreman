@@ -250,6 +250,12 @@ def cmd_digest(args):
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
         if any(n > 1 for n in fails.values()) else []
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
+    nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
+    lines += ["Night shift (fm night):"] + [  # T-0236
+        f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
+                                                        for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
+        + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
+        for e in nights[-5:]] if nights else []
     fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review,
                      "blocked": [b.id for b in blocked], "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))

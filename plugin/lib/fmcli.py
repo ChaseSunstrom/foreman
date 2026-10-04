@@ -2019,7 +2019,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run ui watch"),
+    ("Running elsewhere", "lane serve run night ui watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2270,6 +2270,13 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--timeout", type=float, default=300)
+    s = add("night", lazy("fmnight", "cmd_night"),
+            help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
+                 "refused at high usage; fm digest reports it")
+    s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
+    s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
+    s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
+                                                                  "second session, court")
     s = add("landscape", lazy("fmoutside", "cmd_landscape"),
             help="research what people want from coding-agent harnesses now: what's new since the last scan, what "
                  "Foreman lacks")
@@ -2451,7 +2458,9 @@ def build_parser():
                 "versions": "replay cases on Foreman at an earlier git revision and on this one, and gate the two (T-0241)",
                 "court": "turn the user's steers and corrections into judged cases and replay them (T-0242)",
                 "soak": "replay a case as a conversation with a child playing the user; report what they had to repeat "
-                        "(T-0243)"}
+                        "(T-0243)",
+                "stranger": "a newcomer session in a toy repo with only the README: its stumbles become self items "
+                            "(T-0244)"}
     for name, text in contests.items():
         b = bsp.add_parser(name, help=text, description=text)
         b.add_argument("--json", action="store_true")
@@ -2461,9 +2470,9 @@ def build_parser():
         if name == "versions":
             b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
             b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")
-        if name in ("court", "soak"):
+        if name in ("court", "soak", "stranger"):
             b.add_argument("--plugin", dest="plugin_dir", help="the plugin folder to test (default: this Foreman)")
-        if name != "court":
+        if name not in ("court", "stranger"):
             b.add_argument("--ids", nargs="+", help="only these case ids")
         if name == "soak":
             b.add_argument("--turns", type=int, default=3, help="the user's replies at most")
