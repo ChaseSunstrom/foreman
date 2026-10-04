@@ -1278,6 +1278,9 @@ class Reload(HookCase):
         self.assertEqual(stop().get("decision"), "block", "one change is handed over once")
         touch(".claude-plugin/types/claude-code/index.d.ts", 10)  # the engine writes these on every load
         self.assertEqual(stop().get("decision"), "block")
+        for rel in ("tests/ui.test.tsx", "README.md"):  # T-0203: nothing the engine loads, nothing to reload
+            touch(rel, 15)
+            self.assertEqual(stop().get("decision"), "block", rel)
         self.hook("UserPromptSubmit", {"prompt": "Continue the Foreman drive: the Foreman UI reloaded"}, env=env)
         self.assertIsNone(view(), "the resumed turn clears it")
 

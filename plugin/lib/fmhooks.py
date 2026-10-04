@@ -1421,8 +1421,9 @@ def _ui_changed(sid, since, handed):
     root = os.path.join(os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude"), "dev-mods", sid)
     newest = 0
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [n for n in dirnames if not (n == "types" and dirpath.endswith(".claude-plugin"))]
-        for name in filenames:
+        # T-0203: tests and docs aren't loaded, so changing them needs no reload
+        dirnames[:] = [n for n in dirnames if not (n == "types" and dirpath.endswith(".claude-plugin") or n == "tests")]
+        for name in (n for n in filenames if not n.endswith(".md")):
             try:
                 newest = max(newest, os.stat(os.path.join(dirpath, name)).st_mtime)
             except OSError:
