@@ -60,7 +60,11 @@ def check(tool_name, tool_input, ctx, found=None):
                                       or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
                 return Block(got, detail)
-    if sum(1 for got, _ in found if got == "plugin") > 1:  # a plugin yes is used up by one change (fmhooks)
+    plug = [d for got, d in found if got == "plugin"]
+    # T-0201: refreshing listings before one `claude plugin update` is that update (unpinned; it refreshes them itself)
+    if plug.count(_UPDATE) == 1 and all(d in (_UPDATE, _MARKET_UPDATE) for d in plug):
+        plug = [_UPDATE]
+    if len(plug) > 1:  # a plugin yes is used up by one change (fmhooks)
         return Block("plugin", "more than one plugin change in one command; one yes covers one change: run each as "
                                "its own command, after its own fm ask")
     return None
@@ -1552,6 +1556,8 @@ _CLAUDE_CHANGES = {"plugin": {"install", "i", "enable", "disable", "uninstall", 
 
 
 _SESSION_CONFIG = ("--settings", "--mcp-config", "--plugin-dir")
+_UPDATE = "claude plugin update changes Claude Code's plugins, MCP servers or config"  # the details check() pairs
+_MARKET_UPDATE = "claude plugin marketplace update"
 
 
 def _check_claude_config(name, args, stdin=""):

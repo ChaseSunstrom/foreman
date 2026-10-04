@@ -890,6 +890,19 @@ class PluginChanges(GuardCase):
         self.assertIn("one", r.detail)
         self.assertIsNone(self.bash("fm plugins install a@m", allow=["plugin"]))
 
+    def test_refreshing_a_marketplace_before_one_update_is_one_change(self):
+        # T-0201: an update isn't pinned and refreshes the listing itself; an install after a refresh still is two
+        for cmd in ("claude plugin marketplace update foreman; claude plugin update foreman-ui@foreman",
+                    "claude plugin marketplace update m && claude plugin marketplace update n && claude plugin update x@m"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(self.bash(cmd, allow=["plugin"]))
+        for cmd in ("claude plugin marketplace update m && claude plugin install x@m",
+                    "claude plugin marketplace update m && claude plugin enable x@m",
+                    "claude plugin marketplace update m; claude plugin update x@m; claude plugin update y@m",
+                    "claude plugin marketplace add o/r && claude plugin update x@m"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd, allow=["plugin"]), "plugin")
+
     def test_commands_fm_runs_for_claude_are_checked_too(self):
         # T-0024/T-0025: fm task evidence --run and fm check run commands the Bash guard would otherwise never see
         self.run_table([
