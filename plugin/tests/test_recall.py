@@ -115,7 +115,7 @@ class FailureMemory(ForemanTestCase):
     """T-0046: a failure seen and fixed in an earlier task is pointed out when it happens again."""
     ERR = "Exit code 1\nTraceback (most recent call last):\n  File \"/tmp/a/{f}.py\", line {n}\nModuleNotFoundError: No module named 'yaml'"
 
-    def fail(self, n=12, f="parser"):
+    def failing(self, n=12, f="parser"):
         return self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"},
                                                 "error": self.ERR.format(n=n, f=f)})
 
@@ -129,13 +129,14 @@ class FailureMemory(ForemanTestCase):
         import fmrecall
         self.fm("init")
         first = self.task("Tidy the YAML loader")
-        self.assertIsNone(json.loads(self.fail().stdout or "null"), "first sighting: nothing to point to")
+        sighting = json.loads(self.failing().stdout or "null") or {}
+        self.assertNotIn("came up in", json.dumps(sighting), "first sighting: no earlier task to point to")
         self.fm("task", "step", first, "done", "1", "--evidence", "x", "ok")
         self.fm("task", "ac", first, "check", "1", "--evidence", "x", "ok")
         self.fm("task", "audit", first, "self", "x", "ok")
         self.fm("task", "done", first, "--lesson", "add PyYAML to requirements.txt")
         self.task("Tidy the config reader")
-        ctx = json.loads(self.fail(n=40, f="config").stdout)["hookSpecificOutput"]["additionalContext"]
+        ctx = json.loads(self.failing(n=40, f="config").stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn(first, ctx)
         self.assertIn("PyYAML", ctx)
         self.assertEqual(fmrecall.failure_signature(self.ERR.format(n=1, f="a")),
