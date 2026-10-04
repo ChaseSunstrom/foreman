@@ -30,9 +30,21 @@ TEST_FILE = re.compile(r"(^|/)(tests?|spec|__tests__)/|(^|/)test_[^/]*\.py$|_tes
 def _git(root, *args, timeout=120):
     env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # nothing points it at another repo
     # T-0280 review: a replay runs in bypass mode in a worktree that shares the repo's config, so git run after it
-    # (grading, judging, cleanup) must not run a command the session configured: no fsmonitor, no hooks
-    return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *args],
-                          capture_output=True, text=True, timeout=timeout, env=env)
+    # (grading, judging, cleanup) must not run a command the session configured: no fsmonitor, no hooks — and
+    # (T-0290) no filter driver, from any config file (a session may have written one anywhere), whatever
+    # .gitattributes names it — but git-lfs's own driver, so LFS repos still check out content
+    found = {}
+    for ln in subprocess.run(["git", "-C", root, "config", "--get-regexp", r"^filter\."], capture_output=True,
+                             text=True, timeout=timeout, env=env).stdout.split("\n"):
+        m = re.match(r"filter\.(.+)\.(\w+) ?(.*)$", ln)
+        if m:
+            found.setdefault(m.group(1), []).append((m.group(2), m.group(3)))
+    drivers = {d for d, kv in found.items()
+               if not (d == "lfs" and all(k == "required" or v.startswith("git-lfs ") for k, v in kv))}
+    neutral = [x for d in sorted(drivers) for k in ("clean=", "smudge=", "process=", "required=false")
+               for x in ("-c", f"filter.{d}.{k}")]
+    return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral,
+                           *args], capture_output=True, text=True, timeout=timeout, env=env)
 
 
 @contextlib.contextmanager

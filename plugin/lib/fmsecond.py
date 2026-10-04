@@ -177,6 +177,8 @@ def session(p, exclude=None, if_due=False, model="sonnet", timeout=300):
                 continue  # Foreman already has it
             b = fmcli._create(p, fmcli._title(ask), "FEATURE", "S", "captured", raw=f"{ask}\n(fm second session: {m})",
                               source="self", explore=True)  # confirm first: the words came through a child
+            b.meta["confirm"] = True  # T-0289: and in full autonomy too — a child's reading isn't the user's ask
+            c.save_brief(p, b, touch=False)
             c.log_event(p, "capture", task=b.id, data={"source": "self", "type": "FEATURE", "via": "second session"})
             c.regen_views(p)
         captured.append(f"{b.id} {ask}")

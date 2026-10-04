@@ -509,12 +509,24 @@ def regen_registry():
 def write_atomic(path, text):
     d = os.path.dirname(path)
     os.makedirs(d, exist_ok=True)
-    tmp = os.path.join(d, f".{os.path.basename(path)}.{os.getpid()}.tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-        f.flush()
-        os.fsync(f.fileno())
-    os.replace(tmp, path)
+    try:
+        mode = os.stat(path).st_mode & 0o777
+    except OSError:
+        mode = 0o644
+    # T-0291 review: a fresh, exclusive temp file (mkstemp: O_EXCL, unguessable) — a guessable name could be a planted
+    # symlink that sends the write elsewhere
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{os.path.basename(path)}.", suffix=".tmp")
+    try:
+        os.fchmod(fd, mode)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 @contextlib.contextmanager
@@ -1502,8 +1514,13 @@ STAGE_REFERENCE = {
 
 
 def needs_approval(b, autonomy="standard"):
-    """L tier and explore items wait for the user's approval, except in full autonomy (self-approved)."""
-    return (b.tier == "L" or bool(b.meta.get("explore"))) and not b.meta.get("approved") and autonomy != "full"
+    """L tier and explore items wait for the user's approval, except in full autonomy (self-approved); a confirm item
+    (words that came through a child, T-0289) waits whatever the autonomy."""
+    if b.meta.get("confirm"):  # only the user's own yes settles it — fm ask ID confirm — not approved=, explore= or autonomy
+        return "confirm" not in (b.meta.get("allow") or [])
+    if b.meta.get("approved"):
+        return False
+    return (b.tier == "L" or bool(b.meta.get("explore"))) and autonomy != "full"
 
 
 def audit_progress(b, since=None):
@@ -1538,7 +1555,8 @@ def plan_gaps(b, autonomy="standard"):
     if not b.steps():
         gaps.append("step")
     if needs_approval(b, autonomy):
-        gaps.append(f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
+        gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
+                    if b.meta.get("confirm") else f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
     return gaps
 
 
@@ -1904,7 +1922,9 @@ def _next_for(p, briefs=None):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
             return None, "reflect", fmfriction.ACTION
-    b = active_brief(briefs, p.lane) or next(iter(order_queue(briefs)[0]), None) or next(iter(rank_inbox(briefs)), None)
+    mine = lambda x: not (x.meta.get("confirm") and needs_approval(x))  # T-0289: waits for the user, never picked
+    b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
+        next(filter(mine, rank_inbox(briefs)), None)
     if not b:
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)

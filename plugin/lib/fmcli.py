@@ -779,9 +779,10 @@ def cmd_batch(args):
         members = [need_brief(p, i) for i in ids]
         everything = c.load_briefs(p)
         act, by_id = c.active_brief(everything, p.lane), {x.id: x for x in everything}
-        bad = [f"{b.id} ({'explore: confirm it first' if b.meta.get('explore') else b.status})" for b in members
+        waits = lambda b: b.meta.get("explore") or b.meta.get("confirm") and c.needs_approval(b, "full")  # T-0289
+        bad = [f"{b.id} ({'waits for the user: confirm it first' if waits(b) else b.status})" for b in members
                if b.status not in ("captured", "planned") or b.evidence() or (act and act.id == b.id)
-               or c.batched(b, by_id) or b.meta.get("batch") or b.meta.get("explore")]
+               or c.batched(b, by_id) or b.meta.get("batch") or waits(b)]
         if bad:
             raise UsageError("only items not started, not batched and not waiting on the user can be batched: "
                              + ", ".join(bad))
@@ -2523,8 +2524,9 @@ def build_parser():
                                                          "steered, corrected; brainstorms use it")
     s.add_argument("-n", type=int, default=8)
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
-                                                       "new <id>, list, rm <id> (never discards uncommitted work)")
-    s.add_argument("action", choices=["new", "list", "rm"])
+                                                       "new <id>, list, rm <id> (never discards uncommitted work); "
+                                                       "brief <id>: an S/M task for a foreman:fm-builder subagent")
+    s.add_argument("action", choices=["new", "list", "rm", "brief"])
     s.add_argument("id", nargs="?")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")

@@ -12,9 +12,10 @@ import shlex
 import subprocess
 
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
-              "git-destructive", "pipe-shell", "publish"]
+              "git-destructive", "pipe-shell", "publish", "confirm"]
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize"}
-USER_ONLY = {"core", "remote", "plugin"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
+USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
+# (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 

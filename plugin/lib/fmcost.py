@@ -419,6 +419,11 @@ def cmd_export(args):
     import fmcli
     p = fmcli.resolve(args)
     path = os.path.abspath(args.out or os.path.join(p.root, "AGENTS.md"))
+    root, parent = os.path.realpath(p.root), os.path.realpath(os.path.dirname(path))
+    if os.path.commonpath([root, parent]) != root:  # T-0288: the guard can't see fm's own writes; nor does fm leave
+        raise fmcli.UsageError(f"{path}: fm export writes inside the project ({p.root}) only; copy the file yourself")
+    if {".git", ".claude"} & set(os.path.relpath(parent, root).split(os.sep)):  # review: config and settings live there
+        raise fmcli.UsageError(f"{path}: fm export doesn't write under .git or .claude")
     try:
         if os.path.islink(path):
             raise PermissionError("a symlink")  # review: the link would silently become a file
