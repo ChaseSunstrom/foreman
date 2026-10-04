@@ -3,9 +3,11 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from dataclasses import asdict, dataclass
 
 import fmcore as c
@@ -539,6 +541,88 @@ def check_env(settings, manifest):
     return Result("env", "PASS", ", ".join(f"{k}={env[k]}" for k in fmsetup.ENV))
 
 
+def _git_dir(root):
+    """The repository folder holding root's objects (worktrees share the main one), or None outside git."""
+    r = _run(["git", "-C", root, "rev-parse", "--git-common-dir"], timeout=20)
+    d = r.stdout.strip()
+    return os.path.normpath(os.path.join(root, d)) if r.returncode == 0 and d else None
+
+
+def _empty_objects(root):
+    """Zero-byte loose objects: what a crash mid-write leaves; git then fails on any command that reads one. None
+    outside git. Only object names count (git's in-flight tmp_obj_* files are zero-byte for a moment), and only files
+    older than a few seconds (one being written now isn't damage)."""
+    gd = _git_dir(root)
+    objects = os.path.join(gd, "objects") if gd else None
+    if not objects or not os.path.isdir(objects):
+        return None
+    out, now = [], time.time()
+    try:
+        subs = [x for x in os.scandir(objects) if x.is_dir(follow_symlinks=False) and re.fullmatch(r"[0-9a-f]{2}", x.name)]
+    except OSError:
+        return []
+    for sub in subs:
+        try:  # git gc or prune can remove a file or folder between the listing and the stat
+            for e in os.scandir(sub.path):
+                if re.fullmatch(r"[0-9a-f]{38}|[0-9a-f]{62}", e.name) and e.is_file(follow_symlinks=False):
+                    st = e.stat()
+                    if st.st_size == 0 and now - st.st_mtime > 5:
+                        out.append(e.path)
+        except OSError:
+            continue
+    return out
+
+
+def integrity_roots(projects=None):
+    """Foreman's own repo and every project's root."""
+    projects = [p for p, _ in c.all_projects()] if projects is None else projects
+    return list(dict.fromkeys([c.foreman_home()] + [p.root for p in projects]))
+
+
+def check_integrity(roots, projects):
+    """T-0268: crash damage — empty git objects, zero-byte briefs, state JSON that no longer parses."""
+    bad, scanned = [], 0
+    for root in roots:
+        empty = _empty_objects(root)
+        scanned += empty is not None
+        n = len(empty or [])
+        if n:
+            bad.append(f"{n} empty git object{'s' * (n != 1)} in {root} (a crash mid-write; fm doctor --repair moves "
+                       f"them aside, and git rewrites any the working files still hold)")
+    for p in projects:
+        for path in sorted(glob.glob(os.path.join(p.dir, "tasks", "*.md"))):
+            try:
+                empty = os.path.getsize(path) == 0
+            except OSError:  # removed since the listing
+                continue
+            if empty:
+                bad.append(f"{p.slug}: empty brief {os.path.basename(path)} (fm doctor --restore-state or a backup)")
+        for path in sorted(glob.glob(os.path.join(p.dir, "*.json"))):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    json.load(f)
+            except (OSError, ValueError):
+                bad.append(f"{p.slug}: {os.path.basename(path)} doesn't parse (truncated?)")
+    return Result("integrity", "FAIL" if bad else "PASS", "; ".join(bad) or f"{scanned} repo(s) and state intact")
+
+
+def repair(roots):
+    """Move every zero-byte loose object into Foreman's quarantine (never deleted): [(from, to or the error)]."""
+    stamp, moved = time.strftime("%Y%m%d-%H%M%S"), []
+    for root in roots:
+        for path in _empty_objects(root) or []:
+            dest = os.path.join(c.state_dir(), "quarantine", f"git-objects-{stamp}",
+                                re.sub(r"\W+", "-", root).strip("-"), os.path.basename(os.path.dirname(path))
+                                + os.path.basename(path))
+            try:  # shutil.move: the quarantine may be on another filesystem than the repo
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.move(path, dest)
+                moved.append((path, dest))
+            except OSError as e:
+                moved.append((path, f"not moved: {e.strerror or e}"))
+    return moved
+
+
 def run_all(full=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -566,7 +650,8 @@ def run_all(full=False):
                           or f"{len(projects)} project(s) OK"))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
-                check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full)]
+                check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
+                check_integrity(integrity_roots(projects), projects)]
     return results
 
 
@@ -577,6 +662,10 @@ def cmd_doctor(args):
         except OSError as e:
             print(f"fm doctor: {e}", file=sys.stderr)
             sys.exit(1)
+    if args.repair:
+        moved = repair(integrity_roots())
+        print("\n".join(f"{a} → {b}" for a, b in moved) or "Nothing to repair: no empty git objects.")
+        return None
     results = run_all(full=args.full)
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:

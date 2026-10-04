@@ -2146,6 +2146,7 @@ def build_parser():
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
+    s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
 
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
