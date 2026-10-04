@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Model routing from data (T-0223): `fm bench models --models haiku,sonnet,opus` replays the bench cases once per model and recommends, per tier, the model with the most passes on that tier's cases and the lowest measured cost among ties; `--save` keeps it for `fm run` (meta `run_models`). Each model's results are kept as `models-<model>-<time>`.
 - Bench from any history (T-0222): `fm bench build --commits RANGE --verify CMD` turns a repo's own commits into cases without any Foreman brief — a commit that adds or changes test files and source becomes a case (prompt: its message; grade: CMD with `{tests}` replaced by its test files), validated fail-to-pass like brief cases. Commit cases (`C-<sha>`) survive a rebuild from briefs.
 - Bench rigor (T-0221): `fm bench run --runs N` replays each case N times and records its pass rate and mean cost, turns and time (attempts kept); `fm bench gate A B` says whether candidate B is no worse than A on their shared cases — no fewer passes in total, mean cost per case at most 15% higher (`--cost-tolerance`) — and warns when single runs make a flip look like a result. `/foreman:improve` proposes only candidates that pass the gate.
 - Replay diagnostics (T-0220): each `fm bench run` case keeps what the replay's own Foreman did — its tasks' type, tier and final status, ledger events by kind, guard blocks by category, the tools used most — and `fm bench show LABEL` prints it beside the verify results, so a failed case can be pinned to a stage (never planned, never verified, blocked).

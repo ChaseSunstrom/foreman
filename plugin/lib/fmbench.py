@@ -276,6 +276,23 @@ def gate(a, b, tolerance=0.15):
     return ok, lines
 
 
+def recommend(by_model, cases):
+    """T-0223: {tier: model}: per tier, the model with the most passes on that tier's cases, the lowest mean cost
+    among ties. by_model: {model: [case result]}."""
+    tiers = {x["id"]: x.get("tier") for x in cases}
+    out = {}
+    for tier in sorted({t for t in tiers.values() if t in ("S", "M", "L")}):
+        scores = []
+        for model, results in by_model.items():
+            mine = [r for r in results if tiers.get(r["id"]) == tier]
+            costs = [r["cost_usd"] for r in mine if r.get("cost_usd") is not None]
+            scores.append((-sum(_rate(r) for r in mine), sum(costs) / len(costs) if costs else float("inf"), model))
+        best = min(scores)
+        if best[0] < 0:  # a tier no model passed keeps its current choice
+            out[tier] = best[2]
+    return out
+
+
 def _results_dir(p):
     return os.path.join(p.dir, "bench", "results")
 
@@ -363,6 +380,34 @@ def cmd_bench(args):
             f"  {'✓' if x['pass'] else '✗'} {x['id']} · {x['turns']} turns · ${x['cost_usd'] or 0:.2f} · {x['seconds']} s"
             + (f" · {x['error']}" if x["error"] else "") for x in results))
         return 0 if all(x["pass"] for x in results) else 1
+    if args.bench_cmd == "models":
+        cases = [x for x in _load_cases(p) if not args.ids or x["id"] in args.ids][:args.max]
+        models = [m.strip() for m in args.models.split(",") if m.strip()]
+        if not cases or not models or not all(re.fullmatch(r"[\w.:-]+", m) for m in models):
+            raise fmcli.UsageError("fm bench models needs cases (fm bench build) and --models like haiku,sonnet,opus")
+        stamp, by_model = time.strftime("%Y%m%d-%H%M%S"), {}
+        os.makedirs(_results_dir(p), exist_ok=True)
+        _git(p.root, "worktree", "prune")
+        for m in models:
+            results = []
+            for case in cases:
+                try:
+                    results.append(run_case_n(p, case, c.PLUGIN_ROOT, m, args.budget, args.timeout, args.runs))
+                except (OSError, subprocess.SubprocessError, ValueError) as e:
+                    results.append({"id": case["id"], "pass": False, "pass_rate": 0.0, "cost_usd": None,
+                                    "turns": None, "error": f"{type(e).__name__}: {c.fit(str(e), 120)}"})
+            by_model[m] = results
+            c.write_atomic(os.path.join(_results_dir(p), f"models-{m}-{stamp}.json"),
+                           json.dumps({"label": f"models-{m}-{stamp}", "model": m, "at": c.now(), "cases": results}))
+        rec = recommend(by_model, cases)
+        lines = [f"{m}: " + _summary({"cases": r}) for m, r in by_model.items()]
+        lines.append("recommend: " + (",".join(f"{t}={m}" for t, m in rec.items()) or "nothing (no model passed)")
+                     + (" — saved for fm run" if args.save and rec else " (fm bench models --save keeps it for fm run)"
+                        if rec else ""))
+        if args.save and rec:
+            c.update_meta(p, run_models=dict(c.read_meta(p).get("run_models") or {}, **rec))
+        return fmcli.out(args, {"recommend": rec, "models": {m: _summary({"cases": r}) for m, r in by_model.items()}},
+                         "\n".join(lines))
     if args.bench_cmd == "gate":
         runs = []
         for label in (args.a, args.b):

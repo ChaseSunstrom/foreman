@@ -1949,12 +1949,19 @@ def build_parser():
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
     bsp = s.add_subparsers(dest="bench_cmd", required=True)
-    for name in ("build", "list", "run", "show", "compare", "gate"):
+    for name in ("build", "list", "run", "show", "compare", "gate", "models"):
         b = bsp.add_parser(name)
         b.add_argument("--json", action="store_true")
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
-        if name in ("build", "run"):
+        if name in ("build", "run", "models"):
             b.add_argument("--ids", nargs="+", help="only these task ids")
+        if name == "models":
+            b.add_argument("--models", default="haiku,sonnet", help="comma-separated models to compare")
+            b.add_argument("--max", type=int, default=3)
+            b.add_argument("--runs", type=int, default=1)
+            b.add_argument("--budget", type=float, default=3.0)
+            b.add_argument("--timeout", type=int, default=30)
+            b.add_argument("--save", action="store_true", help="keep the recommendation for fm run --models")
         if name == "build":
             b.add_argument("--last", type=int, default=30, help="finished tasks to consider, newest first")
             b.add_argument("--commits", metavar="RANGE", help="cases from this git range's commits instead of briefs "

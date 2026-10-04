@@ -27,10 +27,12 @@ if os.environ.get("STUB_ALTERNATE"):  # solve every other attempt: a flaky candi
     open(n, "w").write(str(k + 1))
     if k % 2 == 0:
         os.environ["STUB_SOLVE"] = "1"
-if os.environ.get("STUB_SOLVE"):
+model = args[args.index("--model") + 1] if "--model" in args else ""
+if os.environ.get("STUB_SOLVE") or model and model in os.environ.get("STUB_SOLVE_MODELS", "").split(","):
     with open("calc.py", "w") as f:
         f.write("def double(x):\n    return 2 * x\n")
-print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": 0.42, "num_turns": 7, "duration_ms": 1234,
+cost = {"haiku": 0.05, "sonnet": 0.3, "opus": 1.2}.get(model, 0.42)
+print(json.dumps({"type": "result", "is_error": False, "total_cost_usd": cost, "num_turns": 7, "duration_ms": 1234,
                   "result": "done"}))
 '''
 
@@ -199,6 +201,15 @@ class Bench(ForemanTestCase):
         ids = [x["id"] for x in json.loads(self.fm("bench", "list", "--json", env=self.env).stdout)["cases"]]
         self.assertIn(f"C-{sha[:10]}", ids, "a brief build keeps the commit cases")
         self.assertIn(self.tid, ids)
+
+    def test_models_recommends_the_cheapest_that_passes(self):
+        # T-0223: which model each tier needs, measured on the project's own work
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "models", "--models", "haiku,sonnet,opus", "--json",
+                                 env=dict(self.env, STUB_SOLVE_MODELS="sonnet,opus")).stdout)
+        self.assertEqual(res["recommend"], {"S": "sonnet"}, res)
+        self.fm("bench", "models", "--models", "haiku,sonnet", "--save", env=dict(self.env, STUB_SOLVE_MODELS="haiku,sonnet"))
+        self.assertEqual(c.read_meta(c.find_project(self.repo)).get("run_models", {}).get("S"), "haiku")
 
     def test_a_plugin_without_the_guard_or_credentials_never_runs(self):
         # security review: replays run in bypass mode like the user's sessions, so the guard must come with them
