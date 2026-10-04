@@ -4,6 +4,7 @@ rebuilt only when HEAD moves. Stdlib and git only; run by fm commands, never by 
 import collections
 import json
 import os
+import subprocess
 import re
 
 import fmcore as c
@@ -147,6 +148,37 @@ def render(m):
         lines.append("CI runs: " + "; ".join(m["ci"]))
     out = "\n".join(c.plain(x) for x in lines)
     return out if len(out) <= OUT_MAX else out[:OUT_MAX - 1] + "…"
+
+
+def compact(p, limit=500):
+    """T-0215: one line of the cached map for the session-start context, or None. Never builds in the hook (1.5 s on a
+    7k-file repo): a missing or stale map starts a detached `fm map`, and the next session has it."""
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as f:
+            m = json.load(f)
+        if m.get("version") != VERSION:
+            m = None
+    except (OSError, ValueError):
+        m = None
+    head = _git(p.root, "rev-parse", "HEAD").strip()
+    if not m or m.get("head") != head:
+        try:
+            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "map", "--json"], cwd=p.root,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except OSError:
+            pass
+    if not m:
+        return None
+    parts = [f"gates: {'; '.join(m['gates'][:3]) or 'none'}"]
+    if m["entry"]:
+        parts.append(f"entry: {', '.join(m['entry'][:4])}")
+    parts.append("layout: " + ", ".join(f"{d} ({n})" for d, n in m["layout"][:5]))
+    if m["tests"]:
+        parts.append("tests→src: " + "; ".join(f"{t}→{s[0]}" for t, s in list(m["tests"].items())[:4] if s))
+    line = c.plain(f"Map ({m['files']} files{'' if m.get('head') == head else ', as of an older HEAD'}; fm map for "
+                   f"more): " + " · ".join(parts))
+    return line if len(line) <= limit else line[:limit - 1] + "…"
 
 
 def cmd_map(args):

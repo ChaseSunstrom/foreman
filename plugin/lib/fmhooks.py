@@ -310,8 +310,15 @@ def session_context(p, sd, other_note=None):
         tail.append("Sensitive repo: new sessions here start in manual permission mode.")
     if other_note:
         tail.append(other_note)
+    try:
+        import fmmap
+        mapped = [x for x in [fmmap.compact(p)] if x]
+    except Exception:  # the map is a convenience: never the session context
+        log_error("SessionStart", _tb())
+        mapped = []
     text = ""
-    for parts in ([head, focus, resume, queue, tail], [head, focus, queue, tail], [head, focus, tail]):
+    for parts in ([head, focus, resume, mapped, queue, tail], [head, focus, resume, queue, tail],
+                  [head, focus, queue, tail], [head, focus, tail]):
         text = "\n".join(line for part in parts for line in part)
         if len(text) <= CTX_BUDGET:
             return text

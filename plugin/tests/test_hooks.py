@@ -110,6 +110,22 @@ class SessionStart(HookCase):
         tid = self.task()
         self.assertIn(f"Next: {tid} step 1/2", self.ctx_of(self.run_ss()))
 
+    def test_the_project_map_comes_with_the_session(self):
+        # T-0215: a compact map from the cache, so a new session skips its discovery searches
+        self.fm("init")
+        path = os.path.join(self.project().dir, "map.json")
+        self.assertNotIn("Map (", self.ctx_of(self.run_ss()), "no map cached yet: none, and no wait for one")
+        for _ in range(100):  # the hook started a background build instead
+            if os.path.exists(path):
+                break
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(path), "a background fm map was started")
+        ctx = self.ctx_of(self.run_ss())
+        self.assertIn("Map (", ctx)
+        line = next(x for x in ctx.splitlines() if x.startswith("Map ("))
+        self.assertLessEqual(len(line), 520)
+        self.assertLessEqual(len(ctx), 2000)
+
     def test_full_autonomy_is_reported(self):
         self.fm("init")
         self.fm("autonomy", "full")
