@@ -2036,7 +2036,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run night mcp ui watch"),
+    ("Running elsewhere", "lane serve run night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2589,7 +2589,13 @@ def build_parser():
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
 
-    add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
+    s = add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
+    s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
+    s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
+                                                                "app's list): --json, --follow")
+    s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
