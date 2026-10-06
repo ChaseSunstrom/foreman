@@ -1024,6 +1024,23 @@ class Brief:
         line = f"- [ ] {text.strip()}" + (f" — verify with `{verify}`" if verify else "")
         self._append_line("Acceptance criteria", line)
 
+    def edit_ac(self, n, text=None, verify=None):
+        """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was."""
+        lines, k = [], 0
+        for line in self.section("Acceptance criteria").splitlines():
+            m = _AC_RE.match(line)
+            if m:
+                k += 1
+                if k == n:
+                    old = verify_of(m.group(2))
+                    body = _VERIFY_OF.sub("", m.group(2)).rstrip()
+                    v = verify if verify is not None else old
+                    line = f"- [{m.group(1)}] {(text or body).strip()}" + (f" — verify with `{v}`" if v else "")
+            lines.append(line)
+        if k < n:
+            raise KeyError(f"no acceptance criterion {n}")
+        self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
+
     def check_ac(self, n):
         if not self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} acceptance criterion {n} has no evidence; record it with "

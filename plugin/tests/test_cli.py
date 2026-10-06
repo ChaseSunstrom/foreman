@@ -469,6 +469,22 @@ class OneCommandTask(ForemanTestCase):
         self.assertEqual((b.status, len(b.acceptance()), len(b.steps())), ("active", 1, 1))
 
 
+class EditCriterion(ForemanTestCase):
+    def test_edit_sets_the_verify_tail_or_the_text_and_keeps_the_rest(self):
+        self.fm("task", "new", "A", "--type", "FIX", "--tier", "S", "--ac", "typo gone", "--ac", "old :: false")
+        self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "true")
+        self.fm("task", "ac", "T-0001", "edit", "2", "--verify", "grep -q x README")
+        self.fm("task", "ac", "T-0001", "edit", "2", "--text", "README says x")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual(b.verify_cmds(), [(1, "true"), (2, "grep -q x README")])
+        self.assertIn("README says x", b.section("Acceptance criteria"))
+        self.assertNotIn("old", b.section("Acceptance criteria"))
+        p = self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "typed: screenshot review")
+        self.assertIn("typed", p.stderr)  # a typed check isn't a command: finish would run it
+        self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "3", "--verify", "true", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "1", check=False).returncode, 0)
+
+
 class Checks(ForemanTestCase):
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"

@@ -434,6 +434,10 @@ def cmd_task(args):
 
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
+        if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
+            print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and fm task finish would run it: "
+                  f"leave --verify off and record it with fm task evidence ID --ac N CMD RESULT", file=sys.stderr)
+            continue
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
@@ -997,6 +1001,15 @@ def task_ac(p, args):
         n = int(args.arg)
     except ValueError:
         raise UsageError(f"criterion number expected, got {args.arg!r}")
+    if args.action == "edit":
+        if args.verify is None and not args.text:
+            raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
+        try:
+            b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, args.text, args.verify), "ac_edit", {"ac": n})
+        except KeyError as e:
+            raise UsageError(str(e).strip("'\""))
+        _lint_verify(p, [args.verify])
+        return out(args, c.brief_summary(b), f"{b.id}: criterion {n} edited.")
     ev = args.evidence
 
     def check(b):
@@ -2178,9 +2191,10 @@ def build_parser():
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("ac")
     t.add_argument("id")
-    t.add_argument("action", choices=["add", "check"])
+    t.add_argument("action", choices=["add", "check", "edit"])
     t.add_argument("arg")
     t.add_argument("--verify")
+    t.add_argument("--text", help="edit: the criterion's new text (its verify command stays unless --verify)")
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("evidence")
     t.add_argument("id")
