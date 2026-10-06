@@ -18,6 +18,8 @@ Private repo (uses your `gh` login):
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
+Needs Linux, macOS or WSL (not native Windows), `git`, `claude`, and Python 3.12.7 or newer as `python3`: when it's older or missing, the installer installs Python with Homebrew on macOS, or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+
 Flags: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills), `--apply-conflicts` (disable plugins that compete with Foreman instead of just reporting them), `--no-plugins`, `--no-bypass` (keep your current permission mode), `--no-mod` (skip the foreman-ui mod), `--no-wiring` (don't touch `~/.claude`), `--build` (open Claude Code on `/foreman:build` to rebuild from `BUILD_PROMPT.md`).
 
 ## What `install.sh` does

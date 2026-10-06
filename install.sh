@@ -36,6 +36,31 @@ say() { printf '\033[1m==>\033[0m %s\n' "$*"; }
 die() { printf 'foreman: %s\n' "$*" >&2; exit 1; }
 for bin in git claude; do command -v "$bin" >/dev/null 2>&1 || die "'$bin' is required but not on PATH"; done
 
+# 0. Python: fm and every hook run on the python3 on PATH. Foreman needs 3.12.7+: older ones break `communicate()`
+#    on a closed stdin, and argparse before 3.12.7 (and in 3.13.0) drops `fm task evidence ID --ac N CMD RESULT`.
+py_ok() { python3 -c 'import sys; v = sys.version_info[:3]; sys.exit(not (v >= (3, 12, 7) and v != (3, 13, 0)))' >/dev/null 2>&1; }
+if ! py_ok; then
+  case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) die "Foreman needs Linux or macOS; on Windows, install it inside WSL" ;; esac
+  have="$(python3 --version 2>&1)" || have="no python3"
+  if [ "$(uname -s)" = Darwin ] && command -v brew >/dev/null 2>&1; then
+    say "Installing Python with Homebrew (found: $have; Foreman needs 3.12.7+)"
+    brew install python
+  else
+    if ! command -v uv >/dev/null 2>&1; then
+      command -v curl >/dev/null 2>&1 || die "found $have; Foreman needs Python 3.12.7+ (install it, or curl so uv can)"
+      say "Installing uv to install Python (no sudo needed)"
+      curl -LsSf https://astral.sh/uv/install.sh | sh
+      export PATH="$HOME/.local/bin:$PATH"
+    fi
+    say "Installing Python 3.13 with uv (found: $have; Foreman needs 3.12.7+)"
+    uv python install 3.13 --default
+    uv python update-shell   # later shells, and so the hooks, find it too
+    export PATH="$(uv python dir --bin):$PATH"
+  fi
+  hash -r
+  py_ok || die "python3 on PATH is still $(python3 --version 2>&1); put the new one's folder ahead of it on PATH and rerun"
+fi
+
 # 1. Get or update the repo
 if [ -d "$FOREMAN_HOME/.git" ]; then
   say "Updating $FOREMAN_HOME"
