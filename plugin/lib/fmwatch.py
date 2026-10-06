@@ -479,6 +479,17 @@ def projects():
     return sorted(out, key=lambda r: r.get("updated") or 0, reverse=True)
 
 
+def _usage():
+    """T-0346: this device's plan usage (5-hour %, weekly %, share of the week gone) from the newest statusline
+    snapshot, for the app's sidebar; {} when no session has reported one. --follow refreshes it every 30 s, not on
+    every statusline write."""
+    try:
+        import fmbudget
+        return fmbudget.rate_limits()
+    except Exception:
+        return {}
+
+
 def _project_paths(_v):
     root = c.projects_dir()
     paths = [root]
@@ -490,7 +501,7 @@ def _project_paths(_v):
 
 def cmd_projects(args):
     """fm projects [--json] [--follow]: the device-wide list the desktop app's sidebar shows (T-0322)."""
-    build = lambda: {"v": 1, "projects": projects()}  # noqa: E731
+    build = lambda: {"v": 1, "projects": projects(), "usage": _usage()}  # noqa: E731
     if args.follow:
         return _follow(build, _project_paths, args.interval)
     v = build()
