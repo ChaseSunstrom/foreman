@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Foreman Desktop round 4 (T-0348): a Review tab per project. It shows the week's `fm digest` (done, lessons, decisions to review, blocked) and the `fm friction` digest since the last self-improvement pass, both read-only. `--mark`, `--brief` and `--every` are refused.
 - Foreman Desktop round 3 (T-0347, app repo), from a brainstorm on user value and unspoken needs:
   - Each device's `fm doctor` health: a sidebar mark when a check fails, and its non-passing checks on the Devices page.
   - Ctrl+Shift+C captures an idea, a bug or a request into any project's inbox, with its kind, size and urgency.
