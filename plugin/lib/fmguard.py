@@ -18,6 +18,7 @@ NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_CORE_DIRS = ("lib", "bin", "hooks", "evals", "integrations")  # plugin/…: Foreman's code (integrations: T-0340)
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
 
@@ -205,13 +206,21 @@ def _is_credential(path, ctx):
     return bool(re.search(r"(^|[._-])(tokens?|secrets?|credentials?)([._-]|$)", stem.lower())) and ext.lower() not in _DOC_EXT
 
 
+# T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
+# switch the guard off in that agent, as Claude Code's settings can in Claude
+_AGENT_WIRING = re.compile(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings\.json$|/opencode\.jsonc?$|"
+                           r"/\.?opencode/plugins?(?:/|$)")
+
+
 def _is_core(path, ctx):
     """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")}
-    dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
+    dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS]
+    codex = os.environ.get("CODEX_HOME")
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
-        bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
+        bool(re.search(r"/\.claude/settings(\.local)?\.json$", path) or _AGENT_WIRING.search(path)) or \
+        bool(codex) and path in (os.path.join(codex, "hooks.json"), os.path.join(codex, "config.toml"))
 
 
 def _plain_path(detail):
@@ -230,7 +239,7 @@ def _standing_covers(path, ctx):
     if path is None or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
     return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
-        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in ("lib", "bin", "hooks", "evals"))
+        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in _CORE_DIRS)
 
 
 def _trust_covers(path, ctx):
@@ -260,7 +269,9 @@ def _runs_later(p, ctx):
 def _protected_roots(ctx):
     """(path, category) of everything the guard protects, for writes that cover a whole tree."""
     fh, cl = ctx.foreman_home, os.path.join(ctx.home, ".claude")
-    roots = [(os.path.join(fh, "plugin", d), "core") for d in ("lib", "bin", "hooks", "evals")]
+    roots = [(os.path.join(fh, "plugin", d), "core") for d in _CORE_DIRS]
+    roots += [(os.path.join(ctx.home, f), "core") for f in (".codex/hooks.json", ".codex/config.toml",  # T-0340
+                                                             ".gemini/settings.json", ".config/opencode")]
     roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
               (os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
     # user-wide Claude Code settings (a project's own are handled in classify_tree)
@@ -1449,6 +1460,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+            if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
+                found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
