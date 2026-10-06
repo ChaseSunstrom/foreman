@@ -1025,8 +1025,13 @@ class Brief:
         self._append_line("Acceptance criteria", line)
 
     def edit_ac(self, n, text=None, verify=None):
-        """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was."""
-        lines, k = [], 0
+        """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was. T-0342: only while
+        it has no evidence (the T-0305 decision: an edit could weaken a failing check until it passes), and logged."""
+        if self.has_evidence(ac=n):
+            raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
+                              f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
+                              f"with a reason and recreate it with the right check")
+        lines, k, changes = [], 0, []
         for line in self.section("Acceptance criteria").splitlines():
             m = _AC_RE.match(line)
             if m:
@@ -1036,10 +1041,16 @@ class Brief:
                     body = _VERIFY_OF.sub("", m.group(2)).rstrip()
                     v = verify if verify is not None else old
                     line = f"- [{m.group(1)}] {(text or body).strip()}" + (f" — verify with `{v}`" if v else "")
+                    if (v or None) != old:
+                        changes.append(f"criterion {n} verify: `{old or ''}` → `{v or ''}`")
+                    if text and text.strip() != body:
+                        changes.append(f"criterion {n} text: {body} → {text.strip()}")
             lines.append(line)
         if k < n:
             raise KeyError(f"no acceptance criterion {n}")
         self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
+        for x in changes:
+            self.append_log(x)
 
     def check_ac(self, n):
         if not self.has_evidence(ac=n):

@@ -505,6 +505,14 @@ class EditCriterion(ForemanTestCase):
         self.assertIn("typed", p.stderr)  # a typed check isn't a command: finish would run it
         self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "3", "--verify", "true", check=False).returncode, 0)
         self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "1", check=False).returncode, 0)
+        log = c.find_brief(c.find_project(self.repo), "T-0001").section("Log")
+        self.assertIn("criterion 2 verify: `false` → `grep -q x README`", log)  # every edit leaves a visible trail
+        # T-0342: once a criterion has evidence its check is fixed: an edit could weaken a failing one until it passes
+        self.fm("task", "evidence", "T-0001", "--ac", "2", "--run", "false", check=False)
+        p = self.fm("task", "ac", "T-0001", "edit", "2", "--verify", "true", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("evidence", p.stderr)
+        self.assertIn("grep -q x README", c.find_brief(c.find_project(self.repo), "T-0001").section("Acceptance criteria"))
 
 
 class Checks(ForemanTestCase):
