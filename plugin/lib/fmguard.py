@@ -328,8 +328,9 @@ def classify_write(path, ctx):
 # ---------------------------------------------------------------- shell parsing
 
 class Cmd:
-    def __init__(self, argv, redirs, piped, procsub=False):
+    def __init__(self, argv, redirs, piped, procsub=False, op=""):
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
+        self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -495,7 +496,7 @@ def _split(tokens):
         if re.fullmatch(r"[;&|()]+", t) and not re.fullmatch(r"&>+", t):
             if cur.argv or cur.redirs or cur.procsub:
                 cmds.append(cur)
-            cur = Cmd([], [], t in ("|", "|&"))
+            cur = Cmd([], [], t in ("|", "|&"), op=t)
             i += 1
             continue
         if re.fullmatch(r"[<>&]+", t):
@@ -1057,14 +1058,16 @@ _PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$
 
 
 def _top(shell):
-    """(straight, and_chain) at the command's top level, command substitutions blanked: straight when every command
+    """(straight, and_chain, mixed) at the command's top level, command substitutions blanked: straight when every command
     there runs in this shell, in order (no branch, subshell, pipe, background or !: `! cd BAD && x` runs x); and_chain
     when only && joins them, so a failed cd stops the rest."""
     s, prev = re.sub(r"`[^`]*`", "S", shell), None
     while s != prev:
         s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
     straight = "!" not in s and _straight_line(s)
-    return straight, straight and "&&" in s
+    # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order
+    mixed = not straight and "!" not in s and _straight_line(s.replace("&&", ";"))
+    return straight, straight and "&&" in s, mixed
 
 
 def _a_path(word, fixed):
@@ -1353,12 +1356,19 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     outside, bare = _outside(shell, cmds, ctx, pre)  # T-0175: what it inherits and can't change
     # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
-    (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
+    (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
+    base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
     fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
+        in_chain = mixed and (c.op == "&&" or idx + 1 < len(cmds) and cmds[idx + 1].op == "&&")
+        if mixed and c.op != "&&":  # a new segment: the last one's chain may have stopped anywhere
+            if base:
+                cwds, lost = list(dict.fromkeys(base[0] + cwds)), list(dict.fromkeys(base[1] + lost))
+                made = base[2]
+            base = (cwds, lost, set(made)) if in_chain else None
         if env is not None:
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
@@ -1379,9 +1389,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                certain = and_chain or (straight and os.path.isabs(d) and (os.path.normpath(d) in made or (
-                    os.path.isdir(d) and os.access(d, os.X_OK))))
+                certain = and_chain or in_chain or ((straight or mixed) and os.path.isabs(d) and (
+                    os.path.normpath(d) in made or (os.path.isdir(d) and os.access(d, os.X_OK))))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
+                if base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
+                    base = (base[0] + cwds, base[1] + lost, base[2])
         for inner in _shell_c(args) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):

@@ -79,6 +79,19 @@ class KnownVars(GuardCase):
                 self.assertIsNone(g.check("Bash", {"command": cmd}, ctx))
         self.assertIsNotNone(g.check("Bash", {"command": "S=/tmp/x; read S; (cat a > $S/out &)"}, ctx))
 
+    def test_cd_inside_an_and_segment_of_a_list(self):  # T-0339
+        self.run_table([
+            ("D=~/x; mkdir -p $D && cd $D && tar xf -", None),
+            ("true; cd {home} && cd {home}/x && tar xf -", None),
+            ("false && cd {home}; tar xf -", "core"),  # the cd may be skipped: the tar may run here
+            ("true; cd {home} && tar xf -; tar xf -", "core"),  # the second tar runs even if the cd failed
+            ("false && mkdir -p {home}/y; cd {home}/y; tar xf -", "core"),  # its mkdir may not have run
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+        self.run_table([  # its review: a chain that stops partway leaves the shell in a folder from its middle
+            ("cd {fhome} && cd /nonexistent; tar xf -", "core"),
+            ("cd {fhome} && cd /nonexistent && cd /tmp; echo x > plugin/lib/fmguard.py", "core"),
+        ], self.bash)
+
     def test_review_what_bash_may_not_have_set_stays_unknown(self):  # T-0338 review: bypasses found by hand
         self.run_table([
             ('X=/tmp/ok; Y=-X=; S="eval ${{Y#-}}"; true && $S/etc; rm -rf $X', "rm-outside"),  # $S/etc splits

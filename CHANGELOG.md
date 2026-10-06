@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard (T-0339): in a `;` list with `&&` in it (`D=~/x; mkdir -p $D && cd $D && tar xf -`), a `cd` joined by `&&` to what follows counts as certain for the rest of its segment. A tar there is no longer guessed onto the folder the command started in. After the segment, both folders stay possible, since the chain may have stopped early, and a `mkdir -p` inside it is forgotten.
 - Friction fixes (T-0338, from the self-improvement pass), covering four former false blocks:
   - The guard reads `D=~/x` as the home folder.
   - The guard keeps a variable set before a `;` list that mixes in `&&`.
