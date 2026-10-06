@@ -57,6 +57,41 @@ class GuardCase(unittest.TestCase):
                     self.assertBlocked(r, expected)
 
 
+class KnownVars(GuardCase):
+    """T-0330/T-0331 (friction): a variable the command itself sets to a home path or a scratch folder is read, so a
+    write through it isn't guessed onto the cwd (the Foreman checkout, or a project with no task)."""
+    def test_tilde_values_are_home(self):
+        self.run_table([
+            ("D=~; cd $D; tar xf -", "core"),  # right: a tar into home can write over ~/.claude/foreman
+            ("D=~/x; mkdir -p $D; cd $D; tar xf -", None),
+            ("D=~/x; (cd $D; rm -rf ~)", "rm-outside"),
+            ("D=~; rm -rf $D/x", "rm-outside"),
+            ("D=~/x; rm -rf $D", "rm-outside"),
+        ], lambda cmd: self.bash(cmd, cwd=self.fhome))
+
+    def test_prefix_var_survives_flags_and_paths_named_like_it(self):
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome,
+                    scratch=["/tmp"], allow=set(), task_id=None, unbriefed=self.repo)
+        for cmd in ("S=/tmp/x; (sort -S 1M a > $S/out &); ls", "S=/tmp/x; (cp a /tmp/S/b; cat a > $S/out &)",
+                    f"S=/tmp/x; pkill -x app; sleep 1; ($S/app >> $S/app.log 2>&1 &); cd {self.repo} && fm next",
+                    "S=/tmp/x && rm -rf $S/std && cp -r std $S/std; ls | head"):  # its replay: S= can't fail
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, ctx))
+        self.assertIsNotNone(g.check("Bash", {"command": "S=/tmp/x; read S; (cat a > $S/out &)"}, ctx))
+
+    def test_review_what_bash_may_not_have_set_stays_unknown(self):  # T-0338 review: bypasses found by hand
+        self.run_table([
+            ('X=/tmp/ok; Y=-X=; S="eval ${{Y#-}}"; true && $S/etc; rm -rf $X', "rm-outside"),  # $S/etc splits
+            ("false && HOME=/tmp/ok; rm -rf $HOME/x", "rm-outside"),  # the && may skip it; the ; runs anyway
+        ], self.bash)
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome,
+                    scratch=["/tmp"], allow=set(), task_id=None, unbriefed=self.repo)
+        for cmd in ("HOME={home}/.claude; D=~/foreman/x.py; echo x > $D",  # ~ is the new HOME: not known
+                    "false && HOME=/tmp/ok; echo x > $HOME/../{repo}/a.py"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(g.check("Bash", {"command": self.sub(cmd)}, ctx))
+
+
 class RmOutside(GuardCase):
     def test_table(self):
         self.run_table([

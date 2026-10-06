@@ -46,6 +46,16 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("T-0001", inbox)
         self.assertEqual([i["id"] for i in self.fm_json("state")["inbox"]], ["T-0001"])
 
+    def test_capture_keeps_a_mid_text_ref_and_records_refs_as_depends(self):  # T-0334
+        self.fm("capture", "first")
+        self.fm("capture", "fix the #T-0001 regression in send")
+        self.fm("capture", "#T-0001 follow-up: docs")
+        p = c.find_project(self.repo)
+        two, three = c.find_brief(p, "T-0002"), c.find_brief(p, "T-0003")
+        self.assertEqual(two.title, "Fix the T-0001 regression in send")
+        self.assertEqual(three.title, "Follow-up: docs")
+        self.assertEqual((two.meta["depends_on"], three.meta["depends_on"]), (["T-0001"], ["T-0001"]))
+
     def test_intake_block_creates_briefs_in_canonical_order(self):
         block = ("FEATURE: export CSV @src/reports\nFIX: login timeout\nCLEAN!: dedupe date helpers\n"
                  "PERF?: first paint 4s\nSECURITY: review upload\nCONTEXT: Django app\nDONE-WHEN: tests pass\n")

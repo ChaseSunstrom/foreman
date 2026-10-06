@@ -1067,14 +1067,24 @@ def _top(shell):
     return straight, straight and "&&" in s
 
 
-def _outside(shell, cmds, ctx):
+def _a_path(word, fixed):
+    """T-0331: a command word that runs a file, never a builtin or function: a literal / in it, and its only
+    expansions $NAME or ${NAME} of plain literals this command set before it (fixed: no space or glob, so they can't
+    split into `eval …`; its review). `$S/app` with S=/tmp/x is a path; `$S/etc` with S unknown may be `eval X=/etc`."""
+    rest = re.sub(r"\$(?:\{\w+\}|\w+)", "", word)
+    return "/" in rest and not re.search(r"[$`*?\[\\'\"\s]", rest) and all(
+        (a or b) in fixed for a, b in re.findall(r"\$(?:\{(\w+)\}|(\w+))", word))
+
+
+def _outside(shell, cmds, ctx, fixed=None):
     """T-0175 review: ({NAME: value} for the names this command can't set itself, as it inherits them; the names it may
     set). It may set every name it writes bare (an assignment, read NAME, for NAME, ${NAME:=…}), and any name at all
     (None) with a builtin that sets names indirectly (eval, read, declare, source…) or a computed command name. Values
     are Claude Code's environment, HOME the user's; one a shell would split or expand stays unknown."""
     for c in cmds:
         argv, _ = _strip_wrappers(c.argv)
-        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0])):
+        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0]) and not _a_path(
+                argv[0], fixed or {})):
             return {}, None
     bare = set(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
     return {k: v for k, v in {**os.environ, "HOME": ctx.home}.items() if k not in bare and not _SHELL_SET.match(k)
@@ -1150,22 +1160,38 @@ def _possible(path):
 GUESS_WORDS = 48  # ponytail: words tried per unknown part (two parts: their pairs); a longer command is guessed this far
 
 
-def _prefix_vars(shell, cmds):
+def _prefix_vars(shell, cmds, home=None):
     """T-0183: NAME=literal values a branchy command sets in its straight top-level prefix (the commands before its
     first branch, pipe, subshell, group or keyword run first, in this shell), for names written bare nowhere else in
     it; {} when nothing qualifies. Only where no builtin can set names indirectly (the caller checks)."""
     s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell)
     cut = next((m.start() for m in re.finditer(r"&&|\|\|?|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
                                                 r"done|case|esac|select|function|coproc)\b", s) if m.group(0) != "&&"), len(s))
-    ends = [m.start() for m in re.finditer(r";|\n|&&", s[:cut])]
-    prefix = shell[:ends[-1]] if ends and cut < len(s) else ""
+    # what an && may skip is set for sure only if everything after it runs only when the chain got that far:
+    # `false && HOME=/x; rm $HOME` runs the rm anyway (T-0338 review), `S=/x && rm $S/a && ls | head` doesn't
+    amp = s.find("&&", 0, cut)
+    skippable = amp >= 0 and re.search(r";|\n|\|\||(?<![&|])&(?!&)", s[amp + 2:].replace("&&", "  "))
+    seps = list(re.finditer(r";|\n|&&", s[:cut]))
+    if skippable:  # keep the elements that surely ran: after a ; or newline, or after && links that can't fail
+        keep, start, sure = [], 0, True
+        for m in seps:
+            elem = shell[start:m.start()]
+            if sure:
+                keep.append(elem)
+            sure = (sure and bool(re.fullmatch(r"\s*(?:\w+=[^\s;&|$`()<>'\"\\]*\s+)*\w+=[^\s;&|$`()<>'\"\\]*\s*",
+                                                elem))) if m.group(0) == "&&" else True  # a plain assignment can't fail
+            start = m.end()
+        prefix = "; ".join(e.strip() for e in keep if e.strip())
+    else:  # T-0330: a ; list mixed with && (D=~/x; mkdir -p $D && cd $D && tar xf -) isn't straight either
+        prefix = shell[:seps[-1].start()] if seps and (cut < len(s) or not _straight_line(shell)) else ""
     raw = _raw_cmds(prefix) if prefix and _straight_line(prefix) else None
     env = {}
     for words in raw or []:
-        env = _track_vars(words, env)
+        env = _track_vars(words, env, home)
         if env is None:
             return {}
-    counts = collections.Counter(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
+    # T-0331: a word after - / or . (a flag like -S, a path segment like /tmp/S/) can't name a variable
+    counts = collections.Counter(re.findall(r"(?<![\w/.-])[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
     return {k: v for k, v in env.items() if counts[k] == 1}
 
 
@@ -1272,7 +1298,7 @@ def _shell_c(args):
     return out
 
 
-def _track_vars(words, env):
+def _track_vars(words, env, home=None):
     """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
     words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
              and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)", words[i - 1]))]
@@ -1286,7 +1312,9 @@ def _track_vars(words, env):
         words, runner = [w for w in words[1:] if "=" in w], False  # a bare name keeps its value
     if not runner and all(_ASSIGN.match(w) for w in words):
         for w in words:
-            k, v = _ASSIGN.match(w).group(1), _unquote(w.partition("=")[2])
+            k, rv = _ASSIGN.match(w).group(1), w.partition("=")[2]
+            # T-0330: an unquoted leading ~ or ~/ in an assignment is the home folder (bash expands it there)
+            v = _unquote(home + rv[1:] if home and re.match(r"~(?:/|$)", rv) else rv)
             if k == "IFS":
                 return None  # word splitting changes: no expansion can be read
             if _SHELL_SET.match(k) or v is None or _unresolvable(v) or re.search(r"[*?\[~\s]", v):
@@ -1319,17 +1347,20 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
     raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
-    outside, bare = _outside(shell, cmds, ctx)  # T-0175: what it inherits and can't change
+    # T-0330 review: ~ is $HOME, so once the command may set HOME a ~ in a value isn't the user's home any more
+    tilde = None if re.search(r"(?<![\w${])HOME\b", shell) else ctx.home
+    pre = _prefix_vars(shell, cmds, tilde)  # T-0183; also what a path-named command may expand (T-0331)
+    outside, bare = _outside(shell, cmds, ctx, pre)  # T-0175: what it inherits and can't change
     # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
     (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
-    fixed = _prefix_vars(shell, cmds) if env is None and bare is not None else {}  # T-0183: set once before the
+    fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
         if env is not None:
-            env = _track_vars(raw[idx], env)
+            env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
         if not c.piped:
@@ -1337,8 +1368,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
         if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
-            made.update(d for d in (os.path.normpath(_expand(a, ctx)) for a in args)  # when its nearest existing
-                        if os.path.isabs(d) and _makeable(d))                       # folder lets it be made (review)
+            made.update(d for d in (os.path.normpath(_expand(_with_vars(a, known), ctx)) for a in args)  # when its
+                        if os.path.isabs(d) and "$" not in d and _makeable(d))  # nearest existing folder lets it be made
         if name in ("cd", "pushd", "popd"):
             dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
             if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
