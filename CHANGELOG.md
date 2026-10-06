@@ -2,6 +2,7 @@
 
 ## Unreleased
 - Guard (T-0355): a `cd` that heads an `&&` chain stays certain when later elements of the chain are pipelines, as in `cd DIR && curl … && grep … | sha256sum -c - && tar xf …`. Before, the tar there was guessed onto the starting folder. A `cd` inside a pipeline only adds its folder as possible: it runs in a subshell, or in the main shell under `lastpipe`. A newline after `|`, `&&` or `||` continues the command, as bash reads it; before, it split there and hid the pipe. `wget` counts as writing nothing only when every `-O` names standard output (the last one wins).
+- `fm task finish --commit` (T-0360) names each other repo the task edited files in, and says it didn't commit them. Before, it said only "nothing to commit".
 - `fm research ask` (T-0313) matches a quote on its words, so markdown escapes, highlighted code and escaped quotes no longer mark a real quote as not on the page. In a trial run, 6 of 16 claims were wrongly marked that way; all 6 now verify.
 - Guard (T-0358): a clobber redirect (`>|`, `2>|`) is read as a redirect, so its target is checked. Before, it was taken for a word and `echo x >| <core file>` passed.
 - `run.py` (T-0357) refuses a `-k` with spaces (`-k 'a or b'` matched nothing and failed only at the end), and a criterion written that way is flagged when it is added.

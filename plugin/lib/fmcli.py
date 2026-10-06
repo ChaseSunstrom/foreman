@@ -526,8 +526,15 @@ def _commit_task(p, b, message):
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
     files += [".foreman"] if mirror else []
+    elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
+    for e in c.ledger_tail(p, c.TASK_WINDOW):
+        f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == b.id else None
+        if f and not f.startswith(p.root.rstrip("/") + "/") and (r := c.git_root(os.path.dirname(f))):
+            elsewhere.setdefault(r, set()).add(f)
+    for r, fs in elsewhere.items():
+        print(f"{b.id}: {len(fs)} edited file(s) in {r} not committed (another repo): commit them there.")
     if not files:
-        print(f"{b.id}: nothing to commit.")
+        print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
         return
     git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
     add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
