@@ -336,6 +336,29 @@ class InterpreterReads(GuardCase):  # T-0315 (friction): a read-only script isn'
         self.assertIsNotNone(g.check("Bash", {"command": write}, ctx))
 
 
+class SpawnedCommands(GuardCase):  # T-0345: what python starts is a shell command like any other
+    def test_spawn_calls_are_read_as_the_commands_they_run(self):
+        py = lambda body: "python3 - <<'EOF'\n" + body + "\nEOF"  # noqa: E731
+        self.run_table([
+            ("python3 -c \"import subprocess; subprocess.run(['rm', '-rf', '{home}'])\"", "rm-outside"),
+            (py("import subprocess as sp\nsp.check_call(['cp', 'x', '{fhome}/plugin/lib/fmguard.py'])"), "core"),
+            (py("from subprocess import run\nrun('rm -rf ~', shell=True)"), "rm-outside"),
+            (py("import os\nos.system('rm -rf ~')"), "rm-outside"),
+            (py("import os\nos.execvp('rm', ['rm', '-rf', '{home}'])"), "rm-outside"),
+            (py("import os\nos.execlp('rm', 'rm', '-rf', '{home}')"), "rm-outside"),
+            (py("import subprocess\nsubprocess.run(['sh', '-c', 'rm -rf ~'])"), "rm-outside"),
+            (py("import subprocess, sys\nsubprocess.run(['rm', '-rf', sys.argv[1]])"), "rm-outside"),  # unknown target
+            (py("import subprocess\nsubprocess.run(['tar', 'xf', 'a.tar'], cwd='{fhome}')"), "core"),
+            (py("import pty\npty.spawn(['rm', '-rf', '{home}'])"), "rm-outside"),
+            (py("import subprocess\nprint(subprocess.run(['git', 'status'], capture_output=True).stdout)"), None),
+            ("python3 -uc \"import os; os.system('rm -rf ~')\"", "rm-outside"),
+            # a script written with cat isn't run by writing it; written and then run, it is
+            ("cat > t.py <<'EOF'\nimport subprocess\nsubprocess.run(['rm', '-rf', '{home}'])\nEOF", None),
+            ("cat > t.py <<'EOF'\nimport subprocess\nsubprocess.run(['rm', '-rf', '{home}'])\nEOF\npython3 t.py",
+             "rm-outside"),
+        ], self.bash)
+
+
 class FrictionFalseBlocks(GuardCase):  # T-0344
     def test_replace_stays_a_write_in_unproved_code(self):  # its security review: a text match can't tell str's
         ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome,
