@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard (T-0344): `curl … | python3 -c CODE` reads the download as data when all of these hold: CODE is proved pure (no exec, eval or dynamic import, no writes, `sys.stdin` allowed); python runs bare, with every other command a plain data tool (head, jq, echo…), so no `env`, export or quoted `PYTHONINSPECT` can make it read stdin as code; and no imported module is shadowed by a file in the folder it runs in. Before, it was blocked as running a downloaded script. `.replace(` stays a write in unproved code, because a text match can't tell `str.replace` from `os.replace`, an aliased `os` or `(os)`.
 - Recall (T-0343): Related past work keeps one of its four places for the best matching decision. Briefs worded closer to the new task used to push it out. That is how T-0333 rebuilt "edit a criterion in place", which a decision had dropped two days before, without the decision showing up.
 - `fm task ac ID edit N` (T-0342) works only while the criterion has no evidence, and every edit is logged in the brief with the old and new values. This follows the earlier decision against in-place edits (T-0305): once a check has run, it can't be weakened until it passes. Add a criterion instead, or drop and recreate the task.
 - Foreman Desktop round 1 (T-0341, app repo):
