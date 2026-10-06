@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Foreman Desktop round 3 (T-0347, app repo), from a brainstorm on user value and unspoken needs:
+  - Each device's `fm doctor` health: a sidebar mark when a check fails, and its non-passing checks on the Devices page.
+  - Ctrl+Shift+C captures an idea, a bug or a request into any project's inbox, with its kind, size and urgency.
+  - The app runs `fm doctor` read-only (`--json` alone), and a JSON answer is kept when a command exits non-zero.
 - Usage pace (T-0346): `fm projects --json` carries the device's plan usage (5-hour %, weekly %, share of the week gone), refreshed with `--follow` every 30 s. Foreman Desktop shows it as a sidebar meter per device, amber when usage runs ahead of pace (the same rule that pauses subagents).
 - Guard (T-0345): the commands python code starts are checked like any shell command. That covers `subprocess` calls, `os.system`, `popen`, `exec*` and `spawn*`, and `pty.spawn`, under any import alias or from-import, in heredocs and `python -c`. Before, `python3 -c "import subprocess; subprocess.run(['rm','-rf',HOME])"` and a `cp` onto a core file through subprocess passed, because the interpreter rule only looked for file-write APIs.
   - A literal list is read word by word, a string as shell text, and a variable as an unknown target. A `cwd=` is read as a `cd` first.
