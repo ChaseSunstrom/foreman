@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard (T-0354, from security reviews of T-0344): the curl-into-python data exemption now holds only when nothing can plant a module first. Every other command in the line must write no file: no redirect; curl and wget only with flags that keep the download on stdout (`-o /dev/null` and `-w` formats are fine, `%output{}` is not); `sort` and `uniq` are dropped. The folder python runs in must not hold anything named like a standard-library module (`enum.py`, `json.pyc`, a package), since `json` imports `re`, which imports `enum`.
 - `install.sh --desktop` (T-0326) installs Foreman Desktop from its newest GitHub release. On Linux x86_64 that is the AppImage in `~/.local/bin/foreman-desktop` plus a menu entry; on macOS it is `Foreman.app` from the dmg into `~/Applications`. Other systems are told to build it. No Rust or bun is needed. `FOREMAN_DESKTOP_REPO` picks another repo.
 - Foreman Desktop UI cleanup (T-0351):
   - A conversation reads as messages. Each run of tool calls folds into one quiet "N steps · Bash 5 · Read 2" row (failures in red) that opens to the calls, their results and their images. Before, a Claude session could show 775 tool rows against 97 messages, with full-size screenshots inline.

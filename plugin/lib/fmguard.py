@@ -8,6 +8,7 @@ text can always be obfuscated; deny rules and git are the other layers.
 import collections
 import os
 import re
+import sys
 import shlex
 import subprocess
 
@@ -1164,28 +1165,75 @@ def _top(shell):
     return straight, straight and "&&" in s, mixed
 
 
-_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "sort", "uniq", "wc", "grep", "cut", "tr",
-               "sleep", "true"}
+_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true"}
+_CURL_SAFE = re.compile(r"-[sSLf]+|--(?:silent|show-error|location|fail|compressed)")  # flags that write no file
+_WGET_SAFE = {"-q", "--quiet", "-nv", "-O", "-qO", "-O-", "-qO-", "--output-document=-"}
+
+
+def _writes_nothing(x):
+    """T-0344 review: a command beside the python that can't create a file python would then import: no output
+    redirect, and curl or wget only with flags that keep their download on stdout (any other flag, -o/-O, a config
+    or a cookie jar, voids it); every other data tool writes nowhere but stdout."""
+    a, _ = _strip_wrappers(x.argv)
+    if x.redirs or x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS:
+        return False
+    name, args = os.path.basename(a[0]), a[1:]
+    if name == "curl":  # value flags: a header or agent, a -w format (not %output{file}), -o only to /dev/null
+        i = 0
+        while i < len(args):
+            w, v = args[i], args[i + 1] if i + 1 < len(args) else ""
+            if w in ("-H", "--header", "-A", "--user-agent", "-X", "--request") or \
+                    w in ("-w", "--write-out") and "%output{" not in v or w in ("-o", "--output") and v == "/dev/null":
+                i += 2
+            elif w.startswith("-") and not _CURL_SAFE.fullmatch(w):
+                return False
+            else:
+                i += 1
+        return True
+    if name == "wget":
+        flags = [w for w in args if w.startswith("-") and w != "-"]
+        to_stdout = any(w in ("-O-", "-qO-", "--output-document=-") for w in args) or any(
+            w in ("-O", "-qO") and args[i + 1:i + 2] == ["-"] for i, w in enumerate(args))
+        return to_stdout and all(w in _WGET_SAFE for w in flags)
+    return True
+
+
+def _shadowed(cwds, mods):
+    """T-0344 review: a module python -c would import from the folder it runs in instead of the standard library — a
+    name the code imports, or any stdlib name (json imports re, which imports enum) — as X.py, X.pyc, an extension
+    module or a package (X/__init__.py); a plain folder shadows nothing."""
+    names = set(sys.stdlib_module_names) | set(mods)
+    for b in cwds:
+        try:
+            entries = os.listdir(b)
+        except OSError:
+            return True  # a folder the guard can't read could hold anything
+        for n in entries:
+            stem, _, ext = n.partition(".")
+            if stem in names and (ext.split(".")[-1] in ("py", "pyc", "so", "pyd") and ext or
+                                  os.path.isfile(os.path.join(b, n, "__init__.py"))):
+                return True
+    return False
 
 
 def _reads_pipe_as_data(c, argv, cmds, cwds):
     """T-0344: `curl … | python3 -c CODE` reads the download as data when CODE is proved (_open_targets: pure modules,
     nothing dynamic, nothing written) and nothing makes python read stdin as code. -c comes first (every word after
-    CODE is sys.argv, so no -i before it); python runs bare and every other command is a plain data tool, so no
-    assignment, env, export or eval can set PYTHONINSPECT (its review: PYTH""ONINSPECT=1); none is inherited; and no
-    module CODE imports is shadowed by a file in the folder it runs in (python -c searches it first)."""
+    CODE is sys.argv, so no -i before it); python runs bare and every other command is a plain data tool that writes no
+    file (_writes_nothing), so no assignment, env, export or eval can set PYTHONINSPECT (its review: PYTH""ONINSPECT=1)
+    and no module can appear before python starts; none is inherited; and nothing in the folder it runs in shadows a
+    module it may import (_shadowed: python -c searches that folder first)."""
     name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
-    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and len(args) >= 2 and args[0] == "-c"):
+    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and not c.redirs and len(args) >= 2
+            and args[0] == "-c"):
         return False
-    for x in cmds:
-        a, _ = _strip_wrappers(x.argv)
-        if x is not c and (x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS):
-            return False
+    if not all(_writes_nothing(x) for x in cmds if x is not c):
+        return False
     if any(os.environ.get(k) for k in ("PYTHONINSPECT", *_PY_PATH_VARS)) or _open_targets(args[1]) != []:
         return False
     import ast
-    mods = {al.name for n in ast.walk(ast.parse(args[1])) if isinstance(n, ast.Import) for al in n.names}
-    return not any(os.path.exists(os.path.join(b, m + x)) for b in cwds for m in mods for x in (".py", ""))
+    mods = {al.name.split(".")[0] for n in ast.walk(ast.parse(args[1])) if isinstance(n, ast.Import) for al in n.names}
+    return not _shadowed(cwds, mods)
 
 
 def _a_path(word, fixed):
