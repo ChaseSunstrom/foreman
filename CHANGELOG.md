@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Foreman Desktop UI cleanup (T-0351):
+  - A conversation reads as messages. Each run of tool calls folds into one quiet "N steps · Bash 5 · Read 2" row (failures in red) that opens to the calls, their results and their images. Before, a Claude session could show 775 tool rows against 97 messages, with full-size screenshots inline.
+  - The project overview no longer shows empty plans, the agent's own procedure notes under Next, or raw verify commands (they show on hover).
 - Foreman Desktop round 4 (T-0348): a Review tab per project. It shows the week's `fm digest` (done, lessons, decisions to review, blocked) and the `fm friction` digest since the last self-improvement pass, both read-only. `--mark`, `--brief` and `--every` are refused.
 - Foreman Desktop round 3 (T-0347, app repo), from a brainstorm on user value and unspoken needs:
   - Each device's `fm doctor` health: a sidebar mark when a check fails, and its non-passing checks on the Devices page.
