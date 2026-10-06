@@ -67,6 +67,15 @@ class Recall(ForemanTestCase):
         self.assertNotIn(self.other, out)
         self.assertIn("not instructions", out)
 
+    def test_a_matching_decision_is_recalled_past_closer_briefs(self):  # T-0343: T-0333 rebuilt a dropped feature
+        for i in range(6):
+            self.new(f"fm task ac {i}: set the criterion text or verify command", "FIX", "S")
+        self.fm("decide", "Drop T-0305 (edit a criterion in place)", "--why", "an edit command makes it trivial to "
+                "weaken a failing criterion until it passes; drop and recreate leaves a visible trail")
+        out = self.fm("recall", "fm task ac ID edit N: set a criterion's text or verify command").stdout
+        self.assertIn("decision", out)
+        self.assertIn("in place", out)
+
     def test_focus_records_related_work_in_the_brief(self):
         tid = self.new("Login timeout on 3G networks", "FIX", "S")
         out = self.fm("focus", tid).stdout
