@@ -117,6 +117,18 @@ class Serve(ServeCase):
         self.assertNotIn("https://", out, "the session URL is never shown")
         self.assertIn("still full autonomy with drive on", out, "a dead unit leaves the project in serve mode")
 
+    def test_status_json_lists_units_for_the_desktop_app(self):  # T-0328
+        self.assertEqual(json.loads(self.serve("status", "--json").stdout), {"v": 1, "units": []})
+        self.serve()
+        units = json.loads(self.serve("status", "--json").stdout)["units"]
+        self.assertEqual([(u["project"], u["state"], u["root"], u["active"]) for u in units],
+                         [(self.slug, "active", self.repo, None)])
+        self.stub("systemctl", 'if [ "$2" = is-active ]; then echo failed; fi\n')
+        u = json.loads(self.serve("status", "--json").stdout)["units"][0]
+        self.assertEqual(u["state"], "failed")
+        self.assertIn("Workspace not trusted", " ".join(u["log"]))
+        self.assertNotIn("https://", " ".join(u["log"]))
+
     def test_control_characters_never_reach_the_unit_file(self):
         # a newline in the repo path or PATH would end its line and start a new unit directive
         bad = type("P", (), {"root": "/srv/app\nExecStartPre=/bin/evil", "slug": "app-1"})()

@@ -186,27 +186,38 @@ def states():
     return {slug: _systemctl("is-active", unit_name(slug), check=False).stdout.strip() or "unknown" for slug in units()}
 
 
-def status_lines():
-    lines = []
+def status_rows():
+    """T-0328: each fm serve unit as data (the desktop app's Remote Control panel): its project, state, folder, work
+    and, when it isn't running, the last log lines (session URLs removed)."""
+    rows = []
     for slug, path in units().items():
         state = _systemctl("is-active", unit_name(slug), check=False).stdout.strip() or "unknown"
         root = re.search(r"^WorkingDirectory=(.*)$", _read(path) or "", re.M)
         p = c.project_by_slug(slug)
-        work = ""
-        if p:
-            sd = c.state_dict(p)
-            work = (f" · active {sd['active']['id']}" if sd["active"] else " · idle") + f" · queue {len(sd['queue'])}"
-        lines.append(f"{slug}: {state} · {root.group(1).replace('%%', '%') if root else '?'}{work}")
-        if state != "active" and p and c.read_meta(p).get("serve"):
-            lines.append(f"  {slug} is still full autonomy with drive on: fm serve stop restores them")
+        sd = c.state_dict(p) if p else None
+        row = {"project": slug, "unit": unit_name(slug), "state": state,
+               "root": root.group(1).replace("%%", "%") if root else None,
+               "active": sd["active"]["id"] if sd and sd["active"] else None, "queue": len(sd["queue"]) if sd else 0,
+               "serve_mode": bool(p and c.read_meta(p).get("serve")), "log": []}
         if state != "active":
             try:
                 log = subprocess.run(["journalctl", "--user", "-u", unit_name(slug), "-n", "3", "--no-pager", "-o",
                                       "cat"], capture_output=True, text=True, timeout=30).stdout.strip()
             except (OSError, subprocess.SubprocessError):
                 log = ""
-            log = re.sub(r"https?://\S+", "<url>", c.redact(log))  # never show the session URL
-            lines += [f"  {l}" for l in log.splitlines()[-3:]]
+            row["log"] = re.sub(r"https?://\S+", "<url>", c.redact(log)).splitlines()[-3:]  # never the session URL
+        rows.append(row)
+    return rows
+
+
+def status_lines():
+    lines = []
+    for r in status_rows():
+        work = "" if r["queue"] is None else (f" · active {r['active']}" if r["active"] else " · idle") + f" · queue {r['queue']}"
+        lines.append(f"{r['project']}: {r['state']} · {r['root'] or '?'}{work}")
+        if r["state"] != "active" and r["serve_mode"]:
+            lines.append(f"  {r['project']} is still full autonomy with drive on: fm serve stop restores them")
+        lines += [f"  {line}" for line in r["log"]]
     return lines or ["No fm serve units."]
 
 
@@ -216,6 +227,8 @@ def cmd_serve(args):
     if rest and rest[0] in ("start", "status", "stop"):
         action = rest.pop(0)
     if action == "status":
+        if getattr(args, "json", False):
+            return print(json.dumps({"v": 1, "units": status_rows()}))
         return print("\n".join(status_lines()))
     if action == "stop" and args.all:
         return print("\n".join(stop_all()) or "No fm serve units.")
