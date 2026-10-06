@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task ac ID edit N` (T-0342) works only while the criterion has no evidence, and every edit is logged in the brief with the old and new values. This follows the earlier decision against in-place edits (T-0305): once a check has run, it can't be weakened until it passes. Add a criterion instead, or drop and recreate the task.
 - Foreman Desktop round 1 (T-0341, app repo):
   - A Decisions tab per project, from the new structured `rows` in `fm decide --list --json`. Costly and outward decisions are flagged, and reversed ones are struck through.
   - Home's "Waiting on you" now lists blocked tasks next to the yeses to give.
