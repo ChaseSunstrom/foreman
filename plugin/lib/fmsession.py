@@ -387,7 +387,7 @@ def _alive(pid, sid):
             return False
 
 
-def start(agent, cwd, prompt, model=None, extra=(), title=None):
+def start(agent, cwd, prompt, model=None, extra=(), title=None, resume=None):
     if agent not in AGENTS:
         raise ValueError(f"unknown agent {agent} (one of {', '.join(AGENTS)})")
     cwd = os.path.realpath(cwd or os.getcwd())
@@ -400,7 +400,8 @@ def start(agent, cwd, prompt, model=None, extra=(), title=None):
     p = c.find_project(cwd)
     meta = {"v": 1, "id": sid, "agent": agent, "cwd": cwd, "project": p.slug if p else None,
             "title": c.fit(title or prompt.strip().splitlines()[0], 80), "model": model, "extra": list(extra),
-            "created": c.now(), "updated": c.now(), "status": "starting", "turns": 0, "agent_session": None, "pid": None}
+            "created": c.now(), "updated": c.now(), "status": "starting", "turns": 0, "pid": None,
+            "agent_session": resume if resume and not str(resume).startswith("-") else None}  # T-0328: continue one
     write_meta(sid, meta)
     _queue(sid, prompt)
     _spawn(sid, cwd)

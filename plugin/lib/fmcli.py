@@ -2036,7 +2036,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session night mcp ui projects watch"),
+    ("Running elsewhere", "lane serve run session claude night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2579,6 +2579,18 @@ def build_parser():
     s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
     s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
     s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
+    s = add("claude", lazy("fmclaude", "cmd_claude"), help="every Claude Code session on this device (terminal, remote, "
+                                                             "headless): list, show ID, agents ID, image ID REF, files "
+                                                             "ID, file ID PATH, send ID MESSAGE")
+    s.add_argument("action", choices=["list", "show", "agents", "image", "files", "file", "send"])
+    s.add_argument("rest", nargs="*", help="the session id, then a ref, path or message")
+    s.add_argument("--all", action="store_true", help="list: headless (SDK, claude -p) sessions too")
+    s.add_argument("--limit", type=int, default=150, help="list --all: at most this many headless ones, newest first")
+    s.add_argument("--agent", help="show/image: a subagent's transcript (its id from fm claude agents)")
+    s.add_argument("--from", dest="from_line", type=int, default=0, help="show: from this transcript line")
+    s.add_argument("--follow", action="store_true", help="list/show: keep printing as sessions change")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
+    s.add_argument("--model", help="send: the model for the continuation")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
