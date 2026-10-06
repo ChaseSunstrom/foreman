@@ -91,6 +91,19 @@ class Verify(ForemanTestCase):
         self.assertEqual([c.status for c in claims], ["verified", "not found", "unchecked", "unchecked"])
         self.assertIn("404", claims[2].why)
 
+    def test_quotes_match_on_words_not_markup(self):
+        # T-0313 trial: 6 of 16 real quotes failed on markdown escapes, highlighted code and escaped quotes
+        page = ('<pre><span class="pl-ent">tagName</span>: app-v__VERSION__ <span class="pl-c">#</span> the action '
+                'replaces it</pre><p>targets: ["deb", "rpm", "appimage"]</p><p>it runs fast on ARM</p>')
+        claims = [r.Claim("c1", "https://a.example/1", r"tagName: app-v\_\_VERSION\_\_ # the action replaces", "", ""),
+                  r.Claim("c2", "https://a.example/1", r'targets: [\"deb\", \"rpm\", \"appimage\"]', "", ""),
+                  r.Claim("c3", "https://a.example/1", "it runs fas on ARM", "", ""),  # a word cut short isn't there
+                  r.Claim("c4", "https://a.example/1", "it runs fast on ARM chips", "", ""),
+                  r.Claim("c5", "https://a.example/1", "我们 使用 Tauri 构建", "", "")]  # its edge lens: no spaces
+        page += "<p>我们 使用 Tauri 构建应用程序</p>"  # in CJK, a word run is not a word: the plain match still holds
+        r.verify(claims, fetch=lambda url: (page, None))
+        self.assertEqual([c.status for c in claims], ["verified", "verified", "not found", "not found", "verified"])
+
     def test_a_broken_page_or_short_quote_never_verifies_or_crashes(self):
         # T-0206 review: a hostile page (bogus charset, broken HTTP) must not lose the run; "the" isn't a quote
         claims = [r.Claim("c1", "https://a.example/1", "it runs fast", "primary", "unknown"),
