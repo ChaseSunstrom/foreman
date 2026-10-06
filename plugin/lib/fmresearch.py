@@ -124,6 +124,12 @@ def _norm(text):
     return re.sub(r"\s+", " ", text).strip().lower()
 
 
+def _words(text):
+    """T-0313: the text's words alone, padded, for an in-order match that markup can't break (markdown escapes,
+    highlighted code, \\" in a quote were 6 of 16 real quotes marked not found)."""
+    return " " + " ".join(re.findall(r"[^\W_]+", _norm(text))) + " "
+
+
 def cached_fetch(url, fetch=fetch):
     """T-0239: a page fetched at most once a day — verification and repeat asks read the cached text (successes only;
     earlier days are pruned when a page is written)."""
@@ -219,9 +225,9 @@ def verify(claims, fetch=None):
         page, why = pages[x.url]
         if page is None:
             x.status, x.why = "unchecked", why
-        elif len(_norm(x.quote).split()) < MIN_QUOTE:
+        elif len(_words(x.quote).split()) < MIN_QUOTE:
             x.status, x.why = "unchecked", f"quote too short to check (under {MIN_QUOTE} words)"
-        elif _norm(x.quote) in _norm(page):
+        elif _norm(x.quote) in _norm(page) or _words(x.quote) in _words(page):  # CJK has no word gaps to pad
             x.status, x.why = "verified", ""
         else:
             x.status, x.why = "not found", "the quoted words aren't on the page"
