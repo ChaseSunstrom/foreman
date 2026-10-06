@@ -1414,6 +1414,16 @@ def cmd_standing(args):
                or "No standing yes: Foreman's core asks per task.")
 
 
+def _decision_row(line):
+    """T-0341: one decisions.md row as fields (the desktop app's Decisions tab): date, kind (costly|outward|None),
+    text, why, and whether a later decision reversed it."""
+    body = line.removesuffix("  ← reversed later").strip().removeprefix("|").removesuffix("|")
+    cells = [x.strip().replace("\\|", "|") for x in re.split(r"(?<!\\)\|", body)]  # cell() escapes a | as \|
+    kind = re.match(r"\[(costly|outward)\]\s*", cells[1] if len(cells) > 1 else "")
+    return {"date": cells[0], "kind": kind and kind.group(1), "text": (cells[1] if len(cells) > 1 else "")[
+        kind.end() if kind else 0:], "why": cells[2] if len(cells) > 2 else "", "reversed": line.endswith("← reversed later")}
+
+
 def cmd_decide(args):
     """Record a decision; T-0057: --kind costly|outward marks one the user should review in the final report,
     --reverses names the earlier decision it undoes; --list shows them (--review: only those to review)."""
@@ -1427,7 +1437,8 @@ def cmd_decide(args):
         pick = [r for r in rows if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
         pick = [r + ("  ← reversed later" if any(x.lower() in r.lower() for x in reversed_ if "[reverses:" not in r)
                      else "") for r in pick]
-        return out(args, {"decisions": pick}, "\n".join(pick[-args.n:]) or "No decisions recorded.")
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
+                   "\n".join(pick[-args.n:]) or "No decisions recorded.")
 
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())

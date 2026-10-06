@@ -479,6 +479,18 @@ class OneCommandTask(ForemanTestCase):
         self.assertEqual((b.status, len(b.acceptance()), len(b.steps())), ("active", 1, 1))
 
 
+class DecideRows(ForemanTestCase):
+    def test_list_json_has_structured_rows(self):  # T-0341: the desktop app's Decisions tab
+        self.fm("decide", "use sqlite | for the cache", "--why", "one file, no server")
+        self.fm("decide", "ship without the review", "--why", "cap hit", "--kind", "costly")
+        rows = self.fm_json("decide", "--list")["rows"]
+        self.assertEqual([(r["kind"], r["text"], r["why"]) for r in rows],
+                         [(None, "use sqlite | for the cache", "one file, no server"),
+                          ("costly", "ship without the review", "cap hit")])
+        self.assertRegex(rows[0]["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertEqual(len(self.fm_json("decide", "--review")["rows"]), 1)
+
+
 class EditCriterion(ForemanTestCase):
     def test_edit_sets_the_verify_tail_or_the_text_and_keeps_the_rest(self):
         self.fm("task", "new", "A", "--type", "FIX", "--tier", "S", "--ac", "typo gone", "--ac", "old :: false")
