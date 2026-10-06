@@ -515,7 +515,8 @@ def _split(tokens):
             cur = Cmd([], [], t in ("|", "|&"), op=t)
             i += 1
             continue
-        if re.fullmatch(r"[<>&]+", t):
+        if re.fullmatch(r"[<>&]+\|?", t):
+            t = t.rstrip("|")  # >| writes even under noclobber (T-0358)
             nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
             if t == "<" and nxt == "(":
                 cur.procsub = True
@@ -1484,7 +1485,7 @@ def _shell_c(args):
 def _track_vars(words, env, home=None):
     """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
     words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
-             and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)", words[i - 1]))]
+             and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)\|?", words[i - 1]))]
     runner = False
     while words and words[0] in ("!", "time", "command", "builtin"):  # unquoted: these keep the command in this shell
         runner = runner or words[0] in ("command", "builtin")  # whose `command D=x` runs a program named D=x
