@@ -63,7 +63,11 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'cd /tmp && D=~ && (rm -rf "$D")', 'D=/tmp/x; mkdir -p $D; cd $D; D=~; rm -rf "$D"',
          # T-0339: a cd an && may skip leaves the next segment where it was
          'cd ~; false && cd /tmp; rm -rf *', 'cd ~; true && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp && true; rm -rf ./*',
-         'cd /tmp && cd ~ && cd /nonexistent; rm -rf ./*']
+         'cd /tmp && cd ~ && cd /nonexistent; rm -rf ./*',
+         # T-0355: a piped cd moves only its subshell; pipes later in a chain leave its head cd in force
+         'cd ~; cd /tmp | true && rm -rf ./*', 'cd ~; true; cd /tmp | cat && ls | cat && rm -rf ./*',
+         'cd ~ && ls | cat && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp |\ncat\nrm -rf ./*',
+         'cd ~; ls |\ncd /tmp\nrm -rf ./*']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 

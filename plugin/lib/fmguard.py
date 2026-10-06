@@ -506,7 +506,11 @@ def _split(tokens):
             i += 1
             continue
         if re.fullmatch(r"[;&|()]+", t) and not re.fullmatch(r"&>+", t):
-            if cur.argv or cur.redirs or cur.procsub:
+            empty = not (cur.argv or cur.redirs or cur.procsub)
+            if t == ";" and empty and cur.op in ("|", "|&", "&&", "||"):
+                i += 1  # a newline after | && || continues the command (_lines made it a ;): T-0355 review
+                continue
+            if not empty:
                 cmds.append(cur)
             cur = Cmd([], [], t in ("|", "|&"), op=t)
             i += 1
@@ -1160,14 +1164,15 @@ def _top(shell):
     while s != prev:
         s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
     straight = "!" not in s and _straight_line(s)
-    # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order
-    mixed = not straight and "!" not in s and _straight_line(s.replace("&&", ";"))
+    # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
+    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell)
+    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|(?<!\|)\|&?(?!\|)", ";", s))
     return straight, straight and "&&" in s, mixed
 
 
 _DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true"}
 _CURL_SAFE = re.compile(r"-[sSLf]+|--(?:silent|show-error|location|fail|compressed)")  # flags that write no file
-_WGET_SAFE = {"-q", "--quiet", "-nv", "-O", "-qO", "-O-", "-qO-", "--output-document=-"}
+_WGET_SAFE = {"-q", "--quiet", "-nv"}
 
 
 def _writes_nothing(x):
@@ -1190,11 +1195,20 @@ def _writes_nothing(x):
             else:
                 i += 1
         return True
-    if name == "wget":
-        flags = [w for w in args if w.startswith("-") and w != "-"]
-        to_stdout = any(w in ("-O-", "-qO-", "--output-document=-") for w in args) or any(
-            w in ("-O", "-qO") and args[i + 1:i + 2] == ["-"] for i, w in enumerate(args))
-        return to_stdout and all(w in _WGET_SAFE for w in flags)
+    if name == "wget":  # every -O must name stdout (the last one wins: -qO- URL -O json.py writes json.py)
+        outs, i = [], 0
+        while i < len(args):
+            w = args[i]
+            if w in ("-O", "-qO", "--output-document"):
+                outs.append(args[i + 1] if i + 1 < len(args) else "")
+                i += 2
+                continue
+            if w in ("-O-", "-qO-") or w.startswith("--output-document="):
+                outs.append("-" if w in ("-O-", "-qO-") else w.partition("=")[2])
+            elif w.startswith("-") and w != "-" and w not in _WGET_SAFE:
+                return False
+            i += 1
+        return bool(outs) and all(o == "-" for o in outs)
     return True
 
 
@@ -1534,12 +1548,16 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
-        in_chain = mixed and (c.op == "&&" or idx + 1 < len(cmds) and cmds[idx + 1].op == "&&")
-        if mixed and c.op != "&&":  # a new segment: the last one's chain may have stopped anywhere
+        nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
+        piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
+        in_chain = mixed and not piped and (c.op == "&&" or nxt_op == "&&")
+        if mixed and c.op not in ("&&", "|", "|&"):  # a new segment: the last one's chain may have stopped anywhere
             if base:
                 cwds, lost = list(dict.fromkeys(base[0] + cwds)), list(dict.fromkeys(base[1] + lost))
                 made = base[2]
-            base = (cwds, lost, set(made)) if in_chain else None
+            ops = [x.op for x in cmds[idx + 1:]]
+            seg = ops[:next((i for i, o in enumerate(ops) if o not in ("&&", "|", "|&")), len(ops))]
+            base = (cwds, lost, set(made)) if "&&" in seg else None
         if env is not None:
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
@@ -1560,8 +1578,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                certain = and_chain or in_chain or ((straight or mixed) and os.path.isabs(d) and (
-                    os.path.normpath(d) in made or (os.path.isdir(d) and os.access(d, os.X_OK))))
+                certain = not piped and (and_chain or in_chain or ((straight or mixed) and os.path.isabs(d) and (
+                    os.path.normpath(d) in made or (os.path.isdir(d) and os.access(d, os.X_OK)))))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
                 if base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
                     base = (base[0] + cwds, base[1] + lost, base[2])
