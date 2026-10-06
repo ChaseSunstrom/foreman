@@ -2,6 +2,8 @@
 outlines of big files and a mechanical pre-audit."""
 import json
 import os
+import subprocess
+import sys
 import time
 
 from helpers import ForemanTestCase
@@ -138,6 +140,15 @@ class DiffGates(ForemanTestCase):
         self.assertIn("can't fail", p.stderr)
         self.assertEqual(c.lint_verify("set -o pipefail; git log | head -1", self.repo), [])
         self.assertEqual(c.lint_verify("cd sub && FOO=1 git status", self.repo), [])
+        # T-0357: Foreman's run.py -k is a substring, so a pattern with a space matches nothing
+        self.assertTrue(any("repeat -k" in x for x in c.lint_verify(
+            "python3 plugin/tests/run.py -k 'test_guard or test_cli'", self.repo)))
+        self.assertFalse(any("repeat -k" in x for x in c.lint_verify("pytest -k 'a or b'", self.repo)))
+        run = os.path.join(os.path.dirname(os.path.abspath(__file__)), "run.py")
+        p = subprocess.run([sys.executable, run, "-k", "test_cli or test_guard"], capture_output=True, text=True,
+                           timeout=60)
+        self.assertEqual(p.returncode, 2)  # a usage error, before anything runs
+        self.assertIn("repeat -k", p.stderr)
 
     def test_outline_lists_definitions_with_line_ranges(self):
         py = os.path.join(self.repo, "m.py")
