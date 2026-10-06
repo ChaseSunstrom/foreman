@@ -988,6 +988,83 @@ def _interp_code(cmd):
     return "".join(out) + shell[last:] + "\n" + bodies
 
 
+# T-0345: python calls that start a program, by module: where its command is (an argument index, or "k:" for the
+# positional arguments from k on as the argv)
+_SPAWN = {"subprocess": dict.fromkeys(("run", "call", "check_call", "check_output", "Popen", "getoutput",
+                                       "getstatusoutput"), 0),
+          "os": {"system": 0, "popen": 0, **dict.fromkeys(("execv", "execve", "execvp", "execvpe", "posix_spawn",
+                                                           "posix_spawnp"), 1),
+                 **dict.fromkeys(("execl", "execle", "execlp", "execlpe"), "1:"),
+                 **dict.fromkeys(("spawnv", "spawnve", "spawnvp", "spawnvpe"), 2),
+                 **dict.fromkeys(("spawnl", "spawnle", "spawnlp", "spawnlpe"), "2:")},
+          "pty": {"spawn": 0}}
+
+
+def _python_sources(cmd):
+    """T-0345: the python code a command may run: every heredoc body (one that parses as python is read as python) and
+    the code of each `python -c` (option clusters such as -uc included)."""
+    out, lines, seen, i = [], cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        starts = _heredoc_starts(seen, line)
+        seen.append(line)
+        for _, delim in starts:
+            body = []
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            out.append("\n".join(body))
+    for c in _split(_tokens(_lines(_strip_heredocs(cmd)))):
+        argv, _ = _strip_wrappers(c.argv)
+        if argv and re.match(r"^python[0-9.]*$", os.path.basename(argv[0])):
+            out += _shell_c(argv[1:])
+    return out
+
+
+def _spawned_commands(code):
+    """T-0345: the shell commands python code starts (subprocess, os.system/popen/exec*/spawn*, pty.spawn, under any
+    import alias), as text check_bash reads: a literal string as it stands, a literal list with its words quoted, any
+    other part as an unknown "$_" (so a delete of a variable is a delete of an unknown target), cwd= as a cd first."""
+    import ast
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
+        return []
+    alias = {}  # local name → (module, None) for the module, (module, function) for a from-import
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            alias.update({a.asname or a.name: (a.name, None) for a in n.names if a.name in _SPAWN})
+        elif isinstance(n, ast.ImportFrom) and n.module in _SPAWN:
+            alias.update({a.asname or a.name: (n.module, a.name) for a in n.names if a.name in _SPAWN[n.module]})
+    word = lambda e: shlex.quote(e.value) if isinstance(e, ast.Constant) and isinstance(e.value, str) else '"$_"'  # noqa: E731
+    out = []
+    for n in ast.walk(tree):
+        f = getattr(n, "func", None) if isinstance(n, ast.Call) else None
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and alias.get(f.value.id, (0, 0))[1] is None:
+            mod, fn = alias[f.value.id][0], f.attr
+        elif isinstance(f, ast.Name) and alias.get(f.id, (0, None))[1]:
+            mod, fn = alias[f.id]
+        else:
+            continue
+        where = _SPAWN[mod].get(fn)
+        if where is None:
+            continue
+        if isinstance(where, str):
+            text = " ".join(word(e) for e in n.args[int(where[:-1]):])
+        else:
+            arg = n.args[where] if len(n.args) > where else next(
+                (k.value for k in n.keywords if k.arg in ("args", "argv", "cmd", "command")), None)
+            if arg is None:
+                continue
+            text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else \
+                " ".join(word(e) for e in arg.elts) if isinstance(arg, (ast.List, ast.Tuple)) else '"$_"'
+        cwd = next((k.value for k in n.keywords if k.arg == "cwd"), None)
+        out.append((f"cd {word(cwd)} && " if cwd is not None else "") + text)
+    return out
+
+
 def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
@@ -1383,6 +1460,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         return [("rm-outside", "command nesting too deep to analyse")]
     cmd = _join_continued(cmd)
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
+    # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
+    # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
+    dry = _drop_data_heredocs(cmd)
+    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
+        found += check_bash(spawned, ctx, depth + 1)
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
