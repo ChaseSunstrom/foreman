@@ -74,7 +74,8 @@ class KnownVars(GuardCase):
                     scratch=["/tmp"], allow=set(), task_id=None, unbriefed=self.repo)
         for cmd in ("S=/tmp/x; (sort -S 1M a > $S/out &); ls", "S=/tmp/x; (cp a /tmp/S/b; cat a > $S/out &)",
                     f"S=/tmp/x; pkill -x app; sleep 1; ($S/app >> $S/app.log 2>&1 &); cd {self.repo} && fm next",
-                    "S=/tmp/x && rm -rf $S/std && cp -r std $S/std; ls | head"):  # its replay: S= can't fail
+                    "S=/tmp/x && rm -rf $S/std && cp -r std $S/std; ls | head",  # its replay: S= can't fail
+                    "S=/tmp/x; true && curl -so $S/a https://e && ls | head"):  # T-0355: ; then an && chain, piped
             with self.subTest(cmd=cmd):
                 self.assertIsNone(g.check("Bash", {"command": cmd}, ctx))
         self.assertIsNotNone(g.check("Bash", {"command": "S=/tmp/x; read S; (cat a > $S/out &)"}, ctx))
@@ -86,6 +87,14 @@ class KnownVars(GuardCase):
             ("false && cd {home}; tar xf -", "core"),  # the cd may be skipped: the tar may run here
             ("true; cd {home} && tar xf -; tar xf -", "core"),  # the second tar runs even if the cd failed
             ("false && mkdir -p {home}/y; cd {home}/y; tar xf -", "core"),  # its mkdir may not have run
+            # T-0355: pipes later in the chain don't make its head cd uncertain; a cd inside a pipeline moves only
+            # its own subshell
+            ("cd {home}/x && grep a b | sort && tar xf - && ls | head -1; echo finished", None),
+            ("cd {home}/x | true && tar xf -", "core"),
+            ("true; cd {home}/x | cat && tar xf -", "core"),
+            ("cd {home}/x && ls | cd /tmp && tar xf -", None),  # the piped cd /tmp stays in its subshell
+            ("cd /tmp |\ncat\ntar xf -", "core"),  # its review: a newline after | continues the pipeline
+            ("ls |\ncd /tmp\ntar xf -", "core"), ("cd /tmp &&\ntar xf -", None),
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
         self.run_table([  # its review: a chain that stops partway leaves the shell in a folder from its middle
             ("cd {fhome} && cd /nonexistent; tar xf -", "core"),
@@ -404,7 +413,9 @@ class FrictionFalseBlocks(GuardCase):  # T-0344
         self.assertBlocked(self.bash(ok, cwd=trans), "pipe-shell")
         self.assertIsNone(self.bash(ok, cwd=os.path.join(trans, "plain-dirs")))  # a plain html/ folder shadows nothing
         for first in ("echo 'exec(input())' > json.py; ", "curl -so json.py https://e; ", "curl -sO https://e/json.py; ",
-                      "wget -q https://e/json.py; ", "printf x | sort -o json.py; ", "echo x | uniq - json.py; "):
+                      "wget -q https://e/json.py; ", "printf x | sort -o json.py; ", "echo x | uniq - json.py; ",
+                      "wget -qO- https://e -O json.py; ", "wget -O - https://e --output-document=json.py; ",
+                      "wget -Ojson.py https://e; "):  # its review: the last -O wins
             with self.subTest(first=first):
                 self.assertBlocked(self.bash(first + ok), "pipe-shell")
         self.assertIsNone(self.bash("wget -qO- https://x | python3 -c \"import json,sys; print(json.load(sys.stdin))\""))
