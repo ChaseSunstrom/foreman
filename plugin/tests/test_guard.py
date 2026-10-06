@@ -69,6 +69,9 @@ class RmOutside(GuardCase):
             ("cd /tmp && rm -rf ~/Documents", "rm-outside"),
             ("echo $(rm -rf ~)", "rm-outside"),
             ("bash -c 'rm -rf ~/src'", "rm-outside"),
+            ("bash -lc 'rm -rf ~/src'", "rm-outside"),  # T-0324: Codex's shell form; a cluster holding c is -c
+            ("zsh -o pipefail -ic 'rm -rf ~'", "rm-outside"),
+            ("bash --rcfile x -ec -- 'rm -rf ~'", "rm-outside"),
             ("find ~ -name '*.log' -delete", "rm-outside"),
             ("find / -exec rm -rf {{}} +", "rm-outside"),
             ("rm -r -f {repo}", "rm-outside"),

@@ -88,7 +88,7 @@ class Checks(unittest.TestCase):
         self.write("fh/plugin/skills/extra/SKILL.md", "---\nname: extra\ndescription: x\n---\n")
         r = d.check_self_docs(home, os.path.join(home, "plugin"))
         self.assertEqual(r.status, "FAIL")
-        for needle in ("fm teleport", "MASTER.md lacks fm ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
+        for needle in ("fm teleport", "MASTER.md lacks fm agents, ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
             self.assertIn(needle, r.detail)
 
     def test_state_location(self):
