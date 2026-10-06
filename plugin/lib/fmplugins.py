@@ -263,7 +263,8 @@ INDEX_VERSION = 2  # bump when what the index keeps changes
 def _gist(name, desc):
     """What a skill is for: its name and its description's first sentence (later sentences list side uses: a skill
     creator "benchmarks skill performance" without being a performance tool)."""
-    return f"{name} {re.split(r'(?<=[.!?])\s', desc.strip(), maxsplit=1)[0]}".lower()
+    first = re.split(r"(?<=[.!?])\s", desc.strip(), maxsplit=1)[0]  # outside the f-string: Python 3.11
+    return f"{name} {first}".lower()
 
 
 def _skill_index(p):

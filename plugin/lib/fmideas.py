@@ -75,6 +75,7 @@ def run_children(jobs, timeout, feature):
                 procs.append((pr, detail))
                 pr.stdin.write(stdin)
                 pr.stdin.close()
+                pr.stdin = None  # Python 3.11's communicate() flushes stdin and raised on the closed one
         except OSError as e:
             for pr, _ in procs:
                 pr.kill()
