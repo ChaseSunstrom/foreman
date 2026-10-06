@@ -85,16 +85,42 @@ def scan(root):
     return findings
 
 
+def _added_text(root, rel):
+    """What the working tree adds to *rel* against HEAD: the + lines of its diff, or the whole file when git does
+    not track it yet. A doc's drift is the task's only where it sits in that text (T-0035)."""
+    try:
+        tracked = subprocess.run(["git", "-C", root, "ls-files", "--error-unmatch", "--", rel],
+                                 capture_output=True, text=True, timeout=30).returncode == 0
+        if tracked:
+            diff = subprocess.run(["git", "-C", root, "diff", "-U0", "HEAD", "--", rel],
+                                  capture_output=True, text=True, timeout=30).stdout
+            return "\n".join(line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
+    except (OSError, subprocess.SubprocessError):
+        return None  # can't tell: treat all of it as the task's, as before
+    try:
+        with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
 def task_docs(root, docs_impact):
-    """For fm task done (M/L): (blockers, notes). Docs the task says it updated must exist and show no drift; drift in
-    other docs is reported, not blocking, so an old problem elsewhere never holds up unrelated work."""
+    """For fm task done (M/L): (blockers, notes). Docs the task says it updated must exist and add no drift; drift in
+    other docs, and old drift in the ones it updated, is reported, not blocking, so an old problem never holds up
+    unrelated work."""
     named = {os.path.normpath(n) for n in re.findall(r"[\w./-]+\.md\b", docs_impact or "")}
     blockers = [f"docs impact names {n}, which doesn't exist" for n in sorted(named)
                 if not os.path.exists(os.path.join(root, n))]
     notes = []
+    added = {}
     for f in scan(root):
         line = f"{f['file']}: {f['kind']} {f['detail']}"
-        if os.path.normpath(f["file"]) in named:
+        rel = os.path.normpath(f["file"])
+        if rel in named and rel not in added:
+            added[rel] = _added_text(root, rel)
+        # Drift that predates the task is the doc's, not the task's: a ledger with old relative paths refused every
+        # task that added a row to it (T-0035). Only drift in what this task wrote blocks.
+        if rel in named and (added[rel] is None or f["detail"] in added[rel]):
             blockers.append(f"doc drift in a doc this task updated: {line}")
         else:
             notes.append(line)
