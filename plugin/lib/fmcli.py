@@ -2515,7 +2515,6 @@ def build_parser():
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
     s.add_argument("--day", type=float, help="set: USD per day for everything fm spawns")
     s.add_argument("--run", type=float, help="set: USD per command")
-    s.add_argument("--subagent-tokens", type=int, help="set: Agent subagent tokens per day")
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 

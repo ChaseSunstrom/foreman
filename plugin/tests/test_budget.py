@@ -99,10 +99,35 @@ class Budget(ForemanTestCase):
                                    "agent_transcript_path": transcript})
         rec = self.spend()[-1]
         self.assertEqual((rec["feature"], rec["tokens"]), ("subagent:foreman:fm-recon", 3000))
-        bud.set_caps(subagent_tokens=2500)
-        out = self.hook("PreToolUse", {"tool_name": "Agent", "tool_input": {"subagent_type": "foreman:fm-recon",
-                                                                           "prompt": "x"}})
+        self.assertIn("3,000", self.fm("budget").stdout)  # counted and shown, never a cap (T-0320)
+        agent = {"tool_name": "Agent", "tool_input": {"subagent_type": "foreman:fm-recon", "prompt": "x"}}
+        self.assertEqual(self.hook("PreToolUse", agent).returncode, 0)
+        self.usage(seven_day=(50, 6 * 86400))  # half the week used with a seventh of it gone
+        out = self.hook("PreToolUse", agent)
         self.assertEqual(out.returncode, 2)
-        self.assertIn("budget", out.stderr)
-        bud.set_caps(subagent_tokens=10_000)
-        self.assertEqual(self.hook("PreToolUse", {"tool_name": "Agent", "tool_input": {"prompt": "x"}}).returncode, 0)
+        self.assertIn("weekly usage 50%", out.stderr)
+
+    def usage(self, **windows):
+        """A statusline snapshot: window=(used %, seconds until it resets)."""
+        folder = os.path.join(c.state_dir(), "sessions")
+        os.makedirs(folder, exist_ok=True)
+        rl = {k: {"used_percentage": u, "resets_at": int(time.time() + s)} for k, (u, s) in windows.items()}
+        with open(os.path.join(folder, "s.json"), "w") as f:
+            json.dump({"rate_limits": rl}, f)
+
+    def test_subagents_follow_the_weeks_pace(self):
+        self.assertIsNone(bud.subagent_pause(), "unknown usage never pauses")
+        day = 86400
+        for windows, paused in [({"seven_day": (63, 30 * 3600)}, None),           # 82% of the week gone: on pace
+                                ({"seven_day": (50, 6 * day)}, "weekly usage 50%"),  # 14% gone: ahead of pace
+                                ({"seven_day": (91, 3600)}, "weekly usage 91%"),     # never past 90%
+                                ({"five_hour": (95, 3600)}, "5-hour usage 95%"),
+                                ({"five_hour": (95, -60)}, None),                    # that window already reset
+                                ({"seven_day": (15, 30 * day)}, None),  # a reset past a week out: pace unknown, 80% rule
+                                ({"five_hour": (40, 3600), "seven_day": (20, 6 * day)}, None)]:
+            self.usage(**windows)
+            got = bud.subagent_pause()
+            if paused is None:
+                self.assertIsNone(got, windows)
+            else:
+                self.assertIn(paused, got or "", windows)

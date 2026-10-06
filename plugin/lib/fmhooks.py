@@ -704,7 +704,7 @@ def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
-        if tool in ("Agent", "Task"):  # T-0227: subagents run within the day's token budget
+        if tool in ("Agent", "Task"):  # T-0320: subagents wait only while usage runs ahead of pace
             try:
                 import fmbudget
                 fmbudget.check_subagent()

@@ -260,7 +260,7 @@ const NEWS: FmView = {
     unverified: ['the delimiter is always a comma'],
   },
   budget: {
-    today_usd: 2.4, subagent_tokens: 120000, caps: { day: 15, run: 6, subagent_tokens: 4000000 }, halved: 'weekly usage 85%',
+    today_usd: 2.4, subagent_tokens: 120000, caps: { day: 15, run: 6 }, halved: 'weekly usage 85%', subagents_paused: 'weekly usage 85%',
     top: [{ feature: 'bench', usd: 1.9, runs: 4, tokens: 0 }, { feature: 'subagent:foreman:fm-reviewer', usd: 0, runs: 1, tokens: 120000 }],
   },
   bench: {
@@ -282,7 +282,7 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
   for (const key of ['card-budget', 'card-bench', 'card-research'])
     if (!(await ui.find({ key }))) missing.push(key)
   for (const text of [
-    /\$2\.40 of \$15 · subagents 120k of 4\.0M/,
+    /\$2\.40 of \$15 · subagents 120k · waiting: weekly usage 85%/,
     /caps halved: weekly usage 85%/,
     /✗ H1\. the cache is shared/,
     /\? H2\. the input is truncated/,
@@ -306,7 +306,7 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
 })
 
 test('a quiet day shows no spend, bench or research cards', async ($, on) => {
-  world(on, [{ ...VIEW, budget: { ...NEWS.budget!, today_usd: 0, subagent_tokens: 0, halved: null }, bench: null, research: [] }])
+  world(on, [{ ...VIEW, budget: { ...NEWS.budget!, today_usd: 0, subagent_tokens: 0, halved: null, subagents_paused: null }, bench: null, research: [] }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   for (const key of ['card-budget', 'card-bench', 'card-research']) expect(await ui.find({ key })).toBeUndefined()
