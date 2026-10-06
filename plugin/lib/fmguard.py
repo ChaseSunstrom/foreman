@@ -772,7 +772,11 @@ def _python_units(cmd):
         i += 1
         starts = _heredoc_starts(seen, line)
         seen.append(line)
-        run = re.match(r"\s*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*(python[0-9.]*\s+-\s*<<.*)$", line)
+        # T-0315: plain name=value; first (lowercase: a shell variable, never PATH, HOME or LD_* that pick which python
+        # runs or what it loads) and the script's own arguments (sys.argv: they pick what it reads, never what it may
+        # write, which _open_targets proves from literals) don't change what the code does
+        run = re.match(r"\s*(?:[a-z_][a-z0-9_]*=[\w./~@+:=,-]*\s*;\s*)*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
+                       r"(python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
         # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
         fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \

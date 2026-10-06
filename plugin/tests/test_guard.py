@@ -317,6 +317,25 @@ class StateDirect(GuardCase):
         ], self.bash)
 
 
+class InterpreterReads(GuardCase):  # T-0315 (friction): a read-only script isn't a write, whatever its strings
+    def test_read_only_heredoc_with_join_strings(self):
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome,
+                    scratch=["/tmp"], allow=set(), task_id=None, unbriefed=self.repo)
+        read = ("python3 - state.json <<'EOF'\nimport json, sys\nd = json.load(open(sys.argv[1]))\n"
+                "print(' | '.join((x.get('title') or '')[:40] for x in d))\nEOF")
+        self.assertIsNone(g.check("Bash", {"command": read}, ctx))
+        real = ("f=a.jsonl; python3 - \"$f\" <<'EOF'\nimport json,sys\nrows=[json.loads(l) for l in open(sys.argv[1])]\n"
+                "for r in rows:\n    m=r.get('message') or {}\n    c=m.get('content')\n    if isinstance(c,str): s=c\n"
+                "    elif isinstance(c,list):\n        s=' | '.join((x.get('text') or json.dumps(x.get('input',''))[:300] "
+                "or str(x.get('content',''))[:300]) if isinstance(x,dict) else str(x) for x in c)\n    else: continue\n"
+                "    print(r.get('type'), (s or '')[:400].replace('\\\\n',' '))\nEOF")  # the friction command itself
+        self.assertIsNone(g.check("Bash", {"command": real}, ctx))
+        self.assertIsNotNone(g.check("Bash", {"command": real.replace("f=a.jsonl", "HOME=/tmp/h").replace(
+            "join(", "join(open('x.py','w').write('') or ")}, ctx))  # HOME picks python's startup files: not proved
+        write = "python3 - <<'EOF'\nopen('a.py', 'w').write(' | '.join(['x']))\nEOF"
+        self.assertIsNotNone(g.check("Bash", {"command": write}, ctx))
+
+
 class AgentWiring(GuardCase):
     """Foreman's hooks in Codex, Gemini CLI and opencode live in their config: an agent that edits it can switch the
     guard off, so it is core like Claude Code's settings."""
