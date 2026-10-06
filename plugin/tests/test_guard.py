@@ -317,6 +317,22 @@ class StateDirect(GuardCase):
         ], self.bash)
 
 
+class AgentWiring(GuardCase):
+    """Foreman's hooks in Codex, Gemini CLI and opencode live in their config: an agent that edits it can switch the
+    guard off, so it is core like Claude Code's settings."""
+    def test_agent_hook_config_is_core(self):
+        paths = ["{home}/.codex/hooks.json", "{home}/.codex/config.toml", "{home}/.gemini/settings.json",
+                 "{home}/.config/opencode/opencode.json", "{home}/.config/opencode/plugins/foreman.ts",
+                 "{repo}/.codex/config.toml", "{repo}/.gemini/settings.json", "{repo}/opencode.json",
+                 "{repo}/.opencode/plugins/x.ts", "{fhome}/plugin/integrations/opencode/foreman.ts"]
+        self.run_table([(x, "core") for x in paths], self.write)
+        self.run_table([("echo {{}} > ~/.gemini/settings.json", "core"), ("rm ~/.codex/hooks.json", "core"),
+                        ("cp x.json ~/.config/opencode/opencode.json", "core")], self.bash)
+        self.run_table([("{home}/.codex/AGENTS.md", None), ("{repo}/.gemini/notes.md", None)], self.write)
+        self.run_table([("fm agents uninstall codex", "core"), ("fm --json agents uninstall gemini", "core"),
+                        ("fm agents install codex", None), ("fm agents list --json", None)], self.bash)
+
+
 class Core(GuardCase):
     def test_table(self):
         self.run_table([
