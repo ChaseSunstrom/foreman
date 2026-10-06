@@ -73,8 +73,11 @@ def run_children(jobs, timeout, feature):
                 pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                       stderr=subprocess.PIPE, env=_child_env())
                 procs.append((pr, detail))
-                pr.stdin.write(stdin)
-                pr.stdin.close()
+                try:
+                    pr.stdin.write(stdin)
+                    pr.stdin.close()
+                finally:
+                    pr.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
         except OSError as e:
             for pr, _ in procs:
                 pr.kill()
