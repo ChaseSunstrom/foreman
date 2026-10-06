@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Recall (T-0343): Related past work keeps one of its four places for the best matching decision. Briefs worded closer to the new task used to push it out. That is how T-0333 rebuilt "edit a criterion in place", which a decision had dropped two days before, without the decision showing up.
 - `fm task ac ID edit N` (T-0342) works only while the criterion has no evidence, and every edit is logged in the brief with the old and new values. This follows the earlier decision against in-place edits (T-0305): once a check has run, it can't be weakened until it passes. Add a criterion instead, or drop and recreate the task.
 - Foreman Desktop round 1 (T-0341, app repo):
   - A Decisions tab per project, from the new structured `rows` in `fm decide --list --json`. Costly and outward decisions are flagged, and reversed ones are struck through.
