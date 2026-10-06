@@ -2334,6 +2334,8 @@ def lint_verify(cmd, root):
                 problems.append(f"{w} isn't on PATH or in the repo")
     if any(firsts) and all(f in _VACUOUS or not f for f in firsts):
         problems.append("it can't fail (nothing in it checks the behaviour)")
+    if re.search(r"plugin/tests/run\.py\b.*\s-k\s+(['\"])[^'\"]*\s[^'\"]*\1", cmd or ""):  # T-0357: a substring
+        problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
     return problems
