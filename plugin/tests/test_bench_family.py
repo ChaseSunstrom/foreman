@@ -121,6 +121,17 @@ class Judged(_Bench):
                                  env=dict(self.env, STUB_SCORE="2"), check=False).stdout)
         self.assertEqual((low["cases"][0]["score"], low["cases"][0]["pass"]), (2, False))  # below 4 fails
 
+    def test_a_run_stopped_at_its_budget_is_inconclusive_and_not_judged(self):
+        # T-0309: the court's R-T-0205 spent $0.5055 of $0.50 — cut off mid-task, then judged as if it had finished
+        self.fm("bench", "build", "--judged", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--ids", self.docs, "--label", "cap", "--budget", "0.3", "--json",
+                                 env=dict(self.env, STUB_DOCS="1"), check=False).stdout)
+        got = res["cases"][0]
+        self.assertFalse(got["pass"])
+        self.assertIn("budget cap", got["error"])
+        self.assertFalse([x for x in self.calls() if "--plugin-dir" not in x["args"]])  # no judge paid
+        self.assertIn("budget cap", self.fm("bench", "show", "cap", env=self.env).stdout)
+
     def test_without_judged_a_docs_task_is_skipped(self):
         built = json.loads(self.fm("bench", "build", "--json", env=self.env).stdout)
         self.assertNotIn(self.docs, [x["id"] for x in built["cases"]])

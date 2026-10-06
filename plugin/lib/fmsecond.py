@@ -105,6 +105,8 @@ def _user_messages(path, n=40):
                     continue
                 if not isinstance(e, dict) or e.get("type") != "user" or e.get("isMeta"):
                     continue
+                if str(e.get("entrypoint") or "").startswith("sdk"):  # T-0307: a claude -p or SDK run (a background
+                    return []  # review, a child) — nobody typed in it
                 content = (e.get("message") or {}).get("content")
                 texts = [content] if isinstance(content, str) else [
                     x.get("text", "") for x in content or [] if isinstance(x, dict) and x.get("type") == "text"]
@@ -138,7 +140,7 @@ def session(p, exclude=None, if_due=False, model="sonnet", timeout=300):
         c.write_meta(p, meta)
     files = sorted((f for f in glob.glob(os.path.join(fmcost.transcripts_dir(p.root), "*.jsonl"))
                     if os.path.basename(f)[:-6] != exclude), key=os.path.getmtime)
-    said = _user_messages(files[-1]) if files else []
+    said = next((m for m in map(_user_messages, reversed(files[-20:])) if m), [])  # the newest the user typed in
     if not said:
         return [], "no earlier session to review"
     held = [b for b in c.load_briefs(p) if b.status not in c.CLOSED]

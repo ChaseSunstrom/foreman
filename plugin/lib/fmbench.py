@@ -260,6 +260,8 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
             error = f"timed out after {timeout} min"
     except OSError as e:
         error = f"can't start claude: {e}"
+    if not error and (res.get("total_cost_usd") or 0) >= budget:  # T-0309: cut off mid-task, so nothing to judge
+        error = f"hit the ${budget:g} budget cap before finishing (inconclusive: raise --budget)"
     return res, error or (res.get("result") if res.get("is_error") else None)
 
 

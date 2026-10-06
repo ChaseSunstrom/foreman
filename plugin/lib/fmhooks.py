@@ -765,12 +765,6 @@ def _pre_tool_use(raw):
         return 2 if decision[0] == "deny" else 0
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
-    gate = _no_task_gate(pl, p, act, ctx)
-    if gate:
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                 "permissionDecisionReason": gate}}))
-        print(gate, file=sys.stderr)
-        return 2
     try:
         note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
         if note:
@@ -807,7 +801,8 @@ def _guard_ctx(pl, fmguard):
                       allow=set(act.meta.get("allow") or []) if act else set(), task_id=act.id if act else None,
                       standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()),
                       confine=(p.lane, c.main_worktree(p.lane)) if p and getattr(p, "lane", None) and act
-                      and act.meta.get("builder") else None)
+                      and act.meta.get("builder") else None,
+                      unbriefed=p.root if p and not act and not _quiet() else None)  # T-0308: Bash writes too
     return ctx, p, act
 
 
@@ -987,19 +982,6 @@ def _edit_path(pl):
 
 def _in_project(path, p):
     return bool(path) and path.startswith(p.root.rstrip("/") + "/")
-
-
-def _no_task_gate(pl, p, act, ctx):
-    """File edits inside a Foreman project need an active task (rules: never edit without a brief)."""
-    if not p or act or pl.get("tool_name") not in FILE_TOOLS:
-        return None
-    path = _edit_path(pl)
-    exempt = [pl.get("scratchpad_dir"), os.path.join(ctx.home, ".claude", "projects")]  # session scratch, auto memory
-    if not _in_project(path, p) or any(e and path.startswith(e.rstrip("/") + "/") for e in exempt):
-        return None
-    return (f"Foreman: no active task in {p.slug}, so {os.path.relpath(path, p.root)} can't be edited yet. One "
-            f"command starts a small task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" "
-            f"--step \"<step>\" --focus (bigger work: /foreman:intake; fm next says what's next).")
 
 
 _EDIT_VERBS = "edit write change modify touch update overwrite create"
@@ -1301,7 +1283,7 @@ def stop(pl):
         # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
         nudge = None if reload_due else (_evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED})
-                                         or _question_nudge(pl))
+                                         or _question_nudge(pl) or _headless_wait(pl))
         reason = nudge or _drive(p, sd, briefs, pl, g)
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
@@ -1332,6 +1314,22 @@ def _question_nudge(pl):
             "fm ask for a guard category, so the answer can't be lost in chat. Where that tool isn't available "
             "(claude -p), decide with your default and record it. Either way, repeat what the user needs from the "
             "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
+
+
+def _headless_wait(pl):
+    """T-0310: claude -p (and fm run) ends with the turn, so a background task's notification never arrives: wait for
+    it in this turn. Once per stop chain."""
+    headless = os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
+    if pl.get("stop_hook_active") or not headless:
+        return None
+    bg = pl.get("background_tasks")
+    running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else \
+        _running(pl.get("session_id"))
+    if not running:
+        return None
+    return (f"Foreman: this is a headless run (claude -p): it ends with this turn, so the background work still running "
+            f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "
+            f"rerun it in the foreground), then finish with its result.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):
