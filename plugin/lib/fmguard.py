@@ -602,6 +602,8 @@ _WRITE_API = re.compile(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
+# T-0344: .replace( stays a write here even with two string arguments: os.replace('a', 'b'), an aliased os or (os) look
+# the same as str.replace to a text match, and only a proved script (_open_targets) can tell them apart
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin", "brief")
 # A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
@@ -799,7 +801,7 @@ _PY_PURE = {"re": (set("sub subn search match fullmatch findall finditer split c
                    set("error I IGNORECASE M MULTILINE S DOTALL X VERBOSE A ASCII".split())),
             "json": ({"loads", "dumps", "load", "dump"}, {"JSONDecodeError"}),
             "textwrap": ({"dedent", "indent", "fill", "wrap", "shorten"}, set()),
-            "sys": ({"exit"}, {"argv"})}
+            "sys": ({"exit"}, {"argv", "stdin"})}  # T-0344: reading stdin writes nothing
 _FRAME_ATTR = re.compile(r"(?:gi|cr|ag|f|tb)_")
 _PY_PATH_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONPLATLIBDIR", "PYTHONSTARTUP")  # what imports load
 # review: the only builtins a proved script may name (not type: type(f.buffer.raw) is FileIO, which opens files; not
@@ -1083,6 +1085,30 @@ def _top(shell):
     # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order
     mixed = not straight and "!" not in s and _straight_line(s.replace("&&", ";"))
     return straight, straight and "&&" in s, mixed
+
+
+_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "sort", "uniq", "wc", "grep", "cut", "tr",
+               "sleep", "true"}
+
+
+def _reads_pipe_as_data(c, argv, cmds, cwds):
+    """T-0344: `curl … | python3 -c CODE` reads the download as data when CODE is proved (_open_targets: pure modules,
+    nothing dynamic, nothing written) and nothing makes python read stdin as code. -c comes first (every word after
+    CODE is sys.argv, so no -i before it); python runs bare and every other command is a plain data tool, so no
+    assignment, env, export or eval can set PYTHONINSPECT (its review: PYTH""ONINSPECT=1); none is inherited; and no
+    module CODE imports is shadowed by a file in the folder it runs in (python -c searches it first)."""
+    name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
+    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and len(args) >= 2 and args[0] == "-c"):
+        return False
+    for x in cmds:
+        a, _ = _strip_wrappers(x.argv)
+        if x is not c and (x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS):
+            return False
+    if any(os.environ.get(k) for k in ("PYTHONINSPECT", *_PY_PATH_VARS)) or _open_targets(args[1]) != []:
+        return False
+    import ast
+    mods = {al.name for n in ast.walk(ast.parse(args[1])) if isinstance(n, ast.Import) for al in n.names}
+    return not any(os.path.exists(os.path.join(b, m + x)) for b in cwds for m in mods for x in (".py", ""))
 
 
 def _a_path(word, fixed):
@@ -1431,7 +1457,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
-            if c.piped and any(_name(x.argv) in _FETCHERS for x in chain):
+            if c.piped and any(_name(x.argv) in _FETCHERS for x in chain) and not _reads_pipe_as_data(c, argv, cmds,
+                                                                                                    cwds):
                 found.append(("pipe-shell", f"downloaded content piped into {name}"))
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
