@@ -117,7 +117,9 @@ def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source
 
 def _title(text):
     first = text.strip().splitlines()[0] if text.strip() else "untitled"
-    first = c._SCOPE_RE.sub("", c._REF_RE.sub("", first)).strip()
+    # T-0334: a ref that leads or ends the line is a dependency marker; one inside the sentence is part of it
+    first = re.sub(r"^(?:\s*#T-\d{4,}\b)+|(?:\s*#T-\d{4,}\b)+\s*$", "", first)
+    first = c._SCOPE_RE.sub("", c._REF_RE.sub(r"\1", first)).strip()
     return (first[:1].upper() + first[1:])[:90] or "untitled"
 
 
@@ -163,6 +165,7 @@ def cmd_capture(args):
     with c.lock(p.dir):
         b = _create(p, _title(args.text), type_, args.tier or c.guess_tier(type_, args.text), "captured",
                     raw=args.text, scope=args.scope or (), source=args.source,
+                    depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
                     priority="urgent" if args.urgent else "normal")
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
@@ -2655,11 +2658,34 @@ def build_parser():
     return ap
 
 
+def _options_first(parser, argv):
+    """T-0332: argparse reads a command's positionals in one run, so in `fm session send ID --json -- MSG` the option
+    ends that run and MSG is left over. For the commands taking ID then words (session, claude), known options (with
+    their values) standing right before `--` move in front of the positionals; anything else is left as typed, so a
+    flag inside an unprotected message is still an error (its review)."""
+    k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
+        return argv
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]
+    head = argv[k + 1:argv.index("--", k + 1)]
+    first = next((i for i, t in enumerate(head) if t in sub._option_string_actions), len(head))
+    i = first
+    while i < len(head):
+        act = sub._option_string_actions.get(head[i])
+        if act is None:
+            return argv
+        i += 1 + (1 if act.nargs is None else act.nargs if isinstance(act.nargs, int) else 1)
+    if i != len(head):
+        return argv
+    return argv[:k + 1] + head[first:] + head[:first] + argv[k + 1 + len(head):]
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
-    args = build_parser().parse_args(argv or ["help"])  # bare fm: the tiers, not a usage error
+    parser = build_parser()
+    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm: the tiers, not a usage error
     _sync_in(args)
     try:
         rc = args.fn(args)

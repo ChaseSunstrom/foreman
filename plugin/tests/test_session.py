@@ -120,6 +120,15 @@ class Session(ForemanTestCase):
         self.fm("session", "send", sid, "--", "and --model too", env=self.env)
         self.wait(lambda: sum(e["kind"] == "result" for e in self.events(sid)) == 2)
         self.assertIn("and --model too", [e.get("text") for e in self.events(sid)])
+        # T-0332: options may follow the id, as people (and Claude) type them; the message still starts after --
+        out = self.fm("session", "send", sid, "--json", "--", "-v and three", env=self.env).stdout
+        self.assertEqual(json.loads(out)["id"], sid)
+        self.wait(lambda: sum(e["kind"] == "result" for e in self.events(sid)) == 3)
+        self.assertIn("-v and three", [e.get("text") for e in self.events(sid)])
+        self.assertIn("--jsn", self.fm("session", "send", sid, "--jsn", "x", env=self.env, check=False).stderr)
+        # its review: only options right before -- move; a flag inside an unprotected message is still an error
+        p = self.fm("session", "send", sid, "please", "add", "--title", "to", "the", "list", env=self.env, check=False)
+        self.assertNotEqual(p.returncode, 0)
         slow = self.start("slow", STUB_SLEEP="60")
         self.fm("session", "stop", slow, env=self.env)  # before its runner has taken the message, most likely
         time.sleep(1.5)
