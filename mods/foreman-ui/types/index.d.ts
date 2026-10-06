@@ -33,8 +33,9 @@ export type FmHypothesis = { n: number; status: 'open' | 'ruled out' | 'confirme
 export type FmBudget = {
   today_usd: number
   subagent_tokens: number
-  caps: { day: number; run: number; subagent_tokens: number }
+  caps: { day: number; run: number }
   halved: string | null
+  subagents_paused?: string | null // T-0320: why subagents wait (usage ahead of pace)
   top: { feature: string; usd: number; runs: number; tokens: number }[]
 }
 export type FmBench = {

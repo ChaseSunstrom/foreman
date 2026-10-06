@@ -264,7 +264,8 @@ def _budget():
         f["runs"] += e.get("runs") or 0
         f["tokens"] += e.get("tokens") or 0
     top = sorted(by.values(), key=lambda f: -(f["usd"] + f["tokens"] / 1e6))[:4]
-    return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high, "top": top}
+    return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high,
+            "subagents_paused": fmbudget.subagent_pause(), "top": top}
 
 
 def _bench(p, events):
