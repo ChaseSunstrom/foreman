@@ -12,8 +12,9 @@ import shlex
 import subprocess
 
 CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "credentials", "system", "rm-outside",
-              "git-destructive", "pipe-shell", "publish", "confirm", "confine"]
-NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine"}  # confine (T-0234): a builder writes in its worktree only
+              "git-destructive", "pipe-shell", "publish", "confirm", "confine", "brief"]
+# confine (T-0234): a builder writes in its worktree only; brief (T-0308): no edits without a task — start one
+NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -24,7 +25,7 @@ DEFAULT_BRANCHES = {"main", "master", "trunk"}
 # when the rest of the library is broken, and dataclasses would cost every hook ~9 ms of import.
 class Ctx:
     def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
-                 state_fallbacks=(), standing=(), trusted=False, confine=None):
+                 state_fallbacks=(), standing=(), trusted=False, confine=None, unbriefed=None):
         self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
         self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
@@ -34,6 +35,7 @@ class Ctx:
         # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
         # scratch, and the main checkout is never scratch (even under /tmp)
         self.confine = confine
+        self.unbriefed = unbriefed  # T-0308: the project's root while no task is active — writes inside wait for one
 
 
 class Block:
@@ -110,6 +112,10 @@ def _message(block, ctx):
     if cat == "confine":
         return (f"Foreman guard: blocked confine: {detail} is outside this builder's worktree ({ctx.confine[0]}). A builder "
                 f"writes only there (and in scratch); report what needs changing elsewhere to the main thread.")
+    if cat == "brief":
+        return (f"Foreman: no active task in this project, so {detail} can't be edited yet. One command starts a small "
+                f"task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
+                f"(bigger work: /foreman:intake; fm next says what's next).")
     if cat == "state-direct":
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
@@ -311,6 +317,11 @@ def classify_write(path, ctx):
         if lane and not _under(p, lane) and not (p.startswith("/dev/") and _SAFE_DEV.match(p)) and (
                 _under(p, main or "/nonexistent") or not any(_under(p, s) for s in ctx.scratch)):
             cats.append("confine")
+        root = getattr(ctx, "unbriefed", None)  # strictly inside: a checkout-wide git write (merge, pull) is no edit
+        if root and _strictly_under(p, root) and "state-direct" not in cats and not any(  # a scratch dir holding the
+                _under(p, d) for d in [*ctx.scratch, os.path.join(ctx.home, ".claude", "projects")]  # project (/tmp)
+                if not _under(root, d)):  # doesn't make the project scratch
+            cats.append("brief")
     return list(dict.fromkeys(cats))
 
 
@@ -580,7 +591,7 @@ _WRITE_API = re.compile(
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
-_GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin")
+_GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin", "brief")
 # A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
 _SLASH_BODY = (r"/(?:plugins?\s+(?:install|i|enable|disable|uninstall|remove|update|"
                r"marketplace\s+(?:add|remove|rm|update))|"
