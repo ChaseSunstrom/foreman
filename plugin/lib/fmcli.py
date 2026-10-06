@@ -2036,7 +2036,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude night mcp ui projects watch"),
+    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2579,6 +2579,11 @@ def build_parser():
     s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
     s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
     s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
+    s = add("agents", lazy("fmagents", "cmd_agents"), help="Foreman's guard, context, MCP server and rules in Codex, "
+                                                             "Gemini CLI and opencode: list, install AGENT, uninstall "
+                                                             "AGENT")
+    s.add_argument("action", choices=["list", "install", "uninstall"])
+    s.add_argument("agent", nargs="?", choices=["codex", "gemini", "opencode"])
     s = add("claude", lazy("fmclaude", "cmd_claude"), help="every Claude Code session on this device (terminal, remote, "
                                                              "headless): list, show ID, agents ID, image ID REF, files "
                                                              "ID, file ID PATH, send ID MESSAGE")

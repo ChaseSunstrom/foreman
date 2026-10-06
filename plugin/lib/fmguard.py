@@ -1248,6 +1248,30 @@ def _unquote(word):
         return None
 
 
+def _shell_c(args):
+    """The command strings `sh -c` runs: the word after a bare -c, and (T-0324) the first operand once any option
+    cluster holds c (bash -lc, zsh -o x -ic, bash --rcfile f -ec -- CMD)."""
+    out = [args[args.index("-c") + 1]] if "-c" in args and args.index("-c") + 1 < len(args) else []
+    has_c, i = False, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            i += 1
+            break
+        if a in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+            i += 2
+        elif re.fullmatch(r"[-+][a-zA-Z]+", a):
+            has_c = has_c or (a[0] == "-" and "c" in a)
+            i += 1
+        elif a.startswith("--"):
+            i += 1
+        else:
+            break
+    if has_c and i < len(args) and args[i] not in out:
+        out.append(args[i])
+    return out
+
+
 def _track_vars(words, env):
     """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
     words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
@@ -1327,8 +1351,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 certain = and_chain or (straight and os.path.isabs(d) and (os.path.normpath(d) in made or (
                     os.path.isdir(d) and os.access(d, os.X_OK))))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
-        if _SHELLS.match(name) and "-c" in args and args.index("-c") + 1 < len(args):
-            inner = args[args.index("-c") + 1]
+        for inner in _shell_c(args) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
