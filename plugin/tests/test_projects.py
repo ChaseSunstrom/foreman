@@ -27,6 +27,20 @@ class Projects(ForemanTestCase):
         self.assertIn(os.path.basename(other), self.fm("projects").stdout)  # plain text too
 
 
+class Usage(ForemanTestCase):
+    def test_projects_carry_the_devices_usage_pace(self):  # T-0346: the desktop app's sidebar meter
+        self.fm("init")
+        self.assertEqual(json.loads(self.fm("projects", "--json").stdout)["usage"], {})
+        folder = os.path.join(self.home, "state", "sessions")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "s.json"), "w") as f:
+            json.dump({"rate_limits": {"five_hour": {"used_percentage": 42, "resets_at": time.time() + 3600},
+                                       "seven_day": {"used_percentage": 31, "resets_at": time.time() + 3 * 86400}}}, f)
+        u = json.loads(self.fm("projects", "--json").stdout)["usage"]
+        self.assertEqual((u["five_hour"], u["seven_day"]), (42, 31))
+        self.assertAlmostEqual(u["week_gone"], 4 / 7, places=2)
+
+
 class Follow(ForemanTestCase):
     def read_line(self, proc, timeout=10):
         ready, _, _ = select.select([proc.stdout], [], [], timeout)

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Usage pace (T-0346): `fm projects --json` carries the device's plan usage (5-hour %, weekly %, share of the week gone), refreshed with `--follow` every 30 s. Foreman Desktop shows it as a sidebar meter per device, amber when usage runs ahead of pace (the same rule that pauses subagents).
 - Guard (T-0345): the commands python code starts are checked like any shell command. That covers `subprocess` calls, `os.system`, `popen`, `exec*` and `spawn*`, and `pty.spawn`, under any import alias or from-import, in heredocs and `python -c`. Before, `python3 -c "import subprocess; subprocess.run(['rm','-rf',HOME])"` and a `cp` onto a core file through subprocess passed, because the interpreter rule only looked for file-write APIs.
   - A literal list is read word by word, a string as shell text, and a variable as an unknown target. A `cwd=` is read as a `cd` first.
   - A script only written with `cat` isn't read, unless the same command also runs it.
