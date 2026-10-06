@@ -2036,7 +2036,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run night mcp ui projects watch"),
+    ("Running elsewhere", "lane serve run session night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2564,6 +2564,21 @@ def build_parser():
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
     s.add_argument("action", choices=["new", "list", "rm", "brief"])
     s.add_argument("id", nargs="?")
+    s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
+                                                                "opencode), detached: start MESSAGE, list, tail ID, "
+                                                                "send ID MESSAGE, stop ID, rm ID, agents")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["start", "list", "tail", "send", "stop", "rm", "agents", "_run"])
+    s.add_argument("rest", nargs="*", help="the session id and/or the message")
+    s.add_argument("--agent", default="claude", help="start: which agent CLI runs it")
+    s.add_argument("--cwd", help="start: the folder it works in (default: here)")
+    s.add_argument("--model", help="start: the agent's model name")
+    s.add_argument("--title", help="start: a name for the list (default: the first line of the message)")
+    s.add_argument("--arg", action="append", default=[], help="start: an extra argument for the agent CLI, every turn "
+                                                              "(repeat; --arg=--yolo)")
+    s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
+    s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
+    s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
