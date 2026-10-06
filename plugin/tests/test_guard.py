@@ -506,6 +506,15 @@ class Core(GuardCase):
         self.assertIsNone(run("sed -i s/a/b/ plugin/lib/fmguard.py", trusted=True))
         self.assertBlocked(run("cp -r /tmp/a {fhome}/plugin", trusted=True), "core")
 
+    def test_clobber_redirect(self):  # T-0358: >| was one word, so its target went unchecked
+        self.run_table([
+            ("echo x >| {fhome}/plugin/lib/fmguard.py", "core"),
+            ("echo x >|{fhome}/plugin/lib/fmguard.py", "core"),
+            ("echo x 2>| {fhome}/plugin/lib/fmguard.py", "core"),
+            ("echo x &>| {fhome}/plugin/lib/fmguard.py", "core"),
+            ("echo x >| /tmp/claude-1000/proj/sess/scratchpad/x", None),
+        ], self.bash)
+
     def test_glob_and_brace_targets_are_checked(self):
         # T-0177: a target was classified as written; bash expands a glob to the existing file and braces to each word
         lib = os.path.join(self.fhome, "plugin", "lib")

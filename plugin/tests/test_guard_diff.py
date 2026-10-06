@@ -67,7 +67,8 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          # T-0355: a piped cd moves only its subshell; pipes later in a chain leave its head cd in force
          'cd ~; cd /tmp | true && rm -rf ./*', 'cd ~; true; cd /tmp | cat && ls | cat && rm -rf ./*',
          'cd ~ && ls | cat && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp |\ncat\nrm -rf ./*',
-         'cd ~; ls |\ncd /tmp\nrm -rf ./*']
+         'cd ~; ls |\ncd /tmp\nrm -rf ./*',
+         'echo x >| ~/clobbered', 'echo x 2>|~/clobbered', 'set -C; echo x >| ~/clobbered']  # T-0358
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
