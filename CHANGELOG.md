@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Foreman Desktop round 1 (T-0341, app repo):
+  - A Decisions tab per project, from the new structured `rows` in `fm decide --list --json`. Costly and outward decisions are flagged, and reversed ones are struck through.
+  - Home's "Waiting on you" now lists blocked tasks next to the yeses to give.
+  - The Agents page can Remove Foreman's wiring.
+  - The app runs `fm decide` for listing only.
 - Guard (T-0315): a quoted python heredoc that takes script arguments (`python3 - "$f" <<'EOF'`) or follows a plain lowercase `name=value;` is still proved read-only. It is no longer sent to the coarse rule, where a `str.replace(` read as a file rename and a quoted string as a write target. `PATH=`, `HOME=` or `LD_*` before it keeps the coarse rule.
 - Guard (T-0340): the config that loads Foreman's hooks in Codex, Gemini CLI and opencode is now protected core, as Claude Code's settings are. Before, an agent could edit its own `hooks.json`, `settings.json` or plugin and switch the guard off in itself. The same goes for `fm agents uninstall` run from a tool call and for Foreman's `plugin/integrations`.
 - Guard (T-0339): in a `;` list with `&&` in it (`D=~/x; mkdir -p $D && cd $D && tar xf -`), a `cd` joined by `&&` to what follows counts as certain for the rest of its segment. A tar there is no longer guessed onto the folder the command started in. After the segment, both folders stay possible, since the chain may have stopped early, and a `mkdir -p` inside it is forgotten.
