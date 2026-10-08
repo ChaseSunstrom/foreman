@@ -14,6 +14,23 @@ TOOL_EVENT = EVENT in ("PreToolUse", "BeforeTool")
 PLUGIN = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 LIB = os.path.join(PLUGIN, "lib")
 sys.path.insert(0, LIB)
+STDIN = None
+try:  # T-0368: below Python 3.12.7, run this hook under a supported Python. A child, not exec: only its answer (exit 0
+    import fmpy  # or 2) is relayed; if it crashes, the hook runs here as before, so a broken interpreter never opens
+    _exe = fmpy.target(sys.version_info)  # the guard (Claude Code reads exit 1 as allow)
+    if _exe:
+        import subprocess
+        STDIN = sys.stdin.buffer.read()
+        _r = subprocess.run([_exe, os.path.realpath(__file__), *ARGV], input=STDIN, capture_output=True, timeout=120,
+                            env=dict(os.environ, FOREMAN_PY_CHILD="1"))
+        if _r.returncode in (0, 2):
+            sys.stdout.buffer.write(_r.stdout)
+            sys.stderr.buffer.write(_r.stderr)
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os._exit(_r.returncode)
+except Exception:
+    pass
 
 
 def committed_library():
@@ -69,4 +86,5 @@ except Exception as exc:  # broken install: never block unless this is the guard
             sys.exit(2)
     fmhooks.log_error("PreToolUse", f"the working copy of Foreman's library failed to import ({exc!r}); using the "
                                     f"committed library (fix plugin/lib)")
-sys.exit(fmagents.hook(AGENT, EVENT, sys.stdin.read()) if AGENT else fmhooks.run(EVENT, sys.stdin.read()))
+_data = STDIN.decode("utf-8", "replace") if STDIN is not None else sys.stdin.read()
+sys.exit(fmagents.hook(AGENT, EVENT, _data) if AGENT else fmhooks.run(EVENT, _data))

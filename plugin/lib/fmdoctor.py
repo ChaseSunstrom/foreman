@@ -11,6 +11,7 @@ import time
 from dataclasses import asdict, dataclass
 
 import fmcore as c
+import fmpy
 import fmserve
 import fmsetup
 
@@ -298,12 +299,18 @@ def check_rules_symlink(plugin=PLUGIN):
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
 
-def check_python(v=sys.version_info[:3]):
-    """T-0319: fm and every hook run on the python3 on PATH. Before 3.12.7 (and in 3.13.0) argparse drops
-    `fm task evidence ID --ac N CMD RESULT`; install.sh installs a newer one."""
+def check_python(v=sys.version_info[:3], refresh=None, child=False):
+    """T-0319: fm and every hook start on the python3 on PATH. Before 3.12.7 (and in 3.13.0) argparse drops
+    `fm task evidence ID --ac N CMD RESULT`; install.sh installs a newer one, and T-0368 re-runs Foreman under a
+    supported one it finds (`child`: this run already is one; `refresh`: search again and save the answer)."""
     have = ".".join(map(str, v))
-    if v >= (3, 12, 7) and v != (3, 13, 0):
-        return Result("python", "PASS", f"python3 {have}")
+    if fmpy.ok(v):
+        return Result("python", "WARN" if child else "PASS",
+                      f"python3 on PATH is below 3.12.7; Foreman runs under {sys.executable} ({have})" if child
+                      else f"python3 {have}")
+    exe = refresh() if refresh else None
+    if exe:
+        return Result("python", "WARN", f"python3 is {have}, below 3.12.7; Foreman now runs under {exe}")
     return Result("python", "FAIL", f"python3 is {have}; Foreman needs 3.12.7+ (rerun install.sh to install one)")
 
 
@@ -659,7 +666,7 @@ def run_all(full=False):
     settings_path = os.path.join(claude, "settings.json")
     settings = _load_json(settings_path) or {}
     manifest = _load_json(os.path.join(c.state_dir(), "install-manifest.json"))
-    results = [check_python(), check_settings_json([settings_path, os.path.join(claude, "settings.local.json"),
+    results = [check_python(refresh=fmpy.refresh, child=bool(os.environ.get("FOREMAN_PY_CHILD"))), check_settings_json([settings_path, os.path.join(claude, "settings.local.json"),
                                     os.path.join(home, ".claude-plugin", "marketplace.json"),
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
