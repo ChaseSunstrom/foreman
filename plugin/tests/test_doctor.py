@@ -48,6 +48,11 @@ class Checks(unittest.TestCase):
         for v, want in [((3, 12, 3), "FAIL"), ((3, 13, 0), "FAIL"), ((3, 12, 7), "PASS"), ((3, 14, 7), "PASS")]:
             self.assertEqual(d.check_python(v).status, want, v)
         self.assertIn("3.12.7", d.check_python((3, 10, 12)).detail)
+        # T-0368: below the floor, Foreman runs under a supported interpreter it found, and says which
+        r = d.check_python((3, 11, 2), refresh=lambda: "/u/.local/bin/python3.12")
+        self.assertEqual((r.status, "/u/.local/bin/python3.12" in r.detail), ("WARN", True))
+        r = d.check_python((3, 12, 14), child=True)
+        self.assertEqual((r.status, "runs under" in r.detail), ("WARN", True))
 
     def test_settings_json(self):
         good = self.write("good.json", '{"a": 1}')
