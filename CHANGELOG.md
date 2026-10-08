@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor` on a busy machine (1-minute load above the core count) runs each hook fixture once, still checking exit codes, and reports hook latency as not measured. Before, it timed 136 hook runs: 16.6 s on JARVIS at load 27 on 8 cores (now 11.1 s), with numbers that said nothing about the hooks (T-0367).
 
 ## 1.2.1 — 2026-10-08
 - Foreman runs on a supported Python when `python3` is older than 3.12.7 (T-0368). That was JARVIS, on 3.11.2, where argparse dropped typed evidence and the arguments of `fm session` and `fm claude send`. The first call finds a supported interpreter (`python3.14`/`3.13`/`3.12` on PATH or in `~/.local/bin`, then uv's) and saves it in `state/python`, or saves `none`. After that, `fm` and the statusline re-exec under it, and the hook dispatcher runs the hook as a child under it. If that child crashes, the hook runs on the old interpreter as before, because Claude Code reads exit 1 as allow. The saved file counts only when you own it and others can't write it. `fm doctor` says which interpreter Foreman runs under and searches again.
