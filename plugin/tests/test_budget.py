@@ -102,10 +102,12 @@ class Budget(ForemanTestCase):
         self.assertIn("3,000", self.fm("budget").stdout)  # counted and shown, never a cap (T-0320)
         agent = {"tool_name": "Agent", "tool_input": {"subagent_type": "foreman:fm-recon", "prompt": "x"}}
         self.assertEqual(self.hook("PreToolUse", agent).returncode, 0)
-        self.usage(seven_day=(50, 6 * 86400))  # half the week used with a seventh of it gone
+        self.usage(seven_day=(50, 6 * 86400))  # half the week used with a seventh of it gone: under 75% (T-0364)
+        self.assertEqual(self.hook("PreToolUse", agent).returncode, 0)
+        self.usage(seven_day=(78, 6 * 86400))
         out = self.hook("PreToolUse", agent)
         self.assertEqual(out.returncode, 2)
-        self.assertIn("weekly usage 50%", out.stderr)
+        self.assertIn("weekly usage 78%", out.stderr)
 
     def usage(self, **windows):
         """A statusline snapshot: window=(used %, seconds until it resets)."""
@@ -119,7 +121,8 @@ class Budget(ForemanTestCase):
         self.assertIsNone(bud.subagent_pause(), "unknown usage never pauses")
         day = 86400
         for windows, paused in [({"seven_day": (63, 30 * 3600)}, None),           # 82% of the week gone: on pace
-                                ({"seven_day": (50, 6 * day)}, "weekly usage 50%"),  # 14% gone: ahead of pace
+                                ({"seven_day": (50, 6 * day)}, None),  # T-0364: ahead of pace, but under 75% never waits
+                                ({"seven_day": (78, 6 * day)}, "weekly usage 78%"),  # 14% gone: ahead of pace
                                 ({"seven_day": (91, 3600)}, "weekly usage 91%"),     # never past 90%
                                 ({"five_hour": (95, 3600)}, "5-hour usage 95%"),
                                 ({"five_hour": (95, -60)}, None),                    # that window already reset

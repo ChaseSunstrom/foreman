@@ -220,6 +220,17 @@ class UserPromptSubmit(HookCase):
         self.assertIn("--rounds", ctx)
         self.assertNotIn("--rounds", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))
 
+    def test_broad_and_work_requests_are_told_to_plan_wide_first(self):
+        # T-0364: "add a ton of benchmarks" got a few; "can you make music-findr…" went from request to code in minutes
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "add a ton of benchmarks against C++"}))
+        self.assertIn("capability map", ctx)
+        self.assertIn("plan before any edit", ctx)
+        self.assertLessEqual(len(ctx), 400)
+        self.assertNotIn("capability map", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "fix the login timeout"})))
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "clean up the repo, docs and dead code"}))
+        self.assertIn("repo-sweep", ctx)
+
     def test_pause_and_resume_toggle_drive_pause(self):
         self.fm("init")
         self.hook("UserPromptSubmit", {"prompt": "pause"})
@@ -1101,12 +1112,19 @@ class Stop(HookCase):
         p = self.stop("All steps are verified. Next: T-0002.")
         self.assertNotIn("AskUserQuestion", (parse(p) or {}).get("reason", ""))
 
-    def test_drive_waits_while_a_background_agent_runs(self):
-        # T-0019: its completion notification wakes the session; pushing meanwhile only makes busywork
+    def test_drive_keeps_working_while_background_work_runs(self):
+        # T-0364: 357 waits vs 11 pushes in a week; turns ended on "the gate is running (35 min)" and the user had to
+        # say "keep working on stuff while tests run". Once per running set: work on what doesn't need it, then wait.
         self.fm("init")
         self.task()
         self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
-        self.assertIsNone(self.decision(self.stop("Waiting for the audit.")))
+        p = self.stop("Waiting for the audit.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("a1", parse(p)["reason"])
+        self.assertIn("doesn't need", parse(p)["reason"])
+        again = parse(self.stop("Nothing else is independent of the audit."))
+        self.assertIsNone(again.get("decision"), "one push per running set, never a loop")
+        self.assertIn("a1", again.get("systemMessage", ""))
         self.hook("SubagentStop", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
         self.assertEqual(self.decision(self.stop("Audit is in.")), "block")
 
@@ -1134,6 +1152,7 @@ class Stop(HookCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "sleep 60", "run_in_background": True},
                                   "tool_response": "Command running in background with ID: bx7k2. Output is being "
                                                    "written to: /tmp/x.output"})
+        self.assertEqual(self.decision(self.stop("Waiting for the eval.")), "block")  # T-0364: work meanwhile first
         waiting = parse(self.stop("Waiting for the eval."))
         self.assertIsNone(waiting.get("decision"))
         # T-0145 live: the turn ended with no word of why; a never-ending loop then left the session idle
@@ -1182,7 +1201,10 @@ class Stop(HookCase):
         shell = {"id": "bz9", "type": "shell", "status": "running", "description": "Run tests", "command": "cargo test"}
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on the tests.",
                                "session_id": "sess-1", "background_tasks": [shell]})
-        self.assertIsNone(self.decision(p), "a shell the events never saw (ctrl+b) holds drive")
+        self.assertIn("bz9", parse(p)["reason"], "a shell the events never saw (ctrl+b) counts as running")
+        p = self.hook("Stop", {"stop_hook_active": True, "last_assistant_message": "Waiting on the tests.",
+                               "session_id": "sess-1", "background_tasks": [shell]})
+        self.assertIsNone(self.decision(p), "then it holds drive")
 
     def test_a_start_older_than_two_hours_no_longer_holds_drive(self):
         self.fm("init")

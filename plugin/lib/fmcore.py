@@ -1376,7 +1376,7 @@ _GENERIC = r"(it|this|that|everything|all|things|stuff|the (app|project|repo|cod
 _OPEN_ENDED = re.compile("|".join([
     r"\bbrainstorm",
     r"\bget (it|this|everything|things|stuff) done\b",
-    r"\bmake " + _GENERIC + r" (better|great|awesome|perfect|nicer|amazing|shine)\b",
+    r"\bmake " + _GENERIC + r" ((way|much|far|a lot|even) )?(better|great|awesome|perfect|nicer|amazing|shine)\b",
     r"\b(super[- ]?)?(improve|upgrade|polish|optimi[sz]e|enhance) " + _GENERIC + r"\s*([.!?,]|etc|$)",
     r"\b(fix|clean up|tidy up) (everything|all of it|things|stuff)\b",
     r"\bwhat(ever)? (else )?(should|would|could|can) (we|you|i) (do|build|improve|add|work on)\b",
@@ -1408,7 +1408,7 @@ def is_work_request(text):
     """A plain, untagged request with a concrete target ("add a --verbose flag"): intake classifies it first."""
     t = (text or "").strip()
     tag = _TAG_LINE.match(t)
-    return bool(t) and len(t.split()) <= 60 and not (tag and tag.group("tag").upper() in WORK_TAGS) \
+    return bool(t) and len(t.split()) <= 200 and not (tag and tag.group("tag").upper() in WORK_TAGS) \
         and not is_open_ended(t) and bool(_WORK_VERB.match(t))
 
 
@@ -1421,8 +1421,28 @@ def is_open_ended(text):
     return bool(_OPEN_ENDED.search(t))
 
 
-_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|every (possible )?feature|all (the |possible )?"
-                         r"(features|ideas|possibilities)|everything possible|exhaustive(ly)?|super[- ]brainstorm\w*)\b")
+_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|(more )?feature-?full?|every (possible|conceivable) "
+                         r"\w+|every (feature|capability|solution)|all (the )?(possible )?(features|ideas|possibilities|"
+                         r"capabilities|solutions)|all possible \w+|everything possible|exhaustive(ly)?|limitless|"
+                         r"no (caveats|limits|limitations|gaps) (or|and)|super[- ]brainstorm\w*)\b")
+# T-0364: a concrete target asked for in bulk ("a ton of benchmarks", "like a lot more,"): sweep the space before
+# planning. "more" counts before punctuation or a plural, so "a lot more readable" doesn't.
+_BROAD = re.compile(r"(?i)\b((a ton|tons|loads|heaps) of|(a lot|way|tons|loads|a ton|even) more(?=[,.!?]|$| \w+s\b))")
+
+
+# T-0364: a cleanup of the whole repo or of everything named, not one spot: the repo-sweep playbook, tier L
+_SWEEP = re.compile(r"(?i)\b(dead code|unused (code|functions?|functionality|features?)|(replaced|superseded) "
+                    r"(code|functionality)|clean(ing)?[- ]?up (everything|all (the )?(docs|code|files)|the (whole )?"
+                    r"(repo|codebase|project|docs))\b|CLEAN:\s*(the )?(whole|entire|all)\b)")
+
+
+def is_sweep(text):
+    return bool(_SWEEP.search(text or ""))
+
+
+def is_broad(text):
+    """A concrete request asked for in bulk: the plan enumerates the whole space first, not the first few items."""
+    return bool(_BROAD.search(text or "")) and not is_exhaustive(text)
 
 
 def is_exhaustive(text):
