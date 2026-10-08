@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.0 — 2026-10-08
 - Foreman keeps going, plans wider and brainstorms wider (T-0364). The evidence came from the Volt, music-fndr, JARVIS and Foreman transcripts of 2026-10-04 to 10-08.
   - The drive no longer idles while background work runs. The first Stop with a job still out is sent back once per set of running jobs: do what doesn't need the job's result (the next step's test, audits, docs, planning the next task, a builder lane), and end the turn only when nothing is independent of it. Before, there were 357 idle waits and 11 pushes in a week, and the user had to say "stop waiting for work to complete before continuing".
   - The prompt notes reach more requests. Exhaustive ("limitless", "no caveats or", "every possible …", "featureful") goes to the super brainstorm. Broad ("a ton of …", "like a lot more,") gets a capability-map and approaches sweep before planning. A repo-wide cleanup goes to the new `clean/repo-sweep.md` playbook, tier L, with coverage per area as the done check. A long request that opens with a work verb is still a work request, and M/L ones are told to plan before any edit.
