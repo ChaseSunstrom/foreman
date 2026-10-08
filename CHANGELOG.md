@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.2.1 — 2026-10-08
+- Foreman runs on a supported Python when `python3` is older than 3.12.7 (T-0368). That was JARVIS, on 3.11.2, where argparse dropped typed evidence and the arguments of `fm session` and `fm claude send`. The first call finds a supported interpreter (`python3.14`/`3.13`/`3.12` on PATH or in `~/.local/bin`, then uv's) and saves it in `state/python`, or saves `none`. After that, `fm` and the statusline re-exec under it, and the hook dispatcher runs the hook as a child under it. If that child crashes, the hook runs on the old interpreter as before, because Claude Code reads exit 1 as allow. The saved file counts only when you own it and others can't write it. `fm doctor` says which interpreter Foreman runs under and searches again.
+
 ## 1.2.0 — 2026-10-08
 - Foreman keeps going, plans wider and brainstorms wider (T-0364). The evidence came from the Volt, music-fndr, JARVIS and Foreman transcripts of 2026-10-04 to 10-08.
   - The drive no longer idles while background work runs. The first Stop with a job still out is sent back once per set of running jobs: do what doesn't need the job's result (the next step's test, audits, docs, planning the next task, a builder lane), and end the turn only when nothing is independent of it. Before, there were 357 idle waits and 11 pushes in a week, and the user had to say "stop waiting for work to complete before continuing".

@@ -4,6 +4,11 @@ import os
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+try:  # T-0368: below Python 3.12.7, re-run under a supported one
+    import fmpy  # noqa: E402
+    fmpy.reexec()
+except Exception:
+    pass
 import fmcli  # noqa: E402
 
 sys.exit(fmcli.main())

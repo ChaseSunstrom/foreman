@@ -17,6 +17,11 @@ import sys
 import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.realpath(__file__))), "lib"))
+try:  # T-0368: below Python 3.12.7, re-run under a supported one (stdin is still unread)
+    import fmpy
+    fmpy.reexec()
+except Exception:
+    pass
 
 
 def find_hud():
