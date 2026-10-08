@@ -49,6 +49,7 @@ def start_children(raw, manifest):
                 p.stdin.close()
             except BrokenPipeError:
                 pass
+            p.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
             procs.append(p)
         except OSError:
             continue

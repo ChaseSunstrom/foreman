@@ -48,6 +48,8 @@ def main():
     ap.add_argument("-k", action="append", default=[], help="only tests whose id contains this (repeatable)")
     ap.add_argument("-p", default="test*.py", help="module glob, as unittest discover's -p")
     a = ap.parse_args()
+    if any(re.search(r"\s", k) for k in a.k):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
+        ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
     todo = classes(a.p, a.k)
     with concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:

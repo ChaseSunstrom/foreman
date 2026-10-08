@@ -3,16 +3,19 @@ oracle, research ask, evolve's mutation), headless replays (fm bench) and Claude
 cost in one global ledger (state/spend.jsonl: USD from claude's JSON result, tokens for subagents), and caps
 (state/budget.json) refuse a command whose estimate would pass the per-command or the day's limit. Past 80% of weekly
 usage (or 90% of the 5-hour window, the statusline's snapshot) every cap halves, like economy mode. Raising a cap isn't
-blocked: it is recorded as a costly decision, which the user reviews (fm decide --review)."""
+blocked: it is recorded as a costly decision, which the user reviews (fm decide --review). Subagents have no token cap
+(T-0320): they wait only while usage runs ahead of the week's pace or the 5-hour window is nearly spent."""
 import datetime
 import glob
 import json
 import math
 import os
+import time
 
 import fmcore as c
 
-DEFAULTS = {"day": 15.0, "run": 6.0, "subagent_tokens": 4_000_000}  # USD per day, USD per command, subagent tokens/day
+DEFAULTS = {"day": 15.0, "run": 6.0}  # USD per day, USD per command
+PACE_FLOOR = 75  # weekly usage % below which subagents never wait for the pace (T-0364)
 WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
 
 
@@ -80,24 +83,53 @@ def estimate(feature, runs, fallback):
     return round(per * runs, 4)
 
 
-def usage_high():
-    """'weekly 85%' when the newest statusline snapshot is past 80% weekly or 90% of the 5-hour window, else None:
-    the same thresholds as foreman-ui's economy mode (T-0198), read from the snapshot the statusline writes."""
+def rate_limits():
+    """{"five_hour": %, "seven_day": %, "week_gone": share of the week gone by} from the newest statusline snapshot
+    that has any; a window whose reset time has passed reads as 0 (it emptied since the snapshot)."""
     snaps = sorted(glob.glob(os.path.join(c.state_dir(), "sessions", "*.json")), key=os.path.getmtime)
+    now = time.time()
     for path in reversed(snaps[-3:]):
         try:
             with open(path, encoding="utf-8") as f:
                 rl = json.load(f).get("rate_limits") or {}
+            out = {}
+            for k in ("five_hour", "seven_day"):
+                w = rl.get(k) or {}
+                used, resets = w.get("used_percentage"), w.get("resets_at")
+                if not isinstance(used, (int, float)) or isinstance(used, bool):
+                    continue
+                known = isinstance(resets, (int, float))
+                out[k] = 0 if known and resets <= now else used
+                if k == "seven_day" and known and 0 < resets - now <= 7 * 86400:  # else (ms epoch, skew) pace unknown
+                    out["week_gone"] = 1 - (resets - now) / (7 * 86400)
         except (OSError, ValueError, AttributeError):
             continue
-        week = (rl.get("seven_day") or {}).get("used_percentage")
-        five = (rl.get("five_hour") or {}).get("used_percentage")
-        if week is not None and week >= 80:
-            return f"weekly usage {week:g}%"
-        if five is not None and five >= 90:
-            return f"5-hour usage {five:g}%"
-        if week is not None or five is not None:
-            return None
+        if out:
+            return out
+    return {}
+
+
+def usage_high():
+    """'weekly usage 85%' when the newest statusline snapshot is past 80% weekly or 90% of the 5-hour window, else
+    None: the same thresholds as foreman-ui's economy mode (T-0198)."""
+    u = rate_limits()
+    if u.get("seven_day", 0) >= 80:
+        return f"weekly usage {u['seven_day']:g}%"
+    if u.get("five_hour", 0) >= 90:
+        return f"5-hour usage {u['five_hour']:g}%"
+    return None
+
+
+def subagent_pause():
+    """Why subagents should wait, or None (T-0320): the 5-hour window at 90%+, or weekly usage ahead of the week's
+    pace — more than 10 points past the share of the week gone by, never before 75% (the user, T-0364: "the budget
+    stuff shouldn't matter until 75% usage") and never past 90%. Unknown usage never pauses."""
+    u = rate_limits()
+    if u.get("five_hour", 0) >= 90:
+        return f"5-hour usage {u['five_hour']:g}%"
+    week, gone = u.get("seven_day"), u.get("week_gone")
+    if week is not None and week >= max(PACE_FLOOR, min(90, 100 * gone + 10 if gone is not None else 80)):
+        return f"weekly usage {week:g}%" + (f" with {100 * gone:.0f}% of the week gone" if gone is not None else "")
     return None
 
 
@@ -124,12 +156,9 @@ def check(feature, est, smaller=""):
 
 
 def check_subagent():
-    cur, high = effective()
-    _, tokens = spent()
-    if tokens >= cur["subagent_tokens"]:
-        raise BudgetError(f"budget: subagents used {tokens:,} tokens today, the cap is {int(cur['subagent_tokens']):,}"
-                          + (f" (halved: {high})" if high else "") + "; do it in the main thread, or raise it: "
-                          "fm budget set --subagent-tokens N --because \"<why>\"")
+    why = subagent_pause()
+    if why:
+        raise BudgetError(f"budget: subagents wait while usage is ahead of pace ({why}); do it in the main thread")
 
 
 def result(stdout):
@@ -167,7 +196,7 @@ def cmd_budget(args):
     p = fmcli.resolve(args)
     if args.action == "set":
         cur = caps()
-        new = {"day": args.day, "run": args.run, "subagent_tokens": args.subagent_tokens}
+        new = {"day": args.day, "run": args.run}
         bad = [k for k, v in new.items() if v is not None and not (math.isfinite(v) and v >= 0)]
         if bad:
             raise fmcli.UsageError(f"caps are finite numbers ≥ 0: {', '.join(bad)}")
@@ -192,9 +221,11 @@ def cmd_budget(args):
         f["usd"] += e.get("usd") or 0
         f["runs"] += e.get("runs") or 0
         f["tokens"] += e.get("tokens") or 0
-    lines = [f"today: ${usd:.2f} of ${cur['day']:.2f} · subagents {tokens:,} of {int(cur['subagent_tokens']):,} tokens · "
-             f"per command ≤ ${cur['run']:.2f}" + (f" (halved: {high})" if high else "")]
+    pause = subagent_pause()
+    lines = [f"today: ${usd:.2f} of ${cur['day']:.2f} · per command ≤ ${cur['run']:.2f}" + (f" (halved: {high})" if high else ""),
+             f"subagents: {tokens:,} tokens today · " + (f"waiting: {pause}" if pause else "running (usage on pace)")]
     lines += [f"  {k}: ${v['usd']:.2f} over {v['runs']} run(s)" + (f", {v['tokens']:,} tokens" if v["tokens"] else "")
               for k, v in sorted(by.items(), key=lambda kv: -kv[1]["usd"] - kv[1]["tokens"] / 1e6)]
-    fmcli.out(args, {"today_usd": usd, "today_subagent_tokens": tokens, "caps": cur, "halved": high, "by_feature": by},
+    fmcli.out(args, {"today_usd": usd, "today_subagent_tokens": tokens, "caps": cur, "halved": high,
+                     "subagents_paused": pause, "by_feature": by},
               "\n".join(lines))

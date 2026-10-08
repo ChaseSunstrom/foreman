@@ -148,7 +148,20 @@ class Ideas(ForemanTestCase):
 
     def test_default_lenses(self):
         self.fm("ideas", "--pack", self.pack, env=self.env)
-        self.assertEqual(len(self.calls()), 6)  # T-0061 four; T-0099 adds unspoken needs and delight
+        # T-0061 four; T-0099 adds unspoken needs and delight; T-0364 capability map and approaches
+        self.assertEqual(len(self.calls()), 8)
+
+    def test_default_lenses_cover_capabilities_and_approaches(self):
+        # T-0364: "it doesn't think of every possible solution/capability": no lens looked at the whole space of what
+        # a complete version has, or at every way to solve the problem; 8-12 ideas per lens capped the breadth
+        self.fm("ideas", "--pack", self.pack, env=self.env)
+        lenses = {next(l for l in x["stdin"].splitlines() if l.startswith("Lens: "))[6:] for x in self.calls()}
+        self.assertTrue({"capability map", "approaches"} <= lenses, lenses)
+        self.assertIn("10-15 ideas", self.calls()[0]["stdin"])
+        import fmideas
+        prompt = read_text(fmideas.PROMPT)
+        self.assertIn('"capability map"', prompt)
+        self.assertIn('"approaches"', prompt)
 
     def test_default_lenses_look_for_unspoken_needs_and_delight(self):
         # T-0099: the user wanted ideas they can't put into words, and more creative ones

@@ -1024,6 +1024,34 @@ class Brief:
         line = f"- [ ] {text.strip()}" + (f" — verify with `{verify}`" if verify else "")
         self._append_line("Acceptance criteria", line)
 
+    def edit_ac(self, n, text=None, verify=None):
+        """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was. T-0342: only while
+        it has no evidence (the T-0305 decision: an edit could weaken a failing check until it passes), and logged."""
+        if self.has_evidence(ac=n):
+            raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
+                              f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
+                              f"with a reason and recreate it with the right check")
+        lines, k, changes = [], 0, []
+        for line in self.section("Acceptance criteria").splitlines():
+            m = _AC_RE.match(line)
+            if m:
+                k += 1
+                if k == n:
+                    old = verify_of(m.group(2))
+                    body = _VERIFY_OF.sub("", m.group(2)).rstrip()
+                    v = verify if verify is not None else old
+                    line = f"- [{m.group(1)}] {(text or body).strip()}" + (f" — verify with `{v}`" if v else "")
+                    if (v or None) != old:
+                        changes.append(f"criterion {n} verify: `{old or ''}` → `{v or ''}`")
+                    if text and text.strip() != body:
+                        changes.append(f"criterion {n} text: {body} → {text.strip()}")
+            lines.append(line)
+        if k < n:
+            raise KeyError(f"no acceptance criterion {n}")
+        self.set_section("Acceptance criteria", "\n".join(lines) + "\n")
+        for x in changes:
+            self.append_log(x)
+
     def check_ac(self, n):
         if not self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} acceptance criterion {n} has no evidence; record it with "
@@ -1348,7 +1376,7 @@ _GENERIC = r"(it|this|that|everything|all|things|stuff|the (app|project|repo|cod
 _OPEN_ENDED = re.compile("|".join([
     r"\bbrainstorm",
     r"\bget (it|this|everything|things|stuff) done\b",
-    r"\bmake " + _GENERIC + r" (better|great|awesome|perfect|nicer|amazing|shine)\b",
+    r"\bmake " + _GENERIC + r" ((way|much|far|a lot|even) )?(better|great|awesome|perfect|nicer|amazing|shine)\b",
     r"\b(super[- ]?)?(improve|upgrade|polish|optimi[sz]e|enhance) " + _GENERIC + r"\s*([.!?,]|etc|$)",
     r"\b(fix|clean up|tidy up) (everything|all of it|things|stuff)\b",
     r"\bwhat(ever)? (else )?(should|would|could|can) (we|you|i) (do|build|improve|add|work on)\b",
@@ -1380,7 +1408,7 @@ def is_work_request(text):
     """A plain, untagged request with a concrete target ("add a --verbose flag"): intake classifies it first."""
     t = (text or "").strip()
     tag = _TAG_LINE.match(t)
-    return bool(t) and len(t.split()) <= 60 and not (tag and tag.group("tag").upper() in WORK_TAGS) \
+    return bool(t) and len(t.split()) <= 200 and not (tag and tag.group("tag").upper() in WORK_TAGS) \
         and not is_open_ended(t) and bool(_WORK_VERB.match(t))
 
 
@@ -1393,8 +1421,28 @@ def is_open_ended(text):
     return bool(_OPEN_ENDED.search(t))
 
 
-_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|every (possible )?feature|all (the |possible )?"
-                         r"(features|ideas|possibilities)|everything possible|exhaustive(ly)?|super[- ]brainstorm\w*)\b")
+_EXHAUSTIVE = re.compile(r"(?i)\b(fully[- ]featured|feature[- ]complete|(more )?feature-?full?|every (possible|conceivable) "
+                         r"\w+|every (feature|capability|solution)|all (the )?(possible )?(features|ideas|possibilities|"
+                         r"capabilities|solutions)|all possible \w+|everything possible|exhaustive(ly)?|limitless|"
+                         r"no (caveats|limits|limitations|gaps) (or|and)|super[- ]brainstorm\w*)\b")
+# T-0364: a concrete target asked for in bulk ("a ton of benchmarks", "like a lot more,"): sweep the space before
+# planning. "more" counts before punctuation or a plural, so "a lot more readable" doesn't.
+_BROAD = re.compile(r"(?i)\b((a ton|tons|loads|heaps) of|(a lot|way|tons|loads|a ton|even) more(?=[,.!?]|$| \w+s\b))")
+
+
+# T-0364: a cleanup of the whole repo or of everything named, not one spot: the repo-sweep playbook, tier L
+_SWEEP = re.compile(r"(?i)\b(dead code|unused (code|functions?|functionality|features?)|(replaced|superseded) "
+                    r"(code|functionality)|clean(ing)?[- ]?up (everything|all (the )?(docs|code|files)|the (whole )?"
+                    r"(repo|codebase|project|docs))\b|CLEAN:\s*(the )?(whole|entire|all)\b)")
+
+
+def is_sweep(text):
+    return bool(_SWEEP.search(text or ""))
+
+
+def is_broad(text):
+    """A concrete request asked for in bulk: the plan enumerates the whole space first, not the first few items."""
+    return bool(_BROAD.search(text or "")) and not is_exhaustive(text)
 
 
 def is_exhaustive(text):
@@ -2306,6 +2354,8 @@ def lint_verify(cmd, root):
                 problems.append(f"{w} isn't on PATH or in the repo")
     if any(firsts) and all(f in _VACUOUS or not f for f in firsts):
         problems.append("it can't fail (nothing in it checks the behaviour)")
+    if re.search(r"plugin/tests/run\.py\b.*\s-k\s+(['\"])[^'\"]*\s[^'\"]*\1", cmd or ""):  # T-0357: a substring
+        problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
     return problems

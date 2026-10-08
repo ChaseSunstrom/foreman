@@ -166,6 +166,9 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
     ranked = sorted(scored, key=lambda x: -x[0])
     book = next((x for x in ranked if x[1] == "playbook"), None)  # one procedure at most: history comes first
     hits = [x for x in ranked if x[1] != "playbook" or x is book][:n]
+    dec = next((x for x in ranked if x[1] == "decision"), None)  # T-0343: a decision about this very thing (a feature
+    if dec and dec not in hits:  # dropped on purpose) must not lose its place to closer-worded briefs
+        hits = hits[:n - 1] + [dec]
     for i, (score, kind, label, tier, extra) in enumerate(hits):
         gone = _stale(p.root, extra["at"], extra["cites"]) if kind == "research" else []
         if gone:  # T-0210: research about code that has changed since is a lead, not an answer

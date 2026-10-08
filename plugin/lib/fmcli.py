@@ -117,7 +117,9 @@ def _create(p, title, type, tier, status, raw=None, scope=(), depends=(), source
 
 def _title(text):
     first = text.strip().splitlines()[0] if text.strip() else "untitled"
-    first = c._SCOPE_RE.sub("", c._REF_RE.sub("", first)).strip()
+    # T-0334: a ref that leads or ends the line is a dependency marker; one inside the sentence is part of it
+    first = re.sub(r"^(?:\s*#T-\d{4,}\b)+|(?:\s*#T-\d{4,}\b)+\s*$", "", first)
+    first = c._SCOPE_RE.sub("", c._REF_RE.sub(r"\1", first)).strip()
     return (first[:1].upper() + first[1:])[:90] or "untitled"
 
 
@@ -163,6 +165,7 @@ def cmd_capture(args):
     with c.lock(p.dir):
         b = _create(p, _title(args.text), type_, args.tier or c.guess_tier(type_, args.text), "captured",
                     raw=args.text, scope=args.scope or (), source=args.source,
+                    depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
                     priority="urgent" if args.urgent else "normal")
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
@@ -434,6 +437,10 @@ def cmd_task(args):
 
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
+        if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
+            print(f"fm: warning: verify `{cmd}` is a typed check, not a command, and fm task finish would run it: "
+                  f"leave --verify off and record it with fm task evidence ID --ac N CMD RESULT", file=sys.stderr)
+            continue
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
@@ -519,8 +526,15 @@ def _commit_task(p, b, message):
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
     files += [".foreman"] if mirror else []
+    elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
+    for e in c.ledger_tail(p, c.TASK_WINDOW):
+        f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == b.id else None
+        if f and not f.startswith(p.root.rstrip("/") + "/") and (r := c.git_root(os.path.dirname(f))):
+            elsewhere.setdefault(r, set()).add(f)
+    for r, fs in elsewhere.items():
+        print(f"{b.id}: {len(fs)} edited file(s) in {r} not committed (another repo): commit them there.")
     if not files:
-        print(f"{b.id}: nothing to commit.")
+        print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
         return
     git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
     add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
@@ -772,6 +786,12 @@ def task_done_in(p, args):
         if h.status in ("captured", "dropped") or not h.evidence():
             raise c.PolicyError(f"{h.id} hasn't done any work yet ({h.status}, no evidence): --done-in points at the "
                                 f"task that really did it")
+        if b.meta.get("source") == "user" and not args.reason:
+            raise c.PolicyError(f"{b.id} is the user's own request: give the reason (how {h.id} covered every part of "
+                                f"it), or plan it as its own task")
+        if b.meta.get("source") == "user":  # T-0364: the host's intent audit then checks the folded ask too
+            ask = b.section("Raw request").strip() or f"> {b.title}"
+            h.set_section("Raw request", h.section("Raw request").rstrip() + f"\n\nAlso asked ({b.id}, done here):\n{ask}")
         b.meta["status"], b.meta["done_in"] = "done", h.id
         b.append_log(f"done in {h.id}" + (f": {args.reason}" if args.reason else ""))
         h.append_log(f"includes {b.id}: {b.title}")
@@ -997,6 +1017,15 @@ def task_ac(p, args):
         n = int(args.arg)
     except ValueError:
         raise UsageError(f"criterion number expected, got {args.arg!r}")
+    if args.action == "edit":
+        if args.verify is None and not args.text:
+            raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
+        try:
+            b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, args.text, args.verify), "ac_edit", {"ac": n})
+        except KeyError as e:
+            raise UsageError(str(e).strip("'\""))
+        _lint_verify(p, [args.verify])
+        return out(args, c.brief_summary(b), f"{b.id}: criterion {n} edited.")
     ev = args.evidence
 
     def check(b):
@@ -1398,6 +1427,16 @@ def cmd_standing(args):
                or "No standing yes: Foreman's core asks per task.")
 
 
+def _decision_row(line):
+    """T-0341: one decisions.md row as fields (the desktop app's Decisions tab): date, kind (costly|outward|None),
+    text, why, and whether a later decision reversed it."""
+    body = line.removesuffix("  ← reversed later").strip().removeprefix("|").removesuffix("|")
+    cells = [x.strip().replace("\\|", "|") for x in re.split(r"(?<!\\)\|", body)]  # cell() escapes a | as \|
+    kind = re.match(r"\[(costly|outward)\]\s*", cells[1] if len(cells) > 1 else "")
+    return {"date": cells[0], "kind": kind and kind.group(1), "text": (cells[1] if len(cells) > 1 else "")[
+        kind.end() if kind else 0:], "why": cells[2] if len(cells) > 2 else "", "reversed": line.endswith("← reversed later")}
+
+
 def cmd_decide(args):
     """Record a decision; T-0057: --kind costly|outward marks one the user should review in the final report,
     --reverses names the earlier decision it undoes; --list shows them (--review: only those to review)."""
@@ -1411,7 +1450,8 @@ def cmd_decide(args):
         pick = [r for r in rows if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
         pick = [r + ("  ← reversed later" if any(x.lower() in r.lower() for x in reversed_ if "[reverses:" not in r)
                      else "") for r in pick]
-        return out(args, {"decisions": pick}, "\n".join(pick[-args.n:]) or "No decisions recorded.")
+        return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
+                   "\n".join(pick[-args.n:]) or "No decisions recorded.")
 
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
@@ -2036,7 +2076,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run night mcp ui watch"),
+    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2178,9 +2218,10 @@ def build_parser():
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("ac")
     t.add_argument("id")
-    t.add_argument("action", choices=["add", "check"])
+    t.add_argument("action", choices=["add", "check", "edit"])
     t.add_argument("arg")
     t.add_argument("--verify")
+    t.add_argument("--text", help="edit: the criterion's new text (its verify command stays unless --verify)")
     t.add_argument("--evidence", nargs=2, metavar=("CMD", "RESULT"))
     t = tadd("evidence")
     t.add_argument("id")
@@ -2515,7 +2556,6 @@ def build_parser():
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
     s.add_argument("--day", type=float, help="set: USD per day for everything fm spawns")
     s.add_argument("--run", type=float, help="set: USD per command")
-    s.add_argument("--subagent-tokens", type=int, help="set: Agent subagent tokens per day")
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
@@ -2565,6 +2605,38 @@ def build_parser():
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
     s.add_argument("action", choices=["new", "list", "rm", "brief"])
     s.add_argument("id", nargs="?")
+    s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
+                                                                "opencode), detached: start MESSAGE, list, tail ID, "
+                                                                "send ID MESSAGE, stop ID, rm ID, agents")
+    s.add_argument("action", nargs="?", default="list",
+                   choices=["start", "list", "tail", "send", "stop", "rm", "agents", "_run"])
+    s.add_argument("rest", nargs="*", help="the session id and/or the message")
+    s.add_argument("--agent", default="claude", help="start: which agent CLI runs it")
+    s.add_argument("--cwd", help="start: the folder it works in (default: here)")
+    s.add_argument("--model", help="start: the agent's model name")
+    s.add_argument("--title", help="start: a name for the list (default: the first line of the message)")
+    s.add_argument("--arg", action="append", default=[], help="start: an extra argument for the agent CLI, every turn "
+                                                              "(repeat; --arg=--yolo)")
+    s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
+    s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
+    s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
+    s = add("agents", lazy("fmagents", "cmd_agents"), help="Foreman's guard, context, MCP server and rules in Codex, "
+                                                             "Gemini CLI and opencode: list, install AGENT, uninstall "
+                                                             "AGENT")
+    s.add_argument("action", choices=["list", "install", "uninstall"])
+    s.add_argument("agent", nargs="?", choices=["codex", "gemini", "opencode"])
+    s = add("claude", lazy("fmclaude", "cmd_claude"), help="every Claude Code session on this device (terminal, remote, "
+                                                             "headless): list, show ID, agents ID, image ID REF, files "
+                                                             "ID, file ID PATH, send ID MESSAGE")
+    s.add_argument("action", choices=["list", "show", "agents", "image", "files", "file", "send"])
+    s.add_argument("rest", nargs="*", help="the session id, then a ref, path or message")
+    s.add_argument("--all", action="store_true", help="list: headless (SDK, claude -p) sessions too")
+    s.add_argument("--limit", type=int, default=150, help="list --all: at most this many headless ones, newest first")
+    s.add_argument("--agent", help="show/image: a subagent's transcript (its id from fm claude agents)")
+    s.add_argument("--from", dest="from_line", type=int, default=0, help="show: from this transcript line")
+    s.add_argument("--follow", action="store_true", help="list/show: keep printing as sessions change")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
+    s.add_argument("--model", help="send: the model for the continuation")
     s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
@@ -2590,7 +2662,13 @@ def build_parser():
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
 
-    add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
+    s = add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
+    s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
+    s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
+                                                                "app's list): --json, --follow")
+    s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
+    s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
@@ -2604,11 +2682,34 @@ def build_parser():
     return ap
 
 
+def _options_first(parser, argv):
+    """T-0332: argparse reads a command's positionals in one run, so in `fm session send ID --json -- MSG` the option
+    ends that run and MSG is left over. For the commands taking ID then words (session, claude), known options (with
+    their values) standing right before `--` move in front of the positionals; anything else is left as typed, so a
+    flag inside an unprotected message is still an error (its review)."""
+    k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
+        return argv
+    sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]
+    head = argv[k + 1:argv.index("--", k + 1)]
+    first = next((i for i, t in enumerate(head) if t in sub._option_string_actions), len(head))
+    i = first
+    while i < len(head):
+        act = sub._option_string_actions.get(head[i])
+        if act is None:
+            return argv
+        i += 1 + (1 if act.nargs is None else act.nargs if isinstance(act.nargs, int) else 1)
+    if i != len(head):
+        return argv
+    return argv[:k + 1] + head[first:] + head[:first] + argv[k + 1 + len(head):]
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
-    args = build_parser().parse_args(argv or ["help"])  # bare fm: the tiers, not a usage error
+    parser = build_parser()
+    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm: the tiers, not a usage error
     _sync_in(args)
     try:
         rc = args.fn(args)

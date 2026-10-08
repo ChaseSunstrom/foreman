@@ -242,7 +242,8 @@ def cmd_digest(args):
         msgs, _ = scan(transcripts_dir(p.root), since)
         tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
-             + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")]
+             + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
+             + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
     lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({b.meta.get('verified', 'ungraded')})" for b in done[-8:]]
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []

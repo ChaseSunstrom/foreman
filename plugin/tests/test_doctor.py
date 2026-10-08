@@ -44,6 +44,11 @@ class Checks(unittest.TestCase):
         self.assertEqual(d.check_mod_release(repo, listing).status, "PASS")
         self.assertEqual(d.check_mod_release(repo, os.path.join(self.t, "none.json")).status, "PASS")  # not installed
 
+    def test_python_below_the_floor_fails(self):
+        for v, want in [((3, 12, 3), "FAIL"), ((3, 13, 0), "FAIL"), ((3, 12, 7), "PASS"), ((3, 14, 7), "PASS")]:
+            self.assertEqual(d.check_python(v).status, want, v)
+        self.assertIn("3.12.7", d.check_python((3, 10, 12)).detail)
+
     def test_settings_json(self):
         good = self.write("good.json", '{"a": 1}')
         bad = self.write("bad.json", "{nope")
@@ -83,7 +88,7 @@ class Checks(unittest.TestCase):
         self.write("fh/plugin/skills/extra/SKILL.md", "---\nname: extra\ndescription: x\n---\n")
         r = d.check_self_docs(home, os.path.join(home, "plugin"))
         self.assertEqual(r.status, "FAIL")
-        for needle in ("fm teleport", "MASTER.md lacks fm ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
+        for needle in ("fm teleport", "MASTER.md lacks fm agents, ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
             self.assertIn(needle, r.detail)
 
     def test_state_location(self):

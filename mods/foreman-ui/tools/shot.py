@@ -128,10 +128,10 @@ def cells(line):
 
 
 def snap(a):
+    if a.cmd in ("self", "watch") and not os.environ.get("TMUX_PANE"):
+        sys.exit("not inside tmux: snapshot the window instead (spectacle -b -n -a -o OUT.png)")
     from PIL import Image, ImageDraw, ImageFont
     if a.cmd in ("self", "watch"):  # the pane this Claude Code session runs in, on the user's own tmux server (read-only)
-        if not os.environ.get("TMUX_PANE"):
-            sys.exit("not inside tmux: snapshot the window instead (spectacle -b -n -a -o OUT.png)")
         raw = subprocess.run(["tmux", "capture-pane", "-p", "-e", "-t", os.environ["TMUX_PANE"], "-S", str(-a.back)],
                              capture_output=True, text=True, check=True).stdout
     else:

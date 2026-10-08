@@ -243,6 +243,85 @@ class InstallScript(unittest.TestCase):
     def test_build_install_adds_build_tools(self):
         self.assertIn("--build-tools", self.setup_args("--build"))
 
+    def install_python(self, system):
+        """install.sh where python3 is 3.12.3 (Ubuntu 24.04's, too old) until brew or uv installs one; uname says
+        `system`. Returns the run and the installer calls made."""
+        home = self.env["HOME"]
+        mark, calls = os.path.join(home, "installed"), os.path.join(home, "calls")
+        stubs = {"python3": f'[ -e {mark} ] && exec {sys.executable} "$@"\necho "Python 3.12.3"; exit 1\n',
+                 "uname": f"echo {system}\n",
+                 "brew": f'echo "brew $*" >> {calls}; touch {mark}\n',
+                 "uv": f'[ "$2" = dir ] && {{ echo {home}/bin; exit; }}\necho "uv $*" >> {calls}; touch {mark}\n'}
+        for name, body in stubs.items():
+            path = os.path.join(home, "bin", name)
+            with open(path, "w") as f:
+                f.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--no-bypass", "--no-wiring"],
+                           capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        return p, read_text(calls) if os.path.exists(calls) else ""
+
+    def test_too_old_python_is_replaced_by_uv_on_linux(self):
+        p, calls = self.install_python("Linux")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        # update-shell: later shells (and the hooks) find this python3 too, not only the rest of install.sh
+        self.assertEqual(calls, "uv python install 3.13 --default\nuv python update-shell\n")
+
+    def test_too_old_python_is_replaced_by_homebrew_on_macos(self):
+        p, calls = self.install_python("Darwin")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(calls, "brew install python\n")
+
+    def test_native_windows_is_pointed_at_wsl(self):
+        p, calls = self.install_python("MINGW64_NT-10.0-26100")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("WSL", p.stderr)
+        self.assertEqual(calls, "")
+
+    def install_desktop(self, system, machine="x86_64"):
+        """install.sh --desktop (T-0326) with the GitHub API, the download and hdiutil stubbed; uname says `system`."""
+        home = self.env["HOME"]
+        release = {"assets": [{"name": n, "browser_download_url": f"https://dl.example/{n}"} for n in
+                              ("Foreman_0.1.0_amd64.AppImage", "Foreman_0.1.0_amd64.deb", "Foreman_0.1.0_universal.dmg")]}
+        with open(os.path.join(home, "release.json"), "w") as f:
+            json.dump(release, f)
+        stubs = {"uname": f'[ "$1" = -m ] && {{ echo {machine}; exit; }}\necho {system}\n',
+                 # the API answers the release; any other URL is a download, written where -o says
+                 "curl": f'out=""; url=""\nwhile [ $# -gt 0 ]; do case "$1" in -o) out="$2"; shift;; -*) ;; *) url="$1";; esac; shift; done\n'
+                         f'echo "$url" >> {home}/urls\ncase "$url" in *api.github.com*) cat {home}/release.json;; '
+                         f'*) echo "binary of $url" > "${{out:-/dev/stdout}}";; esac\n',
+                 "hdiutil": f'echo "hdiutil $*" >> {home}/calls\n[ "$1" = attach ] && mkdir -p "$5/Foreman.app/Contents" '
+                            f'&& echo app > "$5/Foreman.app/Contents/x"\nexit 0\n'}
+        for name, body in stubs.items():
+            path = os.path.join(home, "bin", name)
+            with open(path, "w") as f:
+                f.write("#!/usr/bin/env bash\n" + body)
+            os.chmod(path, 0o755)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--no-bypass", "--no-wiring",
+                            "--desktop"], capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        return p, home
+
+    def test_desktop_installs_the_appimage_and_a_menu_entry_on_linux(self):
+        p, home = self.install_desktop("Linux")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        app = os.path.join(home, ".local", "bin", "foreman-desktop")
+        self.assertIn("Foreman_0.1.0_amd64.AppImage", read_text(app))
+        self.assertTrue(os.access(app, os.X_OK))
+        entry = read_text(os.path.join(home, ".local", "share", "applications", "foreman-desktop.desktop"))
+        self.assertIn(f"Exec={app}", entry)
+        self.assertIn("ChaseSunstrom/foreman-desktop", read_text(os.path.join(home, "urls")))
+
+    def test_desktop_copies_the_app_from_the_dmg_on_macos(self):
+        p, home = self.install_desktop("Darwin", "arm64")
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(os.path.isfile(os.path.join(home, "Applications", "Foreman.app", "Contents", "x")))
+        self.assertIn("hdiutil detach", read_text(os.path.join(home, "calls")))
+
+    def test_desktop_says_which_systems_have_builds(self):
+        p, _ = self.install_desktop("Linux", "aarch64")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("x86_64", p.stderr)
+
     def test_fresh_machine_round_trip_leaves_no_settings_file(self):
         repo = os.path.dirname(os.path.dirname(os.path.dirname(FM)))
         os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
