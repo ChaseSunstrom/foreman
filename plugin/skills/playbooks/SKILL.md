@@ -21,6 +21,7 @@ Core debugging, regression-test and verification procedures live with intake: `.
 
 ## CLEAN — behavior-preserving refactors
 - `references/clean/code-simplifier.md` — Simplifies and refines code for clarity, consistency, and maintainability while preserving behavior.…
+- `references/clean/repo-sweep.md` — Whole-repo cleanup (repo, docs, settings, UI, briefs, dead and replaced code): inventory every area, a method per area, coverage as the done check.
 - `references/clean/refactor-cleaner.md` — Dead code cleanup and consolidation specialist. Runs analysis tools (knip, depcheck, ts-prune) to…
 
 ## PERFORMANCE — measure before and after

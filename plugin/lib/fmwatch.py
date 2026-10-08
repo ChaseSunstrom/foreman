@@ -2,6 +2,7 @@
 import json
 import os
 import statistics
+import sys
 import time
 
 import fmcore as c
@@ -264,7 +265,8 @@ def _budget():
         f["runs"] += e.get("runs") or 0
         f["tokens"] += e.get("tokens") or 0
     top = sorted(by.values(), key=lambda f: -(f["usd"] + f["tokens"] / 1e6))[:4]
-    return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high, "top": top}
+    return {"today_usd": usd, "subagent_tokens": tokens, "caps": cur, "halved": high,
+            "subagents_paused": fmbudget.subagent_pause(), "top": top}
 
 
 def _bench(p, events):
@@ -414,6 +416,8 @@ def cmd_ui(args):
         p = fmcli.resolve(args, create=False)
     except fmcli.UsageError:
         p = None
+    if getattr(args, "follow", False) and p:
+        return _follow(lambda: view(p), lambda v: v["watch"] + [os.path.join(p.dir, "meta.json")], args.interval)
     v = view(p) if p else {"v": 1, "project": None}
     if getattr(args, "json", False):
         print(json.dumps(v))
@@ -421,3 +425,90 @@ def cmd_ui(args):
         a = v.get("active")
         print(f"{v['project'] or 'not a Foreman project'}" + (f" · {a['id']} {a['stage']}" if a else "")
               + (f"\nNext: {v['next']}" if v.get("next") else ""))
+
+
+def _follow(build, paths, interval, refresh=30.0):
+    """T-0322: print build() as a JSON line now and again whenever one of paths(view) changes (or every `refresh`
+    seconds, for ages and clocks), skipping repeats; ends quietly when the reader goes away (the app, an ssh pipe)."""
+    def sig(v):
+        out = []
+        for path in paths(v):
+            try:
+                out.append(os.stat(path).st_mtime_ns)
+            except OSError:
+                out.append(None)
+        return out
+    last, seen, at = None, None, 0.0
+    try:
+        while True:
+            v = build()
+            line = json.dumps(v)
+            if line != last:
+                print(line, flush=True)
+                last = line
+            seen, at = sig(v), time.time()
+            while sig(v) == seen and time.time() - at < refresh:
+                time.sleep(interval)
+    except (BrokenPipeError, KeyboardInterrupt):
+        try:
+            sys.stdout = open(os.devnull, "w")  # no second BrokenPipeError when Python flushes at exit
+        except OSError:
+            pass
+
+
+def projects():
+    """T-0322: every Foreman project on this device with a light summary, most recently active first."""
+    out = []
+    for p, _ in c.all_projects():
+        try:
+            sd = c.state_dict(p)
+        except Exception as e:  # one damaged project never hides the others
+            out.append({"project": p.slug, "root": p.root, "error": c.fit(str(e), 200)})
+            continue
+        a = sd["active"]
+        try:
+            updated = os.path.getmtime(os.path.join(p.dir, "ledger.jsonl"))
+        except OSError:
+            updated = None
+        out.append({"project": p.slug, "root": p.root, "exists": os.path.isdir(p.root),
+                    "active": a and {k: a.get(k) for k in ("id", "type", "tier", "title", "stage", "steps_done",
+                                                            "steps_total")},
+                    "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "blocked": len(sd["blocked"]),
+                    "waits": len(sd["pending"]) + len(sd["asks"]), "drive": bool(sd["drive"]),
+                    "autonomy": sd["autonomy"], "sensitive": sd["sensitive"], "updated": updated})
+    return sorted(out, key=lambda r: r.get("updated") or 0, reverse=True)
+
+
+def _usage():
+    """T-0346: this device's plan usage (5-hour %, weekly %, share of the week gone) from the newest statusline
+    snapshot, for the app's sidebar; {} when no session has reported one. --follow refreshes it every 30 s, not on
+    every statusline write."""
+    try:
+        import fmbudget
+        return fmbudget.rate_limits()
+    except Exception:
+        return {}
+
+
+def _project_paths(_v):
+    root = c.projects_dir()
+    paths = [root]
+    for slug in sorted(os.listdir(root)) if os.path.isdir(root) else []:
+        d = os.path.join(root, slug)
+        paths += [os.path.join(d, "meta.json"), os.path.join(d, "ledger.jsonl"), os.path.join(d, "tasks")]
+    return paths
+
+
+def cmd_projects(args):
+    """fm projects [--json] [--follow]: the device-wide list the desktop app's sidebar shows (T-0322)."""
+    build = lambda: {"v": 1, "projects": projects(), "usage": _usage()}  # noqa: E731
+    if args.follow:
+        return _follow(build, _project_paths, args.interval)
+    v = build()
+    if args.json:
+        print(json.dumps(v))
+        return
+    for r in v["projects"]:
+        a = r.get("active")
+        print(f"{r['project']}  {r['root']}" + (f"  · {a['id']} {a['stage']}" if a else "")
+              + f"  · queue {r.get('queue', 0)} · inbox {r.get('inbox', 0)}")

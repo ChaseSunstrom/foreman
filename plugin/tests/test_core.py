@@ -514,6 +514,47 @@ class OpenEnded(unittest.TestCase):
                      "add a --verbose flag to the CLI", "yes", "PAUSE", ""):
             with self.subTest(text=text):
                 self.assertFalse(c.is_open_ended(text))
+                self.assertFalse(c.is_exhaustive(text))
+                self.assertFalse(c.is_broad(text))
+
+    def test_real_phrasings_reach_the_brainstorm(self):
+        # T-0364: the user's own words from Volt and Foreman sessions; none reached a brainstorm, so plans covered only
+        # what came to mind first and the user asked for the rest one request at a time
+        for text in ("can you make the language interop limitless? no caveats or non implemented things for rust, zig, "
+                     "c, especially C++, etc.?",
+                     "the recursive brainstorm isn't great, it doesn't think of every possible solution/capability",
+                     "make it more featurefull", "support all possible shapes"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_exhaustive(text))
+        for text in ("can you add even more benchmarks to compare against C/C++? like a lot more, not just simple things "
+                     "either, like a ton of C++/C/Volt language features, truly showcasing the speed",
+                     "add tons of tests for the parser"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_broad(text))
+                self.assertFalse(c.is_exhaustive(text))
+        for text in ("make it way better", "make the app much nicer"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_open_ended(text))
+        for text in ("there's a lot of chat spam from your messages", "every test passes now", "no caveats here, ship it",
+                     "is this a lot more readable?"):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_exhaustive(text) or c.is_broad(text))
+
+    def test_a_repo_cleanup_is_a_sweep(self):
+        # T-0364: "clean up all docs, code, UI, settings, environment" was tiered S and closed after a few files
+        for text in ("clean up all docs, code, UI, settings, environment stuff",
+                     "clean up the repo, docs, briefs, dead code, unused functionality that's been replaced",
+                     "remove dead code", "CLEAN: the whole codebase"):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_sweep(text))
+        for text in ("clean up the panel spacing", "fix the login timeout", "clean up after the test in test_io",
+                     "clean up all of the panels, they still look weird"):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_sweep(text))
+
+    def test_a_long_request_with_a_work_verb_is_still_a_work_request(self):
+        # T-0364: "can you make music-findr which is basically spot dl, but…" (90 words) got no intake note at all
+        self.assertTrue(c.is_work_request("can you make a web app that " + "does one more thing and " * 20 + "works"))
 
 
 class PlanOnly(unittest.TestCase):

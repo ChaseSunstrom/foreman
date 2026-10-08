@@ -117,6 +117,27 @@ class RoundI(ForemanTestCase):
                                text=True).stdout.split()
         self.assertEqual(names, ["feature.py"], "work from before the task stays out of its commit")
 
+    def test_finish_commit_names_edits_in_another_repo(self):
+        # T-0360: T-0359's only edit was in another checkout, and the commit said just "nothing to commit"
+        import os
+        import subprocess
+        import fmcore as c
+        self.fm("init")
+        other = os.path.join(self.tmp, "desktop")
+        subprocess.run(["git", "init", "-q", other], check=True)
+        self.fm("task", "new", "Small", "--type", "FIX", "--tier", "S", "--ac", "works :: python3 -c 'print(1)'",
+                "--step", "build", "--focus")
+        conf = os.path.join(other, "conf.json")
+        with open(conf, "w") as f:
+            f.write("{}\n")
+        c.log_event(c.find_project(self.repo), "touched", task="T-0001", data={"file": conf, "tool": "Edit"})
+        self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: test")
+        ok = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'print(0)'", "--audit", "self",
+                     "--commit", "Fix it", check=False)
+        self.assertEqual(ok.returncode, 0, ok.stderr)
+        self.assertIn(os.path.realpath(other), ok.stdout + ok.stderr)  # named, so it gets committed there
+        self.assertIn("not committed", ok.stdout + ok.stderr)
+
     def test_a_red_step_closes_when_the_same_command_passed_later(self):
         # T-0165: step 1 holds the intended red run, step 2 the same command passing; T-0164 needed a third run
         import os

@@ -1,6 +1,6 @@
 # Delegation (reference)
 
-Default: no subagents. The main thread plans, edits and writes all state. Subagents and fm's child runs are bounded by `fm budget` (T-0227): use them when they help — the caps, not abstinence, keep spend in check.
+The main thread plans, edits and writes all state. Subagents and fm's child runs are bounded by `fm budget` (T-0227): use them whenever they buy parallelism or fresh eyes — the caps, not abstinence, keep spend in check (T-0364: "default none" left long gates idle and research serial).
 
 Allowed only for:
 1. read-only recon of a large codebase area → `foreman:fm-recon`

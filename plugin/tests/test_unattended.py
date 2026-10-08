@@ -93,6 +93,15 @@ class Unattended(ForemanTestCase):
         ctx = json.loads(self.hook("SessionStart", {"source": "startup"}).stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertNotIn("This week", ctx, "offered once a week")
 
+    def test_digest_labels_a_list_cut_to_the_latest(self):  # T-0349: "249 done" above 8 lines read as a wrong count
+        for i in range(1, 10):
+            self.fm("task", "new", f"t{i}", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+            self.fm("task", "finish", f"T-{i:04d}", "--run", "true", "--audit", "checked")
+        out = self.fm("digest").stdout
+        self.assertIn("9 task(s) done", out)
+        self.assertIn("latest 8:", out)
+        self.assertNotIn("] t1 (", out)
+
     def test_usage_measures_whether_next_was_followed(self):
         with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
             for e in ({"kind": "next", "action": "T-0001 step 1/2 — do it, then fm task step T-0001 done 1"},

@@ -472,9 +472,15 @@ def user_prompt_submit(pl):
                      "super mode (fm ideas --rounds 4: rounds build on each other until dry), then every grounded idea")
     elif not r.items and c.is_open_ended(text):
         parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
-    elif not r.items and c.is_work_request(text):
-        parts.append("Untagged work request; Foreman intake classifies it first (type and tier on the reply's first "
-                     "line), then briefs it (fm task new … --focus)")
+    elif c.is_broad(text):
+        parts.append("Broad request: sweep the whole space before planning (fm ideas --lens 'capability map' "
+                     "--lens approaches, or a capability list in the brief)")
+    if c.is_sweep(text):
+        parts.append("Repo-wide cleanup: tier L, playbook clean/repo-sweep.md (every area checked by a stated method; "
+                     "a tool finding nothing isn't done)")
+    if not r.items and not r.overrides and c.is_work_request(text):  # T-0364: a one-liner brief skipped the thinking
+        parts.append("Work request: classify it (type and tier) on your first line; S → fm task new … --focus; "
+                     "M/L → plan before any edit (/foreman:intake §2: every capability and approach, then choose)")
     a, state = sd["active"], []
     if a:
         state.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]
@@ -704,7 +710,7 @@ def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
         tool = pl.get("tool_name", "")
-        if tool in ("Agent", "Task"):  # T-0227: subagents run within the day's token budget
+        if tool in ("Agent", "Task"):  # T-0320: subagents wait only while usage runs ahead of pace
             try:
                 import fmbudget
                 fmbudget.check_subagent()
@@ -1316,11 +1322,14 @@ def _question_nudge(pl):
             "earlier reply (plan, order, results) in your final message: print mode shows only that one.")
 
 
+def _headless():
+    return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
+
+
 def _headless_wait(pl):
     """T-0310: claude -p (and fm run) ends with the turn, so a background task's notification never arrives: wait for
     it in this turn. Once per stop chain."""
-    headless = os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
-    if pl.get("stop_hook_active") or not headless:
+    if pl.get("stop_hook_active") or not _headless():
         return None
     bg = pl.get("background_tasks")
     running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else \
@@ -1423,12 +1432,23 @@ def _drive(p, sd, briefs, pl, g):
     if d.get("hold"):
         return None  # the user asked for planning only this turn
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
-    running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else _running(sid)
+    running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(_running(sid))
     if running:  # background work is out; its completion notification wakes the session
-        if d.get("waited") != running[:5]:  # one wait, one event (T-0152: every Stop counted again in fm friction)
+        first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
+        if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
             _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
         d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
-        return None
+        if not first or _headless() or d.get("count", 0) >= DRIVE_MAX:
+            return None
+        # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
+        d.update(count=d.get("count", 0) + 1, marks=_marks(p))
+        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); its notification wakes "
+                f"you, so don't sleep or poll. Meanwhile do what doesn't need its result: the next step's test, the "
+                f"audit lenses on the current diff (fm audit prep), docs, "
+                + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "
+                   f"(fm lane brief ID). " if more else "planning what comes after this task. ")
+                + "If nothing is independent of it, end the turn with one line naming what you wait on.")
     d.pop("waited", None)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
         return None  # no progress since the last continuation: let the turn end

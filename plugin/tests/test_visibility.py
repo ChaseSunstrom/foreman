@@ -54,7 +54,7 @@ class Statusline(VisibilityCase):
     def test_blank_or_failing_original_still_prints_foreman_line(self):
         self.manifest(statusLine_original={"type": "command", "command": "echo; exit 3"}, statusline_hud=False)
         p = self.statusline()
-        self.assertEqual(p.returncode, 0)
+        self.assertEqual(p.returncode, 0, p.stderr)
         lines = [l for l in p.stdout.split("\n") if l.strip()]
         self.assertEqual(len(lines), 2, "the Foreman line and its progress line only")
         self.assertIn("T-0001", lines[0])
@@ -76,7 +76,7 @@ class Statusline(VisibilityCase):
         os.makedirs(elsewhere)
         payload = dict(self.status_payload(), cwd=elsewhere)
         p = self.statusline(payload, env={"FOREMAN_HOME": os.path.join(self.tmp, "empty-home")})
-        self.assertEqual(p.returncode, 0)
+        self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn("foreman", p.stdout)
 
 

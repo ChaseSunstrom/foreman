@@ -1290,12 +1290,12 @@ export const register: Register = (on, options) => {
         )}
 
         {/* T-0228: spend against fm budget's caps, the bench and evolve, research asks — each only when it has news */}
-        {v.budget && (v.budget.today_usd > 0 || v.budget.subagent_tokens > 0 || v.budget.halved) && (
-          <Box key="card-budget" {...card(v.budget.halved ? C.warn : null)}>
+        {v.budget && (v.budget.today_usd > 0 || v.budget.subagent_tokens > 0 || v.budget.halved || v.budget.subagents_paused) && (
+          <Box key="card-budget" {...card(v.budget.halved || v.budget.subagents_paused ? C.warn : null)}>
             {head(
               'Spend today',
               C.accent2,
-              `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)} of ${tokensWord(v.budget.caps.subagent_tokens)}`,
+              `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)}${v.budget.subagents_paused ? ` · waiting: ${v.budget.subagents_paused}` : ''}`,
             )}
             <Box flexDirection="row" gap={1}>
               {meter($.ui.resolve(e), e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}

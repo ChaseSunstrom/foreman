@@ -55,7 +55,20 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'D=/tmp/x && D=~ & wait; rm -rf "$D"', 'D=~ && D=/tmp/x || true && rm -rf "$D"',
          # T-0190: rm takes a literal set before a branch only when nothing else can set it
          'D=x; for i in 1; do D=~; done; rm -rf "$D"', 'D=~; true | cat; rm -rf "$D"',
-         'D=x; true | cat; printf -v D %s ~; rm -rf "$D"', 'D=x; echo ~ | while read D; do rm -rf "$D"; done']
+         'D=x; true | cat; printf -v D %s ~; rm -rf "$D"', 'D=x; echo ~ | while read D; do rm -rf "$D"; done',
+         # T-0338: ~ values, a ; list mixed with &&, a path-named command, flags and path segments named like a var
+         'D=~/; (rm -rf "$D")', 'D=~; true && :; (rm -rf "$D")', 'D=/tmp/x; true; D=~ && (rm -rf "$D")',
+         'S=/tmp/x; $S/y 2>/dev/null; read -r S <<< ~; (rm -rf "$S")', 'S=/tmp/x; ${S}/y 2>/dev/null; S=~; (rm -rf "$S")',
+         'S=~; sort -S 1M /dev/null; ls /tmp/S/ 2>/dev/null; (rm -rf "$S" &); wait', 'D=~+; (rm -rf "$D")',
+         'cd /tmp && D=~ && (rm -rf "$D")', 'D=/tmp/x; mkdir -p $D; cd $D; D=~; rm -rf "$D"',
+         # T-0339: a cd an && may skip leaves the next segment where it was
+         'cd ~; false && cd /tmp; rm -rf *', 'cd ~; true && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp && true; rm -rf ./*',
+         'cd /tmp && cd ~ && cd /nonexistent; rm -rf ./*',
+         # T-0355: a piped cd moves only its subshell; pipes later in a chain leave its head cd in force
+         'cd ~; cd /tmp | true && rm -rf ./*', 'cd ~; true; cd /tmp | cat && ls | cat && rm -rf ./*',
+         'cd ~ && ls | cat && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp |\ncat\nrm -rf ./*',
+         'cd ~; ls |\ncd /tmp\nrm -rf ./*',
+         'echo x >| ~/clobbered', 'echo x 2>|~/clobbered', 'set -C; echo x >| ~/clobbered']  # T-0358
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 

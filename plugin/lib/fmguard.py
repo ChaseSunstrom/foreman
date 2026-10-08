@@ -8,6 +8,7 @@ text can always be obfuscated; deny rules and git are the other layers.
 import collections
 import os
 import re
+import sys
 import shlex
 import subprocess
 
@@ -18,6 +19,7 @@ NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_CORE_DIRS = ("lib", "bin", "hooks", "evals", "integrations")  # plugin/…: Foreman's code (integrations: T-0340)
 DEFAULT_BRANCHES = {"main", "master", "trunk"}
 
 
@@ -205,13 +207,21 @@ def _is_credential(path, ctx):
     return bool(re.search(r"(^|[._-])(tokens?|secrets?|credentials?)([._-]|$)", stem.lower())) and ext.lower() not in _DOC_EXT
 
 
+# T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
+# switch the guard off in that agent, as Claude Code's settings can in Claude
+_AGENT_WIRING = re.compile(r"/\.codex/(?:hooks\.json|config\.toml)$|/\.gemini/settings\.json$|/opencode\.jsonc?$|"
+                           r"/\.?opencode/plugins?(?:/|$)")
+
+
 def _is_core(path, ctx):
     """Protected core: all Foreman code (it enforces the guard), the rules, the eval suite, the spec and settings."""
     fh = ctx.foreman_home
     files = {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")}
-    dirs = [os.path.join(fh, "plugin", d) for d in ("lib", "bin", "hooks", "evals")]
+    dirs = [os.path.join(fh, "plugin", d) for d in _CORE_DIRS]
+    codex = os.environ.get("CODEX_HOME")
     return path in files or any(_under(path, d) for d in dirs) or path == os.path.join(ctx.home, ".claude.json") or \
-        bool(re.search(r"/\.claude/settings(\.local)?\.json$", path))
+        bool(re.search(r"/\.claude/settings(\.local)?\.json$", path) or _AGENT_WIRING.search(path)) or \
+        bool(codex) and path in (os.path.join(codex, "hooks.json"), os.path.join(codex, "config.toml"))
 
 
 def _plain_path(detail):
@@ -230,7 +240,7 @@ def _standing_covers(path, ctx):
     if path is None or _under(os.path.join(fh, "plugin", "lib", "fmguard.py"), path):
         return False  # not a path, the guard itself, or a whole-tree write that includes it
     return path in {os.path.join(fh, f) for f in ("plugin/rules/foreman.md", "BUILD_PROMPT.md")} or any(
-        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in ("lib", "bin", "hooks", "evals"))
+        _strictly_under(path, os.path.join(fh, "plugin", d)) for d in _CORE_DIRS)
 
 
 def _trust_covers(path, ctx):
@@ -260,7 +270,9 @@ def _runs_later(p, ctx):
 def _protected_roots(ctx):
     """(path, category) of everything the guard protects, for writes that cover a whole tree."""
     fh, cl = ctx.foreman_home, os.path.join(ctx.home, ".claude")
-    roots = [(os.path.join(fh, "plugin", d), "core") for d in ("lib", "bin", "hooks", "evals")]
+    roots = [(os.path.join(fh, "plugin", d), "core") for d in _CORE_DIRS]
+    roots += [(os.path.join(ctx.home, f), "core") for f in (".codex/hooks.json", ".codex/config.toml",  # T-0340
+                                                             ".gemini/settings.json", ".config/opencode")]
     roots += [(os.path.join(fh, "plugin", "rules", "foreman.md"), "core"), (os.path.join(fh, "BUILD_PROMPT.md"), "core"),
               (os.path.join(ctx.home, ".claude.json"), "core"), (os.path.join(cl, "plugins"), "plugin")]
     # user-wide Claude Code settings (a project's own are handled in classify_tree)
@@ -328,8 +340,9 @@ def classify_write(path, ctx):
 # ---------------------------------------------------------------- shell parsing
 
 class Cmd:
-    def __init__(self, argv, redirs, piped, procsub=False):
+    def __init__(self, argv, redirs, piped, procsub=False, op=""):
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
+        self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -493,12 +506,17 @@ def _split(tokens):
             i += 1
             continue
         if re.fullmatch(r"[;&|()]+", t) and not re.fullmatch(r"&>+", t):
-            if cur.argv or cur.redirs or cur.procsub:
+            empty = not (cur.argv or cur.redirs or cur.procsub)
+            if t == ";" and empty and cur.op in ("|", "|&", "&&", "||"):
+                i += 1  # a newline after | && || continues the command (_lines made it a ;): T-0355 review
+                continue
+            if not empty:
                 cmds.append(cur)
-            cur = Cmd([], [], t in ("|", "|&"))
+            cur = Cmd([], [], t in ("|", "|&"), op=t)
             i += 1
             continue
-        if re.fullmatch(r"[<>&]+", t):
+        if re.fullmatch(r"[<>&]+\|?", t):
+            t = t.rstrip("|")  # >| writes even under noclobber (T-0358)
             nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
             if t == "<" and nxt == "(":
                 cur.procsub = True
@@ -590,6 +608,8 @@ _WRITE_API = re.compile(
     r"""open\s*\([^)]*['"][rwxab+]*[wxa+][rwxab+]*['"]|\.write_(?:text|bytes)\s*\(|(?:write|append)FileSync|"""
     r"createWriteStream|\bos\.(?:replace|rename|remove|unlink)\b|\bshutil\.\w+\(|\.(?:unlink|rename|replace|touch)\(|"
     r"File\.write|file_put_contents|open\s*\(\s*(?:my\s+)?\$?\w+\s*,\s*['\"]?[>+]")
+# T-0344: .replace( stays a write here even with two string arguments: os.replace('a', 'b'), an aliased os or (os) look
+# the same as str.replace to a text match, and only a proved script (_open_targets) can tell them apart
 _QUOTED = re.compile(r"""(['"])((?:[~/.]|[\w.-]+/)[^'"\s]*)\1""")
 _GUARDED_BY_PATH = ("core", "state-direct", "credentials", "plugin", "brief")
 # A slash command that changes plugins, MCP servers or config, sent to claude as a prompt (argv, stdin or a heredoc).
@@ -760,7 +780,11 @@ def _python_units(cmd):
         i += 1
         starts = _heredoc_starts(seen, line)
         seen.append(line)
-        run = re.match(r"\s*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*(python[0-9.]*\s+-\s*<<.*)$", line)
+        # T-0315: plain name=value; first (lowercase: a shell variable, never PATH, HOME or LD_* that pick which python
+        # runs or what it loads) and the script's own arguments (sys.argv: they pick what it reads, never what it may
+        # write, which _open_targets proves from literals) don't change what the code does
+        run = re.match(r"\s*(?:[a-z_][a-z0-9_]*=[\w./~@+:=,-]*\s*;\s*)*(?:cd\s+[\w./~@+:=,-]+\s*&&\s*)*"
+                       r"(python[0-9.]*\s+-(?:\s+(?:'[^'\n]*'|\"[^\"`\n]*\"|[\w./~@+:=,$-]+))*\s*<<.*)$", line)
         # review (T-0286): bash must read the body the guard parses — no continued line (`\`), no second `<<` form
         # the heredoc scan doesn't know (`<<\E`: the last redirect wins)
         fed = len(starts) == 1 and starts[0][0] and run and not re.search(r"[|`;&\\]|\$\(", run.group(1)) and \
@@ -783,7 +807,7 @@ _PY_PURE = {"re": (set("sub subn search match fullmatch findall finditer split c
                    set("error I IGNORECASE M MULTILINE S DOTALL X VERBOSE A ASCII".split())),
             "json": ({"loads", "dumps", "load", "dump"}, {"JSONDecodeError"}),
             "textwrap": ({"dedent", "indent", "fill", "wrap", "shorten"}, set()),
-            "sys": ({"exit"}, {"argv"})}
+            "sys": ({"exit"}, {"argv", "stdin"})}  # T-0344: reading stdin writes nothing
 _FRAME_ATTR = re.compile(r"(?:gi|cr|ag|f|tb)_")
 _PY_PATH_VARS = ("PYTHONPATH", "PYTHONHOME", "PYTHONUSERBASE", "PYTHONPLATLIBDIR", "PYTHONSTARTUP")  # what imports load
 # review: the only builtins a proved script may name (not type: type(f.buffer.raw) is FileIO, which opens files; not
@@ -970,6 +994,83 @@ def _interp_code(cmd):
     return "".join(out) + shell[last:] + "\n" + bodies
 
 
+# T-0345: python calls that start a program, by module: where its command is (an argument index, or "k:" for the
+# positional arguments from k on as the argv)
+_SPAWN = {"subprocess": dict.fromkeys(("run", "call", "check_call", "check_output", "Popen", "getoutput",
+                                       "getstatusoutput"), 0),
+          "os": {"system": 0, "popen": 0, **dict.fromkeys(("execv", "execve", "execvp", "execvpe", "posix_spawn",
+                                                           "posix_spawnp"), 1),
+                 **dict.fromkeys(("execl", "execle", "execlp", "execlpe"), "1:"),
+                 **dict.fromkeys(("spawnv", "spawnve", "spawnvp", "spawnvpe"), 2),
+                 **dict.fromkeys(("spawnl", "spawnle", "spawnlp", "spawnlpe"), "2:")},
+          "pty": {"spawn": 0}}
+
+
+def _python_sources(cmd):
+    """T-0345: the python code a command may run: every heredoc body (one that parses as python is read as python) and
+    the code of each `python -c` (option clusters such as -uc included)."""
+    out, lines, seen, i = [], cmd.split("\n"), [], 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        starts = _heredoc_starts(seen, line)
+        seen.append(line)
+        for _, delim in starts:
+            body = []
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
+                body.append(lines[i])
+                i += 1
+            i += 1
+            out.append("\n".join(body))
+    for c in _split(_tokens(_lines(_strip_heredocs(cmd)))):
+        argv, _ = _strip_wrappers(c.argv)
+        if argv and re.match(r"^python[0-9.]*$", os.path.basename(argv[0])):
+            out += _shell_c(argv[1:])
+    return out
+
+
+def _spawned_commands(code):
+    """T-0345: the shell commands python code starts (subprocess, os.system/popen/exec*/spawn*, pty.spawn, under any
+    import alias), as text check_bash reads: a literal string as it stands, a literal list with its words quoted, any
+    other part as an unknown "$_" (so a delete of a variable is a delete of an unknown target), cwd= as a cd first."""
+    import ast
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, MemoryError, RecursionError):
+        return []
+    alias = {}  # local name → (module, None) for the module, (module, function) for a from-import
+    for n in ast.walk(tree):
+        if isinstance(n, ast.Import):
+            alias.update({a.asname or a.name: (a.name, None) for a in n.names if a.name in _SPAWN})
+        elif isinstance(n, ast.ImportFrom) and n.module in _SPAWN:
+            alias.update({a.asname or a.name: (n.module, a.name) for a in n.names if a.name in _SPAWN[n.module]})
+    word = lambda e: shlex.quote(e.value) if isinstance(e, ast.Constant) and isinstance(e.value, str) else '"$_"'  # noqa: E731
+    out = []
+    for n in ast.walk(tree):
+        f = getattr(n, "func", None) if isinstance(n, ast.Call) else None
+        if isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name) and alias.get(f.value.id, (0, 0))[1] is None:
+            mod, fn = alias[f.value.id][0], f.attr
+        elif isinstance(f, ast.Name) and alias.get(f.id, (0, None))[1]:
+            mod, fn = alias[f.id]
+        else:
+            continue
+        where = _SPAWN[mod].get(fn)
+        if where is None:
+            continue
+        if isinstance(where, str):
+            text = " ".join(word(e) for e in n.args[int(where[:-1]):])
+        else:
+            arg = n.args[where] if len(n.args) > where else next(
+                (k.value for k in n.keywords if k.arg in ("args", "argv", "cmd", "command")), None)
+            if arg is None:
+                continue
+            text = arg.value if isinstance(arg, ast.Constant) and isinstance(arg.value, str) else \
+                " ".join(word(e) for e in arg.elts) if isinstance(arg, (ast.List, ast.Tuple)) else '"$_"'
+        cwd = next((k.value for k in n.keywords if k.arg == "cwd"), None)
+        out.append((f"cd {word(cwd)} && " if cwd is not None else "") + text)
+    return out
+
+
 def _interpreter_writes(cmd, ctx):
     """Interpreter code (heredoc, -c, -e) that writes files: every quoted path it names counts as a write target.
 
@@ -1057,24 +1158,117 @@ _PART = re.compile(r"\$(?:\{(\w+)\}|(\w+))|\$\{[^}]*\}?|\$\([^)]*\)?|`[^`]*`?|\$
 
 
 def _top(shell):
-    """(straight, and_chain) at the command's top level, command substitutions blanked: straight when every command
+    """(straight, and_chain, mixed) at the command's top level, command substitutions blanked: straight when every command
     there runs in this shell, in order (no branch, subshell, pipe, background or !: `! cd BAD && x` runs x); and_chain
     when only && joins them, so a failed cd stops the rest."""
     s, prev = re.sub(r"`[^`]*`", "S", shell), None
     while s != prev:
         s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
     straight = "!" not in s and _straight_line(s)
-    return straight, straight and "&&" in s
+    # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
+    # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell)
+    mixed = not straight and "!" not in s and _straight_line(re.sub(r"&&|(?<!\|)\|&?(?!\|)", ";", s))
+    return straight, straight and "&&" in s, mixed
 
 
-def _outside(shell, cmds, ctx):
+_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true"}
+_CURL_SAFE = re.compile(r"-[sSLf]+|--(?:silent|show-error|location|fail|compressed)")  # flags that write no file
+_WGET_SAFE = {"-q", "--quiet", "-nv"}
+
+
+def _writes_nothing(x):
+    """T-0344 review: a command beside the python that can't create a file python would then import: no output
+    redirect, and curl or wget only with flags that keep their download on stdout (any other flag, -o/-O, a config
+    or a cookie jar, voids it); every other data tool writes nowhere but stdout."""
+    a, _ = _strip_wrappers(x.argv)
+    if x.redirs or x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS:
+        return False
+    name, args = os.path.basename(a[0]), a[1:]
+    if name == "curl":  # value flags: a header or agent, a -w format (not %output{file}), -o only to /dev/null
+        i = 0
+        while i < len(args):
+            w, v = args[i], args[i + 1] if i + 1 < len(args) else ""
+            if w in ("-H", "--header", "-A", "--user-agent", "-X", "--request") or \
+                    w in ("-w", "--write-out") and "%output{" not in v or w in ("-o", "--output") and v == "/dev/null":
+                i += 2
+            elif w.startswith("-") and not _CURL_SAFE.fullmatch(w):
+                return False
+            else:
+                i += 1
+        return True
+    if name == "wget":  # every -O must name stdout (the last one wins: -qO- URL -O json.py writes json.py)
+        outs, i = [], 0
+        while i < len(args):
+            w = args[i]
+            if w in ("-O", "-qO", "--output-document"):
+                outs.append(args[i + 1] if i + 1 < len(args) else "")
+                i += 2
+                continue
+            if w in ("-O-", "-qO-") or w.startswith("--output-document="):
+                outs.append("-" if w in ("-O-", "-qO-") else w.partition("=")[2])
+            elif w.startswith("-") and w != "-" and w not in _WGET_SAFE:
+                return False
+            i += 1
+        return bool(outs) and all(o == "-" for o in outs)
+    return True
+
+
+def _shadowed(cwds, mods):
+    """T-0344 review: a module python -c would import from the folder it runs in instead of the standard library — a
+    name the code imports, or any stdlib name (json imports re, which imports enum) — as X.py, X.pyc, an extension
+    module or a package (X/__init__.py); a plain folder shadows nothing."""
+    names = set(sys.stdlib_module_names) | set(mods)
+    for b in cwds:
+        try:
+            entries = os.listdir(b)
+        except OSError:
+            return True  # a folder the guard can't read could hold anything
+        for n in entries:
+            stem, _, ext = n.partition(".")
+            if stem in names and (ext.split(".")[-1] in ("py", "pyc", "so", "pyd") and ext or
+                                  os.path.isfile(os.path.join(b, n, "__init__.py"))):
+                return True
+    return False
+
+
+def _reads_pipe_as_data(c, argv, cmds, cwds):
+    """T-0344: `curl … | python3 -c CODE` reads the download as data when CODE is proved (_open_targets: pure modules,
+    nothing dynamic, nothing written) and nothing makes python read stdin as code. -c comes first (every word after
+    CODE is sys.argv, so no -i before it); python runs bare and every other command is a plain data tool that writes no
+    file (_writes_nothing), so no assignment, env, export or eval can set PYTHONINSPECT (its review: PYTH""ONINSPECT=1)
+    and no module can appear before python starts; none is inherited; and nothing in the folder it runs in shadows a
+    module it may import (_shadowed: python -c searches that folder first)."""
+    name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
+    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and not c.redirs and len(args) >= 2
+            and args[0] == "-c"):
+        return False
+    if not all(_writes_nothing(x) for x in cmds if x is not c):
+        return False
+    if any(os.environ.get(k) for k in ("PYTHONINSPECT", *_PY_PATH_VARS)) or _open_targets(args[1]) != []:
+        return False
+    import ast
+    mods = {al.name.split(".")[0] for n in ast.walk(ast.parse(args[1])) if isinstance(n, ast.Import) for al in n.names}
+    return not _shadowed(cwds, mods)
+
+
+def _a_path(word, fixed):
+    """T-0331: a command word that runs a file, never a builtin or function: a literal / in it, and its only
+    expansions $NAME or ${NAME} of plain literals this command set before it (fixed: no space or glob, so they can't
+    split into `eval …`; its review). `$S/app` with S=/tmp/x is a path; `$S/etc` with S unknown may be `eval X=/etc`."""
+    rest = re.sub(r"\$(?:\{\w+\}|\w+)", "", word)
+    return "/" in rest and not re.search(r"[$`*?\[\\'\"\s]", rest) and all(
+        (a or b) in fixed for a, b in re.findall(r"\$(?:\{(\w+)\}|(\w+))", word))
+
+
+def _outside(shell, cmds, ctx, fixed=None):
     """T-0175 review: ({NAME: value} for the names this command can't set itself, as it inherits them; the names it may
     set). It may set every name it writes bare (an assignment, read NAME, for NAME, ${NAME:=…}), and any name at all
     (None) with a builtin that sets names indirectly (eval, read, declare, source…) or a computed command name. Values
     are Claude Code's environment, HOME the user's; one a shell would split or expand stays unknown."""
     for c in cmds:
         argv, _ = _strip_wrappers(c.argv)
-        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0])):
+        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0]) and not _a_path(
+                argv[0], fixed or {})):
             return {}, None
     bare = set(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
     return {k: v for k, v in {**os.environ, "HOME": ctx.home}.items() if k not in bare and not _SHELL_SET.match(k)
@@ -1150,22 +1344,38 @@ def _possible(path):
 GUESS_WORDS = 48  # ponytail: words tried per unknown part (two parts: their pairs); a longer command is guessed this far
 
 
-def _prefix_vars(shell, cmds):
+def _prefix_vars(shell, cmds, home=None):
     """T-0183: NAME=literal values a branchy command sets in its straight top-level prefix (the commands before its
     first branch, pipe, subshell, group or keyword run first, in this shell), for names written bare nowhere else in
     it; {} when nothing qualifies. Only where no builtin can set names indirectly (the caller checks)."""
     s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell)
     cut = next((m.start() for m in re.finditer(r"&&|\|\|?|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
                                                 r"done|case|esac|select|function|coproc)\b", s) if m.group(0) != "&&"), len(s))
-    ends = [m.start() for m in re.finditer(r";|\n|&&", s[:cut])]
-    prefix = shell[:ends[-1]] if ends and cut < len(s) else ""
+    # what an && may skip is set for sure only if everything after it runs only when the chain got that far:
+    # `false && HOME=/x; rm $HOME` runs the rm anyway (T-0338 review), `S=/x && rm $S/a && ls | head` doesn't
+    amp = s.find("&&", 0, cut)
+    skippable = amp >= 0 and re.search(r";|\n|\|\||(?<![&|])&(?!&)", s[amp + 2:].replace("&&", "  "))
+    seps = list(re.finditer(r";|\n|&&", s[:cut]))
+    if skippable:  # keep the elements that surely ran: after a ; or newline, or after && links that can't fail
+        keep, start, sure = [], 0, True
+        for m in seps:
+            elem = shell[start:m.start()]
+            if sure:
+                keep.append(elem)
+            sure = (sure and bool(re.fullmatch(r"\s*(?:\w+=[^\s;&|$`()<>'\"\\]*\s+)*\w+=[^\s;&|$`()<>'\"\\]*\s*",
+                                                elem))) if m.group(0) == "&&" else True  # a plain assignment can't fail
+            start = m.end()
+        prefix = "; ".join(e.strip() for e in keep if e.strip())
+    else:  # T-0330: a ; list mixed with && (D=~/x; mkdir -p $D && cd $D && tar xf -) isn't straight either
+        prefix = shell[:seps[-1].start()] if seps and (cut < len(s) or not _straight_line(shell)) else ""
     raw = _raw_cmds(prefix) if prefix and _straight_line(prefix) else None
     env = {}
     for words in raw or []:
-        env = _track_vars(words, env)
+        env = _track_vars(words, env, home)
         if env is None:
             return {}
-    counts = collections.Counter(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
+    # T-0331: a word after - / or . (a flag like -S, a path segment like /tmp/S/) can't name a variable
+    counts = collections.Counter(re.findall(r"(?<![\w/.-])[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
     return {k: v for k, v in env.items() if counts[k] == 1}
 
 
@@ -1248,10 +1458,34 @@ def _unquote(word):
         return None
 
 
-def _track_vars(words, env):
+def _shell_c(args):
+    """The command strings `sh -c` runs: the word after a bare -c, and (T-0324) the first operand once any option
+    cluster holds c (bash -lc, zsh -o x -ic, bash --rcfile f -ec -- CMD)."""
+    out = [args[args.index("-c") + 1]] if "-c" in args and args.index("-c") + 1 < len(args) else []
+    has_c, i = False, 0
+    while i < len(args):
+        a = args[i]
+        if a == "--":
+            i += 1
+            break
+        if a in ("-o", "+o", "-O", "+O", "--rcfile", "--init-file"):
+            i += 2
+        elif re.fullmatch(r"[-+][a-zA-Z]+", a):
+            has_c = has_c or (a[0] == "-" and "c" in a)
+            i += 1
+        elif a.startswith("--"):
+            i += 1
+        else:
+            break
+    if has_c and i < len(args) and args[i] not in out:
+        out.append(args[i])
+    return out
+
+
+def _track_vars(words, env, home=None):
     """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
     words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
-             and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)", words[i - 1]))]
+             and not (i and re.fullmatch(r"\d*(?:[<>]+&?|&>>?)\|?", words[i - 1]))]
     runner = False
     while words and words[0] in ("!", "time", "command", "builtin"):  # unquoted: these keep the command in this shell
         runner = runner or words[0] in ("command", "builtin")  # whose `command D=x` runs a program named D=x
@@ -1262,7 +1496,9 @@ def _track_vars(words, env):
         words, runner = [w for w in words[1:] if "=" in w], False  # a bare name keeps its value
     if not runner and all(_ASSIGN.match(w) for w in words):
         for w in words:
-            k, v = _ASSIGN.match(w).group(1), _unquote(w.partition("=")[2])
+            k, rv = _ASSIGN.match(w).group(1), w.partition("=")[2]
+            # T-0330: an unquoted leading ~ or ~/ in an assignment is the home folder (bash expands it there)
+            v = _unquote(home + rv[1:] if home and re.match(r"~(?:/|$)", rv) else rv)
             if k == "IFS":
                 return None  # word splitting changes: no expansion can be read
             if _SHELL_SET.match(k) or v is None or _unresolvable(v) or re.search(r"[*?\[~\s]", v):
@@ -1287,6 +1523,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         return [("rm-outside", "command nesting too deep to analyse")]
     cmd = _join_continued(cmd)
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
+    # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
+    # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
+    dry = _drop_data_heredocs(cmd)
+    for spawned in (x for src in _python_sources(cmd if _INTERP.search(dry) else dry) for x in _spawned_commands(src)):
+        found += check_bash(spawned, ctx, depth + 1)
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
@@ -1295,17 +1536,31 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     cmds = _split(_tokens(_lines(shell)))
     cwd, chain = ctx.cwd, []
     raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
-    outside, bare = _outside(shell, cmds, ctx)  # T-0175: what it inherits and can't change
+    # T-0330 review: ~ is $HOME, so once the command may set HOME a ~ in a value isn't the user's home any more
+    tilde = None if re.search(r"(?<![\w${])HOME\b", shell) else ctx.home
+    pre = _prefix_vars(shell, cmds, tilde)  # T-0183; also what a path-named command may expand (T-0331)
+    outside, bare = _outside(shell, cmds, ctx, pre)  # T-0175: what it inherits and can't change
     # VAR → literal (T-0151); rm trusts no inherited value but HOME, a write target any (its review)
     env = {k: v for k, v in outside.items() if k == "HOME"} if raw is not None and len(raw) == len(cmds) else None
-    (straight, and_chain), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where the shell may be (T-0175)
+    (straight, and_chain, mixed), cwds, lost, made = _top(shell), [ctx.cwd], [], set()  # where it may be (T-0175)
+    base = None  # T-0339: (cwds, lost, made) where the current &&-segment of a mixed list began, and its folders
     cdpath = bare is None or "CDPATH" in shell or bool(os.environ.get("CDPATH"))
-    fixed = _prefix_vars(shell, cmds) if env is None and bare is not None else {}  # T-0183: set once before the
+    fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
     for idx, c in enumerate(cmds):
+        nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
+        piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
+        in_chain = mixed and not piped and (c.op == "&&" or nxt_op == "&&")
+        if mixed and c.op not in ("&&", "|", "|&"):  # a new segment: the last one's chain may have stopped anywhere
+            if base:
+                cwds, lost = list(dict.fromkeys(base[0] + cwds)), list(dict.fromkeys(base[1] + lost))
+                made = base[2]
+            ops = [x.op for x in cmds[idx + 1:]]
+            seg = ops[:next((i for i, o in enumerate(ops) if o not in ("&&", "|", "|&")), len(ops))]
+            base = (cwds, lost, set(made)) if "&&" in seg else None
         if env is not None:
-            env = _track_vars(raw[idx], env)
+            env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
         if not c.piped:
@@ -1313,8 +1568,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         name = os.path.basename(argv[0]) if argv else ""
         args = argv[1:]
         if name == "mkdir" and "-p" in args:  # a folder this command makes takes a cd as surely as one that exists,
-            made.update(d for d in (os.path.normpath(_expand(a, ctx)) for a in args)  # when its nearest existing
-                        if os.path.isabs(d) and _makeable(d))                       # folder lets it be made (review)
+            made.update(d for d in (os.path.normpath(_expand(_with_vars(a, known), ctx)) for a in args)  # when its
+                        if os.path.isabs(d) and "$" not in d and _makeable(d))  # nearest existing folder lets it be made
         if name in ("cd", "pushd", "popd"):
             dirs = [a for a in args if a not in ("-P", "-L", "-e", "-@", "--")]
             if name == "cd" or "-n" not in dirs:  # pushd/popd -n change only the stack
@@ -1324,11 +1579,12 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                certain = and_chain or (straight and os.path.isabs(d) and (os.path.normpath(d) in made or (
-                    os.path.isdir(d) and os.access(d, os.X_OK))))
+                certain = not piped and (and_chain or in_chain or ((straight or mixed) and os.path.isabs(d) and (
+                    os.path.normpath(d) in made or (os.path.isdir(d) and os.access(d, os.X_OK)))))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
-        if _SHELLS.match(name) and "-c" in args and args.index("-c") + 1 < len(args):
-            inner = args[args.index("-c") + 1]
+                if base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
+                    base = (base[0] + cwds, base[1] + lost, base[2])
+        for inner in _shell_c(args) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
@@ -1350,7 +1606,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
-            if c.piped and any(_name(x.argv) in _FETCHERS for x in chain):
+            if c.piped and any(_name(x.argv) in _FETCHERS for x in chain) and not _reads_pipe_as_data(c, argv, cmds,
+                                                                                                    cwds):
                 found.append(("pipe-shell", f"downloaded content piped into {name}"))
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
@@ -1383,6 +1640,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+            if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
+                found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))

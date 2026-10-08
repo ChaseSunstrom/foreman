@@ -46,6 +46,16 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("T-0001", inbox)
         self.assertEqual([i["id"] for i in self.fm_json("state")["inbox"]], ["T-0001"])
 
+    def test_capture_keeps_a_mid_text_ref_and_records_refs_as_depends(self):  # T-0334
+        self.fm("capture", "first")
+        self.fm("capture", "fix the #T-0001 regression in send")
+        self.fm("capture", "#T-0001 follow-up: docs")
+        p = c.find_project(self.repo)
+        two, three = c.find_brief(p, "T-0002"), c.find_brief(p, "T-0003")
+        self.assertEqual(two.title, "Fix the T-0001 regression in send")
+        self.assertEqual(three.title, "Follow-up: docs")
+        self.assertEqual((two.meta["depends_on"], three.meta["depends_on"]), (["T-0001"], ["T-0001"]))
+
     def test_intake_block_creates_briefs_in_canonical_order(self):
         block = ("FEATURE: export CSV @src/reports\nFIX: login timeout\nCLEAN!: dedupe date helpers\n"
                  "PERF?: first paint 4s\nSECURITY: review upload\nCONTEXT: Django app\nDONE-WHEN: tests pass\n")
@@ -469,6 +479,42 @@ class OneCommandTask(ForemanTestCase):
         self.assertEqual((b.status, len(b.acceptance()), len(b.steps())), ("active", 1, 1))
 
 
+class DecideRows(ForemanTestCase):
+    def test_list_json_has_structured_rows(self):  # T-0341: the desktop app's Decisions tab
+        self.fm("decide", "use sqlite | for the cache", "--why", "one file, no server")
+        self.fm("decide", "ship without the review", "--why", "cap hit", "--kind", "costly")
+        rows = self.fm_json("decide", "--list")["rows"]
+        self.assertEqual([(r["kind"], r["text"], r["why"]) for r in rows],
+                         [(None, "use sqlite | for the cache", "one file, no server"),
+                          ("costly", "ship without the review", "cap hit")])
+        self.assertRegex(rows[0]["date"], r"^\d{4}-\d{2}-\d{2}$")
+        self.assertEqual(len(self.fm_json("decide", "--review")["rows"]), 1)
+
+
+class EditCriterion(ForemanTestCase):
+    def test_edit_sets_the_verify_tail_or_the_text_and_keeps_the_rest(self):
+        self.fm("task", "new", "A", "--type", "FIX", "--tier", "S", "--ac", "typo gone", "--ac", "old :: false")
+        self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "true")
+        self.fm("task", "ac", "T-0001", "edit", "2", "--verify", "grep -q x README")
+        self.fm("task", "ac", "T-0001", "edit", "2", "--text", "README says x")
+        b = c.find_brief(c.find_project(self.repo), "T-0001")
+        self.assertEqual(b.verify_cmds(), [(1, "true"), (2, "grep -q x README")])
+        self.assertIn("README says x", b.section("Acceptance criteria"))
+        self.assertNotIn("old", b.section("Acceptance criteria"))
+        p = self.fm("task", "ac", "T-0001", "edit", "1", "--verify", "typed: screenshot review")
+        self.assertIn("typed", p.stderr)  # a typed check isn't a command: finish would run it
+        self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "3", "--verify", "true", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("task", "ac", "T-0001", "edit", "1", check=False).returncode, 0)
+        log = c.find_brief(c.find_project(self.repo), "T-0001").section("Log")
+        self.assertIn("criterion 2 verify: `false` → `grep -q x README`", log)  # every edit leaves a visible trail
+        # T-0342: once a criterion has evidence its check is fixed: an edit could weaken a failing one until it passes
+        self.fm("task", "evidence", "T-0001", "--ac", "2", "--run", "false", check=False)
+        p = self.fm("task", "ac", "T-0001", "edit", "2", "--verify", "true", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("evidence", p.stderr)
+        self.assertIn("grep -q x README", c.find_brief(c.find_project(self.repo), "T-0001").section("Acceptance criteria"))
+
+
 class Checks(ForemanTestCase):
     def test_a_gate_flaky_again_and_again_fails(self):
         # final review: a racy bug that passes half the time mustn't keep passing as "flaky"
@@ -754,12 +800,18 @@ class RoundFiveWorkflow(ForemanTestCase):
         p0 = self.fm("task", "drop", "T-0002", "--done-in", "T-0001", check=False)
         self.assertEqual(p0.returncode, 2, "the host must have done work (evidence), or nothing was done anywhere")
         self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
-        out = self.fm("task", "drop", "T-0002", "--done-in", "T-0001").stdout
+        # T-0364: "clean up all docs, code, UI, settings, environment" closed inside a docs-and-dead-code task, and UI,
+        # settings and environment were never looked at: the user's words need a reason and travel to the host
+        p1 = self.fm("task", "drop", "T-0002", "--done-in", "T-0001", check=False)
+        self.assertEqual(p1.returncode, 2)
+        self.assertIn("reason", p1.stderr)
+        out = self.fm("task", "drop", "T-0002", "covered by the export step", "--done-in", "T-0001").stdout
         self.assertIn("done in T-0001", out)
         p = c.find_project(self.repo)
         folded, host = c.find_brief(p, "T-0002"), c.find_brief(p, "T-0001")
         self.assertEqual((folded.status, folded.meta.get("done_in")), ("done", "T-0001"))
         self.assertIn("includes T-0002", host.section("Log"))
+        self.assertIn("export as CSV", host.section("Raw request"), "the host's intent audit sees every folded ask")
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0999", check=False).returncode, 0)
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0001", check=False).returncode, 0)
         # work that was started keeps its own gates: --done-in isn't a way around evidence and audits
