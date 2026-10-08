@@ -800,12 +800,18 @@ class RoundFiveWorkflow(ForemanTestCase):
         p0 = self.fm("task", "drop", "T-0002", "--done-in", "T-0001", check=False)
         self.assertEqual(p0.returncode, 2, "the host must have done work (evidence), or nothing was done anywhere")
         self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
-        out = self.fm("task", "drop", "T-0002", "--done-in", "T-0001").stdout
+        # T-0364: "clean up all docs, code, UI, settings, environment" closed inside a docs-and-dead-code task, and UI,
+        # settings and environment were never looked at: the user's words need a reason and travel to the host
+        p1 = self.fm("task", "drop", "T-0002", "--done-in", "T-0001", check=False)
+        self.assertEqual(p1.returncode, 2)
+        self.assertIn("reason", p1.stderr)
+        out = self.fm("task", "drop", "T-0002", "covered by the export step", "--done-in", "T-0001").stdout
         self.assertIn("done in T-0001", out)
         p = c.find_project(self.repo)
         folded, host = c.find_brief(p, "T-0002"), c.find_brief(p, "T-0001")
         self.assertEqual((folded.status, folded.meta.get("done_in")), ("done", "T-0001"))
         self.assertIn("includes T-0002", host.section("Log"))
+        self.assertIn("export as CSV", host.section("Raw request"), "the host's intent audit sees every folded ask")
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0999", check=False).returncode, 0)
         self.assertNotEqual(self.fm("task", "drop", "T-0001", "--done-in", "T-0001", check=False).returncode, 0)
         # work that was started keeps its own gates: --done-in isn't a way around evidence and audits

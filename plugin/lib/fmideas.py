@@ -15,11 +15,13 @@ import fmbudget
 import fmcore as c
 import fmrecall
 
-LENSES = ["user value", "unspoken needs", "delight", "reliability", "performance", "security and safety", "simplicity",
-          "bold bets"]
+LENSES = ["user value", "unspoken needs", "delight", "capability map", "approaches", "reliability", "performance",
+          "security and safety", "simplicity", "bold bets"]
 PACK_WORDS = 2000
 # T-0099: unspoken needs and delight by default (the user wanted what they can't put into words, and more creative ideas)
-DEFAULT_LENSES = ["user value", "unspoken needs", "delight", "reliability", "simplicity", "bold bets"]
+# T-0364: capability map (everything a complete version has) and approaches (every way to solve it): breadth
+DEFAULT_LENSES = ["user value", "unspoken needs", "delight", "capability map", "approaches", "reliability", "simplicity",
+                  "bold bets"]
 PROMPT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                       "skills", "brainstorm", "references", "ideas-prompt.md")
 # No built-in tools, no MCP servers, and no user settings (so other plugins' hooks and prompts don't bias the lens).
@@ -103,7 +105,7 @@ def run_children(jobs, timeout, feature):
 def child_prompt(lens, pack):
     """The shared pack first, the lens last (T-0267): siblings and later rounds then share a prefix the prompt cache
     can reuse."""
-    return f"Context pack:\n{pack}\n\nLens: {lens}\n\nReturn 8-12 ideas in the required format, at least 3 of them wild."
+    return f"Context pack:\n{pack}\n\nLens: {lens}\n\nReturn 10-15 ideas in the required format, at least 3 of them wild."
 
 
 def user_voice(p, n=20):

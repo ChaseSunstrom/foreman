@@ -786,6 +786,12 @@ def task_done_in(p, args):
         if h.status in ("captured", "dropped") or not h.evidence():
             raise c.PolicyError(f"{h.id} hasn't done any work yet ({h.status}, no evidence): --done-in points at the "
                                 f"task that really did it")
+        if b.meta.get("source") == "user" and not args.reason:
+            raise c.PolicyError(f"{b.id} is the user's own request: give the reason (how {h.id} covered every part of "
+                                f"it), or plan it as its own task")
+        if b.meta.get("source") == "user":  # T-0364: the host's intent audit then checks the folded ask too
+            ask = b.section("Raw request").strip() or f"> {b.title}"
+            h.set_section("Raw request", h.section("Raw request").rstrip() + f"\n\nAlso asked ({b.id}, done here):\n{ask}")
         b.meta["status"], b.meta["done_in"] = "done", h.id
         b.append_log(f"done in {h.id}" + (f": {args.reason}" if args.reason else ""))
         h.append_log(f"includes {b.id}: {b.title}")

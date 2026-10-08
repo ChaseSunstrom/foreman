@@ -15,6 +15,7 @@ import time
 import fmcore as c
 
 DEFAULTS = {"day": 15.0, "run": 6.0}  # USD per day, USD per command
+PACE_FLOOR = 75  # weekly usage % below which subagents never wait for the pace (T-0364)
 WEIGHTS = {"input_tokens": 1, "cache_creation_input_tokens": 1.25, "cache_read_input_tokens": 0.1, "output_tokens": 5}
 
 
@@ -121,12 +122,13 @@ def usage_high():
 
 def subagent_pause():
     """Why subagents should wait, or None (T-0320): the 5-hour window at 90%+, or weekly usage ahead of the week's
-    pace — more than 10 points past the share of the week gone by, and never past 90%. Unknown usage never pauses."""
+    pace — more than 10 points past the share of the week gone by, never before 75% (the user, T-0364: "the budget
+    stuff shouldn't matter until 75% usage") and never past 90%. Unknown usage never pauses."""
     u = rate_limits()
     if u.get("five_hour", 0) >= 90:
         return f"5-hour usage {u['five_hour']:g}%"
     week, gone = u.get("seven_day"), u.get("week_gone")
-    if week is not None and week >= min(90, 100 * gone + 10 if gone is not None else 80):
+    if week is not None and week >= max(PACE_FLOOR, min(90, 100 * gone + 10 if gone is not None else 80)):
         return f"weekly usage {week:g}%" + (f" with {100 * gone:.0f}% of the week gone" if gone is not None else "")
     return None
 
