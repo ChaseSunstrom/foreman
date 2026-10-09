@@ -1873,10 +1873,11 @@ def vetoes(p):
         return []
 
 
-def add_veto(p, text):
-    """Record the veto in a correction (the newest VETOES_KEEP, one per set of key words); None when it has none."""
-    words = []
-    for m in _VETO.finditer(text or ""):  # each clause on its own: "I don't think so, never push" is about pushing
+def add_veto(p, text, words=None):
+    """Record the veto in a correction (the newest VETOES_KEEP, one per set of key words); None when it has none.
+    words: the key words already known (T-0439: a proposal from repeated steers the user said yes to)."""
+    words = list(words or [])
+    for m in [] if words else _VETO.finditer(text or ""):  # each clause alone: "I don't think so, never push" is pushing
         found = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(1).lower()) if w not in _VETO_STOP]
         if found and found[0] not in _NOT_A_VETO:
             words = found[:3]
@@ -2084,7 +2085,22 @@ def next_for(p, briefs=None):
         action += (f" · revisit decision {date}: {decision[:100]} ({why}"
                    + (f"; {len(fired) - 1} more" if len(fired) > 1 else "") + ") — still holds: fm decide \"<it>\" "
                    f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
+    d = read_meta(p).get("ask_digest")
+    if isinstance(d, dict) and d.get("asks"):  # T-0461
+        n = len(d["asks"])
+        action += (f" · ask digest past its deadline: fm decide --digest applies the {n} default(s)" if digest_due(d)
+                   else f" · ask digest: {n} ask(s) wait (defaults at {d.get('deadline')}); before you end the turn put "
+                        f"them to the user in one AskUserQuestion (fm decide --digest)")
     return b, st, action
+
+
+def digest_due(d):
+    """T-0461: the ask digest has asks and its deadline passed. An unreadable deadline isn't due (T-0671 review: it
+    applied every default at once); the next ask resets it."""
+    if not isinstance(d, dict) or not d.get("asks"):
+        return False
+    t = parse_ts(d.get("deadline"))
+    return bool(t) and t <= datetime.datetime.now(datetime.timezone.utc)
 
 
 def _next_for(p, briefs=None):
