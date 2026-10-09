@@ -2085,7 +2085,7 @@ def _all_parsers(parser):
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
-    ("Every task", "next capture intake batch task focus check gates checkpoint resume queue relate state log ask decide"),
+    ("Every task", "next capture intake batch task focus check gates checkpoint resume queue relate state status log ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
@@ -2122,7 +2122,8 @@ def build_parser():
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
 
-    s = add("state", cmd_state, help="print STATE")
+    s = add("state", cmd_state, help="print STATE (also fm status: the word /foreman:status uses, T-0393)",
+            aliases=["status"])
     s.add_argument("--brief", action="store_true")
     s.add_argument("--line", action="store_true")
 
