@@ -53,6 +53,19 @@ class Friction(ForemanTestCase):
         self.assertIn("3× Read: File does not exist.", out)
         self.assertNotIn("wait on background work", out)
 
+    def test_slow_gate_ignores_reused_passes(self):
+        # T-0424: a reused pass records 0.0 s; counting it dragged the median to 0 ("12s vs usual 0s")
+        import fmcore as c
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            for gate, times in (("fm replay", [10, 0.0, 0.0, 0.0, 11, 12]), ("pytest", [10, 0.0, 0.0, 0.0, 10, 30])):
+                for s in times:
+                    f.write(json.dumps({"ts": c.now(), "event": "check_run",
+                                        "data": {"results": [{"cmd": gate, "exit": 0, "s": s}]}}) + "\n")
+        out = self.fm("friction").stdout
+        self.assertNotIn("fm replay", out)  # 12 s against its real runs' 11 s isn't slow
+        self.assertIn("pytest: 30s vs usual 10s", out)
+
     def test_fm_next_calls_for_a_pass_every_n_closed_tasks_at_a_task_boundary(self):
         nxt = lambda: self.fm("next").stdout
         self.close_one(1)
