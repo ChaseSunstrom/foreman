@@ -47,6 +47,24 @@ class Brief(_Tasks):
         self.assertIn("foreman:fm-builder", res["agent"])
         self.assertIn("builder", self.fm("task", "show", tid).stdout)
 
+    def test_the_brief_names_its_base_and_the_isolation_rule(self):
+        # T-0379 (JARVIS 2026-10-09): Claude Code makes the worktree from the default branch, so a builder can start on
+        # stale code; and its isolation refuses make/gradle/"too complex" commands, which builders retried again and again
+        tid = self.task("Based")
+        brief = read_text(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"])
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertIn(head, brief)
+        self.assertIn("merge --ff-only", brief)
+        self.assertIn("isolated in the worktree", brief)
+        self.assertIn("main thread", brief)
+
+    def test_builder_model_follows_the_tier(self):
+        # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
+        # task's on the main model; the main thread still reviews, merges and re-verifies
+        small, mid = self.task("Small one"), self.task("Mid one", tier="M")
+        self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", small, "--json").stdout)["agent"])
+        self.assertNotIn("model:", json.loads(self.fm("lane", "brief", mid, "--json").stdout)["agent"])
+
     def test_l_tasks_held_tasks_and_a_third_builder_are_refused(self):
         big = self.task("Rewrite the engine", tier="L")
         self.assertNotEqual(self.fm("lane", "brief", big, check=False).returncode, 0)
@@ -123,6 +141,34 @@ class Contract(_Tasks):
         self.assertEqual(verdict("Bash", {"command": "echo x > /tmp/scratch.txt 2>/dev/null"}), "ok")
         main = self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": main_file, "content": "x"}})
         self.assertNotIn("blocked", main.stdout)  # the main thread isn't confined
+
+    def test_lane_merge_and_cache_only_removal(self):
+        # T-0377: on Foreman's own repo the guard refuses `git merge` (a tree write over core), so a reviewed branch
+        # lands through fm, each file it changes judged as its task's write; and python caches don't hold a lane
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write("__pycache__/\n")
+        tid, wt = self.lane("Merge me")
+        with open(os.path.join(wt, "new.py"), "w") as f:
+            f.write("x = 1\n")
+        git(wt, "add", "new.py")
+        git(wt, "commit", "-qm", "builder work")
+        os.makedirs(os.path.join(wt, "__pycache__"))
+        open(os.path.join(wt, "__pycache__", "new.cpython-314.pyc"), "w").close()
+        self.fm("lane", "merge", tid)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "new.py")))
+        self.assertIn(f"Merge {tid}", git(self.repo, "log", "-1", "--format=%s"))
+        self.fm("lane", "rm", tid)  # only caches were left: they go with the folder
+        self.assertFalse(os.path.isdir(wt))
+        sneaky, wt2 = self.lane("Sneaky")
+        os.makedirs(os.path.join(wt2, "config"))
+        with open(os.path.join(wt2, "config", "secrets.yaml"), "w") as f:
+            f.write("k: v\n")
+        git(wt2, "add", "config")
+        git(wt2, "commit", "-qm", "writes a secret")
+        p = self.fm("lane", "merge", sneaky, check=False)
+        self.assertNotEqual(p.returncode, 0, "fm is no way around the guard")
+        self.assertIn("credentials", p.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "config", "secrets.yaml")))
 
     def test_rm_deletes_only_the_lanes_own_branch(self):
         tid, wt = self.lane("Branches")
