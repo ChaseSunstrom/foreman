@@ -2077,6 +2077,19 @@ def cmd_check(args):
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
                                               for r in rows) or "no checks (fm check add '<cmd>')")
         return 0 if all(r["passed"] == n for r in rows) else 1
+    if args.action == "ambient":  # T-0705
+        if args.words[:1] == ["run"]:  # the detached run an edit starts
+            import fmambient
+            return fmambient.run(p) or 0
+        if args.words[:1] not in (["on"], ["off"]):
+            raise UsageError("fm check ambient on|off")
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta["ambient"] = args.words[0] == "on"
+            c.write_meta(p, meta)
+        return out(args, {"ambient": meta["ambient"]},
+                   "Ambient tests on: after each edit the affected tests run in the background; you hear only when "
+                   "they flip." if meta["ambient"] else "Ambient tests off.")
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -2408,9 +2421,11 @@ def _cached_pass(p, checks, tree):
     return None
 
 
-def _check_affected(p, args):
-    """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
+def affected(p):
+    """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
+    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
     import fmmap
+    import shlex
     act = c.active_brief(c.load_briefs(p), p.lane)
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
@@ -2419,12 +2434,17 @@ def _check_affected(p, args):
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
+    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
+        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests)) if tests else None
+    return cmd, tests, changed
+
+
+def _check_affected(p, args):
+    """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
+    cmd, tests, changed = affected(p)
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
-    import shlex
-    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
-        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests))
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed)}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
         f"{c.run_result(code, output)}\n(the full gates still decide before commit and done: fm check)")
@@ -3169,7 +3189,8 @@ def build_parser():
     s.add_argument("--bisect", action="store_true", help="find the commit that broke each failing check (git bisect in "
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
-    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected"])
+    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
+                                                                          "ambient"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension)")

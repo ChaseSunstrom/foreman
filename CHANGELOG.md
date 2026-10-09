@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Ambient verification, first slice (T-0705). `fm check ambient on` (off by default): after each edit, the affected tests (the `fm check --affected` selection) run in a detached process, out of the model's turns. The model hears only a flip, passing tests that now fail or failing ones that pass again, as one note on its next tool call; a passing run is the current step's evidence. Skipped on a strained host. Replaying 10 seeded regressions in a fixture repo: 10/10 caught, reported about 0.17 s after the edit, with no test command run by the model.
 - Zero-call bookkeeping, first slice (T-0704). Over 14 days, 460 tasks closed with 618 `fm task evidence` calls that re-ran a command the session had just run, and 135 refused finishes retried one gap at a time.
   - A passing command run through the same runner as one of the task's verify commands or a project gate (e.g. `python3 plugin/tests/run.py -k X`, `npm test`, `cargo test`) records itself as the current step's evidence. Piped or `;`-chained commands don't count (their exit isn't the check's), nor do steps about failing or reproducing.
   - `fm task finish` checks lenses, docs impact, the lesson and step evidence before running anything and names every gap in one refusal.
