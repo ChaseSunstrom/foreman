@@ -1,7 +1,7 @@
 # Planning: passes, tiers, brief, rubric (reference)
 
 ## Passes
-- **R1 Expand:** interpretation, assumptions with confidence, testable acceptance criteria, scope paths, non-goals.
+- **R1 Expand:** interpretation, assumptions with confidence, testable acceptance criteria, scope paths, non-goals. M/L: flip the two assumptions the plan leans on most (what if each were false?) and note what would change; a flip that changes the approach is a question or a probe before building (T-0627).
 - **R2 Ground:** read the real code, run the real commands, correct R1 against reality. M/L: list every approach worth weighing (three or more, including reuse of an existing tool and one unconventional), choose one, say why. A FEATURE M/L also gets a **capability sweep**: what a complete, best-in-class version in this space does (name the comparable tools); the expected ones go in scope, the rest are captured (`fm capture --source followup`) so the user doesn't have to ask for them one by one. Broad or exhaustive requests: `fm ideas --pack <file> --lens 'capability map' --lens approaches` for the sweep.
 - **R3 Anticipate:** "If I ship this and the user reviews it, what are the three most likely follow-ups or complaints?" Each is either an implied requirement the user would obviously expect (in scope) or an adjacent idea (`fm capture --source followup`, not built). Implied requirements stay within what matters: validation at trust boundaries, data-loss handling, security, accessibility, explicit requests, tests and evidence.
 - **R4 Compile:** the brief's Execution prompt, executable by a fresh session with no history. Regenerate it at every re-plan checkpoint.
