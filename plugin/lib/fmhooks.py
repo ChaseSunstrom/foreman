@@ -19,6 +19,7 @@ PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
 OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
+LONG_JOB_S = 20 * 60    # T-0415: a background job running longer no longer holds the drive
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
@@ -1473,7 +1474,12 @@ def _drive(p, sd, briefs, pl, g):
         return None  # the user asked for planning only this turn
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(_running(sid))
-    if running:  # background work is out; its completion notification wakes the session
+    # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
+    now, since = time.time(), d.setdefault("since", {})
+    d["since"] = since = {k: since.get(k, now) for k in running}
+    running = [k for k in running if now - since[k] < LONG_JOB_S]
+    if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
+        # the jobs don't hold back starting the next one)
         first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
             _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
@@ -1497,6 +1503,12 @@ def _drive(p, sd, briefs, pl, g):
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        if not more and full:  # T-0415: nothing else queued: find the next work rather than wait on these jobs
+            return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
+                    f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "
+                    f"desktop and phone width, or every command; the main flows; the service logs), fm capture each "
+                    f"defect or gap you find, then plan and work the first. Its notification still wakes you for "
+                    f"{work['id']}.")
         return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); its notification wakes "
                 f"you, so don't sleep or poll. Meanwhile do what doesn't need its result: the next step's test, the "
                 f"audit lenses on the current diff (fm audit prep), docs, "

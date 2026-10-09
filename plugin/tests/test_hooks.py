@@ -1228,6 +1228,35 @@ class Stop(HookCase):
         self.assertIsNone(done.get("decision"), "candidates used up: now it may wait")
         self.assertIn("a1", done.get("systemMessage", ""))
 
+    def test_long_jobs_and_an_empty_queue_never_idle(self):
+        # T-0415 (JARVIS 2026-10-09, the user: "it has been sitting idle still again"): a workflow and a shell that ran
+        # for hours held every Stop in the wait branch, and with nothing else queued each turn ended to wait on CI
+        self.fm("init")
+        self.fm("autonomy", "full")
+        queued = self.task("Queued work", focus=False)
+        ci = {"id": "bci1", "type": "shell", "status": "running", "description": "watch the pipeline"}
+
+        def stop(*jobs):
+            return parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on CI.",
+                                            "session_id": "sess-1", "background_tasks": list(jobs)}))
+        r = stop(ci)
+        self.assertEqual(r.get("decision"), "block", "no active task: the jobs don't hold the next one back")
+        self.assertIn(f"fm focus {queued}", r["reason"])
+        self.fm("focus", queued)
+        r = stop(ci)
+        self.assertIn("nothing else is queued", r["reason"])  # full autonomy: find the next work, don't wait
+        self.assertIn("end to end", r["reason"])
+        self.assertIsNone(stop(ci).get("decision"), "then it may wait on the fresh job")
+        gate = os.path.join(c.find_project(self.repo).dir, "gate.json")
+        with open(gate) as f:
+            g = json.load(f)
+        g["drive"]["sess-1"]["since"]["bci1"] -= 21 * 60  # running for 20+ min: a service, not a wait
+        with open(gate, "w") as f:
+            json.dump(g, f)
+        r = stop(ci)
+        self.assertEqual(r.get("decision"), "block")
+        self.assertIn(f"{queued} FIX step 1/2", r["reason"])
+
     def offer_for(self, tid):
         return next((json.dumps(e) for e in reversed(self.events()) if e.get("kind") == "drive_offer"
                      and e.get("offer") == tid), "")
