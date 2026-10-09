@@ -317,6 +317,40 @@ def check_rules_symlink(plugin=PLUGIN):
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
 
+def _version(root):
+    return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
+
+
+def check_running_code(ledger, installed, plugin=PLUGIN):
+    """T-0391: the Foreman code this project's last session ran (session_start records its plugin root) against the
+    one installed (or this copy, without an install record). A session keeps the folder it started with, so a fix
+    copied anywhere else never reaches it (JARVIS ran 1.2.3 from its Folder marketplace while 1.2.4 sat in caches)."""
+    root = None
+    try:
+        with open(ledger, "rb") as f:
+            f.seek(max(0, os.path.getsize(ledger) - 2_000_000))
+            for line in f.read().decode("utf-8", "replace").splitlines():
+                if '"session_start"' in line:
+                    try:
+                        root = (json.loads(line).get("data") or {}).get("root") or root
+                    except ValueError:
+                        continue
+    except OSError:
+        pass
+    entry = next(iter(((_load_json(installed) or {}).get("plugins") or {}).get("foreman@foreman") or []), None)
+    num = lambda v: tuple(int(x) for x in re.findall(r"\d+", v)[:3])  # noqa: E731
+    # the newest Foreman here: the installed copy or this one (a dev checkout runs ahead of its install record)
+    want_root = max(filter(None, [(entry or {}).get("installPath"), plugin]), key=lambda r: num(_version(r)))
+    want = _version(want_root)
+    if not root:
+        return Result("running code", "PASS", f"newest Foreman here {want} ({want_root}); no session recorded its root yet")
+    ran = _version(root)
+    if num(ran) < num(want):
+        return Result("running code", "WARN", f"the last session ran Foreman {ran} from {root}, but {want} is at "
+                                              f"{want_root}: restart that session, or put the fix in {root}")
+    return Result("running code", "PASS", f"sessions run Foreman {ran} from {root}")
+
+
 def check_python(v=sys.version_info[:3], refresh=None, child=False):
     """T-0319: fm and every hook start on the python3 on PATH. Before 3.12.7 (and in 3.13.0) argparse drops
     `fm task evidence ID --ac N CMD RESULT`; install.sh installs a newer one, and T-0368 re-runs Foreman under a
@@ -704,6 +738,9 @@ def run_all(full=False):
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
                           or f"{len(projects)} project(s) OK"))
+    here = c.find_project(os.getcwd())
+    results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
+                                      os.path.join(claude, "plugins", "installed_plugins.json")))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),

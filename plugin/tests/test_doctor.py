@@ -162,6 +162,29 @@ class Checks(unittest.TestCase):
         self.assertIn("gone.md", d.check_file_map(home, master2).detail)
         self.assertEqual(d.check_file_map(home, os.path.join(home, "nope.md")).status, "FAIL")
 
+    def test_running_code(self):
+        # T-0391: a JARVIS session ran 1.2.3 from its Folder marketplace clone while 1.2.4 was synced into cache
+        # folders it never loads; the root and version each session ran must be visible, and a mismatch flagged
+        for root, ver in (("old", "1.2.3"), ("new", "1.2.4")):
+            self.write(f"{root}/.claude-plugin/plugin.json", json.dumps({"name": "foreman", "version": ver}))
+        installed = self.write("installed_plugins.json", json.dumps({"version": 2, "plugins": {"foreman@foreman": [
+            {"installPath": os.path.join(self.t, "new"), "version": "1.2.4"}]}}))
+        ledger = os.path.join(self.t, "ledger.jsonl")
+        with open(ledger, "w") as f:
+            for root in ("new", "old"):  # the newest session_start counts
+                f.write(json.dumps({"event": "session_start", "data": {"root": os.path.join(self.t, root)}}) + "\n")
+        r = d.check_running_code(ledger, installed)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("1.2.3", r.detail)
+        self.assertIn(os.path.join(self.t, "old"), r.detail)
+        with open(ledger, "a") as f:
+            f.write(json.dumps({"event": "session_start", "data": {"root": os.path.join(self.t, "new")}}) + "\n")
+        self.assertEqual(d.check_running_code(ledger, installed).status, "PASS")
+        self.assertEqual(d.check_running_code(os.path.join(self.t, "none.jsonl"), installed).status, "PASS")
+        stale = self.write("stale.json", json.dumps({"plugins": {"foreman@foreman": [
+            {"installPath": os.path.join(self.t, "old")}]}}))  # a dev checkout newer than the install record
+        self.assertEqual(d.check_running_code(ledger, stale, plugin=os.path.join(self.t, "old")).status, "PASS")
+
     def test_git_hygiene(self):
         repo = git_repo(self.t, "r")
         self.write("r/.gitignore", "state/\n")
