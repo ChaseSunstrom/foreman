@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- UI and motion (T-0681 milestone: T-0473, T-0472, T-0500).
+  - A task's close-out toast carries its grade and the lenses it closed with (`✔ T-0123 done · strong · adversary, edge`), from new `title`, `grade` and `lenses` fields on `fm ui --json`'s closed tasks.
+  - The band shows one quiet glyph only when something is amber or red: a failing gate, usage ahead of pace, blocked tasks or hook errors. They come from `fm ui --json`'s new `signals`.
+  - A guard refusal of a long command quotes the part that matched, even when the guard names `~/x` as `/home/…/x`.
 - Self-improvement and learning, first versions (T-0680 milestone: T-0499, T-0454, T-0470, T-0471).
   - The hooks log every note they put into context (hook, a short kind, its characters) and every tripwire lesson they show.
   - The friction digest turns that into a note budget per kind, the notes repeated 3+ times (candidates for a hard check instead of prose) and how often each lesson was shown.

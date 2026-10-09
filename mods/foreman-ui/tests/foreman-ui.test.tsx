@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { activityCells, agentColor, C, changedLines, clawd, clean, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tint, tone, toolFace } from '../hooks/kit'
-import { askNote, guardReason, lastLine, readSummary, summaryText, toasts } from '../hooks/register'
+import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -194,6 +194,20 @@ test('toasts: a step done, a task closed, a new approval; nothing on the first s
   ])
   expect(toasts(after, after)).toEqual([])
   // T-0001 wasn't open before (an old closed task edited again): no toast for it
+})
+
+test('close-out card: the done toast carries the grade and the lenses (T-0473)', () => {
+  expect(closeCard({ grade: 'strong', lenses: ['adversary', 'edge'] })).toBe(' · strong · adversary, edge')
+  expect(closeCard({})).toBe('')
+  const after: FmView = { ...VIEW, queue: VIEW.queue!.filter(q => q.id !== 'T-0009'),
+    closed: [{ id: 'T-0009', status: 'done', grade: 'ok', lenses: ['self'] }] }
+  expect(toasts(VIEW, after)).toContain('✔ T-0009 done · ok · self')
+})
+
+test('signal glyph: quiet when calm, the worst first with a count (T-0472)', () => {
+  expect(signalLine({ ...VIEW, signals: [] })).toBeNull()
+  expect(signalLine({ ...VIEW, signals: [{ level: 'amber', text: '2 blocked' }, { level: 'red', text: 'gate failing: pytest' }] }))
+    .toEqual({ level: 'red', text: 'gate failing: pytest +1' })
 })
 
 test('guard refusals are recognised by their Foreman prefix only', () => {

@@ -57,7 +57,8 @@ export type FmView = {
   inbox?: FmItem[]
   inbox_total?: number
   approvals?: FmApproval[]
-  closed?: { id: string; status: string }[]
+  closed?: { id: string; status: string; title?: string; grade?: string | null; lenses?: string[] }[] // T-0473
+  signals?: { level: 'red' | 'amber'; text: string }[] // T-0472: shown as one glyph only when any
   recent?: string[]
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
