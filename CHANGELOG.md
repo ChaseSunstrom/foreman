@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A data-reading `curl … | python3 -c …` is judged only by what runs before it (T-0414, from JARVIS, refused four times in one session for `…; git log; git fetch` and `T=$(grep …); API=…; …`). Commands after python's pipeline can't change what it does, so they no longer count. A plain assignment before it counts as data when the name isn't in the environment and isn't one python, its loader or the shell reads (`PYTHON*`, `LD_*`, `PATH`, `HOME`, `IFS` …). A name it sets may be expanded only if its value is a plain word. A bare `&` anywhere still refuses, as do python inside `( )` with a redirect or pipe on the group, a quoted `$( )` or backtick, `printf -v`, and a substitution in a heredoc body (the last three slipped through before). Real bash checks the rows.
 
 ## 1.2.13 — 2026-10-09
 - The drive no longer lets a session idle behind long-lived jobs or an empty queue (T-0415; the user, watching JARVIS: "it has been sitting idle still again"). From 09:34 to 12:52 JARVIS waited 10–46 minutes at a time. A workflow and a shell that ran for hours kept every Stop in "wait for background work", and with nothing else queued each turn ended to wait on a CI pipeline. Three changes fix this. A job running for 20 minutes or more no longer holds the drive, since it is a service, not something to wait for. With no active task, running jobs don't hold back the next one. In full autonomy with nothing else queued, the drive no longer says to wait: check the product end to end as its user uses it, capture each defect, then work the first.

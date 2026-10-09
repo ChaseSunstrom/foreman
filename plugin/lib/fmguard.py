@@ -108,9 +108,10 @@ def _hint(detail):
     if "unresolvable target" in detail:
         return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
     if re.fullmatch(r"downloaded content piped into python[0-9.]*", detail):  # T-0395
-        return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every other "
-                "command on the line is a plain data tool that writes no file (curl -s, jq, head, tail, sleep): run a "
-                "program that writes files, or a redirect, as its own command.")
+        return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every command "
+                "before it, or after it in its pipeline, is a plain data tool that writes no file (curl -s, jq, head, "
+                "tail, sleep) or sets a new name (T=…), and no & runs anything beside it: run a program that writes "
+                "files, or a redirect, as its own command or after python's pipeline (; git log).")
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
@@ -377,9 +378,10 @@ def classify_write(path, ctx, real=True):
 # ---------------------------------------------------------------- shell parsing
 
 class Cmd:
-    def __init__(self, argv, redirs, piped, procsub=False, op=""):
+    def __init__(self, argv, redirs, piped, procsub=False, op="", depth=0):
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
         self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
+        self.depth = depth  # T-0414: the ( it sits inside, unclosed: a subshell, $( ) or <( ) (negative: a stray ))
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -532,14 +534,16 @@ def _tokens(cmd):
 
 
 def _split(tokens):
-    cmds, cur = [], Cmd([], [], False)
+    cmds, cur, depth = [], Cmd([], [], False), 0
     i = 0
     while i < len(tokens):
         t = tokens[i]
+        if re.fullmatch(r"[;&|()<>]+", t):  # every punctuation run, even one read below as a word (<(( …)
+            depth += t.count("(") - t.count(")")
         if t in ("<(", ">("):
             cur.procsub = True
             cmds.append(cur)
-            cur = Cmd([], [], False)
+            cur = Cmd([], [], False, depth=depth)
             i += 1
             continue
         if re.fullmatch(r"[;&|()]+", t) and not re.fullmatch(r"&>+", t):
@@ -549,7 +553,7 @@ def _split(tokens):
                 continue
             if not empty:
                 cmds.append(cur)
-            cur = Cmd([], [], t in ("|", "|&"), op=t)
+            cur = Cmd([], [], t in ("|", "|&"), op=t, depth=depth)
             i += 1
             continue
         if re.fullmatch(r"[<>&]+\|?", t):
@@ -558,7 +562,8 @@ def _split(tokens):
             if t == "<" and nxt == "(":
                 cur.procsub = True
                 cmds.append(cur)
-                cur = Cmd([], [], False)
+                depth += 1
+                cur = Cmd([], [], False, depth=depth)
                 i += 2
                 continue
             if t.endswith("&") and re.fullmatch(r"\d+|-", nxt):
@@ -1227,16 +1232,28 @@ _CURL_SAFE = re.compile(r"-[sSLfkiIv]*m\d+(?:\.\d+)?|-[sSLfkiIv]+|--(?:silent|sh
                         r"include|head|verbose|(?:max-time|connect-timeout)=\d+(?:\.\d+)?)")
 _CURL_TIMES = re.compile(r"-[sSLfkiIv]*m|--max-time|--connect-timeout")  # T-0397: take a number next
 _WGET_SAFE = {"-q", "--quiet", "-nv"}
+_RUNS = re.compile(r"\$\(|`|\$\{[^}]*=")  # T-0414: a word that runs a command or sets a name as it expands
+_REACHES_PYTHON = re.compile(r"PYTHON\w*|LD_\w*|PATH|HOME|ENV|BASH_ENV|IFS")  # read by python, its loader or the shell
 
 
 def _writes_nothing(x):
     """T-0344 review: a command beside the python that can't create a file python would then import: no output
     redirect, and curl or wget only with flags that keep their download on stdout (any other flag, -o/-O, a config
-    or a cookie jar, voids it); every other data tool writes nowhere but stdout."""
+    or a cookie jar, voids it); every other data tool writes nowhere but stdout. T-0414: no word with a substitution
+    left in it (a quoted "$( )" or `…` runs a command _split doesn't see; an unquoted $( ) is a command of its own,
+    checked here too) and no printf -v; a command of NAME=value words only sets names, each absent from the
+    environment (so not exported to python) and none that python, its loader or the shell reads (_REACHES_PYTHON)."""
+    if x.redirs or any(_RUNS.search(w) for w in x.argv):
+        return False
+    sets = [_ASSIGN.match(w) for w in x.argv]
+    if x.argv and all(sets):
+        return not any(m.group(1) in os.environ or _REACHES_PYTHON.fullmatch(m.group(1)) for m in sets)
     a, _ = _strip_wrappers(x.argv)
-    if x.redirs or x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS:
+    if x.argv != a or not a or os.path.basename(a[0]) not in _DATA_TOOLS:
         return False
     name, args = os.path.basename(a[0]), a[1:]
+    if name == "printf" and _setter(name, args):
+        return False
     if name == "curl":  # value flags: a header or agent, a -w format (not %output{file}), -o only to /dev/null
         i = 0
         while i < len(args):
@@ -1288,18 +1305,37 @@ def _shadowed(cwds, mods):
     return False
 
 
-def _reads_pipe_as_data(c, argv, cmds, cwds):
+def _reads_pipe_as_data(c, argv, cmds, cwds, cmd):
     """T-0344: `curl … | python3 -c CODE` reads the download as data when CODE is proved (_open_targets: pure modules,
     nothing dynamic, nothing written) and nothing makes python read stdin as code. -c comes first (every word after
     CODE is sys.argv, so no -i before it); python runs bare and every other command is a plain data tool that writes no
-    file (_writes_nothing), so no assignment, env, export or eval can set PYTHONINSPECT (its review: PYTH""ONINSPECT=1)
-    and no module can appear before python starts; none is inherited; and nothing in the folder it runs in shadows a
-    module it may import (_shadowed: python -c searches that folder first)."""
+    file or a plain assignment of a name python can't see (_writes_nothing), so no env, export or eval can set
+    PYTHONINSPECT (its review: PYTH""ONINSPECT=1) and no module can appear before python starts; none is inherited; and
+    nothing in the folder it runs in shadows a module it may import (_shadowed: python -c searches that folder first).
+    T-0414: "every other" is every command up to the end of python's pipeline when python sits outside every ( ) (a
+    group's redirect or pipe is written after python but opens before it or runs beside it); what runs after python
+    exits can't change it. A bare & refuses outright (it runs a command beside python, and `&</dev/null x` hides x
+    from _split), as does a substitution in a live heredoc body. A name set here may be read only where its every value
+    is a plain word: no space, glob, quote, $ or leading -, so it can't split into flags or close a string in CODE."""
     name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
     if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and not c.redirs and len(args) >= 2
             and args[0] == "-c"):
         return False
-    if not all(_writes_nothing(x) for x in cmds if x is not c):
+    shell = _mask_quotes(_strip_heredocs(cmd))
+    if re.search(r"(?<![&<>|])&(?![&>])", shell) or any(_RUNS.search(b) for b in _live_heredocs(cmd)):
+        return False
+    i = end = cmds.index(c)
+    while end + 1 < len(cmds) and "|" in cmds[end + 1].op.replace("||", ""):
+        end += 1
+    top = c.depth == 0 and all(x.depth >= 0 for x in cmds[:i]) and shell.count("(") == shell.count(")")
+    others = [x for x in (cmds[:end + 1] if top else cmds) if x is not c]
+    if not all(_writes_nothing(x) for x in others):
+        return False
+    pairs = [w.split("=", 1) for x in others if all(_ASSIGN.match(w) for w in x.argv) for w in x.argv]
+    loose = {k for k, v in pairs if v.startswith("-") or not re.fullmatch(r"[\w.:/@%+,=-]*", v)}
+    words = [w for x in others + [c] if not all(_ASSIGN.match(v) for v in x.argv) for w in x.argv]
+    read = {r for w in words for r in re.findall(r"\$\{?[#!]?([A-Za-z_]\w*)", w)}
+    if loose & read or loose and any("${!" in w for w in words):  # ${!R} reads the name R holds
         return False
     if any(os.environ.get(k) for k in ("PYTHONINSPECT", *_PY_PATH_VARS)) or _open_targets(args[1]) != []:
         return False
@@ -1867,7 +1903,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
             if c.piped and any(_name(x.argv) in _FETCHERS for x in chain) and not _reads_pipe_as_data(c, argv, cmds,
-                                                                                                    cwds):
+                                                                                                    cwds, cmd):
                 found.append(("pipe-shell", f"downloaded content piped into {name}"))
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
