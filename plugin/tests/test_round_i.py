@@ -117,6 +117,30 @@ class RoundI(ForemanTestCase):
                                text=True).stdout.split()
         self.assertEqual(names, ["feature.py"], "work from before the task stays out of its commit")
 
+    def test_finish_commit_counts_what_the_commit_holds(self):
+        # T-0380: "committed f2c88b6 (70 path(s))" for a commit that changed one file
+        import os
+        import subprocess
+        git = lambda *a: subprocess.run(["git", "-C", self.repo, *a], capture_output=True, text=True).stdout
+        self.fm("init")
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("kept\n")
+        git("add", "notes.txt")
+        git("commit", "-qm", "notes")
+        self.fm("task", "new", "Tiny", "--type", "FEATURE", "--tier", "S", "--ac", "works :: python3 -c 'print(1)'",
+                "--step", "build", "--focus")
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("changed\n")
+        self.fm("task", "log", "T-0001", "touch")
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("kept\n")  # touched, then back as it was
+        with open(os.path.join(self.repo, "feature.py"), "w") as f:
+            f.write("x = 1\n")
+        out = self.fm("task", "finish", "T-0001", "--run", "python3 -c 'print(0)'", "--audit", "self checklist",
+                      "--commit", "Add it").stdout
+        self.assertEqual(git("show", "--name-only", "--format=").split(), ["feature.py"])
+        self.assertIn("(1 file)", out)
+
     def test_finish_commit_names_edits_in_another_repo(self):
         # T-0360: T-0359's only edit was in another checkout, and the commit said just "nothing to commit"
         import os

@@ -556,8 +556,10 @@ def _commit_task(p, b, message):
     if not done or done.returncode:
         raise UsageError(f"{b.id} is done, but the commit failed: {((done and done.stderr) or add.stderr).strip()[:300]}")
     sha = c._git(p.root, "rev-parse", "--short", "HEAD").strip()
-    mutate(p, b.id, lambda x: x.append_log(f"committed {sha} ({len(files)} path(s))"), "commit", {"sha": sha})
-    print(f"{b.id}: committed {sha} ({len(files)} path(s)).")
+    n = len([x for x in c._git(p.root, "show", "--name-only", "--format=", "HEAD").split("\n") if x.strip()])
+    held = f"{n} file{'' if n == 1 else 's'}"  # T-0380: what the commit holds, not the paths it was given
+    mutate(p, b.id, lambda x: x.append_log(f"committed {sha} ({held})"), "commit", {"sha": sha})
+    print(f"{b.id}: committed {sha} ({held}).")
 
 
 def _hunks(diff):
