@@ -153,6 +153,16 @@ class AskMemory(TrustCase):
         self.fm("research", "add", "csv-notes",
                 input=f"# CSV\nThe spreadsheet import quirks were measured in {self.export}.\n\nUnrelated paragraph.\n")
 
+    def test_its_review_a_secret_in_memory_is_never_printed(self):
+        # T-0674 review: passages went out as stored, so a token pasted into a research note was printed back
+        key = "sk-ant-api03-" + "k" * 40
+        self.fm("research", "add", "deploy-notes", input=f"# Deploy\nThe deploy token was {key} for the export.\n")
+        self.fm("task", "log", self.export, f"deploy token for the export: {key}")
+        out = self.fm("recall", "--ask", "which deploy token for the export?").stdout
+        self.assertIn("deploy-notes", out)
+        self.assertNotIn("k" * 20, out)
+        self.assertNotIn("k" * 20, self.fm("recall", "--ask", "deploy token export", "--json").stdout)
+
     def test_an_answer_cites_the_task_behind_a_ledger_note(self):
         out = self.fm("recall", "--ask", "why was the export flaky?").stdout
         first = next(x for x in out.splitlines() if x.startswith("1."))
