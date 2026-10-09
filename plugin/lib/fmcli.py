@@ -1548,6 +1548,16 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def cmd_pause(args):
+    """T-0436: one flag for every project. It grants nothing, and lifting it only lets back what ran before, so
+    either way it's no consent to guard."""
+    on = args.state == "on"
+    c.set_panic(on)
+    out(args, {"paused": on}, "Paused everywhere: no drive, fm run, serve, night or lane launches, and autonomy reads "
+        "standard; a session already running finishes its turn. fm pause off lifts it." if on else
+        "Pause lifted: the drive and the launchers run again, under each project's own autonomy.")
+
+
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
     p = resolve(args)
@@ -2121,7 +2131,7 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
-    ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
+    ("Project and settings", "init autonomy drive pause sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -2468,6 +2478,9 @@ def build_parser():
 
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
+
+    s = add("pause", cmd_pause, help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
+    s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
 
     add("next", cmd_next, help="the one next required action (derived from the briefs)")
 
