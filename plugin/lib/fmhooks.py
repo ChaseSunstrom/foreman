@@ -1628,8 +1628,9 @@ def _drive(p, sd, briefs, pl, g):
             return None
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
-        more = [] if pace else [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
-        if not more and full and not pace and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
+        # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
+        more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
+        if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
                     f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "
