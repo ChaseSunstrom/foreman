@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm friction` reports the errors the hooks swallowed (T-0437, from the brainstorm's observer-health capability). A hook never fails a tool call, so its exceptions went only to hooks.log, and only `fm doctor` counted them. The self-improvement digest now shows how many there were in the last 24 h, the event with the most, and the latest error line. The breaker's pause notes don't count.
 - A capture that resembles a dropped task now says so, with the reason it was dropped. A capture that a standing veto covers says that too (T-0438, from the Foreman brainstorm's intake-quality capability). This is advice only: the capture still happens, and it names `fm task drop` for when the earlier answer still holds.
 - `fm friction`'s slow-gate signal takes its median over real runs only (T-0424). Before, reused passes (0.0 s) pulled the median down, so a gate looked slow every time it really ran ("fm replay 12s vs usual 0s").
 - The drive no longer offers a builder lane for a task already under way (T-0429). While a gate ran, it offered fresh lanes for T-0414 and T-0421, which were done in this checkout and only waiting on that gate. A queued task with a ticked step or recorded evidence is no longer offered as side work.

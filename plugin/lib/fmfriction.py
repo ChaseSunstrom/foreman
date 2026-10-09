@@ -120,6 +120,16 @@ def digest(p, recheck=True):
     if ms:
         out["hook latency"] = [f"p95 {ms[int(len(ms) * 0.95) - 1 if len(ms) > 1 else 0]:.0f} ms over {len(ms)} hook runs"]
 
+    try:  # T-0437: hooks never fail a call, so the errors they swallow are friction only hooks.log saw
+        import fmdoctor
+        errs = [e for e in fmdoctor.recent_hook_errors() if " paused for " not in e[0]]  # the breaker's note
+    except Exception:
+        errs = []
+    if errs:
+        top = collections.Counter((e[0].split(" ") + ["?"])[1] for e in errs).most_common(1)[0]
+        out["errors the hooks swallowed"] = [f"{len(errs)} in the last 24 h, most in {top[0]} ({top[1]}); latest: "
+                                             f"{c.fit(c.plain(errs[-1][-1].strip()), 160)} (state/logs/hooks.log)"]
+
     said = [c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for _, e in ledger
             if e.get("event") == "correction" or (e.get("event") == "note" and
                                                   str((e.get("data") or {}).get("text") or "").startswith("steer:"))]
