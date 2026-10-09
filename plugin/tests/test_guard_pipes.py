@@ -150,6 +150,10 @@ class ShellStdin(GuardCase):
             ("exec sh <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
             ("timeout 5 bash <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
             ("nohup env -i FOO=1 /bin/bash -s <<< 'rm -rf ~'", "rm-outside"),
+            ("X=bash; $X <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),  # T-0669: a computed name may be a shell
+            ("$SHELL <<< 'rm -rf ~'", "rm-outside"),
+            ("echo ok # don't\nrm -rf ~", "rm-outside"),  # T-0669 review: a quote in a comment opens nothing
+            ('echo ok # "\nrm -rf ~', "rm-outside"),
             ("cat > /tmp/x.sh <<'EOF'\nrm -rf ~\nEOF", None),
             ("python3 - <<'EOF'\nprint('rm -rf ~')\nEOF", None),
             ("bash <<'EOF'\necho hi\nEOF", None),

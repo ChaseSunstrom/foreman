@@ -394,13 +394,52 @@ def _heredoc_starts(seen, line):
     a body, so `echo '<<EOF'` hid the command after it from the guard."""
     before = "".join(x + "\n" for x in seen)
     return [(m.group(1), m.group(2)) for m in re.finditer(_HEREDOC_START, line)
-            if _top_level(_strip_comments(before + line[:m.start()]))]
+            if _inner_quote(_strip_comments(before + line[:m.start()])) is None]
+
+
+def _inner_quote(prefix):
+    """T-0669: the quote open in the innermost $( … ) or `…` where shell text ends. Each opens a fresh quoting context,
+    so the "x <<EOF" in "$(echo "x <<EOF")" is quoted text, though a flat scan reads the outer string as closed there.
+    A case arm's ) may close a context early: then more reads as quoted, never less as code (no line hides)."""
+    st, esc, i = [["", None, 0]], False, 0  # [kind, quote, paren depth]
+    while i < len(prefix):
+        ch, top = prefix[i], st[-1]
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and prefix[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            i += 2
+            continue
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
+        elif ch in "'\"":
+            top[1] = ch
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
+        i += 1
+    return "\\" if esc else st[-1][1]
 
 
 def _lines(text):
     """Newlines as command separators for the tokenizer, placed after each line so a # comment ends at its line (it ran
-    to the end of the whole command, hiding every later line: T-0158)."""
-    return text.replace("\n", "\n;")
+    to the end of the whole command, hiding every later line: T-0158). T-0669: not a newline inside quotes — that one
+    is part of the word, and a second shell (eval 'a\\⏎b') must get it back as written."""
+    mask = _mask_quotes(text)
+    return "".join(ch + ";" if ch == "\n" and mask[i] == "\n" else ch for i, ch in enumerate(text))
 
 
 def _ends_body(text, delim, starter):
@@ -476,7 +515,7 @@ def _join_continued(cmd):
         while i < len(lines):
             code = _strip_comments("\n".join(out + [line]))
             tail = len(code) - len(code.rstrip("\\"))
-            if not (code.endswith("\\") and tail % 2 and _top_level(code[:-1])):
+            if not (code.endswith("\\") and tail % 2 and _quote_at(code[:-1]) in (None, '"')):  # T-0669: in "…" too
                 break
             line = line[:-1] + lines[i]
             i += 1
@@ -542,7 +581,8 @@ def _stdin_scripts(cmd, cmds):
     them a shell reads as its script isn't modelled (its review: /dev/stdin, a group, -c 'source /dev/stdin'), so
     all of them, read as commands"""
     feeds = [f for x in cmds for f in x.feeds]
-    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) for x in cmds):
+    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) or x.feeds and re.search(r"[$`]", _name(x.argv))
+                            for x in cmds):  # T-0669: $X <<EOF, when that $X is the one fed
         return []
     return [w for op, w in feeds if op == "<<<"] + (["\n".join(b) for b in _heredoc_split(cmd)[1]]
                                                     if any(op == "<<" for op, _ in feeds) else [])
@@ -798,6 +838,9 @@ def _subst_bodies(text, tails=True):
             tick = i + 1
         elif ch == "$" and text[i + 1:i + 2] == "(":
             ends.append(text[i + 2:])  # $(( … )) too: bash falls back to a subshell when )) doesn't close it
+            last = text.rfind(")")  # T-0669: and, when it ends inside a quote, up to the last ): an outer `)"`
+            if last > i + 2 and _quote_at(text[i + 2:]) is not None:  # left it open (whole code stays whole)
+                ends.append(text[i + 2:last])
             if text[i + 2:i + 3] != "(":
                 ctx.append([None, i + 2, 0])
             i += 2
@@ -869,6 +912,11 @@ def _mask_fm(cmd, ctx):
 
 def _top_level(prefix):
     """True when shell text ending here is outside every quote and escape (a quote scan: wrong only towards False)."""
+    return _quote_at(prefix) is None
+
+
+def _quote_at(prefix):
+    """The quote open where shell text ends (None, ' or "); "\\" when it ends inside an escape."""
     q, esc = None, False
     for ch in prefix:
         if esc:
@@ -879,7 +927,7 @@ def _top_level(prefix):
             q = None if ch == q else q
         elif ch in "'\"":
             q = ch
-    return q is None and not esc
+    return "\\" if esc else q
 
 
 _DYNAMIC = {"exec", "eval", "compile", "getattr", "__import__", "import_module", "importlib", "globals", "vars",
@@ -1909,7 +1957,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
-    for body in _subst_bodies(shell, tails) + [b for t in _live_heredocs(cmd) for b in _subst_bodies(t, tails)]:
+    live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
+    for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
     lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
@@ -2652,8 +2701,11 @@ _RM_LONG = ("force", "interactive", "one-file-system", "no-preserve-root", "pres
 def _readings(text, vals):
     """T-0587 (its review): text eval or sh -c runs, as written (an unknown $q: empty, conditional, a subshell's) and,
     when it differs, with the literal values this line set: both are read, so a value adds findings, never hides one"""
-    sub = _with_vars(text, vals)
-    return [text] if sub == text else [text, sub]
+    out = [text]
+    for t in (_with_vars(text, vals), re.sub(r"\\([$`])", r"\1", text)):  # T-0669: and with \$ and \` unescaped, as
+        if t not in out:                                                 # double quotes unescape them
+            out.append(t)
+    return out
 
 
 def _rm_opts_only(args):
