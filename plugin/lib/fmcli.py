@@ -2988,6 +2988,8 @@ def build_parser():
     g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
     g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
     g.add_argument("--every", type=int, help="fm next calls for a pass every N closed tasks (0: off)")
+    g.add_argument("--reject", metavar="TEXT", help="a dead end: later digests skip lines with TEXT (T-0471)")
+    s.add_argument("--why", help="--reject: why it's a dead end")
 
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"),
             help="commands and procedures this project keeps repeating, and what project tool each could become")

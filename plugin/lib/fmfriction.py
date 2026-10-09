@@ -174,6 +174,28 @@ def digest(p, recheck=True):
     out["self-inbox: what became of earlier passes"] = (
         [f"done since: {b.id} {c.fit(b.title, 90)}" for b in closed][:MAX_LINES] +
         [f"open: {b.id} {c.fit(b.title, 90)}" for b in open_][:MAX_LINES])
+    budget = collections.defaultdict(lambda: [0, 0])  # T-0499: what the hooks put into the model's context
+    for e in events:
+        if e.get("kind") == "inject":
+            b = budget[(e.get("event"), e.get("key"))]
+            b[0], b[1] = b[0] + 1, b[1] + int(e.get("chars") or 0)
+    out["injected notes (event: kind — times, characters)"] = [
+        f"{ev}: {k} — {n}×, {ch:,} chars" for (ev, k), (n, ch) in sorted(budget.items(), key=lambda x: -x[1][1])
+    ][:MAX_LINES]
+    out["notes repeated 3+ times (a candidate for a hard check instead of prose: T-0470)"] = [
+        f"{k} ({n}× from {ev})" for (ev, k), (n, _) in budget.items()
+        if n >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two speak every turn
+    lessons = collections.Counter(e.get("task") for e in events if e.get("kind") == "lesson_shown")  # T-0454
+    out["lessons shown (one shown often while the same blocks recur may need rewording)"] = [
+        f"{t}: {n}×" for t, n in lessons.most_common(MAX_LINES)]
+    dead = [d for d in meta.get("deadends") or [] if isinstance(d, dict) and d.get("text")]  # T-0471
+    skipped = 0
+    for k in list(out) if dead else []:
+        keep = [x for x in out[k] if not any(d["text"].lower() in str(x).lower() for d in dead)]
+        skipped, out[k] = skipped + len(out[k]) - len(keep), keep
+    if skipped:
+        out["dead ends (fm friction --reject)"] = [f"{skipped} line(s) skipped: " + "; ".join(
+            f"\"{d['text']}\" ({d.get('why') or 'no reason given'})" for d in dead[:5])]
     kinds_ev = collections.Counter(e.get("kind") for e in events)
     counts = {"tool calls": kinds_ev["tool"], "guard blocks": kinds_ev["guard_block"],
               "failed tool calls": kinds_ev["tool_fail"],
@@ -246,6 +268,13 @@ def cmd_friction(args):
             c.write_meta(p, meta)
         return print(f"Self-improvement pass: every {args.every} closed tasks." if args.every else
                      "Self-improvement pass: off.")
+    if getattr(args, "reject", None):  # T-0471: a dead end later passes skip (and cite) instead of proposing again
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta["deadends"] = (meta.get("deadends") or []) + [{"text": c.redact(args.reject), "why": c.redact(
+                args.why or ""), "at": c.now()}]
+            c.write_meta(p, meta)
+        return print(f"Dead end recorded: lines with \"{args.reject}\" are skipped from now on.")
     if args.mark:
         with c.lock(p.dir):
             meta = c.read_meta(p)
