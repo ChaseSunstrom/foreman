@@ -1291,12 +1291,14 @@ def _last_green(b):
 _DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug|"
                     r"\b(print|console\.\w+|logger?\.\w+)\(.*\bDEBUG\b")
 _JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
+_PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")
 
 
 def _scaffolding(p, b, files):
     """T-0650: added lines in the task's files that look like debug scaffolding: [file:line]."""
     import subprocess
     base = b.meta.get("base")
+    files = [f for f in files if not f.lower().endswith(_PROSE)]  # docs may name debug calls; only code runs them
     if not base or not files or not c.git_root(p.root):
         return []
     try:
