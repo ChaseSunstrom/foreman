@@ -2112,10 +2112,30 @@ def fired_decisions(p):
     return out
 
 
+def andons(briefs):
+    """T-0648: [(task id, the andon's first line)] for open tasks whose lane holds an ANDON.md."""
+    out = []
+    for b in briefs:
+        lane = b.meta.get("lane")
+        if lane and b.status not in CLOSED:
+            try:
+                with open(os.path.join(lane, "ANDON.md"), encoding="utf-8", errors="replace") as f:
+                    first = next((x.strip() for x in f.read(4000).splitlines() if x.strip()), "")
+            except OSError:
+                continue
+            out.append((b.id, plain(redact(first)) or "(empty)"))
+    return out
+
+
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
     b, st, action = _next_for(p, briefs)
+    raised = andons(briefs if briefs is not None else load_briefs(p))  # T-0648: a lane stopped to ask
+    if raised:
+        tid, text = raised[0]
+        action += (f" · andon from {tid}'s lane: {text[:160]} — answer it (fm bus send, or edit its brief), then delete "
+                   f"its ANDON.md" + (f"; {len(raised) - 1} more" if len(raised) > 1 else ""))
     try:
         fired = fired_decisions(p)
     except Exception:

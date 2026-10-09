@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Agent types and roles (T-0683 milestone: T-0608, T-0629, T-0646, T-0647, T-0648).
+  - New `fm-reproducer` agent: for a FIX it writes the failing test (or a repro script) first, confirms it fails for the reported reason, and hands back the command for `fm task prove`. It never fixes. `fm-reviewer` gains a performance lens.
+  - Every agent ends its report with `Noticed:` lines. `fm research add NAME --from-agent FILE` turns each one into a discovered capture.
+  - `fm bench seed-review [--cases N] [--reviewer CMD]` plants one-line bugs (a `return` becomes `return None`) and scores the reviewer by whether its findings name the file and line.
+  - `fm usage --agents`: a scorecard per agent type, with spawns and tokens, plus lanes merged against removed for builders. This week here: builders 46 spawns, lanes merged 15, removed 16.
+  - A builder blocked on a decision writes `ANDON.md` in its lane with its question and the assumption it proceeds on. `fm lane list` and `fm next` surface it.
 
 ## 1.2.23 — 2026-10-09
 - Intent and change skills, first slice (T-0713).

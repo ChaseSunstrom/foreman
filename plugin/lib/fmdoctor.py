@@ -22,7 +22,8 @@ SKILL_MAX = 10000  # chars of one SKILL.md body: loaded whole whenever the skill
 RULES_CHARS_MAX = 6000  # chars (~1.5k tokens) of always-on rules: denser lines cost as much as more lines
 CTX_BUDGET, PROMPT_BUDGET = 2000, 400
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
-EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"}}  # T-0234: the one bounded exception, in its own worktree
+EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: bounded exceptions, each in its own worktree
+                  "fm-reproducer.md": {"Edit", "Write", "Bash"}}  # T-0608: the failing test, on its lane branch
 EXPECTED_EXIT = {"PreToolUse:Bash:block": [2], "TaskCompleted": [2]}  # fixtures that are designed to block
 SCRIPTS = ["install.sh", "setup-plugins.sh", "configure-repo.sh", "reset-claude.sh", "plugin/uninstall.sh"]
 

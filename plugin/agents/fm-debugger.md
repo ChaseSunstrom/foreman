@@ -28,3 +28,5 @@ Output (≤ 400 words, in this order):
    followed on the next line by: `  if true: <what the probe shows> · if false: <what it shows> · confidence: high|medium|low`
 2. **Ruled out** — hypotheses you dropped and the line that rules each out.
 3. **Not checked** — what you didn't read and why.
+
+End with **Noticed:** — one line per thing outside this brief worth its own task (a second bug, a missing test, a confusing name), or `Noticed: none`. Foreman turns each into a discovered capture.
