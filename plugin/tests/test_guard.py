@@ -781,6 +781,18 @@ class StateFallback(GuardCase):
                 self.assertBlocked(g.check("Bash", {"command": f"cp /etc/hostname {path}"}, ctx), "state-direct")
 
 
+class MergeHint(GuardCase):
+    def test_git_merge_refusal_names_lane_merge(self):
+        # T-0394 (self-improvement pass): builders and the main thread typed `git merge --no-ff worktree-agent-…` on
+        # Foreman's own repo; the refusal is right, but it should name the way that works
+        ctx = self.ctx(cwd=self.fhome)
+        block = g.check("Bash", {"command": "git merge --no-ff worktree-agent-x"}, ctx)
+        self.assertBlocked(block, "core")
+        self.assertIn("fm lane merge", g.message(block, ctx))
+        other = g.check("Bash", {"command": f"echo x > {self.fhome}/plugin/lib/fmguard.py"}, ctx)
+        self.assertNotIn("fm lane merge", g.message(other, ctx))  # only a merge gets the hint
+
+
 class ScratchNames(GuardCase):
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
