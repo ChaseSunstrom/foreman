@@ -150,6 +150,23 @@ class TaskLifecycle(ForemanTestCase):
         steps = self.brief().steps()
         self.assertEqual([(s.done, s.current) for s in steps], [(True, False), (False, True)])
 
+    def test_step_evidence_moves_the_current_step(self):
+        # T-0406 (the user, watching JARVIS in Claude Code): steps 3-5 of T-0278 had passing runs while the band still
+        # read "step 1/5, 0 done": evidence never ticked a step or moved its CURRENT marker, only fm task finish did
+        for s in ("a", "b", "c"):
+            self.fm("task", "step", "T-0001", "add", s)
+        state = lambda: [(s.done, s.current) for s in self.brief().steps()]  # noqa: E731
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", "true")
+        self.assertEqual(state(), [(False, False), (True, False), (False, True)], "2 ticked, the work moves to 3")
+        self.fm("task", "evidence", "T-0001", "--step", "3", "--run", "false", check=False)
+        self.assertEqual(state(), [(False, False), (True, False), (False, True)], "a failed run keeps 3 open, current")
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", "false", check=False)
+        self.assertEqual(state(), [(False, False), (False, True), (False, False)], "a failure reopens 2, current")
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", "true")
+        self.fm("task", "evidence", "T-0001", "--step", "3", "--run", "true")
+        self.assertEqual(state(), [(False, True), (True, False), (True, False)], "the open step left is current")
+        self.assertEqual(self.fm_json("task", "show", "T-0001")["step"]["n"], 1)
+
     def test_task_done_requires_everything(self):
         self.fm("task", "step", "T-0001", "add", "a")
         self.fm("task", "ac", "T-0001", "add", "login works on 3G", "--verify", "pytest -k slow")
