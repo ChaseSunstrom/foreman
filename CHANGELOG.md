@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Observability, replay and trust (T-0674 milestone: T-0464, T-0483, T-0484).
+  - `fm explain [block|drive]` shows what's behind the last guard block or drive/Stop decision: the rule, its inputs, the grants or settings, the ledger events and the hook breaker.
+  - `fm task show ID --story` prints a task's ledger as chapters (Plan, Steps, Evidence, Reviews, Close) with times, archived months included.
+  - `fm recall --ask "QUESTION"` ranks passages from briefs, the ledger, decisions and research with SQLite FTS5's BM25 ranking, redacts them and cites the task ids behind each.
 - `fm pause` now holds every claude launcher (T-0591, from the T-0436 review). `fm session start|send`, `fm ideas`, `fm oracle`, `fm research ask`, `fm bench` (its run commands) and `fm relate` refuse while paused, and the SessionStart relate spawn waits. Each command builder checks the pause too, so a missed path still stops. `fm pause off` is the user's to run: the guard refuses it from Claude and says to type `! fm pause off`.
 - Heredocs fed to Python are no longer read as shell just because the line also sources a file (T-0714, from JARVIS). `. .venv/bin/activate` or `bash ./run.sh` after a `python3 - <<'EOF'` edit made the guard read the body as shell, so a docstring mentioning `` `at` `` was refused as scheduling a command. Only a shell or source that reads its stdin as code (`bash`, `sh -s`, `. /dev/stdin`, `bash -c 'source /dev/stdin'`) or eval counts now. Replaying 5,000 real commands shows no change.
 - Close-out friction (T-0722: T-0718, T-0720). `fm audit prep` of a builder's task now reviews its branch from where it left main, not main's own later commits. `fm task finish --commit` checks for credentials before closing, so a flagged line leaves the task open to fix. A done task's refused commit can be retried with `fm task finish ID --commit MSG`.
