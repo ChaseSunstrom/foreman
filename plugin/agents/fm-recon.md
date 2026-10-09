@@ -21,3 +21,5 @@ Output (≤ 400 words, in this order):
 2. **Findings** — bullets: claim — `path:line`, or URL + "quote" + date + tier — confidence.
 3. **Risks / surprises** — anything the main thread should double-check.
 4. **Not checked** — explicit list of what you did not look at and why.
+
+End with **Noticed:** — one line per thing outside this brief worth its own task (a second bug, a missing test, a confusing name), or `Noticed: none`. Foreman turns each into a discovered capture.

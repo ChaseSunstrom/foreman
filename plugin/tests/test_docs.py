@@ -9,7 +9,8 @@ from helpers import PLUGIN, read_text, read_json
 SKILLS = ["intake", "next", "resume", "status", "capture", "tidy", "doctor", "reflect", "improve", "playbooks", "brainstorm"]
 USER_ONLY = {"capture"}  # everything else Claude may start itself when the user asks in plain words
 READ_ONLY_TOOLS = {"Read", "Grep", "Glob", "WebFetch", "WebSearch"}
-EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"}}  # T-0234: the one exception, worktree-bound
+EDITING_AGENTS = {"fm-builder.md": {"Edit", "Write", "Bash"},  # T-0234: the exceptions, worktree-bound
+                  "fm-reproducer.md": {"Edit", "Write", "Bash"}}  # T-0608
 HOOK_EVENTS = {"SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "PostToolUseFailure", "PreCompact",
                "Stop", "TaskCompleted", "SubagentStart", "SubagentStop", "MessageDisplay", "Notification", "SessionEnd", "PermissionRequest"}
 OWN_REFERENCES = {"language.md", "planning.md", "execute.md", "delegate.md", "audit.md"}

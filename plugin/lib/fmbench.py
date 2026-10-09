@@ -683,6 +683,8 @@ def cmd_bench(args):
     if args.bench_cmd not in ("build", "list", "show", "compare", "models"):
         c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)
+    if args.bench_cmd == "seed-review":
+        return seed_review(p, args)
     if args.bench_cmd == "build":
         if bool(args.commits) != bool(args.verify):
             raise fmcli.UsageError("--commits RANGE and --verify CMD go together (CMD may use {tests})")
@@ -838,3 +840,52 @@ def cmd_bench(args):
     lines += [f"  {i}: {' → '.join('✓' if b[i]['pass'] else '✗' for b in by)}" for i in shared
               if by[0][i]["pass"] != by[1][i]["pass"]]
     fmcli.out(args, {"shared": shared, "runs": [r["label"] for r in runs]}, "\n".join(lines))
+
+
+# ---------------------------------------------------------------- seeded-bug review (T-0646)
+
+def seed_review(p, args):
+    """A role benched on planted bugs: each case is one `return` in a tracked Python file turned into `return None`, shown
+    to the reviewer as a diff; caught when its findings name the file and a line within 3 of the planted one. The
+    default reviewer is the fm-reviewer agent's prompt in a tool-less child; --reviewer CMD reads the diff on stdin."""
+    import difflib
+    import random
+    import fmcli
+    rng = random.Random(args.seed)
+    cands = []
+    for f in c._git(p.root, "ls-files", timeout=60).splitlines():
+        if f.endswith(".py") and not c.TESTISH.search(f) and os.path.isfile(os.path.join(p.root, f)):
+            with open(os.path.join(p.root, f), encoding="utf-8", errors="replace") as fh:
+                lines = fh.read(500_000).splitlines(keepends=True)
+            cands += [(f, i, lines) for i, ln in enumerate(lines)
+                      if re.match(r"\s+return \S", ln) and not re.match(r"\s+return (None|True|False)\b", ln)]
+    if not cands:
+        raise fmcli.UsageError("no `return` line to plant a bug in among the tracked Python files")
+    system = None
+    if not args.reviewer:
+        with open(os.path.join(c.PLUGIN_ROOT, "agents", "fm-reviewer.md"), encoding="utf-8") as fh:
+            system = fh.read().split("---", 2)[-1]
+    rows = []
+    for f, i, lines in rng.sample(cands, min(args.cases, len(cands))):
+        bad = lines[:i] + [re.sub(r"return .*", "return None", lines[i].rstrip("\n")) + "\n"] + lines[i + 1:]
+        diff = "".join(difflib.unified_diff(lines, bad, f"a/{f}", f"b/{f}", n=3))
+        if args.reviewer:
+            r = subprocess.run(args.reviewer, shell=True, input=diff, capture_output=True, text=True, timeout=300,
+                               cwd=p.root)
+            found = r.stdout
+        else:
+            import fmideas
+            try:
+                found = fmideas.run_child("seed-review", system, f"Review this change (the diff is the whole brief):\n"
+                                          f"{diff}", args.model, 300, project=p.slug)
+            except ValueError as e:
+                raise fmcli.UsageError(str(e))
+        hit = any(m.group(1).lstrip("./") == f and abs(int(m.group(2)) - (i + 1)) <= 3
+                  for m in re.finditer(r"([\w./-]+\.py):(\d+)", found))
+        rows.append({"file": f, "line": i + 1, "caught": hit})
+    caught = sum(r["caught"] for r in rows)
+    text = (f"Seeded-bug review ({'--reviewer ' + args.reviewer if args.reviewer else 'fm-reviewer, ' + args.model}): "
+            f"caught {caught}/{len(rows)} ({100 * caught // len(rows)}%)\n"
+            + "\n".join(f"  {'✓' if r['caught'] else '✗'} {r['file']}:{r['line']}" for r in rows))
+    c.log_event(p, "seed_review", data={"cases": len(rows), "caught": caught, "reviewer": args.reviewer or args.model})
+    return fmcli.out(args, {"cases": rows, "caught": caught}, text)

@@ -2049,11 +2049,25 @@ def cmd_research(args):
     text = (_agent_report(args.from_agent) if args.from_agent else
             open(args.file, encoding="utf-8").read() if args.file else sys.stdin.read())
     path = os.path.join(p.dir, "research", name + ".md")
+    # T-0629: what an agent noticed outside its brief becomes a discovered capture, not a line lost in a report
+    noticed = [c.fit(c.plain(c.redact(m.group(1))).strip(" .`*"), 200)
+               for m in re.finditer(r"(?mi)^\W*noticed:?\**\s*(.+)$", text)] if args.from_agent else []
+    noticed = [x for x in dict.fromkeys(noticed) if x and x.lower() not in ("none", "nothing", "n/a")][:10]
     with c.lock(p.dir):
         c.write_atomic(path, c.defang(c.redact(text)))
-        c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text)}, session=session())
+        made = []
+        for x in noticed:
+            type_ = "FIX" if re.search(r"(?i)\b(bug|broken|drops?|crash|fails?|wrong|leak)\b", x) else "FEATURE"
+            b = _create(p, _title(x), type_, c.guess_tier(type_, x), "captured", raw=f"{x}\n(noticed by an agent; "
+                        f"research {name})", source="discovered")
+            made.append(b.id)
+            c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": type_, "from": name},
+                        session=session())
+        c.log_event(p, "research", task=args.task, data={"name": name, "chars": len(text), "noticed": made},
+                    session=session())
         c.regen_views(p)  # (and fm sync's mirror)
-    out(args, {"path": path}, f"Saved {path}")
+    out(args, {"path": path, "noticed": made}, f"Saved {path}" + (f"; {len(made)} noticed item(s) captured: "
+                                                                  f"{', '.join(made)}" if made else ""))
 
 
 def cmd_drive(args):
@@ -3139,6 +3153,7 @@ def build_parser():
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
                    help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
+    s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
@@ -3370,6 +3385,13 @@ def build_parser():
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
     bsp = s.add_subparsers(dest="bench_cmd", required=True)
+    b = bsp.add_parser("seed-review", help="bench a reviewer on planted one-line bugs (T-0646)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b.add_argument("--cases", type=int, default=5)
+    b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
+    b.add_argument("--model", default="sonnet")
+    b.add_argument("--seed", type=int, default=0)
     for name in ("build", "list", "run", "show", "compare", "gate", "models"):
         b = bsp.add_parser(name)
         b.add_argument("--json", action="store_true")

@@ -510,11 +510,36 @@ def cmd_export(args):
               f"It quotes the user's corrections, lessons and decisions: read it before committing it.")
 
 
+def _agents(p, args, fmcli):
+    """T-0647: a scorecard per agent type — spawns and tokens from the spend ledger, and for builders the lanes merged
+    against removed unmerged, from this project's ledger. ponytail: reviewer findings confirmed vs rejected need audit
+    results recorded per finding; add them when fm task audit records that."""
+    import fmbudget
+    rows = collections.defaultdict(collections.Counter)
+    for e in fmbudget.ledger(days=max(1, int(args.days))):
+        f = str(e.get("feature") or "")
+        if f.startswith("subagent:"):
+            r = rows[f.split(":")[-1]]
+            r["spawns"] += int(e.get("runs") or 1)
+            r["tokens"] += int(e.get("tokens") or 0)
+    since = _since(args.days)
+    for e in c.ledger_tail(p, 20000):
+        if str(e.get("ts", ""))[:19] >= since and e.get("event") in ("lane_merge", "lane_rm"):
+            rows["fm-builder"]["merged" if e["event"] == "lane_merge" else "removed"] += 1
+    text = (f"Agents, last {args.days:g} day(s):\n" + "\n".join(
+        f"  {name}: {r['spawns']} spawns, {_human(r['tokens'])} tokens"
+        + (f", lanes merged {r['merged']}, removed {r['removed']}" if name == "fm-builder" else "")
+        for name, r in sorted(rows.items(), key=lambda kv: -kv[1]["tokens"]))) if rows else "No agent spawns recorded."
+    return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}}, text)
+
+
 def cmd_usage(args):
     """Which skills, playbooks and fm commands this project used in the window, and which it never did: candidates to
     trim from the always-loaded context."""
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "agents", False):
+        return _agents(p, args, fmcli)
     since = _since(args.days)
     skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
     followed, ignored, pending = collections.Counter(), collections.Counter(), {}
