@@ -2376,7 +2376,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export"),
+                         "landscape deps oracle pr export instruments sym fail logs data trace"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -2699,6 +2699,11 @@ def build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
+    import fminstr  # T-0701: the instruments, their help and arguments come from one registry
+    add("instruments", lazy("fminstr", "cmd_instruments"),
+        help="the zero-token instruments: typed tools with input schemas and line caps (sym, fail, logs, data, trace)")
+    for name in fminstr.TOOLS:
+        fminstr.arguments(add(name, lazy("fminstr", "cmd_" + name), help=fminstr.TOOLS[name][1]), name)
 
     s = add("vetoes", cmd_vetoes, help="what the user said never to do, checked before matching commands and edits")
     s.add_argument("action", nargs="?", choices=["list", "rm"], default="list")
