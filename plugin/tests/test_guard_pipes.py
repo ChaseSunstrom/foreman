@@ -88,6 +88,31 @@ class IfsInValue(GuardCase):
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}").replace("{{home}}", "{home}")))
 
 
+class EvalVarsAndComputedNames(GuardCase):
+    def test_a_command_name_bash_computes(self):
+        # T-0587: a known variable as the command name, or in eval / sh -c text, ran unread; an unknown one is checked
+        # as each dangerous command it could be
+        self.run_table([
+            ("X=rm; $X -rf ~", "rm-outside"),
+            ("q='rm -rf'; $q ~", "rm-outside"),
+            ("q='rm -rf'; eval \"$q ~\"", "rm-outside"),
+            ("q='rm -rf ~'; eval $q", "rm-outside"),
+            ("q='rm -rf ~'; bash -c \"$q\"", "rm-outside"),
+            ("q='git push --force origin main'; eval \"$q\"", "git-destructive"),
+            ("X=$(echo rm); $X -rf ~", "rm-outside"),
+            ("$CMD push --force origin main", "git-destructive"),
+            ("`which claude` plugin install x@y", "plugin"),
+            ('echo "q=ls"; $q rm -rf ~', "rm-outside"),  # quoted text isn't an assignment; empty q runs rm
+            ("(q=ls); $q git push --force origin main", "git-destructive"),  # a subshell's q is gone
+            ("q=ls; for q in rm; do $q -rf ~; done", "rm-outside"),  # set twice: not trusted
+            ("false && q=ls; eval \"$q rm -rf ~\"", "rm-outside"),  # its review: the raw text is read too
+            ("cc=gcc; $cc -O2 -fwrapv -Wno-unused-variable a.c -o a", None),  # rm stops at -fwrapv
+            ("V=$(ls target/voltc-*); $V check tests/run/x.volt --std std", None),
+            ("S=/tmp/x; $S/voltc build ../blink", None),
+            ("eval \"$(ssh-agent -s)\"", None),
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
+
 class ShellStdin(GuardCase):
     def test_a_script_a_shell_reads_from_stdin_is_checked(self):
         # T-0589: input redirections were dropped, so the text a shell ran from its stdin was never read

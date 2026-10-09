@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- A command name bash computes is read every way it may run (T-0587, found while replaying T-0585). Before, `X=rm; $X -rf ~` and `q='rm -rf'; eval "$q ~"` ran unread. Now a `$X` or `` `…` `` name is checked three ways:
+  - as its value, when the line sets it once to a literal (spaces kept, quoted text never counted);
+  - as expanding to nothing, so the next word runs;
+  - as each dangerous command whose check reads its arguments: `rm` (only with options rm accepts, so `$cc -fwrapv` isn't a delete), `git`, `claude`, `dd`, `systemctl`, the publish and deploy tools.
+
+  `eval` and `sh -c` text is read both as written and with those values. A value can add findings but never hide one. The 30-day replay shows nothing newly blocked or newly allowed.
 - A plain IFS inside an unquoted assignment value is refused, not rewritten to a space (T-0592, a review of T-0590). Bash keeps that value whole, so the space made `D=/tmp/x${IFS}/home/sb` read as `D=/tmp/x` followed by a command.
 - `fm pause` is one flag that stops everything Foreman runs unattended, in every project (T-0436, from the Foreman brainstorm). The drive goes quiet, `fm run`, `serve`, `night` and `lane new` refuse to start, and autonomy reads as standard. STATE and the session note say so, and `fm pause off` lifts it. A session already running finishes its turn.
 - IFS review, round 2 (T-0590, a security review of T-0585):
