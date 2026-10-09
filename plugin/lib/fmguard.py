@@ -628,6 +628,33 @@ def _heredocs(cmd):
 
 # T-0589: what may read a heredoc or here-string as code (bash, sh -s, bash /dev/stdin, { bash; }, . /dev/stdin …)
 _RUNS_STDIN = re.compile(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
+_STDIN_PATHS = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+_INLINE = {"sh": "c", "py": "cm", "js": "ep", "pl": "eE", "rb": "e", "php": "r"}  # flags whose next word is the code
+
+
+def _reads_stdin_code(name, args):
+    """T-0715: whether a shell or interpreter reads its program from stdin: no script file and no inline code (a pipe
+    into it then runs whatever the pipe carries; `curl … | python3 -c '…'` reads data, `| python3` reads code)."""
+    if name in ("source", "."):
+        return bool(args) and args[0] in _STDIN_PATHS
+    kind = ("sh" if re.fullmatch(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox", name) else
+            "py" if re.fullmatch(r"python[0-9.]*|pypy[0-9.]*", name) else "js" if name in ("node", "nodejs", "deno", "bun")
+            else "pl" if name == "perl" else "rb" if name == "ruby" else "php" if name == "php" else None)
+    if kind is None:
+        return False
+    for a in args:
+        if a in _STDIN_PATHS:
+            return True
+        if a.startswith("--"):
+            if kind == "js" and a in ("--eval", "--print") or kind == "sh" and a == "--command":
+                return False
+            continue
+        if a.startswith(("-", "+")) and len(a) > 1:
+            if any(f in a[1:] for f in _INLINE[kind]):
+                return False
+            continue
+        return name == "busybox" and a in ("sh", "ash")  # busybox sh: the applet, then its own options
+    return True
 
 
 def _stdin_scripts(cmd, cmds):
@@ -2100,6 +2127,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found += check_bash(text, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
+        if c.op in ("|", "|&") and _reads_stdin_code(name, args) and not (  # T-0715: echo 'rm -rf ~' | bash; a
+                any(_name(x.argv) in _FETCHERS for x in chain) or _FETCH_WORD.search(_mask_quotes(cmd))):  # download
+            # piped in is pipe-shell's (below), which the user can grant for an installer
+            found.append(("system", f"{name} reads its program from a pipe, which the guard can't read: put it in a "
+                                    f"heredoc ({name} <<'EOF' … EOF), which it reads, or in a file"))
         if _SHELLS.match(name) or name in ("source", "."):
             # T-0421: a download anywhere on the line counts (a $( ), a group or a <( ) splits it from the shell's own
             # chain; a file downloaded first and then piped in is a download too), and so does a pipe into a group
