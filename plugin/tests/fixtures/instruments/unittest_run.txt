@@ -1,0 +1,194 @@
+Run python -m unittest -v tests.price_test
+test_catalogue_00 (tests.price_test.PriceTest.test_catalogue_00) ... catalogue item 0 priced
+ok
+test_catalogue_01 (tests.price_test.PriceTest.test_catalogue_01) ... catalogue item 1 priced
+ok
+test_catalogue_02 (tests.price_test.PriceTest.test_catalogue_02) ... catalogue item 2 priced
+ok
+test_catalogue_03 (tests.price_test.PriceTest.test_catalogue_03) ... catalogue item 3 priced
+ok
+test_catalogue_04 (tests.price_test.PriceTest.test_catalogue_04) ... catalogue item 4 priced
+ok
+test_catalogue_05 (tests.price_test.PriceTest.test_catalogue_05) ... catalogue item 5 priced
+ok
+test_catalogue_06 (tests.price_test.PriceTest.test_catalogue_06) ... catalogue item 6 priced
+ok
+test_catalogue_07 (tests.price_test.PriceTest.test_catalogue_07) ... catalogue item 7 priced
+ok
+test_catalogue_08 (tests.price_test.PriceTest.test_catalogue_08) ... catalogue item 8 priced
+ok
+test_catalogue_09 (tests.price_test.PriceTest.test_catalogue_09) ... catalogue item 9 priced
+ok
+test_catalogue_10 (tests.price_test.PriceTest.test_catalogue_10) ... catalogue item 10 priced
+ok
+test_catalogue_11 (tests.price_test.PriceTest.test_catalogue_11) ... catalogue item 11 priced
+ok
+test_catalogue_12 (tests.price_test.PriceTest.test_catalogue_12) ... catalogue item 12 priced
+ok
+test_catalogue_13 (tests.price_test.PriceTest.test_catalogue_13) ... catalogue item 13 priced
+ok
+test_catalogue_14 (tests.price_test.PriceTest.test_catalogue_14) ... catalogue item 14 priced
+ok
+test_catalogue_15 (tests.price_test.PriceTest.test_catalogue_15) ... catalogue item 15 priced
+ok
+test_catalogue_16 (tests.price_test.PriceTest.test_catalogue_16) ... catalogue item 16 priced
+ok
+test_catalogue_17 (tests.price_test.PriceTest.test_catalogue_17) ... catalogue item 17 priced
+ok
+test_catalogue_18 (tests.price_test.PriceTest.test_catalogue_18) ... catalogue item 18 priced
+ok
+test_catalogue_19 (tests.price_test.PriceTest.test_catalogue_19) ... catalogue item 19 priced
+ok
+test_catalogue_20 (tests.price_test.PriceTest.test_catalogue_20) ... catalogue item 20 priced
+ok
+test_catalogue_21 (tests.price_test.PriceTest.test_catalogue_21) ... catalogue item 21 priced
+ok
+test_catalogue_22 (tests.price_test.PriceTest.test_catalogue_22) ... catalogue item 22 priced
+ok
+test_catalogue_23 (tests.price_test.PriceTest.test_catalogue_23) ... catalogue item 23 priced
+ok
+test_catalogue_24 (tests.price_test.PriceTest.test_catalogue_24) ... catalogue item 24 priced
+ok
+test_catalogue_25 (tests.price_test.PriceTest.test_catalogue_25) ... catalogue item 25 priced
+ok
+test_catalogue_26 (tests.price_test.PriceTest.test_catalogue_26) ... catalogue item 26 priced
+ok
+test_catalogue_27 (tests.price_test.PriceTest.test_catalogue_27) ... catalogue item 27 priced
+ok
+test_catalogue_28 (tests.price_test.PriceTest.test_catalogue_28) ... catalogue item 28 priced
+ok
+test_catalogue_29 (tests.price_test.PriceTest.test_catalogue_29) ... catalogue item 29 priced
+ok
+test_catalogue_30 (tests.price_test.PriceTest.test_catalogue_30) ... catalogue item 30 priced
+ok
+test_catalogue_31 (tests.price_test.PriceTest.test_catalogue_31) ... catalogue item 31 priced
+ok
+test_catalogue_32 (tests.price_test.PriceTest.test_catalogue_32) ... catalogue item 32 priced
+ok
+test_catalogue_33 (tests.price_test.PriceTest.test_catalogue_33) ... catalogue item 33 priced
+ok
+test_catalogue_34 (tests.price_test.PriceTest.test_catalogue_34) ... catalogue item 34 priced
+ok
+test_catalogue_35 (tests.price_test.PriceTest.test_catalogue_35) ... catalogue item 35 priced
+ok
+test_catalogue_36 (tests.price_test.PriceTest.test_catalogue_36) ... catalogue item 36 priced
+ok
+test_catalogue_37 (tests.price_test.PriceTest.test_catalogue_37) ... catalogue item 37 priced
+ok
+test_catalogue_38 (tests.price_test.PriceTest.test_catalogue_38) ... catalogue item 38 priced
+ok
+test_catalogue_39 (tests.price_test.PriceTest.test_catalogue_39) ... catalogue item 39 priced
+ok
+test_catalogue_40 (tests.price_test.PriceTest.test_catalogue_40) ... catalogue item 40 priced
+ok
+test_catalogue_41 (tests.price_test.PriceTest.test_catalogue_41) ... catalogue item 41 priced
+ok
+test_catalogue_42 (tests.price_test.PriceTest.test_catalogue_42) ... catalogue item 42 priced
+ok
+test_catalogue_43 (tests.price_test.PriceTest.test_catalogue_43) ... catalogue item 43 priced
+ok
+test_catalogue_44 (tests.price_test.PriceTest.test_catalogue_44) ... catalogue item 44 priced
+ok
+test_catalogue_45 (tests.price_test.PriceTest.test_catalogue_45) ... catalogue item 45 priced
+ok
+test_catalogue_46 (tests.price_test.PriceTest.test_catalogue_46) ... catalogue item 46 priced
+ok
+test_catalogue_47 (tests.price_test.PriceTest.test_catalogue_47) ... catalogue item 47 priced
+ok
+test_catalogue_48 (tests.price_test.PriceTest.test_catalogue_48) ... catalogue item 48 priced
+ok
+test_catalogue_49 (tests.price_test.PriceTest.test_catalogue_49) ... catalogue item 49 priced
+ok
+test_catalogue_50 (tests.price_test.PriceTest.test_catalogue_50) ... catalogue item 50 priced
+ok
+test_catalogue_51 (tests.price_test.PriceTest.test_catalogue_51) ... catalogue item 51 priced
+ok
+test_catalogue_52 (tests.price_test.PriceTest.test_catalogue_52) ... catalogue item 52 priced
+ok
+test_catalogue_53 (tests.price_test.PriceTest.test_catalogue_53) ... catalogue item 53 priced
+ok
+test_catalogue_54 (tests.price_test.PriceTest.test_catalogue_54) ... catalogue item 54 priced
+ok
+test_catalogue_55 (tests.price_test.PriceTest.test_catalogue_55) ... catalogue item 55 priced
+ok
+test_catalogue_56 (tests.price_test.PriceTest.test_catalogue_56) ... catalogue item 56 priced
+ok
+test_catalogue_57 (tests.price_test.PriceTest.test_catalogue_57) ... catalogue item 57 priced
+ok
+test_catalogue_58 (tests.price_test.PriceTest.test_catalogue_58) ... catalogue item 58 priced
+ok
+test_catalogue_59 (tests.price_test.PriceTest.test_catalogue_59) ... catalogue item 59 priced
+ok
+test_catalogue_60 (tests.price_test.PriceTest.test_catalogue_60) ... catalogue item 60 priced
+ok
+test_catalogue_61 (tests.price_test.PriceTest.test_catalogue_61) ... catalogue item 61 priced
+ok
+test_catalogue_62 (tests.price_test.PriceTest.test_catalogue_62) ... catalogue item 62 priced
+ok
+test_catalogue_63 (tests.price_test.PriceTest.test_catalogue_63) ... catalogue item 63 priced
+ok
+test_catalogue_64 (tests.price_test.PriceTest.test_catalogue_64) ... catalogue item 64 priced
+ok
+test_catalogue_65 (tests.price_test.PriceTest.test_catalogue_65) ... catalogue item 65 priced
+ok
+test_catalogue_66 (tests.price_test.PriceTest.test_catalogue_66) ... catalogue item 66 priced
+ok
+test_catalogue_67 (tests.price_test.PriceTest.test_catalogue_67) ... catalogue item 67 priced
+ok
+test_catalogue_68 (tests.price_test.PriceTest.test_catalogue_68) ... catalogue item 68 priced
+ok
+test_catalogue_69 (tests.price_test.PriceTest.test_catalogue_69) ... catalogue item 69 priced
+ok
+test_catalogue_70 (tests.price_test.PriceTest.test_catalogue_70) ... catalogue item 70 priced
+ok
+test_catalogue_71 (tests.price_test.PriceTest.test_catalogue_71) ... catalogue item 71 priced
+ok
+test_catalogue_72 (tests.price_test.PriceTest.test_catalogue_72) ... catalogue item 72 priced
+ok
+test_catalogue_73 (tests.price_test.PriceTest.test_catalogue_73) ... catalogue item 73 priced
+ok
+test_catalogue_74 (tests.price_test.PriceTest.test_catalogue_74) ... catalogue item 74 priced
+ok
+test_catalogue_75 (tests.price_test.PriceTest.test_catalogue_75) ... catalogue item 75 priced
+ok
+test_catalogue_76 (tests.price_test.PriceTest.test_catalogue_76) ... catalogue item 76 priced
+ok
+test_catalogue_77 (tests.price_test.PriceTest.test_catalogue_77) ... catalogue item 77 priced
+ok
+test_catalogue_78 (tests.price_test.PriceTest.test_catalogue_78) ... catalogue item 78 priced
+ok
+test_catalogue_79 (tests.price_test.PriceTest.test_catalogue_79) ... catalogue item 79 priced
+ok
+test_reduced (tests.price_test.PriceTest.test_reduced) ... ok
+test_refund_of_a_refund (tests.price_test.PriceTest.test_refund_of_a_refund) ... FAIL
+test_vat_on_standard (tests.price_test.PriceTest.test_vat_on_standard) ... pricing the standard basket
+ERROR
+
+======================================================================
+ERROR: test_vat_on_standard (tests.price_test.PriceTest.test_vat_on_standard)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/shop/shop/tests/price_test.py", line 15, in test_vat_on_standard
+    self.assertEqual(price.with_vat(100), 120)
+                     ~~~~~~~~~~~~~~^^^^^
+  File "/home/runner/work/shop/shop/price.py", line 10, in with_vat
+    return round(amount * (1 + rate_for(kind)), 2)
+                               ~~~~~~~~^^^^^^
+  File "/home/runner/work/shop/shop/price.py", line 6, in rate_for
+    return RATES[kind]
+           ~~~~~^^^^^^
+KeyError: 'std'
+
+======================================================================
+FAIL: test_refund_of_a_refund (tests.price_test.PriceTest.test_refund_of_a_refund)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/home/runner/work/shop/shop/tests/price_test.py", line 18, in test_refund_of_a_refund
+    with self.assertRaises(ValueError):
+         ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^
+AssertionError: ValueError not raised
+
+----------------------------------------------------------------------
+Ran 83 tests in 0.003s
+
+FAILED (failures=1, errors=1)

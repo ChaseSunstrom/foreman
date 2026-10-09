@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/home/runner/work/shop/shop/app.py", line 11, in <module>
+    print(load_orders('[{"net": 10}]'))
+          ~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/shop/shop/app.py", line 7, in load_orders
+    return json.loads(text, object_hook=lambda d: {**d, "gross": price.with_vat(d["net"])} if "net" in d else d)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/__init__.py", line 365, in loads
+    return cls(**kw).decode(s)
+           ~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+  File "/home/runner/work/shop/shop/app.py", line 7, in <lambda>
+    return json.loads(text, object_hook=lambda d: {**d, "gross": price.with_vat(d["net"])} if "net" in d else d)
+                                                                 ~~~~~~~~~~~~~~^^^^^^^^^^
+  File "/home/runner/work/shop/shop/price.py", line 10, in with_vat
+    return round(amount * (1 + rate_for(kind)), 2)
+                               ~~~~~~~~^^^^^^
+  File "/home/runner/work/shop/shop/price.py", line 6, in rate_for
+    return RATES[kind]
+           ~~~~~^^^^^^
+KeyError: 'std'
