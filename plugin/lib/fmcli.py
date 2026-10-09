@@ -3517,6 +3517,8 @@ def build_parser():
     s.add_argument("--dry", type=int, default=3, help="stop when a later round adds fewer new ideas than this")
     s.add_argument("--seen", action="append", help="an earlier ideas.md whose ideas this run must go past (repeatable)")
     s.add_argument("--deepen", type=int, default=0, help="then a yes-and round for each of the K biggest idea categories")
+    s.add_argument("--falsify", action="store_true", help="one more child: the quickest kill test for each idea (T-0606)")
+    s.add_argument("--crossbreed", action="store_true", help="one more child: the top ideas combined (T-0628)")
     s.add_argument("--timeout", type=int, default=300)
 
     s = add("serve", lazy("fmserve", "cmd_serve"),
