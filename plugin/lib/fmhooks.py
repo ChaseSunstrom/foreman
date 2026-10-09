@@ -767,7 +767,7 @@ def _pre_tool_use(raw):
                 reason += f" To continue the queued work instead: fm focus {nxt.id} ({c.fit(nxt.title, 60)})."
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
                 "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
-                "cmd": c.fit(c.redact(_target(pl.get("tool_input") or {})), 160)})  # T-0172: groundable later
+                "cmd": _window(c.redact(_target(pl.get("tool_input") or {})), block.detail)})  # T-0172, T-0423
         try:
             if p:
                 c.log_event(p, "guard_block", task=act.id if act else None,
@@ -1130,6 +1130,19 @@ def _target(ti):
         if ti.get(k):
             return str(ti[k]).replace("\n", " ")
     return ""
+
+
+def _window(cmd, detail, width=160):
+    """T-0423: ~width chars of the command around where the block's target (the detail up to its first " (") or its
+    variable first appears, so the event shows what tripped the guard; the head when nothing matches."""
+    target = str(detail).split(" (", 1)[0].strip()
+    var = re.match(r"\$\{?(\w+)", target)
+    hit = target and (re.search(re.escape(target), cmd) or var and re.search(r"\$\{?" + var.group(1) + r"\b", cmd))
+    if len(cmd) <= width or not hit:
+        return c.fit(cmd, width)
+    start = max(0, min(hit.start() - width // 3, len(cmd) - width + 2))
+    end = start + width - 2
+    return ("…" if start else "") + cmd[start:end] + ("…" if end < len(cmd) else "")
 
 
 def post_tool_use(pl, ok=True):
