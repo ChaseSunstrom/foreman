@@ -161,6 +161,17 @@ def check_project(p, apply, actions):
                 fmcli.mutate(p, b.id, lambda x: (x.meta.update(status="planned"), x.append_log(f"reopened: {why}")),
                              "task_set", {"status": "planned", "why": why})
                 actions.append(("reopen", b.id))
+    import fmcli
+    for tid in fmcli.unanswered_asks(p):  # T-0622: an ask nobody answered goes quiet after a week, never deleted
+        b = c.find_brief(p, tid)
+        if b and (c.age_days(b.meta.get("created")) or 0) > fmcli.ASK_DAYS:
+            out.append(finding(slug, "ask_expired", "action", f"{tid} (an unanswered ask from fm second session) is "
+                               f"{fmcli.ASK_DAYS}+ days old", "deferred, not dropped", auto=True))
+            if apply:
+                fmcli.mutate(p, tid, lambda x: (x.meta.update(status="deferred"), x.append_log(
+                    f"deferred: an unanswered ask, {fmcli.ASK_DAYS}+ days old (T-0622)")), "task_defer",
+                    {"reason": "unanswered ask expired"})
+                actions.append(("ask_expired", tid))
     import fmrepeats
     n = fmrepeats.open_candidates(fmrepeats.scan(p))
     if n:

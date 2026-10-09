@@ -16,7 +16,7 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
-NAMES = ("dream", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("dream", "cold files", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
 def jobs(p):
@@ -24,6 +24,7 @@ def jobs(p):
     import fmbench
     import fmoutside
     meta, out = c.read_meta(p), [("dream", ["dream"], 0.0)]  # T-0665: free: the day's failures as tripwire candidates
+    out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
     if meta.get("second_session") != c.now()[:10]:
         out.append(("second session", ["second", "session", "--if-due"], fmbudget.estimate("second-session", 1, 0.05)))
     age = c.age_days(meta.get("landscape_at"))
@@ -31,7 +32,8 @@ def jobs(p):
         out.append(("landscape", ["landscape", "--if-due"], fmbudget.estimate("research", 4, 0.2)))
     events = c.ledger_tail(p, 5000)
     asked = {e.get("task") for e in events if e.get("event") == "research"}
-    debt = next((b for b in c.rank_inbox(c.load_briefs(p)) if b.type == "RESEARCH" and b.id not in asked), None)
+    debt = next((b for b in c.rank_inbox(c.load_briefs(p)) if b.type == "RESEARCH" and b.id not in asked
+                 and b.meta.get("source") != "cold"), None)  # local files are read here, never sent to web research
     if debt:  # the oldest research question nobody has asked yet: one a night
         out.append(("research debt", ["research", "ask", c.fit(debt.title, 300), "--task", debt.id],
                     fmbudget.estimate("research", 4, 0.2)))

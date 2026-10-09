@@ -37,7 +37,8 @@ def done_at(b):
 
 def outcomes(p):
     """{task id: {fate, by, type, tier}} for every done task: "reverted" (a Revert commit names it), "fixed later" (a
-    FIX task created after it closed names it), else "held"."""
+    FIX task created after it closed names it), "corrected" (a user correction logged against it after it closed),
+    else "held"."""
     briefs = c.load_briefs(p, include_archive=True)
     closed = {b.id: done_at(b) for b in briefs if b.status == "done"}
     reverted = collections.defaultdict(list)
@@ -53,8 +54,15 @@ def outcomes(p):
         named = (set(_TID.findall(" ".join([f.title, f.section("Raw request")]))) - {f.id}) & closed.keys()
         if len(named) == 1 and str(f.meta.get("created") or "") >= closed[next(iter(named))]:
             later[next(iter(named))].append(f.id)
-    return {b.id: {"fate": "reverted" if b.id in reverted else "fixed later" if b.id in later else "held",
-                   "by": reverted.get(b.id) or sorted(later.get(b.id, [])), "type": b.type, "tier": b.tier}
+    corrected = collections.defaultdict(list)  # T-0602: the user corrected it after it closed
+    for e in c.ledger_tail(p, 50000):
+        t = e.get("task")
+        if e.get("event") == "correction" and t in closed and str(e.get("ts") or "") > closed[t]:
+            corrected[t].append(c.fit(str((e.get("data") or {}).get("text") or ""), 100))
+    fate = lambda i: ("reverted" if i in reverted else "fixed later" if i in later else
+                      "corrected" if i in corrected else "held")
+    return {b.id: {"fate": fate(b.id), "by": reverted.get(b.id) or sorted(later.get(b.id, [])) or corrected.get(b.id, []),
+                   "type": b.type, "tier": b.tier}
             for b in briefs if b.id in closed}
 
 

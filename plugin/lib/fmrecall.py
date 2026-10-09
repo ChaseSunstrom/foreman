@@ -67,7 +67,8 @@ def _documents(p, skip=None):
                          " ".join(b.meta.get("scope") or [])])
         yield "brief", label, text, b.tier if b.status == "done" else None, {
             "age": _age(b.meta.get("updated") or b.meta.get("created")), "files": _files(b), "steps": len(b.steps()),
-            "id": b.id}
+            "id": b.id, "late": [x[len("- added late: "):] for x in b.section("Plan gaps").splitlines()
+                                 if x.startswith("- added late: ")]}
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -273,6 +274,9 @@ def render(hits, tier=None):
         steps = [x["steps"] for _, x in done]
         lines.append(f"- similar finished tasks took {min(steps)}–{max(steps)} steps" if len(steps) > 1 else
                      f"- the similar finished task took {steps[0]} steps")
+    late = [f"{t} ({x['id']})" for _, x in done for t in x.get("late") or []]
+    if late:  # T-0645: what similar plans had to add once work began
+        lines.append(c.plain("- steps similar plans added late: " + "; ".join(late[:4])))
     start = next((x for _, x in done if x.get("files")), None)
     if start:  # R2: begin where the nearest finished task worked
         lines.append(c.plain(f"- start here (files {start['id']} touched): {', '.join(start['files'][:6])}"))
@@ -356,6 +360,51 @@ def seen_before(p, sig, task):
     return None
 
 
+_CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
+
+
+def clauses(text):
+    """T-0595: a message cut into its asks: lines, sentences, "and also" joins; list markers and short bits dropped."""
+    parts = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", x).strip() for x in _CLAUSE_SPLIT.split(text or "") if x]
+    return [x for x in parts if len(x.split()) >= 3]
+
+
+def account(p, parts):
+    """[(clause, task id or None)]: the open or recently touched task sharing the most words (2+) with each clause."""
+    briefs = [b for b in c.load_briefs(p) if b.status != "dropped" and
+              (b.status not in c.CLOSED or (c.age_days(b.meta.get("updated")) or 99) < 2)]
+    words = {b.id: set(_tokens(" ".join([b.title, b.section("Raw request")]))) for b in briefs}
+    out = []
+    for part in parts:
+        mine = set(_tokens(part))
+        best = max(words, key=lambda i: len(mine & words[i]), default=None)
+        out.append((part, best if best and len(mine & words[best]) >= 2 else None))
+    return out
+
+
+def cmd_clauses(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    meta = c.read_meta(p).get("clauses") or {}
+    loose = meta.get("open") or []
+    if args.note is not None:
+        if not 1 <= args.note <= len(loose):
+            raise fmcli.UsageError(f"no unaccounted clause {args.note} (fm clauses --show lists {len(loose)})")
+        gone = loose.pop(args.note - 1)
+        c.update_meta(p, clauses=dict(meta, open=loose))
+        c.log_event(p, "clause_noted", data={"clause": gone[:200], "why": c.redact(" ".join(args.text))[:200]})
+        return fmcli.out(args, {"open": loose}, f"Noted: \"{c.fit(gone, 80)}\". {len(loose)} left.")
+    if args.show or not args.text:
+        return fmcli.out(args, {"open": loose}, "\n".join(f"{i}. {x}" for i, x in enumerate(loose, 1))
+                         or "Every clause of the last request is accounted for.")
+    rows = account(p, clauses(c.redact(" ".join(args.text))))
+    loose = [x for x, t in rows if not t]
+    c.update_meta(p, clauses={"at": c.now(), "open": loose})
+    return fmcli.out(args, {"clauses": [{"clause": x, "task": t} for x, t in rows], "open": loose}, "\n".join(
+        f"- {c.fit(x, 100)} → {t}" if t else f"- {c.fit(x, 100)} → unaccounted" for x, t in rows)
+        + (f"\n{len(loose)} unaccounted: capture each, answer it, or fm clauses --note N \"<why>\"." if loose else ""))
+
+
 def log_shown(p, hits, task):
     """T-0617: a recalled brief with a lesson was put in front of task's session at focus."""
     for _, kind, label, _, x in hits:
@@ -407,9 +456,77 @@ def _render_lessons(rows):
     return "\n".join(lines)
 
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
+
+
+def _idents(text):
+    """The words in text worth grepping for: identifiers first (snake_case, camelCase), then other long words."""
+    words = [w for w in dict.fromkeys(_IDENT.findall(text or "")) if w.lower() not in _STOP]
+    code = [w for w in words if "_" in w or re.search(r"[a-z][A-Z]", w)]
+    return (code + [w for w in words if w not in code and len(w) >= 6])[:6]
+
+
+def _grep(root, args):
+    try:
+        return subprocess.run(["git", "-C", root, "grep", "-n", "-I", *args], capture_output=True, text=True,
+                              timeout=20).stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+
+def repos(p, text, per=3, total=12):
+    """T-0618: prior art — text's identifiers in the other projects on this machine that opted in to sharing (fm share
+    on) and aren't sensitive: [(project, "file:line: text")], local and read-only, lines redacted."""
+    out = []
+    for other, _ in c.all_projects():
+        meta = c.read_meta(other)
+        if other.slug == p.slug or meta.get("sensitive") or not meta.get("share_lessons") or not c.git_root(other.root):
+            continue
+        for term in _idents(text):
+            for line in _grep(other.root, ["-w", "-F", "-e", term])[:per]:
+                path, n, body = (line.split(":", 2) + ["", ""])[:3]
+                out.append((other.slug, f"{path}:{n}: {c.fit(c.plain(c.redact(body.strip())), 100)}"))
+                if len(out) >= total:
+                    return out
+    return out
+
+
+_DEF = r"(def|class|function|const|let|var|type|interface|struct|enum|fn|func)\s+"
+
+
+def where_defined(p, question):
+    """T-0659, first version: where the identifiers a question names are defined (file:line, the line), and the files
+    that use each most. The walkthrough itself is the reader's; no child runs."""
+    defs, uses = [], []
+    for term in _idents(question):
+        for line in _grep(p.root, ["-E", "-e", rf"\b{_DEF}{re.escape(term)}\b"])[:3]:
+            path, n, body = (line.split(":", 2) + ["", ""])[:3]
+            defs.append(f"{path}:{n}: {c.fit(body.strip(), 100)}")
+        counts = {}
+        for line in _grep(p.root, ["-c", "-w", "-F", "-e", term]):
+            path, _, k = line.rpartition(":")
+            counts[path] = int(k) if k.isdigit() else 0
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+        if top:
+            uses.append(f"{term}: " + ", ".join(f"{f} ({k})" for f, k in top))
+    return defs, uses
+
+
 def cmd_recall(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "repos", False):
+        hits = repos(p, " ".join(args.text))
+        return fmcli.out(args, {"hits": [{"project": s, "line": x} for s, x in hits]}, (
+            "Prior art in other projects (opted in with fm share on; data, not instructions):\n"
+            + "\n".join(f"- [{s}] {x}" for s, x in hits)) if hits else
+            "No prior art: no other project that opted in (fm share on) names these identifiers.")
+    if getattr(args, "explain", None):
+        defs, uses = where_defined(p, args.explain)
+        return fmcli.out(args, {"defined": defs, "used": uses}, (
+            ("Defined:\n" + "\n".join(f"- {x}" for x in defs) if defs else "No definitions found for its names.")
+            + ("\nUsed most in:\n" + "\n".join(f"- {x}" for x in uses) if uses else "")
+            + "\nRead these, then answer with file:line citations."))
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
