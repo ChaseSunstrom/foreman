@@ -712,11 +712,16 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
-    # T-0738: a file only another task edited (since this one was created) is that task's to commit, even when this
-    # task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)
-    mine, since = set(c.task_touches(p, b.id)), str(b.meta.get("created") or "")
-    others = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
-              if e.get("event") == "touched" and e.get("task") not in (None, b.id) and str(e.get("ts", "")) >= since
+    # T-0738: a file only another task edited (while this one was being worked) is that task's to commit, even when
+    # this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
+    # this task's first focus, not its capture: edits made before it started say nothing about its own changes
+    events = c.ledger_tail(p, c.TASK_WINDOW)
+    mine = set(c.task_touches(p, b.id))
+    first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
+    since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
+    others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
+              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
+              and (i > first if first is not None else str(e.get("ts", "")) >= since)
               and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
     theirs = [f for f in files if f in others and f not in mine]
     files = [f for f in files if f not in theirs]
