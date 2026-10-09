@@ -47,6 +47,17 @@ class Brief(_Tasks):
         self.assertIn("foreman:fm-builder", res["agent"])
         self.assertIn("builder", self.fm("task", "show", tid).stdout)
 
+    def test_the_brief_names_its_base_and_the_isolation_rule(self):
+        # T-0379 (JARVIS 2026-10-09): Claude Code makes the worktree from the default branch, so a builder can start on
+        # stale code; and its isolation refuses make/gradle/"too complex" commands, which builders retried again and again
+        tid = self.task("Based")
+        brief = read_text(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"])
+        head = git(self.repo, "rev-parse", "HEAD").strip()
+        self.assertIn(head, brief)
+        self.assertIn("merge --ff-only", brief)
+        self.assertIn("isolated in the worktree", brief)
+        self.assertIn("main thread", brief)
+
     def test_builder_model_follows_the_tier(self):
         # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
         # task's on the main model; the main thread still reviews, merges and re-verifies
