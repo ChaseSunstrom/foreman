@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The drive stops offering side work it can't use (T-0700, a self-improvement finding). It doesn't offer `fm lane brief` while both builder slots are taken, which `fm lane brief` refuses, and it skips a planned task whose plan review is already saved when no lane can take it. Each such offer cost a turn.
 
 ## 1.2.16
 - Guard hardening batch (T-0669, which closes T-0577 to T-0584): every open fuzzer escape is now blocked, and the batch was verified once at close. Changes:
