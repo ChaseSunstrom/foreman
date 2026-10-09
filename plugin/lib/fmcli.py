@@ -2607,6 +2607,8 @@ def build_parser():
     s.add_argument("--full", action="store_true")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
+    s.add_argument("--accept-supply", action="store_true",
+                   help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
 
     s = add("sweep", lazy("fmeco", "cmd_sweep"), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
