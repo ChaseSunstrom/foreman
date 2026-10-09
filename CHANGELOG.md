@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 1.2.22 — 2026-10-09
+- Cockpit, first slice (T-0711). The Foreman pane gains a Fleet card: every live session on this machine with project, task, context and mail, plus a tile for each session on a remote the user added. Its steer box runs `fm conductor steer`, which reaches every session here and on those remotes. The task card lists the parts `fm task split` made, with their progress.
+  - `fm conductor remote add NAME user@host [FM_PATH]`, `remote rm NAME` and `remote` (list). A remote's sessions are fetched over the user's own ssh (BatchMode, 5 s connect timeout) by a detached refresh every 60 s and cached, so the pane never waits on the network. Nothing is fetched from a machine that wasn't added.
+- Milestone merge train, first slice (T-0710). `fm task finish ID --commit "<msg>" --stack [--stack-check CMD]` lands a task as a stack: one commit per step, or per member for an `fm batch` host. Each file goes with the step it was last edited in (the ledger's order of edits and step evidence). Each commit is checked alone in a scratch worktree with `--stack-check` or its member's own verify commands, and one that fails alone is folded into the next. Only the task's paths are reset in the index, so other staged work stays. From 30 days of history: 30 batches cost 61M input-equivalent against about 104M estimated for their members done alone (by tier medians), cheaper in 17 of 30.
+- Orchestrators of orchestrators, first slice (T-0709).
+  - `fm task split ID [--parts K] [--files …] [--dry-run]` partitions a task's files (its scope, or `fm graph pack`'s read-set) along the code's seams. It merges the most-linked groups over the work graph's code, co-change and test edges, and each part becomes a child task scoped to its files and told which seams to keep.
+  - `fm task capsule ID` is a child's return to its parent: at most 15 lines covering status, files and lines changed, verification, decisions, lessons, follow-ups and risks.
+  - A parent can't close while a child is open. Children run through lanes and builders like any task, and can split again.
+  - `fm map` now links a test to a source whose name is a short prefix plus the test's (`test_bus.py` → `fmbus.py`).
+  - The proof run (one L task as a tree against one session) waits for usage headroom.
+- Orchestrator control plane, first slice (T-0708). All of it is local and costs no tokens until something happens.
+  - `fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]`: the message reaches the session on its next tool call, once. A session about to stop is held for unread mail. `--wake` types one short line into a session's tmux pane; the statusline now records `TMUX_PANE`.
+  - Leases: an edit leases the function it lands in for 20 minutes, renewed with each edit; a Write leases the file. Another session's edit inside that function is refused, naming the holder and how to message it; edits elsewhere in the file go through. `fm lease list|take|drop`.
+  - `fm conductor` lists live sessions with project, task, context, unread mail and leases. `fm conductor steer "<text>" [--wake]` steers them all.
+
 ## 1.2.21 — 2026-10-09
 - Debugging intuition engine, first slice (T-0706). A red run now comes with what a debugger would gather first.
   - `fm suspects` ranks files for a failure from signals already on hand: repo frames on the stack, what the task changed, the sources linked to the failing tests, and edit recency. The failure hook adds its top 3 to a failing test run.

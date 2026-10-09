@@ -130,7 +130,8 @@ def snapshot(c, data, p):
             "model": (data.get("model") or {}).get("display_name"), "context_pct": cw.get("used_percentage"),
             "context_size": cw.get("context_window_size"), "cost_usd": cost.get("total_cost_usd"),
             "lines_added": cost.get("total_lines_added"), "lines_removed": cost.get("total_lines_removed"),
-            "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio")}
+            "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio"),
+            "tmux_pane": os.environ.get("TMUX_PANE")}  # T-0708: fm bus send --wake types into it
     c.write_atomic(os.path.join(c.state_dir(), "sessions", f"{sid}.json"), json.dumps(snap) + "\n")
 
 

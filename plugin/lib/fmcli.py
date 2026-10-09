@@ -379,6 +379,9 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "packet":
         return task_packet(p, args)
+    if sub in ("split", "capsule"):  # T-0709
+        import fmsplit
+        return (fmsplit.task_split if sub == "split" else fmsplit.task_capsule)(p, args)
     if sub == "show":
         b = need_brief(p, args.id)
         if args.story:  # T-0483
@@ -458,6 +461,9 @@ def cmd_task(args):
         def done(b):
             reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
+            import fmsplit  # T-0709: a parent closes after its children
+            reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"
+                        for k in fmsplit.open_children(p, b)]
             outside = c.scope_drift(b, files)
             if outside and not c.scope_reason_covers(b, touches, outside):
                 latest = max(outside, key=lambda f: touches.get(f, ""))  # T-0168: a reason counts after this edit
@@ -609,7 +615,7 @@ def task_finish(p, args):
     if b.status == "dropped":  # T-0679 chaos test
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
-        _commit_task(p, b, args.commit)
+        _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check)
         return 0
     if not args.audit:
         raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
@@ -667,7 +673,7 @@ def task_finish(p, args):
     args.task_cmd = "done"
     rc = cmd_task(args)
     if args.commit and not rc:
-        _commit_task(p, need_brief(p, b.id), args.commit)
+        _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
     return rc
 
 
@@ -687,7 +693,7 @@ def _finish_gaps(b, args, lenses):
     return gaps
 
 
-def _commit_task(p, b, message, dry=False):
+def _commit_task(p, b, message, dry=False, stack=False, check=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
     credential check, before the close, leaving the index as it was."""
@@ -749,7 +755,15 @@ def _commit_task(p, b, message, dry=False):
     if add.returncode == 0 and not subprocess.run([*git, "diff", "--cached", "--quiet", "--", *files]).returncode:
         print(f"{b.id}: nothing to commit (its files are as committed already).")  # T-0738: not a blank failure
         return
-    trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
+    if stack:  # T-0710: one commit per step group, each checked alone
+        import fmstack
+        subprocess.run([*git, "reset", "-q", "--", *files], capture_output=True)  # the stack builds its own index
+        try:
+            print("\n".join(fmstack.commit(p, b, files, message, check)))
+        except ValueError as e:
+            raise UsageError(f"{b.id} is done, but the stack wasn't committed: {e}")
+        return
+    trailer =[] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
     done = add.returncode == 0 and subprocess.run([*git, "commit", "-q", "-m", message, *trailer, "--",
                                                    *files], capture_output=True, text=True)
@@ -2794,7 +2808,8 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch"),
+    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
+                          "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2919,6 +2934,13 @@ def build_parser():
         t.add_argument("--json", action="store_true")
         return t
 
+    t = tadd("split")  # T-0709
+    t.add_argument("id")
+    t.add_argument("--parts", type=int, help="how many children (default: about 4 files each, 2–4)")
+    t.add_argument("--files", nargs="+", help="the files to split (default: its scope, else fm graph pack's read-set)")
+    t.add_argument("--dry-run", action="store_true", help="show the partition only")
+    t = tadd("capsule")  # T-0709
+    t.add_argument("id")
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
@@ -2988,6 +3010,10 @@ def build_parser():
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
+                                                        "each checked alone; a red one folds into the next (T-0710)")
+    t.add_argument("--stack-check", metavar="CMD", help="the check each stacked commit runs alone (default: its "
+                                                        "member's verify commands)")
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
     t.add_argument("--run", help="the test command")
@@ -3051,6 +3077,21 @@ def build_parser():
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
+    s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
+                                                  "yours (T-0708)")
+    s.add_argument("action", choices=["send", "read"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--type", default="note", choices=["note", "steer", "stop"])
+    s.add_argument("--wake", action="store_true", help="type one short line into a tmux-hosted session")
+    s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
+    s.add_argument("target", nargs="?", help="FILE[::SYMBOL]")
+    s.add_argument("--minutes", type=float, default=20)
+    s = add("conductor", lazy("fmbus", "cmd_conductor"), help="live sessions with their task, context, mail and leases; "
+                                                              "steer them all (T-0708)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "steer", "remote", "refresh"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--wake", action="store_true")
     s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
                                                         "read-set, as of any moment (T-0707)")
     s.add_argument("action", choices=["blast", "pack", "build"])

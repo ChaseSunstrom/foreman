@@ -65,7 +65,9 @@ def build(p):
     for t in (f for f in files if _TEST.search(f) and _CODE.search(f)):
         stem, ext = _name_stem(t), os.path.splitext(t)[1]
         # same language; the source's name is the test's, or ends with it (test_guard.py → fmguard.py)
-        srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (len(stem) >= 4 and _name_stem(s).endswith(stem)))]
+        # T-0709: a short name links when only a short prefix comes before it (test_bus.py → fmbus.py)
+        srcs = [s for s in sources if s.endswith(ext) and (_name_stem(s) == stem or (_name_stem(s).endswith(stem) and (
+            len(stem) >= 4 or len(_name_stem(s)) - len(stem) <= 2)))]
         if srcs:
             links[t] = srcs
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
