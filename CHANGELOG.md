@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- A guard block's event keeps the part of the command that tripped it (T-0423, from a self-improvement pass that couldn't explain two `$R` blocks). The event now records a window around the blocked target, or its variable, instead of the command's head, so a block that comes after a long heredoc can be explained.
+- Builders leave CHANGELOG.md to the main thread (T-0428). With `merge=union` (T-0427), the T-0414 lane's "Unreleased" line merged under `## 1.2.14`, because the main line released between the lane's start and its merge. The lane contract now tells a builder not to edit CHANGELOG.md and to give its changelog line in the final report; the main thread adds it at finish.
 
 ## 1.2.15 — 2026-10-09
 - A data-reading `curl … | python3 -c …` is judged only by what runs before it (T-0414, from JARVIS, refused four times in one session for `…; git log; git fetch` and `T=$(grep …); API=…; …`). Commands after python's pipeline can't change what it does, so they no longer count. A plain assignment before it counts as data when the name isn't in the environment and isn't one python, its loader or the shell reads (`PYTHON*`, `LD_*`, `PATH`, `HOME`, `IFS` …). A name it sets may be expanded only if its value is a plain word. A bare `&` anywhere still refuses, as do python inside `( )` with a redirect or pipe on the group, a quoted `$( )` or backtick, `printf -v`, and a substitution in a heredoc body (the last three slipped through before). A quoted parenthesis on the line also refuses: the review showed `echo ")"; ( … | python3 … ) > json.py` passing, because the quoted `)` was counted as a real one. Real bash checks the rows.
