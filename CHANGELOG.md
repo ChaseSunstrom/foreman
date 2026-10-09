@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).
   - Blocking a task writes its eval case at once (local). `fm evals inbox` lists blocks, plus guard blocks later granted for the same task as false-positive candidates.
   - Bench holdout: a stable hash holds out one case in five, and `fm evolve` never trains on those. `fm bench list` and `fm bench run` take `--split train|holdout`, and `fm bench scorecard` prints each saved run's train and holdout pass rates.
