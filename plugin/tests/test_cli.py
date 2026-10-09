@@ -55,6 +55,15 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("reports live on the dashboard", out)
         self.assertNotIn("Dropped before", self.fm("capture", "fix the login timeout on slow wifi").stdout)
 
+    def test_capture_reask_ignores_a_dropped_batchs_huge_request(self):
+        # T-0726: a dropped batch quoting every member's request shared half the words of any new request
+        import itertools
+        words = " ".join("q" + "".join(x) for x in itertools.product("abcd", repeat=4))  # 256 distinct stems
+        self.fm("capture", f"rebuild members: audit diffs lane locks commit retry evidence quality {words}")
+        self.fm("task", "drop", "T-0001", "rebuilt")
+        out = self.fm("capture", "audit diffs skip lane locks").stdout
+        self.assertNotIn("Dropped before", out)
+
     def test_capture_veto_contradiction(self):
         # T-0438: a request a standing veto covers is said at capture
         self.fm("capture", "tidy the readme")

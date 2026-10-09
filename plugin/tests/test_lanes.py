@@ -99,6 +99,23 @@ class Lanes(ForemanTestCase):
         self.assertFalse(os.path.isdir(data["path"]))
         self.assertIn(tid, [q["id"] for q in json.loads(self.fm("state", "--json").stdout)["queue"]], "back in the queue")
 
+    def test_rm_unlocks_a_finished_agents_worktree_once_merged(self):
+        # T-0725: Claude Code keeps a builder's worktree locked ("claude agent … (pid …)") after it finishes, so
+        # fm lane rm failed on git's lock even with the branch merged
+        tid = self.new("Laned", self.repo, focus=False)
+        data = json.loads(self.fm("lane", "new", tid, "--json").stdout)
+        with open(os.path.join(data["path"], "done.py"), "w") as f:
+            f.write("x = 1\n")
+        self.git("add", "done.py", cwd=data["path"])
+        self.git("commit", "-qm", "done", cwd=data["path"])
+        self.git("worktree", "lock", "--reason", "claude agent agent-x (pid 1 start 1)", data["path"])
+        p = self.fm("lane", "rm", tid, check=False)
+        self.assertNotEqual(p.returncode, 0, "not merged: the agent's lock holds")
+        self.assertIn("merge", p.stderr)
+        self.git("merge", "-q", "--no-ff", "-m", "merge", data["branch"])
+        self.fm("lane", "rm", tid)
+        self.assertFalse(os.path.isdir(data["path"]))
+
     def test_the_shared_status_files_keep_the_main_checkouts_view(self):
         # review: a lane's write overwrote status.json, so the main session's statusline showed the lane's task
         import fmcore as c
