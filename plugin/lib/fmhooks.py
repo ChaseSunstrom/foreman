@@ -1606,7 +1606,8 @@ def _side_work(sd, briefs, work, full, offered):
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
         if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
-                or b.meta.get("builder")):
+                or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
+                or b.section("Verification evidence").strip()):
             continue
         return x
     return None

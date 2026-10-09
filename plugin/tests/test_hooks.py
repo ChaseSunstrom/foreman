@@ -1310,6 +1310,18 @@ class Stop(HookCase):
         self.fm("task", "drop", tid, "test")
         self.assertEqual(self.decision(self.stop("Fixed it.")), "block", "drained again: checks again")
 
+    def test_drive_skips_work_already_under_way(self):
+        # T-0429: while a gate ran, the drive offered builder lanes for T-0414 and T-0421, done here and waiting on it
+        self.fm("init")
+        started = self.task("Done here, waiting on its gate", focus=False)
+        fresh = self.task("Not started", focus=False)
+        self.fm("task", "evidence", started, "--step", "1", "--run", "true")
+        self.task("Current work")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        offered = [parse(self.stop("Waiting for the review.")).get("reason", "") for _ in range(2)]
+        self.assertIn(fresh, offered[0])
+        self.assertFalse(any(f"Start {started}" in r for r in offered), offered)
+
     def offer_for(self, tid):
         return next((json.dumps(e) for e in reversed(self.events()) if e.get("kind") == "drive_offer"
                      and e.get("offer") == tid), "")

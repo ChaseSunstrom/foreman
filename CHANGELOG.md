@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The drive no longer offers a builder lane for a task already under way (T-0429). While a gate ran, it offered fresh lanes for T-0414 and T-0421, which were done in this checkout and only waiting on that gate. A queued task with a ticked step or recorded evidence is no longer offered as side work.
 - A guard block's event keeps the part of the command that tripped it (T-0423, from a self-improvement pass that couldn't explain two `$R` blocks). The event now records a window around the blocked target, or its variable, instead of the command's head, so a block that comes after a long heredoc can be explained.
 - Builders leave CHANGELOG.md to the main thread (T-0428). With `merge=union` (T-0427), the T-0414 lane's "Unreleased" line merged under `## 1.2.14`, because the main line released between the lane's start and its merge. The lane contract now tells a builder not to edit CHANGELOG.md and to give its changelog line in the final report; the main thread adds it at finish.
 
