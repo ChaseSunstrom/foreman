@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Verification and product checking, first versions (T-0682 milestone: T-0457, T-0501, T-0458, T-0475, T-0474, T-0460).
+  - `fm task prove ID --vacuous` names criteria whose checks also pass on the tree the task started from.
+  - `fm task prove ID --same CMD` records a behaviour lock for CLEAN work when CMD's exit and output (timings aside) are the same before and after, and shows the difference when not.
+  - `fm sentinel --bisect` runs `git bisect` in a throwaway worktree for each re-check that fails now, and captures the commit that broke it, and its task, as a FIX.
+  - `fm check --repeat N` reports each gate's pass rate.
+  - `fm task finish` warns about changed source files that no linked test changed or ran.
+  - `fm smoke set cmd "…" [--expect RE]` and `fm smoke set http URL [--status N] [--json-key K]` check products without a web UI.
+  - Product journeys (Playwright steps per criterion) are deferred. A flaky-gate quarantine was skipped: a gate flaky twice stays a failure, so the race gets found.
 - UI and motion (T-0681 milestone: T-0473, T-0472, T-0500).
   - A task's close-out toast carries its grade and the lenses it closed with (`✔ T-0123 done · strong · adversary, edge`), from new `title`, `grade` and `lenses` fields on `fm ui --json`'s closed tasks.
   - The band shows one quiet glyph only when something is amber or red: a failing gate, usage ahead of pace, blocked tasks or hook errors. They come from `fm ui --json`'s new `signals`.

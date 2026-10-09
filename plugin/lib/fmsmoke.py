@@ -83,18 +83,39 @@ def cmd_smoke(args):
             c.write_meta(p, meta)
         return fmcli.out(args, meta["smoke"], f"fm smoke is off here ({meta['smoke']['off']}).")
     if args.action == "set":
-        if len(args.words) != 2 or args.words[0] != "web" or not args.words[1].startswith(("http://", "https://")):
-            raise fmcli.UsageError("fm smoke set web <http(s) url> (or fm smoke set off <why>)")
+        kind, rest = (args.words[:1] or [""])[0], args.words[1:]
+        url_ok = len(rest) == 1 and rest[0].startswith(("http://", "https://"))
+        if kind == "web" and url_ok:
+            entry = rest[0]
+        elif kind == "http" and url_ok:  # T-0460: an API or service endpoint
+            entry = {"url": rest[0], "status": args.status, "key": args.json_key}
+        elif kind == "cmd" and rest:  # T-0460: a CLI, a daemon's status command, a voice pipeline's self-test
+            entry = {"run": " ".join(rest), "expect": args.expect}
+        else:
+            raise fmcli.UsageError("fm smoke set web <http(s) url> | http <http(s) url> [--status N] [--json-key K] | "
+                                   "cmd \"<command>\" [--expect REGEX] (or fm smoke set off <why>)")
         with c.lock(p.dir):
             meta = c.read_meta(p)
-            meta["smoke"] = {"web": args.words[1]}
+            meta["smoke"] = dict({k: v for k, v in (meta.get("smoke") or {}).items() if k != "off"}, **{kind: entry})
             meta["checks"] = list(meta.get("checks") or []) + ([GATE] if GATE not in (meta.get("checks") or []) else [])
             c.write_meta(p, meta)
-        return fmcli.out(args, meta["smoke"], f"fm smoke checks {args.words[1]}; it is one of this project's gates "
-                                              f"(fm check runs it).")
-    url = (c.read_meta(p).get("smoke") or {}).get("web")
+        return fmcli.out(args, meta["smoke"], f"fm smoke checks the {kind} product check; it is one of this project's "
+                                              f"gates (fm check runs it).")
+    smoke = c.read_meta(p).get("smoke") or {}
+    other = _other_checks(p, smoke, args)  # T-0460: before the browser, fast
+    bad = [x for x in other if not x["ok"]]
+    url = smoke.get("web")
     if not url:
-        raise fmcli.UsageError("nothing to check yet: fm smoke set web <url> (the address the user opens)")
+        if not other:
+            raise fmcli.UsageError("nothing to check yet: fm smoke set web <url> | http <url> | cmd \"<command>\"")
+        c.log_event(p, "smoke", data={"checks": len(other), "defects": len(bad)}, session=fmcli.session())
+        fmcli.out(args, {"checks": other}, "\n".join(f"{'ok' if x['ok'] else '✗ failed'}  {x['what']}: {x['detail']}"
+                                                     for x in other))
+        if bad:
+            raise SystemExit(1)
+        return None
+    for x in other:
+        print(f"{'ok' if x['ok'] else '✗ failed'}  {x['what']}: {x['detail']}")
     pw = playwright(p.root)
     if not pw and not _runner():  # review: a lane or machine without it isn't a product defect; say so, don't block
         return fmcli.out(args, {"url": url, "skipped": "no Playwright"},
@@ -116,5 +137,36 @@ def cmd_smoke(args):
                if any(d["what"].startswith("did not load") for d in defects) else "")
             + f"\nScreenshots: {out}")
     fmcli.out(args, dict(res, url=url, shots=out), text)
-    if defects:
+    if defects or bad:
         raise SystemExit(1)
+
+
+def _other_checks(p, smoke, args):
+    """T-0460: the command and HTTP product checks: [{what, ok, detail}]. Only the URLs and commands the project set."""
+    import urllib.request
+    out = []
+    cmd = smoke.get("cmd")
+    if isinstance(cmd, dict) and cmd.get("run"):
+        code, output = c.run_command(p.root, cmd["run"], 300)
+        ok = not code and (not cmd.get("expect") or bool(re.search(cmd["expect"], output)))
+        out.append({"what": f"cmd {cmd['run'][:80]}", "ok": ok, "detail": c.run_result(code, output)
+                    + ("" if ok or code else f" (no match for {cmd['expect']!r})")})
+    http = smoke.get("http")
+    if isinstance(http, dict) and http.get("url"):
+        try:
+            with urllib.request.urlopen(http["url"], timeout=30) as r:  # noqa: S310 — the project's own URL
+                status, body = r.status, r.read(1_000_000)
+        except Exception as e:  # urllib's HTTPError carries the status
+            status, body = getattr(e, "code", None), b""
+        why = []
+        if status != (http.get("status") or 200):
+            why.append(f"status {status}, wanted {http.get('status') or 200}")
+        if http.get("key") and status == (http.get("status") or 200):
+            try:
+                data = json.loads(body.decode("utf-8", "replace"))
+                if not (isinstance(data, dict) and http["key"] in data):
+                    why.append(f"JSON key {http['key']!r} missing")
+            except ValueError:
+                why.append("not JSON")
+        out.append({"what": f"http {http['url'][:80]}", "ok": not why, "detail": "; ".join(why) or f"status {status}"})
+    return out
