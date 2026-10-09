@@ -364,11 +364,11 @@ def _run_lanes(p, batch, args, models, log):
             runs[b.id] = (path, proc, out, time.monotonic())
         deadline = time.monotonic() + args.timeout * 60
         for tid, (path, proc, out, t0) in runs.items():
-            try:
-                code = proc.wait(timeout=max(1, deadline - time.monotonic()))
-            except subprocess.TimeoutExpired:
+            code, why = _watch(proc, path, deadline, getattr(args, "stall", 20) * 60)
+            if code is None:
                 _stop(proc, signal)  # the whole process group: tools the session started go too
-                code = None
+                if why == "stalled":  # T-0447
+                    c.log_event(p, "run_stalled", task=tid, data={"minutes": args.stall, "lane": path})
             out.seek(0)
             text = out.read()
             with open(log, "a", encoding="utf-8") as f:
@@ -387,6 +387,37 @@ def _run_lanes(p, batch, args, models, log):
         for _, _, out, _ in runs.values():
             out.close()
     return results
+
+
+def _transcript_mark(cwd, since):
+    """T-0447: the newest mtime of the Claude Code transcripts for cwd written since `since` (wall clock), or None when
+    there's none to watch (another agent, another layout): a session Foreman can't observe is never called stalled."""
+    folder = os.path.join(os.path.expanduser("~"), ".claude", "projects", re.sub(r"[^A-Za-z0-9]", "-", cwd))
+    try:
+        newest = max((e.stat().st_mtime for e in os.scandir(folder) if e.name.endswith(".jsonl")), default=0)
+    except OSError:
+        return None
+    return newest if newest >= since else None
+
+
+def _watch(proc, cwd, deadline, stall_s):
+    """(exit code, None) when the session ends; (None, "timeout") at the deadline (monotonic); (None, "stalled") once
+    its transcript stops moving for stall_s seconds."""
+    since, mark, moved = time.time() - 1, None, time.monotonic()
+    poll = max(0.5, min(30.0, stall_s / 3))
+    while True:
+        try:
+            return proc.wait(timeout=max(0.1, min(poll, deadline - time.monotonic()))), None
+        except subprocess.TimeoutExpired:
+            pass
+        now = time.monotonic()
+        if now >= deadline:
+            return None, "timeout"
+        m = _transcript_mark(cwd, since)
+        if m is not None and m != mark:
+            mark, moved = m, now
+        if mark is not None and stall_s > 0 and now - moved >= stall_s:
+            return None, "stalled"
 
 
 def _stop(proc, signal):
@@ -625,20 +656,28 @@ def cmd_run(args):
         model = models.get(b.tier)
         cmd = _claude_cmd(p, b, args, models)
         started, t0 = c.now(), time.monotonic()
-        try:
-            r = subprocess.run(cmd, cwd=p.root, env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), capture_output=True,
-                               text=True, timeout=args.timeout * 60)
-            streams, code = (r.stdout, r.stderr), r.returncode
-            output = r.stdout + r.stderr
-        except FileNotFoundError:
-            raise fmcli.UsageError("claude isn't on PATH")
-        except subprocess.TimeoutExpired as e:  # its output may be bytes even with text=True
-            output = "".join(x.decode("utf-8", "replace") if isinstance(x, bytes) else x
-                             for x in (e.stdout or "", e.stderr or ""))
-            code = None
+        import signal
+        import tempfile
+        with tempfile.TemporaryFile("w+", errors="replace") as so, tempfile.TemporaryFile("w+", errors="replace") as se:
+            try:
+                proc = subprocess.Popen(cmd, cwd=p.root, env=dict(os.environ, FOREMAN_DRIVE_TASK=b.id), stdout=so,
+                                        stderr=se, text=True, start_new_session=True)
+            except FileNotFoundError:
+                raise fmcli.UsageError("claude isn't on PATH")
+            code, why = _watch(proc, p.root, t0 + args.timeout * 60, getattr(args, "stall", 20) * 60)
+            if code is None:
+                _stop(proc, signal)  # the whole process group: tools the session started go too
+            so.seek(0)
+            se.seek(0)
+            streams = (so.read(), se.read())
+        output = streams[0] + streams[1]
         with open(log, "a", encoding="utf-8") as f:
-            f.write(f"== {c.now()} {b.id} exit {code}\n{c.redact(output)}\n")
-        if code is None:
+            f.write(f"== {c.now()} {b.id} exit {code}{' (' + why + ')' if why else ''}\n{c.redact(output)}\n")
+        if why == "stalled":  # T-0447: stopped; it resumes from its brief in a fresh session if it moved at all
+            c.log_event(p, "run_stalled", task=b.id, data={"minutes": args.stall})
+            print(f"{b.id}: stalled (its transcript didn't move for {args.stall:g} min); stopped it", flush=True)
+            code = 0
+        elif code is None:
             fail(f"{b.id}: the session hit the {args.timeout}-minute limit; stopping")
         last = (streams[1].strip() or streams[0].strip()).splitlines()[-1:]  # a crash's own error wins over model text
         if code and last and USAGE_LIMIT.search(last[0]):

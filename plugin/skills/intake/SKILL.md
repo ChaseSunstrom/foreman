@@ -26,7 +26,7 @@ Every criterion has a verification command? Could a fresh session run the Execut
 
 ## 4. Autonomy gate
 Check the level with `fm autonomy`.
-- **Standard** — L tier, `?` items, and anything destructive or irreversible (data deletion, force-push, migrations on real data, major dependency bumps, public API changes): present a ≤ 15-line plan summary plus batched questions, each with your default, then stop. After approval: `fm task set ID approved=true`.
+- **Standard** — L tier, `?` items, and anything destructive or irreversible (data deletion, force-push, migrations on real data, major dependency bumps, public API changes): present a ≤ 15-line plan summary plus batched questions, each with your default, then stop. After approval: `fm task set ID approved=true` (a FEATURE L first gets its "Build vs reuse" section: what it builds on, or why nothing fits).
 - **Full** — ask nothing. After the self-critique, record the plan choice with `fm decide`, `fm task set ID approved=true` with a log line "self-approved (full autonomy)", and continue. What only the user can grant (`core`, destructive guard categories, merging Foreman changes): `fm ask`, then carry on with other work and list it in the final report.
 - S/M: proceed after self-review.
 

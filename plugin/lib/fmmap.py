@@ -277,6 +277,16 @@ def outline(path):
     with open(path, encoding="utf-8", errors="replace") as f:
         text = f.read()
     lines = text.splitlines()
+    heads = None  # T-0724: Markdown by its headings, a diff by its files
+    if path.endswith((".md", ".markdown")):
+        heads = [(i + 1, len(m.group(1)) - 1, m.group(2).strip()) for i, line in enumerate(lines)
+                 if (m := re.match(r"(#{1,4})\s+(.+)", line))]
+    elif path.endswith((".diff", ".patch")):
+        heads = [(i + 1, 0, "file " + m.group(1)) for i, line in enumerate(lines)
+                 if (m := re.match(r"diff --git a/\S+ b/(\S+)", line))]
+    if heads is not None:
+        return [(n, next((h[0] - 1 for h in heads[k + 1:] if h[1] <= d), len(lines)), d, name)
+                for k, (n, d, name) in enumerate(heads)], len(lines)
     if path.endswith(".py"):
         try:
             out = []
