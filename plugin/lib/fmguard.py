@@ -67,6 +67,8 @@ def check(tool_name, tool_input, ctx, found=None):
                 if got == "core" and ("core" in ctx.standing and _standing_covers(detail, ctx)
                                       or ctx.trusted and _trust_covers(detail, ctx)):
                     continue
+                if got == "brief" and tool_name == "Bash" and _focuses(tool_input.get("command") or ""):
+                    detail += _FOCUS_LATE  # T-0404: the line's own fm focus hasn't run when the guard reads it
                 return Block(got, detail)
     plug = [d for got, d in found if got == "plugin"]
     # T-0201: refreshing listings before one `claude plugin update` is that update (unpinned; it refreshes them itself)
@@ -87,6 +89,17 @@ def _is_allow(arg):
 _ASK = "fm ask {id} {cat} --why \"<what and why>\", then ask the user one yes/no question; their yes grants it"
 
 
+_FOCUS_LATE = " (this command's own fm focus hasn't run yet: the guard reads the whole command first)"
+
+
+def _focuses(cmd):
+    """T-0404: whether a command focuses a task itself (fm focus, fm task new … --focus)."""
+    try:
+        return any(a[:1] == ["focus"] or (a[:2] == ["task", "new"] and "--focus" in a) for a in fm_calls(cmd))
+    except Exception:
+        return False
+
+
 def _hint(detail):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
     if "(not known before it runs" in detail:
@@ -98,6 +111,8 @@ def _hint(detail):
         return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every other "
                 "command on the line is a plain data tool that writes no file (curl -s, jq, head, tail, sleep): run a "
                 "program that writes files, or a redirect, as its own command.")
+    if detail.endswith(_FOCUS_LATE):
+        return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
         return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")
