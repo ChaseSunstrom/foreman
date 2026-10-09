@@ -276,14 +276,14 @@ class Run(ServeCase):
         self.assertEqual(len(read_text(told).splitlines()), 1)  # once per stale episode
         self.assertIn("T-0002", read_text(told))
 
-    def test_two_failed_sessions_in_a_row_trip_the_breaker(self):
+    def test_blocked_tasks_dont_stop_the_run(self):
+        # T-0434 review: a session that blocks its task says why and the run moves on (the user wants no idling);
+        # only a crash, a login problem or no progress stops it
         for t in ("one", "two", "three"):
             self.task(t)
         self.stub("claude", f'{sys.executable} {FM} task block $FOREMAN_DRIVE_TASK "stub: cannot" >/dev/null\n')
-        p = self.run_fm(check=False)
-        self.assertEqual(p.returncode, 1)
-        self.assertIn("in a row", p.stderr)
-        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 2)  # never a third
+        self.run_fm()
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 3)
 
     def test_tasks_waiting_on_the_user_are_skipped(self):
         a, b = self.task("one"), self.task("two")

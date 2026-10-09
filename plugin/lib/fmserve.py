@@ -645,12 +645,9 @@ def cmd_run(args):
             print(f"{b.id} done{how}")
             _notify(p, f"{b.id} done: {b.title[:80]}")
         elif after.status in ("blocked", "dropped", "deferred"):
-            skip.add(b.id)
+            skip.add(b.id)  # a block says why and the run moves on: it isn't a failure (a crash or no progress is)
             print(f"{b.id} {after.status}{how}")
             _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
-            fails = fails + 1 if after.status == "blocked" else 0
-            if fails >= FAILS_MAX:
-                fail(f"{fails} sessions in a row ended blocked; stopping")
         elif _fingerprint(after) == before:
             fail(f"{b.id}: no progress in a fresh session; stopping")
         else:
