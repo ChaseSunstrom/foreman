@@ -538,10 +538,33 @@ def cmd_task(args):
     raise UsageError(f"unknown task subcommand {sub}")
 
 
+def _repro(b):
+    """T-0704: the command a handoff's failure reproduces with: the newest command fm ran that failed and hasn't
+    passed since, else the red run of red→green."""
+    failed = None
+    for line in b.evidence():
+        if c._RAN_MARK in line and line.count("`") >= 2:
+            cmd = line.split("`", 2)[1]
+            failed = cmd if "` → ✗ exit" in line else None if cmd == failed else failed
+    return failed or b.red_green_cmd()
+
+
 def task_packet(p, args):
     """T-0466: one markdown handoff for a person or another machine: what the task is, when it's done, the steps,
     the evidence, why it's blocked, what was tried and the next probe. Redacted; plain text, no instructions."""
     b = need_brief(p, args.id)
+    repro = _repro(b)
+    if args.check:  # T-0704: a handoff is trusted only while the failure it hands over still happens
+        if not repro:
+            raise UsageError(f"{b.id} has no failing run recorded to reproduce (fm task evidence {b.id} --run \"<cmd>\")")
+        code, output = c.run_command(p.root, repro, args.timeout)
+        if code:
+            return out(args, {"task": b.id, "cmd": repro, "reproduces": True},
+                       f"{b.id}: the failure reproduces ({repro} → {c.run_result(code, output)}): handoff accepted.")
+        out(args, {"task": b.id, "cmd": repro, "reproduces": False},
+            f"{b.id}: stale handoff: {repro} passes now, so the failure it hands over doesn't happen here (fixed "
+            f"already, or this checkout differs); re-check the task before working it.")
+        raise SystemExit(1)
     hyps = b.hypotheses()
     probe = next((re.search(r"probe: `(.+?)`", t) for _, st, t in hyps if st == "open" and "probe: `" in t), None)
     step = next((s for s in b.steps() if not s.done), None)
@@ -551,6 +574,8 @@ def task_packet(p, args):
              "## What it is", (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section(
                  "Raw request")).strip() or b.title),
              "## Done when", "\n".join(f"- [{'x' if a.checked else ' '}] {a.text}" for a in b.acceptance()) or "(none)",
+             "## Reproduce", f"`{repro}` (failed when packed; fm task packet {b.id} --check reruns it)" if repro
+             else "(no failing run recorded)",
              "## Steps", b.section("Steps").strip() or "(none)",
              "## Evidence so far", "\n".join(b.evidence()) or "(none)",
              "## Blocked", "\n".join(blocked) or "(not blocked)",
@@ -594,8 +619,6 @@ def task_finish(p, args):
         if not sep or lens.strip() not in c.AUDIT_LENSES or not result.strip():
             raise UsageError(f"--lens takes '<lens>: <result>' with a lens of {', '.join(c.AUDIT_LENSES)}; got {spec!r}")
         lenses.append((lens.strip(), result.strip()))
-    if b.tier != "S" and not lenses:
-        raise UsageError(f"{b.id} is {b.tier}: name its audits, e.g. --lens 'intent: <result>' --lens 'edge: <result>'")
     runs = {}
 
     def run(cmd):
@@ -615,9 +638,10 @@ def task_finish(p, args):
         ("step", s.n, args.run) for s in b.steps() if not s.done and s.n not in evidenced]
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
-    if missing:
-        raise UsageError(f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
-                         f"evidence of its own")
+    gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses)
+    if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
+        raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -645,6 +669,22 @@ def task_finish(p, args):
     if args.commit and not rc:
         _commit_task(p, need_brief(p, b.id), args.commit)
     return rc
+
+
+def _finish_gaps(b, args, lenses):
+    """T-0704: what fm task done would refuse that this call doesn't supply, checked before anything runs: the audit
+    lenses its tier needs, docs impact and the lesson (M/L)."""
+    given = {lens for lens, _ in lenses} | ({"self"} if b.tier == "S" else set())
+    recorded = b.audit_blockers()
+    gaps = [f"audit missing: --lens '{sorted(g)[0]}: <result>'" + (f" (or {', '.join(sorted(g)[1:])})" if len(g) > 1
+                                                                  else "")
+            for g in c.REQUIRED_AUDITS.get(b.tier, c.REQUIRED_AUDITS["S"])
+            if not g & given and any(r.startswith(f"audit missing: {' or '.join(sorted(g))}") for r in recorded)]
+    if b.docs_gap() and not args.docs:
+        gaps.append("docs impact missing: --docs \"<docs updated | none: why>\"")
+    if b.tier in ("M", "L") and not args.lesson and not b.section("Lessons").strip():
+        gaps.append("lesson missing: --lesson \"<what the next similar task should know>\" (or \"none: <why>\")")
+    return gaps
 
 
 def _commit_task(p, b, message, dry=False):
@@ -2843,6 +2883,9 @@ def build_parser():
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
+    t.add_argument("--check", action="store_true",
+                   help="rerun the failing command the packet hands over: accepted while it still fails (T-0704)")
+    t.add_argument("--timeout", type=int, default=300)
     t = tadd("new")
     t.add_argument("title")
     t.add_argument("--type", required=True)

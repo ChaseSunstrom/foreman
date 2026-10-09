@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Zero-call bookkeeping, first slice (T-0704). Over 14 days, 460 tasks closed with 618 `fm task evidence` calls that re-ran a command the session had just run, and 135 refused finishes retried one gap at a time.
+  - A passing command run through the same runner as one of the task's verify commands or a project gate (e.g. `python3 plugin/tests/run.py -k X`, `npm test`, `cargo test`) records itself as the current step's evidence. Piped or `;`-chained commands don't count (their exit isn't the check's), nor do steps about failing or reproducing.
+  - `fm task finish` checks lenses, docs impact, the lesson and step evidence before running anything and names every gap in one refusal.
+  - `fm task packet ID` carries a Reproduce section (the newest failing command fm ran); `--check` reruns it and accepts the handoff only while the failure still reproduces.
 - Cache economics, first slice (T-0703). Over 30 days, cache reads were 78% of spend (every turn re-reads the whole context; this machine's sessions average 258–339k tokens per turn).
   - `fm cost --sessions`: per session, turns, context per turn, the cache read/write/fresh/output split and cache busts (turns that re-wrote over half of a 30k+ context).
   - The Stop hook's task-boundary note now also fires past 200k context tokens, not only at 60% of the window, and names the tokens.

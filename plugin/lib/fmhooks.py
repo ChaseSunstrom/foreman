@@ -1356,6 +1356,8 @@ def _auto_evidence(pl, p, ok):
     act = c.active_brief(c.load_briefs(p), p.lane) if cmd else None
     hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
     if not hits:
+        if ok and act:
+            _runner_evidence(pl, p, act, cmd)
         return
     if ok:
         r = pl.get("tool_response")
@@ -1375,6 +1377,54 @@ def _auto_evidence(pl, p, ok):
             b.add_evidence(cmd, result, step=step, tree=tree, ran=True)
         c.save_brief(p, b)
         c.log_event(p, "evidence", task=b.id, data={"ac": hits, "step": step, "cmd": cmd[:200], "auto": True},
+                    session=pl.get("session_id"))
+
+
+_INTERPRETERS = re.compile(r"python[0-9.]*|node|bun|deno|bash|sh|ruby|perl|php")
+_RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")
+
+
+def _runner(cmd):
+    """T-0704: what runs a check: the program and its subcommand words (npm test, cargo test, claude plugin test), or
+    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's.
+    ponytail: a word heuristic, so `npm test` and `npm test:e2e` differ; a project-declared runner list if it bites."""
+    cmd = re.sub(r"^(?:cd \S+ && )+", "", cmd)
+    if re.search(r"(?<!\|)\|(?!\|)|;|&&|\|\|", cmd):
+        return None
+    words = [w for w in cmd.split() if not re.match(r"[A-Za-z_]\w*=", w)]
+    if not words:
+        return None
+    key = [os.path.basename(words[0])]
+    rest = iter(words[1:])
+    for w in rest:
+        if _INTERPRETERS.fullmatch(key[0]):
+            key.append(next(rest, "") if w == "-m" else w)
+            break
+        if not re.fullmatch(r"[a-z][\w:-]*", w) or len(key) == 3:
+            break
+        key.append(w)
+    return tuple(key)
+
+
+def _runner_evidence(pl, p, act, cmd):
+    """T-0704: a passing command run through the same runner as one of the task's verify commands or the project's
+    gates is the current step's evidence, so the step needs no fm task evidence call (618 of them re-ran a command the
+    session had just run). A step about failing or reproducing wants a red run, so a pass doesn't verify it."""
+    run = _runner(cmd)
+    cur = act.current_step()
+    if not run or not cur or act.has_evidence(step=cur.n) or _RED_STEP.search(cur.text):
+        return
+    known = [v for _, v in act.verify_cmds() if v] + list(c.read_meta(p).get("checks") or [])
+    if run not in {_runner(" ".join(v.split())) for v in known}:
+        return
+    r = pl.get("tool_response")
+    output = f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+    result, tree = c.run_result(0, c.redact(output)), c.worktree_id(p.root)
+    with c.lock(p.dir, timeout=LOCK_QUICK):
+        b = c.find_brief(p, act.id)
+        b.add_evidence(cmd, result, step=cur.n, tree=tree, ran=True)
+        c.save_brief(p, b)
+        c.log_event(p, "evidence", task=b.id, data={"step": cur.n, "cmd": cmd[:200], "auto": "runner"},
                     session=pl.get("session_id"))
 
 
