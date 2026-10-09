@@ -42,6 +42,28 @@ class Panic(ServeCase):
         self.assertFalse(os.path.exists(self.unit))
         self.serve("stop")  # stopping still works: pause only tightens
 
+    def test_its_review_every_claude_launcher_waits_and_only_the_user_lifts_it(self):
+        # T-0591 (T-0436 review): fm session start, fm ideas, fm research ask, fm bench and fm relate still launched
+        # claude children while paused; and Claude could run fm pause off itself
+        from unittest import mock
+        import fmrelate
+        pack = os.path.join(self.tmp, "pack.md")
+        with open(pack, "w") as f:
+            f.write("a pack\n")
+        self.fm("pause")
+        for args in (["session", "start", "do x"], ["ideas", "--pack", pack], ["research", "ask", "what is x?"],
+                     ["bench", "run"], ["relate"], ["oracle", "will it work?"]):
+            r = self.fm(*args, check=False, env=self.env())
+            self.assertNotEqual(r.returncode, 0, args)
+            self.assertIn("fm pause off", r.stderr, args)
+        self.assertEqual(self.called(), "")
+        with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": ""}), mock.patch("subprocess.Popen") as popen:
+            fmrelate.spawn(c.find_project(self.repo))  # the SessionStart path: skipped, never raised
+        popen.assert_not_called()
+        out = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "fm pause off"}}).stdout
+        self.assertIn('"deny"', out)
+        self.assertTrue(c.panicked())
+
     def test_panic_blocks_unattended_in_a_running_loop(self):
         fm = f"{sys.executable} {FM}"  # the user pauses while the first session runs
         self.stub("claude", f'{fm} pause\n{fm} task block $FOREMAN_DRIVE_TASK "needs a key"\n')

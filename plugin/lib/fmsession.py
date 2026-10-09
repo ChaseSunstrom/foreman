@@ -68,6 +68,7 @@ def _emit(sid, turn, ev):
 # ---------------------------------------------------------------- agents: argv and normalisers
 
 def argv(agent, prompt, resume, model, extra):
+    c.refuse_if_paused()  # T-0591: whatever path got here
     prompt = " " + prompt if prompt.startswith("-") else prompt  # never read as an option
     resume = resume if resume and not str(resume).startswith("-") else None  # nor a resume id
     if agent == "claude":
@@ -549,6 +550,8 @@ def cmd_session(args):
     try:
         if a == "_run":
             return run(need(1)[0])
+        if a in ("start", "send"):
+            c.refuse_if_paused()  # T-0591
         if a == "start":
             if not rest:
                 raise fmcli.UsageError("fm session start needs a message")

@@ -284,6 +284,13 @@ def panicked():
     return os.path.exists(os.path.join(state_dir(), "PANIC"))
 
 
+def refuse_if_paused():
+    """T-0591: every launcher of a claude child calls this at its entry (and its command builder, so a path missed
+    here still stops)."""
+    if panicked():
+        raise PolicyError(PAUSED)
+
+
 def set_panic(on):
     path = os.path.join(state_dir(), "PANIC")
     if on:

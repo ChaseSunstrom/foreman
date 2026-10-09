@@ -39,7 +39,7 @@ def _open(briefs):
 
 def spawn(p):
     """A detached `fm relate --if-due`: never in the caller's time (SessionStart, fm intake)."""
-    if not os.environ.get("FOREMAN_NO_BACKGROUND"):
+    if not os.environ.get("FOREMAN_NO_BACKGROUND") and not c.panicked():  # T-0591: paused, it waits
         subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "relate", "--if-due"], cwd=p.root,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                          start_new_session=True)
@@ -233,5 +233,7 @@ def cmd_relate(args):
         b_id, a_id = (x.upper() for x in args.drop)
         drop(p, b_id, a_id)
         return fmcli.out(args, {"dropped": [b_id, a_id]}, f"{b_id} no longer waits on {a_id}, and won't be inferred to")
+    if not args.no_child:
+        c.refuse_if_paused()  # T-0591: its child is a claude session
     msg = relate(p, not args.no_child, args.if_due, args.model, args.timeout)
     return fmcli.out(args, {"message": msg}, msg)
