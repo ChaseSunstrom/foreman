@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Batch by default (T-0670, at the user's request: "put them into one task/milestone, and not test every little change"):
+  - `fm next` offers a batch for related items of any size. Before, it only did so for three or more small items of one type.
+  - `fm batch --suggest` lists related groups across the inbox, and `--apply` makes them. Items are related when they share a type and either a scope path or their distinctive words (boilerplate common to a third of the inbox doesn't count). Closest pairs merge first, up to 8 items a batch.
+  - A batch brief, and the rules, say how to verify it cheaply: every member's failing tests first, each step's own tests only, then the full gates, replays and review once at close.
 - `rm --rec ~` and `rm --re --f ~` are now read as recursive (T-0668, a review of T-0587). Getopt accepts any unique prefix of a long option, but the guard only knew `--recursive` spelled out. An unknown computed name is also read as `bash -c` and as `eval`. The rm reading of a computed name is skipped only when rm would itself refuse an option that comes before the first operand.
 - A command name bash computes is read every way it may run (T-0587, found while replaying T-0585). Before, `X=rm; $X -rf ~` and `q='rm -rf'; eval "$q ~"` ran unread. Now a `$X` or `` `…` `` name is checked three ways:
   - as its value, when the line sets it once to a literal (spaces kept, quoted text never counted);
