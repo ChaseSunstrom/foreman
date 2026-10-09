@@ -188,7 +188,8 @@ def taste_default(p, options):
              for w in _key_words(s)}
     best = max(free, key=lambda o: sum(w in liked for w in _key_words(o)))
     why = ["avoids the veto " + "; ".join(f"\"{vetoed[o][0]['said']}\"" for o in options if o not in free)] \
-        if len(free) < len(options) else []
+        if len(free) < len(options) else [f"every option hits a veto (\"{vetoed[options[0]][0]['said']}\"): the "
+                                          f"least bad by your record"] if options and all(vetoed.values()) else []
     hits = [w for w in _key_words(best) if w in liked]
     why += [f"like your steers and finished requests ({', '.join(hits)})"] if hits else []
     return best, ("taste record: " + "; ".join(why)) if why else "no signal in your taste record: the first option"

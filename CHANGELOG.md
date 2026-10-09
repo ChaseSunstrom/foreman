@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Autonomy and the user (T-0671 milestone: T-0439, T-0461, T-0477).
+  - `fm taste` proposes a veto once the same no comes up in three steers; the user's one yes adopts it. `fm decide --ask Q --options …` then takes its default from the taste record and never pre-answers a guard category. Synonyms and plurals count too: push, force-push, plugins, credential, delete, sudo, publish.
+  - In standard autonomy, non-urgent asks wait in one digest with a deadline, and each takes its default when the deadline passes. An unreadable deadline is reset, not applied.
+  - `fm capture --from-file PATH|-` attaches a log, a paste or a screenshot path. The excerpt is redacted line by line before it's cut. Credentials files are refused, and a paste is capped at 2 MB.
 - The pipe-into-shell rule closes its review's gaps (T-0716). An option's value no longer passes for the script (`| bash -o posix`, `| python3 -W ignore`, `| node -r ./hook.js`); `| bash -s ARGS` reads stdin; a bare word isn't taken for a script file. A piped group or computed name (`| (sh)`, `| $SH`) counts. Inline code that runs what it reads counts too: `bash -c 'source /dev/stdin'`, `exec bash`, `eval "$(cat)"`, a `read` loop running each line, `python3 -c 'exec(sys.stdin.read())'`, `perl -ne 'system $_'`, `awk '{system($0)}'`, `xargs sh -c`. Data readers such as `json.load(sys.stdin)`, `re.compile` and `| $GREP pat` stay allowed. Replaying 5,000 real commands shows 0 new blocks.
 - A shell or interpreter reading its program from a pipe is refused (T-0715, found probing the T-0698 review). `echo 'rm -rf ~' | bash` ran unread; so did `| sh -s`, `| python3`, `| node -` and `| source /dev/stdin`. None of 5,000 real commands does this, and a heredoc, which the guard reads, does the same job. Inline code (`-c`, `-e`, `-m`) and a script file are unchanged. A download piped in stays `pipe-shell`, which can be granted for an installer.
 - Friction batch (T-0698, from a self-improvement pass):
