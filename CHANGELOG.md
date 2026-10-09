@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.18 — 2026-10-09
+- `fm recall --ask` redacts passages before indexing them, caps what one question indexes at 20 M characters, and shows at most 50 answers (T-0728, from a commit security review). SQLite's snippet put `[ ]` around a matched word inside a secret, so the redactor no longer recognised it on the way out.
 - Performance and cost (T-0676 milestone: T-0467, T-0486, T-0449, T-0487, T-0448).
   - `fm check` runs gates by failure odds per second of median runtime, so fail-fast stops sooner; results stay in configured order.
   - Each `hook_ms` event carries Foreman's version, and `fm doctor` warns when the p95 of the last 200 PreToolUse runs passes the hook budget, naming the version where it rose.
