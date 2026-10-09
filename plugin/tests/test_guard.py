@@ -806,6 +806,24 @@ class PipeShellHint(GuardCase):
         self.assertIsNone(g.check("Bash", {"command": cmd.split("; ", 1)[1]}, ctx))  # the split-off part passes
 
 
+class DataTools(GuardCase):
+    def test_timing_flags_and_nvidia_smi_write_nothing(self):
+        # T-0397 (JARVIS): `curl -s -m 5 http://127.0.0.1:9000/running | python3 -c "…json.load…"; nvidia-smi …` was
+        # refused: a timeout flag and a GPU query counted as commands that may write a module python would import
+        ctx = self.ctx()
+        py = "python3 -c \"import json,sys;print(json.load(sys.stdin))\""
+        for cmd in (f"curl -s -m 5 http://127.0.0.1:9000/running | {py}; nvidia-smi --query-gpu=index,memory.used "
+                    "--format=csv,noheader", f"curl -sk --max-time 3 --connect-timeout 2 https://e/api | {py}",
+                    f"curl -sSm5 https://e/api | {py}", f"curl -m5 -s https://e/api | {py}", f"curl -sI -v https://e/api | {py}"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, ctx))
+        for cmd in (f"curl -s -m 5 -o json.py https://e/x | {py}", f"curl -s -K cfg https://e/x | {py}",
+                    f"curl -s -m json.py https://e/x | {py}", f"nvidia-smi -f json.py; curl -s https://e/x | {py}",
+                    f"nvidia-smi --filename=json.py; curl -s https://e/x | {py}"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(g.check("Bash", {"command": cmd}, ctx), "pipe-shell")
+
+
 class ScratchNames(GuardCase):
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
