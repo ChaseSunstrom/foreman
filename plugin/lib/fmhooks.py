@@ -1464,14 +1464,28 @@ def _drive(p, sd, briefs, pl, g):
                  if w["id"] not in waiting and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting), None)
-    if not work:
-        return None  # nothing left that doesn't need the user
-    wb = next(b for b in briefs if b.id == work["id"])
-    if c.waits_on_user(wb, waiting, "full" if full else "standard"):
-        return None  # waiting on the user's approval (AUTONOMY standard)
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
+    if not work:  # nothing left that doesn't need the user
+        # waiting: what's left is the user's; drained: checked already, and no task has been made since; review: only
+        # after this turn worked a task (answering a question isn't a drain) and within DRIVE_MAX
+        began = _turn_began(p, sid, d) or time.time()
+        worked = any(time.time() - (c.age_days(b.meta.get("updated")) or 1e9) * 86400 >= began - 1 for b in briefs)
+        if (not full or scope or waiting or d.get("drained") == len(briefs) or not worked or _headless()
+                or d.get("count", 0) >= DRIVE_MAX):
+            return None
+        # T-0417: in full autonomy a drained queue is when to look at the product as its user does, once per drain
+        d.update(drained=len(briefs), count=d.get("count", 0) + 1, marks=_marks(p))
+        _event({"kind": "drive_drained", "session_id": sid})
+        return ("Foreman drive: the queue is empty. Before stopping, check the product the way its user uses it: "
+                + ("fm smoke, then " if (c.read_meta(p).get("smoke") or {}).get("web") else "")
+                + "every screen at desktop and phone width (or every command), the main flows, the service logs. "
+                  "fm capture --source self each defect or gap, then plan and work the first. If everything holds, "
+                  "say so in one line and stop.")
+    wb = next(b for b in briefs if b.id == work["id"])
+    if c.waits_on_user(wb, waiting, "full" if full else "standard"):
+        return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(_running(sid))
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
@@ -1503,7 +1517,8 @@ def _drive(p, sd, briefs, pl, g):
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
         more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
-        if not more and full:  # T-0415: nothing else queued: find the next work rather than wait on these jobs
+        if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
+            d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}) and nothing else is "
                     f"queued; don't wait on it. Check the product end to end as its user uses it (every screen at "
                     f"desktop and phone width, or every command; the main flows; the service logs), fm capture each "
