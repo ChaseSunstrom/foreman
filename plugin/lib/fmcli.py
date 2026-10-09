@@ -24,6 +24,16 @@ def session():
     return c.session_id()
 
 
+def _session_model():
+    """T-0487: the model this session runs, from the statusline's snapshot (state/sessions/<id>.json), else None."""
+    sid = re.sub(r"[^\w-]", "", str(session() or ""))[:80]  # as the statusline names it
+    try:
+        with open(os.path.join(c.state_dir(), "sessions", f"{sid or '-'}.json"), encoding="utf-8") as f:
+            return json.load(f).get("model")
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
 def out(args, data, text):
     if getattr(args, "json", False):
         print(json.dumps(data, indent=2, ensure_ascii=False))
@@ -460,9 +470,11 @@ def cmd_task(args):
             b.meta["verified"] = b.grade()[0]
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
-            b.append_log("done")
+            b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
+            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"])
         first_edit = c.first_touch(p, pre.id)
-        b, _ = mutate(p, args.id, done, "task_done", {"lesson": lesson[:300]} if lesson else None)
+        logged = {"lesson": lesson[:300]} if lesson else {}
+        b, _ = mutate(p, args.id, done, "task_done", logged)
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         try:
@@ -1880,7 +1892,7 @@ def cmd_check(args):
         return 0
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
-    for cmd in checks:  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
+    for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
         skip = None if args.fresh else _paths_unchanged(p, cmd, check_paths.get(cmd), tree)
         if skip:  # T-0126: recorded as a pass carrying its real run's time and tree
             results.append((cmd, 0, skip[0], 0.0))
@@ -1908,6 +1920,7 @@ def cmd_check(args):
             notes[cmd] = "; ".join(filter(None, [notes.get(cmd), f"--fail-fast: {len(checks) - len(results)} "
                                                                  f"later gate(s) not run"]))
             break
+    results.sort(key=lambda r: checks.index(r[0]))  # T-0467: listed (and cached, _cached_pass) in configured order
     after = c.worktree_id(p.root) if tree else None
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
     tree = after or tree
@@ -1994,6 +2007,26 @@ def _slower(p, cmd, secs, runs=5):
         return None
     med = sorted(past)[len(past) // 2]
     return f"slower: {secs:.1f} s vs a usual {med:.1f} s" if secs > 1.5 * med and secs - med > 2 else None
+
+
+def _gate_order(p, checks, runs=20):
+    """T-0467: the gates by failure odds per second of median runtime over their last `runs` real runs (skipped ones
+    left out; a flaky first failure counts), so fail-fast stops sooner. Odds are (fails+1)/(runs+2): a gate that never
+    failed still ranks by speed. A gate with no history runs first (unknown, may fail); none with any: as configured."""
+    hist = {cmd: [] for cmd in checks}
+    for e in reversed(c.ledger_tail(p, 2000)):
+        for r in (e.get("data") or {}).get("results") or [] if e.get("event") == "check_run" else []:
+            h = hist.get(r.get("cmd"))
+            if h is not None and len(h) < runs and not r.get("since") and isinstance(r.get("s"), (int, float)):
+                h.append((bool(r.get("exit")) or str(r.get("note") or "").startswith("flaky"), max(r["s"], 0.1)))
+
+    def score(cmd):
+        h = hist[cmd]
+        if not h:
+            return float("inf")
+        med = sorted(s for _, s in h)[len(h) // 2]
+        return (sum(f for f, _ in h) + 1) / (len(h) + 2) / med
+    return sorted(checks, key=score, reverse=True)  # stable: equal scores keep the configured order
 
 
 def _flaky_count(p, cmd, runs=20):
@@ -2624,6 +2657,7 @@ def build_parser():
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
+    s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")

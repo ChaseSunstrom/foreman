@@ -2106,15 +2106,24 @@ def digest_due(d):
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = "standard" if panicked() else read_meta(p).get("autonomy", "standard")
+    waits = ""
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
-            return None, "reflect", fmfriction.ACTION
+            try:  # T-0449: optional work waits while usage runs ahead of pace
+                import fmbudget
+                pace = fmbudget.degrade()
+            except Exception:  # an unreadable snapshot never costs the next action
+                pace = None
+            if not pace:
+                return None, "reflect", fmfriction.ACTION
+            waits = (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
+                     f"required gates still run)")
     mine = lambda x: not (x.meta.get("confirm") and needs_approval(x))  # T-0289: waits for the user, never picked
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
         next(filter(mine, rank_inbox(briefs)), None)
     if not b:
-        return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
+        return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
     since = last_change(p, b.id)
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
     group = []
@@ -2145,7 +2154,7 @@ def _next_for(p, briefs=None):
                            f" · installed skills that fit this stage: {', '.join(fit)} (use one if it helps)")
         except Exception:
             pass  # a broken plugin registry must never cost the next action
-    return b, st, action
+    return b, st, action + waits
 
 
 def active_brief(briefs, lane=None):
