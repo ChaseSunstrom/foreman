@@ -843,6 +843,21 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    if p and tool in FILE_TOOLS and os.path.exists(os.path.join(c.state_dir(), "bus", "leases.json")):  # T-0708
+        # another session's lease on the function this edit lands in
+        try:
+            import fmbus
+            ti = pl.get("tool_input") or {}
+            leased = fmbus.conflict(pl, p, os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or
+                                                                         ti.get("notebook_path") or "")))
+        except Exception:
+            log_error("PreToolUse", _tb())
+            leased = None
+        if leased:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": leased}}))
+            print(leased, file=sys.stderr)
+            return 2
     try:
         _record_asks(pl, p, guard)
         decision = _ask_prompt(pl, p, guard) or _wait_loop(pl)
@@ -857,13 +872,21 @@ def _pre_tool_use(raw):
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
         note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _ambient_note(p)]))
+                                      _ambient_note(p), _bus_note(pl)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _bus_note(pl):
+    """T-0708: this session's unread mail, once."""
+    if not os.path.exists(os.path.join(c.state_dir(), "bus", "mail.jsonl")):
+        return None
+    import fmbus
+    return fmbus.note(pl.get("session_id"))
 
 
 def _ambient_note(p):
@@ -1355,6 +1378,11 @@ def post_tool_use(pl, ok=True):
             fmambient.after_edit(p, path)
         except Exception:
             log_error("PostToolUse", _tb())
+        try:  # T-0708: the function this edit landed in is this session's for a while
+            import fmbus
+            fmbus.after_edit(pl, p, path)
+        except Exception:
+            log_error("PostToolUse", _tb())
         note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
@@ -1550,6 +1578,15 @@ def _progressed(p, marks, sid):
 
 def stop(pl):
     sid, msg = pl.get("session_id"), pl.get("last_assistant_message") or ""
+    if os.path.exists(os.path.join(c.state_dir(), "bus", "mail.jsonl")):  # T-0708: mail holds a stopping session
+        try:
+            import fmbus
+            mail = fmbus.note(sid)
+        except Exception:
+            log_error("Stop", _tb())
+            mail = None
+        if mail:
+            return {"decision": "block", "reason": mail}
     p = c.find_project(_cwd(pl))
     if not p:
         return None

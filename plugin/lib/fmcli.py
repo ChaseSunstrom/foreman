@@ -2794,7 +2794,8 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch"),
+    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
+                          "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -3051,6 +3052,21 @@ def build_parser():
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
+    s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
+                                                  "yours (T-0708)")
+    s.add_argument("action", choices=["send", "read"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--type", default="note", choices=["note", "steer", "stop"])
+    s.add_argument("--wake", action="store_true", help="type one short line into a tmux-hosted session")
+    s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
+    s.add_argument("target", nargs="?", help="FILE[::SYMBOL]")
+    s.add_argument("--minutes", type=float, default=20)
+    s = add("conductor", lazy("fmbus", "cmd_conductor"), help="live sessions with their task, context, mail and leases; "
+                                                              "steer them all (T-0708)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "steer"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--wake", action="store_true")
     s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
                                                         "read-set, as of any moment (T-0707)")
     s.add_argument("action", choices=["blast", "pack", "build"])
