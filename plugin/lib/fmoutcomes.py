@@ -2,6 +2,7 @@
 track record that follows (T-0641): per type and tier, how many closed on their first fm task finish and how many held.
 Everything is derived on demand from git, the briefs and the ledger, so there is nothing extra to keep in sync."""
 import collections
+import os
 import re
 import subprocess
 
@@ -60,10 +61,7 @@ def outcomes(p):
 def track(p, outs=None):
     """{(type, tier): Counter(n, first, held)}: first = its first fm task finish ran no failing check."""
     outs = outcomes(p) if outs is None else outs
-    first = {}
-    for e in c.ledger_tail(p, 50000):
-        if e.get("event") == "finish" and e.get("task") and e["task"] not in first:
-            first[e["task"]] = not (e.get("data") or {}).get("failed")
+    first = _first_finish(p)
     rows = collections.defaultdict(collections.Counter)
     for tid, o in outs.items():
         r = rows[(o["type"], o["tier"])]
@@ -83,8 +81,8 @@ def track_line(p, typ, tier):
     return f"Track record for {typ} {tier} here: {_row(r)} (no later fix or revert)." if r and r["n"] >= 2 else ""
 
 
-def track_lines(p):
-    rows = sorted(track(p).items(), key=lambda kv: -kv[1]["n"])
+def track_lines(p, outs=None):
+    rows = sorted(track(p, outs).items(), key=lambda kv: -kv[1]["n"])
     return ["Track record (all time; held = no later fix or revert): " + " · ".join(
         f"{t} {tier}: {_row(r)}" for (t, tier), r in rows[:6])] if rows else []
 
@@ -98,7 +96,90 @@ def cmd_outcomes(args):
     lines = [f"{len(outs)} finished task(s): {len(outs) - len(bad)} held"
              + "".join(f", {n} {k}" for k, n in fates.most_common())]
     lines += [f"- {t} {o['fate']}: {c.fit(', '.join(o['by'][:3]), 140)}" for t, o in sorted(bad.items())[-20:]]
-    lines += track_lines(p)
+    if getattr(args, "atlas", False):  # T-0620
+        return fmcli.out(args, atlas(p, outs), "\n".join(atlas_lines(p, outs)))
+    lines += track_lines(p) + calibration_lines(p, outs)
     rows = track(p, outs)
     return fmcli.out(args, {"tasks": outs, "track": {f"{a} {b}": dict(r) for (a, b), r in rows.items()}},
                      "\n".join(lines))
+
+
+BUCKETS = ((0, 59), (60, 79), (80, 94), (95, 100))
+
+
+def calibration(p, outs=None):
+    """T-0619, one axis: a task's stated confidence (fm task set ID confidence=N, 0-100) that it holds on its first
+    finish, against what happened: [(lo, hi, n, ok)] per bucket, and the Brier score (0 is perfect; None without
+    data). ok = closed on the first finish and held."""
+    outs = outcomes(p) if outs is None else outs
+    first = _first_finish(p)
+    stated = {b.id: b.meta.get("confidence") for b in c.load_briefs(p, include_archive=True) if b.id in outs}
+    pairs = []
+    for tid, conf in stated.items():
+        try:
+            pairs.append((int(conf), first.get(tid, True) and outs[tid]["fate"] == "held"))
+        except (TypeError, ValueError):
+            continue
+    rows = [(lo, hi, sum(lo <= x <= hi for x, _ in pairs), sum(ok for x, ok in pairs if lo <= x <= hi))
+            for lo, hi in BUCKETS]
+    brier = sum((x / 100 - ok) ** 2 for x, ok in pairs) / len(pairs) if pairs else None
+    return [r for r in rows if r[2]], brier
+
+
+def calibration_lines(p, outs=None):
+    rows, brier = calibration(p, outs)
+    return ["Calibration (stated confidence → held on the first finish): " + " · ".join(
+        f"{lo}–{hi}%: {n} task(s), {ok} held on the first finish ({round(100 * ok / n)}%)" for lo, hi, n, ok in rows)
+        + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
+
+
+def _first_finish(p):
+    first = {}
+    for e in c.ledger_tail(p, 50000):
+        if e.get("event") == "finish" and e.get("task") and e["task"] not in first:
+            first[e["task"]] = not (e.get("data") or {}).get("failed")
+    return first
+
+
+ATLAS_MIN = 3  # tasks before a file or language counts
+
+
+def atlas(p, outs=None):
+    """T-0620: where work tends not to hold. {"files": [...], "languages": [...]}, each row (name, n, bad, weak):
+    done tasks that touched it, how many were later fixed or reverted, how many closed with a weak grade; worst first."""
+    outs = outcomes(p) if outs is None else outs
+    files, langs = collections.defaultdict(collections.Counter), collections.defaultdict(collections.Counter)
+    for b in c.load_briefs(p, include_archive=True):
+        if b.id not in outs:
+            continue
+        touched = [x.lstrip("- ").strip() for x in b.section("Files touched").splitlines() if x.strip()]
+        bad, weak = outs[b.id]["fate"] != "held", b.meta.get("verified") == "weak"
+        for key, group in [(f, files) for f in touched] + [(e, langs) for e in
+                                                             {os.path.splitext(f)[1] or "(none)" for f in touched}]:
+            r = group[key]
+            r["n"], r["bad"], r["weak"] = r["n"] + 1, r["bad"] + bad, r["weak"] + weak
+
+    def rank(group):
+        rows = [(k, r["n"], r["bad"], r["weak"]) for k, r in group.items() if r["n"] >= ATLAS_MIN]
+        return sorted(rows, key=lambda x: (-(x[2] + x[3]) / x[1], -x[1], x[0]))
+    return {"files": rank(files), "languages": rank(langs)}
+
+
+def atlas_lines(p, outs=None, n=8):
+    a = atlas(p, outs)
+    out = []
+    for title, rows in (("Files", a["files"]), ("Languages", a["languages"])):
+        rows = [r for r in rows if r[2] or r[3]][:n]
+        out += [f"{title} where work didn't hold (of {ATLAS_MIN}+ tasks):"] + [
+            f"- {k}: {bad} of {total} needed a later fix or revert" + (f", {weak} closed weak" if weak else "")
+            for k, total, bad, weak in rows] if rows else []
+    return out or [f"No file or language with {ATLAS_MIN}+ finished tasks has needed a later fix yet."]
+
+
+def caution(p, scope):
+    """One line for fm focus when the task's scope covers a file where 20%+ of past work (2+ tasks) needed a fix."""
+    hits = []
+    for k, total, bad, _ in atlas(p)["files"]:
+        if bad >= 2 and bad / total >= 0.2 and any(k == s or k.startswith(s.rstrip("/") + "/") for s in scope):
+            hits.append(f"{k}: {bad} of {total} tasks that touched it needed a later fix or revert")
+    return ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""

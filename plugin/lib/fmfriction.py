@@ -228,6 +228,11 @@ def digest(p, recheck=True):
         f"{k} ({n}× from {ev})" for (ev, k), (n, _) in budget.items()
         if n >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two speak every turn
     out.update(_mine(ledger, label))  # T-0658
+    try:  # T-0620: where this project's work hasn't held, for the pass to look at first
+        import fmoutcomes
+        out["weak areas (fm outcomes --atlas)"] = [x[2:] for x in fmoutcomes.atlas_lines(p) if x.startswith("- ")][:MAX_LINES]
+    except Exception:  # a report line; never the digest
+        pass
     lessons = collections.Counter(e.get("task") for e in events if e.get("kind") == "lesson_shown")  # T-0454
     out["lessons shown (one shown often while the same blocks recur may need rewording)"] = [
         f"{t}: {n}×" for t, n in lessons.most_common(MAX_LINES)]

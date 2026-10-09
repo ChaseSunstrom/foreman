@@ -11,7 +11,8 @@ import time
 
 import fmcore as c
 
-EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title"}
+EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title",
+            "confidence"}
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -1182,7 +1183,27 @@ def _close_warnings_of(p, b, files):
     still = fmsecond.open_dissent(b)  # T-0642: an objection nobody answered is worth one line at the close
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
-    return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else [])
+    honest = _honest(p, b)  # T-0661
+    return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+def _honest(p, b):
+    """T-0661: hindsight rewriting (criteria text or checks edited after work started) and suspiciously smooth results
+    (an M/L task other than a FIX whose every recorded run passed first time); logged as closeout_flags."""
+    log = b.section("Log").splitlines()
+    start = next((i for i, x in enumerate(log) if re.match(r"- \S+ focused\b", x)), None)
+    edits = [re.sub(r"^- \S+ ", "", x) for x in log[start:]] if start is not None else []
+    edits = [x for x in edits if re.match(r"criterion \d+ (text|verify):", x)]
+    runs = [x for x in b.evidence() if c._RAN_MARK in x]
+    smooth = b.tier in ("M", "L") and b.type != "FIX" and runs and not any("✗" in x for x in runs)
+    out = ([f"criteria edited after work started (re-check they weren't loosened to fit the result): "
+            + "; ".join(c.fit(x, 140) for x in edits[:3])] if edits else []) + (
+        [f"suspiciously smooth: all {len(runs)} recorded run(s) passed the first time; was a test seen failing "
+         f"before the change?"] if smooth else [])
+    if out:
+        c.log_event(p, "closeout_flags", task=b.id, data={"kinds": (["criteria_edited"] if edits else [])
+                                                          + (["smooth"] if smooth else [])})
+    return out
 
 
 def _not_verified(p, b, files):
@@ -1396,6 +1417,8 @@ def task_set(p, args):
                 raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
                                  f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
+        if k == "confidence" and not (v.isdigit() and 0 <= int(v) <= 100):  # T-0619
+            raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -1573,7 +1596,8 @@ def cmd_focus(args):
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
     import fmoutcomes
     try:
-        record = fmoutcomes.track_line(p, target.type, target.tier)  # T-0641: calibration before claiming confidence
+        record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
+                                          fmoutcomes.caution(p, target.meta.get("scope") or [])]))  # T-0620
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
@@ -3177,8 +3201,9 @@ def build_parser():
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
-    add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later by a "
-                                                             "task naming them, or held; and the track record (T-0616)")
+    s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
+                                                                 "by a task naming them, or held; track record (T-0616)")
+    s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
     s.add_argument("action", choices=["add"])
     s.add_argument("id")

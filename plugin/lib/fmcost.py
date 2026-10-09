@@ -330,7 +330,8 @@ def cmd_digest(args):
     redo = [(b.id, b.section("Would do differently").strip()) for b in done if b.section("Would do differently").strip()]
     lines += ["Would do differently:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in redo[-6:]] if redo else []
     import fmoutcomes
-    lines += fmoutcomes.track_lines(p)  # T-0641
+    outs = fmoutcomes.outcomes(p)
+    lines += fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-0641, T-0619
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
