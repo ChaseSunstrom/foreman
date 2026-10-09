@@ -228,6 +228,12 @@ def session_start(pl):
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception:  # a review that can't start must never cost the session its start
             log_error("SessionStart", _tb())
+    try:  # T-0383: infer what builds on what (detached, once a day, when 3+ open tasks are new)
+        import fmrelate
+        if fmrelate.due(meta, [x["id"] for x in ([sd["active"]] if sd["active"] else []) + sd["queue"] + sd["inbox"]]):
+            fmrelate.spawn(p)
+    except Exception:
+        log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:

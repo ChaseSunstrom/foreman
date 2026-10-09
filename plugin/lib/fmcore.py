@@ -6,7 +6,6 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
-import heapq
 import json
 import os
 import re
@@ -1228,6 +1227,16 @@ def _key(b):
             RANK.get(b.type, 99), id_num(b.id))
 
 
+def _deps(b):
+    """What a brief waits on: its depends_on, then what fm relate inferred (T-0383)."""
+    return list(dict.fromkeys(list(b.meta.get("depends_on") or []) + list(b.meta.get("inferred_deps") or [])))
+
+
+def _with(b, grp):
+    """T-0383: 0 when b is in grp, the group of the one placed last, so a group's members stay together."""
+    return 0 if grp and b.meta.get("group") == grp else 1
+
+
 SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
 
 
@@ -1241,24 +1250,26 @@ def batched(b, by_id):
 def rank_inbox(briefs):
     """T-0111: captured items by value for effort inside the intake order: urgent first, then type (RANK), then value
     (who asked, 2 per item depending on it, up to 2 for waiting two weeks) per tier; an item follows any captured
-    item it depends on."""
+    item it depends on. T-0383: inferred dependencies count too, and a group's members follow the first one placed."""
     wanted = defaultdict(int)
     for b in briefs:
-        for d in b.meta.get("depends_on") or []:
+        for d in _deps(b):
             wanted[d] += 1
 
-    def key(b):
-        value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min((age_days(b.meta.get("created")) or 0) / 7, 2)
+    def key(b):  # whole days waited: a float age read at each call would order same-second captures by the clock
+        value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min(int(age_days(b.meta.get("created")) or 0) / 7, 2)
         return (0 if b.priority == "urgent" else 1, RANK.get(b.type, 99), -value / TIER_EFFORT.get(b.tier, 2), id_num(b.id))
     by_id = {b.id: b for b in briefs}
     pending = sorted((b for b in briefs if b.status == "captured" and not batched(b, by_id)), key=key)
-    ids, out, placed = {b.id for b in pending}, [], set()
+    keys = {b.id: key(b) for b in pending}
+    ids, out, placed, grp = {b.id for b in pending}, [], set(), None
     while pending:  # ponytail: O(n²), fine for an inbox
-        b = next((x for x in pending if all(d in placed or d not in ids for d in x.meta.get("depends_on") or [])),
-                 pending[0])  # a cycle: as ranked
+        ready = [x for x in pending if all(d in placed or d not in ids for d in _deps(x))] or pending[:1]  # a cycle: as ranked
+        b = min(ready, key=lambda x: (keys[x.id][0], _with(x, grp), keys[x.id][1:]))  # urgent still leads
         pending.remove(b)
         out.append(b)
         placed.add(b.id)
+        grp = b.meta.get("group")
     return out
 
 
@@ -1270,10 +1281,10 @@ def order_queue(briefs):
     deps, dangling = {}, []
     for b in runnable:
         ds = []
-        for d in b.meta.get("depends_on") or []:
+        for d in _deps(b):
             if d in rid:
                 ds.append(d)
-            elif d not in by_id:
+            elif d not in by_id and d in (b.meta.get("depends_on") or []):  # an inferred one was checked when made
                 dangling.append((b.id, d))
         deps[b.id] = ds
     indeg = {i: len(ds) for i, ds in deps.items()}
@@ -1281,16 +1292,16 @@ def order_queue(briefs):
     for i, ds in deps.items():
         for d in ds:
             rev[d].append(i)
-    heap = [(_key(by_id[i]), i) for i, n in indeg.items() if n == 0]
-    heapq.heapify(heap)
-    out = []
-    while heap:
-        _, i = heapq.heappop(heap)
+    ready, out, grp = [i for i, n in indeg.items() if n == 0], [], None
+    while ready:  # ponytail: O(n²) picks, fine for a queue
+        i = min(ready, key=lambda j: _key(by_id[j])[:2] + (_with(by_id[j], grp),) + _key(by_id[j])[2:])  # active, urgent lead
+        ready.remove(i)
         out.append(by_id[i])
+        grp = by_id[i].meta.get("group")
         for j in rev[i]:
             indeg[j] -= 1
             if indeg[j] == 0:
-                heapq.heappush(heap, (_key(by_id[j]), j))
+                ready.append(j)
     placed = {b.id for b in out}
     remaining = [i for i in deps if i not in placed]
     cycles = _cycles({i: [d for d in deps[i] if d in remaining] for i in remaining})

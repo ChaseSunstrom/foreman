@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm relate` (T-0383) orders and groups the queue and inbox by which open tasks build on others, so nobody has to type `#T-` dependencies. A task id one open task names is an edge. A tool-less Haiku child (budgeted, never in a sensitive project) reads the open tasks and adds `T-B -> T-A: why` edges and groups. Unknown ids, self edges and cycles are dropped. The inferences are kept apart from `depends_on`, `fm queue` shows each reason, and `fm relate --clear` undoes them. It runs on its own, detached, from SessionStart and after an `fm intake` of 3+ items: once a day, and only when 3+ open tasks are new since the last run. Captures made in the same second now rank by id instead of by the microsecond the inbox was read.
 
 ## 1.2.4 — 2026-10-09
 - A secret-named template is no longer refused as a credential (T-0386, from JARVIS's builder): `secrets.yaml.example`, `.sample`, `.template`, `.dist` and `.tmpl` copies hold placeholders, as `.env.example` already did. The real files, `secrets.example.yaml` and private-key names stay guarded, and copying a real secret into a template still reads the real file.
