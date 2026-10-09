@@ -2113,6 +2113,13 @@ def next_for(p, briefs=None):
         action += (f" · revisit decision {date}: {decision[:100]} ({why}"
                    + (f"; {len(fired) - 1} more" if len(fired) > 1 else "") + ") — still holds: fm decide \"<it>\" "
                    f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
+    today = datetime.date.today().isoformat()  # T-0450: a deferral whose revisit date came
+    due = [x for x in (briefs if briefs is not None else load_briefs(p))
+           if x.status == "deferred" and str(x.meta.get("revisit") or "9999") <= today]
+    if due:
+        action += (f" · deferred {due[0].id} is due back (revisit {due[0].meta['revisit']})"
+                   + (f" and {len(due) - 1} more" if len(due) > 1 else "")
+                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until <date>")
     d = read_meta(p).get("ask_digest")
     if isinstance(d, dict) and d.get("asks"):  # T-0461
         n = len(d["asks"])

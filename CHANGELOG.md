@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- Planning, briefs and the queue, first versions (T-0677 milestone: T-0450, T-0451, T-0452, T-0488, T-0489, T-0490, T-0491).
+  - `fm task defer ID WHY --until DATE`: `fm next` names it again from that day.
+  - `fm next` says how long this type and tier usually takes here.
+  - `fm orders add --every 1w|--on-change PATH "…"`, with `list`, `rm N` and `run`: standing orders capture a task when due, once per period or change, and `fm night` runs them.
+  - `fm task done` warns when the diff is a size bigger than the planned tier.
+  - `fm task assume ID add FACT --check CMD`: `fm sentinel` re-runs the check after the task is done and captures a FIX when it breaks.
+  - A FEATURE L is approved only with a "Build vs reuse" section.
+  - `fm doctor` names lib modules MASTER.md doesn't.
+  - Deferred: `fm task revert`, budget-fit ordering, a SPIKE type.
 - Orchestration, lanes and fleets, first versions (T-0675 milestone: T-0466, T-0465, T-0446, T-0447).
   - `fm task packet ID [--out PATH]` writes one redacted markdown handoff for a person or another machine: the brief, criteria, steps, evidence, the blocker, the hypotheses tried and the next probe.
   - `fm lane new` refuses, and the drive offers no builder lane, while the host is loaded past twice its CPUs or has under 512 MB available.

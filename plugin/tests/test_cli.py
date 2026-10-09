@@ -698,7 +698,7 @@ class AuditPrep(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "big.py"), "w") as f:
             f.write("".join(f"X{i} = {i}\n" for i in range(900)))
@@ -719,7 +719,7 @@ class AuditPrep(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "prints more with --verbose", "--verify", "pytest")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "cli.py"), "w") as f:
             f.write("VERBOSE = True\n")  # new, uncommitted and untracked
@@ -845,7 +845,7 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "syncs", "--verify", "pytest")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         out = self.fm("audit", "prep", "--print", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
                       "--note", "round 3 only").stdout
