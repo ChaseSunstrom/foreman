@@ -1,6 +1,6 @@
 {
   "name": "foreman",
-  "version": "1.2.11",
+  "version": "1.2.12",
   "description": "Plans, sequences, tracks and verifies work from terse prompts: evidence-gated briefs, focus lock, exact resume, a bypass-mode guard, drive mode and memory hygiene.",
   "author": {
     "name": "ChaseSunstrom"
