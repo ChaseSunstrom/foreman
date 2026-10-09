@@ -1912,6 +1912,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     for body in _subst_bodies(shell, tails) + [b for t in _live_heredocs(cmd) for b in _subst_bodies(t, tails)]:
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
+    lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
     for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
         found += check_bash(script, ctx, depth + 1)
     cwd, chain = ctx.cwd, []
@@ -1974,7 +1975,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
             if base:
                 base = (base[0] + cwds, base[1] + lost, base[2])
-        for inner in _shell_c(args) if _SHELLS.match(name) else ():
+        for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
@@ -1992,7 +1993,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     found += check_bash(" ".join(shlex.quote(x) for x in args[j + 1:end]), ctx, depth + 1)
         if name == "eval":
             joined = " ".join(args)
-            found += check_bash(joined, ctx, depth + 1)
+            for text in _readings(joined, {**lits, **known}):  # T-0587: q='rm -rf'; eval "$q ~"
+                found += check_bash(text, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
@@ -2041,11 +2043,23 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         rm_vars = env or fixed  # T-0190: a literal set once before a branch holds for rm as for a write
-        found += _check_rm(name, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
-        found += _check_git(name, args, cwd, ctx)
-        found += _check_system(name, args)
-        found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")
-        found += _check_publish(name, args)
+        names = [name]
+        if re.search(r"[$`]", name):  # T-0587: a name bash computes, read every way it may run
+            m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", argv[0])
+            val = ({**lits, **known}.get(m.group(1) or m.group(2)) if m else None)
+            rest_args = [shlex.quote(a) for a in args]
+            if val is not None:  # its value on this line, split as bash splits it unquoted
+                found += check_bash(" ".join([val] + rest_args), ctx, depth + 1)
+            found += check_bash(" ".join(rest_args), ctx, depth + 1) if args else []  # it may expand to nothing
+            names += _COMPUTED_AS  # or be any dangerous command
+        for nm in names:
+            if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
+                continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
+            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
+            found += _check_git(nm, args, cwd, ctx)
+            found += _check_system(nm, args)
+            found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
+            found += _check_publish(nm, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
     return found + [("system", unreadable)] if unreadable else found
 
@@ -2606,6 +2620,45 @@ _PUBLISH = {
     "fly": ["deploy"], "flyctl": ["deploy"], "firebase": ["deploy"], "serverless": ["deploy"], "sls": ["deploy"],
     "wrangler": ["deploy", "publish"], "heroku": ["releases:rollback"],
 }
+_LIT_ASSIGN = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(?:'([^']*)'|\"([^\"$`\\]*)\"|([^\s;&|()<>'\"$`\\]*))(?=[\s;&|)]|$)")
+
+
+def _line_literals(shell):
+    """T-0587: NAME → value for a name set once on the line to a literal (spaces kept: q='rm -rf') and named nowhere
+    else but in $q / ${q}, so no loop, read, declare or second assignment can have changed it."""
+    out = {}
+    for m in _LIT_ASSIGN.finditer(_mask_quotes(shell)):  # an assignment, not quoted text that looks like one
+        k = next(k for k in (2, 3, 4) if m.group(k) is not None)
+        name, val = m.group(1), shell[m.start(k):m.end(k)]
+        rest = shell[:m.start()] + shell[m.end():]
+        if not re.search(rf"(?<![\w$]){name}(?!\w)|\$\{{[#!]?{name}[^}}]", re.sub(rf"\$(?:\{{{name}\}}|{name}(?!\w))", "", rest)):
+            out[name] = val
+    return out
+
+
+# T-0587: what a command name bash computes from an unknown value ($X, `which x`) is checked as: those whose check
+# reads the arguments (ponytail: crontab, at, nft, ufw, disk and power tools refuse nearly any arguments, so they'd
+# refuse every computed name; a bare `$X` that is shutdown stays unread)
+_COMPUTED_AS = ["rm", "git", "claude", "dd", "systemctl", "cryptsetup", "direnv", "init"] + sorted(_PUBLISH)
+_RM_OPT = re.compile(r"-[fiIrRdv]+|--(?:force|interactive(?:=\w+)?|one-file-system|no-preserve-root|preserve-root(?:=all)?"
+                     r"|recursive|dir|verbose)?")
+
+
+def _readings(text, vals):
+    """T-0587 (its review): text eval or sh -c runs, as written (an unknown $q: empty, conditional, a subshell's) and,
+    when it differs, with the literal values this line set: both are read, so a value adds findings, never hides one"""
+    sub = _with_vars(text, vals)
+    return [text] if sub == text else [text, sub]
+
+
+def _rm_opts_only(args):
+    """T-0587: every option before a -- is one rm accepts (an unknown one makes rm exit before deleting)."""
+    for a in args:
+        if a == "--":
+            return True
+        if a.startswith("-") and len(a) > 1 and not _RM_OPT.fullmatch(a):
+            return False
+    return True
 
 
 def _check_publish(name, args):
