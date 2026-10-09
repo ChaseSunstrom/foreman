@@ -85,11 +85,18 @@ def cmd_lane(args):
 
 BUILDERS = 2  # at once: each is a full session's worth of tokens, and two merging into one tree is plenty to review
 CONTRACT = """## Your contract (foreman:fm-builder)
-- First, in your worktree: `fm focus {id}`. Refused → stop and report why.
+- Start from the main checkout's commit {base}: Claude Code makes your worktree from the default branch, which can be
+  older. If `git rev-parse HEAD` isn't {base}: when `git merge-base --is-ancestor HEAD {base}` succeeds, run
+  `git merge --ff-only {base}`; otherwise stop and report the two commits (T-0379).
+- Then, in your worktree: `fm focus {id}`. Refused → stop and report why.
 - Stay in your worktree; never touch the main checkout, other worktrees or Foreman's state except through fm.
 - Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then `fm check --evidence {id}`.
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
-- Never push, never merge, never rebase, never close the task, never launch agents.
+- Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
+  launch agents.
+- Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
+  pipeline): that's the harness, not a bug. Don't retry or rephrase it; run what it allows, commit, and list each
+  refused check in your report as one for the main thread to run after the merge.
 - Return: branch, commit sha, each criterion ✓/✗ with its evidence, what's unfinished, files to read first."""
 
 
@@ -122,7 +129,9 @@ def builder_brief(p, b, args):
         body = b.section(name).strip()
         if body:
             parts += [f"## {name}", body, ""]
-    parts.append(CONTRACT.format(id=b.id))
+    main = c.main_worktree(p.root) or p.root
+    base = _git(main, "rev-parse", "HEAD").stdout.strip() or "HEAD"
+    parts.append(CONTRACT.format(id=b.id, base=base))
     path = os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
