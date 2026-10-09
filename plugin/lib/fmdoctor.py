@@ -245,9 +245,25 @@ def check_file_map(home, master_path):
 
 
 def check_backup(home):
+    """T-0574: the newest backups/*.tgz is read through to its end, as a restore would (gzip checks its CRC there);
+    nothing is written."""
+    import tarfile
     d = os.path.join(home, "backups")
     tgz = sorted(f for f in os.listdir(d) if f.endswith(".tgz")) if os.path.isdir(d) else []
-    return Result("backup", "PASS" if tgz else "FAIL", f"latest {tgz[-1]}" if tgz else "no backups/*.tgz")
+    if not tgz:
+        return Result("backup", "FAIL", "no backups/*.tgz")
+    files = 0
+    try:  # ponytail: reads every member's bytes, never extracts; a real extract into a temp dir if this misses one
+        with tarfile.open(os.path.join(d, tgz[-1]), "r:gz") as t:
+            for m in t:
+                if m.isfile():
+                    files += 1
+                    f = t.extractfile(m)
+                    while f and f.read(1 << 20):
+                        pass
+    except (OSError, EOFError, tarfile.TarError, ValueError) as e:
+        return Result("backup", "FAIL", f"the newest backup {tgz[-1]} doesn't restore: {c.fit(str(e), 120)}")
+    return Result("backup", "PASS", f"latest {tgz[-1]}: restore rehearsal read {files} files")
 
 
 def check_validate(home):
@@ -359,6 +375,21 @@ def check_running_code(ledger, installed, plugin=PLUGIN):
         return Result("running code", "WARN", f"the last session ran Foreman {ran} from {root}, but {want} is at "
                                               f"{want_root}: restart that session, or put the fix in {root}")
     return Result("running code", "PASS", f"sessions run Foreman {ran} from {root}")
+
+
+def check_version_skew(projects, changes=None):
+    """T-0463: projects whose last session ran a Foreman older than released fixes, with the task ids they lack."""
+    import fmeco
+    changes = fmeco.changelog() if changes is None else changes
+    behind = []
+    for p, meta in projects:
+        ran = (meta.get("foreman") or {}).get("version")
+        lacks = fmeco.lacks(ran, changes)
+        if lacks:
+            behind.append(f"{p.slug} ran {ran}, lacks {len(lacks)} ({', '.join(lacks[:4])}{' …' if len(lacks) > 4 else ''})")
+    return Result("version skew", "WARN" if behind else "PASS",
+                  "; ".join(behind[:6]) + " — restart their sessions on the new Foreman" if behind else
+                  "every project's last session ran the newest released Foreman (or none recorded one yet)")
 
 
 def check_python(v=sys.version_info[:3], refresh=None, child=False):
@@ -770,6 +801,7 @@ def run_all(full=False):
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
+    results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
