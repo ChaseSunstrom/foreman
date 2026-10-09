@@ -160,15 +160,13 @@ _CACHE = re.compile(r"(^|/)__pycache__(/|$)|\.py[co]$")
 def merge(p, b, main):
     """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
     guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
-    write by its task would (its grants, the standing yes, trust), so fm is no way around it. Refused over uncommitted
-    changes; a merge that conflicts is aborted."""
+    write by its task would (its grants, the standing yes, trust), so fm is no way around it. Refused over staged
+    changes or uncommitted edits to a file the branch changes (T-0403); a merge that conflicts is aborted."""
     import fmcli
     import fmguard
     branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
     if _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode:
         raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
-    if _git(main, "status", "--porcelain", "--untracked-files=no").stdout.strip():
-        raise c.PolicyError(f"{main} has uncommitted changes: commit them first, then merge")
     meta = c.read_meta(p)
     ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
                       state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
@@ -177,6 +175,26 @@ def merge(p, b, main):
     # T-0382: --no-renames, so a file moved away is listed by its old path too (a rename deletes it from main)
     files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{branch}").stdout.split("\0")
              if f]
+    # T-0403: the main thread is often mid-task, so uncommitted edits the branch doesn't touch stay and the merge goes
+    # ahead, as git's own does; a staged change (the merge commit would record it) or an overlapping edit refuses
+    entries, staged, dirty, i = _git(main, "status", "--porcelain", "-z", "--untracked-files=no").stdout.split("\0"), [], set(), 0
+    while i < len(entries):
+        e, i = entries[i], i + 1
+        if len(e) < 4:
+            continue
+        dirty.add(e[3:])
+        if e[0] in "RC" and i < len(entries):  # a rename or copy: its source path follows
+            dirty.add(entries[i])
+            i += 1
+        if e[0] not in " ?":
+            staged.append(e[3:])
+    if staged:
+        raise c.PolicyError(f"{main} has staged changes ({', '.join(staged[:5])}), which a merge commit would record: "
+                            f"commit or unstage them, then merge")
+    clash = sorted(dirty & set(files))
+    if clash:
+        raise c.PolicyError(f"{main} has uncommitted changes to {', '.join(clash[:5])}, which {branch} also changes: "
+                            f"commit them first, then merge")
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:

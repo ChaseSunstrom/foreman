@@ -824,6 +824,22 @@ class DataTools(GuardCase):
                 self.assertBlocked(g.check("Bash", {"command": cmd}, ctx), "pipe-shell")
 
 
+class FocusHint(GuardCase):
+    def test_brief_refusal_with_focus_in_the_line(self):
+        # T-0404 (JARVIS): `fm focus T-0278 2>&1|tail -1; sed -i … docs/testing.md` was refused twice: the guard reads
+        # the whole line before the focus in it runs, and the refusal didn't say so
+        ctx = g.Ctx(cwd=self.repo, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                    allow=set(), task_id=None, unbriefed=self.repo)
+        for cmd in (f"fm focus T-0278 2>&1 | tail -1; echo x > {self.repo}/f.txt",
+                    f"fm task new t --type FIX --tier S --focus && echo x > {self.repo}/f.txt"):
+            with self.subTest(cmd=cmd):
+                block = g.check("Bash", {"command": cmd}, ctx)
+                self.assertBlocked(block, "brief")
+                self.assertIn("own command", g.message(block, ctx))
+        plain = g.check("Bash", {"command": f"echo x > {self.repo}/f.txt"}, ctx)
+        self.assertNotIn("own command", g.message(plain, ctx))
+
+
 class ScratchNames(GuardCase):
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run

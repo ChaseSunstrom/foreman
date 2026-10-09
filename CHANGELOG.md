@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.2.10 — 2026-10-09
+- A "no active task" refusal whose own command runs `fm focus` (or `fm task new … --focus`) now says to run the focus as its own command first (T-0404, from JARVIS: refused twice in a row). The guard reads the whole command before any of it runs. Only the message changes.
+- `fm lane merge` lands a builder's branch while the main thread is mid-task (T-0403, from JARVIS: T-0280 couldn't land during T-0278). Uncommitted edits the branch doesn't touch stay put and the merge goes ahead, as git's own does. A staged change (the merge commit would record it) or an edit to a file the branch also changes still refuses, by name.
+
 ## 1.2.9 — 2026-10-09
 - The drive no longer lets a session idle on background jobs while work is queued (T-0401; the user, watching JARVIS: "make sure it doesnt sit idle"). Each Stop during background work names the next queued task that can move and how to start it: a builder lane for planned S/M work, or planning for an L task or an inbox item. It also says to `fm task block` a task that can't move, instead of using it as a reason to wait. It offers up to 3 tasks per set of jobs, then waits as before. Tasks that depend on the active one, or are already in a lane, are skipped.
 
