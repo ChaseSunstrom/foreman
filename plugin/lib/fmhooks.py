@@ -21,6 +21,7 @@ DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
 OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
 LONG_JOB_S = 20 * 60    # T-0415: a background job running longer no longer holds the drive
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
+CONTEXT_NOTE_TOKENS = 200_000  # T-0703: every turn re-reads the context, so past this a 1M window costs at 20%
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
 # async events (latency irrelevant) and per-batch MessageDisplay are not timed
@@ -855,13 +856,22 @@ def _pre_tool_use(raw):
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
-        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
+        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+                                      _ambient_note(p)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _ambient_note(p):
+    """T-0705: a flip of the affected tests since the last tool call, once."""
+    if not p or not os.path.exists(os.path.join(p.dir, "ambient", "note.json")):
+        return None
+    import fmambient
+    return fmambient.note(p)
 
 
 def _guard_ctx(pl, fmguard):
@@ -1340,6 +1350,11 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
+        try:  # T-0705: the affected tests run out of the model's turns; only a flip comes back
+            import fmambient
+            fmambient.after_edit(p, path)
+        except Exception:
+            log_error("PostToolUse", _tb())
         note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
@@ -1355,6 +1370,8 @@ def _auto_evidence(pl, p, ok):
     act = c.active_brief(c.load_briefs(p), p.lane) if cmd else None
     hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
     if not hits:
+        if ok and act:
+            _runner_evidence(pl, p, act, cmd)
         return
     if ok:
         r = pl.get("tool_response")
@@ -1377,6 +1394,54 @@ def _auto_evidence(pl, p, ok):
                     session=pl.get("session_id"))
 
 
+_INTERPRETERS = re.compile(r"python[0-9.]*|node|bun|deno|bash|sh|ruby|perl|php")
+_RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")
+
+
+def _runner(cmd):
+    """T-0704: what runs a check: the program and its subcommand words (npm test, cargo test, claude plugin test), or
+    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's.
+    ponytail: a word heuristic, so `npm test` and `npm test:e2e` differ; a project-declared runner list if it bites."""
+    cmd = re.sub(r"^(?:cd \S+ && )+", "", cmd)
+    if re.search(r"(?<!\|)\|(?!\|)|;|&&|\|\|", cmd):
+        return None
+    words = [w for w in cmd.split() if not re.match(r"[A-Za-z_]\w*=", w)]
+    if not words:
+        return None
+    key = [os.path.basename(words[0])]
+    rest = iter(words[1:])
+    for w in rest:
+        if _INTERPRETERS.fullmatch(key[0]):
+            key.append(next(rest, "") if w == "-m" else w)
+            break
+        if not re.fullmatch(r"[a-z][\w:-]*", w) or len(key) == 3:
+            break
+        key.append(w)
+    return tuple(key)
+
+
+def _runner_evidence(pl, p, act, cmd):
+    """T-0704: a passing command run through the same runner as one of the task's verify commands or the project's
+    gates is the current step's evidence, so the step needs no fm task evidence call (618 of them re-ran a command the
+    session had just run). A step about failing or reproducing wants a red run, so a pass doesn't verify it."""
+    run = _runner(cmd)
+    cur = act.current_step()
+    if not run or not cur or act.has_evidence(step=cur.n) or _RED_STEP.search(cur.text):
+        return
+    known = [v for _, v in act.verify_cmds() if v] + list(c.read_meta(p).get("checks") or [])
+    if run not in {_runner(" ".join(v.split())) for v in known}:
+        return
+    r = pl.get("tool_response")
+    output = f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+    result, tree = c.run_result(0, c.redact(output)), c.worktree_id(p.root)
+    with c.lock(p.dir, timeout=LOCK_QUICK):
+        b = c.find_brief(p, act.id)
+        b.add_evidence(cmd, result, step=cur.n, tree=tree, ran=True)
+        c.save_brief(p, b)
+        c.log_event(p, "evidence", task=b.id, data={"step": cur.n, "cmd": cmd[:200], "auto": "runner"},
+                    session=pl.get("session_id"))
+
+
 def post_tool_use_failure(pl):
     """Also failure memory (T-0046): a failed command whose failure a finished task already met gets a pointer to it."""
     post_tool_use(pl, ok=False)
@@ -1388,7 +1453,11 @@ def post_tool_use_failure(pl):
             return None
         import fmrecall
         act = c.active_brief(c.load_briefs(p), p.lane)
-        note = fmrecall.note_failure(p, act.id if act else None, str(pl.get("error") or ""))
+        err = str(pl.get("error") or "")
+        note = fmrecall.note_failure(p, act.id if act else None, err)
+        if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
+            import fmdebug
+            note = " ".join(filter(None, [note, fmdebug.line(p, err)]))
     except Exception:
         log_error("PostToolUseFailure", _tb())
         return None
@@ -1588,14 +1657,16 @@ def _evidence_gate(p, act, pl, g, closed=()):
             f"fm task evidence {act.id} {flag}\"<cmd>\" \"<result>\", or state why it can't be verified.")
 
 
-def _context_pct(sid):
-    """Context-window use for a session, from the statusline's snapshot (state/sessions/<id>.json)."""
+def _context(sid):
+    """(percent, tokens) of the context window a session uses, from the statusline's snapshot
+    (state/sessions/<id>.json); (None, 0) when there's none."""
     try:
         with open(os.path.join(c.state_dir(), "sessions", f"{sid}.json")) as f:
-            pct = json.load(f).get("context_pct")
-        return int(pct) if pct is not None else None
-    except (OSError, ValueError, TypeError):
-        return None
+            snap = json.load(f)
+        pct = int(snap["context_pct"]) if snap.get("context_pct") is not None else None
+        return pct, int(pct * int(snap.get("context_size") or 0) / 100) if pct is not None else 0
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None, 0
 
 
 BG_WAIT_S = 2 * 3600  # backstop: a start older than this is assumed finished (T-0096: 6 h stalled a 5-day session)
@@ -1743,15 +1814,17 @@ def _drive(p, sd, briefs, pl, g):
                  "when a question or approval is needed, or with `fm drive off`."))
     try:
         reason += " Next: " + c.next_for(p, briefs)[2]
-        pct = _context_pct(sid)
+        pct, tokens = _context(sid)
+        big = pct is not None and (pct >= CONTEXT_NOTE_PCT or tokens >= CONTEXT_NOTE_TOKENS)
+        used = f"{pct}%" + (f" ({tokens // 1000}k tokens)" if tokens else "")
         act = sd["active"]
-        if not act and pct is not None and pct >= CONTEXT_NOTE_PCT:
-            reason += (f" Context {pct}% used at a task boundary; Foreman state is saved, so this is a good point for "
+        if not act and big:
+            reason += (f" Context {used} used at a task boundary; Foreman state is saved, so this is a good point for "
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
-        elif act and act["tier"] in ("M", "L") and pct is not None and pct >= CONTEXT_NOTE_PCT:
+        elif act and act["tier"] in ("M", "L") and big:
             n = _step_boundary(p, act["id"])  # T-0448: compact between steps, not mid-step; once per boundary
             if n and _first_time(sid, f"compact-{act['id']}-s{n}"):
-                reason += (f" Context {pct}% used at a step boundary of {act['id']} (step {n} has its evidence): "
+                reason += (f" Context {used} used at a step boundary of {act['id']} (step {n} has its evidence): "
                            f"checkpoint here, fm checkpoint --note \"<what the next step needs>\"; its Resume here is "
                            f"the handoff the compacted context reads, so this is the point for the user to /compact "
                            f"(auto-compaction will also handle it).")

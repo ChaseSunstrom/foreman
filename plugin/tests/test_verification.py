@@ -102,6 +102,22 @@ class NotVerified(Base):
         self.assertIn("lib/b.py", out)
         self.assertNotIn("lib/a.py", out.split("not verified")[1] if "not verified" in out else "")
 
+    def test_a_passing_gate_run_covers_the_files_its_paths_match(self):
+        # T-0736: the full suite is a gate, so a passing run of it verifies every file it covers
+        self.write("lib/a.py", "A = 1\n")
+        self.write("tools/t.py", "T = 1\n")
+        self.commit("base")
+        self.fm("check", "add", "python3 -c 'print(1)'")
+        self.fm("check", "paths", "1", "lib/**")
+        self.fm("task", "new", "Change a and t", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        self.write("lib/a.py", "A = 2\n")
+        self.write("tools/t.py", "T = 2\n")
+        r = self.fm("task", "finish", "T-0001", "--audit", "self check", "--run", "python3 -c 'print(1)'")
+        warned = (r.stdout + r.stderr).split("not verified")[1] if "not verified" in r.stdout + r.stderr else ""
+        self.assertNotIn("lib/a.py", warned)
+        self.assertIn("tools/t.py", warned)
+
 
 class SmokeCmd(Base):
     def test_a_command_and_an_http_check_run_as_the_product_check(self):

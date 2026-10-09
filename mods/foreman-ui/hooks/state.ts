@@ -30,4 +30,4 @@ export const starts = new Map<string, number>() // tool_use_id → when it start
 export const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 
 /** userConfig and the session's folder, set by register (rows read them). */
-export const cfg = { freshAt: 40, mascot: 'blue', root: '' }
+export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '' }
