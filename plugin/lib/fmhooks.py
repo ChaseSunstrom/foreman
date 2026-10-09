@@ -216,7 +216,9 @@ def session_start(pl):
                 week = None
             if week:
                 other_note = " ".join(x for x in (other_note, week) if x)
-        meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root))
+        import fmeco  # T-0463, T-0574: the Foreman this project runs, on which machine (fm projects, fm doctor)
+        meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
+                    foreman=fmeco.stamp())
         c.write_meta(p, meta)
         synced = _sync_import(p)
         sd = c.regen_views(p)
@@ -230,6 +232,15 @@ def session_start(pl):
                               "--exclude", sid or ""], cwd=p.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception:  # a review that can't start must never cost the session its start
+            log_error("SessionStart", _tb())
+    if pl.get("source") in (None, "startup", "resume") and not os.environ.get("FOREMAN_NO_BACKGROUND") \
+            and not c.panicked():  # T-0482: Claude Code's version; a new one runs the checks
+        try:  # review: canary_due too, inside — a surprise there must never blank the session start
+            if fmeco.canary_due():
+                subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "canary", "--if-changed"], cwd=p.root,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+        except Exception:
             log_error("SessionStart", _tb())
     try:  # T-0383: infer what builds on what (detached, once a day, when 3+ open tasks are new)
         import fmrelate
@@ -773,12 +784,13 @@ def _pre_tool_use(raw):
             reason += (f" Stop retrying: this exact refusal came 3 times in a row. Instead, {how}record why the task "
                        f"can't go on (fm task block {tid} \"<why>\") and take the next task.")
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
-                "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
+                "rule": getattr(block, "rule", None), "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
                 "cmd": _window(c.redact(_target(pl.get("tool_input") or {})), block.detail)})  # T-0172, T-0423
         try:
             if p:
                 c.log_event(p, "guard_block", task=act.id if act else None,
-                            data={"category": block.category, "detail": str(block.detail)[:200]},
+                            data={"category": block.category, "detail": str(block.detail)[:200],
+                                  "rule": getattr(block, "rule", None)},  # T-0672 (committed fallback may lack it)
                             session=pl.get("session_id"))
         except Exception:
             log_error("PreToolUse", _tb())
@@ -893,9 +905,41 @@ def _grant(p, b, cats, sid, via, pin=None, h=None, **data):
     b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
     if cats:
         b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
+    if set(cats) & set(_UNDO) and c.git_root(p.root):  # T-0672 (T-0478): where to come back to, as of this yes
+        point = undo_point(p.root, b.id)
+        if point.get("head"):
+            b.append_log(f"undo point at this yes for {', '.join(sorted(set(cats) & set(_UNDO)))}: HEAD "
+                         f"{point['head'][:12]}" + (f", tracked uncommitted work in {point['ref']} (git stash apply "
+                                                    f"{point['ref']})" if point.get("ref") else
+                                                    ", uncommitted work NOT recorded" if point.get("dirty") else ""))
     c.save_brief(p, b)
     if cats:
         c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": cats, "via": via}, **data), session=sid)
+
+
+_UNDO = {  # T-0672 (T-0478): what a destructive grant can and can't be brought back from (review: exactly)
+    "git-destructive": "partly restorable: Foreman records HEAD and tracked uncommitted changes as of this yes; "
+                       "untracked files (git clean) and remote history (a force push) are not covered",
+    "rm-outside": "irreversible: files deleted outside the repo can't be brought back from git",
+    "publish": "irreversible: a release, push to a registry or deploy can't be fully taken back",
+    "system": "may be irreversible: system changes outside the repo aren't recorded",
+}
+
+
+def restorable(category):
+    return _UNDO.get(category, "")
+
+
+def undo_point(root, tid=None):
+    """T-0672: {"head", "stash", "ref", "dirty"}: the commit the repo is on, and `git stash create`'s commit of tracked
+    uncommitted work (never the stash list or the working tree), kept under refs/foreman/undo/<task> so gc can't take
+    it; "dirty" when there was work but no stash commit came back (a timeout), so the log says it wasn't recorded."""
+    head = c._git(root, "rev-parse", "HEAD").strip()
+    stash = c._git(root, "stash", "create", timeout=10).strip()
+    ref = f"refs/foreman/undo/{tid or 'grant'}"
+    pinned = bool(stash) and c._git(root, "update-ref", ref, stash, fail=None) is not None
+    dirty = not stash and bool(c._git(root, "status", "--porcelain", "--untracked-files=no").strip())
+    return {"head": head, "stash": stash, "ref": ref if pinned else "", "dirty": dirty}
 
 
 _WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)
@@ -958,6 +1002,7 @@ def _ask_prompt(pl, p, fmguard):
                       + ("" if fmplugins.pin_covers_code(pin) else
                          " (a remote source: the pin covers its marketplace entry, not the code it fetches)")
                       if pin else "")
+                   + "".join(f". {x}: {restorable(x)}" for x in cats if restorable(x))  # T-0672
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 
@@ -1555,7 +1600,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer)
+            how = _start_how(offer, lanes_free(briefs))
             _event({"kind": "drive_offer", "session_id": sid, "task": work["id"], "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
                     f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
@@ -1624,22 +1669,32 @@ def _side_work(sd, briefs, work, full, offered):
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
+    lanes = lanes_free(briefs)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
         if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
                 or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
                 or b.section("Verification evidence").strip()):
             continue
+        if (x.get("status") != "captured" and b.section("Plan review").strip()
+                and not (lanes and x.get("tier") in ("S", "M"))):  # T-0700: planned and reviewed, no lane free:
+            continue                                                 # nothing left to do on it from here
         return x
     return None
 
 
-def _start_how(x):
-    """How to start a side task: a builder lane for planned S/M work, planning for the rest."""
+def lanes_free(briefs):
+    """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
+    import fmlanes
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS
+
+
+def _start_how(x, lanes=True):
+    """How to start a side task: a builder lane for planned S/M work while a slot is free, planning for the rest."""
     if x.get("status") == "captured":
         return (f"plan it (fm task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
                 f"for M/L), so it's ready to run")
-    if x.get("tier") in ("S", "M"):
+    if x.get("tier") in ("S", "M") and lanes:
         return f"fm lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
     return f"ground it and sharpen its plan (fm second plan {x['id']}), so it's ready when the current task lands"
 

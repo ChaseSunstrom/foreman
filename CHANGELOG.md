@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## 1.2.17 — 2026-10-09
+- Zero-token instruments (T-0701, the first slice of Frontier 01). Each answers in 15–40 lines with the root cause first.
+  - `fm instruments [--json]` lists five typed tools with their input schemas and line caps.
+  - `fm sym PATH:NAME` shows a definition, the names it uses and its callers.
+  - `fm fail` reduces a test run to the failing test, its error and the failing source.
+  - `fm logs FILE [--since-good FILE]` groups a log into templates with counts, errors first, and with `--since-good` shows what's new against a good run. On 51,406 real journal lines it printed 40 lines (7.6 MB → 4.5 KB), and the first line was the crash-looping service and its missing library.
+  - `fm data FILE` gives a csv/json/jsonl/sqlite file's schema, stats and first rows.
+  - `fm trace` maps a Python or JS stack trace to repo lines, each with the commit date and task that last touched it.
+  - Review fixes: numeric lines fold into one template; new errors lead; output is redacted; reads are bounded; one bad sqlite byte no longer loses the file; symlinks can't escape the repo.
+- Autonomy and the user (T-0671 milestone: T-0439, T-0461, T-0477).
+  - `fm taste` proposes a veto once the same no comes up in three steers; the user's one yes adopts it. `fm decide --ask Q --options …` then takes its default from the taste record and never pre-answers a guard category. Synonyms and plurals count too: push, force-push, plugins, credential, delete, sudo, publish.
+  - In standard autonomy, non-urgent asks wait in one digest with a deadline, and each takes its default when the deadline passes. An unreadable deadline is reset, not applied.
+  - `fm capture --from-file PATH|-` attaches a log, a paste or a screenshot path. The excerpt is redacted line by line before it's cut. Credentials files are refused, and a paste is capped at 2 MB.
+- The pipe-into-shell rule closes its review's gaps (T-0716). An option's value no longer passes for the script (`| bash -o posix`, `| python3 -W ignore`, `| node -r ./hook.js`); `| bash -s ARGS` reads stdin; a bare word isn't taken for a script file. A piped group or computed name (`| (sh)`, `| $SH`) counts. Inline code that runs what it reads counts too: `bash -c 'source /dev/stdin'`, `exec bash`, `eval "$(cat)"`, a `read` loop running each line, `python3 -c 'exec(sys.stdin.read())'`, `perl -ne 'system $_'`, `awk '{system($0)}'`, `xargs sh -c`. Data readers such as `json.load(sys.stdin)`, `re.compile` and `| $GREP pat` stay allowed. Replaying 5,000 real commands shows 0 new blocks.
+- A shell or interpreter reading its program from a pipe is refused (T-0715, found probing the T-0698 review). `echo 'rm -rf ~' | bash` ran unread; so did `| sh -s`, `| python3`, `| node -` and `| source /dev/stdin`. None of 5,000 real commands does this, and a heredoc, which the guard reads, does the same job. Inline code (`-c`, `-e`, `-m`) and a script file are unchanged. A download piped in stays `pipe-shell`, which can be granted for an installer.
+- Friction batch (T-0698, from a self-improvement pass):
+  - A plain IFS inside one `'…'` string, or inside one quoted heredoc body that no shell on the line reads, is data. So a test file or commit message that names IFS is no longer refused. IFS beside it, IFS split across two pieces, or IFS in a shell's heredoc still is.
+  - A suite test fails on any name in `plugin/lib` or `plugin/hooks` that nothing binds. Several renames had left the guard failing closed on a NameError.
+  - The rules say to `fm outline` MASTER.md or Read it with an offset.
+  - Builder briefs list `fm task evidence`/`log` among the commands a lane may refuse.
+- Foreman across projects, machines and the tools around it (T-0673: T-0443, T-0444, T-0463, T-0481, T-0482, T-0574, your picks on the punch-list page):
+  - `fm sweep "<fix>" --grep TEXT` asks every other project about a fix by putting a brief in its inbox. Nothing in that repo is edited, its fm sync mirror included, and sensitive projects are skipped. `fm friction` lists the open requests.
+  - `fm adopt` runs a baseline pass over an existing repo (map, gates with a flake rerun, secrets, dependencies) and queues the work it finds.
+  - `fm projects` and `fm doctor` show which Foreman version each project last ran and the fixes it lacks.
+  - `fm inbox gh` reads open issues into briefs, read-only through `gh`. Issue text stays untrusted: every line is prefixed, the repro command is redacted and defanged, and a deduplication match must be a whole line of Foreman's, so one issue can't hide another.
+  - A new Claude Code version runs `fm canary`'s checks, and a failure becomes a brief.
+  - `fm machine` names this machine for brief logs.
+  - `fm doctor` rehearses restoring the newest backup.
+- The guard-and-safety milestone (T-0672: T-0441, T-0462, T-0478, T-0479, T-0480, T-0502). Each part only adds a check or logging:
+  - A close warns about a likely secret in a file the task changed (placeholders aside), and about ignored files it left outside its scope.
+  - A destructive grant's ask says what can be undone, and the grant logs an undo point: HEAD plus tracked uncommitted work, pinned under refs/foreman/undo/<task> so git keeps it. Untracked files and remote history are not covered, and the ask says so.
+  - `fm doctor` hashes every enabled plugin's whole install tree and every MCP server (user-wide and per project), and warns when one changes, until `fm doctor --accept-supply`. An unreadable baseline warns rather than quietly starting over.
+  - Every guard block carries a rule id, and `fm friction` counts how often each rule fires.
+  - Terminal escapes in task titles were already stripped; a seeded fuzz test now pins that, and the approval phrases.
+- The drive stops offering side work it can't use (T-0700, a self-improvement finding). It doesn't offer `fm lane brief` while both builder slots are taken, which `fm lane brief` refuses, and it skips a planned task whose plan review is already saved when no lane can take it. Each such offer cost a turn.
+
 ## 1.2.16
 - Guard hardening batch (T-0669, which closes T-0577 to T-0584): every open fuzzer escape is now blocked, and the batch was verified once at close. Changes:
   - A newline inside quotes stays part of the word, so a second shell gets `ins\⏎tall` back and joins it (class 2).

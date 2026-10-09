@@ -1283,6 +1283,26 @@ class Stop(HookCase):
         self.assertIsNone(done.get("decision"), "candidates used up: now it may wait")
         self.assertIn("a1", done.get("systemMessage", ""))
 
+    def test_side_work_respects_lane_capacity_and_plan_reviews(self):
+        # T-0700: with both builder slots taken the drive kept offering `fm lane brief` (refused), and kept offering
+        # `fm second plan` for an L milestone whose plan review was already saved: a wasted turn each Stop
+        self.fm("init")
+        reviewed = self.task("Big milestone", type_="FEATURE", tier="L", focus=False)
+        small = self.task("Small fix", focus=False)
+        out = [self.task(f"Lane {i}", focus=False) for i in range(2)]
+        self.task("Current work")
+        self.fm("task", "set", reviewed, "--section", "Plan review", "--text", "verdict: revise (folded in)")
+        p = self.project()
+        for b in c.load_briefs(p):
+            if b.id in out:
+                b.meta["builder"] = "worktree"
+                c.save_brief(p, b)
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-builder"})
+        reasons = [parse(self.stop("Waiting on the builders.")).get("reason", "") for _ in range(3)]
+        self.assertFalse(any(reviewed in r for r in reasons), "a reviewed L task has nothing left to do from here")
+        offered = next(r for r in reasons if small in r)
+        self.assertNotIn("fm lane brief", offered, "both builder slots are taken")
+
     def test_long_jobs_and_an_empty_queue_never_idle(self):
         # T-0415 (JARVIS 2026-10-09, the user: "it has been sitting idle still again"): a workflow and a shell that ran
         # for hours held every Stop in the wait branch, and with nothing else queued each turn ended to wait on CI

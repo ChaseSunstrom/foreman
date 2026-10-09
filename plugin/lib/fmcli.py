@@ -168,16 +168,66 @@ def cmd_capture(args):
     type_ = c.WORK_TAGS.get(type_, type_)
     if type_ not in c.TYPES:
         raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
+    text, raw = (args.text or "").strip(), args.text
+    if args.from_file:
+        attached, first = _attachment(p, args.from_file)
+        text = text or first
+        raw = (args.text + "\n\n" if args.text else "") + attached
+    if not text:
+        raise UsageError("fm capture \"<request>\" [--from-file PATH|-]: say what to do, or attach a file that does")
     with c.lock(p.dir):
-        b = _create(p, _title(args.text), type_, args.tier or c.guess_tier(type_, args.text), "captured",
-                    raw=args.text, scope=args.scope or (), source=args.source,
+        b = _create(p, _title(text), type_, args.tier or c.guess_tier(type_, text), "captured",
+                    raw=raw, scope=args.scope or (), source=args.source,
                     depends=list(dict.fromkeys(c._REF_RE.findall(args.text or ""))),  # T-0334: as fm intake does
                     priority="urgent" if args.urgent else "normal")
         c.log_event(p, "capture", task=b.id, data={"source": args.source, "type": type_}, session=session())
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, args.text) + _reask_note(p, b.id, args.text))
+        + _covered_note(p, b.id, text) + _reask_note(p, b.id, text))
+
+
+EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
+PASTE_MAX = 2_000_000
+
+
+def _attachment(p, src):
+    """T-0477: fm capture --from-file: (raw text, first line). A text file, or a paste on stdin (-), gives its path and
+    an excerpt (the head and tail of a long one), redacted and marked as data; a paste is kept, redacted, in the
+    project's attachments/. A binary file (a screenshot) is attached as its path alone."""
+    if src == "-":
+        data = c.redact(sys.stdin.buffer.read(PASTE_MAX).decode("utf-8", "replace"))  # T-0671 review: bounded
+        import hashlib
+        path = os.path.join(p.dir, "attachments", f"paste-{hashlib.sha256(data.encode()).hexdigest()[:12]}.txt")
+        c.write_atomic(path, data)
+        lines = _excerpt(data.splitlines())
+    else:
+        path = os.path.realpath(src)
+        if not os.path.isfile(path):  # a FIFO or device would hang the read, a directory would crash it
+            raise UsageError(f"{src} is not a regular file")
+        import fmguard, types  # T-0671 review: the guard refuses reading these; so does an attachment
+        if fmguard._is_credential(path, types.SimpleNamespace(home=os.path.expanduser("~"), scratch=())):
+            raise UsageError(f"{src} looks like a credentials file: describe the problem, or attach a copy with "
+                             f"the secrets taken out")
+        with open(path, "rb") as f:
+            if b"\0" in f.read(8192):
+                return f"Attached: {path}", f"Attached: {os.path.basename(path)}"
+            f.seek(0)
+            # ponytail: streamed, so redaction sees only the excerpt: a key block cut by the elision can leak its kept
+            # lines into the brief; redact the whole file first if that matters
+            lines = _excerpt(x.decode("utf-8", "replace") for x in f)
+    first = next((c.redact(x).strip() for x in lines if x.strip()), f"Attached: {os.path.basename(path)}")
+    return f"Attached: {path}\n" + c.defang(c.redact("\n".join(lines))), first
+
+
+def _excerpt(lines):
+    import collections
+    head, tail, n = [], collections.deque(maxlen=EXCERPT_TAIL), 0
+    for line in lines:
+        n += 1
+        line = c.redact(line.rstrip("\r\n").replace("\t", "    "))  # before the cut: a cut secret no longer matches
+        (head if n <= EXCERPT_HEAD else tail).append(c.fit(c.plain(line), 300))
+    return head + ([f"… {n - len(head) - len(tail)} lines …"] if n > len(head) + len(tail) else []) + list(tail)
 
 
 def _note_escapes(p, b, text):
@@ -422,6 +472,8 @@ def cmd_task(args):
                                                         b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
+        for w in _close_warnings(p, b, files):  # T-0672: seen, never a refusal
+            print(f"fm: warning: {w}", file=sys.stderr)
         grade, why = b.grade()
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed),
@@ -826,6 +878,55 @@ def task_done_in(p, args):
 _DONE_WHEN = re.compile(r"(?m)^>?\s*DONE-WHEN:\s*(.+)$")
 
 
+def _close_warnings(p, b, files):
+    """T-0672: what a close doesn't refuse but the user should see: a likely secret in a file the task changed (T-0441;
+    placeholder lines aside), and ignored files made since it began, outside its scope (T-0462: untracked ones are
+    scope drift, refused already; ignored output — logs, builds, scratch — slips past that)."""
+    try:  # review: the task is closed by now; a surprise here costs the warning, never the exit code
+        return _close_warnings_of(p, b, files)
+    except Exception as e:
+        return [f"close-out warnings not computed ({type(e).__name__})"]
+
+
+_CACHES = re.compile(r"(?:^|/)(?:__pycache__|\.pytest_cache|\.mypy_cache|node_modules|\.venv|venv|\.tox|\.cache|"
+                     r"\.foreman|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
+
+
+def _close_warnings_of(p, b, files):
+    import fmsecrets
+    out = []
+    for f in files[:200]:
+        try:
+            path = os.path.join(p.root, f)
+            if os.path.getsize(path) > 1_000_000:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        lines = text.split("\n")
+        # review: a placeholder must be in the secret-looking token itself (AKIAXXXX…), not anywhere on the line
+        out += [f"possible secret ({kind}) in {f}:{n}: move it to the environment or a secret store before committing"
+                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))
+                if not any(fmsecrets.PLACEHOLDER.search(t) for t in re.findall(r"[\w+/=-]{16,}", lines[n - 1]))][:3]
+    began = c.parse_ts(c.first_touch(p, b.id) or b.meta.get("created") or "")
+    if b.meta.get("scope") and began and c.git_root(p.root):
+        ignored = c._git(p.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory") or ""
+        since = began.timestamp() - 1
+        new = []
+        for x in ignored.splitlines()[:2000]:
+            try:
+                if x and not _CACHES.search(x) and os.path.getmtime(os.path.join(p.root, x)) >= since:
+                    new.append(x)
+            except OSError:
+                continue
+        stray = c.scope_drift(b, new)
+        if stray:
+            out.append(f"ignored files outside its scope [{', '.join(b.meta['scope'])}] left behind: "
+                       + ", ".join(stray[:10]))
+    return out
+
+
 def cmd_batch(args):
     """T-0257: several requests not started yet worked as one host task — one plan read, one gate run, one review,
     one commit — with every member's criteria and a step each; the members leave the inbox and queue while batched and
@@ -1127,7 +1228,9 @@ def cmd_focus(args):
                 target.meta["base_tree"] = snap
             else:
                 target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
-        target.append_log("focused")
+        import fmeco
+        mach = fmeco.machine()  # T-0574: a named machine shows in the log fm sync carries: which machine ran what
+        target.append_log("focused" + (f" on {mach['name']}" if mach["named"] else ""))
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
             import fmrecall
@@ -1489,6 +1592,13 @@ def cmd_decide(args):
     --reverses names the earlier decision it undoes; --list shows them (--review: only those to review)."""
     p = resolve(args)
     path = os.path.join(p.dir, "decisions.md")
+    applied = _apply_due_asks(p)  # any fm decide applies a passed deadline first
+    if getattr(args, "ask", None) is not None:
+        return _decide_ask(p, args)
+    if getattr(args, "digest", False):
+        return _digest(p, args, applied)
+    if getattr(args, "answer", None) is not None:
+        return _answer(p, args)
     if args.list or args.review or not args.decision:
         rows = [l.rstrip("\n") for l in (open(path, encoding="utf-8").readlines() if os.path.exists(path) else [])
                 if l.startswith("| 2")]
@@ -1499,28 +1609,144 @@ def cmd_decide(args):
                      else "") for r in pick]
         return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
                    "\n".join(pick[-args.n:]) or "No decisions recorded.")
+    try:
+        revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
+    except ValueError as e:                                                                          # their own args
+        raise UsageError(str(e))
+    _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
+                    getattr(args, "revisited", None), revisit)
+    out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
 
+
+def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
+                    revisit="", locked=False):
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
-    trigger, settles = getattr(args, "revisit", None), getattr(args, "revisited", None)  # callers build their own args
-    try:
-        revisit = c.revisit_tag(p.root, trigger) + " " if trigger else ""
-    except ValueError as e:
-        raise UsageError(str(e))
     words = lambda v: cell(v).replace("]", ")")  # a tag's words can't close the tag early
-    tags = ("" if args.kind == "reversible" else f"[{args.kind}] ") + (
-        f"[reverses: {words(args.reverses)}] " if args.reverses else "") + (
+    tags = ("" if kind == "reversible" else f"[{kind}] ") + (
+        f"[reverses: {words(reverses)}] " if reverses else "") + (
         f"[revisited: {words(settles)}] " if settles else "") + revisit
-    text = re.sub(r"^\[", "(", cell(args.decision))  # review: free text can't open with a tag fm would read
-    row = f"| {c.now()[:10]} | {tags}{text} | {cell(args.why)} | {cell(args.rejected)} |\n"
-    with c.lock(p.dir):
+    text = re.sub(r"^\[", "(", cell(decision))  # review: free text can't open with a tag fm would read
+    row = f"| {c.now()[:10]} | {tags}{text} | {cell(why)} | {cell(rejected)} |\n"
+    path = os.path.join(p.dir, "decisions.md")
+    import contextlib
+    with contextlib.nullcontext() if locked else c.lock(p.dir):
         cur = open(path, encoding="utf-8").read() if os.path.exists(path) else \
             "# Decisions\n\n| Date | Decision | Why | Alternatives rejected |\n|---|---|---|---|\n"
         c.write_atomic(path, cur + row)
-        c.log_event(p, "decision", task=args.task, data={"decision": args.decision, "why": args.why,
-                                                          "rejected": args.rejected, "kind": args.kind,
-                                                          "reverses": args.reverses}, session=session())
-    out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
+        c.log_event(p, "decision", task=task, data={"decision": decision, "why": why, "rejected": rejected,
+                                                     "kind": kind, "reverses": reverses}, session=session())
+
+
+def _guard_named(text):
+    """T-0439: the guard categories (or fm ask) an ask names: those are the user's to grant, never pre-answered."""
+    import fmguard
+    words = set(re.findall(r"[a-z][a-z-]*", text.lower()))
+    words |= {w.rstrip("s") for w in words} | {p for w in words for p in w.split("-")}  # plugins, force-push
+    named = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x in words]
+    named += [cat for cat, syn in _GUARD_WORDS.items() if words & syn and cat not in named]  # T-0671 review
+    return named + (["fm ask"] if re.search(r"(?i)\bfm\s+ask\b", text) else [])
+
+
+# ponytail: words, not meaning ("Remove the alias?" isn't one, "Delete …" is); a miss is still refused by the guard
+_GUARD_WORDS = {"git-destructive": {"push", "rebase", "force"}, "remote": {"origin", "upstream"},
+                "credentials": {"credential", "secret", "password"}, "rm-outside": {"delete", "rm", "wipe", "purge"},
+                "system": {"sudo", "systemctl"}, "publish": {"publish", "deploy", "upload"},
+                "plugin": {"plugin", "marketplace"}, "core": {"guard"}}
+
+
+def _decide_ask(p, args):
+    """T-0439/T-0461: a question Claude would put to the user, with its default (given, or the taste record's pick of
+    --options). Urgent: ask now. Full autonomy: decided now. Standard: it waits in the ask digest until its deadline."""
+    q, options = c.plain(args.ask).strip(), [c.plain(o).strip() for o in args.options or [] if o.strip()]
+    named = _guard_named(" ".join([q, *options, args.default or ""]))
+    if named:
+        raise UsageError(f"this ask names {', '.join(named)}: guard categories are the user's alone (fm ask ID "
+                         f"<category> --why \"…\"); the taste record and the ask digest never pre-answer them")
+    if not q or not (args.default or options):
+        raise UsageError("fm decide --ask \"<question>\" needs --default ANSWER or --options A B … (the taste record picks)")
+    if args.default:
+        answer, why = c.plain(args.default).strip(), "the given default"
+    else:
+        import fmideas
+        answer, why = fmideas.taste_default(p, options)
+    rejected = ", ".join(o for o in options if o != answer)
+    autonomy = "standard" if c.panicked() else c.read_meta(p).get("autonomy", "standard")
+    data = {"q": q, "default": answer, "why": why, "options": options}
+    if args.urgent:
+        return out(args, dict(data, urgent=True), f"Urgent: ask the user now, one AskUserQuestion with \"{answer}\" "
+                   f"first ({why}); record the answer: fm decide \"{q} → <answer>\".")
+    if autonomy == "full":
+        _write_decision(p, f"{q} → {answer}", f"full autonomy: the default ({why})", rejected, task=args.task)
+        return out(args, dict(data, answer=answer, applied=True), f"Decided (full autonomy): {q} → {answer} ({why}).")
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        d = meta.get("ask_digest") or {"asks": []}
+        if not c.parse_ts(d.get("deadline")):
+            d["deadline"] = c.iso(time.time() + DIGEST_HOURS * 3600)
+        n = max((a.get("n", 0) for a in d["asks"]), default=0) + 1
+        d["asks"].append(dict(data, n=n, task=args.task, at=c.now()))
+        meta["ask_digest"] = d
+        c.write_meta(p, meta)
+        c.log_event(p, "ask_queued", task=args.task, data={"n": n, "q": q, "default": answer}, session=session())
+    return out(args, dict(data, queued=n, deadline=d["deadline"]),
+               f"Ask {n} waits in the digest ({len(d['asks'])}; unanswered, each takes its default at {d['deadline']}). "
+               f"Keep working; before you end the turn put the digest to the user (fm decide --digest).")
+
+
+DIGEST_HOURS = 8  # T-0461: how long a non-urgent ask waits for the user before its default applies
+
+
+def _apply_due_asks(p):
+    """T-0461: past the digest's deadline every unanswered ask takes its default, each a decision in decisions.md."""
+    if not c.digest_due(c.read_meta(p).get("ask_digest")):
+        return []
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        d = meta.get("ask_digest")
+        if not c.digest_due(d):
+            return []
+        for a in d["asks"]:  # rows first: a crash between the two repeats a row rather than losing an ask
+            _write_decision(p, f"{a['q']} → {a['default']}", f"ask digest deadline passed unanswered: the default "
+                            f"({a.get('why')})", ", ".join(o for o in a.get("options") or [] if o != a["default"]),
+                            task=a.get("task"), locked=True)
+        meta.pop("ask_digest")
+        c.write_meta(p, meta)
+    return [dict(a, answer=a["default"]) for a in d["asks"]]
+
+
+def _digest(p, args, applied):
+    d = c.read_meta(p).get("ask_digest") or {}
+    asks = d.get("asks") or []
+    lines = [f"Default applied at the deadline: {a['q']} → {a['answer']}" for a in applied]
+    if asks:
+        lines += [f"Ask digest ({len(asks)}; unanswered, each takes its default at {d.get('deadline')}):"]
+        lines += [f"  {a['n']}. {a['q']} — default: {a['default']}"
+                  + (f" (of: {', '.join(a['options'])})" if a.get("options") else "") for a in asks]
+        lines += ["Put them to the user in one AskUserQuestion, each default first; record each answer: "
+                  "fm decide \"<answer>\" --answer N."]
+    return out(args, {"asks": asks, "applied": applied, "deadline": d.get("deadline")},
+               "\n".join(lines) or "The ask digest is empty.")
+
+
+def _answer(p, args):
+    if not args.decision:
+        raise UsageError("fm decide \"<the user's answer>\" --answer N (N from fm decide --digest)")
+    with c.lock(p.dir):
+        meta = c.read_meta(p)
+        d = meta.get("ask_digest") or {}
+        a = next((x for x in d.get("asks") or [] if x.get("n") == args.answer), None)
+        if not a:
+            raise UsageError(f"no ask {args.answer} waits in the digest; fm decide --digest lists them")
+        _write_decision(p, f"{a['q']} → {args.decision}", args.why or "the user's answer (ask digest)",
+                        args.rejected or ", ".join(o for o in a.get("options") or [] if o != args.decision),
+                        task=a.get("task") or args.task, locked=True)
+        d["asks"].remove(a)
+        if not d["asks"]:
+            meta.pop("ask_digest")
+        c.write_meta(p, meta)
+    return out(args, {"n": args.answer, "q": a["q"], "answer": args.decision}, f"Ask {args.answer}: {a['q']} → "
+               f"{args.decision} (decisions.md).")
 
 
 def _agent_report(path):
@@ -2150,10 +2376,11 @@ HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export"),
-    ("Project and settings", "init autonomy drive pause sensitive trust standing budget sync share notify plugins docs doctor tidy"),
+                         "landscape deps oracle pr export instruments sym fail logs data trace"),
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
+                             "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
+    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects sweep machine watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2195,8 +2422,11 @@ def build_parser():
     s.add_argument("--file")
 
     s = add("capture", cmd_capture, help="capture a request to the inbox")
-    s.add_argument("text")
-    s.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
+    s.add_argument("text", nargs="?")
+    s.add_argument("--from-file", metavar="PATH", help="attach a log, transcript or screenshot (- : a paste on stdin): "
+                                                       "its path and an excerpt; the request may be left out")
+    s.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self", "cross-project"],
+                   help="cross-project: a request from another project (fm -p SLUG capture … asks that project)")
     s.add_argument("--type")
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
@@ -2228,6 +2458,15 @@ def build_parser():
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
     s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
+    s.add_argument("--ask", metavar="QUESTION", help="a question for the user, with --default or --options (the taste "
+                                                     "record picks): urgent → ask now; full autonomy → decided now; "
+                                                     "standard → the ask digest, default applied at its deadline")
+    s.add_argument("--default", metavar="ANSWER")
+    s.add_argument("--options", nargs="+", metavar="OPTION")
+    s.add_argument("--urgent", action="store_true", help="with --ask: it can't wait for the digest")
+    s.add_argument("--digest", action="store_true", help="the asks waiting for the user (past the deadline: defaults "
+                                                         "applied)")
+    s.add_argument("--answer", type=int, metavar="N", help="the decision is the user's answer to digest ask N")
     s.add_argument("--list", action="store_true")
     s.add_argument("--review", action="store_true", help="only costly/outward decisions")
     s.add_argument("-n", type=int, default=30)
@@ -2460,6 +2699,11 @@ def build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
+    import fminstr  # T-0701: the instruments, their help and arguments come from one registry
+    add("instruments", lazy("fminstr", "cmd_instruments"),
+        help="the zero-token instruments: typed tools with input schemas and line caps (sym, fail, logs, data, trace)")
+    for name in fminstr.TOOLS:
+        fminstr.arguments(add(name, lazy("fminstr", "cmd_" + name), help=fminstr.TOOLS[name][1]), name)
 
     s = add("vetoes", cmd_vetoes, help="what the user said never to do, checked before matching commands and edits")
     s.add_argument("action", nargs="?", choices=["list", "rm"], default="list")
@@ -2564,6 +2808,28 @@ def build_parser():
     s.add_argument("--full", action="store_true")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
+    s.add_argument("--accept-supply", action="store_true",
+                   help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
+
+    s = add("sweep", lazy("fmeco", "cmd_sweep"), help="ask every other project about a fix: where a pattern is (or what "
+                                                       "recall relates), a brief in its inbox; edits nothing there")
+    s.add_argument("fix", help="the fix, as the brief's first line")
+    s.add_argument("--grep", metavar="TEXT", help="the sibling pattern (a fixed string, git grep in each project)")
+    s.add_argument("--type", default="FIX")
+    s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
+    s = add("adopt", lazy("fmeco", "cmd_adopt"), help="take in an existing repo: map, gates (a flake rerun), secrets, "
+                                                       "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
+    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="capture work from a tracker: gh reads the repo's open issues "
+                                                       "(read-only) into briefs, their text kept as untrusted data")
+    s.add_argument("source", choices=["gh"])
+    s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
+    s.add_argument("--limit", type=int, default=30)
+    s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
+                                                         "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
+    s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")
+    s = add("machine", lazy("fmeco", "cmd_machine"), help="this machine's identity: a stable id and a name (shown in "
+                                                           "fm projects and, once named, in brief logs fm sync carries)")
+    s.add_argument("--name", help="name this machine")
 
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
@@ -2699,7 +2965,10 @@ def build_parser():
     s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
 
     s = add("taste", lazy("fmideas", "cmd_taste"), help="what your choices say you want: kept, dropped (and why), "
-                                                         "steered, corrected; brainstorms use it")
+                                                         "steered, corrected, vetoes to propose; brainstorms use it")
+    s.add_argument("action", nargs="?", choices=["adopt", "decline"],
+                   help="the user's yes or no to the proposed vetoes (all, or N)")
+    s.add_argument("which", nargs="?", type=int, metavar="N")
     s.add_argument("-n", type=int, default=8)
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
