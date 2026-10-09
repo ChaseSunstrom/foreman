@@ -53,6 +53,21 @@ class Friction(ForemanTestCase):
         self.assertIn("3× Read: File does not exist.", out)
         self.assertNotIn("wait on background work", out)
 
+    def test_friction_hook_errors(self):
+        # T-0437: hooks never fail a tool call; the errors they swallow went only to hooks.log, where a pass never looked
+        import time
+        import fmcore as c
+        log = os.path.join(c.state_dir(), "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with open(log, "w") as f:
+            for event in ("PreToolUse", "PreToolUse", "Stop"):
+                f.write(f"{now} {event} Traceback (most recent call last):\n  File \"x.py\", line 1\nNameError: boom\n")
+            f.write(f"{now} Stop paused for 10 min after 3 failures in a row\n")  # the breaker's note isn't an error
+        out = self.fm("friction").stdout
+        self.assertIn("3 in the last 24 h, most in PreToolUse (2)", out)
+        self.assertIn("NameError: boom", out)
+
     def test_slow_gate_ignores_reused_passes(self):
         # T-0424: a reused pass records 0.0 s; counting it dragged the median to 0 ("12s vs usual 0s")
         import fmcore as c
