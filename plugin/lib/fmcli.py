@@ -310,6 +310,16 @@ def task_hypo(p, args):
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
+ASK_DAYS = 7  # T-0622: an unanswered ask fm second session found is deferred (never dropped) after this
+
+
+def unanswered_asks(p):
+    """T-0622: tasks fm second session captured from the last session's missed requests that are still captured."""
+    found = {e.get("task") for e in c.ledger_tail(p, 5000) if e.get("event") == "capture"
+             and (e.get("data") or {}).get("via") == "second session"}
+    return [b.id for b in c.load_briefs(p) if b.id in found and b.status == "captured"]
+
+
 def flag_replan(p, task, reason):
     """T-0603: an active M/L task's plan met a surprise; fm next leads with a replan until fm task log ID "replan: …"
     (a later trigger replaces the reason; the Log keeps each one)."""
@@ -1226,6 +1236,13 @@ def _close_warnings_of(p, b, files):
     if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
         honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
                       f"\"Recommendation: …; would change if: …\"")
+    steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
+              and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
+    standing = [x for x in steers if c.STANDING_STEER.search(x)]
+    if standing:  # T-0601: a steer meant to last should outlive this task
+        honest.append("Standing steer(s) on this task, rule candidates: " + "; ".join(f"\"{c.fit(x, 90)}\"" for x in
+                      standing[:3]) + " — a 'no' is now a proposed veto (fm taste; adopted only on the user's yes), "
+                      "anything else a line for the project's CLAUDE.md or memory, asked first")
     debug = _scaffolding(p, b, files)
     if debug:
         honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
@@ -3131,6 +3148,13 @@ def cmd_next(args):
         if median and took > 2 * median:
             over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
                     f"is the plan still the right size, or should it split?")
+    meta = c.read_meta(p)
+    loose = (meta.get("clauses") or {}).get("open") or []
+    over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or fm clauses --note N "
+             f"\"<why>\" (fm clauses --show)") if loose else ""
+    asks = unanswered_asks(p)
+    over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
+             f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
     if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
@@ -3195,7 +3219,7 @@ def _all_parsers(parser):
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
-    ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
+    ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
@@ -3688,6 +3712,11 @@ def build_parser():
     s.add_argument("--note")
     s.add_argument("--auto", action="store_true")
 
+    s = add("clauses", lazy("fmrecall", "cmd_clauses"), help="split a multi-part request into clauses and match each to "
+                                                              "a task; fm next names the unaccounted ones (T-0595)")
+    s.add_argument("text", nargs="*", help="the user's message (or, with --note, why the clause needs no task)")
+    s.add_argument("--note", type=int, metavar="N", help="mark unaccounted clause N as handled (answered, or no task)")
+    s.add_argument("--show", action="store_true", help="the unaccounted clauses of the last request")
     s = add("resume", cmd_resume, help="print the resume point, and re-run the last green check for drift")
     s.add_argument("--no-check", action="store_true", help="don't re-run the last green check (T-0649)")
 

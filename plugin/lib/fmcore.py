@@ -1700,7 +1700,8 @@ def brief_summary(b):
     steps = b.steps()
     cur = next((s for s in steps if s.current), None)
     return {"id": b.id, "type": b.type, "tier": b.tier, "status": b.status, "title": b.title, "priority": b.priority,
-            "explore": bool(b.meta.get("explore")), "source": b.meta.get("source"), "scope": b.meta.get("scope") or [],
+            "explore": bool(b.meta.get("explore")), "confirm": bool(b.meta.get("confirm")),
+            "source": b.meta.get("source"), "scope": b.meta.get("scope") or [],
             "allow": b.meta.get("allow") or [], "updated": b.meta.get("updated"), "created": b.meta.get("created"),
             "steps_done": sum(s.done for s in steps), "steps_total": len(steps),
             "step": {"n": cur.n, "of": len(steps), "text": cur.text} if cur else None, "path": b.path}
@@ -1897,6 +1898,10 @@ _VETO_STOP = set("""without asking ask me you the a an it its that this these th
 before being told unless until and or to of in on for with from my your our just so too also all again yet
 make do does doing done be is are was were get got have has had use using there here then""".split())
 VETOES_KEEP = 30
+
+
+STANDING_STEER = re.compile(r"(?i)\b(always|never|from now on|every time|going forward|by default|in general|"
+                            r"any time|whenever|as a rule)\b")  # T-0601: a steer meant to last, not just this once
 
 
 def _vetoes_path(p):
@@ -2361,7 +2366,8 @@ def render_state(sd, ts=None):
     out += [f"{i}. {q['id']} {q['type']} {q['tier']}{' !' if q['priority'] == 'urgent' else ''} — {q['title'][:70]}"
             for i, q in enumerate(sd["queue"][:10], 1)] + _more(len(sd["queue"]), 10)
     out += ["", f"## Inbox ({len(sd['inbox'])})"]
-    out += [f"- {q['id']} [{q['type']}{'?' if q['explore'] else ''} {q['tier']}] {q['title'][:70]}"
+    out += [f"- {q['id']} [{q['type']}{'?' if q['explore'] else ''} {q['tier']}] "
+            f"{'✋ waits for your yes · ' if q.get('confirm') else ''}{q['title'][:70]}"
             for q in sd["inbox"][:5]] + _more(len(sd["inbox"]), 5)
     out += ["", f"## Blocked ({len(sd['blocked'])})"]
     out += [f"- {q['id']} — {q['reason'][:80]}" for q in sd["blocked"][:5]] + _more(len(sd["blocked"]), 5)

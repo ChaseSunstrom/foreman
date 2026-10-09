@@ -360,6 +360,51 @@ def seen_before(p, sig, task):
     return None
 
 
+_CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
+
+
+def clauses(text):
+    """T-0595: a message cut into its asks: lines, sentences, "and also" joins; list markers and short bits dropped."""
+    parts = [re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", x).strip() for x in _CLAUSE_SPLIT.split(text or "") if x]
+    return [x for x in parts if len(x.split()) >= 3]
+
+
+def account(p, parts):
+    """[(clause, task id or None)]: the open or recently touched task sharing the most words (2+) with each clause."""
+    briefs = [b for b in c.load_briefs(p) if b.status != "dropped" and
+              (b.status not in c.CLOSED or (c.age_days(b.meta.get("updated")) or 99) < 2)]
+    words = {b.id: set(_tokens(" ".join([b.title, b.section("Raw request")]))) for b in briefs}
+    out = []
+    for part in parts:
+        mine = set(_tokens(part))
+        best = max(words, key=lambda i: len(mine & words[i]), default=None)
+        out.append((part, best if best and len(mine & words[best]) >= 2 else None))
+    return out
+
+
+def cmd_clauses(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    meta = c.read_meta(p).get("clauses") or {}
+    loose = meta.get("open") or []
+    if args.note is not None:
+        if not 1 <= args.note <= len(loose):
+            raise fmcli.UsageError(f"no unaccounted clause {args.note} (fm clauses --show lists {len(loose)})")
+        gone = loose.pop(args.note - 1)
+        c.update_meta(p, clauses=dict(meta, open=loose))
+        c.log_event(p, "clause_noted", data={"clause": gone[:200], "why": c.redact(" ".join(args.text))[:200]})
+        return fmcli.out(args, {"open": loose}, f"Noted: \"{c.fit(gone, 80)}\". {len(loose)} left.")
+    if args.show or not args.text:
+        return fmcli.out(args, {"open": loose}, "\n".join(f"{i}. {x}" for i, x in enumerate(loose, 1))
+                         or "Every clause of the last request is accounted for.")
+    rows = account(p, clauses(c.redact(" ".join(args.text))))
+    loose = [x for x, t in rows if not t]
+    c.update_meta(p, clauses={"at": c.now(), "open": loose})
+    return fmcli.out(args, {"clauses": [{"clause": x, "task": t} for x, t in rows], "open": loose}, "\n".join(
+        f"- {c.fit(x, 100)} → {t}" if t else f"- {c.fit(x, 100)} → unaccounted" for x, t in rows)
+        + (f"\n{len(loose)} unaccounted: capture each, answer it, or fm clauses --note N \"<why>\"." if loose else ""))
+
+
 def log_shown(p, hits, task):
     """T-0617: a recalled brief with a lesson was put in front of task's session at focus."""
     for _, kind, label, _, x in hits:
