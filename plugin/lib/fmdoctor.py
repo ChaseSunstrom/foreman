@@ -912,6 +912,10 @@ def run_all(full=False, accept_supply=False):
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
                           or f"{len(projects)} project(s) OK"))
+    stale = [p.slug for p in projects if not views_match(p)]  # T-0494
+    results.append(Result("views", "WARN" if stale else "PASS",
+                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --repair regenerates them"
+                          if stale else "status views match the briefs"))
     here = c.find_project(os.getcwd())
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
@@ -935,6 +939,13 @@ def cmd_doctor(args):
     if args.repair:
         moved = repair(integrity_roots())
         print("\n".join(f"{a} → {b}" for a, b in moved) or "Nothing to repair: no empty git objects.")
+        fixed = []
+        for p, _ in c.all_projects():  # T-0494: views that don't match their briefs are regenerated
+            if not views_match(p):
+                with c.lock(p.dir):
+                    c.regen_views(p, mirror=False)
+                fixed.append(p.slug)
+        print(f"Views regenerated in {', '.join(fixed)}." if fixed else "Views match the briefs everywhere.")
         return None
     results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
     ok = not any(r.status == "FAIL" for r in results)
@@ -947,3 +958,60 @@ def cmd_doctor(args):
               f"{sum(r.status == 'WARN' for r in results)} warn, {sum(r.status == 'FAIL' for r in results)} fail)")
     if not ok:
         sys.exit(1)
+
+
+def views_match(p):
+    """T-0494: whether the project's one-line views (state.line, status.json) say what its briefs do now; a torn
+    or hand-edited view, or one a crash left behind, doesn't. Unreadable briefs count as matching (check_briefs
+    reports those)."""
+    try:
+        sd = c.state_dict(c.main_view(p))
+        want = {"state.line": c.state_line(sd) + "\n", "status.json": json.dumps(c.status_dict(sd)) + "\n"}
+    except Exception:
+        return True
+    for name, text in want.items():
+        try:
+            with open(os.path.join(p.dir, name), encoding="utf-8") as f:
+                if f.read() != text:
+                    return False
+        except OSError:
+            return False
+    return True
+
+
+def cmd_wiring(args):
+    """T-0469: one screen of what is wired: Foreman's version and where it runs from, its hooks, this project's flags,
+    the standing yeses, trust, the pause, the budget and the enabled plugins. Read-only."""
+    import fmbudget
+    import fmcli
+    p = fmcli.resolve(args)
+    meta = c.read_meta(p)
+    try:
+        with open(os.path.join(PLUGIN, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+            version = json.load(f).get("version")
+        with open(os.path.join(PLUGIN, "hooks", "hooks.json"), encoding="utf-8") as f:
+            hooks = json.load(f).get("hooks", {})
+    except (OSError, ValueError):
+        version, hooks = None, {}
+    try:
+        with open(os.path.join(os.path.expanduser("~"), ".claude", "settings.json"), encoding="utf-8") as f:
+            plugins = sorted(k for k, v in (json.load(f).get("enabledPlugins") or {}).items() if v)
+    except (OSError, ValueError, AttributeError):
+        plugins = []
+    caps, high = fmbudget.effective()
+    data = {"version": version, "plugin": PLUGIN, "hooks": {e: [g.get("matcher", "") for g in gs] for e, gs in hooks.items()},
+            "autonomy": meta.get("autonomy", "standard"), "drive": bool(meta.get("drive")),
+            "sensitive": bool(meta.get("sensitive")), "sync": bool(meta.get("sync")),
+            "standing": sorted(meta.get("standing") or {}), "trust": bool(c.trusted()), "paused": c.panicked(),
+            "budget": caps, "budget_halved": high, "plugins": plugins}
+    lines = [f"Foreman version {version} from {PLUGIN}",
+             "hooks: " + " · ".join(e + (f" ({', '.join(m for m in ms if m)})" if any(ms) else "")
+                                    for e, ms in data["hooks"].items()),
+             f"{p.slug}: autonomy {data['autonomy']} · drive {'on' if data['drive'] else 'off'} · sensitive "
+             f"{'on' if data['sensitive'] else 'off'} · sync {'on' if data['sync'] else 'off'}",
+             f"standing yes: {', '.join(data['standing']) or 'none'} · trust {'on' if data['trust'] else 'off'} · "
+             f"pause {'ON' if data['paused'] else 'off'}",
+             "budget: " + ", ".join(f"{k} ${v:g}" for k, v in caps.items()) + (f" (halved: {high})" if high else ""),
+             f"plugins enabled ({len(plugins)}): " + (", ".join(plugins[:12]) + (" …" if len(plugins) > 12 else "")
+                                                       if plugins else "none")]
+    return fmcli.out(args, data, "\n".join(lines))

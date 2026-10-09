@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Resilience, state and simplicity, first versions (T-0679 milestone: T-0453, T-0495, T-0468, T-0469, T-0494, T-0496).
+  - The task lifecycle is one table (`fmcore.TRANSITIONS`). A chaos test runs random lifecycles, crashes them at a random write and checks that the state still loads and that every status change was a legal one. It found two bugs, now fixed: `fm task block` turned a dropped task into a blocked one, and `fm task finish` marked a dropped task done.
+  - `fm usage --prune` lists the fm commands no session ran in the window, in any project, as one CLEAN capture to review. Nothing is removed.
+  - `fm wiring` shows on one screen the version, hooks, project flags, standing yeses, trust, pause, budget and enabled plugins.
+  - `fm doctor` warns when a project's status views don't match its briefs; five did here, left by older formats. `--repair` regenerates them.
+  - `plugin/tests/mutate_guard.py` flips one operator at a time in fmguard's check functions and reports the mutants the guard tests miss.
 - One-command releases (T-0678 milestone: T-0493, T-0492). `python3 release.py VERSION` bumps plugin.json and Foreman's marketplace entries, heads the Unreleased changelog entries with the version, runs `fm check` (and undoes the bump if it fails), and commits. It refuses a dirty tree or an older version. `--push URL` merges into that remote's main from a scratch clone. `--canary` first re-runs `fm sentinel` in every local project and prints what fails there now.
 
 ## 1.2.19 — 2026-10-09
