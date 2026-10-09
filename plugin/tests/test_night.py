@@ -138,6 +138,21 @@ class NightGuards(ForemanTestCase):
         self.assertEqual([j["name"] for j in res["ran"]], ["second session"])
         self.assertIn("usage", res["stopped"])
 
+    def test_night_breaker_stops_after_two_failed_jobs(self):
+        # T-0434: two failed jobs in a row stop the night (never a retry); each job beats into the state dir first
+        self.fm("capture", "RESEARCH: which TOML parser handles comments", "--type", "RESEARCH")
+        beat = os.path.join(c.find_project(self.repo).dir, "heartbeat-night.json")
+        seen = os.path.join(self.tmp, "seen")
+        with open(os.path.join(self.tmp, "bin", "claude"), "w") as f:
+            f.write(f"#!/usr/bin/env bash\ncat {beat} >> {seen}; echo >> {seen}\necho 'Error: boom' >&2\nexit 1\n")
+        res = json.loads(self.fm("night", "--max-usd", "50", "--only", "second session", "--only", "landscape",
+                                 "--only", "research debt", "--json", env=self.env).stdout)
+        self.assertEqual([j["name"] for j in res["ran"]], ["second session", "landscape"])
+        self.assertTrue(all(j["exit"] for j in res["ran"]))
+        self.assertIn("in a row", res["stopped"])
+        self.assertIn("second session", read_text(seen))
+        self.assertFalse(os.path.exists(beat))  # the night ended: no heartbeat left to go stale
+
     def test_unknown_usage_halves_the_limit(self):
         os.remove(os.path.join(c.state_dir(), "sessions", "s.json"))
         res = json.loads(self.fm("night", "--dry-run", "--max-usd", "1", "--json").stdout)

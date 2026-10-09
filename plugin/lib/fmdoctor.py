@@ -609,6 +609,23 @@ def check_serve(states):
     return Result("fm serve", "PASS", f"{len(states)} unit(s) active" if states else "no fm serve units")
 
 
+def check_heartbeats(projects, now=None):
+    """T-0434: an overdue fm run/night heartbeat (wedged, or killed mid-work) warns, and the project's notify command
+    (fm notify) hears of it once per stale episode: the next beat starts a new one."""
+    stale = []
+    for p in projects:
+        for name, hb in fmserve.stale_beats(p, now):
+            what = f"{p.slug} fm {name} ({c.plain(str(hb.get('doing')))[:80]}, last beat {hb.get('at')})"
+            stale.append(what)
+            told = c.read_meta(p).get("heartbeat_told") or {}
+            if told.get(name) != hb["due"]:
+                fmserve._notify(p, f"fm {name} looks stuck or dead: {what}")
+                c.update_meta(p, heartbeat_told=dict(told, **{name: hb["due"]}))
+    if stale:
+        return Result("heartbeats", "WARN", "overdue: " + "; ".join(stale) + " (the run log says what it last did)")
+    return Result("heartbeats", "PASS", "no overdue fm run/night heartbeat")
+
+
 def check_env(settings, manifest):
     """The env values fm install-user sets (drive continuation cap, earlier compaction), unless Foreman isn't wired."""
     if manifest is None:
@@ -744,6 +761,7 @@ def run_all(full=False):
                 check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md")),
                 check_frontmatter()]
     projects = [p for p, _ in c.all_projects()]
+    results.append(check_heartbeats(projects))
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
