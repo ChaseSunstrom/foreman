@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `rm --rec ~` and `rm --re --f ~` are now read as recursive (T-0668, a review of T-0587). Getopt accepts any unique prefix of a long option, but the guard only knew `--recursive` spelled out. An unknown computed name is also read as `bash -c` and as `eval`. The rm reading of a computed name is skipped only when rm would itself refuse an option that comes before the first operand.
 - A command name bash computes is read every way it may run (T-0587, found while replaying T-0585). Before, `X=rm; $X -rf ~` and `q='rm -rf'; eval "$q ~"` ran unread. Now a `$X` or `` `…` `` name is checked three ways:
   - as its value, when the line sets it once to a literal (spaces kept, quoted text never counted);
   - as expanding to nothing, so the next word runs;

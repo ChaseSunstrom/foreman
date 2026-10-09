@@ -113,6 +113,22 @@ class EvalVarsAndComputedNames(GuardCase):
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
 
 
+class RmOptsOnly(GuardCase):
+    def test_an_unknown_name_is_rm_unless_rm_would_refuse_its_options(self):
+        # T-0668 (review of T-0587): getopt takes --rec for --recursive; under POSIXLY_CORRECT an option after an
+        # operand is a file name, so only options before the first operand can make rm refuse
+        self.run_table([
+            ("$X --rec --forc ~", "rm-outside"),
+            ("$X -rf ~ -Wfoo", "rm-outside"),
+            ("$X --recursive=x ~", "rm-outside"),
+            ("$cc -O2 -fwrapv ~/a.c -o a", None),
+            ("rm --rec ~", "rm-outside"),  # plain rm too: --recursive was only read spelled out
+            ("rm --re --f ~", "rm-outside"),
+            ("$X -c 'rm -rf ~'", "rm-outside"),  # an unknown name may be bash -c
+            ("$X 'rm -rf ~'", "rm-outside"),  # or eval
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
+
 class ShellStdin(GuardCase):
     def test_a_script_a_shell_reads_from_stdin_is_checked(self):
         # T-0589: input redirections were dropped, so the text a shell ran from its stdin was never read
