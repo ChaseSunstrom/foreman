@@ -147,15 +147,16 @@ class PluginFiles(unittest.TestCase):
         self.assertEqual(set(hooks), HOOK_EVENTS)
         for event, groups in hooks.items():
             handlers = [h for g in groups for h in g["hooks"]]
-            self.assertEqual(len(handlers), 1, event)
-            self.assertEqual(handlers[0]["args"], [event])
+            # T-0724: PreToolUse has a second entry, for Read (outline-first), with its own failure rule
+            self.assertEqual(len(handlers), 2 if event == "PreToolUse" else 1, event)
+            self.assertTrue(all(h["args"] == [event] for h in handlers), event)
 
     def test_the_guard_hook_fails_closed(self):
         hooks = read_json(os.path.join(PLUGIN, "hooks", "hooks.json"))["hooks"]
         for event, groups in hooks.items():
             for g in groups:
                 for h in g["hooks"]:
-                    if event == "PreToolUse":
+                    if event == "PreToolUse" and g["matcher"] != "Read":
                         self.assertEqual(h.get("onFailure"), "block")
                     else:
                         self.assertNotIn("onFailure", h, event)

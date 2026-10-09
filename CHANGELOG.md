@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Outline-first reads (T-0724, the biggest lever T-0717 measured). The first full Read of a file over 600 lines (code, Markdown or a diff) gets its outline and a range to read instead. Read it again with no range to get all of it. This is per agent and resets at compaction. Over 30 days it would have caught 367 reads holding 4.1M tokens; with a range read after each, that saves about 3.1M tokens. It has its own PreToolUse entry, which never blocks a read on failure, and adds about 30 ms per Read.
 - The diff a reviewer reads is 11% smaller across 48 real audit diffs, and up to 21% on one (T-0723, from the T-0717 measurement: reviewers read 3.2M tokens of diffs in 30 days). A file whose change repeats another's, such as the synced eval copies of the rules, becomes one line naming the first. Context lines are cut at 200 characters. Fixtures and lockfiles are listed with their +/- counts. Changed lines stay whole, and the pre-audit still reads the raw diff.
 - Friction (T-0729: T-0725, T-0726). `fm lane rm` unlocks a worktree Claude Code still locks for a finished builder once its branch is in main; while the branch isn't merged, it says to merge first. `fm capture` no longer calls a request a re-ask of a dropped batch just because the batch's huge request shares a few of its words: the shared words must be a fifth of the dropped request's too.
 
