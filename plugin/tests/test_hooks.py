@@ -208,6 +208,18 @@ class UserPromptSubmit(HookCase):
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nCLEAN: b"}))
         self.assertIn("CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE", ctx)
 
+    def test_urgent_tag_mid_task_says_switch_now(self):
+        # T-0385: JARVIS got "CLEAN!: …" mid-task with only "Message has 1 intake item (CLEAN!)" and finished three
+        # tasks before starting it; the rules say an urgent tag checkpoints the active task and switches at once
+        self.fm("init")
+        quiet = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX!: the login page crashes"}))
+        self.assertNotIn("checkpoint", quiet)  # nothing active: nothing to switch from
+        tid = self.task()
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "CLEAN!: deep clean the repo now"}))
+        self.assertIn(f"fm checkpoint", ctx)
+        self.assertIn(tid, ctx)
+        self.assertIn("now", ctx)
+
     def test_open_ended_request_points_at_mission(self):
         # T-0375: the mission and its brainstorm seeds are composed by fm, not left for the model to write by hand
         self.fm("init")

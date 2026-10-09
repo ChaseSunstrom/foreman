@@ -463,6 +463,9 @@ def user_prompt_submit(pl):
                      + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip
                         or any(i.own for i in r.items) else "")
                      + "; canonical order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE (fm intake prints it)")
+        a = sd["active"] if sd else None
+        if a and any(i.urgent for i in r.items):  # T-0385: JARVIS finished three tasks before an urgent one
+            parts.append(f"Urgent: fm checkpoint {a['id']} now and switch to it (don't finish {a['id']} first)")
     if c.is_plan_only(text):
         parts.append("Plan-only request: drive won't start implementation until the next message")
     if r.overrides:
