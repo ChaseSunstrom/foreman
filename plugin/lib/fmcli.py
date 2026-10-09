@@ -3,6 +3,7 @@
 Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
 """
 import argparse
+import collections
 import json
 import os
 import re
@@ -437,18 +438,28 @@ def cmd_task(args):
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
-            need_brief(p, args.id)
+            pre = need_brief(p, args.id)
             code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
+            result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
         else:
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
-        b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree,
-                                                            ran=args.run is not None, inconclusive=args.inconclusive),
+        if args.run is None:
+            tried = None
+
+        def record(b):
+            b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree, ran=args.run is not None,
+                           inconclusive=args.inconclusive)
+            if tried:  # T-0632: what was tried, for whoever picks the step up
+                b.append_log(f"tried: `{cmd}` ×{tried} on step {args.step}, failing the same way")
+        b, _ = mutate(p, args.id, record,
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300],
                                    **({"inconclusive": True} if args.inconclusive else {})})
+        for w in _evidence_notes(b, args.step, result, tried):
+            print(f"fm: warning: {w}", file=sys.stderr)
         out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
             + (f" ({result})" if args.run is not None else "")
             + (" as inconclusive: it never counts as passing; a sharper check is next." if args.inconclusive else "."))
@@ -1215,6 +1226,9 @@ def _close_warnings_of(p, b, files):
     if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
         honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
                       f"\"Recommendation: …; would change if: …\"")
+    debug = _scaffolding(p, b, files)
+    if debug:
+        honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
     gone = _deleted(p, b)
     why = b.section("Origins")
     unexplained = [f for f in gone if f not in why]
@@ -1227,6 +1241,118 @@ def _close_warnings_of(p, b, files):
         honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
                       f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+_EXPECT = re.compile(r"\(expect:\s*([^)]+)\)")
+_FAILED_RUN = re.compile(r"^- \(step (\d+)\) `(.+?)` → ✗ exit")
+
+
+def _step_checks(b, step, cmd, code, output, result):
+    """T-0596, T-0632: (result with the step's expectation marked, how many times this exact command has now failed on
+    the step when that's 3 or more, else None)."""
+    s = next((x for x in b.steps() if x.n == step), None) if step else None
+    m = _EXPECT.search(s.text) if s else None
+    if m:
+        want = m.group(1).strip()
+        result += " · expect ✓" if want.lower() in (output or "").lower() else f" · expect missed: \"{c.fit(want, 60)}\""
+    if not code or not step:
+        return result, None
+    same = 1 + sum(1 for line in b.evidence() if (r := _FAILED_RUN.match(line)) and int(r.group(1)) == step
+                   and r.group(2) == cmd.replace("`", "'").strip())
+    return result, same if same >= 3 else None
+
+
+def _evidence_notes(b, step, result, tried):
+    notes = []
+    m = re.search(r"expect missed: \"(.*)\"$", result)
+    if m:
+        notes.append(f"step {step} expected \"{m.group(1)}\" in the output and it wasn't there: check before calling the "
+                     f"step done")
+    if tried:
+        notes.append(f"this exact command has now failed {tried} times on step {step}: change something first (a "
+                     f"hypothesis with its probe, fm task hypo {b.id} add …, or a smaller step)")
+    return notes
+
+
+def _tried(b):
+    """T-0632: [(command, failures)] on the current step that failed twice or more."""
+    cur = b.current_step()
+    seen = collections.Counter(r.group(2) for line in b.evidence() if (r := _FAILED_RUN.match(line)) and cur
+                               and int(r.group(1)) == cur.n)
+    return cur.n if cur else None, [(x, n) for x, n in seen.most_common(4) if n >= 2]
+
+
+def _last_green(b):
+    """The newest command fm ran for this task that passed."""
+    return next((r.group(1) for line in reversed(b.evidence()) if c._RAN_MARK in line
+                 and (r := re.match(r"^- \((?:step|ac) \d+\) `(.+?)` → exit 0\b", line))), None)
+
+
+_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug|"
+                    r"\b(print|console\.\w+|logger?\.\w+)\(.*\bDEBUG\b")
+_JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
+
+
+def _scaffolding(p, b, files):
+    """T-0650: added lines in the task's files that look like debug scaffolding: [file:line]."""
+    import subprocess
+    base = b.meta.get("base")
+    if not base or not files or not c.git_root(p.root):
+        return []
+    try:
+        diff = subprocess.run(["git", "-C", p.root, "diff", "-U0", base, "--", *files[:200]], capture_output=True,
+                              text=True, errors="replace", timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    hits, path, n = [], None, 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            n = int(m.group(1)) if m else 0
+        elif line.startswith("+") and path:
+            text = line[1:]
+            if _DEBUG.search(text) or (path.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs")) and _JS_LOG.search(text)
+                                       and "/test" not in path):
+                hits.append(f"{path}:{n}")
+            n += 1
+    return hits
+
+
+def _preflight(p, b):
+    """T-0633: before step 1 — scope paths that don't exist, uncommitted files outside the scope, and whether the gates
+    already ran green on this exact tree (a baseline to compare against)."""
+    notes = [f"{s} doesn't exist (fine if a step creates it)" for s in b.meta.get("scope") or []
+             if not re.search(r"[*?\[]", s) and not os.path.exists(os.path.join(p.root, s))]
+    if c.git_root(p.root):
+        dirty = [x[3:] for x in c._git(p.root, "status", "--porcelain", fail="").splitlines() if x[3:]]
+        stray = c.scope_drift(b, dirty) if b.meta.get("scope") else []
+        notes += [f"{len(stray)} uncommitted file(s) outside the scope already: {', '.join(stray[:3])}"] if stray else []
+    tree = c.worktree_id(p.root)
+    green = any(e.get("event") == "check_run" and (e.get("data") or {}).get("tree") == tree
+                and not any(r.get("exit") for r in (e.get("data") or {}).get("results") or [])
+                for e in c.ledger_tail(p, 3000))
+    notes.append("gates ran green on this tree (baseline cached)" if green else
+                 "no fm check on this tree yet: fm check now gives a baseline to compare against")
+    return "Preflight: " + "; ".join(notes)
+
+
+def _files_vs_steps(b, files):
+    """T-0610: each changed file against the steps that name it (by path, file name or stem) and the scope."""
+    if not files:
+        return ""
+    steps, scope = b.steps(), b.meta.get("scope") or []
+    rows = []
+    for f in files[:40]:
+        name, stem = os.path.basename(f).lower(), os.path.splitext(os.path.basename(f))[0].lower()
+        hit = [s.n for s in steps if any(k in s.text.lower() for k in (f.lower(), name)) or
+               (len(stem) >= 4 and re.search(rf"\b{re.escape(stem)}\b", s.text.lower()))]
+        out_of_scope = scope and c.scope_drift(b, [f])
+        rows.append(f"- {f} — " + (f"step {', '.join(map(str, hit))}" if hit else "no step names it")
+                    + (" (outside the scope)" if out_of_scope else ""))
+    return ("\n\n## Files vs steps\n" + "\n".join(rows) + "\nFor each hunk, say which step it serves; a hunk that "
+            "serves none is a finding (scope creep, or a step the plan is missing).")
 
 
 def _deleted(p, b):
@@ -1655,6 +1781,7 @@ def cmd_focus(args):
                 c.save_brief(p, b)
         resumed = target.status not in ("active", "verifying")  # set active by hand: its pause point is stale (review)
         target.meta["status"] = "active"
+        first_focus = not target.meta.get("base")
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
         paused = target.meta.pop("paused_tree", None)
@@ -1711,7 +1838,8 @@ def cmd_focus(args):
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
-                                          step_order(target), step_contracts(p, target)]))  # T-0623, T-0666
+                                          step_order(target), step_contracts(p, target),  # T-0623, T-0666
+                                          _preflight(p, target) if first_focus else ""]))  # T-0633
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
@@ -1796,9 +1924,18 @@ def cmd_resume(args):
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
              f"relying on it." if r.get("stale") else "")
-    notes = c.find_brief(p, r["id"]).section("Notes").strip()  # T-0630
+    b = c.find_brief(p, r["id"])
+    notes = b.section("Notes").strip()  # T-0630
+    n, tried = _tried(b)
+    extra = (f"\nTried on step {n}: " + "; ".join(f"{x} ×{k}" for x, k in tried)) if tried else ""
+    green = None if getattr(args, "no_check", False) else _last_green(b)
+    if green:  # T-0649: did anything drift since the last green check?
+        code, output = c.run_command(p.root, green, 120)
+        extra += (f"\nLast green check `{green}` still passes." if code == 0 else
+                  f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
+                  f"passed — look before going on.")
     out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}"
-        + (f"\nNotes:\n{notes}" if notes else "") + f"\nBrief: {r['path']}")
+        + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):
@@ -2890,11 +3027,13 @@ def cmd_audit(args):
     if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
             f"- {x}" for x in found)
+    steps = _files_vs_steps(b, files)  # T-0610: does each changed file serve a step?
+    head += steps
     blocks, sections = [], []
     for lens in lenses:
         if lens == "self":
             blocks.append("=== self (main thread) ===\n" + ref[ref.index("**self**"):].strip()
-                          + "".join(f"\n- pre-audit: {x}" for x in found))
+                          + "".join(f"\n- pre-audit: {x}" for x in found) + steps)
             continue
         context, prompt = templates[lens]
         extra = ""
@@ -3546,7 +3685,8 @@ def build_parser():
     s.add_argument("--note")
     s.add_argument("--auto", action="store_true")
 
-    add("resume", cmd_resume, help="print the resume point")
+    s = add("resume", cmd_resume, help="print the resume point, and re-run the last green check for drift")
+    s.add_argument("--no-check", action="store_true", help="don't re-run the last green check (T-0649)")
 
     s = add("queue", cmd_queue, help="ordered queue")
     s.add_argument("--replan", action="store_true")

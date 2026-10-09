@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Steps and execution craft (T-0695 milestone: T-0596, T-0610, T-0632, T-0633, T-0649, T-0650).
+  - A step can say `(expect: TEXT)`. `fm task evidence --step N --run CMD` marks the run "expect ✓" or "expect missed" and warns on a miss.
+  - `fm audit prep` adds a "Files vs steps" section: each changed file, the steps that name it, and whether it is outside the scope. The reviewer says which step each hunk serves.
+  - The same failing command a third time on a step gets a nudge and is logged as tried, and `fm resume` lists what was tried.
+  - First focus prints a preflight: scope paths that don't exist, uncommitted files outside the scope, and whether the gates ran green on this exact tree.
+  - `fm resume` re-runs the last green check (capped at 2 minutes) and reports drift. `--no-check` skips it.
+  - The close warns about debug scaffolding in added lines: `breakpoint()`, pdb, `debugger;`, `console.log` in JS/TS outside tests, and DEBUG prints.
 - Research and knowledge (T-0694 milestone: T-0594, T-0599, T-0600, T-0618, T-0659, T-0660). Everything here is local; nothing new goes to the network.
   - `fm deps --calls`: each dependency's installed version (read locally) and its import sites with the names used, so release notes can be read against real call sites. planning.md says to probe the installed version before trusting docs.
   - Every `fm research ask` note ends with a Decision prompt (recommendation, would change if). A RESEARCH task that closes without a Decision section warns.
