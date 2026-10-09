@@ -89,6 +89,31 @@ class Parallel(ForemanTestCase):
         p = c.find_project(self.repo)
         self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0004"])
 
+    def test_same_group_never_batches(self):
+        # T-0445: fm relate groups related tasks; two of one group in parallel lanes step on each other's work
+        import fmcore as c
+        import fmserve
+        for t, f in (("one", "a.txt"), ("two", "b.txt"), ("three", "c.txt")):
+            self.task(t, f)
+        p = c.find_project(self.repo)
+        for t in ("T-0001", "T-0002"):
+            b = c.find_brief(p, t)
+            b.meta["group"] = "g1"
+            c.save_brief(p, b)
+        self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
+
+    def test_cochange_footprint_blocks_batch(self):
+        # T-0445: files that nearly always change together (fm map's pairs): a task on one will touch the other
+        from unittest import mock
+        import fmcore as c
+        import fmserve
+        for t, f in (("api", "src/api.py"), ("client", "src/client.py"), ("docs", "README.md")):
+            self.task(t, f)
+        p = c.find_project(self.repo)
+        with mock.patch.object(fmserve, "_pairs", return_value={"src/api.py": ["src/client.py"]}, create=True):
+            ids = [b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)]
+        self.assertEqual(ids, ["T-0001", "T-0003"])
+
     def test_scopes_are_compared_as_paths(self):
         import fmserve
         for a, b in (("./a.txt", "a.txt"), ("src//x.py", "src/x.py"), ("src/{a,b}.py", "src/a.py"), ("plugin/", "plugin/x")):

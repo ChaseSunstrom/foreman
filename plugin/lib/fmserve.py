@@ -298,6 +298,20 @@ def _overlap(a, b):
     return x.startswith(y) or y.startswith(x)
 
 
+def _pairs(p):
+    """T-0445: fm map's co-change pairs ({file: [files that nearly always change with it]}); {} without a map."""
+    try:
+        import fmmap
+        return fmmap.load(p).get("pairs") or {}
+    except Exception:  # no map is no widening: scopes alone, as before
+        return {}
+
+
+def _footprint(scopes, pairs):
+    """T-0445: what a task will touch: its scopes plus each literal file's co-change companions."""
+    return list(scopes) + [f for s in scopes for f in pairs.get(_literal(s), [])]
+
+
 def _batch(p, head, skip, n):
     """T-0167: head plus queued tasks that can't collide with it or each other: S or M, planned, explicit scopes that
     are pairwise disjoint, nothing unfinished they depend on, nothing waiting on the user. One task: run as before."""
@@ -311,10 +325,13 @@ def _batch(p, head, skip, n):
                 and all(d in by_id and by_id[d].status in c.CLOSED for d in c._deps(b)))  # T-0383: inferred too
     if n < 2 or not free(head):
         return [head]
-    batch = [head]
+    batch, pairs = [head], _pairs(p)
+    group = lambda b: b.meta.get("group")  # T-0445: fm relate's groups are related work: one at a time
     for b in c.order_queue(briefs)[0]:
         if len(batch) < n and b.id != head.id and free(b) and not any(
-                _overlap(g, h) for x in batch for g in x.meta["scope"] for h in b.meta["scope"]):
+                group(b) and group(b) == group(x) for x in batch) and not any(
+                _overlap(g, h) for x in batch for g in _footprint(x.meta["scope"], pairs)
+                for h in _footprint(b.meta["scope"], pairs)):
             batch.append(b)
     return batch
 
