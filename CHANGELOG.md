@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Friction (T-0729: T-0725, T-0726). `fm lane rm` unlocks a worktree Claude Code still locks for a finished builder once its branch is in main; while the branch isn't merged, it says to merge first. `fm capture` no longer calls a request a re-ask of a dropped batch just because the batch's huge request shares a few of its words: the shared words must be a fifth of the dropped request's too.
 
 ## 1.2.18 — 2026-10-09
 - `fm recall --ask` redacts passages before indexing them, caps what one question indexes at 20 M characters, and shows at most 50 answers (T-0728, from a commit security review). SQLite's snippet put `[ ]` around a matched word inside a secret, so the redactor no longer recognised it on the way out.

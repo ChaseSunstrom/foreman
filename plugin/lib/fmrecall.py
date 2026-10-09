@@ -200,8 +200,9 @@ def nearest_dropped(p, text, skip=None):
     for b in c.load_briefs(p, include_archive=True):
         if b.status != "dropped" or b.id == skip:
             continue
-        n = len(q & set(_tokens(" ".join([b.title, b.section("Raw request")]))))
-        if n >= max(2, (len(q) + 1) // 2) and (not best or n > best[0]):
+        d = set(_tokens(" ".join([b.title, b.section("Raw request")])))
+        n = len(q & d)  # T-0726: and a real share of the dropped one's words, not a few of a batch's hundreds
+        if n >= max(2, (len(q) + 1) // 2) and n >= 0.2 * len(d) and (not best or n > best[0]):
             why = re.findall(r"(?m)dropped: (.+)$", b.section("Log"))
             best = (n, b.id, b.title, why[-1] if why else "")
     return best[1:] if best else None

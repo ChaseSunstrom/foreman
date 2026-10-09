@@ -240,6 +240,14 @@ def remove(p, b, main):
                                                        "uncommitted work: commit it (fm task finish --commit) or remove it")
                                 + " there first; fm lane rm never discards anything")
         r = _git(main, "worktree", "remove", path)
+        if r.returncode and "claude agent" in r.stderr and "locked" in r.stderr:
+            # T-0725: Claude Code keeps a finished builder's worktree locked; once its work is in main it can go
+            tip = _git(path, "rev-parse", "HEAD").stdout.strip()
+            if not tip or _git(main, "merge-base", "--is-ancestor", tip, "HEAD").returncode:
+                raise fmcli.UsageError(f"lane {path} is locked by a Claude Code agent and its branch isn't merged: "
+                                       f"merge it first (fm lane merge {b.id}), or let the agent finish")
+            _git(main, "worktree", "unlock", path)
+            r = _git(main, "worktree", "remove", path)
         if r.returncode:
             raise fmcli.UsageError(f"git worktree remove failed: {r.stderr.strip()[:300]}")
     _git(main, "worktree", "prune")  # a folder deleted by hand leaves a registration that holds the branch (review)
