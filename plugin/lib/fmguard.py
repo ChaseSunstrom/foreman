@@ -141,8 +141,10 @@ def _message(block, ctx):
                 f"task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
                 f"(bigger work: /foreman:intake; fm next says what's next).")
     if cat == "state-direct":
+        diff = re.search(r"/audits/(T-\d+)\.diff$", str(detail))  # T-0413
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
-                f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
+                f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
+                f"direct writes are never authorized.")
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
