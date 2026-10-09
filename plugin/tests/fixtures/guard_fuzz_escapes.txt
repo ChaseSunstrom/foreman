@@ -4,10 +4,10 @@
 # lands; then drop the mark and it must stay blocked.
 
 # 1. ${IFS} (or a continued ${I\<newline>FS}) as the space between words: the guard reads one word
-open 'rm${IFS}-rf ~'
-open 'git${IFS}push --force origin main'
-open 'claude plugin${IFS}install x@y'
-open 'timeout 5${IFS}rm -rf ~'
+'rm${IFS}-rf ~'
+'git${IFS}push --force origin main'
+'claude plugin${IFS}install x@y'
+'timeout 5${IFS}rm -rf ~'
 
 # 2. a backslash-newline inside single quotes that a second shell reads (eval, bash -c, sh -c, trap, script -c)
 open "eval 'claude plugin ins\\\ntall x@y'"
@@ -43,38 +43,38 @@ open 'echo `cat <<EOF\n\\`rm -rf ~\\`\nEOF`'
 
 # the fixed seed's own escapes (FM_FUZZ_SEED 433, 300 cases; two more are in class 1 above): class 1 but the last two
 # (classes 2 and 4)
-open "command ech''o $(( 1 )) $(rm${IFS}-rf ~)"
-open "echo '<<-EOF' && script -qc 'git push${IFS}--force${IFS}origin main' /dev/null"
-open 'D=x; set -o posix; D=~ :; rm${IFS}-rf "$D"'
-open '( true; echo $(true)#x; git${IFS}push --force origin main )'
-open "bash${IFS}-c 'true; git push --force origin main'"
-open 'echo a |\nxargs${IFS}-I@ rm -rf ~'
-open 'D=~; "time" D=/tmp/x; "rm"${IFS}-rf "$D"'
-open 'if true; then echo "$(true; claude plugin${IFS}install${IFS}x@y)"; fi'
-open 'cd ~\ncd /nonexistent &&\necho \'(|)\'; rm${IFS}-rf "$PWD"'
-open 'exec echo $\\\n(rm${IFS}-rf ~)'
-open 'cat <<EOF\n`claude plu\\\ngin${IFS}install x@y`\nEOF'
-open 'echo a#b && r\'\'m${IFS}-r""f ~'
-open 'D=x; for i in 1; do D=~; done; rm${IFS}-rf "$D"'
-open 'D=x; trap \'D\\\n=~\' DEBUG; rm${IFS}-rf "$D"'
-open 'D=/; (D=x); r\\m${IFS}-rf "$D"'
-open "echo a#b &&\nuntil false; do echo ${HOME}#x; rm${IFS}-rf ~; brea''k; done"
-open "nice${IFS}'claude' plugin install x@y"
-open 'f() { rm${IFS}-rf ~; }; f'
-open 'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "${S}/"'
-open 'D=~; "D=/tmp/x"; rm${IFS}-rf "$D"'
-open 'bash -c \'true; claude plugin insta""ll${IFS}x@y\''
-open 'D=${HOME}; echo "x${IFS}D=y"; "D=/tmp/x"; rm${IFS}-rf "$D"'
-open 'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "$S/"'
-open 'x=$(git \\push --force origin${IFS}main)'
-open 'D=/tmp/x; X=read; $X D <<< ~; rm${IFS}-rf "$D"'
-open 'for d in /home/sb; do rm${IFS}-rf "$d"; done'
-open 'D=~; echo "x D=y"; "D=/tmp/x"; rm${IFS}-fr "$D"'
-open "bash${IFS}-c 'echo `true`#x; rm -rf ~'"
-open 'D=/tmp/x; touc\'\'h${IFS}read; rea? D <<< ~; rm${IFS}-rf "$D"'
-open "bash${IFS}-c 'echo a#b && echo `true`#x; git pus\\h --force or''igin main'"
-open 'true # c\nrm${IFS}-rf $HOME'
-open 'echo `claude${I\\\nFS}plugin install x@y`'
-open 'echo $(( 1 )) $(true; rm${IF\\\nS}-rf ~)'
+"command ech''o $(( 1 )) $(rm${IFS}-rf ~)"
+"echo '<<-EOF' && script -qc 'git push${IFS}--force${IFS}origin main' /dev/null"
+'D=x; set -o posix; D=~ :; rm${IFS}-rf "$D"'
+'( true; echo $(true)#x; git${IFS}push --force origin main )'
+"bash${IFS}-c 'true; git push --force origin main'"
+'echo a |\nxargs${IFS}-I@ rm -rf ~'
+'D=~; "time" D=/tmp/x; "rm"${IFS}-rf "$D"'
+'if true; then echo "$(true; claude plugin${IFS}install${IFS}x@y)"; fi'
+'cd ~\ncd /nonexistent &&\necho \'(|)\'; rm${IFS}-rf "$PWD"'
+'exec echo $\\\n(rm${IFS}-rf ~)'
+'cat <<EOF\n`claude plu\\\ngin${IFS}install x@y`\nEOF'
+'echo a#b && r\'\'m${IFS}-r""f ~'
+'D=x; for i in 1; do D=~; done; rm${IFS}-rf "$D"'
+'D=x; trap \'D\\\n=~\' DEBUG; rm${IFS}-rf "$D"'
+'D=/; (D=x); r\\m${IFS}-rf "$D"'
+"echo a#b &&\nuntil false; do echo ${HOME}#x; rm${IFS}-rf ~; brea''k; done"
+"nice${IFS}'claude' plugin install x@y"
+'f() { rm${IFS}-rf ~; }; f'
+'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "${S}/"'
+'D=~; "D=/tmp/x"; rm${IFS}-rf "$D"'
+'bash -c \'true; claude plugin insta""ll${IFS}x@y\''
+'D=${HOME}; echo "x${IFS}D=y"; "D=/tmp/x"; rm${IFS}-rf "$D"'
+'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "$S/"'
+'x=$(git \\push --force origin${IFS}main)'
+'D=/tmp/x; X=read; $X D <<< ~; rm${IFS}-rf "$D"'
+'for d in /home/sb; do rm${IFS}-rf "$d"; done'
+'D=~; echo "x D=y"; "D=/tmp/x"; rm${IFS}-fr "$D"'
+"bash${IFS}-c 'echo `true`#x; rm -rf ~'"
+'D=/tmp/x; touc\'\'h${IFS}read; rea? D <<< ~; rm${IFS}-rf "$D"'
+"bash${IFS}-c 'echo a#b && echo `true`#x; git pus\\h --force or''igin main'"
+'true # c\nrm${IFS}-rf $HOME'
+'echo `claude${I\\\nFS}plugin install x@y`'
+'echo $(( 1 )) $(true; rm${IF\\\nS}-rf ~)'
 open "echo $(eval 'echo $((1))#x; '\\claude' plugin ins\\\ntall x@y')"
 open 'echo "$(echo \'<<-EOF\' &&\ncase a in a) git p\'\'ush --force origin main;; esac)"'

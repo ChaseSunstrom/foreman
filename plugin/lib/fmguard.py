@@ -409,6 +409,12 @@ def _ends_body(text, delim, starter):
         re.search(r"<<-\s*(['\"]?)" + re.escape(delim) + r"\1", starter))
 
 
+# T-0576: an expansion of IFS (default: space, tab, newline), plain or with an operator (${IFS:0:1}, ${IFS%?}…),
+# reads as the space it splits on; a line that also sets IFS can't be read that way
+_IFS_USE = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{[#!]?IFS(?:[^A-Za-z0-9_}][^}]*)?\}")
+_IFS_SET = re.compile(r"(?<![\w$])(?:IFS\+?=|read\b[^;&|\n]*-d|declare\b[^;&|\n]*\bIFS|printf\s+-v\s+IFS)")
+
+
 def _join_continued(cmd):
     """Lines as bash reads a command (T-0286 review): one ending in an unescaped backslash outside quotes and comments
     is joined with the next before heredoc bodies are read, so `python3 - <<'X' \\` + `1>FILE` is a redirect on the
@@ -1815,7 +1821,12 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    cmd = _expand_literal_loops(_join_continued(cmd))  # T-0411: a loop over literal words, as the commands it runs
+    cmd = _join_continued(cmd)
+    if _IFS_USE.search(cmd):  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
+        if _IFS_SET.search(cmd):
+            return [("system", "IFS is set and expanded on one line: the guard can't read how bash splits it")]
+        cmd = _IFS_USE.sub(" ", cmd)
+    cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
