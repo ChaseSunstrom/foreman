@@ -2219,6 +2219,38 @@ SPLIT_GROUPS = tuple(tuple(g) for g in c.routing().get("review_groups") or ())
 SPLIT_SUGGEST = 800  # diff lines past which an L review suggests --split
 
 
+_BULK = re.compile(r"(^|/)(fixtures?|testdata|__snapshots__)/|(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock|"
+                   r"Cargo\.lock|poetry\.lock|go\.sum|uv\.lock)$|\.lock$|\.min\.(js|css)$")
+CONTEXT_MAX = 200
+
+
+def _compact_diff(diff):
+    """T-0723 (reviewers read 3.2M tokens of diffs in 30 days): a file whose hunks repeat another's (synced copies)
+    becomes one line naming the first, context lines are cut at CONTEXT_MAX characters, and fixtures and lockfiles
+    are listed with their +/- counts. Changed lines always stay whole."""
+    out, seen = [], {}
+    for blk in re.split(r"(?m)^(?=diff --git )", diff):
+        m = re.match(r"diff --git a/(.+?) b/(.+)\n", blk)
+        hunks = blk[blk.find("\n@@") + 1:] if m and "\n@@" in blk else ""
+        if not m or not hunks:
+            out.append(blk)
+            continue
+        path = m.group(2)
+        lines = hunks.splitlines()
+        if _BULK.search(path):
+            plus = sum(1 for x in lines if x.startswith("+"))
+            minus = sum(1 for x in lines if x.startswith("-"))
+            out.append(f"diff --git a/{path} b/{path}\n{path}: a fixture or lockfile, +{plus} −{minus} lines, left out\n")
+            continue
+        if hunks in seen:
+            out.append(f"diff --git a/{path} b/{path}\n{path}: the same change as {seen[hunks]}\n")
+            continue
+        seen[hunks] = path
+        cut = [x[:CONTEXT_MAX] + "…" if x.startswith(" ") and len(x) > CONTEXT_MAX else x for x in lines]
+        out.append(blk[:blk.find("\n@@") + 1] + "\n".join(cut) + ("\n" if blk.endswith("\n") else ""))
+    return "".join(out)
+
+
 def _without_secrets(root, diff):
     """T-0413: the frozen diff a reviewer reads holds no secret: a credential file (the guard's names: .env*, *.pem …)
     keeps its header lines, not its contents, and key=value secrets elsewhere are redacted."""
@@ -2267,7 +2299,7 @@ def cmd_audit(args):
         raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
     path = os.path.join(p.dir, "audits", f"{b.id}.diff")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    c.write_atomic(path, _without_secrets(p.root, r.stdout))  # the pre-audit below still reads the raw diff's values
+    c.write_atomic(path, _compact_diff(_without_secrets(p.root, r.stdout)))  # the pre-audit reads the raw diff (T-0723)
     with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md"), encoding="utf-8") as f:
         ref = f.read()
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
