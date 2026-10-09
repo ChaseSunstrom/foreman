@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A heredoc or here-string a shell runs as its script is now checked as commands (T-0589, found while replaying T-0585). Before, the guard dropped input redirections, so a `rm -rf ~` in `bash <<'EOF'` or in `sh <<< '…'` ran with no finding. Which feed a shell reads as code isn't modelled (`/dev/stdin`, `{ bash; }`, `-c 'source /dev/stdin'`). So when a line with a heredoc or here-string also runs a shell, `source` or `eval`, every one of its bodies is read as commands. Data heredocs (`cat > f <<'EOF'`) and Python heredocs are unchanged.
 - IFS forms the guard can't read are refused instead of guessed (T-0585, from a security review of T-0576).
   - An operator form such as `${IFS:+word}` can yield any word. It was erased to a space, which hid `${IFS:+r}m -rf ~`.
   - A line that may change IFS and then splits words on it is refused. IFS can be changed by name (also split, as in `I""FS`), as a loop variable, through a nameref, or through a computed name in `declare`, `export`, `printf -v` or `(( ))`.
