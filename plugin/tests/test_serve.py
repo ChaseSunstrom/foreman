@@ -249,6 +249,42 @@ class Run(ServeCase):
         for bad in ("nan", "-1", "inf"):
             self.assertIn("--wait", self.run_fm("--wait", bad, check=False).stderr)
 
+    def test_run_heartbeat_goes_stale_and_notifies(self):
+        # T-0434: each loop beats into the state dir; a clean stop removes it, a killed run leaves it, and doctor's
+        # dead-man check tells the notify command once per stale episode
+        import time
+        import fmdoctor
+        p = c.find_project(self.repo)
+        beat, seen, told = (os.path.join(p.dir, "heartbeat-run.json"), os.path.join(self.tmp, "seen"),
+                            os.path.join(self.tmp, "told"))
+        self.task("one")
+        self.stub("claude", f"cat {beat} > {seen}\n" + self.finisher)
+        self.run_fm()
+        self.assertEqual(json.loads(read_text(seen))["doing"], "T-0001")
+        self.assertFalse(os.path.exists(beat))  # a clean stop takes it away
+        self.task("two")
+        self.stub("claude", "kill -9 $PPID\n")  # the run dies mid-session
+        self.run_fm(check=False)
+        self.assertTrue(os.path.exists(beat))
+        self.fm("notify", f'echo "$1" >> {told}')
+        self.assertEqual(fmdoctor.check_heartbeats([p]).status, "PASS")  # not overdue yet
+        later = time.time() + 86400
+        r = fmdoctor.check_heartbeats([p], now=later)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("fm run", r.detail)
+        fmdoctor.check_heartbeats([p], now=later)
+        self.assertEqual(len(read_text(told).splitlines()), 1)  # once per stale episode
+        self.assertIn("T-0002", read_text(told))
+
+    def test_blocked_tasks_dont_stop_the_run(self):
+        # T-0434 review: a session that blocks its task says why and the run moves on (the user wants no idling);
+        # only a crash, a login problem or no progress stops it
+        for t in ("one", "two", "three"):
+            self.task(t)
+        self.stub("claude", f'{sys.executable} {FM} task block $FOREMAN_DRIVE_TASK "stub: cannot" >/dev/null\n')
+        self.run_fm()
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 3)
+
     def test_tasks_waiting_on_the_user_are_skipped(self):
         a, b = self.task("one"), self.task("two")
         self.fm_ask(a, "publish")

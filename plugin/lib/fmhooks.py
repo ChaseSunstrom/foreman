@@ -248,7 +248,7 @@ def second_due(pl, meta, busy=False):
     """T-0276: a new session (not a compaction or /clear) in a project not reviewed today, not sensitive, and no other
     session active minutes ago (its transcript would be read as the "previous" one while it is still answering)."""
     return (not busy and pl.get("source") in (None, "startup", "resume") and meta.get("second_session") != c.now()[:10]
-            and not meta.get("sensitive"))
+            and not meta.get("sensitive") and not c.panicked())
 
 
 def _resume_turn(pl, sd):
@@ -297,6 +297,7 @@ def session_context(p, sd, other_note=None):
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
             + (" Autonomy: full." if sd.get("autonomy") == "full" else "")
+            + (" PAUSED everywhere (fm pause): nothing unattended starts; the user lifts it." if sd.get("panic") else "")
             + _grants_note(c.read_meta(p))
             + (f" State: fallback {c.state_dir()} (fm doctor)." if c.fallback_marker() else "")]
     focus, resume = [], []
@@ -765,9 +766,15 @@ def _pre_tool_use(raw):
                 nxt = None
             if nxt:
                 reason += f" To continue the queued work instead: fm focus {nxt.id} ({c.fit(nxt.title, 60)})."
+        if _repeat_streak(pl.get("session_id"), block.category, str(block.detail)[:120]) >= 2:  # T-0440: 3rd in a row
+            tid = act.id if act else "ID"
+            how = (f"ask the user (fm ask {tid} {block.category} --why \"<what and why>\"), or "
+                   if block.category not in guard.NOT_AUTHORIZABLE else "")
+            reason += (f" Stop retrying: this exact refusal came 3 times in a row. Instead, {how}record why the task "
+                       f"can't go on (fm task block {tid} \"<why>\") and take the next task.")
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
                 "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
-                "cmd": c.fit(c.redact(_target(pl.get("tool_input") or {})), 160)})  # T-0172: groundable later
+                "cmd": _window(c.redact(_target(pl.get("tool_input") or {})), block.detail)})  # T-0172, T-0423
         try:
             if p:
                 c.log_event(p, "guard_block", task=act.id if act else None,
@@ -1132,6 +1139,31 @@ def _target(ti):
     return ""
 
 
+def _repeat_streak(sid, category, target):
+    """T-0440: how many of this session's latest tool events, back to back, were this same refusal."""
+    n = 0
+    for e in reversed(c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 400)):
+        if e.get("session_id") != sid or e.get("kind") not in ("guard_block", "tool", "tool_fail"):
+            continue
+        if e.get("kind") != "guard_block" or e.get("category") != category or e.get("target") != target:
+            break
+        n += 1
+    return n
+
+
+def _window(cmd, detail, width=160):
+    """T-0423: ~width chars of the command around where the block's target (the detail up to its first " (") or its
+    variable first appears, so the event shows what tripped the guard; the head when nothing matches."""
+    target = str(detail).split(" (", 1)[0].strip()
+    var = re.match(r"\$\{?(\w+)", target)
+    hit = target and (re.search(re.escape(target), cmd) or var and re.search(r"\$\{?" + var.group(1) + r"\b", cmd))
+    if len(cmd) <= width or not hit:
+        return c.fit(cmd, width)
+    start = max(0, min(hit.start() - width // 3, len(cmd) - width + 2))
+    end = start + width - 2
+    return ("…" if start else "") + cmd[start:end] + ("…" if end < len(cmd) else "")
+
+
 def post_tool_use(pl, ok=True):
     tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
     p = c.find_project(_cwd(pl))
@@ -1470,7 +1502,7 @@ def _scan_notices(pl, g):
 def _drive(p, sd, briefs, pl, g):
     sid = pl.get("session_id")
     full = sd.get("autonomy") == "full"
-    if not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
+    if sd.get("panic") or not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
         return None
     waiting = [t for t in sd.get("pending") or [] if t]
     if waiting and not full:
@@ -1507,7 +1539,9 @@ def _drive(p, sd, briefs, pl, g):
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
     now, since = time.time(), d.setdefault("since", {})
     d["since"] = since = {k: since.get(k, now) for k in running}
-    running = [k for k in running if now - since[k] < LONG_JOB_S]
+    agents = {str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list) \
+        else set()  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
+    running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
     if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
         # the jobs don't hold back starting the next one)
         first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
@@ -1593,7 +1627,8 @@ def _side_work(sd, briefs, work, full, offered):
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
         if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
-                or b.meta.get("builder")):
+                or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
+                or b.section("Verification evidence").strip()):
             continue
         return x
     return None

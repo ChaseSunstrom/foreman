@@ -9,6 +9,7 @@ fm run works the queue in fresh `claude -p` sessions, one task per session (driv
 FOREMAN_DRIVE_TASK), so a long queue never runs in one ever-growing context.
 """
 import fcntl
+import glob
 import json
 import os
 import re
@@ -27,6 +28,8 @@ RUN_LOG_MAX = 1_000_000  # bytes; the run log rotates to .1 past this
 # Claude Code's own usage-limit wording, matched on the last line a failed session printed
 USAGE_LIMIT = re.compile(r"You've hit your|You've reached your|You're out of usage|out of usage|usage limit reached", re.I)
 WAIT_FIRST, WAIT_STEP_MAX = 300, 3600  # seconds; a usage-limit wait doubles per hit in a row, capped per wait
+FAILS_MAX = 2  # T-0434: failed sessions (fm run) or jobs (fm night) in a row before the breaker stops; never a retry
+BEAT_SLACK = 600  # seconds past a heartbeat's expected next beat before fm doctor calls it stale
 
 
 def unit_dir():
@@ -240,6 +243,8 @@ def cmd_serve(args):
         p = fmcli.resolve(args)
     if action == "stop":
         return print("\n".join(stop(p.slug)) or f"fm serve isn't running for {p.slug}.")
+    if c.panicked():
+        raise c.PolicyError(c.PAUSED)
     lingering = start(p, args.permission_mode)
     print(f"Serving {p.root}: Claude Code Remote Control runs under {unit_name(p.slug)}, autonomy full, drive on. "
           f"Open it from claude.ai/code or the Claude app and send requests there.\n"
@@ -295,6 +300,20 @@ def _overlap(a, b):
     return x.startswith(y) or y.startswith(x)
 
 
+def _pairs(p):
+    """T-0445: fm map's co-change pairs ({file: [files that nearly always change with it]}); {} without a map."""
+    try:
+        import fmmap
+        return fmmap.load(p).get("pairs") or {}
+    except Exception:  # no map is no widening: scopes alone, as before
+        return {}
+
+
+def _footprint(scopes, pairs):
+    """T-0445: what a task will touch: its scopes plus each literal file's co-change companions."""
+    return list(scopes) + [f for s in scopes for f in pairs.get(_literal(s), [])]
+
+
 def _batch(p, head, skip, n):
     """T-0167: head plus queued tasks that can't collide with it or each other: S or M, planned, explicit scopes that
     are pairwise disjoint, nothing unfinished they depend on, nothing waiting on the user. One task: run as before."""
@@ -308,10 +327,13 @@ def _batch(p, head, skip, n):
                 and all(d in by_id and by_id[d].status in c.CLOSED for d in c._deps(b)))  # T-0383: inferred too
     if n < 2 or not free(head):
         return [head]
-    batch = [head]
+    batch, pairs = [head], _pairs(p)
+    group = lambda b: b.meta.get("group")  # T-0445: fm relate's groups are related work: one at a time
     for b in c.order_queue(briefs)[0]:
         if len(batch) < n and b.id != head.id and free(b) and not any(
-                _overlap(g, h) for x in batch for g in x.meta["scope"] for h in b.meta["scope"]):
+                group(b) and group(b) == group(x) for x in batch) and not any(
+                _overlap(g, h) for x in batch for g in _footprint(x.meta["scope"], pairs)
+                for h in _footprint(b.meta["scope"], pairs)):
             batch.append(b)
     return batch
 
@@ -480,6 +502,42 @@ def _notify(p, message):
             pass
 
 
+def beat(p, name, secs, doing):
+    """T-0434: fm run/night's heartbeat, in the project's state dir: what it does now and when the next beat is due
+    (secs from now). Removed at a clean exit, so one left overdue means the run wedged or was killed."""
+    path = os.path.join(p.dir, f"heartbeat-{name}.json")
+    if path not in _BEATING:  # any exit Python sees (done, fail, an error) removes it; a kill can't
+        import atexit
+        _BEATING.add(path)
+        atexit.register(_unbeat, path)
+    c.write_atomic(path, json.dumps({"pid": os.getpid(), "at": c.now(), "doing": doing, "due": time.time() + secs}))
+
+
+_BEATING = set()
+
+
+def _unbeat(path):
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def stale_beats(p, now=None):
+    """[(name, heartbeat)] whose next beat is more than BEAT_SLACK overdue."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(p.dir, "heartbeat-*.json"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                hb = json.load(f)
+            overdue = (now or time.time()) > float(hb["due"]) + BEAT_SLACK
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        if overdue:
+            out.append((os.path.basename(path)[10:-5], hb))
+    return out
+
+
 def cmd_notify(args):
     """fm notify <cmd> (it gets the message as $1, e.g. notify-send Foreman "$1"), --off, or --test."""
     import fmcli
@@ -519,13 +577,16 @@ def cmd_run(args):
     if not 0 <= args.wait < float("inf"):
         raise fmcli.UsageError(f"--wait takes hours from 0 up, got {args.wait}")
     models = _models(p, args)
-    finished, skip, told, sessions = 0, set(), set(), {}
+    finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     while finished < args.max:
+        if c.panicked():  # T-0436: before the first session and between every two
+            fail(c.PAUSED)
         b = _next_runnable(p, skip, told)
         if not b:
             break
         batch = _batch(p, b, skip, min(args.parallel, PARALLEL_MAX, args.max - finished))
+        beat(p, "run", args.timeout * 60, " ".join(x.id for x in batch))
         if len(batch) > 1:  # T-0167: independent tasks at once, each in its lane, merged back one by one
             print(f"running {len(batch)} at once: {', '.join(x.id for x in batch)}", flush=True)
             limited = False
@@ -539,18 +600,23 @@ def cmd_run(args):
                     print(f"{tid}: no lane ({text}); skipped this run", flush=True)
                     continue
                 last = text.strip().splitlines()[-1:]
-                limited = limited or bool(code and last and USAGE_LIMIT.search(last[0]))
+                hit = bool(code and last and USAGE_LIMIT.search(last[0]))
+                limited = limited or hit
                 after = c.find_brief(p, tid)
                 if after.status == "done":
-                    finished += 1
+                    finished, fails = finished + 1, 0
+                    beat(p, "run", 2 * 3600, f"{tid}: merging its lane")  # gates may take an hour
                     how = _integrate(p, tid, path)
                     print(f"{tid} done; {how}", flush=True)
                     _notify(p, f"{tid} done ({how}): {after.title[:80]}")
                 else:
+                    fails += not hit  # a usage limit is waited out, never a failure
                     skip.add(tid)  # not this run again; an empty lane frees the task for the next
                     freed = not _lane_has_work(p, path) and _fm(p.root, "lane", "rm", tid).returncode == 0
                     print(f"{tid} not finished in its lane ({after.status}, exit {code}); "
                           + ("lane removed, back in the queue" if freed else f"lane kept with its work: {path}"), flush=True)
+            if fails >= FAILS_MAX:
+                fail(f"{fails} sessions in a row ended unfinished; stopping")
             if limited:
                 args.parallel = 1  # one at a time from here, which waits a usage limit out
                 print("usage limit hit: no more lanes this run; one task at a time from here", flush=True)
@@ -584,6 +650,7 @@ def cmd_run(args):
             print(msg, flush=True)
             with open(log, "a", encoding="utf-8") as f:
                 f.write(f"== {c.now()} {msg}\n")
+            beat(p, "run", pause, f"{b.id}: usage-limit wait")
             time.sleep(pause)
             continue
         if code != 0:
@@ -595,11 +662,11 @@ def cmd_run(args):
         how = f" ({model or 'default model'}, {spent:,} input-equivalent tokens)" if spent else ""
         after = c.find_brief(p, b.id)
         if after.status == "done":
-            finished += 1
+            finished, fails = finished + 1, 0
             print(f"{b.id} done{how}")
             _notify(p, f"{b.id} done: {b.title[:80]}")
         elif after.status in ("blocked", "dropped", "deferred"):
-            skip.add(b.id)
+            skip.add(b.id)  # a block says why and the run moves on: it isn't a failure (a crash or no progress is)
             print(f"{b.id} {after.status}{how}")
             _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
         elif _fingerprint(after) == before:

@@ -12,8 +12,10 @@ import time
 
 import fmbudget
 import fmcore as c
+import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
+JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 NAMES = ("second session", "landscape", "research debt", "court", "evolve candidate")
 
 
@@ -57,6 +59,8 @@ def _usage():
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
+    if c.panicked():
+        raise c.PolicyError(c.PAUSED)
     bad = [n for n in args.only or [] if n not in NAMES]
     if bad:
         raise fmcli.UsageError(f"no such night job: {', '.join(bad)} (jobs: {', '.join(NAMES)})")
@@ -94,10 +98,17 @@ def cmd_night(args):
         if fmbudget.usage_high():
             stopped = f"usage climbed ({fmbudget.usage_high()})"
             break
+        if c.panicked():
+            stopped = c.PAUSED
+            break
+        if len(ran) >= fmserve.FAILS_MAX and all(x["exit"] for x in ran[-fmserve.FAILS_MAX:]):  # T-0434: the breaker
+            stopped = f"{fmserve.FAILS_MAX} jobs failed in a row"
+            break
+        fmserve.beat(p, "night", JOB_TIMEOUT, j["name"])
         try:
             r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"]], cwd=p.root,
                                env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"), capture_output=True, text=True,
-                               timeout=3 * 3600)
+                               timeout=JOB_TIMEOUT)
             code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-1:]
         except (OSError, subprocess.TimeoutExpired) as e:
             code, tail = 124, [str(e)]

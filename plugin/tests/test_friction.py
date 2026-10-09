@@ -53,6 +53,50 @@ class Friction(ForemanTestCase):
         self.assertIn("3× Read: File does not exist.", out)
         self.assertNotIn("wait on background work", out)
 
+    def test_digest_labels_downstream_project_friction(self):
+        # T-0435: _ledgers read every project's ledger but dropped which one a line came from: JARVIS's steers and
+        # corrections reached Foreman's pass unlabelled, and how much friction each project had wasn't visible
+        from helpers import git_repo
+        other, quiet = git_repo(self.tmp, "jarvis"), git_repo(self.tmp, "private")
+        for root in (other, quiet):
+            self.fm("init", cwd=root)
+            tid = first(self.fm("task", "new", "Work", "--type", "FIX", "--tier", "S", "--step", "a", "--json", cwd=root).stdout)["id"]
+            self.fm("task", "log", tid, "steer: the panels must load before anything else", cwd=root)
+        self.fm("sensitive", "on", cwd=quiet)
+        out = self.fm("friction").stdout
+        self.assertIn("[jarvis-", out)  # the steer, labelled with its project
+        self.assertIn("the panels must load before anything else", out)
+        self.assertIn("other projects", out)
+        self.assertNotIn("private-", out, "a sensitive project's ledger stays out")
+
+    def test_friction_hook_errors(self):
+        # T-0437: hooks never fail a tool call; the errors they swallow went only to hooks.log, where a pass never looked
+        import time
+        import fmcore as c
+        log = os.path.join(c.state_dir(), "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        with open(log, "w") as f:
+            for event in ("PreToolUse", "PreToolUse", "Stop"):
+                f.write(f"{now} {event} Traceback (most recent call last):\n  File \"x.py\", line 1\nNameError: boom\n")
+            f.write(f"{now} Stop paused for 10 min after 3 failures in a row\n")  # the breaker's note isn't an error
+        out = self.fm("friction").stdout
+        self.assertIn("3 in the last 24 h, most in PreToolUse (2)", out)
+        self.assertIn("NameError: boom", out)
+
+    def test_slow_gate_ignores_reused_passes(self):
+        # T-0424: a reused pass records 0.0 s; counting it dragged the median to 0 ("12s vs usual 0s")
+        import fmcore as c
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            for gate, times in (("fm replay", [10, 0.0, 0.0, 0.0, 11, 12]), ("pytest", [10, 0.0, 0.0, 0.0, 10, 30])):
+                for s in times:
+                    f.write(json.dumps({"ts": c.now(), "event": "check_run",
+                                        "data": {"results": [{"cmd": gate, "exit": 0, "s": s}]}}) + "\n")
+        out = self.fm("friction").stdout
+        self.assertNotIn("fm replay", out)  # 12 s against its real runs' 11 s isn't slow
+        self.assertIn("pytest: 30s vs usual 10s", out)
+
     def test_fm_next_calls_for_a_pass_every_n_closed_tasks_at_a_task_boundary(self):
         nxt = lambda: self.fm("next").stdout
         self.close_one(1)

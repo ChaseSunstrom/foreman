@@ -177,7 +177,7 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, args.text))
+        + _covered_note(p, b.id, args.text) + _reask_note(p, b.id, args.text))
 
 
 def _note_escapes(p, b, text):
@@ -194,6 +194,19 @@ def _note_escapes(p, b, text):
                 c.log_event(p, "escape", task=tid, data={"by": b.id, "type": b.type, "title": c.fit(b.title, 160),
                                                          "lenses": sorted({x[0] for x in done.audits()})},
                             session=session())
+
+
+def _reask_note(p, tid, text):
+    """T-0438: a request like a dropped task, or one a standing veto covers, is said at capture, before work starts."""
+    try:
+        import fmrecall
+        hit = fmrecall.nearest_dropped(p, text, skip=tid)
+        notes = ([f"Dropped before: {hit[0]} ({c.fit(c.plain(hit[1]), 60)})"
+                  + (f": {c.fit(c.defang(c.plain(hit[2])), 120)}" if hit[2] else "")] if hit else []) + \
+            [f"Vetoed: \"{v['said']}\"" for v in c.veto_hits(p, text)][:2]
+    except Exception:  # a note; capture never fails over it
+        return ""
+    return ("\n" + "; ".join(notes) + f". If that still holds, drop this: fm task drop {tid} \"<why>\".") if notes else ""
 
 
 def _covered_note(p, tid, text):
@@ -819,7 +832,26 @@ def cmd_batch(args):
     are closed done-in the host when it is done (handed back if it is dropped)."""
     p = resolve(args)
     c.hint_used(p, "batch")  # T-0250
-    ids = list(dict.fromkeys(x.upper() for x in args.ids))
+    if args.suggest:  # T-0670: every related group in the inbox and queue, made into batches with --apply
+        groups = c.related_groups(c.load_briefs(p))
+        if not args.apply:
+            return out(args, {"groups": [[x.id for x in g] for g in groups]}, "\n".join(
+                f"fm batch {' '.join(x.id for x in g)}  # {c.fit(g[0].title, 60)}" for g in groups)
+                or "nothing related enough to batch")
+        made = [_make_batch(p, [x.id for x in g], None) for g in groups]
+        return out(args, {"batches": [dict(c.brief_summary(h), members=m) for h, m in made]}, "\n".join(
+            f"{h.id} [{h.type} {h.tier}] {c.fit(h.title, 70)} — batch of {', '.join(m)}" for h, m in made)
+            or "nothing related enough to batch")
+    if args.apply:
+        raise UsageError("--apply goes with --suggest")
+    h, ids = _make_batch(p, args.ids, args.title)
+    out(args, dict(c.brief_summary(h), members=ids),
+        f"{h.id} [{h.type} {h.tier}] {h.title} — batch of {', '.join(ids)} (plan its verify commands, then fm focus "
+        f"{h.id}; each member closes done in {h.id})")
+
+
+def _make_batch(p, ids, title):
+    ids = list(dict.fromkeys(x.upper() for x in ids))
     if len(ids) < 2:
         raise UsageError("a batch is two or more items")
     with c.lock(p.dir):
@@ -837,7 +869,7 @@ def cmd_batch(args):
         type_ = max(sorted(set(types)), key=types.count)
         tiers = {b.tier for b in members}
         tier = "L" if "L" in tiers else "M" if "M" in tiers or len(members) > 2 else "S"
-        title = args.title or "Batch: " + "; ".join(c.fit(b.title, 40) for b in members)
+        title = title or "Batch: " + "; ".join(c.fit(b.title, 40) for b in members)
         raw = "\n".join(f"{b.id}: " + re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip() for b in members)
         source = "user" if any(b.meta.get("source") == "user" for b in members) else members[0].meta.get("source", "user")
         h = _create(p, c.fit(title, 120), type_, tier, "planned", raw=raw, source=source,
@@ -845,7 +877,10 @@ def cmd_batch(args):
                     scope=sorted({s for b in members for s in b.meta.get("scope") or []}),
                     depends=sorted({d for b in members for d in b.meta.get("depends_on") or []} - set(ids)))
         h.set_section("Interpretation", f"Do {', '.join(ids)} as one batch: one plan read, one gate run, one review and "
-                                        f"one commit; each keeps its own criteria and is closed done in {h.id}.")
+                                        f"one commit; each keeps its own criteria and is closed done in {h.id}. Write "
+                                        "the failing tests for every member first, together. Per step, run only that "
+                                        "step's own new tests (fast, -k); the full gates, replays and the review run "
+                                        "once, at close (T-0670).")
         for b in members:
             crit = [(c._VERIFY_OF.sub("", a.text).strip(), c.verify_of(a.text)) for a in b.acceptance()] or \
                 [(x.strip(), None) for x in _DONE_WHEN.findall(b.section("Raw request"))] or [(f"{b.title} works", None)]
@@ -861,9 +896,7 @@ def cmd_batch(args):
             c.save_brief(p, b)
         c.log_event(p, "batch", task=h.id, data={"members": ids}, session=session())
         c.regen_views(p)
-    out(args, dict(c.brief_summary(h), members=ids),
-        f"{h.id} [{h.type} {h.tier}] {h.title} — batch of {', '.join(ids)} (plan its verify commands, then fm focus "
-        f"{h.id}; each member closes done in {h.id})")
+    return h, ids
 
 
 def _settle_batch(p, h, done):
@@ -1535,6 +1568,16 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def cmd_pause(args):
+    """T-0436: one flag for every project. It grants nothing, and lifting it only lets back what ran before, so
+    either way it's no consent to guard."""
+    on = args.state == "on"
+    c.set_panic(on)
+    out(args, {"paused": on}, "Paused everywhere: no drive, fm run, serve, night or lane launches, and autonomy reads "
+        "standard; a session already running finishes its turn. fm pause off lifts it." if on else
+        "Pause lifted: the drive and the launchers run again, under each project's own autonomy.")
+
+
 def cmd_check(args):
     """The project's gate commands (tests, lint, doctor…), run together; any failure exits 1, so a pipe can't mask it."""
     p = resolve(args)
@@ -2108,7 +2151,7 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
-    ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
+    ("Project and settings", "init autonomy drive pause sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -2456,6 +2499,9 @@ def build_parser():
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
 
+    s = add("pause", cmd_pause, help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
+    s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
+
     add("next", cmd_next, help="the one next required action (derived from the briefs)")
 
     s = add("sentinel", cmd_sentinel, help="re-run the checks recent finished tasks passed; report what fails now")
@@ -2594,8 +2640,10 @@ def build_parser():
 
     s = add("batch", cmd_batch, help="work several not-yet-started requests as one task: one plan, gate run, review and "
                                      "commit; each closes done in it (T-0257)")
-    s.add_argument("ids", nargs="+")
+    s.add_argument("ids", nargs="*")
     s.add_argument("--title")
+    s.add_argument("--suggest", action="store_true", help="list related items worth one batch each (T-0670)")
+    s.add_argument("--apply", action="store_true", help="with --suggest: make those batches")
 
     s = add("budget", lazy("fmbudget", "cmd_budget"), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")

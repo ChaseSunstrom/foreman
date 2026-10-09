@@ -46,6 +46,22 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("T-0001", inbox)
         self.assertEqual([i["id"] for i in self.fm_json("state")["inbox"]], ["T-0001"])
 
+    def test_capture_reask_dropped(self):
+        # T-0438: a request like one already dropped is said at capture, with why it was dropped
+        self.fm("capture", "export the weekly report as a CSV spreadsheet")
+        self.fm("task", "drop", "T-0001", "not wanted: reports live on the dashboard")
+        out = self.fm("capture", "export weekly report to CSV spreadsheet").stdout
+        self.assertIn("Dropped before: T-0001", out)
+        self.assertIn("reports live on the dashboard", out)
+        self.assertNotIn("Dropped before", self.fm("capture", "fix the login timeout on slow wifi").stdout)
+
+    def test_capture_veto_contradiction(self):
+        # T-0438: a request a standing veto covers is said at capture
+        self.fm("capture", "tidy the readme")
+        c.add_veto(c.find_project(self.repo), "never push to main")
+        self.assertIn("Vetoed: \"never push to main\"", self.fm("capture", "push the release to main").stdout)
+        self.assertNotIn("Vetoed", self.fm("capture", "write the release notes").stdout)
+
     def test_capture_keeps_a_mid_text_ref_and_records_refs_as_depends(self):  # T-0334
         self.fm("capture", "first")
         self.fm("capture", "fix the #T-0001 regression in send")
