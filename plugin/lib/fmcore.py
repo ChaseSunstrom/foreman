@@ -25,6 +25,18 @@ RUNNABLE = {"planned", "active", "verifying"}
 OPEN = RUNNABLE | {"captured", "blocked", "deferred"}
 CLOSED = {"done", "dropped"}
 STATUSES = OPEN | CLOSED
+# T-0495: the task lifecycle as one table: the statuses each status may move to (tests check every fm command
+# keeps to it; a reopened done task comes back through fm task set status=…)
+TRANSITIONS = {
+    "captured": {"planned", "active", "blocked", "deferred", "dropped", "done"},
+    "planned": {"active", "verifying", "blocked", "deferred", "dropped", "done", "captured"},
+    "active": {"planned", "verifying", "blocked", "deferred", "dropped", "done"},
+    "verifying": {"active", "planned", "blocked", "deferred", "dropped", "done"},
+    "blocked": {"planned", "active", "deferred", "dropped", "done", "captured"},
+    "deferred": {"planned", "active", "blocked", "dropped", "done", "captured"},
+    "done": {"planned", "active"},
+    "dropped": {"planned", "captured"},
+}
 SENSITIVE_MODES = {"default", "manual", "acceptEdits", "plan", "dontAsk"}
 
 

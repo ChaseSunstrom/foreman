@@ -60,7 +60,7 @@ class CleanupGate(Base):
         self.assertEqual(out.returncode, 0, text)
         self.assertIn("left behind", text)
         self.assertIn("tmp/", text.split("left behind", 1)[1])
-        self.assertNotIn("src/app.py", text.split("left behind", 1)[1])
+        self.assertNotIn("src/app.py", text.split("left behind", 1)[1].split("\n")[0])
 
 
 class UndoPoint(Base):

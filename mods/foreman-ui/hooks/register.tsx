@@ -75,13 +75,27 @@ export function toasts(prev: FmView | null, next: FmView): string[] {
   // Only a task that was open in the last snapshot closed just now (an old closed one edited again is no news).
   const open = new Set([a?.id, ...[...(prev.queue ?? []), ...(prev.inbox ?? [])].map(x => x.id)])
   for (const c of next.closed ?? []) {
-    if (open.has(c.id)) out.push(c.status === 'done' ? `✔ ${c.id} done` : `${c.id} ${c.status}`)
+    if (open.has(c.id)) out.push(c.status === 'done' ? `✔ ${c.id} done${closeCard(c)}` : `${c.id} ${c.status}`)
   }
   const asked = new Set((prev.approvals ?? []).map(x => `${x.task}:${x.allow.join(',')}`))
   for (const x of next.approvals ?? []) {
     if (!asked.has(`${x.task}:${x.allow.join(',')}`)) out.push(`⚠ ${x.task} needs your yes: ${x.allow.join(', ')}`)
   }
   return out
+}
+
+/** T-0473: a close-out's facts after "done": its grade and the lenses it closed with. */
+export function closeCard(c: { grade?: string | null; lenses?: string[] }): string {
+  const parts = [c.grade, (c.lenses ?? []).join(', ')].filter(Boolean)
+  return parts.length ? ` · ${parts.join(' · ')}` : ''
+}
+
+/** T-0472: the band's one glyph: the worst signal (red before amber) and how many more, or null when calm. */
+export function signalLine(v: FmView | null): { level: 'red' | 'amber'; text: string } | null {
+  const sig = v?.signals ?? []
+  const worst = sig.find(x => x.level === 'red') ?? sig[0]
+  if (!worst) return null
+  return { level: worst.level, text: worst.text + (sig.length > 1 ? ` +${sig.length - 1}` : '') }
 }
 
 /** The guard's refusal text, when a tool call was refused by Foreman. */
@@ -815,6 +829,7 @@ export const register: Register = (on, options) => {
     const cut = 'truncate-end' as const
     // T-0146: with the pane shown, the band keeps the task, what waits and what needs the person; the rest is the pane's
     const paneOpen = (await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)
+    const sl = signalLine(v) // T-0472: quiet unless something is amber or red
 
     // Beside a docked pane the band is narrow: each row is one Text that cuts at its end, never mid-word per span.
     const head = narrow ? (
@@ -881,6 +896,7 @@ export const register: Register = (on, options) => {
             {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
             {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
             {m?.trust && <Text color={hex(C.warn)}>trust on</Text>}
+            {sl && <Text color={hex(sl.level === 'red' ? C.err : C.warn)} wrap={cut}>{sl.level === 'red' ? '●' : '◐'} {sl.text}</Text>}
           </Box>
         </Box>
         {a && (

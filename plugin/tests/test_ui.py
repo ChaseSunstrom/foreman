@@ -90,7 +90,7 @@ class UiView(ForemanTestCase):
     def test_closed_tasks_are_listed_newest_first(self):
         self.fm("task", "drop", "T-0003", "not needed")
         v = json.loads(self.fm("ui", "--json").stdout)
-        self.assertEqual(v["closed"][0], {"id": "T-0003", "status": "dropped"})
+        self.assertEqual({k: v["closed"][0][k] for k in ("id", "status")}, {"id": "T-0003", "status": "dropped"})
 
     def test_outside_a_project_the_view_is_empty_not_an_error(self):
         elsewhere = os.path.join(self.tmp, "plain")

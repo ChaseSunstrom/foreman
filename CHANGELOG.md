@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## 1.2.20 — 2026-10-09
+- Verification and product checking, first versions (T-0682 milestone: T-0457, T-0501, T-0458, T-0475, T-0474, T-0460).
+  - `fm task prove ID --vacuous` names criteria whose checks also pass on the tree the task started from.
+  - `fm task prove ID --same CMD` records a behaviour lock for CLEAN work when CMD's exit and output (timings aside) are the same before and after, and shows the difference when not.
+  - `fm sentinel --bisect` runs `git bisect` in a throwaway worktree for each re-check that fails now, and captures the commit that broke it, and its task, as a FIX.
+  - `fm check --repeat N` reports each gate's pass rate.
+  - `fm task finish` warns about changed source files that no linked test changed or ran.
+  - `fm smoke set cmd "…" [--expect RE]` and `fm smoke set http URL [--status N] [--json-key K]` check products without a web UI.
+  - Product journeys (Playwright steps per criterion) are deferred. A flaky-gate quarantine was skipped: a gate flaky twice stays a failure, so the race gets found.
+- UI and motion (T-0681 milestone: T-0473, T-0472, T-0500).
+  - A task's close-out toast carries its grade and the lenses it closed with (`✔ T-0123 done · strong · adversary, edge`), from new `title`, `grade` and `lenses` fields on `fm ui --json`'s closed tasks.
+  - The band shows one quiet glyph only when something is amber or red: a failing gate, usage ahead of pace, blocked tasks or hook errors. They come from `fm ui --json`'s new `signals`.
+  - A guard refusal of a long command quotes the part that matched, even when the guard names `~/x` as `/home/…/x`.
+- Self-improvement and learning, first versions (T-0680 milestone: T-0499, T-0454, T-0470, T-0471).
+  - The hooks log every note they put into context (hook, a short kind, its characters) and every tripwire lesson they show.
+  - The friction digest turns that into a note budget per kind, the notes repeated 3+ times (candidates for a hard check instead of prose) and how often each lesson was shown.
+  - `fm friction --reject TEXT --why WHY` records a dead end that later digests skip and count.
+  - The bench-bound half (auto-evals on a block, a holdout split, playbook drafts, tuning per model) is captured (T-0734).
+- Resilience, state and simplicity, first versions (T-0679 milestone: T-0453, T-0495, T-0468, T-0469, T-0494, T-0496).
+  - The task lifecycle is one table (`fmcore.TRANSITIONS`). A chaos test runs random lifecycles, crashes them at a random write and checks that the state still loads and that every status change was a legal one. It found two bugs, now fixed: `fm task block` turned a dropped task into a blocked one, and `fm task finish` marked a dropped task done.
+  - `fm usage --prune` lists the fm commands no session ran in the window, in any project, as one CLEAN capture to review. Nothing is removed.
+  - `fm wiring` shows on one screen the version, hooks, project flags, standing yeses, trust, pause, budget and enabled plugins.
+  - `fm doctor` warns when a project's status views don't match its briefs; five did here, left by older formats. `--repair` regenerates them.
+  - `plugin/tests/mutate_guard.py` flips one operator at a time in fmguard's check functions and reports the mutants the guard tests miss.
+- One-command releases (T-0678 milestone: T-0493, T-0492). `python3 release.py VERSION` bumps plugin.json and Foreman's marketplace entries, heads the Unreleased changelog entries with the version, runs `fm check` (and undoes the bump if it fails), and commits. It refuses a dirty tree or an older version. `--push URL` merges into that remote's main from a scratch clone. `--canary` first re-runs `fm sentinel` in every local project and prints what fails there now.
+
 ## 1.2.19 — 2026-10-09
 - Planning, briefs and the queue, first versions (T-0677 milestone: T-0450, T-0451, T-0452, T-0488, T-0489, T-0490, T-0491).
   - `fm task defer ID WHY --until DATE`: `fm next` names it again from that day.

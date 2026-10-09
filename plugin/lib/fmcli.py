@@ -433,6 +433,8 @@ def cmd_task(args):
         import fmdocs
         since, tree = c.last_change(p, args.id), c.worktree_id(p.root)
         pre = need_brief(p, args.id)
+        if pre.status == "dropped":  # T-0679 chaos test: a dropped task isn't finished by closing it again
+            raise c.PolicyError(f"{pre.id} is dropped: reopen it first (fm task set {pre.id} status=planned)")
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
@@ -526,6 +528,9 @@ def cmd_task(args):
         until = getattr(args, "until", None)
         if until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
             raise UsageError("--until takes a date, YYYY-MM-DD")
+        cur = need_brief(p, args.id)
+        if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
+            raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
@@ -576,6 +581,8 @@ def task_finish(p, args):
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
     stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
+    if b.status == "dropped":  # T-0679 chaos test
+        raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
         _commit_task(p, b, args.commit)
         return 0
@@ -878,6 +885,12 @@ def task_prove(p, args):
     b = need_brief(p, args.id)
     if args.hunks:
         return task_prove_hunks(p, b, args)
+    if getattr(args, "vacuous", False):
+        return task_prove_vacuous(p, b, args)
+    if getattr(args, "same", None):
+        return task_prove_same(p, b, args)
+    if not args.run:
+        raise UsageError("fm task prove ID --run CMD (or --hunks, --vacuous, --same CMD)")
     base = b.meta.get("base")
     if not base:
         raise UsageError(f"{b.id} has no start commit on record: prove needs the tree the task started from")
@@ -913,6 +926,75 @@ def task_prove(p, args):
         f"{b.id}: {verdict}\n  start tree + {len(tests)} test file(s): {c.run_result(*red)}\n  current tree: "
         f"{c.run_result(*green)}")
     return 0 if proved else 1
+
+
+def _run_at(p, rev, cmd, timeout):
+    """(exit, output) of cmd in a throwaway worktree of rev (a commit, or a tree such as a task's start snapshot)."""
+    import tempfile
+    if c._git(p.root, "cat-file", "-t", rev, timeout=10).strip() == "tree":
+        rev = c._git(p.root, "commit-tree", "--no-gpg-sign", rev, "-m", "fm scratch", timeout=60).strip()
+    if not rev:
+        raise UsageError("git couldn't make a scratch commit of the start tree")
+    with tempfile.TemporaryDirectory(prefix="fm-at-") as t:
+        wt = os.path.join(t, "wt")
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, rev, timeout=120)
+        if not os.path.isdir(wt):
+            raise UsageError(f"git worktree add at {rev[:12]} failed")
+        try:
+            return c.run_command(wt, cmd, timeout)
+        finally:
+            c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
+            c._git(p.root, "worktree", "prune", timeout=30)
+
+
+def task_prove_vacuous(p, b, args):
+    """T-0457: a criterion whose check also passes on the tree the task started from doesn't test this change."""
+    base = c.task_base(p.root, b)
+    if not base:
+        raise UsageError(f"{b.id} has no start snapshot: --vacuous needs the tree the task started from")
+    hollow = []
+    for n, cmd in [(n, cmd) for n, cmd in b.verify_cmds() if cmd and not cmd.lstrip().startswith("typed:")]:
+        code, _ = _run_at(p, base, cmd, args.timeout)
+        if not code:
+            hollow.append((n, cmd))
+    mutate(p, b.id, lambda x: x.append_log("vacuous checks: " + (", ".join(f"ac {n}" for n, _ in hollow) or "none")),
+           "prove_vacuous", {"hollow": [n for n, _ in hollow]})
+    out(args, {"vacuous": [{"ac": n, "cmd": cmd} for n, cmd in hollow]},
+        f"{b.id}: " + ("every criterion's check fails on the start tree: each tests the change" if not hollow else
+                       "\n".join(f"criterion {n} passes on the start tree too, so it doesn't test this change: {cmd}"
+                                 for n, cmd in hollow)))
+    return 1 if hollow else 0
+
+
+_VOLATILE = re.compile(r"\d+(?:\.\d+)?\s?(?:ms|s|sec|seconds|min)\b|0x[0-9a-f]+|\d{4}-\d\d-\d\dT[\d:.]+Z?")
+
+
+def task_prove_same(p, b, args):
+    """T-0501: CLEAN work keeps behaviour: CMD's exit and output (timings and addresses aside) before and after."""
+    import difflib
+    base = c.task_base(p.root, b)
+    if not base:
+        raise UsageError(f"{b.id} has no start snapshot: --same needs the tree the task started from")
+    before = _run_at(p, base, args.same, args.timeout)
+    after = c.run_command(p.root, args.same, args.timeout)
+    norm = lambda r: (r[0], _VOLATILE.sub("#", r[1]).strip())  # noqa: E731
+    same = norm(before) == norm(after)
+    tree = c.worktree_id(p.root)
+
+    def record(x):
+        x.add_evidence(args.same, ("same exit and output before and after" if same else
+                                   f"differs: exit {before[0]} → {after[0]}"), tree=tree, ran=True)
+        if same:
+            x.set_section("Behaviour lock", (x.section("Behaviour lock").rstrip() + "\n" if
+                                             x.section("Behaviour lock").strip() else "")
+                          + f"- behaviour lock: `{args.same}` gives the same exit and output before and after")
+    mutate(p, b.id, record, "prove_same", {"cmd": args.same[:200], "same": same})
+    diff = "" if same else "\n".join(list(difflib.unified_diff(norm(before)[1].splitlines(), norm(after)[1].splitlines(),
+                                                               "before", "after", lineterm=""))[:40])
+    out(args, {"same": same, "exit_before": before[0], "exit_after": after[0]},
+        f"{b.id}: " + (f"behaviour lock holds: `{args.same}` is the same before and after" if same else
+                       f"behaviour changed: `{args.same}` exit {before[0]} → {after[0]}\n{diff}"))
+    return 0 if same else 1
 
 
 def task_done_in(p, args):
@@ -994,7 +1076,22 @@ def _close_warnings_of(p, b, files):
             out.append(f"ignored files outside its scope [{', '.join(b.meta['scope'])}] left behind: "
                        + ", ".join(stray[:10]))
     drift = _tier_drift(p, b, files)  # T-0488
-    return out + ([drift] if drift else [])
+    bare = _not_verified(p, b, files)  # T-0474
+    return out + ([drift] if drift else []) + ([bare] if bare else [])
+
+
+def _not_verified(p, b, files):
+    """T-0474: changed source files no linked test (by name, fmmap) changed or ran in this task's evidence."""
+    import fmmap
+    try:
+        m = fmmap.load(p)
+    except Exception:  # the map is a hint: no map, no warning
+        return None
+    ran = " ".join(b.evidence())
+    bare = [f for f in files if c.CODE.search(f) and not fmmap._TEST.search(f)
+            and not any(t in files or t in ran for t in fmmap.tests_for(m, [f]))]
+    return (f"not verified: {', '.join(bare[:8])}{' …' if len(bare) > 8 else ''} — no linked test changed or ran "
+            f"(fm task prove {b.id} --hunks names the hunks no check notices)") if bare else None
 
 
 def _tier_drift(p, b, files):
@@ -1927,6 +2024,14 @@ def cmd_check(args):
             c.write_meta(p, meta)
             c.log_event(p, "checks", data={"checks": checks}, session=session())
         return out(args, {"checks": checks}, f"{p.slug}: {len(checks)} check(s).")
+    if getattr(args, "repeat", 0):  # T-0475: an intermittent failure's rate, gate by gate (nothing recorded or cached)
+        n, rows = max(1, args.repeat), []
+        for cmd in c.read_meta(p).get("checks") or []:
+            passed = sum(1 for _ in range(n) if not c.run_command(p.root, cmd, args.timeout)[0])
+            rows.append({"cmd": cmd, "passed": passed, "runs": n})
+        out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
+                                              for r in rows) or "no checks (fm check add '<cmd>')")
+        return 0 if all(r["passed"] == n for r in rows) else 1
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -2093,12 +2198,59 @@ def cmd_sentinel(args):
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
-    out(args, {"results": results, "failed": len(failed), "skipped": skipped},
+    culprits = [_bisect(p, r, args.timeout) for r in failed if not r.get("assumption")] if \
+        getattr(args, "bisect", False) else []  # T-0458
+    out(args, {"results": results, "failed": len(failed), "skipped": skipped, "culprits": [x for x in culprits if x]},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
         + (f"; {skipped} with side effects skipped" if skipped else "") + "".join(
             f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
-            + f"{r['cmd']} → {r['result']}" for r in failed))
+            + f"{r['cmd']} → {r['result']}" for r in failed)
+        + "".join(f"\n  ↳ broke at {x['sha'][:10]} {x['subject']}" + (f" ({x['task']})" if x["task"] else "")
+                  + f": {x['captured']}" for x in culprits if x))
     return 1 if failed else 0
+
+
+def _bisect(p, r, timeout):
+    """T-0458: git bisect, in a throwaway worktree, between the commit of the task that proved r's check (good) and
+    HEAD (bad); the first bad commit is captured as a FIX naming it and its task. None when it can't run."""
+    import tempfile
+    good = c._git(p.root, "log", "-1", "--format=%H", f"--grep=Foreman-Task: {r['task']}", timeout=30).strip()
+    head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
+    if not good or not head or good == head:
+        return None
+    with tempfile.TemporaryDirectory(prefix="fm-bisect-") as t:
+        wt = os.path.join(t, "wt")
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, head, timeout=120)
+        if not os.path.isdir(wt):
+            return None
+        try:
+            c._git(wt, "bisect", "start", head, good, timeout=60)
+            import subprocess
+            run = subprocess.run(["git", "-C", wt, "bisect", "run", "sh", "-c", r["cmd"]], capture_output=True,
+                                 text=True, timeout=max(60, timeout * 20))
+            m = re.search(r"^([0-9a-f]{40}) is the first '?bad'? commit", run.stdout, re.M)  # newer git quotes it
+            c._git(wt, "bisect", "reset", timeout=60)
+        finally:
+            c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
+            c._git(p.root, "worktree", "prune", timeout=30)
+    if not m:
+        return None
+    sha = m.group(1)
+    subject = c.plain(c._git(p.root, "log", "-1", "--format=%s", sha, timeout=10).strip())[:100]
+    task = (re.findall(r"Foreman-Task: (T-\d+)", c._git(p.root, "log", "-1", "--format=%B", sha, timeout=10))
+            or [None])[0]
+    title = _title(f"Regression: {r['cmd'][:60]} broke at {sha[:10]} ({subject})")
+    if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+        with c.lock(p.dir):
+            nb = _create(p, title, "FIX", "S", "captured", raw=f"{title}; the check passed for {r['task']}"
+                         + (f"; the commit is {task}'s" if task else ""), source="discovered",
+                         depends=[x for x in [task] if x])
+            c.log_event(p, "capture", task=nb.id, data={"source": "sentinel bisect", "sha": sha})
+            c.regen_views(p)
+        captured = nb.id
+    else:
+        captured = "already captured"
+    return {"cmd": r["cmd"], "sha": sha, "subject": subject, "task": task, "captured": captured}
 
 
 def _slower(p, cmd, secs, runs=5):
@@ -2560,7 +2712,7 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch"),
@@ -2756,7 +2908,11 @@ def build_parser():
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
-    t.add_argument("--run", required=True, help="the test command")
+    t.add_argument("--run", help="the test command")
+    t.add_argument("--vacuous", action="store_true",
+                   help="name the criteria whose checks pass on the start tree too (they don't test the change; T-0457)")
+    t.add_argument("--same", metavar="CMD", help="CLEAN work: CMD's exit and output must match before and after "
+                                                 "(a behaviour lock; T-0501)")
     t.add_argument("--hunks", action="store_true",
                    help="revert each code hunk of the task's diff alone: name the ones the check doesn't notice")
     t.add_argument("--max", type=int, default=20, help="--hunks: at most this many hunks (one check run each)")
@@ -2818,6 +2974,8 @@ def build_parser():
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
+    s.add_argument("--prune", action="store_true",
+                   help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
@@ -2850,6 +3008,8 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=300)
     s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
                                                  "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
+    add("wiring", lazy("fmdoctor", "cmd_wiring"), help="one screen of what is wired: version, hooks, flags, standing "
+                                                        "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
                                                              "schedule or when a file changes (T-0452)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "run"])
@@ -2956,6 +3116,8 @@ def build_parser():
     s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
     s.add_argument("--max", type=int, default=20, help="commands to run at most")
     s.add_argument("--timeout", type=float, default=120)
+    s.add_argument("--bisect", action="store_true", help="find the commit that broke each failing check (git bisect in "
+                                                        "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
@@ -2963,6 +3125,8 @@ def build_parser():
                                             "(paths) or {names} (file names without extension)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
+    s.add_argument("--repeat", type=int, default=0, help="run each gate N times and report its pass rate (an "
+                                                       "intermittent failure; nothing is recorded; T-0475)")
     s.add_argument("--fail-fast", action="store_true", help="stop at the first failing gate (while iterating)")
     s.add_argument("--affected", action="store_true", help="only the tests linked to files changed since the task "
                                                            "started (fm map); the full gates still decide at the end")
@@ -2977,6 +3141,8 @@ def build_parser():
     g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
     g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
     g.add_argument("--every", type=int, help="fm next calls for a pass every N closed tasks (0: off)")
+    g.add_argument("--reject", metavar="TEXT", help="a dead end: later digests skip lines with TEXT (T-0471)")
+    s.add_argument("--why", help="--reject: why it's a dead end")
 
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
@@ -3150,7 +3316,10 @@ def build_parser():
     s = add("smoke", lazy("fmsmoke", "cmd_smoke"), help="check the product the way its user uses it: the web UI in a "
                                                          "headless browser at desktop and phone width (T-0417)")
     s.add_argument("action", nargs="?", choices=["run", "set"], default="run")
-    s.add_argument("words", nargs="*", help="set: web <url>")
+    s.add_argument("words", nargs="*", help="set: web <url> | http <url> | cmd \"<command>\"")
+    s.add_argument("--expect", help="set cmd: a regex its output must match")
+    s.add_argument("--status", type=int, default=200, help="set http: the status it must return")
+    s.add_argument("--json-key", dest="json_key", help="set http: a key its JSON body must have")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
