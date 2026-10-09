@@ -2345,7 +2345,10 @@ def build_parser():
     s = add("relate", lazy("fmrelate", "cmd_relate"),
             help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "
                  "tool-less child's reading (runs on its own once a day when 3+ tasks are new); --clear undoes")
-    s.add_argument("--clear", action="store_true", help="drop every inferred dependency and group")
+    s.add_argument("--clear", action="store_true", help="drop every inferred dependency and group, and turn the "
+                                                         "automatic runs off")
+    s.add_argument("--on", action="store_true", help="turn the automatic runs back on after --clear")
+    s.add_argument("--drop", nargs=2, metavar=("T-B", "T-A"), help="veto one inferred edge (T-B after T-A), for good")
     s.add_argument("--no-child", action="store_true", help="only the ids tasks mention: no model call")
     s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
     s.add_argument("--model", default="haiku", help="the child's model (default haiku)")

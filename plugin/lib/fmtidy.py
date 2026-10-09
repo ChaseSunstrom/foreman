@@ -122,8 +122,13 @@ def check_project(p, apply, actions):
             out.append(finding(slug, "inbox_stale", "warn", f"{b.id} captured {int(age)}d ago: {b.title}",
                                f"keep (fm task new … --from {b.id}) or drop (fm task drop {b.id} \"<why>\")"))
     _, cycles, dangling = c.order_queue(briefs)
-    for cyc in cycles:
-        out.append(finding(slug, "cycle", "warn", "dependency cycle: " + " ↔ ".join(cyc), "fm task set ID depends_on=…"))
+    by_id = {b.id: b for b in briefs}
+    for cyc in cycles:  # T-0383: a cycle through an edge fm relate inferred is undone there
+        guess = next(((a, d) for a in cyc for d in c._deps(by_id[a]) if d in cyc
+                      and d not in (by_id[a].meta.get("depends_on") or [])), None)
+        out.append(finding(slug, "cycle", "warn", "dependency cycle: " + " ↔ ".join(cyc),
+                           f"fm relate --drop {guess[0]} {guess[1]} (inferred) or fm relate --clear" if guess
+                           else "fm task set ID depends_on=…"))
     for a, d in dangling:
         out.append(finding(slug, "dangling_dep", "warn", f"{a} depends on unknown {d}", f"fm task set {a} depends_on=…"))
     status = {b.id: b.status for b in briefs}

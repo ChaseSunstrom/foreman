@@ -12,6 +12,8 @@ import json, os, sys
 stdin = sys.stdin.read()
 with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"args": sys.argv[1:], "stdin": stdin}) + "\n")
+if os.environ.get("STUB_EXIT"):
+    sys.exit(int(os.environ["STUB_EXIT"]))
 print(json.dumps({"result": open(os.environ["STUB_REPLY"]).read(), "total_cost_usd": 0.01}))
 '''
 
@@ -147,3 +149,147 @@ class Due(_Stubbed):
                                 "FEATURE: rename the CLI\nFEATURE: parse the report\n",
                 env=dict(self.env, FOREMAN_NO_BACKGROUND=""))
         self.wait_for_run()
+
+
+class Review(_Stubbed):
+    """The T-0383 review's fixes, one test each."""
+
+    def meta(self):
+        import fmcore as c
+        return c.read_meta(c.find_project(self.repo))
+
+    def set_meta(self, **kw):
+        import fmcore as c
+        c.update_meta(c.find_project(self.repo), **kw)
+
+    def deps(self, tid):
+        show = self.fm("task", "show", tid).stdout
+        line = next((x for x in show.splitlines() if x.startswith("inferred_deps:")), "")
+        return line.split(":", 1)[1].strip() if line else None
+
+    def planned(self, title, scope):
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--scope", scope, "--ac", "ok :: true",
+                "--step", "a")
+
+    def test_a_failed_child_leaves_the_day_unclaimed_and_is_logged(self):
+        import fmcore as c
+        self.seven()
+        self.fm("relate", "--if-due", env=dict(self.env, STUB_EXIT="1"))
+        meta = self.meta()
+        self.assertNotIn("relate_day", meta)
+        self.assertNotIn("relate_claim", meta)
+        self.assertTrue(any(e.get("event") == "relate" and "error" in (e.get("data") or {})
+                            for e in c.ledger_tail(c.find_project(self.repo), 50)))
+        self.fm("relate", "--if-due", env=self.env)  # the next trigger tries again
+        self.assertEqual(len(self.calls()), 2)
+        self.assertEqual(self.deps("T-0001"), "[T-0004]")
+
+    def test_a_fresh_claim_dedupes_a_concurrent_trigger(self):
+        import fmcore as c
+        self.seven()
+        self.set_meta(relate_claim=c.now())
+        self.assertIn("already running", self.fm("relate", "--if-due", env=self.env).stdout)
+        self.assertEqual(self.calls(), [])
+        self.set_meta(relate_claim="2000-01-01T00:00:00Z")  # a claim left by a run that died
+        self.fm("relate", "--if-due", env=self.env)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_clear_turns_the_automatic_runs_off_until_on(self):
+        import fmrelate
+        self.seven()
+        self.fm("relate", "--clear", env=self.env)
+        self.assertIn("off", self.fm("relate", "--if-due", env=self.env).stdout)
+        self.assertEqual(self.calls(), [])
+        self.assertFalse(fmrelate.due(self.meta(), ["T-0001", "T-0002", "T-0003"]))
+        self.fm("relate", "--on", env=self.env)
+        self.fm("relate", "--if-due", env=self.env)
+        self.assertEqual(len(self.calls()), 1)
+
+    def test_a_dropped_edge_stays_dropped(self):
+        self.seven()
+        self.fm("relate", env=self.env)
+        self.fm("relate", "--drop", "T-0001", "T-0004", env=self.env)
+        self.assertIsNone(self.deps("T-0001"))
+        self.fm("relate", env=self.env)
+        self.assertIsNone(self.deps("T-0001"))
+        self.assertEqual(self.deps("T-0007"), "[T-0006]")
+
+    def test_no_child_and_a_sensitive_project_keep_the_childs_edges(self):
+        self.seven()
+        self.fm("relate", env=self.env)
+        self.fm("relate", "--no-child", env=self.env)
+        self.assertEqual(self.deps("T-0001"), "[T-0004]")
+        self.fm("sensitive", "on")
+        self.fm("relate", env=self.env)
+        self.assertEqual(self.deps("T-0001"), "[T-0004]")
+
+    def test_batched_tasks_never_reach_the_child(self):
+        self.seven()
+        host = json.loads(self.fm("batch", "T-0002", "T-0003", "--json").stdout)["id"]
+        self.fm("relate", env=self.env)
+        stdin = self.calls()[0]["stdin"]
+        self.assertNotIn("T-0002 [", stdin)
+        self.assertNotIn("T-0003 [", stdin)
+        self.assertIn(f"{host} [", stdin)
+
+    def test_at_most_five_inferred_edges_per_task(self):
+        for i in range(8):
+            self.fm("capture", f"task {i}", "--tier", "M")
+        with open(self.env["STUB_REPLY"], "w") as f:
+            f.write("".join(f"T-0001 -> T-{i:04d}: needs it\n" for i in range(2, 9)))
+        self.fm("relate", env=self.env)
+        self.assertEqual(len(self.deps("T-0001").strip("[]").split(",")), 5)
+
+    def test_fm_run_never_batches_a_task_with_what_it_inferred_it_needs(self):
+        import fmcore as c
+        import fmserve
+        self.planned("base", "a.txt")                 # T-0001
+        self.planned("builds on T-0001", "b.txt")     # T-0002: a mention, so an inferred edge
+        self.planned("free", "c.txt")                 # T-0003
+        self.fm("relate", "--no-child", env=self.env)
+        self.assertEqual(self.deps("T-0002"), "[T-0001]")
+        p = c.find_project(self.repo)
+        self.assertEqual([b.id for b in fmserve._batch(p, c.find_brief(p, "T-0001"), set(), 3)], ["T-0001", "T-0003"])
+
+    def test_a_cycle_through_an_inferred_edge_names_fm_relate(self):
+        self.planned("builds on T-0002", "a.txt")     # T-0001
+        self.planned("base", "b.txt")                 # T-0002
+        self.fm("relate", "--no-child", env=self.env)
+        self.fm("task", "set", "T-0002", "depends_on=T-0001")
+        out = self.fm("tidy").stdout
+        self.assertIn("fm relate --drop T-0001 T-0002", out)
+
+
+class Order(ForemanTestCase):
+    @staticmethod
+    def brief(id, status="planned", priority="normal", inferred=(), group=None):
+        import fmcore as c
+        b = c.Brief.new(id, f"task {id}", "FEATURE", "S", now="2026-01-01T00:00:00Z", status=status)
+        b.meta.update(priority=priority, inferred_deps=list(inferred))
+        if group:
+            b.meta["group"] = group
+        return b
+
+    def test_an_inferred_edge_never_holds_back_an_urgent_task(self):
+        import fmcore as c
+        for status in ("planned", "captured"):
+            briefs = [self.brief("T-0001", status, "urgent", inferred=["T-0002"]), self.brief("T-0002", status)]
+            q = c.order_queue(briefs)[0] if status == "planned" else c.rank_inbox(briefs)
+            self.assertEqual([b.id for b in q], ["T-0001", "T-0002"], status)
+
+    def test_keys_and_dependencies_are_read_once_per_brief(self):
+        from unittest import mock
+        import fmcore as c
+        briefs = [self.brief(f"T-{i:04d}", inferred=[f"T-{i - 1:04d}"] if i % 3 else [], group=f"g{i % 7}")
+                  for i in range(1, 301)]
+        inbox = [self.brief(b.id, "captured", inferred=b.meta["inferred_deps"], group=b.meta["group"]) for b in briefs]
+        with mock.patch.object(c, "_key", wraps=c._key) as key, mock.patch.object(c, "_deps", wraps=c._deps) as deps:
+            q = c.order_queue(briefs)[0]
+            self.assertLessEqual(key.call_count, 300)
+            self.assertLessEqual(deps.call_count, 300)
+            deps.reset_mock()
+            r = c.rank_inbox(inbox)
+            self.assertLessEqual(deps.call_count, 300)
+        for order in ([b.id for b in q], [b.id for b in r]):  # still after what each waits on
+            pos = {i: n for n, i in enumerate(order)}
+            self.assertTrue(all(pos[f"T-{i - 1:04d}"] < pos[f"T-{i:04d}"] for i in range(2, 301) if i % 3))

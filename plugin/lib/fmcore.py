@@ -6,6 +6,7 @@ import contextlib
 import datetime
 import fcntl
 import hashlib
+import heapq
 import json
 import os
 import re
@@ -1228,13 +1229,50 @@ def _key(b):
 
 
 def _deps(b):
-    """What a brief waits on: its depends_on, then what fm relate inferred (T-0383)."""
-    return list(dict.fromkeys(list(b.meta.get("depends_on") or []) + list(b.meta.get("inferred_deps") or [])))
+    """What a brief waits on: its depends_on, then what fm relate inferred (T-0383) — never for an urgent brief: a
+    guess must not hold back urgent work."""
+    inferred = [] if b.priority == "urgent" else list(b.meta.get("inferred_deps") or [])
+    return list(dict.fromkeys(list(b.meta.get("depends_on") or []) + inferred))
 
 
-def _with(b, grp):
-    """T-0383: 0 when b is in grp, the group of the one placed last, so a group's members stay together."""
-    return 0 if grp and b.meta.get("group") == grp else 1
+def _topo(ids, deps, key, group, lead, brk=False):
+    """T-0383: ids in key order, each after the ids it waits on (deps: id -> ids among ids), and the ready members of
+    the group the last one placed belongs to next — unless key[:lead] (active, urgent) says otherwise. With brk a
+    cycle is broken at its best-ranked id. (order, ids left in cycles)."""
+    indeg, rev = {i: len(deps[i]) for i in ids}, defaultdict(list)
+    for i in ids:
+        for d in deps[i]:
+            rev[d].append(i)
+    heap, of_group, out, done, grp = [], defaultdict(list), [], set(), None
+
+    def push(i):
+        heapq.heappush(heap, (key[i], i))
+        if group.get(i):
+            heapq.heappush(of_group[group[i]], (key[i], i))
+    for i in ids:
+        if not indeg[i]:
+            push(i)
+    while True:
+        mine = of_group.get(grp) if grp else None
+        for h in (heap, mine or []):
+            while h and h[0][1] in done:  # lazy deletion: an id sits in both heaps
+                heapq.heappop(h)
+        if not heap:
+            left = [i for i in ids if i not in done]
+            if not (brk and left):
+                return out, left
+            push(min(left, key=key.get))
+            continue
+        _, i = heapq.heappop(mine if mine and mine[0][0][:lead] == heap[0][0][:lead] else heap)
+        if i in done:
+            continue
+        done.add(i)
+        out.append(i)
+        grp = group.get(i)
+        for j in rev[i]:
+            indeg[j] -= 1
+            if not indeg[j]:
+                push(j)
 
 
 SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
@@ -1251,26 +1289,20 @@ def rank_inbox(briefs):
     """T-0111: captured items by value for effort inside the intake order: urgent first, then type (RANK), then value
     (who asked, 2 per item depending on it, up to 2 for waiting two weeks) per tier; an item follows any captured
     item it depends on. T-0383: inferred dependencies count too, and a group's members follow the first one placed."""
-    wanted = defaultdict(int)
-    for b in briefs:
-        for d in _deps(b):
+    wanted, deps = defaultdict(int), {b.id: _deps(b) for b in briefs}
+    for ds in deps.values():
+        for d in ds:
             wanted[d] += 1
 
     def key(b):  # whole days waited: a float age read at each call would order same-second captures by the clock
         value = SOURCE_VALUE.get(b.meta.get("source"), 1) + 2 * wanted[b.id] + min(int(age_days(b.meta.get("created")) or 0) / 7, 2)
         return (0 if b.priority == "urgent" else 1, RANK.get(b.type, 99), -value / TIER_EFFORT.get(b.tier, 2), id_num(b.id))
     by_id = {b.id: b for b in briefs}
-    pending = sorted((b for b in briefs if b.status == "captured" and not batched(b, by_id)), key=key)
-    keys = {b.id: key(b) for b in pending}
-    ids, out, placed, grp = {b.id for b in pending}, [], set(), None
-    while pending:  # ponytail: O(n²), fine for an inbox
-        ready = [x for x in pending if all(d in placed or d not in ids for d in _deps(x))] or pending[:1]  # a cycle: as ranked
-        b = min(ready, key=lambda x: (keys[x.id][0], _with(x, grp), keys[x.id][1:]))  # urgent still leads
-        pending.remove(b)
-        out.append(b)
-        placed.add(b.id)
-        grp = b.meta.get("group")
-    return out
+    pending = {b.id: b for b in briefs if b.status == "captured" and not batched(b, by_id)}
+    order, _ = _topo(list(pending), {i: [d for d in deps[i] if d in pending] for i in pending},
+                     {i: key(b) for i, b in pending.items()}, {i: b.meta.get("group") for i, b in pending.items()},
+                     1, brk=True)  # a cycle: as ranked
+    return [pending[i] for i in order]
 
 
 def order_queue(briefs):
@@ -1287,26 +1319,10 @@ def order_queue(briefs):
             elif d not in by_id and d in (b.meta.get("depends_on") or []):  # an inferred one was checked when made
                 dangling.append((b.id, d))
         deps[b.id] = ds
-    indeg = {i: len(ds) for i, ds in deps.items()}
-    rev = defaultdict(list)
-    for i, ds in deps.items():
-        for d in ds:
-            rev[d].append(i)
-    ready, out, grp = [i for i, n in indeg.items() if n == 0], [], None
-    while ready:  # ponytail: O(n²) picks, fine for a queue
-        i = min(ready, key=lambda j: _key(by_id[j])[:2] + (_with(by_id[j], grp),) + _key(by_id[j])[2:])  # active, urgent lead
-        ready.remove(i)
-        out.append(by_id[i])
-        grp = by_id[i].meta.get("group")
-        for j in rev[i]:
-            indeg[j] -= 1
-            if indeg[j] == 0:
-                ready.append(j)
-    placed = {b.id for b in out}
-    remaining = [i for i in deps if i not in placed]
+    key = {b.id: _key(b) for b in runnable}
+    order, remaining = _topo(list(deps), deps, key, {b.id: b.meta.get("group") for b in runnable}, 2)
     cycles = _cycles({i: [d for d in deps[i] if d in remaining] for i in remaining})
-    out += sorted((by_id[i] for i in remaining), key=_key)
-    return out, cycles, dangling
+    return [by_id[i] for i in order + sorted(remaining, key=key.get)], cycles, dangling
 
 
 def _cycles(graph):
