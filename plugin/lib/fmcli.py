@@ -408,6 +408,14 @@ def cmd_task(args):
         return task_packet(p, args)
     if sub == "revert":
         return task_revert(p, args)
+    if sub == "finding":  # T-0743: one reviewer finding and whether it held, for per-lens precision
+        if args.lens not in c.AUDIT_LENSES:
+            raise UsageError(f"unknown lens {args.lens!r}; one of {', '.join(c.AUDIT_LENSES)}")
+        b = need_brief(p, args.id)
+        text = c.redact(" ".join(args.text))[:300]
+        c.log_event(p, "finding", task=b.id, data={"lens": args.lens, "verdict": args.verdict, "text": text})
+        return out(args, {"task": b.id, "lens": args.lens, "verdict": args.verdict},
+                   f"{b.id}: {args.lens} finding {args.verdict}.")
     if sub == "dissent":  # T-0642
         import fmsecond
         return fmsecond.task_dissent(p, args)
@@ -593,6 +601,12 @@ def cmd_task(args):
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
+        if status == "blocked":  # T-0734: a block is a real failure worth an eval case, kept locally
+            try:
+                import fmcost
+                fmcost.eval_case(p, b)
+            except Exception as e:  # the block is recorded already; a case is a bonus
+                print(f"fm: warning: no eval case written ({type(e).__name__})", file=sys.stderr)
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
@@ -3471,6 +3485,11 @@ def build_parser():
     t.add_argument("--dry-run", action="store_true", help="show the partition only")
     t = tadd("capsule")  # T-0709
     t.add_argument("id")
+    t = tadd("finding")  # T-0743
+    t.add_argument("id")
+    t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
+    t.add_argument("verdict", choices=["confirmed", "rejected"])
+    t.add_argument("text", nargs="+")
     t = tadd("revert")  # T-0732
     t.add_argument("id")
     t = tadd("packet")  # T-0466
@@ -3623,9 +3642,10 @@ def build_parser():
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
-    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
-    s.add_argument("action", choices=["add"])
-    s.add_argument("id")
+    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
+                                                        "what could become one (T-0734)")
+    s.add_argument("action", choices=["add", "inbox"])
+    s.add_argument("id", nargs="?")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
                                                   "yours (T-0708)")
@@ -3807,6 +3827,9 @@ def build_parser():
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
+    s.add_argument("--retire", metavar="LESSON", help="with --lessons: leave this lesson (T-0123.1) out of recall and "
+                                                      "tripwires (T-0743)")
+    s.add_argument("--why", help="with --retire: why it no longer helps")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
                                                         "in with fm share on (never sensitive ones), file:line (T-0618)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
@@ -3890,6 +3913,8 @@ def build_parser():
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+    s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
+                                                        "the same order (T-0734; adopting it is asked first)")
 
     s = add("sync", lazy("fmsync", "cmd_sync"),
             help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
@@ -3955,6 +3980,9 @@ def build_parser():
     b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
     b.add_argument("--model", default="sonnet")
     b.add_argument("--seed", type=int, default=0)
+    b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
     b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
                                         "from another (T-0656)")
     b.add_argument("--json", action="store_true")
@@ -3965,6 +3993,9 @@ def build_parser():
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name in ("build", "run", "models"):
             b.add_argument("--ids", nargs="+", help="only these task ids")
+        if name in ("list", "run"):
+            b.add_argument("--split", choices=["train", "holdout"], help="only that split (a stable 1 in 5 is "
+                                                                          "held out from fm evolve; T-0734)")
         if name == "models":
             b.add_argument("--models", default="haiku,sonnet", help="comma-separated models to compare")
             b.add_argument("--max", type=int, default=3)
