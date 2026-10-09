@@ -95,9 +95,9 @@ class CatchRate(Base):
     def test_the_close_says_which_checks_have_ever_caught_a_failure(self):
         rows = []
         for t in ("T-0101", "T-0102"):
-            rows += [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "pytest -q", "result": "exit 1 · 1 failed"}},
-                     {"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "pytest -q", "result": "exit 0 · 3 passed"}}]
-        rows += [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "make lint", "result": "exit 0"}}
+            rows += [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "pytest -q", "result": c.run_result(1, "1 failed")}},
+                     {"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "pytest -q", "result": c.run_result(0, "3 passed")}}]
+        rows += [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "make lint", "result": c.run_result(0, "ok")}}
                  for t in ("T-0101", "T-0102", "T-0103")]
         rows += [{"ts": c.now(), "task": "T-0104", "event": "finish", "data": {"runs": 1, "failed": n, "ran": [["make test", n]]}}
                  for n in (1, 0)]  # T-0749: a failure the close itself recorded counts too

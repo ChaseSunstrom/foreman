@@ -160,7 +160,7 @@ class Mining(Base):
         ev("task_done", "T-0005", verified="weak", type="FEATURE", tier="S")
         ev("focus", "T-0006")
         for _ in range(3):
-            ev("evidence", "T-0006", cmd="pytest", result="exit 1 · 2 failed")
+            ev("evidence", "T-0006", cmd="pytest", result=c.run_result(1, "2 failed"))  # the real format
         ev("task_block", "T-0006", reason="can't reproduce")
         out = self.fm("friction").stdout
         self.assertRegex(out, r"smooth but unverified[^\n]*\n\s+- T-0005")
