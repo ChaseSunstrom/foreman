@@ -1393,7 +1393,8 @@ def _interpreter_writes(cmd, ctx):
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
     if _drives_fm(cmd, ctx.cwd):
-        return [("core", "interpreter code driving Foreman's modules (use the fm CLI)")]
+        return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
+                         "whose text names its modules, use the Edit or Write tool)")]  # T-0740: 9 repeats in a day
     code = _interp_code(cmd)
     # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
     ticks = "`" in code and any(not _TEXT_TICKS.match(m.group(1)) for m in _INTERP.finditer(cmd))
