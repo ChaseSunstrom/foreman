@@ -67,7 +67,7 @@ class Night(ForemanTestCase):
         self.assertIn("second session", names)
         self.assertLessEqual(sum(j["usd"] for j in out["jobs"]), out["limit"])
         tight = json.loads(self.fm("night", "--dry-run", "--max-usd", "0.001", "--json").stdout)
-        self.assertEqual(tight["jobs"], [])
+        self.assertEqual([j["name"] for j in tight["jobs"]], ["dream"])  # T-0665: only the free job fits
         self.assertTrue(tight["skipped"])  # what didn't fit is named
 
     def test_high_usage_runs_nothing(self):

@@ -29,9 +29,12 @@ def cmd_lane(args):
                          "tasks": [{"id": b.id, "status": b.status, "title": b.title} for b in tasks]})
             gone = not os.path.isdir(path)  # deleted by hand: git lists it until pruned
             rows[-1]["missing"] = gone
+            andon = dict(c.andons(tasks))  # T-0648
+            rows[-1]["andon"] = next(iter(andon.values()), None)
             lines.append(f"{path} [{'missing' if gone else rows[-1]['branch'] or 'detached'}]: "
                          + ("; ".join(f"{b.id} {b.status} {c.fit(b.title, 50)}" for b in tasks) or "no task")
-                         + (f" — fm lane rm {tasks[0].id} frees it" if gone and tasks else ""))
+                         + (f" — fm lane rm {tasks[0].id} frees it" if gone and tasks else "")
+                         + (f" — ANDON: {c.fit(rows[-1]['andon'], 120)}" if andon else ""))
         listed = {r["path"] for r in rows}
         for b in briefs:  # review: a task whose lane folder is gone is still held; say how to free it
             if b.meta.get("lane") and b.meta["lane"] not in listed and b.status not in c.CLOSED:

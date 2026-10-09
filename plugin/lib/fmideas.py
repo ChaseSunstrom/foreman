@@ -3,6 +3,7 @@
 A Claude Code subagent can't have zero tools (an empty `tools:` list means every tool), so each lens runs as a
 fresh `claude -p` session with no built-in tools and no MCP servers, in a scratch directory outside any project.
 """
+import glob
 import json
 import os
 import re
@@ -17,7 +18,23 @@ import fmrecall
 
 LENSES = ["user value", "unspoken needs", "delight", "capability map", "approaches", "reliability", "performance",
           "security and safety", "simplicity", "bold bets", "beautiful UI and motion", "every device and surface",
-          "agents of agents", "privacy and local-first"]
+          "agents of agents", "privacy and local-first", "reframe", "flip assumptions", "oblique provocation",
+          "devil's idea", "worst-bugs persona"]
+# T-0627/T-0628: what a lens whose name isn't enough asks for
+LENS_NOTES = {
+    "reframe": "restate the problem three different ways (as the user's goal, as a constraint to remove, as a question "
+               "nobody asked) and give the ideas each framing opens",
+    "flip assumptions": "list the assumptions the request rests on, flip each one, and give the ideas that only exist "
+                        "once it's false",
+    "oblique provocation": "take one past lesson or failure from the pack as a provocation and follow it somewhere "
+                           "unexpected",
+    "devil's idea": "propose what a rival who wanted this project to win would ship that its owner would never dare to",
+    "worst-bugs persona": "be the user who hits the worst bugs: what breaks, confuses or loses work, and what would "
+                          "have prevented it",
+}
+# T-0605: the capability axes a complete catalogue covers; thin ones are named for the next round
+AXES = ["user value", "reliability", "performance", "security", "privacy", "ui", "devices", "agents", "simplicity",
+        "developer experience", "observability", "docs", "delight"]
 PACK_WORDS = 2000
 # T-0099: unspoken needs and delight by default (the user wanted what they can't put into words, and more creative ideas)
 # T-0375: fm mission adds the UI, device, agent and privacy lenses when the project has those surfaces
@@ -108,7 +125,8 @@ def run_children(jobs, timeout, feature):
 def child_prompt(lens, pack):
     """The shared pack first, the lens last (T-0267): siblings and later rounds then share a prefix the prompt cache
     can reuse."""
-    return f"Context pack:\n{pack}\n\nLens: {lens}\n\nReturn 10-15 ideas in the required format, at least 3 of them wild."
+    note = f" — {LENS_NOTES[lens]}" if lens in LENS_NOTES else ""
+    return f"Context pack:\n{pack}\n\nLens: {lens}{note}\n\nReturn 10-15 ideas in the required format, at least 3 of them wild."
 
 
 def user_voice(p, n=20):
@@ -146,7 +164,30 @@ def taste(p, n=8):
             "dropped": [{"id": b.id, "title": fit(b.title, 90), "why": why(b)} for b in briefs if b.status == "dropped"
                         and not HOUSEKEEPING.match(why(b))][-n:],  # merged or done elsewhere says nothing of taste
             "steered": [fit(t[len("steer:"):], 200) for t in notes if t.startswith("steer:")][-n:],
-            "corrected": [fit((e.get("data") or {}).get("text"), 200) for e in ledger if e.get("event") == "correction"][-n:]}
+            "corrected": [fit((e.get("data") or {}).get("text"), 200) for e in ledger if e.get("event") == "correction"][-n:],
+            "lenses": lens_rates(p, briefs)}
+
+
+def lens_rates(p, briefs):
+    """T-0607: per brainstorm lens, how many of its ideas became tasks that were built, dropped or are still open — an
+    idea matches a brief whose title holds most of its words."""
+    rates = {}
+    briefs = [(b, _words(b.title)) for b in briefs]
+    for path in glob.glob(os.path.join(p.dir, "research", "brainstorm-*", "ideas.json")):
+        try:
+            with open(path, encoding="utf-8") as f:
+                lenses = json.load(f).get("lenses") or {}
+        except (OSError, ValueError):
+            continue
+        for lens, titles in lenses.items():
+            r = rates.setdefault(lens, {"ideas": 0, "built": 0, "dropped": 0, "open": 0})
+            for t in titles:
+                r["ideas"] += 1
+                w = _words(t)
+                b = next((b for b, bw in briefs if w and len(w & bw) / len(w) >= 0.6), None)
+                if b:
+                    r["built" if b.status == "done" else "dropped" if b.status == "dropped" else "open"] += 1
+    return rates
 
 
 # T-0439: a no the user keeps steering with becomes a veto to propose; their other steers and finished requests say
@@ -221,6 +262,10 @@ def cmd_taste(args):
     for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
                        ("Steered", t["steered"]), ("Corrected", t["corrected"])):
         lines += [f"{head}:"] + [f"  {r}" for r in rows] if rows else []
+    if t["lenses"]:  # T-0607: which lenses' ideas the user keeps
+        lines += ["Brainstorm lenses (ideas that became tasks):"] + [
+            f"  {k}: {r['built']}/{r['ideas']} built, {r['dropped']} dropped, {r['open']} open"
+            for k, r in sorted(t["lenses"].items(), key=lambda kv: -kv[1]["built"] / max(kv[1]["ideas"], 1))]
     if props:
         lines += ["Proposed vetoes (a no you keep steering with):"]
         lines += [f"  {i}. never {' '.join(x['words'])} — steered {x['count']} times, last: {x['said']}"
@@ -254,10 +299,40 @@ def deepen_pack(pack, category, titles):
               "category (don't repeat the list).")
 
 
-def later_round_pack(pack, titles, n):
+def later_round_pack(pack, titles, n, thin=()):
     return (pack + "\n\n## Ideas so far (don't repeat these; go past them)\n" + "\n".join(f"- {t}" for t in titles)
+            + (f"\n\nThin so far (fill these first): {', '.join(thin)}" if thin else "")
             + f"\n\nRound {n}: propose only NEW ideas: gaps nobody covered, second-order improvements on the ideas "
               f"above, combinations worth more together, and what a genuinely fully featured version would still lack.")
+
+
+def coverage(results):
+    """T-0605: ({category: ideas}, the axes with at most one idea)."""
+    of, cats = {}, {}
+    for r in results:  # distinct ideas: a later round repeating one doesn't count twice
+        of.update(r.get("categories", {}))
+    for cat in of.values():
+        cats[cat] = cats.get(cat, 0) + 1
+    thin = [a for a in AXES if sum(n for cat, n in cats.items() if a in cat or cat in a) <= 1]
+    return cats, thin
+
+
+FALSIFY = ("You kill ideas fast. For each numbered idea, give the quickest observation or experiment that would show "
+           "it isn't worth building. Output only lines `N: <one line>`.")
+
+
+def _falsify(titles, args, p):
+    prompt = "KILL IT FAST\n" + "\n".join(f"{i}: {t}" for i, t in enumerate(titles[:60], 1))
+    text = run_child("ideas", FALSIFY, prompt, args.model, args.timeout, project=p.slug, detail="falsify")
+    found = {int(m.group(1)): c.fit(c.plain(m.group(2)), 200) for m in re.finditer(r"(?m)^\s*(\d+):\s*(.+)$", text)}
+    return {titles[i - 1]: f for i, f in found.items() if 0 < i <= min(len(titles), 60)}
+
+
+def _crossbreed(titles, system, args, p):
+    prompt = ("CROSS-BREED: combine the strongest of these ideas into 3-6 new ideas worth more together, in the "
+              "required format.\n" + "\n".join(f"- {t}" for t in titles[:30]))
+    text = run_child("ideas", system, prompt, args.model, args.timeout, project=p.slug, detail="crossbreed")
+    return [c.plain(t).strip() for t in _TITLE.findall(c.redact(text))]
 
 
 def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
@@ -291,6 +366,12 @@ def cmd_ideas(args):
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack += user_voice(p)
     lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
+    if "oblique provocation" in lenses:  # T-0628: its provocations are the project's own lessons
+        lessons = [ln.strip("- ").strip() for b in sorted(c.load_briefs(p), key=lambda b: b.meta.get("updated") or "")
+                   for ln in b.section("Lessons").splitlines() if ln.strip()][-8:]
+        if lessons:
+            pack += "\n\n## Past lessons (provocations for the oblique lens)\n" + "\n".join(
+                f"- {c.fit(c.plain(x), 200)}" for x in lessons)
     deepen = max(0, getattr(args, "deepen", 0) or 0)
     pace = fmbudget.degrade() if deepen else None
     if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
@@ -326,8 +407,8 @@ def cmd_ideas(args):
     for n in range(1, max(1, args.rounds) + 1):
         rounds = n
         prefix = f"r{n}-" if args.rounds > 1 else ""
-        got = _run_round(lenses, pack if not titles else later_round_pack(pack, titles, n), system, args, out_dir,
-                         prefix, fmcli)
+        got = _run_round(lenses, pack if not titles else later_round_pack(pack, titles, n, coverage(results)[1]),
+                         system, args, out_dir, prefix, fmcli)
         results += [dict(r, round=n) for r in got]
         new = []
         for r in got:
@@ -359,6 +440,15 @@ def cmd_ideas(args):
                 seen.append(_words(t))
             titles += new
             deepened[r["category"]] = new
+    kills, bred = {}, []
+    try:
+        kills = _falsify(titles[known:], args, p) if getattr(args, "falsify", False) and titles[known:] else {}
+        bred = [t for t in (_crossbreed(titles[known:], system, args, p) if getattr(args, "crossbreed", False)
+                            and titles[known:] else []) if _is_new(t, seen)]
+    except ValueError as e:  # an optional pass that fails leaves the catalogue as it is
+        print(f"fm: {e}", file=sys.stderr)
+    titles += bred
+    cats, thin = coverage(results)
     near = fmrecall.nearest_done(p, titles[known:])  # T-0208: what may already be built, before grounding
     item = lambda t: f"- {t}" + (f" — near {near[t][0]} (done): {c.fit(near[t][1], 60)}" if t in near else "") + "\n"
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
@@ -366,7 +456,16 @@ def cmd_ideas(args):
                 "that shares most of an idea's words)\n"
                 + "".join(f"\n## Round {i}\n" + "".join(map(item, ts)) for i, ts in enumerate(by_round, 1))
                 + "".join(f"\n## Deepened: {cat}\n" + "".join(map(item, ts)) for cat, ts in deepened.items())
-                + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items()))
+                + "".join(f"\n## Cross-bred\n" + "".join(map(item, bred)) for _ in [0] if bred)
+                + "\n## New ideas per lens\n" + "".join(f"- {k}: {v}\n" for k, v in lens_yield.items())
+                + "\n## Coverage (ideas per category)\n" + "".join(f"- {k} {v}\n" for k, v in
+                                                                   sorted(cats.items(), key=lambda kv: -kv[1]))
+                + f"Thin (0-1 ideas): {', '.join(thin) or 'none'}\n"
+                + ("\n## Kill it fast (the quickest test that would show it isn't worth building)\n"
+                   + "".join(f"- {t} — {k}\n" for t, k in kills.items()) if kills else ""))
+    with open(os.path.join(out_dir, "ideas.json"), "w", encoding="utf-8") as f:  # T-0607: for fm taste's keep rates
+        json.dump({"lenses": {r["lens"]: r["titles"] for r in results if r["ok"]}, "crossbred": bred,
+                   "kills": kills, "created": c.now()}, f)
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,

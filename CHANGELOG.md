@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 1.2.24 — 2026-10-09
+- Deliberation (T-0687 milestone: T-0642, T-0662).
+  - Dissent that survives: `fm second plan` also records each objection as an open item in the brief's Dissent section. `fm task dissent ID add "<objection>" | resolve N "<how>"` manages them, and the close lists any still open.
+  - Panels sized by stakes: `plugin/protocols.json` says what deliberation each tier gets. `fm second plan` on an S task says it's skipped (`--force` runs it). `fm next` names `fm second plan` for an L plan that has no review yet and isn't approved.
+- Debugging and diagnosis (T-0686 milestone: T-0597, T-0598, T-0611, T-0612, T-0613).
+  - Proving the diagnosis is `fm task prove`. It runs the task's tests on the start tree with the fix removed (red) and on the current tree (green); this release documents and tests it.
+  - `fm task finish --why-not-caught "<the test, gate or guard that would have caught it>"`: required for M/L fixes, suggested for S. A real answer becomes a follow-up, "Catch it earlier: …".
+  - `fm next` escalates a step that keeps failing: after 2 failed runs, fresh eyes (`fm suspects`, `fm whyred`, then `foreman:fm-debugger`); after 3, hypotheses and then a differential table; after 4, block it and move on.
+  - `fm bisect --run CMD [--good REF]` finds the first commit where a check started failing, with its files, in a throwaway worktree. The good end defaults to the active task's start; it shares its bisect with `fm sentinel --bisect`.
+  - A failing `fm check` gate is fingerprinted into failure memory like a failing shell run. `fm recall --magnets` ranks the files the most FIX tasks touched.
+- Cognitive architecture, first versions (T-0685 milestone: T-0663, T-0664, T-0665).
+  - Recall by activation. A past task whose files the active task touched recently, or whose failure signatures came back in the last week, counts 1.5× in `fm recall` and everywhere recall feeds.
+  - `fm usage --lesions` reports what each `fm evolve --drop` ablation found: the bench held without the file (a candidate to trim) or dropped (it earns its place). It also names the next lesion to run.
+  - `fm dream [--day]` turns the day's repeated failure signatures and guard refusals into tripwire candidates, each with its counterfactual ("a tripwire at the first would have caught N"), written to `research/dream-DATE.md`. It is also a free `fm night` job.
+- Brainstorming and ideation (T-0684 milestone: T-0605, T-0606, T-0607, T-0627, T-0628).
+  - `fm ideas` writes a coverage map to `ideas.md` (distinct ideas per category) and names the thin capability axes. A later round's pack lists them as holes to fill first.
+  - `--falsify`: one more child gives every idea its quickest kill test, listed under "Kill it fast".
+  - `--crossbreed`: one more child combines the top ideas into new ones.
+  - Each brainstorm writes `ideas.json` (lens → ideas). `fm taste` shows, per lens, how many of its ideas became tasks that were built, dropped or are still open.
+  - New lenses, each with a one-line instruction for the child: reframe, flip assumptions, oblique provocation (fed the project's latest lessons), devil's idea, and worst-bugs persona. Planning's R1 pass now flips the two assumptions an M/L plan leans on most.
+- Agent types and roles (T-0683 milestone: T-0608, T-0629, T-0646, T-0647, T-0648).
+  - New `fm-reproducer` agent: for a FIX it writes the failing test (or a repro script) first, confirms it fails for the reported reason, and hands back the command for `fm task prove`. It never fixes. `fm-reviewer` gains a performance lens.
+  - Every agent ends its report with `Noticed:` lines. `fm research add NAME --from-agent FILE` turns each one into a discovered capture.
+  - `fm bench seed-review [--cases N] [--reviewer CMD]` plants one-line bugs (a `return` becomes `return None`) and scores the reviewer by whether its findings name the file and line.
+  - `fm usage --agents`: a scorecard per agent type, with spawns and tokens, plus lanes merged against removed for builders. This week here: builders 46 spawns, lanes merged 15, removed 16.
+  - A builder blocked on a decision writes `ANDON.md` in its lane with its question and the assumption it proceeds on. `fm lane list` and `fm next` surface it.
+
 ## 1.2.23 — 2026-10-09
 - Intent and change skills, first slice (T-0713).
   - `fm spec "<wish>" --module M [--out FILE]` turns a one-line wish into a red unittest. One tool-less child (Haiku by default) proposes assertions; only safe ones are kept (comparisons over calls into M and literals: no imports, dunders, eval or open). The file is run once to show it red. A real run on "calc.mul multiplies two numbers…" gave 7 assertions, all red.

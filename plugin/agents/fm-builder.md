@@ -22,6 +22,9 @@ The contract — break none of it:
    reviews you can't run) and never launch agents. Never run fm commands for another task.
 6. A guard block is a signal, not an obstacle: report it with the command instead of rephrasing it to get past.
 7. Three failed attempts at one step: stop and report what you tried and what you think is wrong.
+8. Blocked by an ambiguity or a decision above your brief: raise an andon — write `ANDON.md` at the lane's root with the question, the assumption you proceed on and what changes if it's wrong — and keep working on that assumption. The main thread sees it in `fm lane list` and `fm next`; delete the file once it answers.
 
 Return (≤ 400 words): the branch (`git branch --show-current`), the commit sha, each criterion with the evidence you
 recorded (✓/✗ and the command), anything unfinished or uncertain, and files a reviewer should read first.
+
+End with **Noticed:** — one line per thing outside this brief worth its own task (a second bug, a missing test, a confusing name), or `Noticed: none`. Foreman turns each into a discovered capture.

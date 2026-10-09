@@ -2112,10 +2112,62 @@ def fired_decisions(p):
     return out
 
 
+def stuck_rung(b):
+    """T-0611: the next rung when the current step keeps failing: its failed fm runs since its last pass, and the
+    task's open hypotheses. None while it isn't stuck."""
+    cur = b.current_step()
+    if not cur:
+        return None
+    fails = 0
+    for line in b.evidence():
+        m = _EV_RE.match(line)
+        if m and m.group(1) == "step" and int(m.group(2)) == cur.n and _RAN_MARK in line:
+            fails = fails + 1 if "` → ✗ exit" in line else 0
+    hyps = sum(1 for _, st, _ in b.hypotheses() if st == "open")
+    if fails >= 4:
+        return (f"stuck, rung 4: {fails} failed runs on step {cur.n}: write the diagnosis and block it (fm task block "
+                f"{b.id} \"<why>\"), then take the next task")
+    if fails >= 3 and hyps >= 2:
+        return (f"stuck, rung 3: a differential table — one probe per open hypothesis, run once each, and record what "
+                f"each rules out (fm task hypo {b.id} …) before another fix")
+    if fails >= 3:
+        return f"stuck, rung 3: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
+    if fails >= 2:
+        return (f"stuck, rung 2: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger with "
+                f"what's been ruled out")
+    return None
+
+
+def andons(briefs):
+    """T-0648: [(task id, the andon's first line)] for open tasks whose lane holds an ANDON.md."""
+    out = []
+    for b in briefs:
+        lane = b.meta.get("lane")
+        if lane and b.status not in CLOSED:
+            try:
+                with open(os.path.join(lane, "ANDON.md"), encoding="utf-8", errors="replace") as f:
+                    first = next((x.strip() for x in f.read(4000).splitlines() if x.strip()), "")
+            except OSError:
+                continue
+            out.append((b.id, plain(redact(first)) or "(empty)"))
+    return out
+
+
 def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
     b, st, action = _next_for(p, briefs)
+    if b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
+            and not b.section("Plan review").strip():  # T-0662: L plans get a second read before approval
+        action += f" · before approving it: fm second plan {b.id} (another model reads the plan; protocols.json)"
+    rung = stuck_rung(b) if b is not None and b.status == "active" else None
+    if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
+        action += f" · {rung}"
+    raised = andons(briefs if briefs is not None else load_briefs(p))  # T-0648: a lane stopped to ask
+    if raised:
+        tid, text = raised[0]
+        action += (f" · andon from {tid}'s lane: {text[:160]} — answer it (fm bus send, or edit its brief), then delete "
+                   f"its ANDON.md" + (f"; {len(raised) - 1} more" if len(raised) > 1 else ""))
     try:
         fired = fired_decisions(p)
     except Exception:

@@ -108,3 +108,43 @@ class CommitOwnFiles(HookCase):
         self.fm("focus", "T-0002")
         r = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Second", check=False)
         self.assertIn("nothing to commit", r.stdout + r.stderr)
+
+
+class CommitAfterFocus(HookCase):
+    def test_a_file_another_task_edited_before_this_one_started_is_still_committed(self):
+        # T-0739: T-0684's own shell edits of CHANGELOG.md were left out because T-0683 had edited it after T-0684 was
+        # captured (but before it was focused)
+        self.fm("init")
+        self.fm("capture", "Later work")  # T-0001, captured long before it is worked
+        self.fm("task", "new", "First", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        notes = os.path.join(self.repo, "notes.md")
+        with open(notes, "w") as f:
+            f.write("one\n")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": notes}, "tool_response": {}})
+        self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "First")
+        self.fm("task", "new", "Later work", "--from", "T-0001", "--type", "FEATURE", "--tier", "S")
+        self.fm("task", "ac", "T-0001", "add", "ok", "--verify", "true")
+        self.fm("task", "step", "T-0001", "add", "s")
+        self.fm("focus", "T-0001")
+        with open(notes, "a") as f:  # through the shell: no touched event of its own
+            f.write("two\n")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Later")
+        shown = subprocess.run(["git", "-C", self.repo, "show", "--stat", "--format=%s", "HEAD"], capture_output=True,
+                               text=True).stdout
+        self.assertTrue(shown.startswith("Later"), shown)  # its own commit, not the one before
+        self.assertIn("notes.md", shown)
+
+
+class FinalRun(ForemanTestCase):
+    def test_run_is_the_final_check_even_when_every_step_has_evidence(self):
+        # T-0742: T-0686's close skipped --run (every step had evidence), so the full suite never ran at the close
+        self.fm("init")
+        self.fm("task", "new", "Two steps", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                "--step", "a", "--focus")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "false", check=False)
+        self.assertNotEqual(r.returncode, 0, "a failing final check stops the close")
+        self.assertNotEqual(c.find_brief(c.find_project(self.repo), "T-0001").status, "done")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true")
+        self.assertTrue(any("`true` → exit 0" in l and "[ran]" in l
+                            for l in c.find_brief(c.find_project(self.repo), "T-0001").evidence()))

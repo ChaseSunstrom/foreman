@@ -152,3 +152,11 @@ class NewFiles(ForemanTestCase):
                                  "python3 -c 'import calc; assert calc.g() == 2'", "--json", check=False).stdout)
         self.assertEqual((res["total"], res["proven"]), (3, 1))  # g's hunk is the one the check tests
         self.assertNotIn("+16", " ".join(u["at"] for u in res["unproven"]))
+
+
+class EditTool(GuardCase):
+    def test_the_driving_refusal_names_the_edit_tool(self):
+        # T-0740: 9 refusals in one day from edit scripts whose text names fm modules; the way out is the Edit tool
+        said = str(self.bash("python3 - <<'PY'\nimport fmcli\nfmcli.main()\nPY") or "")
+        self.assertIn("driving Foreman's modules", said)
+        self.assertIn("Edit or Write tool", said)
