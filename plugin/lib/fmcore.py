@@ -2222,6 +2222,12 @@ def _next_for(p, briefs=None):
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
         next(filter(mine, rank_inbox(briefs)), None)
     if not b:
+        import fmtidy  # T-0657: what a blocked task waited on may have changed since
+        state = {x.id: x.status for x in briefs}
+        retry = [x.id for x in briefs if x.status == "blocked" and fmtidy.unblocked(p, x, state)]
+        if retry:
+            return None, "idle", (f"queue is empty, but what {len(retry)} blocked task(s) waited on changed "
+                                  f"({', '.join(retry[:4])}): fm tidy --apply reopens them" + waits)
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
     since = last_change(p, b.id)
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)

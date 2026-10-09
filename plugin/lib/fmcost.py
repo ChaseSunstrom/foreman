@@ -327,6 +327,10 @@ def cmd_digest(args):
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
     insights = [(b.id, b.section("Insight").strip()) for b in done if b.section("Insight").strip()]  # T-0639
     lines += ["Insights:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in insights[-6:]] if insights else []
+    redo = [(b.id, b.section("Would do differently").strip()) for b in done if b.section("Would do differently").strip()]
+    lines += ["Would do differently:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in redo[-6:]] if redo else []
+    import fmoutcomes
+    lines += fmoutcomes.track_lines(p)  # T-0641
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
@@ -574,7 +578,48 @@ def _agents(p, args, fmcli):
         f"  {name}: {r['spawns']} spawns, {_human(r['tokens'])} tokens"
         + (f", lanes merged {r['merged']}, removed {r['removed']}" if name == "fm-builder" else "")
         for name, r in sorted(rows.items(), key=lambda kv: -kv[1]["tokens"]))) if rows else "No agent spawns recorded."
-    return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}}, text)
+    lenses, passes = yields(p, since)
+    text += ("\nAudit lenses (found something = fixed, found or captured; from the recorded results):\n" + "\n".join(
+        f"  {k}: {r['hit']} of {r['n']} found something" + (f", {r['fp']} false positive(s)" if r["fp"] else "")
+        for k, r in sorted(lenses.items(), key=lambda kv: -kv[1]["n"]))) if lenses else ""
+    text += ("\nPasses: " + " · ".join(f"{k}: {r['hit']} of {r['n']} {verb}" for k, (r, verb) in passes.items())
+             ) if passes else ""
+    return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}, "lenses": {k: dict(v) for k, v in
+                     lenses.items()}, "passes": {k: dict(r) for k, (r, _) in passes.items()}}, text)
+
+
+_HIT = re.compile(r"(?i)\b(fixed|found|caught|captured|T-\d{4,})\b")
+_CLEAN = re.compile(r"(?i)\s*(no|nothing|none|clean)\b")  # "no issues found" found nothing
+_FP = re.compile(r"(?i)(\d+)\s+false positives?\b|\bfalse positive\b|\bnot real\b")
+
+
+def yields(p, since):
+    """T-0640: ({lens: Counter(n, hit, fp)} from recorded audits, {pass: (Counter(n, hit), verb)}) since then: a lens
+    found something when its result says fixed, found, caught or captured (or names a task); false positives when it
+    says so. Passes: second plans that left dissent, second sessions that captured work."""
+    lenses = collections.defaultdict(collections.Counter)
+    second = collections.Counter()
+    for e in c.ledger_tail(p, 50000):
+        if str(e.get("ts", ""))[:19] < since:
+            continue
+        d = e.get("data") or {}
+        if e.get("event") == "audit" and d.get("lens"):
+            r, res = lenses[d["lens"]], str(d.get("result") or "")
+            fp = _FP.search(res)
+            r["n"] += 1
+            r["fp"] += int(fp.group(1)) if fp and fp.group(1) else bool(fp)
+            r["hit"] += bool(_HIT.search(_FP.sub("", res))) and not _CLEAN.match(res)
+        elif e.get("event") == "second_session" and "error" not in d:
+            second["n"] += 1
+            second["hit"] += bool(d.get("captured"))
+    plan = collections.Counter()
+    for b in c.load_briefs(p, include_archive=True):
+        if b.section("Plan review").strip() and str(b.meta.get("updated") or "")[:19] >= since:
+            plan["n"] += 1
+            plan["hit"] += bool(re.search(r"(?m)^- \[[ xX]\] ", b.section("Dissent")))
+    passes = {k: v for k, v in (("second plan", (plan, "left dissent")), ("second session", (second, "captured work")))
+              if v[0]["n"]}
+    return lenses, passes
 
 
 def cmd_usage(args):

@@ -73,6 +73,48 @@ def _rate(n, calls):
     return f"{n * 100 / calls:.1f}".rstrip("0").rstrip(".")
 
 
+STAGES = {"task_plan": "plan", "focus": "focus", "step_done": "step", "evidence": "evidence", "check_run": "check",
+          "audit": "audit", "finish": "finish", "task_done": "done", "task_block": "block"}
+SMOOTH = 3  # stage events or fewer for a finished task: too smooth to have been checked much
+
+
+def _failed(e):
+    d = e.get("data") or {}
+    if e.get("event") == "evidence":
+        return str(d.get("result") or "").startswith("exit ") and not str(d.get("result")).startswith("exit 0")
+    return e.get("event") == "check_run" and any((r or {}).get("exit") for r in d.get("results") or [])
+
+
+def _mine(ledger, label):
+    """T-0658: process mining over the window's ledgers — the paths tasks really take (stage sequences, repeats
+    collapsed), finished tasks that went smoothly but closed with a weak grade, and how many failed runs came before
+    each block (where work gives up)."""
+    runs = collections.defaultdict(list)
+    for lp, e in ledger:
+        if e.get("task") and e.get("event") in STAGES:
+            runs[(lp.slug, e["task"])].append((lp, e))
+    paths, smooth, gave_up = collections.Counter(), [], collections.defaultdict(list)
+    for (_, tid), pairs in runs.items():
+        lp, evs = pairs[0][0], [e for _, e in pairs]
+        seq = [STAGES[e["event"]] for e in evs]
+        seq = [s for i, s in enumerate(seq) if not i or s != seq[i - 1]]
+        if seq[-1] in ("done", "block"):
+            paths[" → ".join(seq)] += 1
+        end = evs[-1]
+        if end["event"] == "task_done" and len(evs) <= SMOOTH \
+                and (end.get("data") or {}).get("verified") not in ("strong", "ok"):
+            smooth.append(f"{label(lp)}{tid} ({len(evs)} stage events, graded "
+                          f"{(end.get('data') or {}).get('verified') or 'ungraded'})")
+        if end["event"] == "task_block":
+            gave_up[sum(_failed(e) for e in evs)].append(f"{label(lp)}{tid}")
+    return {
+        "common paths (stage sequences of tasks that finished or blocked)": [
+            f"{s} ×{n}" for s, n in paths.most_common(3)],
+        "smooth but unverified (few stage events, weak grade: check these held)": smooth[:MAX_LINES],
+        "give-up points (failed runs before each block)": [
+            f"after {n} failed run(s): {', '.join(t[:5])}" for n, t in sorted(gave_up.items())][:MAX_LINES]}
+
+
 def digest(p, recheck=True):
     """{section: [lines]} of what went wrong or slow since the last pass, newest kinds first, each line bounded, and the
     window's counts (kept at --mark for the next digest's trend)."""
@@ -185,6 +227,7 @@ def digest(p, recheck=True):
     out["notes repeated 3+ times (a candidate for a hard check instead of prose: T-0470)"] = [
         f"{k} ({n}× from {ev})" for (ev, k), (n, _) in budget.items()
         if n >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two speak every turn
+    out.update(_mine(ledger, label))  # T-0658
     lessons = collections.Counter(e.get("task") for e in events if e.get("kind") == "lesson_shown")  # T-0454
     out["lessons shown (one shown often while the same blocks recur may need rewording)"] = [
         f"{t}: {n}×" for t, n in lessons.most_common(MAX_LINES)]
