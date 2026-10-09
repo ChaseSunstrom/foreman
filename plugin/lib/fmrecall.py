@@ -360,6 +360,18 @@ def cmd_recall(args):
         return fmcli.out(args, rows, "\n".join(f"- {str(e.get('ts', ''))[:10]} {e.get('task') or '-'}: "
                                                 f"{c.plain((e.get('data') or {}).get('text', ''))}" for e in rows)
                          or "No corrections recorded.")
+    if getattr(args, "magnets", False):  # T-0613: where fixes keep landing
+        fixes = {b.id for b in c.load_briefs(p, include_archive=True) if b.type == "FIX"}
+        by_file = {}
+        for e in c.ledger_tail(p, 50000):
+            f = (e.get("data") or {}).get("file")
+            if e.get("event") == "touched" and e.get("task") in fixes and f:
+                by_file.setdefault(os.path.relpath(f, p.root), set()).add(e["task"])
+        rows = sorted(by_file.items(), key=lambda kv: (-len(kv[1]), kv[0]))[:args.n * 4]
+        return fmcli.out(args, {"magnets": {f: sorted(t) for f, t in rows}}, "Fix magnets (files the most FIX tasks "
+                         "touched):\n" + "\n".join(f"  {f} — {len(t)} fix{'es' if len(t) != 1 else ''} "
+                                                    f"({', '.join(sorted(t)[-4:])})" for f, t in rows)
+                         if rows else "No FIX task has touched a file yet.")
     if args.ask:  # T-0484
         hits = ask(p, args.ask, n=args.n)
         cited = list(dict.fromkeys(t for h in hits for t in h["cites"]))[:12]
