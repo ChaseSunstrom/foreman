@@ -904,9 +904,33 @@ def _grant(p, b, cats, sid, via, pin=None, h=None, **data):
     b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
     if cats:
         b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
+    if set(cats) & set(_UNDO) and c.git_root(p.root):  # T-0672 (T-0478): where to come back to, before it's used
+        point = undo_point(p.root)
+        if point.get("head"):
+            b.append_log(f"undo point before {', '.join(sorted(set(cats) & set(_UNDO)))}: HEAD {point['head'][:12]}"
+                         + (f", uncommitted work in stash commit {point['stash'][:12]} (git stash apply <it>)"
+                            if point.get("stash") else ""))
     c.save_brief(p, b)
     if cats:
         c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": cats, "via": via}, **data), session=sid)
+
+
+_UNDO = {  # T-0672 (T-0478): what a destructive grant can and can't be brought back from
+    "git-destructive": "restorable: Foreman records HEAD and a stash commit of uncommitted work before it's used",
+    "rm-outside": "irreversible: files deleted outside the repo can't be brought back from git",
+    "publish": "irreversible: a release, push to a registry or deploy can't be fully taken back",
+    "system": "may be irreversible: system changes outside the repo aren't recorded",
+}
+
+
+def restorable(category):
+    return _UNDO.get(category, "")
+
+
+def undo_point(root):
+    """T-0672: {"head", "stash"} for a repo: the commit it's on, and `git stash create`'s commit of uncommitted work
+    (it never touches the stash list or the working tree)."""
+    return {"head": c._git(root, "rev-parse", "HEAD").strip(), "stash": c._git(root, "stash", "create").strip()}
 
 
 _WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)
@@ -969,6 +993,7 @@ def _ask_prompt(pl, p, fmguard):
                       + ("" if fmplugins.pin_covers_code(pin) else
                          " (a remote source: the pin covers its marketplace entry, not the code it fetches)")
                       if pin else "")
+                   + "".join(f". {x}: {restorable(x)}" for x in cats if restorable(x))  # T-0672
                    + ". Yes grants it to that task; No refuses. Only your answer here can grant it.")
 
 
