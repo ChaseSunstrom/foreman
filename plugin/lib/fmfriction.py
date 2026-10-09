@@ -93,6 +93,10 @@ def digest(p, recheck=True):
     out["guard blocks (each a stop Claude had to work around; a false one costs a rewrite)"] = [
         f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
         + (f" — {now[i]}" if i in now else "") for i, ((cat, target), n) in enumerate(shown)]
+    rules = collections.Counter(e["rule"] for e in guard if e.get("rule"))  # T-0672: which checks fire most
+    if rules:
+        out["guard rules by fire count (a rule that fires often on harmless work is the one to look at)"] = [
+            f"{n}× {r}" for r, n in rules.most_common(MAX_LINES)]
 
     failed = [e for e in events if e.get("kind") == "tool_fail"]  # T-0301: grouped by why, not by which file
     why = lambda e: (e.get("tool"), c.fit(c.plain(str(e.get("error") or "no error recorded")), 90))

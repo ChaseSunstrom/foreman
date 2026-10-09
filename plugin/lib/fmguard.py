@@ -43,9 +43,17 @@ class Ctx:
 class Block:
     def __init__(self, category, detail):
         self.category, self.detail = category, detail
+        self.rule = rule_id(category, str(detail))  # T-0672: which check fired, for fire counts
 
     def __repr__(self):
         return f"Block({self.category!r}, {self.detail!r})"
+
+
+def rule_id(category, detail):
+    """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
+    paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
+    words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
+    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or 'other'}"
 
 
 def findings(tool_name, tool_input, ctx):

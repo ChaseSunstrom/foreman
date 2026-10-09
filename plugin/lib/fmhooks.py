@@ -773,12 +773,13 @@ def _pre_tool_use(raw):
             reason += (f" Stop retrying: this exact refusal came 3 times in a row. Instead, {how}record why the task "
                        f"can't go on (fm task block {tid} \"<why>\") and take the next task.")
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
-                "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
+                "rule": getattr(block, "rule", None), "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
                 "cmd": _window(c.redact(_target(pl.get("tool_input") or {})), block.detail)})  # T-0172, T-0423
         try:
             if p:
                 c.log_event(p, "guard_block", task=act.id if act else None,
-                            data={"category": block.category, "detail": str(block.detail)[:200]},
+                            data={"category": block.category, "detail": str(block.detail)[:200],
+                                  "rule": getattr(block, "rule", None)},  # T-0672 (committed fallback may lack it)
                             session=pl.get("session_id"))
         except Exception:
             log_error("PreToolUse", _tb())
