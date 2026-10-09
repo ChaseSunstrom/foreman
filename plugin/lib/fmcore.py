@@ -2229,6 +2229,9 @@ def _next_for(p, briefs=None):
             return None, "idle", (f"queue is empty, but what {len(retry)} blocked task(s) waited on changed "
                                   f"({', '.join(retry[:4])}): fm tidy --apply reopens them" + waits)
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
+    if b.status == "active" and b.meta.get("replan"):  # T-0603
+        return b, "replan", (f"replan {b.id}: {b.meta['replan']} — re-read Steps and the Execution prompt, change what "
+                             f"no longer holds, then fm task log {b.id} \"replan: <what changed>\"")
     since = last_change(p, b.id)
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
     group = []

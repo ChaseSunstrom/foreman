@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Planning and decomposition, part 1 (T-0691 milestone: T-0603, T-0604, T-0623, T-0624, T-0625, T-0626, T-0643, T-0644).
+  - Replan on surprise: `fm surprise`, or an assumption verified false, on an active M/L task makes `fm next` lead with a replan. A false assumption also names the steps that cite it as `(A<n>)`. `fm task log ID "replan: …"` clears it, and a close with a replan still unanswered warns.
+  - `fm second plan ID --role pre-mortem|naive|prosecutor|defender` reads the plan from a stress-test stance and saves the result as its own "Plan review: <role>" section.
+  - `fm focus` flags a step that explores an unknown placed after a step that is hard to undo. The word list is fixed and the flag is only a hint.
+  - planning.md gets a Steps rubric: risk and information order, `Spike:` steps, a walking skeleton first for FEATURE L, one observable per step, and obligations (FIX: contain, cure, inoculate; migrations: cleanup and rollback). The new `decomposition.md` holds the recipes. An L that closes with an empty Risks and rollback section warns.
+  - `fm next` on an active task past twice the usual time for its type and tier suggests a re-frame. `task_done` records planned scope against changed files, and `fm digest` shows the median ratio.
 - Metacognition and calibration (T-0690 milestone: T-0619, T-0620, T-0661).
   - `fm task set ID confidence=N` (0–100) records how likely a task is to hold on its first finish. `fm digest` and `fm outcomes` compare each confidence bucket with what happened and give a Brier score.
   - `fm outcomes --atlas` lists the files and languages where work didn't hold: tasks later fixed or reverted, and tasks that closed weak. `fm focus` adds a caution line when the task's scope covers a weak file, and `fm friction` lists the weakest.

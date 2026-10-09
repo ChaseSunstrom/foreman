@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import re
+import statistics
 
 import fmcore as c
 
@@ -331,6 +332,10 @@ def cmd_digest(args):
     lines += ["Would do differently:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in redo[-6:]] if redo else []
     import fmoutcomes
     outs = fmoutcomes.outcomes(p)
+    grew = [d["changed"] / d["planned"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done"
+            and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
+    lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
+              f"the paths they planned (median; T-0644)"] if grew else []
     lines += fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-0641, T-0619
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
