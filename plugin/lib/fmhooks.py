@@ -781,7 +781,7 @@ def _pre_tool_use(raw):
         return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard)
+        decision = _ask_prompt(pl, p, guard) or _wait_loop(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -889,6 +889,22 @@ def _grant(p, b, cats, sid, via, pin=None, h=None, **data):
     c.save_brief(p, b)
     if cats:
         c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": cats, "via": via}, **data), session=sid)
+
+
+_WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)
+
+
+def _wait_loop(pl):
+    """T-0426 (JARVIS: `until grep -q … log; do sleep 20; done` held the session 10 minutes): a foreground loop that
+    sleeps 5 s or more between checks leaves the session idle until it ends."""
+    ti = pl.get("tool_input") or {}
+    m = _WAIT_LOOP.search(ti.get("command") or "") if pl.get("tool_name") == "Bash" else None
+    if not m or ti.get("run_in_background") or (
+            m.group(1) and float(m.group(1)) * {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}[m.group(2)] < 5):
+        return None
+    return ("deny", "Foreman: a foreground wait loop holds this session idle until it ends. Run it with "
+                    "run_in_background (its completion notification wakes you) or as a Monitor, and do other work "
+                    "meanwhile: the next step, another task, a builder lane.")
 
 
 def _ask_prompt(pl, p, fmguard):

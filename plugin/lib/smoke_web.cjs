@@ -10,20 +10,28 @@ const PLACEHOLDERS = '[aria-busy="true"], [class*="skeleton" i], [class*="shimme
   '[class*="loading" i]:not(input, button, select, textarea, a)';
 const SETTLE_MS = 5000;
 const DEADLINE = Date.now() + 200000;  // under fm smoke's 240 s: print what was found rather than lose it all
+const VIEW_MS = 30000;  // T-0420: a view (or a load) that takes longer has stopped responding
+const HUNG = new Error("hung");
+
+const views = [], defects = [], notes = [], seen = new Set();
+const add = (where, what) => {
+  const key = where.split(" ")[0] + "|" + what;  // one report per viewport, at the first view it shows in
+  if (!seen.has(key)) { seen.add(key); defects.push({ where, what: what.slice(0, 300) }); }
+};
+const finish = () => { console.log(JSON.stringify({ views, defects, notes })); process.exit(0); };
+// T-0420: a frozen page leaves Playwright calls that never return; whatever happens, print what was found
+setTimeout(() => { notes.push(`stopped at the time limit after ${views.length} views`); finish(); }, DEADLINE + 15000 - Date.now());
+const withTimeout = (p, ms) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(HUNG), ms))]);
 
 (async () => {
-  const views = [], defects = [], notes = [], seen = new Set();
-  const add = (where, what) => {
-    const key = where.split(" ")[0] + "|" + what;  // one report per viewport, at the first view it shows in
-    if (!seen.has(key)) { seen.add(key); defects.push({ where, what: what.slice(0, 300) }); }
-  };
   const host = new URL(url).hostname;
   const ours = u => { try { return new URL(u).hostname === host; } catch (e) { return false; } };  // any port: its API
   const browser = await chromium.launch();
   for (const [label, viewport] of [["desktop", { width: 1440, height: 900 }], ["phone", { width: 390, height: 844 }]]) {
-    const ctx = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
+    let where = `${label} start`, ctx;
+    try { await withTimeout((async () => {  // a viewport gets its views' share of the deadline, then is abandoned
+    ctx = await browser.newContext({ viewport, ignoreHTTPSErrors: true });
     const page = await ctx.newPage();
-    let where = `${label} start`;
     page.on("pageerror", e => add(where, `page error: ${e.message}`));
     page.on("console", m => {
       if (m.type() === "error" && !m.text().startsWith("Failed to load resource")) add(where, `console error: ${m.text()}`);
@@ -41,8 +49,7 @@ const DEADLINE = Date.now() + 200000;  // under fm smoke's 240 s: print what was
       await page.goto(url, { waitUntil: "load", timeout: 30000 });
     } catch (e) {
       add(where, `did not load (is the server running?): ${e.message.split("\n")[0]}`);
-      await ctx.close();
-      continue;
+      return;
     }
     const check = async () => {
       views.push(where);
@@ -88,7 +95,7 @@ const DEADLINE = Date.now() + 200000;  // under fm smoke's 240 s: print what was
       for (const f of found) add(where, f);
       await page.screenshot({ path: path.join(out, `${views.length}-${where.replace(/[^\w]+/g, "-").slice(0, 60)}.png`) });
     };
-    await check();
+    await withTimeout(check(), VIEW_MS);
     const tabs = [];
     for (const tab of (await page.getByRole("tab").all()).slice(0, 24))
       if (await tab.isVisible()) tabs.push(tab);
@@ -102,7 +109,7 @@ const DEADLINE = Date.now() + 200000;  // under fm smoke's 240 s: print what was
           add(where, `tab can't be clicked: ${e.message.split("\n")[0]}`);
           continue;
         }
-        await check();
+        await withTimeout(check(), VIEW_MS);
       }
     } else {  // review: an app without role=tab is still more than its start view
       const links = await page.evaluate(() => [...new Set([...document.querySelectorAll('nav a[href], [role="navigation"] a[href]')]
@@ -117,12 +124,15 @@ const DEADLINE = Date.now() + 200000;  // under fm smoke's 240 s: print what was
           add(where, `did not load: ${e.message.split("\n")[0]}`);
           continue;
         }
-        await check();
+        await withTimeout(check(), VIEW_MS);
       }
     }
-    await ctx.close();
+    })(), Math.max(VIEW_MS, (DEADLINE - Date.now()) / (label === "desktop" ? 2 : 1))); } catch (e) {
+      add(where, e === HUNG ? `the page stopped responding (no answer for ${VIEW_MS / 1000} s)` : `crawl error: ${e.message}`);
+    }
+    if (ctx) ctx.close().catch(() => {});  // not awaited: a frozen renderer may never answer
     if (Date.now() > DEADLINE) { notes.push(`stopped at the time limit after ${views.length} views`); break; }
   }
-  await browser.close();
-  console.log(JSON.stringify({ views, defects, notes }));
-})().catch(e => { console.log(JSON.stringify({ views: [], defects: [{ where: "smoke", what: `crawl crashed: ${e.message}` }] })); });
+  await withTimeout(browser.close(), 10000).catch(() => {});
+  finish();
+})().catch(e => { add("smoke", `crawl crashed: ${e.message}`); finish(); });
