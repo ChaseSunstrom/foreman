@@ -284,6 +284,27 @@ def panicked():
     return os.path.exists(os.path.join(state_dir(), "PANIC"))
 
 
+def host_strain():
+    """T-0465: why this machine shouldn't take another lane (load over twice its CPUs, or under 512 MB available), or
+    None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
+    try:
+        fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
+        load = float(fake["load"]) if "load" in fake else os.getloadavg()[0]
+        cpus = int(fake["cpus"]) if "cpus" in fake else (os.cpu_count() or 1)
+        if "mem_mb" in fake:
+            mem = float(fake["mem_mb"])
+        else:
+            with open("/proc/meminfo") as f:
+                mem = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable:")) / 1024
+    except (OSError, ValueError, StopIteration, KeyError):
+        return None
+    if load > 2 * cpus:
+        return f"the host is loaded ({load:.1f} with {cpus} CPUs)"
+    if mem < 512:
+        return f"the host is low on memory ({mem:.0f} MB available)"
+    return None
+
+
 def refuse_if_paused():
     """T-0591: every launcher of a claude child calls this at its entry (and its command builder, so a path missed
     here still stops)."""
