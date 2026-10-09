@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.20 — 2026-10-09
 - Verification and product checking, first versions (T-0682 milestone: T-0457, T-0501, T-0458, T-0475, T-0474, T-0460).
   - `fm task prove ID --vacuous` names criteria whose checks also pass on the tree the task started from.
   - `fm task prove ID --same CMD` records a behaviour lock for CLEAN work when CMD's exit and output (timings aside) are the same before and after, and shows the difference when not.
