@@ -314,8 +314,11 @@ def task_assume(p, args):
         fact = " ".join(args.args).strip()
         if not fact:
             raise UsageError("an assumption needs its text")
-        b, n = mutate(p, args.id, lambda b: b.add_assumption(fact), "assumption", {"text": c.redact(fact)[:200]})
-        return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed].")
+        check = getattr(args, "check", None)  # T-0489: a command that stays true while it holds
+        text = fact + (f" — check: `{check}`" if check else "")
+        b, n = mutate(p, args.id, lambda b: b.add_assumption(text), "assumption", {"text": c.redact(fact)[:200]})
+        return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed]"
+                   + ("; fm sentinel re-runs its check." if check else "."))
     if len(args.args) != 1 or not args.args[0].isdigit() or (args.run is None) == (args.evidence is None):
         raise UsageError("fm task assume ID verify N --run CMD | --evidence \"<how it was checked>\"")
     n = int(args.args[0])
@@ -516,7 +519,13 @@ def cmd_task(args):
             if status != "dropped" and b.status in ("active", "verifying"):
                 c.pause_snapshot(p.root, b)  # T-0136
             b.meta["status"] = status
-            b.append_log(f"{status}: {reason}" if reason else status)
+            until = getattr(args, "until", None)
+            if until:  # T-0450: fm next names it again from then
+                b.meta["revisit"] = until
+            b.append_log((f"{status}: {reason}" if reason else status) + (f" (revisit {until})" if until else ""))
+        until = getattr(args, "until", None)
+        if until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
+            raise UsageError("--until takes a date, YYYY-MM-DD")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
@@ -984,7 +993,33 @@ def _close_warnings_of(p, b, files):
         if stray:
             out.append(f"ignored files outside its scope [{', '.join(b.meta['scope'])}] left behind: "
                        + ", ".join(stray[:10]))
-    return out
+    drift = _tier_drift(p, b, files)  # T-0488
+    return out + ([drift] if drift else [])
+
+
+def _tier_drift(p, b, files):
+    """T-0488: the diff's size against the planned tier (S: a few files and lines; M: up to a large batch), so the
+    next plan of this kind is sized from what it really took."""
+    base = c.task_base(p.root, b) if files and c.git_root(p.root) else None
+    if not base:
+        return None
+    lines, seen = 0, set()
+    for row in (c._git(p.root, "diff", "--numstat", base, "--", *files[:500], timeout=30) or "").splitlines():
+        add, rem, name = (row.split("\t") + ["", "", ""])[:3]
+        seen.add(name)
+        lines += (int(add) if add.isdigit() else 0) + (int(rem) if rem.isdigit() else 0)
+    for f in files[:500]:  # new, untracked files: every line is added
+        if f not in seen:
+            try:
+                with open(os.path.join(p.root, f), "rb") as fh:
+                    lines += fh.read(2_000_000).count(b"\n")
+            except OSError:
+                pass
+    size = "L" if len(files) > 20 or lines > 1500 else "M" if len(files) > 3 or lines > 150 else "S"
+    if "SML".index(size) > "SML".index(b.tier):
+        return (f"{b.id} was planned {b.tier}, but its diff is {size}-sized ({len(files)} files, {lines} lines): "
+                f"plan this kind of change as {size} next time")
+    return None
 
 
 def cmd_batch(args):
@@ -1147,6 +1182,13 @@ def task_set(p, args):
                 raise UsageError(f"unknown type {v!r}")
         if k == "tier" and v not in ("S", "M", "L"):
             raise UsageError("tier must be S, M or L")
+        if k == "approved" and v == "true":  # T-0490: an L feature names what it builds on before it's approved
+            b = need_brief(p, args.id)
+            if b.type == "FEATURE" and b.tier == "L" and not b.section("Build vs reuse").strip() and \
+                    not (args.section == "Build vs reuse" and (args.text or "").strip()):
+                raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
+                                 f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
+                                 f"reuses, or why nothing fits (fm recall, fm map)>\"")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -2027,17 +2069,35 @@ def cmd_sentinel(args):
                     skipped += 1
                 elif cmd not in cmds:
                     cmds[cmd] = b.id
+    checks = {}  # T-0489: assumptions a finished task rested on, with a command that stays true while they hold
+    for b in done:
+        for line in b.section(b.ASSUMPTIONS).splitlines():
+            m = re.match(r"- \[\w+\] (.+?) — check: `(.+)`\s*$", line)
+            if m and not _SIDE_EFFECTS.search(m.group(2)):
+                checks.setdefault(m.group(2), (b.id, m.group(1)))
     results = []
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
         results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
+    for cmd, (tid, fact) in list(checks.items())[:args.max]:
+        code, output = c.run_command(p.root, cmd, args.timeout)
+        results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output), "assumption": fact})
+        if code:
+            title = _title(f"Assumption broke for {tid}: {fact}")
+            if not any(x.title == title for x in c.load_briefs(p) if x.status not in c.CLOSED):
+                with c.lock(p.dir):
+                    nb = _create(p, title, "FIX", "S", "captured", raw=f"{title} (its check `{cmd}` now fails)",
+                                 source="discovered", depends=[tid])
+                    c.log_event(p, "capture", task=nb.id, data={"source": "sentinel", "assumption_of": tid})
+                    c.regen_views(p)
     failed = [r for r in results if r["exit"]]
     c.log_event(p, "sentinel", data={"ran": len(results), "failed": [(r["task"], r["cmd"][:120]) for r in failed]},
                 session=session())
     out(args, {"results": results, "failed": len(failed), "skipped": skipped},
         f"Sentinel: {len(results)} past check(s) from {len(done)} finished task(s); {len(failed)} failing now"
         + (f"; {skipped} with side effects skipped" if skipped else "") + "".join(
-            f"\n  ✗ {r['task']}: {r['cmd']} → {r['result']}" for r in failed))
+            f"\n  ✗ {r['task']}: " + (f"assumption \"{r['assumption']}\": " if r.get("assumption") else "")
+            + f"{r['cmd']} → {r['result']}" for r in failed))
     return 1 if failed else 0
 
 
@@ -2431,8 +2491,14 @@ def _sync_in(args):
 
 
 def cmd_next(args):
-    b, st, action = c.next_for(resolve(args))
-    out(args, {"task": b.id if b else None, "stage": st, "action": action}, f"Next: {action}")
+    p = resolve(args)
+    b, st, action = c.next_for(p)
+    usual = None
+    if b and b.status != "active":  # T-0451: what this kind of task usually takes here (fm next only: not the hooks)
+        import fmwatch
+        usual = fmwatch.typical(c.ledger_tail(p, 5000)).get(f"{b.type}/{b.tier}")
+    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
+        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else ""))
 
 
 def cmd_autonomy(args):
@@ -2497,7 +2563,7 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects sweep machine watch"),
+    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2715,6 +2781,8 @@ def build_parser():
     g = t.add_mutually_exclusive_group()
     g.add_argument("--run", metavar="CMD", help="verify: run CMD; exit 0 marks it verified, anything else false")
     g.add_argument("--evidence", metavar="HOW", help="verify: how it was checked, when it can't run (file:line read…)")
+    t.add_argument("--check", metavar="CMD", help="add: a command that stays true while the assumption holds; fm "
+                                                  "sentinel re-runs it after the task is done (T-0489)")
     t.add_argument("--timeout", type=float, default=600)
     t = tadd("done")
     t.add_argument("id")
@@ -2729,6 +2797,7 @@ def build_parser():
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
+    t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450)")
 
     s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
@@ -2781,6 +2850,13 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=300)
     s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
                                                  "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
+    s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
+                                                             "schedule or when a file changes (T-0452)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "run"])
+    s.add_argument("text", nargs="*", help="add: what to capture · rm: N")
+    s.add_argument("--every", help="add: a period, e.g. 30m, 6h, 1d, 1w")
+    s.add_argument("--on-change", dest="on_change", help="add: a file in the project; captures when its content changes")
+    s.add_argument("--type", help="add: the captured task's type (default FEATURE)")
     s = add("night", lazy("fmnight", "cmd_night"),
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
                  "refused at high usage; fm digest reports it")

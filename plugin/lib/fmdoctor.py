@@ -605,6 +605,7 @@ def check_self_docs(home=None, plugin=PLUGIN):
             name = name[:-len(strip)] if strip and name.endswith(strip) else name
             if name not in master:
                 bad.append(f"MASTER.md doesn't mention the {kind} {name}")
+    bad += [f"MASTER.md doesn't name the module {m}" for m in missing_modules(home, master)]  # T-0491
     readme, install = _read(os.path.join(home, "README.md")) or "", _read(os.path.join(home, "install.sh")) or ""
     header = "\n".join(l for l in install.splitlines()[:20] if l.startswith("#"))  # the --help text
     help_flags = set(re.findall(r"(--[\w-]+)", header))
@@ -614,6 +615,14 @@ def check_self_docs(home=None, plugin=PLUGIN):
     bad = list(dict.fromkeys(bad))
     return Result("self docs", "FAIL" if bad else "PASS", "; ".join(bad[:12]) + (f" (+{len(bad) - 12} more)" if len(bad) > 12
                                                                                   else "") if bad else "docs match the code")
+
+
+def missing_modules(home, master=None):
+    """T-0491: plugin/lib/fm*.py modules MASTER.md never names, so its module map keeps up with the code."""
+    master = master if master is not None else (_read(os.path.join(home, "MASTER.md")) or "")
+    lib = os.path.join(home, "plugin", "lib")
+    names = sorted(f[:-3] for f in (os.listdir(lib) if os.path.isdir(lib) else []) if re.fullmatch(r"fm\w+\.py", f))
+    return [n for n in names if not re.search(rf"\b{n}\b", master)]
 
 
 def check_state_dir(home, state):
