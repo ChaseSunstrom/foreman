@@ -1,0 +1,6 @@
+{
+  "_": "T-0662: how much deliberation a task gets, by tier. panel: what runs before execution; dissent: objections are kept open in the brief until answered (fm task dissent).",
+  "S": {"panel": "none", "why": "a small, obvious change: a panel costs more than it finds"},
+  "M": {"panel": "optional", "why": "fm second plan when the approach is a real choice"},
+  "L": {"panel": "fm second plan", "before": "approval", "why": "cross-cutting or risky: another model reads the plan before it is approved"}
+}
