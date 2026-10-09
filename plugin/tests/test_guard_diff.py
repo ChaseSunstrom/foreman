@@ -98,6 +98,22 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'for d in /home/sb x; do echo done; rm -rf "$d"; done', 'false && for d in x; do :; done; rm -rf "/home/sb$d"',
          'true | for d in x; do :; done; rm -rf "/home/sb$d"', 'IFS=,; for d in x,/home/sb; do rm -rf $d; done',
          'for d in /home/sb x; do echo \\; done; rm -rf "$d"; done', 'for d in /home/sb x; do echo a # ; done\nrm -rf "$d"; done']
+# T-0414: a data-reading python -c is judged by what runs before it; these run beside it or before it all the same (a
+# bare &, a group's redirect, an exported or reused name, a substitution that writes) and plant a json.py it imports
+EVIL = "import os; os.system('rm -rf ~')"
+EXTRA += [r.replace("EVIL", EVIL) for r in (
+    'curl -s file:///dev/null | python3 -c "import json" & echo "EVIL" > json.py; wait',
+    '(curl -s file:///dev/null | python3 -c "import json"; true) & echo "EVIL" > json.py; wait',
+    'curl -s file:///dev/null | python3 -c "import json" &</dev/null echo "EVIL" > json.py; wait',
+    'T=`echo "EVIL" | curl -s -o json.py file:///dev/stdin`; curl -s file:///dev/null | python3 -c "import json"',
+    'printf "#!/bin/sh\\nrm -rf ~\\n" > python3; chmod +x python3; PATH=.:$PATH; curl -s file:///dev/null | python3 -c "1"',
+    'T=$(echo "EVIL" | curl -s -o json.py file:///dev/stdin); curl -s file:///dev/null | python3 -c "import json"',
+    'T="$(echo "EVIL" | curl -s -o json.py file:///dev/stdin)"; curl -s file:///dev/null | python3 -c "import json"',
+    'cat <<X\n$(echo "EVIL" | curl -s -o json.py file:///dev/stdin)\nX\ncurl -s file:///dev/null | python3 -c "import json"',
+    'printf -v U %s -ojson.py; echo "EVIL" | curl -s $U file:///dev/stdin; curl -s file:///dev/null | python3 -c "import json"',
+    'U=$(echo "\'); import os; os.system(\'rm -rf ~\'); print(\'"); curl -s file:///dev/null | python3 -c "print(\'$U\')"',
+    '(echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json") > json.py',
+    '{ echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json"; } > json.py')]
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
@@ -154,9 +170,12 @@ class GuardAgainstBash(unittest.TestCase):
                 ran += 1
                 if not g.check_bash(cmd, self.ctx):
                     bypasses.append(f"{kind}: {cmd!r} ran {calls[0]!r}")
-        for cmd in EXTRA:
+        for cmd in EXTRA:  # T-0414: the guard reads a command before it runs, in a clean folder (a row may plant files)
+            shutil.rmtree(self.project)
+            os.makedirs(self.project)
+            found = g.check_bash(cmd, self.ctx)
             calls = [c for c in self.run_in_sandbox(cmd) if dangerous(c)]
-            if calls and not g.check_bash(cmd, self.ctx):
+            if calls and not found:
                 bypasses.append(f"extra: {cmd!r} ran {calls[0]!r}")
         self.assertGreater(ran, len(FORMS), "the stand-ins logged too little: the corpus would be vacuous")
         self.assertEqual(bypasses, [], "\n" + "\n".join(bypasses))
