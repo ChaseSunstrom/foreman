@@ -1,7 +1,10 @@
 """T-0160: the guard against real bash. Each corpus command runs in a bubblewrap sandbox (read-only /, a tmpfs /home, no
 network) with logging stand-ins for rm, git and claude first on PATH; a dangerous call the stand-ins log that
 check_bash didn't block is a bypass. Hand-tracing found four in a day; this finds the class mechanically."""
+import ast
 import os
+import random
+import re
 import shutil
 import subprocess
 import sys
@@ -138,6 +141,69 @@ def dangerous(line):
     return False
 
 
+# T-0433: the fuzzer. A wider sweep: FM_FUZZ_SEED=<n> FM_FUZZ_CASES=<n> on the fuzz test; each escape it finds goes in
+# ESCAPES, and gets a guard fix of its own
+SEED, CASES = int(os.environ.get("FM_FUZZ_SEED", 433)), int(os.environ.get("FM_FUZZ_CASES", 300))
+ESCAPES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "guard_fuzz_escapes.txt")
+
+
+def wrap(form, p):
+    """form around p, p escaped for the quotes the form puts it in, so a nested call still runs."""
+    before = form.split("{p}")[0]
+    if before.count("'") % 2:
+        p = p.replace("'", "'\\''")
+    elif before.endswith('"'):
+        p = re.sub(r'(["\\$`])', r"\\\1", p)
+    elif before.endswith("`"):
+        p = re.sub(r"([\\`])", r"\\\1", p)
+    return form.replace("{p}", p)
+
+
+def _at(rng, cmd, pattern, repl):
+    """cmd with one match of pattern, chosen by rng, replaced by repl(match)."""
+    spots = list(re.finditer(pattern, cmd))
+    if not spots:
+        return cmd
+    m = rng.choice(spots)
+    return cmd[:m.start()] + repl(m) + cmd[m.end():]
+
+
+# each one keeps what bash runs in most spots; where it doesn't, bash makes no dangerous call and the case is vacuous
+MUTATIONS = [
+    lambda rng, c: _at(rng, c, r"[a-z](?=[a-z])", lambda m: m[0] + rng.choice(["''", '""', "\\"])),  # r''m r""m r\m
+    lambda rng, c: _at(rng, c, r"\b(rm|git|claude|push)\b", lambda m: rng.choice(['"%s"', "'%s'", "\\%s"]) % m[0]),
+    lambda rng, c: _at(rng, c, r"\$([A-Za-z_]\w*)", lambda m: rng.choice(["${%s}", "${%s:-}", "${%s#}"]) % m[1]),
+    lambda rng, c: _at(rng, c, r"(?<=\w) (?=[\w-])", lambda m: "${IFS}"),
+    lambda rng, c: _at(rng, c, r"(?<![\\;]) *;(?!;) *", lambda m: "\n"),  # a line break for a ;
+    lambda rng, c: _at(rng, c, r"(&&|\|\|?) *", lambda m: m[1] + "\n"),  # a list or pipe continued on the next line
+    lambda rng, c: _at(rng, c, r"(?<=\S)(?=\S)", lambda m: "\\\n"),  # a backslash continuation, even mid-word
+    lambda rng, c: _at(rng, c, r"~(?=[\s\"';)/]|$)", lambda m: rng.choice(['"$HOME"', "$HOME", "${HOME}", "~/."])),
+    lambda rng, c: _at(rng, c, r"(?<= )-rf\b", lambda m: rng.choice(["-r -f", "-fr", "-Rf", "--recursive --force"])),
+]
+
+
+def fuzz(rng, n):
+    """n commands: a payload in one to three nested FORMS, or an EXTRA row, then one to three MUTATIONS."""
+    for _ in range(n):
+        if rng.random() < 0.5:
+            cmd = rng.choice(list(PAYLOADS.values()))
+            for _ in range(rng.randint(1, 3)):
+                cmd = wrap(rng.choice(FORMS), cmd)
+        else:
+            cmd = rng.choice(EXTRA)
+        for _ in range(rng.randint(1, 3)):
+            cmd = rng.choice(MUTATIONS)(rng, cmd)
+        yield cmd
+
+
+def saved_escapes():
+    """(cmd, still_open) per saved escape: one Python string literal a line; "open " before one the guard still
+    misses (an expected failure until its guard fix lands)."""
+    with open(ESCAPES) as f:
+        rows = [ln.strip() for ln in f if ln.strip() and not ln.startswith("#")]
+    return [(ast.literal_eval(r.removeprefix("open ")), r.startswith("open ")) for r in rows]
+
+
 @unittest.skipUnless(shutil.which("bwrap") and shutil.which("bash"), "needs bubblewrap and bash")
 class GuardAgainstBash(unittest.TestCase):
     def setUp(self):
@@ -162,7 +228,10 @@ class GuardAgainstBash(unittest.TestCase):
                 "--dev", "/dev", "--proc", "/proc", "--unshare-all", "--die-with-parent", "--chdir", self.project,
                 "--setenv", "HOME", HOME, "--setenv", "PATH", f"{self.bin}:/usr/bin:/bin",
                 "--setenv", "FM_DIFF_LOG", self.log, "bash", "-c", cmd]
-        subprocess.run(argv, capture_output=True, timeout=10)
+        try:
+            subprocess.run(argv, capture_output=True, timeout=10)
+        except subprocess.TimeoutExpired:  # T-0433: a fuzzed loop can spin; what it called before still counts
+            pass
         with open(self.log) as f:
             return [ln.rstrip("\n") for ln in f if ln.strip()]
 
@@ -177,15 +246,40 @@ class GuardAgainstBash(unittest.TestCase):
                 ran += 1
                 if not g.check_bash(cmd, self.ctx):
                     bypasses.append(f"{kind}: {cmd!r} ran {calls[0]!r}")
-        for cmd in EXTRA:  # T-0414: the guard reads a command before it runs, in a clean folder (a row may plant files)
-            shutil.rmtree(self.project)
-            os.makedirs(self.project)
-            found = g.check_bash(cmd, self.ctx)
-            calls = [c for c in self.run_in_sandbox(cmd) if dangerous(c)]
-            if calls and not found:
-                bypasses.append(f"extra: {cmd!r} ran {calls[0]!r}")
+        bypasses += ["extra: " + e for e in (self.unblocked(cmd)[1] for cmd in EXTRA) if e]
         self.assertGreater(ran, len(FORMS), "the stand-ins logged too little: the corpus would be vacuous")
         self.assertEqual(bypasses, [], "\n" + "\n".join(bypasses))
+
+    def unblocked(self, cmd):
+        """(ran, escape): whether bash made a dangerous call, and that call when check_bash blocked nothing. The guard
+        reads the command before it runs, in a clean folder (T-0414: a row may plant files)."""
+        shutil.rmtree(self.project)
+        os.makedirs(self.project)
+        found = g.check_bash(cmd, self.ctx)
+        calls = [c for c in self.run_in_sandbox(cmd) if dangerous(c)]
+        return bool(calls), (f"{cmd!r} ran {calls[0]!r}" if calls and not found else None)
+
+    def test_fuzzed_forms_never_run_a_dangerous_call_unblocked(self):
+        # T-0433: forms nested in forms and rows mutated (quotes, ${}, $IFS, line breaks, continuations), one fixed
+        # seed; a saved escape is the next test's to judge
+        known = {cmd for cmd, _ in saved_escapes()}
+        ran, bypasses = 0, []
+        for cmd in fuzz(random.Random(SEED), CASES):
+            did, escape = self.unblocked(cmd)
+            ran += did
+            bypasses += [escape] if escape and cmd not in known else []
+        self.assertGreater(ran, CASES // 2, "too few fuzzed cases made a dangerous call: the fuzz would be vacuous")
+        self.assertEqual(bypasses, [], f"\n{chr(10).join(bypasses)}\nsave each in {ESCAPES} and open a guard fix")
+
+    def test_saved_fuzz_escapes_stay_blocked(self):
+        for cmd, still_open in saved_escapes():
+            with self.subTest(cmd=cmd):
+                did, escape = self.unblocked(cmd)
+                self.assertTrue(did, "a saved escape that makes no dangerous call tests nothing")
+                if still_open:  # an expected failure: it flips once its guard fix lands; then drop the "open " mark
+                    self.assertTrue(escape, "the guard blocks this one now: drop its \"open \" mark")
+                else:
+                    self.assertIsNone(escape)
 
 
 if __name__ == "__main__":
