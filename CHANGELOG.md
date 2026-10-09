@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm mission --request "<words>"` (T-0375) writes the full mission for an open-ended or exhaustive request, so nobody has to hand-write one. It reads the project's files and lists the surfaces it ships (web UI, mobile, desktop, server, car or embedded, AI and agents). It adds the lenses those call for to fm ideas' defaults: beautiful UI and motion, every device and surface, agents of agents, privacy and local-first. It writes the pillars of a complete pass: finish the queue in builder lanes, a capability map, a recursive brainstorm that shows every idea and runs until dry, a UI pass with screenshots, verification on the real path, privacy, a repo sweep, and asking nothing mid-run. It also writes the context pack and the exact `fm ideas` line, both under `research/`. The prompt hook points exhaustive and open-ended requests at it, and the brainstorm skill's step 2 starts with it.
+- `fm task finish --commit` reports how many files the commit holds (T-0380), counted from the commit itself, so a commit that picked up less than the task touched is visible at once.
 - The headless-wait nudge (T-0310) now fires only on Claude Code before 2.1.292 (T-0372). Newer `claude -p` runs wait for background work and wake on it, so the nudge just made Claude poll. The version comes from `claude --version`, read at most once a day.
 
 ## 1.2.3 — 2026-10-09

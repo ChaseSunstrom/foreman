@@ -2074,7 +2074,7 @@ def _all_parsers(parser):
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
-    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research ideas "
+    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -2582,6 +2582,9 @@ def build_parser():
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=300)
 
+    s = add("mission", lazy("fmmission", "cmd_mission"), help="the mission and brainstorm seeds for an open-ended "
+                                                               "request, composed from the project (T-0375)")
+    s.add_argument("--request", help="the user's words, verbatim")
     s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "

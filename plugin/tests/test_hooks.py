@@ -208,6 +208,13 @@ class UserPromptSubmit(HookCase):
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nCLEAN: b"}))
         self.assertIn("CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE", ctx)
 
+    def test_open_ended_request_points_at_mission(self):
+        # T-0375: the mission and its brainstorm seeds are composed by fm, not left for the model to write by hand
+        self.fm("init")
+        for prompt in ("super improve it", "make it genuinely fully featured"):
+            with self.subTest(prompt=prompt):
+                self.assertIn("fm mission", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt})))
+
     def test_open_ended_request_points_at_brainstorm(self):
         self.fm("init")
         self.assertIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))

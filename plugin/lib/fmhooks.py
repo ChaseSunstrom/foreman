@@ -468,10 +468,11 @@ def user_prompt_submit(pl):
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
     elif c.is_exhaustive(text):
-        parts.append("Exhaustive request (everything / fully featured): the Foreman procedure is /foreman:brainstorm in "
-                     "super mode (fm ideas --rounds 4: rounds build on each other until dry), then every grounded idea")
+        parts.append("Exhaustive request (everything / fully featured): run fm mission --request \"<their words>\" (it "
+                     "composes the mission, lenses and fm ideas line), then /foreman:brainstorm super mode (--rounds 4) until dry")
     elif not r.items and c.is_open_ended(text):
-        parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
+        parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm, "
+                     "seeded by fm mission --request \"<their words>\"")
     elif c.is_broad(text):
         parts.append("Broad request: sweep the whole space before planning (fm ideas --lens 'capability map' "
                      "--lens approaches, or a capability list in the brief)")
