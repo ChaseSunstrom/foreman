@@ -102,7 +102,7 @@ class Checks(unittest.TestCase):
         self.write("fh/plugin/skills/extra/SKILL.md", "---\nname: extra\ndescription: x\n---\n")
         r = d.check_self_docs(home, os.path.join(home, "plugin"))
         self.assertEqual(r.status, "FAIL")
-        for needle in ("fm teleport", "MASTER.md lacks fm agents, ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
+        for needle in ("fm teleport", "MASTER.md lacks fm adopt, agents, ask", "doctor", "extra", "--frobnicate", "--no-wiring"):
             self.assertIn(needle, r.detail)
 
     def test_state_location(self):
@@ -216,6 +216,10 @@ class Checks(unittest.TestCase):
         home = os.path.join(self.t, "fh")
         self.assertEqual(d.check_backup(home).status, "FAIL")
         self.write("fh/backups/claude-20260101-000000.tgz", "x")
+        self.assertEqual(d.check_backup(home).status, "FAIL")  # T-0574: an archive that doesn't open isn't a backup
+        import tarfile
+        with tarfile.open(os.path.join(home, "backups", "claude-20260102-000000.tgz"), "w:gz") as t:
+            t.add(os.path.join(home, "backups", "claude-20260101-000000.tgz"), "x")
         self.assertEqual(d.check_backup(home).status, "PASS")
 
     def test_statusline_and_deny(self):
