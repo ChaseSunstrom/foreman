@@ -648,6 +648,8 @@ def task_finish(p, args):
              f"its own"] if missing else []) + _finish_gaps(b, args, lenses)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
+    if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
+        todo.append(("final", None, args.run))
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -655,8 +657,8 @@ def task_finish(p, args):
         for n in evidenced:
             x.mark_step(n)  # refuses a failed run, as fm task step done does
         for kind, n, cmd, code, output in results:
-            x.add_evidence(cmd, c.run_result(code, output), tree=tree, ran=True, **{kind: n})
-            if not code:
+            x.add_evidence(cmd, c.run_result(code, output), tree=tree, ran=True, **({} if kind == "final" else {kind: n}))
+            if not code and kind != "final":
                 x.check_ac(n) if kind == "ac" else x.mark_step(n)
         if not any(code for *_, code, _ in results):
             small = b.tier == "S" and all(lens != "self" for lens, _ in lenses)  # T-0129: --audit is S's self audit
@@ -667,7 +669,8 @@ def task_finish(p, args):
             if getattr(args, "why_not_caught", None):  # T-0598
                 x.set_section("Why not caught", c.redact(args.why_not_caught))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
-    failed = [f"{kind} {n}: {cmd} → {c.run_result(code, output)}" for kind, n, cmd, code, output in results if code]
+    failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
+              for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted

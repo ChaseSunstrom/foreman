@@ -133,3 +133,18 @@ class CommitAfterFocus(HookCase):
                                text=True).stdout
         self.assertTrue(shown.startswith("Later"), shown)  # its own commit, not the one before
         self.assertIn("notes.md", shown)
+
+
+class FinalRun(ForemanTestCase):
+    def test_run_is_the_final_check_even_when_every_step_has_evidence(self):
+        # T-0742: T-0686's close skipped --run (every step had evidence), so the full suite never ran at the close
+        self.fm("init")
+        self.fm("task", "new", "Two steps", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true",
+                "--step", "a", "--focus")
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "true")
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "false", check=False)
+        self.assertNotEqual(r.returncode, 0, "a failing final check stops the close")
+        self.assertNotEqual(c.find_brief(c.find_project(self.repo), "T-0001").status, "done")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true")
+        self.assertTrue(any("`true` → exit 0" in l and "[ran]" in l
+                            for l in c.find_brief(c.find_project(self.repo), "T-0001").evidence()))
