@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Planning and decomposition, part 2 (T-0692 milestone: T-0645, T-0666).
+  - Plan from history: at close, a task keeps a "Plan gaps" section listing the steps added after work started and the steps whose first run failed. `fm focus` shows "steps similar plans added late" from related finished tasks.
+  - Step contracts: a step can say `(produces: PATH, …)` and `(requires: PATH, …)`. `fm focus` flags an undone step whose product already exists, and a requirement that doesn't exist and that no earlier step produces.
 
 ## 1.2.25 — 2026-10-09
 - Planning and decomposition, part 1 (T-0691 milestone: T-0603, T-0604, T-0623, T-0624, T-0625, T-0626, T-0643, T-0644).

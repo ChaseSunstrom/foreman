@@ -67,7 +67,8 @@ def _documents(p, skip=None):
                          " ".join(b.meta.get("scope") or [])])
         yield "brief", label, text, b.tier if b.status == "done" else None, {
             "age": _age(b.meta.get("updated") or b.meta.get("created")), "files": _files(b), "steps": len(b.steps()),
-            "id": b.id}
+            "id": b.id, "late": [x[len("- added late: "):] for x in b.section("Plan gaps").splitlines()
+                                 if x.startswith("- added late: ")]}
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -273,6 +274,9 @@ def render(hits, tier=None):
         steps = [x["steps"] for _, x in done]
         lines.append(f"- similar finished tasks took {min(steps)}–{max(steps)} steps" if len(steps) > 1 else
                      f"- the similar finished task took {steps[0]} steps")
+    late = [f"{t} ({x['id']})" for _, x in done for t in x.get("late") or []]
+    if late:  # T-0645: what similar plans had to add once work began
+        lines.append(c.plain("- steps similar plans added late: " + "; ".join(late[:4])))
     start = next((x for _, x in done if x.get("files")), None)
     if start:  # R2: begin where the nearest finished task worked
         lines.append(c.plain(f"- start here (files {start['id']} touched): {', '.join(start['files'][:6])}"))
