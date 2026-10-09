@@ -140,6 +140,12 @@ def cmd_intake(args):
         c.log_event(p, "intake", data={"created": [b.id for b in created], "overrides": r.overrides,
                                        "untagged": bool(r.untagged)}, session=session())
         c.regen_views(p)
+    if len(created) >= 3:  # T-0383: a batch of new work: relate it (detached, once a day)
+        import fmrelate
+        try:
+            fmrelate.spawn(p)
+        except OSError:  # the capture already happened; a relate that can't start costs it nothing
+            pass
     order = sorted(created, key=lambda b: (0 if b.priority == "urgent" else 1, c.RANK.get(b.type, 99), c.id_num(b.id)))
     data = {"created": [c.brief_summary(b) for b in created], "order": [c.brief_summary(b) for b in order],
             "context": r.context, "constraints": r.constraints, "done_when": r.done_when, "skip": r.skip,
@@ -1244,8 +1250,14 @@ def cmd_queue(args):
             c.log_event(p, "replan", data={"order": [b.id for b in order]}, session=session())
             c.regen_views(p, briefs)
     data = {"order": [c.brief_summary(b) for b in order], "cycles": cycles, "dangling": [list(d) for d in dangling]}
-    lines = [f"{i}. {b.id} {b.type} {b.tier} [{b.status}]{' !' if b.priority == 'urgent' else ''} — {b.title}"
-             for i, b in enumerate(order, 1)] or ["Queue empty."]
+    lines = []
+    for i, b in enumerate(order, 1):
+        lines.append(f"{i}. {b.id} {b.type} {b.tier} [{b.status}]{' !' if b.priority == 'urgent' else ''} — {b.title}")
+        why = [x for x in (b.meta.get("inferred_why") and f"after {b.meta['inferred_why']}",
+                           b.meta.get("group") and f"group: {b.meta['group']}") if x]
+        if why:  # T-0383: what fm relate inferred, and why
+            lines.append("   ↳ " + " · ".join(why))
+    lines = lines or ["Queue empty."]
     if cycles:
         lines.append("Cycles: " + "; ".join(" ↔ ".join(x) for x in cycles))
     if dangling:
@@ -2073,7 +2085,7 @@ def _all_parsers(parser):
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
-    ("Every task", "next capture intake batch task focus check gates checkpoint resume queue state log ask decide"),
+    ("Every task", "next capture intake batch task focus check gates checkpoint resume queue relate state log ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
     ("Project and settings", "init autonomy drive sensitive trust standing budget sync share notify plugins docs doctor tidy"),
@@ -2329,6 +2341,14 @@ def build_parser():
     s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
+    s.add_argument("--timeout", type=float, default=300)
+    s = add("relate", lazy("fmrelate", "cmd_relate"),
+            help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "
+                 "tool-less child's reading (runs on its own once a day when 3+ tasks are new); --clear undoes")
+    s.add_argument("--clear", action="store_true", help="drop every inferred dependency and group")
+    s.add_argument("--no-child", action="store_true", help="only the ids tasks mention: no model call")
+    s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
+    s.add_argument("--model", default="haiku", help="the child's model (default haiku)")
     s.add_argument("--timeout", type=float, default=300)
     s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
                                                  "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
