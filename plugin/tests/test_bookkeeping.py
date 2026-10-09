@@ -108,3 +108,28 @@ class CommitOwnFiles(HookCase):
         self.fm("focus", "T-0002")
         r = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Second", check=False)
         self.assertIn("nothing to commit", r.stdout + r.stderr)
+
+
+class CommitAfterFocus(HookCase):
+    def test_a_file_another_task_edited_before_this_one_started_is_still_committed(self):
+        # T-0739: T-0684's own shell edits of CHANGELOG.md were left out because T-0683 had edited it after T-0684 was
+        # captured (but before it was focused)
+        self.fm("init")
+        self.fm("capture", "Later work")  # T-0001, captured long before it is worked
+        self.fm("task", "new", "First", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        notes = os.path.join(self.repo, "notes.md")
+        with open(notes, "w") as f:
+            f.write("one\n")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": notes}, "tool_response": {}})
+        self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "First")
+        self.fm("task", "new", "Later work", "--from", "T-0001", "--type", "FEATURE", "--tier", "S")
+        self.fm("task", "ac", "T-0001", "add", "ok", "--verify", "true")
+        self.fm("task", "step", "T-0001", "add", "s")
+        self.fm("focus", "T-0001")
+        with open(notes, "a") as f:  # through the shell: no touched event of its own
+            f.write("two\n")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Later")
+        shown = subprocess.run(["git", "-C", self.repo, "show", "--stat", "--format=%s", "HEAD"], capture_output=True,
+                               text=True).stdout
+        self.assertTrue(shown.startswith("Later"), shown)  # its own commit, not the one before
+        self.assertIn("notes.md", shown)
