@@ -850,6 +850,29 @@ class PreToolUse(HookCase):
                 self.assertEqual(self.pre("Bash", ok).returncode, 0)
         self.assertEqual(self.pre("Bash", {"command": "while true; do curl -s x; sleep 30; done"}).returncode, 2)
 
+    def test_every_refusal_names_its_fix(self):
+        # T-0440: a refusal that names no allowed form costs a guess; every category names the next action
+        import types
+        import fmguard as g
+        ctx = types.SimpleNamespace(task_id="T-0007", confine=("/lane", "/main"))
+        fixes = ("fm ask", "--allow", "fm task new", "fm task", "fm focus", "report what needs changing")
+        for cat in g.CATEGORIES:
+            with self.subTest(cat=cat):
+                text = g.message(g.Block(cat, "/x/y"), ctx)
+                self.assertTrue(any(f in text for f in fixes), text)
+
+    def test_third_identical_refusal_escalates(self):
+        # T-0440: JARVIS retried the same refused command; the third identical block says to stop and ask or block
+        self.fm("init")
+        self.task()
+        cmd = {"command": "git push --force origin main"}
+        texts = [self.pre("Bash", cmd).stdout for _ in range(3)]
+        self.assertTrue(all(json.loads(t)["hookSpecificOutput"]["permissionDecision"] == "deny" for t in texts))
+        self.assertNotIn("Stop retrying", texts[1])
+        self.assertIn("Stop retrying", texts[2])
+        self.pre("Bash", {"command": "npm publish"})  # a different block resets the count
+        self.assertNotIn("Stop retrying", self.pre("Bash", cmd).stdout)
+
     def test_brief_refusal_names_the_task_to_resume(self):
         # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
         # `fm task new` though the work in progress was right there in the queue
