@@ -832,6 +832,17 @@ def _close_warnings(p, b, files):
     """T-0672: what a close doesn't refuse but the user should see: a likely secret in a file the task changed (T-0441;
     placeholder lines aside), and ignored files made since it began, outside its scope (T-0462: untracked ones are
     scope drift, refused already; ignored output — logs, builds, scratch — slips past that)."""
+    try:  # review: the task is closed by now; a surprise here costs the warning, never the exit code
+        return _close_warnings_of(p, b, files)
+    except Exception as e:
+        return [f"close-out warnings not computed ({type(e).__name__})"]
+
+
+_CACHES = re.compile(r"(?:^|/)(?:__pycache__|\.pytest_cache|\.mypy_cache|node_modules|\.venv|venv|\.tox|\.cache|"
+                     r"\.foreman|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
+
+
+def _close_warnings_of(p, b, files):
     import fmsecrets
     out = []
     for f in files[:200]:
@@ -844,9 +855,10 @@ def _close_warnings(p, b, files):
         except OSError:
             continue
         lines = text.split("\n")
+        # review: a placeholder must be in the secret-looking token itself (AKIAXXXX…), not anywhere on the line
         out += [f"possible secret ({kind}) in {f}:{n}: move it to the environment or a secret store before committing"
                 for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))
-                if not fmsecrets.PLACEHOLDER.search(lines[n - 1])][:3]
+                if not any(fmsecrets.PLACEHOLDER.search(t) for t in re.findall(r"[\w+/=-]{16,}", lines[n - 1]))][:3]
     began = c.parse_ts(c.first_touch(p, b.id) or b.meta.get("created") or "")
     if b.meta.get("scope") and began and c.git_root(p.root):
         ignored = c._git(p.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory") or ""
@@ -854,7 +866,7 @@ def _close_warnings(p, b, files):
         new = []
         for x in ignored.splitlines()[:2000]:
             try:
-                if x and not x.startswith(".foreman/") and os.path.getmtime(os.path.join(p.root, x)) >= since:
+                if x and not _CACHES.search(x) and os.path.getmtime(os.path.join(p.root, x)) >= since:
                     new.append(x)
             except OSError:
                 continue
