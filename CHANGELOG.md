@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Deliberation (T-0687 milestone: T-0642, T-0662).
+  - Dissent that survives: `fm second plan` also records each objection as an open item in the brief's Dissent section. `fm task dissent ID add "<objection>" | resolve N "<how>"` manages them, and the close lists any still open.
+  - Panels sized by stakes: `plugin/protocols.json` says what deliberation each tier gets. `fm second plan` on an S task says it's skipped (`--force` runs it). `fm next` names `fm second plan` for an L plan that has no review yet and isn't approved.
 - Debugging and diagnosis (T-0686 milestone: T-0597, T-0598, T-0611, T-0612, T-0613).
   - Proving the diagnosis is `fm task prove`. It runs the task's tests on the start tree with the fix removed (red) and on the current tree (green); this release documents and tests it.
   - `fm task finish --why-not-caught "<the test, gate or guard that would have caught it>"`: required for M/L fixes, suggested for S. A real answer becomes a follow-up, "Catch it earlier: …".

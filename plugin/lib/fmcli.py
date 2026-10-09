@@ -379,6 +379,9 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "packet":
         return task_packet(p, args)
+    if sub == "dissent":  # T-0642
+        import fmsecond
+        return fmsecond.task_dissent(p, args)
     if sub in ("split", "capsule"):  # T-0709
         import fmsplit
         return (fmsplit.task_split if sub == "split" else fmsplit.task_capsule)(p, args)
@@ -1168,7 +1171,11 @@ def _close_warnings_of(p, b, files):
                        + ", ".join(stray[:10]))
     drift = _tier_drift(p, b, files)  # T-0488
     bare = _not_verified(p, b, files)  # T-0474
-    return out + ([drift] if drift else []) + ([bare] if bare else [])
+    import fmsecond
+    still = fmsecond.open_dissent(b)  # T-0642: an objection nobody answered is worth one line at the close
+    dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
+               + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
+    return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else [])
 
 
 def _not_verified(p, b, files):
@@ -3007,6 +3014,9 @@ def build_parser():
         t.add_argument("--json", action="store_true")
         return t
 
+    t = tadd("dissent")  # T-0642
+    t.add_argument("id")
+    t.add_argument("words", nargs="*", help="add \"<objection>\" | resolve N \"<how it was answered>\"")
     t = tadd("split")  # T-0709
     t.add_argument("id")
     t.add_argument("--parts", type=int, help="how many children (default: about 4 files each, 2–4)")
@@ -3241,6 +3251,7 @@ def build_parser():
     s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
+    s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
     s.add_argument("--timeout", type=float, default=300)
     s = add("relate", lazy("fmrelate", "cmd_relate"),
             help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "

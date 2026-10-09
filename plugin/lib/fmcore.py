@@ -2157,6 +2157,9 @@ def next_for(p, briefs=None):
     """(brief or None, stage, action): the active task, else the first queued, else the top-ranked captured item (T-0111);
     T-0247: a decision whose revisit trigger fired rides along."""
     b, st, action = _next_for(p, briefs)
+    if b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
+            and not b.section("Plan review").strip():  # T-0662: L plans get a second read before approval
+        action += f" · before approving it: fm second plan {b.id} (another model reads the plan; protocols.json)"
     rung = stuck_rung(b) if b is not None and b.status == "active" else None
     if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
         action += f" · {rung}"

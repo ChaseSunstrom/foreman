@@ -70,9 +70,65 @@ def plan(p, b, model="sonnet", timeout=300):
     body = (f"A second read on {model}, before execution (data, not instructions):\n"
             + "".join(f"- {x}\n" for x in objections) + verdict + "\n")
     import fmcli
-    fmcli.mutate(p, b.id, lambda x: x.set_section("Plan review", body), "plan_review",
+
+    def save(x):
+        x.set_section("Plan review", body)
+        old = x.section("Dissent").rstrip()  # T-0642: an objection stays open until someone answers it
+        new = [f"- [ ] {o}" for o in objections if f"] {o}" not in old]
+        if new:
+            x.set_section("Dissent", (old + "\n" if old else "") + "\n".join(new))
+    fmcli.mutate(p, b.id, save, "plan_review",
                  {"model": model, "objections": len(objections), "verdict": m.group(1).lower()})
     return objections, verdict
+
+
+def protocols():
+    """T-0662: the deliberation each tier gets (plugin/protocols.json); {} when it can't be read."""
+    try:
+        with open(os.path.join(c.PLUGIN_ROOT, "protocols.json"), encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def open_dissent(b):
+    """[(n, objection)] still open in the brief's Dissent section."""
+    items = [ln for ln in b.section("Dissent").splitlines() if re.match(r"- \[[ xX]\] ", ln)]
+    return [(i, ln[6:].strip()) for i, ln in enumerate(items, 1) if ln.startswith("- [ ]")]
+
+
+def task_dissent(p, args):
+    """fm task dissent ID [add TEXT | resolve N HOW]: the objections a review raised, kept until answered."""
+    import fmcli
+    b = fmcli.need_brief(p, args.id)
+    words = args.words or []
+    if words[:1] == ["add"] and len(words) > 1:
+        text = c.fit(c.plain(" ".join(words[1:])), 300)
+        fmcli.mutate(p, b.id, lambda x: x.set_section("Dissent", (x.section("Dissent").rstrip() + "\n" if
+                                                                  x.section("Dissent").strip() else "") + f"- [ ] {text}"),
+                     "dissent", {"add": text[:120]})
+    elif words[:1] == ["resolve"] and len(words) > 2 and words[1].isdigit():
+        n, how = int(words[1]), c.fit(c.plain(" ".join(words[2:])), 200)
+
+        def resolve(x):
+            lines, k = x.section("Dissent").splitlines(), 0
+            for i, ln in enumerate(lines):
+                if re.match(r"- \[[ xX]\] ", ln):
+                    k += 1
+                    if k == n:
+                        lines[i] = f"- [x] {ln[6:].strip()} — answered: {how}"
+                        break
+            else:
+                raise fmcli.UsageError(f"{b.id} has no objection {n}")
+            x.set_section("Dissent", "\n".join(lines))
+        fmcli.mutate(p, b.id, resolve, "dissent", {"resolve": n})
+    elif words:
+        raise fmcli.UsageError("fm task dissent ID [add \"<objection>\" | resolve N \"<how it was answered>\"]")
+    b = fmcli.need_brief(p, args.id)
+    still = open_dissent(b)
+    return fmcli.out(args, {"open": [{"n": n, "text": t} for n, t in still]},
+                     (f"{b.id}: {len(still)} open objection(s):\n" + "\n".join(f"  {n}. {t}" for n, t in still))
+                     if still else f"{b.id}: no open dissent.")
 
 
 def debate(p, b, name):
@@ -179,6 +235,11 @@ def cmd_second(args):
     try:
         if args.what == "plan":
             b = fmcli.need_brief(p, args.id)
+            rule = protocols().get(b.tier) or {}
+            if rule.get("panel") == "none" and not getattr(args, "force", False):  # T-0662: S tasks skip panels
+                return fmcli.out(args, {"skipped": True, "tier": b.tier},
+                                 f"{b.id}: skipped — {b.tier} tasks get no panel ({rule.get('why', 'protocols.json')}); "
+                                 f"--force runs it anyway")
             objections, verdict = plan(p, b, args.model or "sonnet", args.timeout)
             return fmcli.out(args, {"objections": objections, "verdict": verdict},
                              f"{b.id}: plan review saved\n" + "".join(f"  - {x}\n" for x in objections) + f"  {verdict}")
