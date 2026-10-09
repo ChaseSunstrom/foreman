@@ -68,7 +68,16 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'cd ~; cd /tmp | true && rm -rf ./*', 'cd ~; true; cd /tmp | cat && ls | cat && rm -rf ./*',
          'cd ~ && ls | cat && cd /nonexistent; rm -rf ./*', 'cd ~; cd /tmp |\ncat\nrm -rf ./*',
          'cd ~; ls |\ncd /tmp\nrm -rf ./*',
-         'echo x >| ~/clobbered', 'echo x 2>|~/clobbered', 'set -C; echo x >| ~/clobbered']  # T-0358
+         'echo x >| ~/clobbered', 'echo x 2>|~/clobbered', 'set -C; echo x >| ~/clobbered',  # T-0358
+         # T-0370/T-0374: a substitution is no branch, but an S= inside one stays there; a name used before it is set
+         # is empty; printf sets a name only with a -v bash may compute
+         'X=$(echo \\); S=/tmp/ok; true); rm -rf "$S/"', 'X=$(echo ")"; S=/tmp/ok; true); rm -rf "$S/"',
+         'X=$(case a in a) S=/tmp/ok; true;; esac); rm -rf "$S/"', 'X=$(echo #); S=/tmp/ok\n); rm -rf "$S/"',
+         'X=`echo \\`; S=/tmp/ok; true`; rm -rf "$S/"', 'f=$(S=/tmp/ok); rm -rf "$S/"', 'f=$(ls /tmp); S=~; rm -rf "$S"',
+         'f=$(ls /tmp); rm -rf "$S/"; S=/tmp/ok; ls | cat', 'rm -rf "$S/"; S=/tmp/ok', 'f=$(true); (rm -rf "$S/"); S=/tmp/ok',
+         'D=/tmp/x; X=-vD; printf $X %s ~; rm -rf "$D"', 'D=/tmp/x; printf {-v,D} %s ~; rm -rf "$D"',
+         'D=/tmp/x; printf `echo -vD` %s ~; rm -rf "$D"', 'D=/tmp/x; printf -vD %s ~; rm -rf "$D"',
+         'D=/tmp/x; printf "-vD" %s ~; rm -rf "$D"', 'D=/tmp/x; printf -v D -- %s ~; rm -rf "$D"']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 

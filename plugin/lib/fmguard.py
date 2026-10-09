@@ -204,7 +204,13 @@ def _is_credential(path, ctx):
     if any(_under(path, s) for s in getattr(ctx, "scratch", ()) or ()):
         return False  # T-0169: a scratch file's name says nothing of its contents (its real path is checked too)
     stem, ext = os.path.splitext(base)
-    return bool(re.search(r"(^|[._-])(tokens?|secrets?|credentials?)([._-]|$)", stem.lower())) and ext.lower() not in _DOC_EXT
+    if ext.lower() in _DOC_EXT:
+        return False
+    if re.search(r"(^|[._-])(secrets?|credentials?)([._-]|$)", stem.lower()):
+        return True
+    # a design system's tokens (colours, spacing, durations) aren't auth tokens (JARVIS: design/tokens.json was refused)
+    design = re.search(r"/(design|themes?|styles?|ui)/", path.lower()) or re.match(r"(design|theme|style)[._-]", stem.lower())
+    return bool(re.search(r"(^|[._-])tokens?([._-]|$)", stem.lower())) and not (design and stem.lower() != "token")
 
 
 # T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
@@ -1133,6 +1139,17 @@ _BUILTINS = set(". : [ [[ alias bg bind break builtin caller cd command compgen 
                 "trap true type typeset ulimit umask unalias unset wait".split())
 _INERT = set(": [ cd dirs echo exit false hash help jobs kill popd pushd pwd shift test times true type ulimit umask".split())
 _ASSIGN = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$", re.S)
+
+
+def _setter(name, args):
+    """A builtin that can set this shell's names. T-0370: printf only as printf -v NAME (the option comes first, before
+    any --), so a plain printf no longer makes every name unknown."""
+    if name == "printf":  # its security review: a first word bash computes ($X, `…`, {a,b}, a glob) may become -v
+        first = args[0] if args else ""
+        word, m = _unquote(first), re.search(r"[*?\[{]", first)  # a glob or brace makes -v… only from a -v prefix
+        return bool(args) and (word is None or "$" in first or "`" in first or word.startswith("-v")
+                               or bool(m) and "-v".startswith(first[:m.start()]))
+    return name in _BUILTINS and name not in _INERT
 _ASSIGNISH = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^\]]*\])?\+?=")  # NAME=, NAME+= and NAME[i]=
 # bash sets these itself, ignores an assignment to them or makes it fail (readonly)
 _SHELL_SET = re.compile(r"^(?:_|PWD|OLDPWD|DIRSTACK|BASH\w*|RANDOM|SRANDOM|SECONDS|LINENO|EPOCH\w+|HISTCMD|PPID|E?UID|"
@@ -1267,7 +1284,7 @@ def _outside(shell, cmds, ctx, fixed=None):
     are Claude Code's environment, HOME the user's; one a shell would split or expand stays unknown."""
     for c in cmds:
         argv, _ = _strip_wrappers(c.argv)
-        if argv and (os.path.basename(argv[0]) in _BUILTINS - _INERT or re.search(r"[$`*?\[]", argv[0]) and not _a_path(
+        if argv and (_setter(os.path.basename(argv[0]), argv[1:]) or re.search(r"[$`*?\[]", argv[0]) and not _a_path(
                 argv[0], fixed or {})):
             return {}, None
     bare = set(re.findall(r"[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
@@ -1344,10 +1361,34 @@ def _possible(path):
 GUESS_WORDS = 48  # ponytail: words tried per unknown part (two parts: their pairs); a longer command is guessed this far
 
 
+_PLAIN = r"[^()`'\"\\#\n]*"  # no quote, escape, comment, newline or paren: bash's closing ) is the first one
+
+
+def _mask_substs(shell):
+    """T-0370: each plain $(…) and `…` (innermost first, so nesting unwinds) as $___…, an unknown value of the same
+    length; a tail's leading plain `…)` (the rest of a substitution it opens in) too. Only plain bodies: a quote, \\),
+    a # comment, a heredoc or a case pattern can move the real closing paren past the first, and an S= inside it would
+    then look like this shell's (its review: X=$(echo \\); S=/tmp/ok; true); rm -rf $S/ is rm -rf /)."""
+    def mask(m):
+        body = m.group(0)
+        return body if re.search(r"\bcase\b|<<", body) else "$" + "_" * (len(body) - 1)
+    shell = re.sub(r"^" + _PLAIN + r"\)", lambda m: m.group(0) if mask(m) == m.group(0) else " " * len(m.group(0)),
+                   shell)  # a tail's head ran in the subshell: no command of this shell
+    while True:
+        t = re.sub(r"\$\(" + _PLAIN + r"\)|`[^()`'\"\\#\n]*`", mask, shell)
+        if t == shell:
+            return shell
+        shell = t
+
+
 def _prefix_vars(shell, cmds, home=None):
     """T-0183: NAME=literal values a branchy command sets in its straight top-level prefix (the commands before its
     first branch, pipe, subshell, group or keyword run first, in this shell), for names written bare nowhere else in
     it; {} when nothing qualifies. Only where no builtin can set names indirectly (the caller checks)."""
+    # T-0370: a substitution is no branch (a subshell sets nothing here): read the prefix with each one as an unknown
+    # value of the same length, so `f=$(ls …); S=/tmp/x; … > $S/a` knows S; f stays unknown, and a name also set
+    # inside a substitution is written twice (counts, below, reads the real text)
+    full, shell = shell, _mask_substs(shell)
     s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell)
     cut = next((m.start() for m in re.finditer(r"&&|\|\|?|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
                                                 r"done|case|esac|select|function|coproc)\b", s) if m.group(0) != "&&"), len(s))
@@ -1367,7 +1408,7 @@ def _prefix_vars(shell, cmds, home=None):
             start = m.end()
         prefix = "; ".join(e.strip() for e in keep if e.strip())
     else:  # T-0330: a ; list mixed with && (D=~/x; mkdir -p $D && cd $D && tar xf -) isn't straight either
-        prefix = shell[:seps[-1].start()] if seps and (cut < len(s) or not _straight_line(shell)) else ""
+        prefix = shell[:seps[-1].start()] if seps and (cut < len(s) or not _straight_line(full) or full != shell) else ""
     raw = _raw_cmds(prefix) if prefix and _straight_line(prefix) else None
     env = {}
     for words in raw or []:
@@ -1375,8 +1416,12 @@ def _prefix_vars(shell, cmds, home=None):
         if env is None:
             return {}
     # T-0331: a word after - / or . (a flag like -S, a path segment like /tmp/S/) can't name a variable
-    counts = collections.Counter(re.findall(r"(?<![\w/.-])[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", shell)))
-    return {k: v for k, v in env.items() if counts[k] == 1}
+    counts = collections.Counter(re.findall(r"(?<![\w/.-])[A-Za-z_]\w*", re.sub(r"\$\w+|\$\{\w+\}", " ", full)))
+
+    def set_first(k):  # T-0370 review: `echo > $S/x; S=/tmp/x` writes /x (S is unset there): no value before it is set
+        a, r = re.search(rf"(?<![\w$]){k}=", full), re.search(rf"\$\{{?{k}\b", full)
+        return a is not None and (r is None or a.start() < r.start())
+    return {k: v for k, v in env.items() if counts[k] == 1 and set_first(k)}
 
 
 def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note=""):
@@ -1398,14 +1443,21 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
             return found
     elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
                  or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
-        return found  # only names it neither sets nor inherits: nothing in it says where they point
+        # only names it neither sets nor inherits: bash expands them to nothing (T-0374: echo x > $NOPE/<guard file>
+        # wrote the guard file), so the target is the rest of the word
+        e = _expand(_PART.sub("", t), ctx)
+        for path in dict.fromkeys(_resolve(e, b) for b in ([ctx.cwd] if os.path.isabs(e) else cwds)):
+            found += [(cat, f"{target}{note} (an unset name is empty: {path})") for cat in classify(path, ctx)
+                      if cat in _GUARDED_BY_PATH]
+        return found
     text = re.sub(r"(?<![\w$])[A-Za-z_]\w*\+?=", " ", shell)  # T-0190: a variable's name is no guess, its value is
     raw = [w for w in dict.fromkeys(_with_vars(w, known) for w in _WORD.findall(text)) if not _unresolvable(w)]
     if _unresolvable(t):
         # T-0183: words as written, one per unknown part, the first two paired (a word in every part guessed
-        # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after
+        # <abs>/<abs>), the rest a neutral name; the whole guess is resolved after. T-0374: and every part empty,
+        # as an unset name (or a substitution that prints nothing) expands
         raw, pair = raw[:GUESS_WORDS], len(list(_PART.finditer(t))) > 1
-        guesses = []
+        guesses = [_resolve(_expand(_PART.sub("", t), ctx), base) for base in here]
         for a in raw:
             for b in raw if pair else [None]:
                 vals = iter((a, b))
@@ -1514,7 +1566,7 @@ def _track_vars(words, env, home=None):
     if re.search(r"[$`*?\[]", word):
         return None  # T-0162: a name bash computes ($X, `…`, a glob) can turn out to be a builtin
     name = _unquote(word) or ""
-    return None if name in _BUILTINS and name not in _INERT else env
+    return None if _setter(name, words[words.index(word) + 1:] if word in words else []) else env
 
 
 def check_bash(cmd, ctx, depth=0, tails=True):

@@ -101,6 +101,37 @@ class KnownVars(GuardCase):
             ("cd {fhome} && cd /nonexistent && cd /tmp; echo x > plugin/lib/fmguard.py", "core"),
         ], self.bash)
 
+    def test_a_substitution_keeps_literal_variables_known(self):
+        # T-0370: "f=$(ls <state>); …; S=/tmp/…; … > $S/x" was refused as a state write 6 times: the ( ) of $(…)
+        # turned off variable tracking for the whole line; a substitution runs in a subshell and sets nothing here
+        st = "{fhome}/state/projects/p/tasks"
+        self.run_table([
+            ("f=$(ls " + st + "/T-0247-*.md); sed -n '1,2p' $f; S=/tmp/x/scratch; echo hi > $S/t247.volt", None),
+            ("X=$(ls /tmp); echo x > $S{fhome}/plugin/lib/fmguard.py; S=/tmp/x; ls | head -1", "core"),  # S unset there
+            # a plain printf sets no name (the replay's site check: its ( ) in quotes, then cp -r … $T/)
+            ("T=/tmp/x/copy && mkdir -p $T && cp -r a b $T/ && printf '(x)' >> $T/b.md; echo done", None),
+            ("T=/tmp/x/copy && printf -v T %s {fhome} && cp -r a $T/; echo done", "core"),  # printf -v sets T
+            ("S=$(echo {fhome}/state); echo hi > $S/a", "state-direct"),  # set from a substitution: unknown
+            ("f=$(ls " + st + "/T-1.md); S=/tmp/x; echo hi > $f", "state-direct"),
+            ("S=/tmp/x; echo $(true) > /dev/null; S={fhome}/state; echo hi > $S/a", "state-direct"),
+            ("X=$(mktemp -d); rm -rf $X/../..", "rm-outside"),
+            ("D=/tmp/ok; D=$(echo /); rm -rf $D", "rm-outside"),  # reassigned from a substitution: unknown again
+            ("S=/tmp/x; $(echo cd) {fhome}/state; echo hi > $S/a", "state-direct"),  # a computed command name
+        ], self.bash)
+        # its review: where the real closing ) isn't the first one, an S= inside the substitution must not look like
+        # this shell's: S is then empty, and $S/… is an absolute path
+        # T-0374: a name that isn't set expands to nothing, so the rest of the word is the target
+        for cmd in ("echo x > $NOPE{fhome}/plugin/lib/fmguard.py", "echo x > ${{NOPE}}{fhome}/state/meta.json",
+                    "cp a $NOPE{fhome}/plugin/hooks/hook", "echo x | tee $NOPE{fhome}/plugin/lib/fmcore.py",
+                    "echo x > $S{fhome}/plugin/lib/fmguard.py; S=/tmp/x"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNotNone(self.bash(cmd))
+        for cmd in ("X=$(echo \\); S=/tmp/ok; true); rm -rf $S/", "X=$(echo \")\"; S=/tmp/ok; true); rm -rf $S/",
+                    "X=$(case a in a) S=/tmp/ok; true;; esac); rm -rf $S/", "X=$(echo #); S=/tmp/ok\n); rm -rf $S/",
+                    "X=`echo \\`; S=/tmp/ok; true`; rm -rf $S/"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(self.bash(cmd), "rm-outside")
+
     def test_review_what_bash_may_not_have_set_stays_unknown(self):  # T-0338 review: bypasses found by hand
         self.run_table([
             ('X=/tmp/ok; Y=-X=; S="eval ${{Y#-}}"; true && $S/etc; rm -rf $X', "rm-outside"),  # $S/etc splits
@@ -145,7 +176,15 @@ class RmOutside(GuardCase):
             ('FOO={repo}/build rm -rf "$FOO"', "rm-outside"),  # a prefix assignment isn't seen by its own arguments
             # T-0161: inert builtins and other programs can't change it; any other builtin could
             ('D={repo}/build; cd {repo}; echo hi; mkdir -p x; rm -rf "$D"', None),
-            ('D={repo}/build; printf x; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf x; rm -rf "$D"', None),  # T-0370: printf sets a name only with -v
+            ('D={repo}/build; printf -v D %s /; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf "-vD" %s /; rm -rf "$D"', "rm-outside"),
+            # its security review: a first word bash computes may turn out to be -v
+            ('X=-vD; D={repo}/build; printf $X %s /; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf {{-v,D}} %s /; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf `echo -vD` %s /; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf -[v]D %s /; rm -rf "$D"', "rm-outside"),  # a glob from a -v prefix
+            ("D={repo}/build; printf 'see [x](y) [z]'; rm -rf \"$D\"", None),  # a [ that can't make -v
             ('D={repo}/build; D+=/x; rm -rf "$D"', "rm-outside"),
             ('D="{repo} /etc"; rm -rf $D', "rm-outside"),
             ('D=~; "D={repo}/b"; rm -rf "$D"', "rm-outside"),  # its review: a quoted word is a command, not an assignment
@@ -421,6 +460,15 @@ class FrictionFalseBlocks(GuardCase):  # T-0344
         self.assertIsNone(self.bash("wget -qO- https://x | python3 -c \"import json,sys; print(json.load(sys.stdin))\""))
         self.assertIsNone(self.bash(ok + "; curl -s -o /dev/null -w '%{{http_code}}' -L https://y"))  # the friction line
         self.assertBlocked(self.bash("curl -s -w '%output{{json.py}}x' https://e; " + ok), "pipe-shell")
+        # T-0369: neighbours a widened proof would have to rule out, kept blocked. A self-improvement pass proposed
+        # allowing inert commands and bare assignments; an assignment word-splits into curl flags (last case)
+        for first in ("PYTHONSTARTUP=/tmp/s.py; ", "LD_PRELOAD=/tmp/x.so; ", "HOME=/tmp/evil; ", "PATH=/tmp/evil; ",
+                      "L=$(touch json.py); ", "L=`touch json.py`; ", "rm -f $(touch json.py); ", "ls > json.py; ",
+                      "pkill -f x > json.py; ", "rm -f x; touch json.py; ", "L=x; export L; "):
+            with self.subTest(first=first):
+                self.assertBlocked(self.bash(first + ok), "pipe-shell")
+        self.assertBlocked(self.bash("U='-o json.py https://e'; curl -s $U | python3 -c \"import json,sys; "
+                                     "print(json.load(sys.stdin))\""), "pipe-shell")
 
 
 class AgentWiring(GuardCase):
@@ -668,6 +716,17 @@ class StateFallback(GuardCase):
 
 
 class ScratchNames(GuardCase):
+    def test_design_tokens_are_not_credentials(self):
+        # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
+        for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",
+                     f"{self.repo}/design-tokens.json", f"{self.repo}/ui/styles/tokens.json"):
+            with self.subTest(path=path):
+                self.assertFalse(self.bash(f"echo x > {path}"))
+        for path in (f"{self.repo}/token.json", f"{self.home}/.config/app/tokens.json", f"{self.repo}/design/secrets.yaml",
+                     f"{self.repo}/design/credentials.json", f"{self.repo}/tokens.json"):
+            with self.subTest(path=path):
+                self.assertBlocked(self.bash(f"echo x > {path}"), "credentials")
+
     def test_a_secret_sounding_name_in_scratch_is_not_a_credential(self):
         # T-0169 (self-improvement pass 2): `fm secrets > <scratchpad>/secrets.txt` was blocked as a credential
         self.assertFalse(self.bash("fm secrets > /tmp/claude-1000/proj/sess/scratchpad/secrets.txt"))
