@@ -97,6 +97,25 @@ print(json.dumps({"result": "## Missed\n- none", "total_cost_usd": float(os.envi
 '''
 
 
+class PrePlan(ForemanTestCase):
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        d = os.path.join(c.state_dir(), "sessions")  # usage known and low
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "s.json"), "w") as f:
+            json.dump({"rate_limits": {"seven_day": {"used_percentage": 10}}}, f)
+
+    def test_pre_plan_reads_a_queued_l_tasks_plan_once(self):
+        # T-0730: idle time reads the plan of a big queued task before anyone starts it
+        self.fm("task", "new", "Big", "--type", "FEATURE", "--tier", "L", "--ac", "ok :: true", "--step", "s")
+        out = json.loads(self.fm("night", "--dry-run", "--only", "pre-plan", "--json").stdout)
+        self.assertEqual([j["argv"] for j in out["jobs"]], [["second", "plan", "T-0001"]])
+        self.fm("task", "set", "T-0001", "--section", "Plan review", "--text", "read")
+        out = json.loads(self.fm("night", "--dry-run", "--only", "pre-plan", "--json").stdout)
+        self.assertEqual(out["jobs"], [])
+
+
 class NightGuards(ForemanTestCase):
     """T-0298 review: the limit is a cap on spend, usage is re-read, sensitive projects and odd names are refused."""
 

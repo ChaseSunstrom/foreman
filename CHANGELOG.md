@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 1.2.27 — 2026-10-09
+- Learning, paid half (T-0752 milestone: T-0734, T-0743).
+  - Blocking a task writes its eval case at once (local). `fm evals inbox` lists blocks, plus guard blocks later granted for the same task as false-positive candidates.
+  - Bench holdout: a stable hash holds out one case in five, and `fm evolve` never trains on those. `fm bench list` and `fm bench run` take `--split train|holdout`, and `fm bench scorecard` prints each saved run's train and holdout pass rates.
+  - `fm repeats --draft` writes a playbook draft from steps that 3+ finished tasks took in the same order. Adopting it is asked first.
+  - Per-model lesions: when the newest model has no ablations yet and the project has bench cases, `fm night` queues `fm evolve --drop` for the next rule or skill file. Evolve events now record the model.
+  - Smoke fates: with a smoke target set, `fm night` runs `fm smoke` locally, and `fm outcomes` marks tasks closed in the 7 days before a failing smoke run.
+  - `fm recall --lessons --retire T-0123.1 --why "…"` keeps a lesson out of recall and tripwires. The bench gate comes later.
+  - `fm task finding ID LENS confirmed|rejected "<finding>"` records each reviewer finding's verdict, and `fm usage --agents` shows per-lens precision.
+- Runtime (T-0751 milestone: T-0731, T-0732).
+  - `fm run --failover codex|gemini|opencode`: when a usage limit outlasts `--wait`, the task's handoff packet goes to a detached `fm session` of that agent and the run stops. It is opt-in per run, because the packet leaves for that provider.
+  - `fm task revert ID` lists the task's commits, the open tasks that depend on or name it, and the `git revert` command. It never reverts anything itself.
+  - `fm run --fit` takes S tasks before M before L, so more finish before a limit. It turns on by itself while usage runs ahead of pace, and a task waiting on an open one keeps waiting.
+  - `fm lane new ID --spike` makes a throwaway lane that `fm lane merge` refuses.
+- `fm night` pre-plans: the first queued L task without a plan review gets `fm second plan` overnight. Like other optional work, it waits while usage runs ahead of pace (T-0730).
+- Test hygiene: tests always see a calm host, and the screenshot harness uses its own tmux socket, so the suite no longer fails when the machine is loaded (T-0744). Catch rates, give-up mining and plan gaps read real run results through one parser, and the check track record counts failures that `fm task finish` recorded (T-0749, T-0750).
+
 ## 1.2.26 — 2026-10-09
 - Verification reasoning (T-0697 milestone: T-0614, T-0615, T-0634, T-0635, T-0651, T-0652, T-0653).
   - `fm task finish --claim "checked|inferred|unchecked: <claim> [:: <evidence>]"` records typed claims in a Claims section, and `fm pr` renders them.

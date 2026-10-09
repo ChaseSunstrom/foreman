@@ -16,7 +16,28 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
-NAMES = ("dream", "cold files", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("dream", "cold files", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
+
+
+def current_model(p):
+    """The model of the newest finished task here (task_done events carry it), or None."""
+    return next(((e.get("data") or {}).get("model") for e in reversed(c.ledger_tail(p, 5000))
+                 if e.get("event") == "task_done" and (e.get("data") or {}).get("model")), None)
+
+
+def next_lesion(p):
+    """T-0734: the first rule or skill file not yet ablated (fm evolve --drop) on the current model, when this project
+    has bench cases to gate it; None otherwise."""
+    import fmbench
+    model = current_model(p)
+    if not model or not fmbench._load_cases(p):
+        return None
+    done = {(e.get("data") or {}).get("target") for e in c.ledger_tail(p, 20000) if e.get("event") == "evolve"
+            and (e.get("data") or {}).get("model") == model}
+    root = os.path.dirname(c.PLUGIN_ROOT)
+    files = [os.path.relpath(os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md"), root)] + sorted(
+        os.path.relpath(x, root) for x in glob.glob(os.path.join(c.PLUGIN_ROOT, "skills", "*", "SKILL.md")))
+    return next((f for f in files if f not in done), None)
 
 
 def jobs(p):
@@ -25,11 +46,21 @@ def jobs(p):
     import fmoutside
     meta, out = c.read_meta(p), [("dream", ["dream"], 0.0)]  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
+    smoke = meta.get("smoke") or {}
+    if any(k != "off" for k in smoke) and "off" not in smoke:  # T-0743: a target is set; the crawl runs locally
+        out.append(("smoke", ["smoke"], 0.0))
     if meta.get("second_session") != c.now()[:10]:
         out.append(("second session", ["second", "session", "--if-due"], fmbudget.estimate("second-session", 1, 0.05)))
     age = c.age_days(meta.get("landscape_at"))
     if age is None or age >= fmoutside.LANDSCAPE_DAYS:
         out.append(("landscape", ["landscape", "--if-due"], fmbudget.estimate("research", 4, 0.2)))
+    lesion = None if fmbudget.degrade() else next_lesion(p)
+    if lesion:  # T-0734: a model nobody has ablated Foreman's rules and skills on yet
+        out.append((f"model lesion {lesion}", ["evolve", "--target", lesion, "--drop"], fmbudget.estimate("bench", 3, 0.5)))
+    big = None if fmbudget.degrade() else next(  # T-0730: optional, so it waits while usage runs ahead of pace
+        (b for b in c.order_queue(c.load_briefs(p))[0] if b.tier == "L" and not b.section("Plan review").strip()), None)
+    if big:  # a queued L task's plan read by another model while nobody is waiting on it
+        out.append((f"pre-plan {big.id}", ["second", "plan", big.id], fmbudget.estimate("second-plan", 1, 0.05)))
     events = c.ledger_tail(p, 5000)
     asked = {e.get("task") for e in events if e.get("event") == "research"}
     debt = next((b for b in c.rank_inbox(c.load_briefs(p)) if b.type == "RESEARCH" and b.id not in asked

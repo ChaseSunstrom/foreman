@@ -52,6 +52,9 @@ def cmd_lane(args):
     if args.action == "brief":
         return builder_brief(p, b, args)
     if args.action == "merge":
+        if b.meta.get("lane_spike"):  # T-0732: a spike answers a question; its code is thrown away
+            raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
+                                f"{b.id} fact \"…\"), then fm lane rm {b.id}")
         return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main)}, f"{b.id}: merged {merge.last} into {main} "
                          f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
     if args.action == "new":
@@ -73,6 +76,8 @@ def cmd_lane(args):
 
         def give(x):
             x.meta["lane"] = path
+            if getattr(args, "spike", False):
+                x.meta["lane_spike"] = True
             for k in ("base", "base_tree", "paused_tree"):  # its start point is taken in the lane, at focus
                 x.meta.pop(k, None)
             x.append_log(f"lane: {path} on {branch}")

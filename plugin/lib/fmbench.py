@@ -12,6 +12,7 @@ how /foreman:improve judges a candidate on real past work instead of synthetic c
 import collections
 import contextlib
 import glob
+import hashlib
 import json
 import os
 import re
@@ -490,6 +491,41 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     return res
 
 
+HOLDOUT_EVERY = 5  # one case in five is held out: fm evolve never trains on it, a release checks it
+
+
+def split_of(case_id):
+    """T-0734: "holdout" or "train", stable for a case id across runs and machines."""
+    return "holdout" if int(hashlib.sha1(str(case_id).encode()).hexdigest()[:8], 16) % HOLDOUT_EVERY == 0 else "train"
+
+
+def in_split(cases, split=None):
+    return [x for x in cases if not split or split_of(x.get("id")) == split]
+
+
+def scorecard(p, args):
+    """T-0734: each saved run's pass rate on the train and holdout splits, newest last — a release line that shows
+    whether evolve's gains hold on cases it never trained on."""
+    import fmcli
+    rows = []
+    for path in sorted(glob.glob(os.path.join(_results_dir(p), "*.json")), key=os.path.getmtime):
+        try:
+            with open(path, encoding="utf-8") as f:
+                res = json.load(f)
+        except (OSError, ValueError):
+            continue
+        tally = {k: [0, 0] for k in ("train", "holdout")}
+        for x in res.get("cases") or []:
+            if isinstance(x, dict) and x.get("id"):
+                t = tally[split_of(x["id"])]
+                t[0], t[1] = t[0] + bool(x.get("pass")), t[1] + 1
+        rows.append((res.get("label") or os.path.basename(path)[:-5], tally))
+    return fmcli.out(args, {"runs": [{"label": l, **{k: {"pass": v[0], "of": v[1]} for k, v in t.items()}}
+                                     for l, t in rows]},
+                     "\n".join(f"{l}: train {t['train'][0]}/{t['train'][1]} · holdout {t['holdout'][0]}/{t['holdout'][1]}"
+                               for l, t in rows[-12:]) or "No saved bench runs (fm bench run).")
+
+
 def hygiene(p, args):
     """T-0656: cases whose result is the same in every saved run (2+ runs): they discriminate nothing, so they cost a
     replay each without telling one plugin version from another; listed as candidates to drop, nothing is removed."""
@@ -701,7 +737,7 @@ def _contest(p, args):
 
 def cmd_bench(args):
     import fmcli
-    if args.bench_cmd not in ("build", "list", "show", "compare", "models", "hygiene"):
+    if args.bench_cmd not in ("build", "list", "show", "compare", "models", "hygiene", "scorecard"):
         c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)
     if args.bench_cmd == "seed-review":
@@ -727,8 +763,10 @@ def cmd_bench(args):
         return fmcli.out(args, {"cases": cases, "skipped": skipped},
                          f"{len(cases)} bench case(s) in {_cases_path(p)}: {', '.join(x['id'] for x in cases) or 'none'}"
                          + "".join(f"\n  skipped {s}" for s in skipped[:12]))
+    if args.bench_cmd == "scorecard":  # T-0734
+        return scorecard(p, args)
     if args.bench_cmd == "list":
-        cases = _load_cases(p)
+        cases = in_split(_load_cases(p), getattr(args, "split", None))
         lines = [f"{len(cases)} case(s): " + (", ".join(f"{x['id']} [{x['type']} {x['tier']}]" for x in cases) or
                                               "none (fm bench build)")]
         folder = _results_dir(p)
@@ -739,9 +777,10 @@ def cmd_bench(args):
                     lines.append(f"  {n[:-5]}: {_summary(json.load(f))}")
             except (OSError, ValueError, KeyError, TypeError):
                 lines.append(f"  {n[:-5]}: unreadable")
-        return fmcli.out(args, {"cases": cases}, "\n".join(lines))
+        return fmcli.out(args, {"cases": cases, "ids": [x["id"] for x in cases]}, "\n".join(lines))
     if args.bench_cmd == "run":
-        cases = [x for x in _load_cases(p) if not args.ids or x["id"] in args.ids][:args.max]
+        cases = [x for x in in_split(_load_cases(p), getattr(args, "split", None))
+                 if not args.ids or x["id"] in args.ids][:args.max]
         if not cases:
             raise fmcli.UsageError("no bench cases: fm bench build first (or --ids names none of them)")
         plugin = os.path.abspath(args.plugin or c.PLUGIN_ROOT)

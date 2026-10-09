@@ -406,6 +406,16 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "packet":
         return task_packet(p, args)
+    if sub == "revert":
+        return task_revert(p, args)
+    if sub == "finding":  # T-0743: one reviewer finding and whether it held, for per-lens precision
+        if args.lens not in c.AUDIT_LENSES:
+            raise UsageError(f"unknown lens {args.lens!r}; one of {', '.join(c.AUDIT_LENSES)}")
+        b = need_brief(p, args.id)
+        text = c.redact(" ".join(args.text))[:300]
+        c.log_event(p, "finding", task=b.id, data={"lens": args.lens, "verdict": args.verdict, "text": text})
+        return out(args, {"task": b.id, "lens": args.lens, "verdict": args.verdict},
+                   f"{b.id}: {args.lens} finding {args.verdict}.")
     if sub == "dissent":  # T-0642
         import fmsecond
         return fmsecond.task_dissent(p, args)
@@ -591,6 +601,12 @@ def cmd_task(args):
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
+        if status == "blocked":  # T-0734: a block is a real failure worth an eval case, kept locally
+            try:
+                import fmcost
+                fmcost.eval_case(p, b)
+            except Exception as e:  # the block is recorded already; a case is a bonus
+                print(f"fm: warning: no eval case written ({type(e).__name__})", file=sys.stderr)
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
@@ -606,6 +622,27 @@ def _repro(b):
             cmd = line.split("`", 2)[1]
             failed = cmd if "` → ✗ exit" in line else None if cmd == failed else failed
     return failed or b.red_green_cmd()
+
+
+def task_revert(p, args):
+    """T-0732: what undoing a task would touch — its commits, and the open tasks that depend on or name it — and the
+    command that undoes it. It never reverts by itself: reverting under a dependent is the user's call."""
+    b = need_brief(p, args.id)
+    log = c._git(p.root, "log", "-n", "3000", "--format=%h%x1f%s%x1f%b%x1e", fail="") if c.git_root(p.root) else ""
+    own = re.compile(rf"\b{re.escape(b.id)}\b")
+    rows = [(r.strip().split("\x1f") + ["", "", ""])[:3] for r in log.split("\x1e") if r.strip()]
+    shas = [(h, subj) for h, subj, body in rows
+            if (own.search(subj) or f"Foreman-Task: {b.id}" in body) and not subj.startswith("Revert ")]
+    deps = [x for x in c.load_briefs(p) if x.id != b.id and x.status not in c.CLOSED
+            and (b.id in c._deps(x) or own.search(" ".join([x.title, x.section("Raw request")])))]
+    lines = [f"{b.id} {b.title}: {len(shas)} commit(s)"] + [f"  {h} {c.fit(s_, 90)}" for h, s_ in shas[:20]]
+    lines += ["Open tasks that depend on or name it (check each before undoing):"] + [
+        f"  {x.id} {c.fit(x.title, 70)} — " + ("depends on it" if b.id in c._deps(x) else "names it") for x in deps] \
+        if deps else ["No open task depends on it."]
+    lines += [f"Undo with: git revert --no-edit {' '.join(h for h, _ in shas)}" if shas else
+              "No commit names it (nothing to revert by id)."]
+    return out(args, {"task": b.id, "commits": [h for h, _ in shas], "dependents": [x.id for x in deps]},
+               "\n".join(lines))
 
 
 def task_packet(p, args):
@@ -732,7 +769,8 @@ def task_finish(p, args):
                                                 for t, x_, ev in claims))
             if getattr(args, "differently", None):  # T-0641
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
-    mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
+    mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3]),
+                                       "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
               for kind, n, cmd, code, output in results if code]
     if failed:
@@ -1311,9 +1349,13 @@ def catch_rates(p):
     runs, seq = collections.Counter(), collections.defaultdict(list)
     for e in c.ledger_tail(p, 50000):
         d = e.get("data") or {}
-        if e.get("event") == "evidence" and d.get("cmd") and str(d.get("result") or "").startswith("exit "):
+        if e.get("event") == "evidence" and d.get("cmd") and c.result_exit(d.get("result")) is not None:
             runs[d["cmd"]] += 1
-            seq[(d["cmd"], e.get("task"))].append(str(d["result"]).startswith("exit 0"))
+            seq[(d["cmd"], e.get("task"))].append(c.result_exit(d["result"]) == 0)
+        elif e.get("event") == "finish":  # T-0749: the close's own runs count too
+            for cmd, code in d.get("ran") or []:
+                runs[cmd] += 1
+                seq[(cmd, e.get("task"))].append(not code)
     caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
     return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
 
@@ -1477,7 +1519,7 @@ def _plan_gaps(p, b):
         if started and e.get("event") == "step_add" and d.get("text"):
             late.append(c.fit(c.plain(str(d["text"])), 120))
         elif e.get("event") == "evidence" and d.get("step") and d["step"] not in failed:
-            failed[d["step"]] = not str(d.get("result") or "").startswith("exit 0")
+            failed[d["step"]] = bool(c.result_exit(d.get("result")))  # a typed result is no failure
     steps = {s.n: s.text for s in b.steps()}
     lines = [f"- added late: {t}" for t in late] + [f"- failed first: step {n} {c.fit(steps[n], 100)}"
                                                     for n, bad in sorted(failed.items()) if bad and n in steps]
@@ -3443,6 +3485,13 @@ def build_parser():
     t.add_argument("--dry-run", action="store_true", help="show the partition only")
     t = tadd("capsule")  # T-0709
     t.add_argument("id")
+    t = tadd("finding")  # T-0743
+    t.add_argument("id")
+    t.add_argument("lens", help=", ".join(c.AUDIT_LENSES))
+    t.add_argument("verdict", choices=["confirmed", "rejected"])
+    t.add_argument("text", nargs="+")
+    t = tadd("revert")  # T-0732
+    t.add_argument("id")
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
@@ -3593,9 +3642,10 @@ def build_parser():
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
-    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
-    s.add_argument("action", choices=["add"])
-    s.add_argument("id")
+    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
+                                                        "what could become one (T-0734)")
+    s.add_argument("action", choices=["add", "inbox"])
+    s.add_argument("id", nargs="?")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
                                                   "yours (T-0708)")
@@ -3777,6 +3827,9 @@ def build_parser():
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
+    s.add_argument("--retire", metavar="LESSON", help="with --lessons: leave this lesson (T-0123.1) out of recall and "
+                                                      "tripwires (T-0743)")
+    s.add_argument("--why", help="with --retire: why it no longer helps")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
                                                         "in with fm share on (never sensitive ones), file:line (T-0618)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
@@ -3860,6 +3913,8 @@ def build_parser():
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+    s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
+                                                        "the same order (T-0734; adopting it is asked first)")
 
     s = add("sync", lazy("fmsync", "cmd_sync"),
             help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
@@ -3925,6 +3980,9 @@ def build_parser():
     b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
     b.add_argument("--model", default="sonnet")
     b.add_argument("--seed", type=int, default=0)
+    b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
     b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
                                         "from another (T-0656)")
     b.add_argument("--json", action="store_true")
@@ -3935,6 +3993,9 @@ def build_parser():
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name in ("build", "run", "models"):
             b.add_argument("--ids", nargs="+", help="only these task ids")
+        if name in ("list", "run"):
+            b.add_argument("--split", choices=["train", "holdout"], help="only that split (a stable 1 in 5 is "
+                                                                          "held out from fm evolve; T-0734)")
         if name == "models":
             b.add_argument("--models", default="haiku,sonnet", help="comma-separated models to compare")
             b.add_argument("--max", type=int, default=3)
@@ -4077,6 +4138,7 @@ def build_parser():
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
     s.add_argument("id", nargs="?")
+    s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")
@@ -4116,6 +4178,11 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--stall", type=float, default=20, help="minutes a session's transcript may sit still before fm "
                                                           "run stops it and goes on (0: never; T-0447)")
+    s.add_argument("--fit", action="store_true", help="small tasks first (S, M, then L), so more finish before a usage "
+                                                      "limit; on by itself while usage runs ahead of pace (T-0732)")
+    s.add_argument("--failover", choices=["codex", "gemini", "opencode"],
+                   help="opt-in for this run: when a usage limit outlasts --wait, hand the task's packet to this agent "
+                        "(it leaves for that provider; T-0731)")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
