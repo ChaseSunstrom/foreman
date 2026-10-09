@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Judgment, taste and decisions (T-0688 milestone: T-0636, T-0637, T-0638, T-0639, T-0654, T-0655, T-0667).
+  - Doors: execution classifies each fork. A one-way door (costly or outward) gets a plan note, a second read and `fm decide --kind`; a two-way door is decided on the spot and logged.
+  - Reviews list implicit decisions: the defaults a change took without saying so (`audit.md` and `fm-reviewer`).
+  - `fm second cheapest ID`: a tool-less child argues the cheapest version that still meets the request, saved as a "Cheapest version" section.
+  - `fm task finish --followups "Q => A" … --insight "<one line>"` keeps the likely follow-ups answered and the task's insight; `fm digest` lists the week's insights.
+  - Precedent: the user's words > vetoes > decisions > lessons > defaults. `fm decide --cites "<what it rests on>"` records the source on the row.
+  - `fm taste --overwrites`: files where a commit without a `Foreman-Task` trailer reworked an agent commit's file within two weeks.
+  - `fm digest` reports decisions reversed per kind, joining `[reverses:]` rows to the rows they undo.
 
 ## 1.2.24 — 2026-10-09
 - Deliberation (T-0687 milestone: T-0642, T-0662).

@@ -671,6 +671,11 @@ def task_finish(p, args):
                 x.set_section("Docs impact", c.redact(args.docs))
             if getattr(args, "why_not_caught", None):  # T-0598
                 x.set_section("Why not caught", c.redact(args.why_not_caught))
+            if getattr(args, "followups", None):  # T-0639: the questions the user will likely ask, answered
+                x.set_section("Follow-up answers", "\n".join(
+                    "- " + c.redact(q.strip()).replace("=>", "→", 1) for q in args.followups))
+            if getattr(args, "insight", None):
+                x.set_section("Insight", c.redact(c.plain(args.insight).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
               for kind, n, cmd, code, output in results if code]
@@ -1916,18 +1921,19 @@ def cmd_decide(args):
     except ValueError as e:                                                                          # their own args
         raise UsageError(str(e))
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
-                    getattr(args, "revisited", None), revisit)
+                    getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None))
     out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
-                    revisit="", locked=False):
+                    revisit="", locked=False, cites=None):
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
     words = lambda v: cell(v).replace("]", ")")  # a tag's words can't close the tag early
     tags = ("" if kind == "reversible" else f"[{kind}] ") + (
         f"[reverses: {words(reverses)}] " if reverses else "") + (
-        f"[revisited: {words(settles)}] " if settles else "") + revisit
+        f"[revisited: {words(settles)}] " if settles else "") + (
+        f"[cites: {words(cites)}] " if cites else "") + revisit  # T-0654: what the decision rests on
     text = re.sub(r"^\[", "(", cell(decision))  # review: free text can't open with a tag fm would read
     row = f"| {c.now()[:10]} | {tags}{text} | {cell(why)} | {cell(rejected)} |\n"
     path = os.path.join(p.dir, "decisions.md")
@@ -2964,6 +2970,7 @@ def build_parser():
     s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
                    help="costly/outward: listed for the user's review (fm decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
+    s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
     s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
@@ -3093,6 +3100,8 @@ def build_parser():
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
+    t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -3245,7 +3254,7 @@ def build_parser():
     s.add_argument("id")
     s = add("second", lazy("fmsecond", "cmd_second"),
             help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
-    s.add_argument("what", choices=["plan", "debate", "session"])
+    s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
     s.add_argument("id", nargs="?", help="plan, debate: the task")
     s.add_argument("--review", help="debate: the research note holding the earlier review")
     s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
@@ -3614,6 +3623,8 @@ def build_parser():
                    help="the user's yes or no to the proposed vetoes (all, or N)")
     s.add_argument("which", nargs="?", type=int, metavar="N")
     s.add_argument("-n", type=int, default=8)
+    s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
+                                                            "agent's (T-0655)")
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")

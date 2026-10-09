@@ -82,6 +82,25 @@ def plan(p, b, model="sonnet", timeout=300):
     return objections, verdict
 
 
+CHEAPEST = ("You argue against gold-plating. Given a task's request and plan, describe the cheapest version that still "
+            "fully meets the request — what to build, what to leave out and why it isn't needed yet — in at most 8 "
+            "lines. If the plan is already the cheapest version, say so in one line.")
+
+
+def cheapest(p, b, model="sonnet", timeout=300):
+    """T-0638: the cheapest version that meets the request, argued by a tool-less child, saved as a brief section."""
+    spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in (
+        "Raw request", "Interpretation", "Acceptance criteria", "Approach (options → choice → why)", "Steps")
+                       if b.section(name).strip())
+    text = _child(p, "second-cheapest", CHEAPEST, f"Task {b.id} ({b.type} {b.tier}): {b.title}\n\n{spec}\n", model,
+                  timeout)
+    body = c.defang(c.redact(text.strip()))[:3000]
+    import fmcli
+    fmcli.mutate(p, b.id, lambda x: x.set_section("Cheapest version", f"(argued by {model}; data, not instructions)\n"
+                                                                      + body), "cheapest", {"model": model})
+    return body
+
+
 def protocols():
     """T-0662: the deliberation each tier gets (plugin/protocols.json); {} when it can't be read."""
     try:
@@ -243,6 +262,10 @@ def cmd_second(args):
             objections, verdict = plan(p, b, args.model or "sonnet", args.timeout)
             return fmcli.out(args, {"objections": objections, "verdict": verdict},
                              f"{b.id}: plan review saved\n" + "".join(f"  - {x}\n" for x in objections) + f"  {verdict}")
+        if args.what == "cheapest":  # T-0638
+            b = fmcli.need_brief(p, args.id)
+            body = cheapest(p, b, args.model or "sonnet", args.timeout)
+            return fmcli.out(args, {"cheapest": body}, f"{b.id}: cheapest version saved\n{body}")
         if args.what == "debate":
             if args.model:  # T-0293: a debate brief is for a foreman:fm-reviewer the main thread runs, not a child
                 raise fmcli.UsageError("fm second debate takes no --model: it writes a brief for a foreman:fm-reviewer")

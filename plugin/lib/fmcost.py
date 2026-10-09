@@ -282,6 +282,29 @@ def weekly_line(p):
             + (f", {len(review)} decision(s) to review" if review else "") + "; fm digest shows it.")
 
 
+def reversals(p):
+    """T-0667: {kind: (decisions, reversed)} from decisions.md — a row is reversed when a later row's [reverses: words]
+    matches its text."""
+    try:
+        with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
+            rows = [ln for ln in f if ln.startswith("| 2")]
+    except OSError:
+        return {}
+    parsed = []
+    for ln in rows:
+        cells = [x.strip() for x in ln.strip().strip("|").split("|")]
+        text = cells[1] if len(cells) > 1 else ""
+        kind = (re.match(r"\[(costly|outward)\]", text) or [None, "reversible"])[1]
+        undoes = (re.search(r"\[reverses: ([^\]]+)\]", text) or [None, None])[1]
+        parsed.append((kind, re.sub(r"\[[a-z]+(?::[^\]]*)?\]\s*", "", text).lower(), undoes))
+    out = {}
+    for i, (kind, text, _) in enumerate(parsed):
+        hit = any(u and u.lower().strip() in text for _, _, u in parsed[i + 1:])
+        n, r = out.get(kind, (0, 0))
+        out[kind] = (n + 1, r + hit)
+    return out
+
+
 def cmd_digest(args):
     """The week (or --days N) in one screen: finished work with its verification grade, lessons, decisions the user
     should review, blocked work, recurring failures and tokens."""
@@ -302,6 +325,11 @@ def cmd_digest(args):
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
     lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({b.meta.get('verified', 'ungraded')})" for b in done[-8:]]
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
+    insights = [(b.id, b.section("Insight").strip()) for b in done if b.section("Insight").strip()]  # T-0639
+    lines += ["Insights:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in insights[-6:]] if insights else []
+    rev = reversals(p)  # T-0667: how often each kind of decision got undone
+    lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
+        if any(r for _, r in rev.values()) else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \

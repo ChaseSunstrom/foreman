@@ -19,6 +19,8 @@ what counts as correct. `fm task done` refuses until the tier's audits are recor
 6. **Record** each lens: `fm task audit ID <lens> "<how: agent/lens/diff>" "<N findings: F fixed (tests), C captured (ids), X false positive>"`.
 7. If a fix changed code after an audit, re-run that lens (fm rejects audits older than the last edit).
 
+8. **Implicit decisions** (T-0637): every lens also lists the defaults the change took without saying so — a library, a name, a schema or file format, a behaviour at the edges — one line each, so a default the user would have chosen differently is visible; real ones go in the brief's Log or `fm decide`.
+
 ## Lens templates (paste into the fm-reviewer brief)
 
 **intent** — context: the user's raw request(s) verbatim, the acceptance criteria, the diff. Nothing else.
