@@ -44,6 +44,15 @@ class Checks(unittest.TestCase):
         self.assertEqual(d.check_mod_release(repo, listing).status, "PASS")
         self.assertEqual(d.check_mod_release(repo, os.path.join(self.t, "none.json")).status, "PASS")  # not installed
 
+    def test_a_busy_machine_skips_hook_timing(self):
+        # T-0367: at load 35 JARVIS spent 21 s on 136 timed hook runs, and slow numbers there say nothing of the hooks
+        bench = {"Stop": {"p95": 900, "budget": 150, "ok": False, "exit_codes": [0]}}
+        r = d.check_hook_latency(bench, busy="load 35.1 on 16 cores")
+        self.assertEqual((r.status, "not measured" in r.detail), ("WARN", True))
+        self.assertEqual(d.check_hook_latency(bench).status, "FAIL")
+        self.assertEqual(d.bench_runs("load 35.1 on 16 cores"), 1)
+        self.assertEqual(d.bench_runs(None), 5)
+
     def test_python_below_the_floor_fails(self):
         for v, want in [((3, 12, 3), "FAIL"), ((3, 13, 0), "FAIL"), ((3, 12, 7), "PASS"), ((3, 14, 7), "PASS")]:
             self.assertEqual(d.check_python(v).status, want, v)

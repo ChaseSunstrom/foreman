@@ -92,8 +92,24 @@ def check_hook_scripts(plugin=PLUGIN):
     return Result("hook scripts", "FAIL" if problems else "PASS", "; ".join(problems) or f"{len(cmds)} executables OK")
 
 
-def check_hook_latency(bench):
-    over = [f"{k} p95 {v['p95']}ms > {v['budget']}ms" for k, v in bench.items() if not v["ok"]]
+def busy():
+    """'load L on N cores' when the 1-minute load passes the core count, else None (T-0367)."""
+    try:
+        load, cores = os.getloadavg()[0], os.cpu_count() or 1
+    except (OSError, AttributeError):
+        return None
+    return f"load {load:.1f} on {cores} cores" if load > cores else None
+
+
+def bench_runs(busy):
+    """A busy machine runs each fixture once: the exit codes still count, the timings wouldn't."""
+    return 1 if busy else 5
+
+
+def check_hook_latency(bench, busy=None):
+    if busy:
+        return Result("hook latency", "WARN", f"not measured: {busy} (run plugin/tests/bench_hooks.py when it's idle)")
+    over =[f"{k} p95 {v['p95']}ms > {v['budget']}ms" for k, v in bench.items() if not v["ok"]]
     worst = max((v["p95"] for v in bench.values()), default=0)
     return Result("hook latency", "FAIL" if over else "PASS", "; ".join(over) or f"all {len(bench)} fixtures, worst p95 {worst} ms")
 
@@ -412,11 +428,11 @@ def check_hook_errors():
 
 # ---------------------------------------------------------------- orchestration
 
-def _bench_and_injection():
+def _bench_and_injection(runs=5):
     import tempfile
     sys.path.insert(0, os.path.join(PLUGIN, "tests"))
     import bench_hooks
-    bench = bench_hooks.run_bench(runs=5)
+    bench = bench_hooks.run_bench(runs=runs)
     sizes = {}
     with tempfile.TemporaryDirectory() as tmp:
         repo, env = bench_hooks._scratch_project(tmp)
@@ -673,8 +689,9 @@ def run_all(full=False):
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home)]
     try:
-        bench, sizes = _bench_and_injection()
-        results += [check_hook_latency(bench), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
+        load = busy()
+        bench, sizes = _bench_and_injection(bench_runs(load))
+        results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_writers(settings, home), check_name_collisions(settings),

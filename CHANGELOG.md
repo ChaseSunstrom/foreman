@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.2.2 — 2026-10-09
+- Guard: a design system's tokens file (`design/tokens.json`, `theme/tokens.yaml`, `design-tokens.json`) is no longer taken for a credential. JARVIS's UI work was refused mid-run on `/opt/jarvis/design/tokens.json`. `token.json`, a tokens file anywhere else, and every `secret`/`credential` name still count.
+- Guard: a variable that isn't set counts as empty, as bash expands it (T-0374, found while fixing T-0370). Before, `echo x > $NOPE/home/…/.claude/foreman/plugin/lib/fmguard.py` (and `cp`, `tee`, `${NOPE}` forms) passed and wrote the guard file. A variable used before its assignment on the line is no longer read with that later value. Every unknown part is also tried as empty.
+- Guard (T-0370): a plain `$(…)` or `` `…` `` no longer turns off variable tracking for the whole line, so `f=$(ls <state>/…); …; S=/tmp/…; … > $S/x` knows `S`. Before, that line was refused as a state write 6 times. A substitution whose body has a quote, an escape, a comment, a heredoc or `case` still counts as unknown, since its closing paren may not be the first. A plain `printf` no longer makes every variable unknown; only `printf -v` sets one.
+- `fm doctor` on a busy machine (1-minute load above the core count) runs each hook fixture once, still checking exit codes, and reports hook latency as not measured. Before, it timed 136 hook runs: 16.6 s on JARVIS at load 27 on 8 cores (now 11.1 s), with numbers that said nothing about the hooks (T-0367).
+
 ## 1.2.1 — 2026-10-08
 - Foreman runs on a supported Python when `python3` is older than 3.12.7 (T-0368). That was JARVIS, on 3.11.2, where argparse dropped typed evidence and the arguments of `fm session` and `fm claude send`. The first call finds a supported interpreter (`python3.14`/`3.13`/`3.12` on PATH or in `~/.local/bin`, then uv's) and saves it in `state/python`, or saves `none`. After that, `fm` and the statusline re-exec under it, and the hook dispatcher runs the hook as a child under it. If that child crashes, the hook runs on the old interpreter as before, because Claude Code reads exit 1 as allow. The saved file counts only when you own it and others can't write it. `fm doctor` says which interpreter Foreman runs under and searches again.
 
