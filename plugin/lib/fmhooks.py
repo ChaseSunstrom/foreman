@@ -811,6 +811,9 @@ def _pre_tool_use(raw):
         return 2
     if block:
         reason = guard.message(block, ctx)
+        long_cmd = str((pl.get("tool_input") or {}).get("command") or "") if tool == "Bash" else ""
+        if len(long_cmd) > 160:  # T-0500: in a long command, quote the part that matched
+            reason += f"\nin: {c.redact(_window(long_cmd, block.detail))}"
         if block.category == "brief" and p:  # T-0409: the work in progress is usually right there in the queue
             try:
                 nxt = next(iter(c.order_queue(c.load_briefs(p))[0]), None)
@@ -1290,6 +1293,8 @@ def _window(cmd, detail, width=160):
     target = str(detail).split(" (", 1)[0].strip()
     var = re.match(r"\$\{?(\w+)", target)
     hit = target and (re.search(re.escape(target), cmd) or var and re.search(r"\$\{?" + var.group(1) + r"\b", cmd))
+    tail = os.path.basename(target.rstrip("/")) if "/" in target else ""
+    hit = hit or (len(tail) > 2 and re.search(re.escape(tail), cmd))  # T-0500: the guard names ~/x as /home/…/x
     if len(cmd) <= width or not hit:
         return c.fit(cmd, width)
     start = max(0, min(hit.start() - width // 3, len(cmd) - width + 2))
