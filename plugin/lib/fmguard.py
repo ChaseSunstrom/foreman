@@ -204,8 +204,8 @@ def _is_credential(path, ctx):
     if any(_under(path, s) for s in getattr(ctx, "scratch", ()) or ()):
         return False  # T-0169: a scratch file's name says nothing of its contents (its real path is checked too)
     stem, ext = os.path.splitext(base)
-    if ext.lower() in _DOC_EXT:
-        return False
+    if ext.lower() in _DOC_EXT or ext.lower() in (".example", ".sample", ".template", ".dist", ".tmpl"):
+        return False  # T-0386: secrets.yaml.example is the placeholder copy, as .env.example is
     if re.search(r"(^|[._-])(secrets?|credentials?)([._-]|$)", stem.lower()):
         return True
     # a design system's tokens (colours, spacing, durations) aren't auth tokens (JARVIS: design/tokens.json was refused)
