@@ -3,6 +3,7 @@ data and trace questions in a few capped lines, so the model reads the answer in
 One registry (name, line cap, JSON-schema input) drives `fm instruments`, the fm subcommands and their arguments.
 Each tool puts its most telling lines first and is cut at its cap. Stdlib and git only: no network, no model calls."""
 import collections
+import itertools
 import json
 import os
 import re
@@ -19,7 +20,7 @@ TOOLS = {
              [("file", "string", "the runner's output (default: stdin)", False, "FILE")]),
     "logs": (40, "a log as templates with counts, errors first; with --since-good, what's new against a good run",
              [("file", "string", "the log", True, "FILE"),
-              ("since_good", "string", "a good run's log: templates new or gone since it lead", False, "FILE")]),
+              ("since_good", "string", "a good run's log: templates new or gone since it led", False, "FILE")]),
     "data": (40, "a data file's schema, stats and first 5 rows (csv, tsv, json, jsonl, sqlite)",
              [("file", "string", "the data file", True, "FILE")]),
     "trace": (30, "a Python or JS stack trace mapped to repo lines, deepest first, with each line's commit date and "
@@ -66,11 +67,15 @@ def _emit(args, name, lines, data):
     cap = TOOLS[name][0]
     if len(lines) > cap:
         lines = lines[:cap - 1] + [f"… {len(lines) - cap + 1} more lines (fm {name} keeps {cap})"]
-    fmcli.out(args, data, c.plain_lines("\n".join(c.fit(" ⏎ ".join(ln.splitlines()), WIDTH) for ln in lines)))
+    text = "\n".join(c.fit(" ⏎ ".join(c.redact(ln).splitlines()), WIDTH) for ln in lines)  # redact, then cut
+    fmcli.out(args, c.redact_obj(data), c.plain_lines(text))
 
 
 def _root():
     return c.git_root(os.getcwd()) or os.getcwd()
+
+
+MAX_TEXT, MAX_LINES = 20_000_000, 1_000_000  # ponytail: a huge input is read up to these; a streaming pass if it matters
 
 
 def _input(path):
@@ -78,12 +83,12 @@ def _input(path):
     if path and path != "-":
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                return f.read()
+                return f.read(MAX_TEXT)
         except OSError as e:
             raise fmcli.UsageError(f"can't read {path}: {e.strerror}")
     if sys.stdin.isatty():
         raise fmcli.UsageError("pipe the text in or name a FILE")
-    return sys.stdin.read()
+    return sys.stdin.read(MAX_TEXT)
 
 
 def _read_lines(root, rel, cache={}):  # noqa: B006 — one process, one read per file
@@ -200,11 +205,11 @@ def cmd_sym(args):
     words = re.findall(r"[A-Za-z_$][\w$]*", " ".join(_code(ln, py) for ln in lines[start - 1:end]))
     used = [w for w in dict.fromkeys(words) if w in table and w != short]
     out.append(f"uses ({len(used)}):" if used else "uses: nothing else defined in this file")
-    for w in used[:8]:
+    for w in used[:6]:
         a, b = table[w]
         out.append(f"  {w:<16} {rel}:{a}{'-' + str(b) if b != a else ''}  {lines[a - 1].strip()}")
-    if len(used) > 8:
-        out.append(f"  … {len(used) - 8} more: {', '.join(used[8:])}")
+    if len(used) > 6:
+        out.append(f"  … {len(used) - 6} more: {', '.join(used[6:])}")
     # callers: lines in the repo that call it (a method by .name()), each with the definition around it
     call = re.compile((r"\." if "." in qual else r"(?<![\w$])") + re.escape(short) + r"\s*\(")
     import fmmap
@@ -224,7 +229,7 @@ def cmd_sym(args):
         where = max(around, key=lambda q: q[1])[0] if around else "<module>"
         callers.append(f"  {f}:{n} in {where}: {line.strip()}")
     out.append(f"callers ({len(callers)}):" if callers else f"callers: none found for {short}( in {os.path.basename(root)}")
-    out += callers[:8] + ([f"  … {len(callers) - 8} more"] if len(callers) > 8 else [])
+    out += callers[:6] + ([f"  … {len(callers) - 6} more"] if len(callers) > 6 else [])  # 1+20+1+7+7 ≤ 40
     _emit(args, "sym", out, {"path": rel, "name": qual, "kind": kind, "start": start, "end": end, "uses": used,
                              "callers": [x.strip() for x in callers[:50]]})
 
@@ -236,7 +241,7 @@ _AT_LINE = re.compile(r"^\s*([\w./\\-]+\.\w+):(\d+):(?:\s*in (\S+))?")  # pytest
 _JS_FRAME = re.compile(r"^\s*at (?:(.+?) \()?(\S+?):(\d+):\d+\)?$")
 _LIB = re.compile(r"(^|[/\\])(site-packages|dist-packages|node_modules|\.venv|venv|\.tox|lib[/\\]python[\d.]*)[/\\]|"
                   r"^node:|^<|^internal[/\\]")
-_ERROR = re.compile(r"^(?:E\s+)?((?:[A-Za-z_][\w.]*\.)?[A-Z]\w*(?:Error|Exception|Failure|Exit|Interrupt)\b.*|"
+_ERROR = re.compile(r"^(?:E\s+)?((?:[A-Za-z_]\w*\.)*[A-Z]\w*(?:Error|Exception|Failure|Exit|Interrupt)\b.*|"
                     r"panic: .*|thread '.*' panicked.*|assert .*)$")
 
 
@@ -264,7 +269,9 @@ def _locate(path, root):
     for base in dict.fromkeys([os.getcwd(), root]):
         for i in range(len(parts)):
             if ".." not in parts[i:] and os.path.isfile(os.path.join(base, *parts[i:])):
-                return os.path.relpath(os.path.realpath(os.path.join(base, *parts[i:])), root)
+                rel = os.path.relpath(os.path.realpath(os.path.join(base, *parts[i:])), root)
+                if not rel.startswith(".."):  # a symlink out of the repo isn't a repo line
+                    return rel
     return None
 
 
@@ -346,7 +353,9 @@ def _mask(tok):
 def _sim(tmpl, toks):
     """Drain's similarity: the share of the template's fixed tokens the line repeats (a prefix<*> matches its prefix)."""
     same = sum(1 for a, b in zip(tmpl, toks) if a != "<*>" and (a == b or a.endswith("<*>") and b.startswith(a[:-3])))
-    return same / len(tmpl)
+    # T-0701 review: a line that repeats every fixed token is the template's, however many values it has (an access
+    # log is mostly numbers); otherwise Drain's share of all tokens, so a template can't drift general
+    return 1.0 if same == sum(a != "<*>" for a in tmpl) else same / len(tmpl)
 
 
 def _wild(a, b):
@@ -383,7 +392,7 @@ def cmd_logs(args):
     for path in [args.file] + ([args.since_good] if args.since_good else []):
         try:
             with open(path, encoding="utf-8", errors="replace") as f:
-                runs.append(f.read().splitlines())
+                runs.append([ln.rstrip("\r\n") for ln in itertools.islice(f, MAX_LINES)])
         except OSError as e:
             raise fmcli.UsageError(f"can't read {path}: {e.strerror}")
     temps = _mine(runs)
@@ -398,7 +407,7 @@ def cmd_logs(args):
     name = os.path.basename(args.file)
     head = f"{name}: {len(runs[0])} lines → {len(here)} templates"
     if args.since_good:
-        new = sorted((t for t in here if not t["counts"][1]), key=lambda t: t["first"][0])
+        new = sorted((t for t in here if not t["counts"][1]), key=lambda t: (t["sev"], t["first"][0]))
         gone = sorted((t for t in temps if not t["counts"][0]), key=lambda t: (-t["counts"][1], t["first"][1]))
         rows = [("new", t) for t in new] + [("gone", t) for t in gone] + [("", t) for t in sorted(
             (t for t in here if t["counts"][1]), key=order)]
@@ -450,6 +459,7 @@ def _tables(path):
         import pathlib
         import sqlite3
         con = sqlite3.connect(pathlib.Path(path).absolute().as_uri() + "?mode=ro", uri=True)
+        con.text_factory = lambda b: b.decode("utf-8", "replace")  # one bad value mustn't lose the file
         try:
             out = []
             for (t,) in con.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
@@ -465,16 +475,20 @@ def _tables(path):
     ext = os.path.splitext(path)[1].lower()
     with open(path, encoding="utf-8-sig", errors="replace", newline="") as f:
         if ext in (".jsonl", ".ndjson"):
-            recs, bad = [], 0
+            recs, bad, total = [], 0, 0
             for ln in f:
                 if ln.strip():
-                    try:
-                        recs.append(json.loads(ln))
-                    except ValueError:
-                        bad += 1
-            cols, rows = _records(recs[:ROWS])
-            return "jsonl", [("", cols, [], rows, len(recs))], f"{bad} lines aren't JSON" if bad else ""
+                    total += 1
+                    if len(recs) < ROWS:  # T-0701 review: parse the first ROWS, count the rest
+                        try:
+                            recs.append(json.loads(ln))
+                        except ValueError:
+                            bad += 1
+            cols, rows = _records(recs)
+            return "jsonl", [("", cols, [], rows, total - bad)], f"{bad} lines aren't JSON" if bad else ""
         if ext == ".json":
+            if os.path.getsize(path) > MAX_TEXT:
+                raise ValueError(f"over {MAX_TEXT // 1_000_000} MB: as JSON lines (.jsonl) it's read in part")
             data, note = json.load(f), ""
             if isinstance(data, dict):
                 key = max((k for k, v in data.items() if isinstance(v, list)), key=lambda k: len(data[k]), default=None)
@@ -522,7 +536,7 @@ def _column(name, vals, decl):
     distinct = collections.Counter(str(v) for v in vals_)
     parts.append(f"{len(distinct)} distinct")
     if typ == "number":
-        nums = [float(v) for v in vals_]
+        nums = [float(str(v)) for v in vals_]  # str: an int over 1e308 is inf, not an OverflowError
         parts.append(f"min {min(nums):g} max {max(nums):g} mean {sum(nums) / len(nums):.4g}")
     elif typ == "date":
         parts.append(f"{min(map(str, vals_))} → {max(map(str, vals_))}")
@@ -572,7 +586,9 @@ def cmd_data(args):
 
 def _touch(root, rel, n, cache):
     """The commit that last touched the line: date, sha, the tasks it names and its subject."""
-    blame = c._git(root, "blame", "--porcelain", "-L", f"{n},{n}", "--", rel, timeout=10)
+    if (rel, n) not in cache:  # recursion repeats frames: one blame each
+        cache[(rel, n)] = c._git(root, "blame", "--porcelain", "-L", f"{n},{n}", "--", rel, timeout=10)
+    blame = cache[(rel, n)]
     sha = blame.split()[0] if blame.strip() else ""
     if not sha:
         return "not in git"
