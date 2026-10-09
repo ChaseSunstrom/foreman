@@ -538,10 +538,33 @@ def cmd_task(args):
     raise UsageError(f"unknown task subcommand {sub}")
 
 
+def _repro(b):
+    """T-0704: the command a handoff's failure reproduces with: the newest command fm ran that failed and hasn't
+    passed since, else the red run of red→green."""
+    failed = None
+    for line in b.evidence():
+        if c._RAN_MARK in line and line.count("`") >= 2:
+            cmd = line.split("`", 2)[1]
+            failed = cmd if "` → ✗ exit" in line else None if cmd == failed else failed
+    return failed or b.red_green_cmd()
+
+
 def task_packet(p, args):
     """T-0466: one markdown handoff for a person or another machine: what the task is, when it's done, the steps,
     the evidence, why it's blocked, what was tried and the next probe. Redacted; plain text, no instructions."""
     b = need_brief(p, args.id)
+    repro = _repro(b)
+    if args.check:  # T-0704: a handoff is trusted only while the failure it hands over still happens
+        if not repro:
+            raise UsageError(f"{b.id} has no failing run recorded to reproduce (fm task evidence {b.id} --run \"<cmd>\")")
+        code, output = c.run_command(p.root, repro, args.timeout)
+        if code:
+            return out(args, {"task": b.id, "cmd": repro, "reproduces": True},
+                       f"{b.id}: the failure reproduces ({repro} → {c.run_result(code, output)}): handoff accepted.")
+        out(args, {"task": b.id, "cmd": repro, "reproduces": False},
+            f"{b.id}: stale handoff: {repro} passes now, so the failure it hands over doesn't happen here (fixed "
+            f"already, or this checkout differs); re-check the task before working it.")
+        raise SystemExit(1)
     hyps = b.hypotheses()
     probe = next((re.search(r"probe: `(.+?)`", t) for _, st, t in hyps if st == "open" and "probe: `" in t), None)
     step = next((s for s in b.steps() if not s.done), None)
@@ -551,6 +574,8 @@ def task_packet(p, args):
              "## What it is", (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section(
                  "Raw request")).strip() or b.title),
              "## Done when", "\n".join(f"- [{'x' if a.checked else ' '}] {a.text}" for a in b.acceptance()) or "(none)",
+             "## Reproduce", f"`{repro}` (failed when packed; fm task packet {b.id} --check reruns it)" if repro
+             else "(no failing run recorded)",
              "## Steps", b.section("Steps").strip() or "(none)",
              "## Evidence so far", "\n".join(b.evidence()) or "(none)",
              "## Blocked", "\n".join(blocked) or "(not blocked)",
@@ -594,8 +619,6 @@ def task_finish(p, args):
         if not sep or lens.strip() not in c.AUDIT_LENSES or not result.strip():
             raise UsageError(f"--lens takes '<lens>: <result>' with a lens of {', '.join(c.AUDIT_LENSES)}; got {spec!r}")
         lenses.append((lens.strip(), result.strip()))
-    if b.tier != "S" and not lenses:
-        raise UsageError(f"{b.id} is {b.tier}: name its audits, e.g. --lens 'intent: <result>' --lens 'edge: <result>'")
     runs = {}
 
     def run(cmd):
@@ -615,9 +638,10 @@ def task_finish(p, args):
         ("step", s.n, args.run) for s in b.steps() if not s.done and s.n not in evidenced]
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
-    if missing:
-        raise UsageError(f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
-                         f"evidence of its own")
+    gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses)
+    if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
+        raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -647,6 +671,22 @@ def task_finish(p, args):
     return rc
 
 
+def _finish_gaps(b, args, lenses):
+    """T-0704: what fm task done would refuse that this call doesn't supply, checked before anything runs: the audit
+    lenses its tier needs, docs impact and the lesson (M/L)."""
+    given = {lens for lens, _ in lenses} | ({"self"} if b.tier == "S" else set())
+    recorded = b.audit_blockers()
+    gaps = [f"audit missing: --lens '{sorted(g)[0]}: <result>'" + (f" (or {', '.join(sorted(g)[1:])})" if len(g) > 1
+                                                                  else "")
+            for g in c.REQUIRED_AUDITS.get(b.tier, c.REQUIRED_AUDITS["S"])
+            if not g & given and any(r.startswith(f"audit missing: {' or '.join(sorted(g))}") for r in recorded)]
+    if b.docs_gap() and not args.docs:
+        gaps.append("docs impact missing: --docs \"<docs updated | none: why>\"")
+    if b.tier in ("M", "L") and not args.lesson and not b.section("Lessons").strip():
+        gaps.append("lesson missing: --lesson \"<what the next similar task should know>\" (or \"none: <why>\")")
+    return gaps
+
+
 def _commit_task(p, b, message, dry=False):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
@@ -666,6 +706,16 @@ def _commit_task(p, b, message, dry=False):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
+    # T-0738: a file only another task edited (since this one was created) is that task's to commit, even when this
+    # task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)
+    mine, since = set(c.task_touches(p, b.id)), str(b.meta.get("created") or "")
+    others = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
+              if e.get("event") == "touched" and e.get("task") not in (None, b.id) and str(e.get("ts", "")) >= since
+              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    theirs = [f for f in files if f in others and f not in mine]
+    files = [f for f in files if f not in theirs]
+    if theirs and not dry:
+        print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
     files += [".foreman"] if mirror else []
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
@@ -695,6 +745,9 @@ def _commit_task(p, b, message, dry=False):
                                f"`{fmsecrets.ALLOW}`, then commit"
                              + ("." if dry else f" (fm task finish {b.id} --commit \"<message>\" retries it)."))
     if dry:
+        return
+    if add.returncode == 0 and not subprocess.run([*git, "diff", "--cached", "--quiet", "--", *files]).returncode:
+        print(f"{b.id}: nothing to commit (its files are as committed already).")  # T-0738: not a blank failure
         return
     trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
@@ -1087,8 +1140,13 @@ def _not_verified(p, b, files):
         m = fmmap.load(p)
     except Exception:  # the map is a hint: no map, no warning
         return None
+    import fnmatch
     ran = " ".join(b.evidence())
-    bare = [f for f in files if c.CODE.search(f) and not fmmap._TEST.search(f)
+    meta = c.read_meta(p)
+    passed = {l.split("`", 2)[1] for l in b.evidence() if c._RAN_MARK in l and "` → exit 0" in l}
+    gates = [(meta.get("check_paths") or {}).get(g) or ["*"] for g in meta.get("checks") or [] if g in passed]
+    bare = [f for f in files if c.CODE.search(f) and not fmmap._TEST.search(f)  # T-0736: a passing gate covers its paths
+            and not any(fnmatch.fnmatch(f, g) for globs in gates for g in globs)
             and not any(t in files or t in ran for t in fmmap.tests_for(m, [f]))]
     return (f"not verified: {', '.join(bare[:8])}{' …' if len(bare) > 8 else ''} — no linked test changed or ran "
             f"(fm task prove {b.id} --hunks names the hunks no check notices)") if bare else None
@@ -2032,6 +2090,19 @@ def cmd_check(args):
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
                                               for r in rows) or "no checks (fm check add '<cmd>')")
         return 0 if all(r["passed"] == n for r in rows) else 1
+    if args.action == "ambient":  # T-0705
+        if args.words[:1] == ["run"]:  # the detached run an edit starts
+            import fmambient
+            return fmambient.run(p) or 0
+        if args.words[:1] not in (["on"], ["off"]):
+            raise UsageError("fm check ambient on|off")
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta["ambient"] = args.words[0] == "on"
+            c.write_meta(p, meta)
+        return out(args, {"ambient": meta["ambient"]},
+                   "Ambient tests on: after each edit the affected tests run in the background; you hear only when "
+                   "they flip." if meta["ambient"] else "Ambient tests off.")
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -2363,9 +2434,11 @@ def _cached_pass(p, checks, tree):
     return None
 
 
-def _check_affected(p, args):
-    """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
+def affected(p):
+    """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
+    project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
     import fmmap
+    import shlex
     act = c.active_brief(c.load_briefs(p), p.lane)
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
@@ -2374,12 +2447,17 @@ def _check_affected(p, args):
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
+    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
+        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests)) if tests else None
+    return cmd, tests, changed
+
+
+def _check_affected(p, args):
+    """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
+    cmd, tests, changed = affected(p)
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
-    import shlex
-    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
-        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests))
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed)}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
         f"{c.run_result(code, output)}\n(the full gates still decide before commit and done: fm check)")
@@ -2711,7 +2789,8 @@ HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export instruments sym fail logs data trace"),
+                         "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred "
+                         "record graph"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -2843,6 +2922,9 @@ def build_parser():
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
+    t.add_argument("--check", action="store_true",
+                   help="rerun the failing command the packet hands over: accepted while it still fails (T-0704)")
+    t.add_argument("--timeout", type=int, default=300)
     t = tadd("new")
     t.add_argument("title")
     t.add_argument("--type", required=True)
@@ -2969,9 +3051,30 @@ def build_parser():
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
+    s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
+                                                        "read-set, as of any moment (T-0707)")
+    s.add_argument("action", choices=["blast", "pack", "build"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--as-of", help="only what was known by this ISO time (backtests)")
+    s.add_argument("--top", type=int, default=15)
+    s = add("suspects", lazy("fmdebug", "cmd_suspects"), help="files ranked for a failure: stack, task change, test "
+                                                               "links, recency (T-0706)")
+    s.add_argument("file", nargs="?", help="the failing run's output (default: stdin)")
+    s.add_argument("--top", type=int, default=5)
+    s = add("whyred", lazy("fmdebug", "cmd_whyred"), help="the minimal hunks of this task's change that turn a command "
+                                                           "red (delta debugging, T-0706)")
+    s.add_argument("cmd")
+    s.add_argument("--timeout", type=int, default=300)
+    s = add("record", lazy("fmdebug", "cmd_record"), help="rerun a Python command and show the locals where its "
+                                                           "exceptions unwound (T-0706)")
+    s.add_argument("cmd")
+    s.add_argument("--top", type=int, default=4)
+    s.add_argument("--timeout", type=int, default=600)
     s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
+    s.add_argument("--sessions", action="store_true",
+                   help="per session: turns, context per turn, the cache read/write/output split and cache busts")
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
@@ -3119,7 +3222,8 @@ def build_parser():
     s.add_argument("--bisect", action="store_true", help="find the commit that broke each failing check (git bisect in "
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
-    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected"])
+    s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
+                                                                          "ambient"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
                                             "(paths) or {names} (file names without extension)")

@@ -157,6 +157,8 @@ def cmd_cost(args):
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
     msgs, tools = scan(folder, _since(args.days))
+    if getattr(args, "sessions", False):
+        return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
     timeline = sorted((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_tail(p, 20000) if e.get("task"))
     for ts, sid, usage in msgs:
@@ -201,6 +203,40 @@ def cmd_cost(args):
             + (f"\nContext at the first reply of a session (median): {_human(base)} tokens, re-read every turn"
                if base else "") + when)
     fmcli.out(args, data, text)
+
+
+BUST_MIN = 30000  # a turn re-writing over half of a context this big lost its cache (T-0703)
+SPLIT = {"cache_read_input_tokens": "cache read", "cache_creation_input_tokens": "cache write", "input_tokens": "fresh",
+         "output_tokens": "output"}
+
+
+def _sessions(msgs, args, fmcli):
+    """T-0703: per session, the context every turn re-reads (the 78% of spend that is cache reads), its weighted split
+    and the cache busts: turns that re-wrote over half of a context past BUST_MIN tokens."""
+    rows = {}
+    for ts, sid, u in sorted(msgs, key=lambda x: x[0]):
+        r = rows.setdefault(sid, {"session": sid, "turns": 0, "busts": 0, "ctx": 0, "prev": 0,
+                                  "tokens": collections.Counter()})
+        ctx = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+        w = u.get("cache_creation_input_tokens") or 0
+        r["busts"] += r["prev"] > BUST_MIN and ctx > BUST_MIN and w > ctx / 2
+        r["turns"], r["ctx"], r["prev"] = r["turns"] + 1, r["ctx"] + ctx, ctx
+        for k in WEIGHTS:
+            r["tokens"][k] += u.get(k) or 0
+    out = []
+    for r in rows.values():
+        spend = {k: r["tokens"][k] * WEIGHTS[k] for k in WEIGHTS}
+        out.append({"session": r["session"], "turns": r["turns"], "avg_context": r["ctx"] // r["turns"],
+                    "busts": r["busts"], "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
+                    "split": {SPLIT[k]: round(100 * v / (sum(spend.values()) or 1)) for k, v in sorted(spend.items(), key=lambda kv: list(SPLIT).index(kv[0]))}})
+    out.sort(key=lambda s: -s["input_equivalent"])
+    text = (f"Sessions, last {args.days:g} day(s), costliest first (the context a turn re-reads is most of the cost):\n"
+            + "\n".join(f"  {s['session'][:12]}: {s['turns']} turns, {_human(s['avg_context'])} context per turn, "
+                        f"≈ {_human(s['input_equivalent'])} input-equivalent (" + ", ".join(
+                            f"{k} {v}%"
+                            for k, v in s["split"].items()) + f"), {s['busts']} bust{'s' * (s['busts'] != 1)}"
+                        for s in out[:15]) if out else f"No token usage in the last {args.days:g} day(s).")
+    return fmcli.out(args, {"days": args.days, "sessions": out}, text)
 
 
 def _by_model(p, args, fmcli):

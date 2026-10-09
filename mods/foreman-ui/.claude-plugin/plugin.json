@@ -13,6 +13,12 @@
       "description": "When a task closes with context at or above this percent, compact so the next task starts fresh. 0 turns it off.",
       "default": 40
     },
+    "freshTokens": {
+      "type": "number",
+      "title": "Compact at task boundaries (context tokens)",
+      "description": "When a task closes with at least this many context tokens, compact so the next task starts fresh: every turn re-reads the whole context. 0 turns it off.",
+      "default": 200000
+    },
     "mascot": {
       "type": "string",
       "title": "Mascot",
