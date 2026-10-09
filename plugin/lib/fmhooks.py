@@ -220,7 +220,8 @@ def session_start(pl):
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
-    c.log_event(p, "session_start", data={"source": pl.get("source")}, session=sid)
+    c.log_event(p, "session_start", data={"source": pl.get("source"), "root": c.PLUGIN_ROOT},  # T-0391: the code
+                session=sid)  # this session runs (fm doctor compares it with the installed one)
     if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time
         try:
             subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "second", "session", "--if-due",
