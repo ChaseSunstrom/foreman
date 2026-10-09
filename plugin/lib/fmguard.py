@@ -2051,6 +2051,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if val is not None:  # its value on this line, split as bash splits it unquoted
                 found += check_bash(" ".join([val] + rest_args), ctx, depth + 1)
             found += check_bash(" ".join(rest_args), ctx, depth + 1) if args else []  # it may expand to nothing
+            for t in _shell_c(args) + ([" ".join(args)] if args else []):  # T-0668 (review): or be bash -c, or eval
+                for x in _readings(t, {**lits, **known}):
+                    found += check_bash(x, ctx, depth + 1)
             names += _COMPUTED_AS  # or be any dangerous command
         for nm in names:
             if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
@@ -2381,7 +2384,9 @@ def _check_rm(name, args, via_xargs, chain, cwd, ctx):
                 opts.append(a)
             else:
                 targets.append(a)
-        recursive = any(o in ("-r", "-R", "--recursive") or (not o.startswith("--") and re.search(r"[rR]", o)) for o in opts)
+        recursive = any(o in ("-r", "-R") or (not o.startswith("--") and re.search(r"[rR]", o))  # T-0668: getopt takes
+                        or (o.startswith("--") and len(o) > 2 and "recursive".startswith(o[2:].split("=")[0]))  # --rec
+                        for o in opts)
         if recursive:
             if not targets:
                 upstream = next((x for x in reversed(chain) if _name(x.argv) == "find"), None)
@@ -2640,8 +2645,8 @@ def _line_literals(shell):
 # reads the arguments (ponytail: crontab, at, nft, ufw, disk and power tools refuse nearly any arguments, so they'd
 # refuse every computed name; a bare `$X` that is shutdown stays unread)
 _COMPUTED_AS = ["rm", "git", "claude", "dd", "systemctl", "cryptsetup", "direnv", "init"] + sorted(_PUBLISH)
-_RM_OPT = re.compile(r"-[fiIrRdv]+|--(?:force|interactive(?:=\w+)?|one-file-system|no-preserve-root|preserve-root(?:=all)?"
-                     r"|recursive|dir|verbose)?")
+_RM_LONG = ("force", "interactive", "one-file-system", "no-preserve-root", "preserve-root", "recursive", "dir", "verbose",
+            "help", "version")
 
 
 def _readings(text, vals):
@@ -2652,11 +2657,16 @@ def _readings(text, vals):
 
 
 def _rm_opts_only(args):
-    """T-0587: every option before a -- is one rm accepts (an unknown one makes rm exit before deleting)."""
+    """T-0587: no option rm would refuse (one makes it exit before deleting). T-0668 (its review): getopt takes any
+    prefix of a long option (--rec), and under POSIXLY_CORRECT options end at the first operand, so only the options
+    before it count; any doubt reads as rm."""
     for a in args:
-        if a == "--":
+        if a == "--" or not a.startswith("-") or a == "-":
             return True
-        if a.startswith("-") and len(a) > 1 and not _RM_OPT.fullmatch(a):
+        if a.startswith("--"):
+            if not any(o.startswith(a[2:].split("=")[0]) for o in _RM_LONG):
+                return False
+        elif not re.fullmatch(r"-[fiIrRdv]+", a):
             return False
     return True
 
