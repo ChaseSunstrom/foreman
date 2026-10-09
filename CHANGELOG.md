@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.25 — 2026-10-09
 - Planning and decomposition, part 1 (T-0691 milestone: T-0603, T-0604, T-0623, T-0624, T-0625, T-0626, T-0643, T-0644).
   - Replan on surprise: `fm surprise`, or an assumption verified false, on an active M/L task makes `fm next` lead with a replan. A false assumption also names the steps that cite it as `(A<n>)`. `fm task log ID "replan: …"` clears it, and a close with a replan still unanswered warns.
   - `fm second plan ID --role pre-mortem|naive|prosecutor|defender` reads the plan from a stress-test stance and saves the result as its own "Plan review: <role>" section.
