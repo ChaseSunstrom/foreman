@@ -615,7 +615,7 @@ def task_finish(p, args):
     if b.status == "dropped":  # T-0679 chaos test
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
-        _commit_task(p, b, args.commit)
+        _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check)
         return 0
     if not args.audit:
         raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
@@ -673,7 +673,7 @@ def task_finish(p, args):
     args.task_cmd = "done"
     rc = cmd_task(args)
     if args.commit and not rc:
-        _commit_task(p, need_brief(p, b.id), args.commit)
+        _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
     return rc
 
 
@@ -693,7 +693,7 @@ def _finish_gaps(b, args, lenses):
     return gaps
 
 
-def _commit_task(p, b, message, dry=False):
+def _commit_task(p, b, message, dry=False, stack=False, check=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
     credential check, before the close, leaving the index as it was."""
@@ -755,7 +755,15 @@ def _commit_task(p, b, message, dry=False):
     if add.returncode == 0 and not subprocess.run([*git, "diff", "--cached", "--quiet", "--", *files]).returncode:
         print(f"{b.id}: nothing to commit (its files are as committed already).")  # T-0738: not a blank failure
         return
-    trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
+    if stack:  # T-0710: one commit per step group, each checked alone
+        import fmstack
+        subprocess.run([*git, "reset", "-q", "--", *files], capture_output=True)  # the stack builds its own index
+        try:
+            print("\n".join(fmstack.commit(p, b, files, message, check)))
+        except ValueError as e:
+            raise UsageError(f"{b.id} is done, but the stack wasn't committed: {e}")
+        return
+    trailer =[] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
     done = add.returncode == 0 and subprocess.run([*git, "commit", "-q", "-m", message, *trailer, "--",
                                                    *files], capture_output=True, text=True)
@@ -3002,6 +3010,10 @@ def build_parser():
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
+                                                        "each checked alone; a red one folds into the next (T-0710)")
+    t.add_argument("--stack-check", metavar="CMD", help="the check each stacked commit runs alone (default: its "
+                                                        "member's verify commands)")
     t = tadd("prove")  # red→green: fails on the start tree with only this task's tests, passes now
     t.add_argument("id")
     t.add_argument("--run", help="the test command")
