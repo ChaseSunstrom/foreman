@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Metacognition and calibration (T-0690 milestone: T-0619, T-0620, T-0661).
+  - `fm task set ID confidence=N` (0–100) records how likely a task is to hold on its first finish. `fm digest` and `fm outcomes` compare each confidence bucket with what happened and give a Brier score.
+  - `fm outcomes --atlas` lists the files and languages where work didn't hold: tasks later fixed or reverted, and tasks that closed weak. `fm focus` adds a caution line when the task's scope covers a weak file, and `fm friction` lists the weakest.
+  - Honest close-outs: `fm task finish` warns, without refusing, when criteria were edited after work started or when an M/L task (other than a FIX) passed every recorded run on the first try. Each warning is logged as a `closeout_flags` event.
 - Learning from outcomes (T-0689 milestone: T-0616, T-0617, T-0640, T-0641, T-0656, T-0657, T-0658).
   - `fm outcomes`: what became of each finished task: reverted (a Revert commit names it), fixed later (a FIX task created after it closed names it and only it) or held. Derived from git and the briefs, so nothing extra is stored.
   - Track record per type and tier: how many closed on their first `fm task finish` and how many held. It appears in `fm outcomes` and `fm digest`, and `fm focus` shows the line for the focused task's type and tier.

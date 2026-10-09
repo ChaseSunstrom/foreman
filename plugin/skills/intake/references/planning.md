@@ -17,7 +17,7 @@ A request about a whole repo or "all …" (clean up everything, all docs) is nev
 ## Brief (created by fm from templates/brief.md)
 Frontmatter: id, type, tier, status (captured|planned|active|verifying|done|blocked|deferred|dropped), priority, scope, depends_on, source, allow (guard authorizations), approved, explore, created, updated.
 Sections: Raw request · Interpretation · Assumptions (confidence) · Acceptance criteria · Non-goals · Approach (options → choice → why) · Risks and rollback · Execution prompt · Steps · Resume here · Verification evidence · Log · Follow-ups captured.
-Assumptions: one bullet per fact, `fm task assume ID add "<fact>"` (`[assumed]`) and `fm task assume ID verify N` once checked (`[verified: how]` / `[false: how]`). Edit sections with `fm task set ID --section "<Name>" --text "…"` (or `--file`). Steps with `fm task step`, criteria with `fm task ac`, evidence with `fm task evidence`.
+Confidence: M/L, state how likely the task holds on its first finish, `fm task set ID confidence=N` (0–100); `fm digest` scores it against what happened, and `fm focus` shows the track record and any caution for the scope first (T-0619). Assumptions: one bullet per fact, `fm task assume ID add "<fact>"` (`[assumed]`) and `fm task assume ID verify N` once checked (`[verified: how]` / `[false: how]`). Edit sections with `fm task set ID --section "<Name>" --text "…"` (or `--file`). Steps with `fm task step`, criteria with `fm task ac`, evidence with `fm task evidence`.
 
 ## Rubric (self-critique before executing M/L and before any gate; at most two revisions)
 - Every acceptance criterion has a verification command?
