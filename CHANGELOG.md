@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.26 — 2026-10-09
 - Verification reasoning (T-0697 milestone: T-0614, T-0615, T-0634, T-0635, T-0651, T-0652, T-0653).
   - `fm task finish --claim "checked|inferred|unchecked: <claim> [:: <evidence>]"` records typed claims in a Claims section, and `fm pr` renders them.
   - The oracle asks for a negative twin per criterion: a near-miss that must not pass. A run where no tests ran still counts as a failure, as it did before.
