@@ -1312,9 +1312,9 @@ def catch_rates(p):
     runs, seq = collections.Counter(), collections.defaultdict(list)
     for e in c.ledger_tail(p, 50000):
         d = e.get("data") or {}
-        if e.get("event") == "evidence" and d.get("cmd") and str(d.get("result") or "").startswith("exit "):
+        if e.get("event") == "evidence" and d.get("cmd") and c.result_exit(d.get("result")) is not None:
             runs[d["cmd"]] += 1
-            seq[(d["cmd"], e.get("task"))].append(str(d["result"]).startswith("exit 0"))
+            seq[(d["cmd"], e.get("task"))].append(c.result_exit(d["result"]) == 0)
         elif e.get("event") == "finish":  # T-0749: the close's own runs count too
             for cmd, code in d.get("ran") or []:
                 runs[cmd] += 1
@@ -1482,7 +1482,7 @@ def _plan_gaps(p, b):
         if started and e.get("event") == "step_add" and d.get("text"):
             late.append(c.fit(c.plain(str(d["text"])), 120))
         elif e.get("event") == "evidence" and d.get("step") and d["step"] not in failed:
-            failed[d["step"]] = not str(d.get("result") or "").startswith("exit 0")
+            failed[d["step"]] = bool(c.result_exit(d.get("result")))  # a typed result is no failure
     steps = {s.n: s.text for s in b.steps()}
     lines = [f"- added late: {t}" for t in late] + [f"- failed first: step {n} {c.fit(steps[n], 100)}"
                                                     for n, bad in sorted(failed.items()) if bad and n in steps]

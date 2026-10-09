@@ -394,6 +394,12 @@ def run_result(code, output):
     return f"{'✗ ' if code else ''}exit {code}{timed} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
 
 
+def result_exit(result):
+    """T-0750: the exit code in a run_result string ("exit 0 · …" or "✗ exit 1 · …"), or None for a typed result."""
+    m = re.match(r"(?:✗ )?exit (\d+)", str(result or ""))
+    return int(m.group(1)) if m else None
+
+
 def git_root(path):
     d = os.path.realpath(path)
     while True:
