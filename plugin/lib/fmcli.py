@@ -309,6 +309,15 @@ def task_hypo(p, args):
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
+def flag_replan(p, task, reason):
+    """T-0603: an active M/L task's plan met a surprise; fm next leads with a replan until fm task log ID "replan: …"
+    (a later trigger replaces the reason; the Log keeps each one)."""
+    b, reason = (c.find_brief(p, task) if task else None), " ".join(c.redact(reason).split())  # one frontmatter line
+    if b and b.status == "active" and b.tier in ("M", "L"):
+        mutate(p, b.id, lambda x: (x.meta.update(replan=reason), x.append_log(f"plan revision needed: {reason}")),
+               "replan_needed", {"reason": reason[:200]})
+
+
 def task_assume(p, args):
     """T-0254: the brief's assumptions say whether they were checked. A check that fails marks it false, not an error."""
     if args.action == "add":
@@ -336,6 +345,10 @@ def task_assume(p, args):
             raise UsageError(f"{b.id} has no assumption {n}")
     b, _ = mutate(p, args.id, mark, "assumption",
                   {"n": n, "status": status, "how": c.redact(how)[:300]})
+    if status == "false":  # T-0643: the steps that rest on it are named for re-check
+        cite = [s.n for s in b.steps() if re.search(rf"\bA{n}\b", s.text)]
+        flag_replan(p, b.id, f"assumption {n} is false" + (
+            f"; step {', '.join(map(str, cite))} cite{'s' if len(cite) == 1 else ''} it" if cite else ""))
     return out(args, dict(c.brief_summary(b), status=status), (shown + "\n" if shown else "") + (
         f"{b.id}: assumption {n} verified." if status == "verified" else
         f"{b.id}: assumption {n} is false — re-check the plan, and log it: fm surprise \"<expected> → <observed>\"."))
@@ -365,6 +378,7 @@ def cmd_surprise(args):
         with open(os.path.join(p.dir, "surprises.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
     c.log_event(p, "surprise", task=task, data={"text": text[:300]})
+    flag_replan(p, task, "surprise: " + c.fit(text, 160))
     return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: fm friction and fm recall will bring it back.")
 
 
@@ -402,7 +416,11 @@ def cmd_task(args):
     if sub == "ac":
         return task_ac(p, args)
     if sub == "log":
-        b, _ = mutate(p, args.id, lambda b: b.append_log(args.text), "note", {"text": args.text[:300]})
+        def note(b):
+            b.append_log(args.text)
+            if args.text.strip().lower().startswith("replan:"):  # T-0603: the plan was re-read and revised
+                b.meta.pop("replan", None)
+        b, _ = mutate(p, args.id, note, "note", {"text": args.text[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "hypo":
         return task_hypo(p, args)
@@ -492,7 +510,8 @@ def cmd_task(args):
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
-            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"])
+            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
+                          planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
         first_edit = c.first_touch(p, pre.id)
         logged = {"lesson": lesson[:300]} if lesson else {}
         b, _ = mutate(p, args.id, done, "task_done", logged)
@@ -1184,7 +1203,29 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
+    if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
+        honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
+    if b.meta.get("replan"):  # T-0603: a surprise the plan never answered
+        honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
+                      f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+_HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
+_UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
+
+
+def step_order(b):
+    """T-0623: a step that explores an unknown placed after one that's hard to undo (a fixed vocabulary; a hint)."""
+    steps = b.steps()
+    for i, s in enumerate(steps):
+        if _HARD.search(s.text):
+            late = next((t for t in steps[i + 1:] if _UNKNOWN.search(t.text) and not _HARD.search(t.text)), None)
+            if late:
+                return (f"Step order: step {late.n} ({c.fit(late.text, 50)}) explores an unknown after step {s.n} "
+                        f"({c.fit(s.text, 50)}) does something hard to undo — unknowns first, then reversible, then "
+                        f"irreversible (planning.md R2).")
+    return ""
 
 
 def _honest(p, b):
@@ -1597,7 +1638,8 @@ def cmd_focus(args):
     import fmoutcomes
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
-                                          fmoutcomes.caution(p, target.meta.get("scope") or [])]))  # T-0620
+                                          fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
+                                          step_order(target)]))  # T-0623
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
@@ -2860,8 +2902,20 @@ def cmd_next(args):
     if b and b.status != "active":  # T-0451: what this kind of task usually takes here (fm next only: not the hooks)
         import fmwatch
         usual = fmwatch.typical(c.ledger_tail(p, 5000)).get(f"{b.type}/{b.tier}")
+    over = ""
+    if b and b.status == "active":  # T-0644: past twice the usual, re-frame before pushing on
+        import fmwatch
+        events = c.ledger_tail(p, 5000)
+        median = fmwatch.typical(events).get(f"{b.type}/{b.tier}")
+        began = min((c.parse_ts(e.get("ts")) for e in events if e.get("event") == "focus" and e.get("task") == b.id
+                     and c.parse_ts(e.get("ts"))), default=None)
+        took = (time.time() - began.timestamp()) / 60 if began else 0
+        if median and took > 2 * median:
+            over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
+                    f"is the plan still the right size, or should it split?")
     out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
-        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else ""))
+        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
+        + over)
 
 
 def cmd_autonomy(args):
@@ -3298,6 +3352,8 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
+    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender"],
+                   help="plan: read it from a stress-test stance, saved as its own Plan review section (T-0604)")
     s.add_argument("--timeout", type=float, default=300)
     s = add("relate", lazy("fmrelate", "cmd_relate"),
             help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "
