@@ -80,6 +80,27 @@ class TasteVetoes(_Base):
         self.assertFalse(c.read_meta(self.p).get("pending_approvals"))
         self.assertEqual(c.find_brief(self.p, self.tid).meta.get("allow"), [])
 
+    def test_its_review_synonyms_and_plurals_are_guard_asks_too(self):
+        # T-0671 review: only exact category words counted, so "Force-push the branch?" was decided by default
+        self.fm("autonomy", "full")
+        for q in ("Force-push the branch to origin?", "Push the release?", "Install the two plugins?",
+                  "Rotate the credential?", "Delete the old build folder outside the repo?", "Run it with sudo?",
+                  "Publish the package?"):
+            r = self.fm("decide", "--ask", q, "--options", "yes", "no", check=False)
+            self.assertEqual(r.returncode, 1, q)
+        self.assertEqual(self.decisions(), [])
+        self.assertEqual(self.fm_json("decide", "--ask", "Which log format?", "--options", "json", "text")["answer"],
+                         "json", "an ordinary question still decides")
+
+    def test_when_every_option_is_vetoed_it_says_so(self):
+        for s in DEPS:
+            self.steer(s)
+        self.fm("taste", "adopt")
+        self.fm("autonomy", "full")
+        r = self.fm_json("decide", "--ask", "Which parser?", "--options", "add the yaml dependencies",
+                         "add the toml dependencies")
+        self.assertIn("every option", r["why"])
+
 
 class AskDigest(_Base):
     def ask(self, *args):
@@ -117,6 +138,17 @@ class AskDigest(_Base):
         self.assertEqual(len(events), 2)
         self.assertNotIn("ask_digest", c.read_meta(self.p))
         self.assertNotIn("ask digest", self.fm("next").stdout)
+
+    def test_an_unreadable_deadline_is_reset_not_applied(self):
+        # T-0671 review: a corrupt deadline applied every default at once, without the wait
+        self.ask("Which name for the new flag?", "--default", "from-file")
+        meta = c.read_meta(self.p)
+        meta["ask_digest"]["deadline"] = "garbage"
+        c.write_meta(self.p, meta)
+        self.assertFalse(c.digest_due(c.read_meta(self.p)["ask_digest"]))
+        self.ask("Keep the old alias?", "--options", "yes", "no")
+        self.assertIsNotNone(c.parse_ts(c.read_meta(self.p)["ask_digest"]["deadline"]), "the next ask resets it")
+        self.assertEqual(self.decisions(), [])
 
     def test_an_answer_settles_its_ask_and_urgent_or_full_autonomy_asks_never_wait(self):
         self.ask("Which name for the new flag?", "--default", "from-file")
@@ -180,6 +212,17 @@ class CaptureFromFile(_Base):
         self.assertNotIn("IHDR", raw)
         bare = self.fm_json("capture", "--from-file", shot)
         self.assertIn("header.png", bare["title"])
+
+    def test_its_review_credentials_files_and_cut_secrets(self):
+        # T-0671 review: --from-file read ~/.aws/credentials or .env into the brief; a line cut at 300 characters
+        # before redaction could leave a secret's fragment unmatched
+        env = self.write(".env", b"DB_URL=postgres://u:pw@host/db\n")  # pragma: allowlist secret
+        r = self.fm("capture", "Config broke", "--from-file", env, check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("credentials", r.stderr)
+        log = self.write("long.log", (("x" * 280) + " key sk-ant-api03-" + "y" * 60 + "\n").encode())
+        raw = c.find_brief(self.p, self.fm_json("capture", "Long line", "--from-file", log)["id"]).section("Raw request")
+        self.assertNotIn("y" * 10, raw)
 
     def test_it_needs_text_or_a_readable_file(self):
         for args in ((), ("--from-file", os.path.join(self.tmp, "nope.log")), ("--from-file", self.tmp)):
