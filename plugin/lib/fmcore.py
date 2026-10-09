@@ -861,6 +861,28 @@ class Brief:
                 nxt.current = True
         self._write_steps(steps)
 
+    def track_step(self, n):
+        """T-0406: evidence for step n moves the work there, so the band and fm next follow it: a step its evidence
+        closes (evidence in, no failed run newer than a pass, as finish reads it) is ticked and the next open step
+        after it becomes current; otherwise it is reopened and current. Inconclusive runs leave everything as it is."""
+        steps = self.steps()
+        s = next((x for x in steps if x.n == n), None)
+        if s is None or (self.inconclusive(step=n) and not self.has_evidence(step=n)):
+            return
+        try:
+            self._refuse_failed_run(step=n)
+            closes = self.has_evidence(step=n)
+        except PolicyError:
+            closes = False
+        for x in steps:
+            x.current = False
+        s.done = closes
+        nxt = s if not closes else (next((x for x in steps if x.n > n and not x.done), None)
+                                    or next((x for x in steps if not x.done), None))
+        if nxt:
+            nxt.current = True
+        self._write_steps(steps)
+
     # --- debugging ledger (T-0207): what is suspected, how to tell, what the probe said; survives a compaction
     def hypotheses(self):
         """[(n, status, text)] from the Hypotheses section."""
@@ -939,6 +961,8 @@ class Brief:
         # [ran]: fm ran it (only runs decide pass/fail); [tree]: the files it was recorded against (audit_blockers)
         mark = (_INCONCLUSIVE if inconclusive else "") + (_RAN_MARK if ran else "") + (f" [tree {tree}]" if tree else "")
         self._append_line("Verification evidence", f"- {tag}`{cmd}` → {result}{mark} ({ts or now()})")
+        if step is not None and not inconclusive:
+            self.track_step(step)  # T-0406: every writer of step evidence moves the band and fm next with it
 
     def _refuse_failed_run(self, step=None, ac=None):
         """Once fm has run a check for this step/criterion, only a passing run clears a failed one."""

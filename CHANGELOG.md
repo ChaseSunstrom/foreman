@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.2.11 — 2026-10-09
+- Evidence for a step moves the current step (T-0406). The user, watching JARVIS in Claude Code, saw it work on later steps while the Foreman band still showed an earlier one: T-0278 read "step 1/5, 0 done" with passing runs for steps 3–5, because only `fm task finish` ticked steps. Now a run that closes a step (evidence in, no failed run newer than a pass) ticks it and makes the next open step current, and a failed run reopens its step and makes it current. This holds for every way evidence is recorded (`fm task evidence`, `fm check --evidence`, `fm task prove`, a passing criterion check). `fm task finish` is as strict as before.
+
 ## 1.2.10 — 2026-10-09
 - A "no active task" refusal whose own command runs `fm focus` (or `fm task new … --focus`) now says to run the focus as its own command first (T-0404, from JARVIS: refused twice in a row). The guard reads the whole command before any of it runs. Only the message changes.
 - `fm lane merge` lands a builder's branch while the main thread is mid-task (T-0403, from JARVIS: T-0280 couldn't land during T-0278). Uncommitted edits the branch doesn't touch stay put and the merge goes ahead, as git's own does. A staged change (the merge commit would record it) or an edit to a file the branch also changes still refuses, by name.
