@@ -230,6 +230,24 @@ class Contract(_Tasks):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("staged", p.stderr)
 
+    def test_lane_rm_ignores_tool_caches(self):
+        # T-0408 (JARVIS): before each fm lane rm the session deleted __pycache__ and .pytest_cache by hand (and hit the
+        # guard doing it); a test run's caches are rebuilt on the next run, never anyone's work
+        with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
+            f.write(".pytest_cache/\nnode_modules/\n.env\n")
+        tid, wt = self.lane("Caches only")
+        for d in (".pytest_cache/v/cache", "node_modules/x"):
+            os.makedirs(os.path.join(wt, d))
+            open(os.path.join(wt, d, "f"), "w").close()
+        self.fm("lane", "rm", tid)
+        self.assertFalse(os.path.isdir(wt))
+        kept, wt2 = self.lane("Has a .env")
+        with open(os.path.join(wt2, ".env"), "w") as f:
+            f.write("K=v\n")
+        p = self.fm("lane", "rm", kept, check=False)
+        self.assertNotEqual(p.returncode, 0, "an ignored .env may be someone's config: never discarded")
+        self.assertIn(".env", p.stderr)
+
     def test_rm_deletes_only_the_lanes_own_branch(self):
         tid, wt = self.lane("Branches")
         git(self.repo, "branch", "release")  # merged into main

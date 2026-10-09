@@ -154,7 +154,11 @@ def builder_brief(p, b, args):
                      f"(skills/intake/references/delegate.md)")
 
 
-_CACHE = re.compile(r"(^|/)__pycache__(/|$)|\.py[co]$")
+# what a build or test run leaves and rebuilds, never anyone's work (T-0377: python's; T-0408: the test, lint, package
+# and bundler caches builders' runs leave, which JARVIS deleted by hand before each fm lane rm)
+_CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.hypothesis|\.tox|\.nox|node_modules|"
+                    r"\.vite|\.svelte-kit|\.next|\.turbo|\.parcel-cache|\.gradle|\.kotlin|htmlcov)(/|$)|\.py[co]$|"
+                    r"(^|/)\.coverage(\.[\w.-]+)?$")
 
 
 def merge(p, b, main):
@@ -223,7 +227,7 @@ def remove(p, b, main):
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored")  # ignored files (.env, builds) go with the folder too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
-        if st.returncode or left:  # T-0377: python's caches are rebuilt on the next import, never anyone's work
+        if st.returncode or left:  # T-0377/T-0408: caches are rebuilt on the next run, never anyone's work
             ignored = [ln[3:] for ln in left if ln.startswith("!! ")]
             raise c.PolicyError(f"lane {path} has " + (f"ignored files ({', '.join(ignored[:5])}) that removing it would "
                                                        f"delete: move or delete them" if ignored and len(ignored) ==
