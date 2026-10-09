@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A foreground wait loop is refused (T-0426; the user, watching JARVIS: "make sure it isn't sitting idle like it was waiting on pipelines"). JARVIS ran `until grep -q "^exit" e2e.log; do sleep 20; done` in the foreground with a 10-minute timeout, so the session sat waiting on a test run that was already in the background. Foreman now refuses any `until`/`while` loop that sleeps 5 s or more between checks unless it is run with `run_in_background` (its completion wakes the session) or as a Monitor. The refusal names that and the work to do meanwhile. Short polls (`sleep 1` while a server starts) and loops with no sleep pass.
 - `fm smoke` can't be hung by a page that stops responding (T-0420, from its first run on JARVIS, which ran past 240 s and lost every result). Each view gets 30 s and each viewport its share of a 200 s deadline. A view past that is reported as "the page stopped responding". Whatever happens, the crawl prints what it found before fm's limit.
 
 ## 1.2.14 — 2026-10-09
