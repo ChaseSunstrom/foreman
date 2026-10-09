@@ -417,6 +417,7 @@ def _ends_body(text, delim, starter):
 _IFS_PLAIN = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{IFS\}")
 _IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
 _IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
+_IFS_IN_VALUE = re.compile(r"(?<![\w$])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[^\s;&|()<>]*(?:\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
 _IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^'\n]*'|\"[^\"\n]*\"|[^\s;&|'\"])*[ \t]+read\b")  # one line
 _READ_REDEFINED = re.compile(r"\b(?:alias|enable|function)\b|\bread\s*\(")
 _NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
@@ -434,6 +435,8 @@ def _ifs_unreadable(cmd):
     rest = _IFS_PLAIN.sub(" ", cmd)
     if _IFS_OP.search(rest):
         return "IFS is expanded with an operator: the guard can't read the word it yields"
+    if _IFS_IN_VALUE.search(_mask_quotes(cmd)):  # T-0592: bash keeps it whole there; a space would end the value
+        return "IFS in an assignment's value: the guard can't read where that value is split later"
     why = "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
     plain, hidden = rest != cmd, _RUNS_HERE.search(rest)
     if plain and hidden:  # T-0590: eval or source may set IFS out of sight

@@ -75,6 +75,19 @@ class IfsReview2(GuardCase):
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
 
 
+class IfsInValue(GuardCase):
+    def test_ifs_in_an_assignment_value(self):
+        # T-0592 (review of T-0590): bash doesn't split an assignment's value, so the rewrite's space made
+        # D=/tmp/x${IFS}/home/sb read as D=/tmp/x before a command /home/sb
+        self.run_table([
+            ("D=/tmp/x${IFS}{home}; rm -rf $D", "system"),
+            ("export P=a$IFS{home}; rm -rf $P", "system"),
+            ("a[0]=x${IFS}y; echo ok", "system"),
+            ('X="a$IFS"; echo "$X"', None),
+            ("rm${IFS}-rf {home}", "rm-outside"),
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}").replace("{{home}}", "{home}")))
+
+
 class ShellStdin(GuardCase):
     def test_a_script_a_shell_reads_from_stdin_is_checked(self):
         # T-0589: input redirections were dropped, so the text a shell ran from its stdin was never read
