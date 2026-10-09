@@ -2095,11 +2095,12 @@ def next_for(p, briefs=None):
 
 
 def digest_due(d):
-    """T-0461: the ask digest has asks and its deadline passed (or can't be read)."""
+    """T-0461: the ask digest has asks and its deadline passed. An unreadable deadline isn't due (T-0671 review: it
+    applied every default at once); the next ask resets it."""
     if not isinstance(d, dict) or not d.get("asks"):
         return False
     t = parse_ts(d.get("deadline"))
-    return not t or t <= datetime.datetime.now(datetime.timezone.utc)
+    return bool(t) and t <= datetime.datetime.now(datetime.timezone.utc)
 
 
 def _next_for(p, briefs=None):

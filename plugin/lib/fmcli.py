@@ -188,6 +188,7 @@ def cmd_capture(args):
 
 
 EXCERPT_HEAD, EXCERPT_TAIL = 10, 30  # T-0477: a log's start says what ran, its end what broke
+PASTE_MAX = 2_000_000
 
 
 def _attachment(p, src):
@@ -195,7 +196,7 @@ def _attachment(p, src):
     an excerpt (the head and tail of a long one), redacted and marked as data; a paste is kept, redacted, in the
     project's attachments/. A binary file (a screenshot) is attached as its path alone."""
     if src == "-":
-        data = c.redact(sys.stdin.buffer.read().decode("utf-8", "replace"))
+        data = c.redact(sys.stdin.buffer.read(PASTE_MAX).decode("utf-8", "replace"))  # T-0671 review: bounded
         import hashlib
         path = os.path.join(p.dir, "attachments", f"paste-{hashlib.sha256(data.encode()).hexdigest()[:12]}.txt")
         c.write_atomic(path, data)
@@ -204,6 +205,10 @@ def _attachment(p, src):
         path = os.path.realpath(src)
         if not os.path.isfile(path):  # a FIFO or device would hang the read, a directory would crash it
             raise UsageError(f"{src} is not a regular file")
+        import fmguard, types  # T-0671 review: the guard refuses reading these; so does an attachment
+        if fmguard._is_credential(path, types.SimpleNamespace(home=os.path.expanduser("~"), scratch=())):
+            raise UsageError(f"{src} looks like a credentials file: describe the problem, or attach a copy with "
+                             f"the secrets taken out")
         with open(path, "rb") as f:
             if b"\0" in f.read(8192):
                 return f"Attached: {path}", f"Attached: {os.path.basename(path)}"
@@ -220,7 +225,8 @@ def _excerpt(lines):
     head, tail, n = [], collections.deque(maxlen=EXCERPT_TAIL), 0
     for line in lines:
         n += 1
-        (head if n <= EXCERPT_HEAD else tail).append(c.fit(c.plain(line.rstrip("\r\n").replace("\t", "    ")), 300))
+        line = c.redact(line.rstrip("\r\n").replace("\t", "    "))  # before the cut: a cut secret no longer matches
+        (head if n <= EXCERPT_HEAD else tail).append(c.fit(c.plain(line), 300))
     return head + ([f"… {n - len(head) - len(tail)} lines …"] if n > len(head) + len(tail) else []) + list(tail)
 
 
@@ -1636,8 +1642,17 @@ def _guard_named(text):
     """T-0439: the guard categories (or fm ask) an ask names: those are the user's to grant, never pre-answered."""
     import fmguard
     words = set(re.findall(r"[a-z][a-z-]*", text.lower()))
-    return [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x in words] + \
-        (["fm ask"] if re.search(r"(?i)\bfm\s+ask\b", text) else [])
+    words |= {w.rstrip("s") for w in words} | {p for w in words for p in w.split("-")}  # plugins, force-push
+    named = [x for x in fmguard.CATEGORIES if x not in fmguard.NOT_AUTHORIZABLE and x in words]
+    named += [cat for cat, syn in _GUARD_WORDS.items() if words & syn and cat not in named]  # T-0671 review
+    return named + (["fm ask"] if re.search(r"(?i)\bfm\s+ask\b", text) else [])
+
+
+# ponytail: words, not meaning ("Remove the alias?" isn't one, "Delete …" is); a miss is still refused by the guard
+_GUARD_WORDS = {"git-destructive": {"push", "rebase", "force"}, "remote": {"origin", "upstream"},
+                "credentials": {"credential", "secret", "password"}, "rm-outside": {"delete", "rm", "wipe", "purge"},
+                "system": {"sudo", "systemctl"}, "publish": {"publish", "deploy", "upload"},
+                "plugin": {"plugin", "marketplace"}, "core": {"guard"}}
 
 
 def _decide_ask(p, args):
@@ -1666,7 +1681,9 @@ def _decide_ask(p, args):
         return out(args, dict(data, answer=answer, applied=True), f"Decided (full autonomy): {q} → {answer} ({why}).")
     with c.lock(p.dir):
         meta = c.read_meta(p)
-        d = meta.get("ask_digest") or {"deadline": c.iso(time.time() + DIGEST_HOURS * 3600), "asks": []}
+        d = meta.get("ask_digest") or {"asks": []}
+        if not c.parse_ts(d.get("deadline")):
+            d["deadline"] = c.iso(time.time() + DIGEST_HOURS * 3600)
         n = max((a.get("n", 0) for a in d["asks"]), default=0) + 1
         d["asks"].append(dict(data, n=n, task=args.task, at=c.now()))
         meta["ask_digest"] = d
