@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- Learning from outcomes (T-0689 milestone: T-0616, T-0617, T-0640, T-0641, T-0656, T-0657, T-0658).
+  - `fm outcomes`: what became of each finished task: reverted (a Revert commit names it), fixed later (a FIX task created after it closed names it and only it) or held. Derived from git and the briefs, so nothing extra is stored.
+  - Track record per type and tier: how many closed on their first `fm task finish` and how many held. It appears in `fm outcomes` and `fm digest`, and `fm focus` shows the line for the focused task's type and tier.
+  - `fm task finish --differently "<one line>"`: what you would do differently next time. `fm digest` lists them.
+  - Lessons have ids (`T-0123.1`). `fm focus` logs each recalled lesson it shows, and edit tripwires now record their project. `fm recall --lessons` lists times shown, lessons never recalled 7+ days after they closed, and lessons whose task's failure came back in a later task.
+  - `fm usage --agents` adds per-lens audit yield (found something, false positives) and per-pass yield (second plans that left dissent, second sessions that captured work).
+  - `fm bench hygiene`: cases that passed or failed the same way in every saved run, listed as candidates to drop.
+  - `fm tidy --apply` reopens a blocked task once every task it depends on is closed, or once a project file named in its block reason changes. Reverted commits come back in `fm recall` as wrong turns.
+  - `fm friction` mines the window's ledgers for common stage paths, tasks that went smoothly but closed with a weak grade, and the number of failed runs before each block.
 - Judgment, taste and decisions (T-0688 milestone: T-0636, T-0637, T-0638, T-0639, T-0654, T-0655, T-0667).
   - Doors: execution classifies each fork. A one-way door (costly or outward) gets a plan note, a second read and `fm decide --kind`; a two-way door is decided on the spot and logged.
   - Reviews list implicit decisions: the defaults a change took without saying so (`audit.md` and `fm-reviewer`).

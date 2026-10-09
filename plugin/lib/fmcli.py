@@ -676,6 +676,8 @@ def task_finish(p, args):
                     "- " + c.redact(q.strip()).replace("=>", "→", 1) for q in args.followups))
             if getattr(args, "insight", None):
                 x.set_section("Insight", c.redact(c.plain(args.insight).strip()))
+            if getattr(args, "differently", None):  # T-0641
+                x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
               for kind, n, cmd, code, output in results if code]
@@ -1541,7 +1543,9 @@ def cmd_focus(args):
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
             import fmrecall
-            related = fmrecall.render(fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id), target.tier)
+            hits = fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id)
+            related = fmrecall.render(hits, target.tier)
+            fmrecall.log_shown(p, hits, target.id)  # T-0617
             if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
                 import fmmap
                 try:
@@ -1567,9 +1571,14 @@ def cmd_focus(args):
     if warn:
         print(warn, file=sys.stderr)
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
+    import fmoutcomes
+    try:
+        record = fmoutcomes.track_line(p, target.type, target.tier)  # T-0641: calibration before claiming confidence
+    except Exception:  # a report: it never stops a focus
+        record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
-        + (f"\n{related}" if related else "")
+        + (f"\n{related}" if related else "") + (f"\n{record}" if record else "")
         + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
 
 
@@ -2893,7 +2902,7 @@ HELP_TIERS = [
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
-    ("Reports", "digest cost burden dream usage repeats friction taste evals replay bench evolve"),
+    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -3102,6 +3111,7 @@ def build_parser():
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
     t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
     t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
+    t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -3167,6 +3177,8 @@ def build_parser():
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
+    add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later by a "
+                                                             "task naming them, or held; and the track record (T-0616)")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
@@ -3346,6 +3358,7 @@ def build_parser():
     s.add_argument("-n", type=int, default=4)
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
+    s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
     s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
@@ -3482,6 +3495,10 @@ def build_parser():
     b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
     b.add_argument("--model", default="sonnet")
     b.add_argument("--seed", type=int, default=0)
+    b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
+                                        "from another (T-0656)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
     for name in ("build", "list", "run", "show", "compare", "gate", "models"):
         b = bsp.add_parser(name)
         b.add_argument("--json", action="store_true")
