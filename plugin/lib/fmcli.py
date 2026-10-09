@@ -366,6 +366,10 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "show":
         b = need_brief(p, args.id)
+        if args.story:  # T-0483
+            import fmrecall
+            s = fmrecall.story(p, b)
+            return out(args, s, fmrecall.render_story(s))
         if args.json:
             return print(json.dumps(dict(c.brief_detail(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
         return print(b.render(), end="")
@@ -2395,7 +2399,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
                              "plugins docs doctor canary tidy"),
@@ -2541,6 +2545,8 @@ def build_parser():
     t.add_argument("--focus", action="store_true", help="focus it right away (the plan gate still applies)")
     t = tadd("show")
     t.add_argument("id")
+    t.add_argument("--story", action="store_true", help="the ledger as chapters (plan, steps, evidence, reviews, "
+                                                        "close) with their times")
     t = tadd("set")
     t.add_argument("id")
     t.add_argument("assignments", nargs="*")
@@ -2737,6 +2743,11 @@ def build_parser():
     s.add_argument("--task", help="recall for this task's title, request and scope")
     s.add_argument("-n", type=int, default=4)
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
+    s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
+                                                     "BM25), each passage citing its task ids")
+    s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
+                                                             "behind the last guard block or drive/Stop decision")
+    s.add_argument("what", nargs="?", choices=["block", "drive"], help="only guard blocks, or only drive/Stop decisions")
 
     s = add("focus", cmd_focus, help="make a task the single active task")
     s.add_argument("id")

@@ -1570,7 +1570,7 @@ def _drive(p, sd, briefs, pl, g):
             return None
         # T-0417: in full autonomy a drained queue is when to look at the product as its user does, once per drain
         d.update(drained=len(briefs), count=d.get("count", 0) + 1, marks=_marks(p))
-        _event({"kind": "drive_drained", "session_id": sid})
+        _event({"kind": "drive_drained", "session_id": sid, "project": p.slug})  # project: fm explain (T-0464)
         return ("Foreman drive: the queue is empty. Before stopping, check the product the way its user uses it: "
                 + ("fm smoke, then " if (c.read_meta(p).get("smoke") or {}).get("web") else "")
                 + "every screen at desktop and phone width (or every command), the main flows, the service logs. "
@@ -1591,7 +1591,8 @@ def _drive(p, sd, briefs, pl, g):
         # the jobs don't hold back starting the next one)
         first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
-            _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
+            _event({"kind": "drive_wait", "session_id": sid, "project": p.slug, "task": work["id"],
+                    "running": running[:5]})
             d["offered"] = []
         d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
@@ -1601,7 +1602,8 @@ def _drive(p, sd, briefs, pl, g):
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
             how = _start_how(offer, lanes_free(briefs))
-            _event({"kind": "drive_offer", "session_id": sid, "task": work["id"], "offer": offer["id"], "how": how})
+            _event({"kind": "drive_offer", "session_id": sid, "project": p.slug, "task": work["id"],
+                    "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
                     f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
                     f"A queued task that can't move now (it needs a device, a person, another task): fm task block ID "
@@ -1657,9 +1659,9 @@ def _drive(p, sd, briefs, pl, g):
         meta["resume_after_reload"] = {"session": sid, "at": c.now(), "task": work["id"]}
         c.write_meta(p, meta)
         d.update(ui_mtime=changed, reloading=True)
-        _event({"kind": "drive_reload", "session_id": sid, "task": work["id"]})
+        _event({"kind": "drive_reload", "session_id": sid, "project": p.slug, "task": work["id"]})
         return None
-    _event({"kind": "drive", "session_id": sid, "task": work["id"]})
+    _event({"kind": "drive", "session_id": sid, "project": p.slug, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
 
