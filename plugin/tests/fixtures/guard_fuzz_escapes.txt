@@ -26,8 +26,8 @@ open 'echo "$(case a in a) \\rm -rf ~;; esac)"'
 open 'echo "$(echo $((1))#x; git ""push"" --force origin main)"'
 
 # 6. a download piped into a ( group ) with a space or a line break before the paren
-open 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin | (bash)'
-open 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin |\n(bash)'
+'echo "rm -rf /home/sb" | curl -s file:///dev/stdin | (bash)'
+'echo "rm -rf /home/sb" | curl -s file:///dev/stdin |\n(bash)'
 
 # 7. a quoted "x <<EOF" inside a "$( … )" or "` … `" starts a heredoc in the guard's reading, hiding the next line
 open 'echo "$(echo "x <<EOF"\nrm -rf ~)"'
