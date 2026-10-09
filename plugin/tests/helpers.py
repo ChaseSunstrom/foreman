@@ -24,6 +24,9 @@ with open(os.path.join(_LOCKOUT, "claude"), "w") as _f:
 os.chmod(os.path.join(_LOCKOUT, "claude"), 0o755)
 os.environ["PATH"] = _LOCKOUT + os.pathsep + os.environ.get("PATH", "")
 atexit.register(shutil.rmtree, _LOCKOUT, True)
+# T-0744: every test sees a calm host unless it says otherwise; the machine's real load (a full run beside other work)
+# turned lanes and ambient runs off and failed tests only then
+os.environ.setdefault("FOREMAN_HOST", "load=0.1,cpus=8,mem_mb=8192")
 
 
 def read_text(path, encoding="utf-8", limit=-1):

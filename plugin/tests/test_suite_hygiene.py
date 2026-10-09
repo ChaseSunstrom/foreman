@@ -25,6 +25,19 @@ def unbound(src):
 
 
 class SuiteHygiene(unittest.TestCase):
+    def test_tests_never_see_the_machines_real_load(self):
+        # T-0744: under load (a finish's full run beside other work) host_strain() turned lanes and ambient runs off,
+        # and test_hooks.Stop, test_ambient and test_orchestration failed only then
+        import helpers  # noqa: F401  (it pins the host every test sees)
+        import fmcore
+        self.assertIn("load=", os.environ.get("FOREMAN_HOST", ""))
+        self.assertIsNone(fmcore.host_strain())
+
+    def test_the_screenshot_harness_runs_on_a_socket_of_its_own(self):
+        # T-0744: two suites at once shared tmux -L fm-shot and killed each other's session
+        with open(os.path.join(os.path.dirname(__file__), "test_shot.py"), encoding="utf-8") as f:
+            self.assertIn("FM_SHOT_SOCKET", f.read())
+
     def test_no_test_class_shadows_a_testcase_method(self):
         inherited = {n for n in dir(unittest.TestCase) if not n.startswith("__")} - MEANT
         found = []
