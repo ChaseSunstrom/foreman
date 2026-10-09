@@ -2826,7 +2826,7 @@ HELP_TIERS = [
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
-    ("Reports", "digest cost burden usage repeats friction taste evals replay bench evolve"),
+    ("Reports", "digest cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -3127,6 +3127,9 @@ def build_parser():
     s.add_argument("--convert", action="store_true", help="with --apply: rewrite the residual lines with a cheap child")
     s.add_argument("--model", default="haiku")
     s.add_argument("--timeout", type=int, default=180)
+    s = add("dream", lazy("fmrecall", "cmd_dream"), help="the day's repeated failures as tripwire candidates with their "
+                                                          "counterfactual (T-0665)")
+    s.add_argument("--day", help="YYYY-MM-DD (default: today)")
     s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
                                                         "read-set, as of any moment (T-0707)")
     s.add_argument("action", choices=["blast", "pack", "build"])
@@ -3159,6 +3162,7 @@ def build_parser():
     s.add_argument("--prune", action="store_true",
                    help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
+    s.add_argument("--lesions", action="store_true", help="what each fm evolve --drop ablation found (T-0664)")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)

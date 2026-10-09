@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Cognitive architecture, first versions (T-0685 milestone: T-0663, T-0664, T-0665).
+  - Recall by activation. A past task whose files the active task touched recently, or whose failure signatures came back in the last week, counts 1.5× in `fm recall` and everywhere recall feeds.
+  - `fm usage --lesions` reports what each `fm evolve --drop` ablation found: the bench held without the file (a candidate to trim) or dropped (it earns its place). It also names the next lesion to run.
+  - `fm dream [--day]` turns the day's repeated failure signatures and guard refusals into tripwire candidates, each with its counterfactual ("a tripwire at the first would have caught N"), written to `research/dream-DATE.md`. It is also a free `fm night` job.
 - Brainstorming and ideation (T-0684 milestone: T-0605, T-0606, T-0607, T-0627, T-0628).
   - `fm ideas` writes a coverage map to `ideas.md` (distinct ideas per category) and names the thin capability axes. A later round's pack lists them as holes to fill first.
   - `--falsify`: one more child gives every idea its quickest kill test, listed under "Kill it fast".
