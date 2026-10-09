@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Builder briefs tell builders to change files with the Edit and Write tools only (T-0399, from JARVIS). Claude Code's worktree isolation refuses shell heredocs, `python3 - <<…` rewrites, `cat > f` and sed as "too complex": five refusals in ten minutes.
 
 ## 1.2.7 — 2026-10-09
 - `curl … | python3 -c` reading a download as data passes with curl's timeout flags (`-m`, `--max-time`, `--connect-timeout`, numeric values only), its stdout-only flags (`-k -i -I -v`) and `nvidia-smi` on the same line (T-0397, from JARVIS). Flags that can write a file (`-o`, `-K`, a non-numeric `-m`) and `nvidia-smi -f/--filename` still refuse.
