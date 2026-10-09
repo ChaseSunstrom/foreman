@@ -305,7 +305,7 @@ def _batch(p, head, skip, n):
     def free(b):
         return (b.tier in ("S", "M") and b.status == "planned" and b.meta.get("scope") and b.id not in skip
                 and not c.waits_on_user(b, pending, autonomy)
-                and all(d in by_id and by_id[d].status in c.CLOSED for d in b.meta.get("depends_on") or []))
+                and all(d in by_id and by_id[d].status in c.CLOSED for d in c._deps(b)))  # T-0383: inferred too
     if n < 2 or not free(head):
         return [head]
     batch = [head]

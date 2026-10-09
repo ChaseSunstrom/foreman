@@ -17,7 +17,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def classes(pattern, k):
+def classes(patterns, k):
     """Every test class id (module.Class) discover would run, biggest first so the long ones start early."""
     sys.path.insert(0, HERE)
     counts = {}
@@ -29,7 +29,8 @@ def classes(pattern, k):
             elif not k or any(x in t.id() for x in k):
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
-    walk(unittest.defaultTestLoader.discover(HERE, pattern=pattern))
+    for pattern in dict.fromkeys(patterns):
+        walk(unittest.defaultTestLoader.discover(HERE, pattern=pattern))
     return sorted(counts, key=lambda c: -counts[c])
 
 
@@ -46,12 +47,13 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-k", action="append", default=[], help="only tests whose id contains this (repeatable)")
-    ap.add_argument("-p", default="test*.py", help="module glob, as unittest discover's -p")
+    ap.add_argument("-p", action="append", help="module glob, as unittest discover's -p (repeatable; default "
+                                                "test*.py)")  # T-0389: a second -p replaced the first
     a = ap.parse_args()
     if any(re.search(r"\s", k) for k in a.k):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
-    todo = classes(a.p, a.k)
+    todo = classes(a.p or ["test*.py"], a.k)
     with concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         results = list(ex.map(lambda c: run_one(c, a.k), todo))
     failed = [r for r in results if r[1] != 0]

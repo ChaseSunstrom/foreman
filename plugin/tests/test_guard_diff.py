@@ -77,7 +77,19 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          'f=$(ls /tmp); rm -rf "$S/"; S=/tmp/ok; ls | cat', 'rm -rf "$S/"; S=/tmp/ok', 'f=$(true); (rm -rf "$S/"); S=/tmp/ok',
          'D=/tmp/x; X=-vD; printf $X %s ~; rm -rf "$D"', 'D=/tmp/x; printf {-v,D} %s ~; rm -rf "$D"',
          'D=/tmp/x; printf `echo -vD` %s ~; rm -rf "$D"', 'D=/tmp/x; printf -vD %s ~; rm -rf "$D"',
-         'D=/tmp/x; printf "-vD" %s ~; rm -rf "$D"', 'D=/tmp/x; printf -v D -- %s ~; rm -rf "$D"']
+         'D=/tmp/x; printf "-vD" %s ~; rm -rf "$D"', 'D=/tmp/x; printf -v D -- %s ~; rm -rf "$D"',
+         # T-0384: quoted text is no branch, a head cd that can't fail holds past its segment, a pipeline sets
+         # nothing here, $S/tool with S known is a path, and eval or trap may cd
+         "cd ~ && echo '(|)'; rm -rf \"$PWD\"", "cd ~; cd /nonexistent && echo '(|)'; rm -rf \"$PWD\"",
+         "cd /tmp && echo '(|)'; cd ~; rm -rf \"$PWD\"", 'S=~; X=/tmp; $X/true; rm -rf "$S"',
+         'S=/tmp/x; true | S=~; rm -rf "$S"', 'S=~; true | cat; rm -rf "$S"', 'S=/tmp/x; true | read S; rm -rf "$S/"',
+         "cd /tmp; eval 'cd ~'; rm -rf \"$PWD\"", "cd /tmp && eval \"cd ~\" && rm -rf ./", "cd /tmp; trap 'cd ~' DEBUG; rm -rf \"$PWD\"",
+         # its review: a quote in a comment, trap --, brace-made eval text, cd with two arguments, /dev/stdin,
+         # mapfile -C, a pipe continued on the next line
+         "cd ~\necho # a'\ntrue || cd /tmp\nrm -rf \"$PWD\" # b'", "cd /tmp; trap -- 'cd ~' DEBUG; rm -rf \"$PWD\"",
+         'cd /tmp; eval {c,#}d; rm -rf "$PWD"', 'cd ~; cd /tmp extra; rm -rf "$PWD"',
+         "cd /tmp; source /dev/stdin <<< 'cd ~'; rm -rf \"$PWD\"",
+         "cd /tmp; mapfile -C 'cd ~ #' -c 1 < /etc/hostname; rm -rf \"$PWD\"", 'true |\nS=/tmp/x; rm -rf "${S}/home/sb"']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
