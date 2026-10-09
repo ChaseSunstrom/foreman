@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.21 — 2026-10-09
 - Debugging intuition engine, first slice (T-0706). A red run now comes with what a debugger would gather first.
   - `fm suspects` ranks files for a failure from signals already on hand: repo frames on the stack, what the task changed, the sources linked to the failing tests, and edit recency. The failure hook adds its top 3 to a failing test run.
   - `fm whyred CMD`: delta debugging (ddmin over hunks) of the task's change against its start tree, in a scratch copy, capped at 32 runs. It names the minimal hunks that turn a green command red.
