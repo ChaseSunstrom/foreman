@@ -732,7 +732,8 @@ def task_finish(p, args):
                                                 for t, x_, ev in claims))
             if getattr(args, "differently", None):  # T-0641
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
-    mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
+    mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3]),
+                                       "ran": [[r[2][:200], r[3]] for r in results][:20]})  # T-0749: catch rates
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
               for kind, n, cmd, code, output in results if code]
     if failed:
@@ -1314,6 +1315,10 @@ def catch_rates(p):
         if e.get("event") == "evidence" and d.get("cmd") and str(d.get("result") or "").startswith("exit "):
             runs[d["cmd"]] += 1
             seq[(d["cmd"], e.get("task"))].append(str(d["result"]).startswith("exit 0"))
+        elif e.get("event") == "finish":  # T-0749: the close's own runs count too
+            for cmd, code in d.get("ran") or []:
+                runs[cmd] += 1
+                seq[(cmd, e.get("task"))].append(not code)
     caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
     return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
 

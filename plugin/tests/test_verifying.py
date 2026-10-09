@@ -99,10 +99,13 @@ class CatchRate(Base):
                      {"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "pytest -q", "result": "exit 0 · 3 passed"}}]
         rows += [{"ts": c.now(), "task": t, "event": "evidence", "data": {"cmd": "make lint", "result": "exit 0"}}
                  for t in ("T-0101", "T-0102", "T-0103")]
+        rows += [{"ts": c.now(), "task": "T-0104", "event": "finish", "data": {"runs": 1, "failed": n, "ran": [["make test", n]]}}
+                 for n in (1, 0)]  # T-0749: a failure the close itself recorded counts too
         with open(os.path.join(self.p.dir, "ledger.jsonl"), "a") as f:
             f.writelines(json.dumps(r) + "\n" for r in rows)
-        tid = self.task("tests pass :: pytest -q", "lint is clean :: make lint")
+        tid = self.task("tests pass :: pytest -q", "lint is clean :: make lint", "suite :: make test")
         import fmcli
         warns = " ".join(fmcli._close_warnings(self.p, c.find_brief(self.p, tid), []))
         self.assertRegex(warns, r"`pytest -q` caught a failure in 2 task")
         self.assertRegex(warns, r"`make lint` never failed in 3 run")
+        self.assertRegex(warns, r"`make test` caught a failure in 1 task")
