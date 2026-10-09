@@ -16,7 +16,7 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
-NAMES = ("dream", "cold files", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("dream", "cold files", "pre-plan", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
 def jobs(p):
@@ -30,6 +30,10 @@ def jobs(p):
     age = c.age_days(meta.get("landscape_at"))
     if age is None or age >= fmoutside.LANDSCAPE_DAYS:
         out.append(("landscape", ["landscape", "--if-due"], fmbudget.estimate("research", 4, 0.2)))
+    big = None if fmbudget.degrade() else next(  # T-0730: optional, so it waits while usage runs ahead of pace
+        (b for b in c.order_queue(c.load_briefs(p))[0] if b.tier == "L" and not b.section("Plan review").strip()), None)
+    if big:  # a queued L task's plan read by another model while nobody is waiting on it
+        out.append((f"pre-plan {big.id}", ["second", "plan", big.id], fmbudget.estimate("second-plan", 1, 0.05)))
     events = c.ledger_tail(p, 5000)
     asked = {e.get("task") for e in events if e.get("event") == "research"}
     debt = next((b for b in c.rank_inbox(c.load_briefs(p)) if b.type == "RESEARCH" and b.id not in asked
