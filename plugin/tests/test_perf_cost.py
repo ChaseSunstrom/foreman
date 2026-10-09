@@ -113,8 +113,10 @@ class DegradeOnPace(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting for the review.",
                                "session_id": "sess-1"})
         reason = (parse(p) or {}).get("reason", "")
-        self.assertNotIn(queued, reason, "no side task while usage runs ahead of pace")
+        self.assertNotIn(f"lane brief {queued}", reason, "no side task while usage runs ahead of pace")
+        self.assertNotIn(f"second plan {queued}", reason)
         self.assertIn("ahead of pace", reason)
+        self.assertIn(queued, reason, "the queue is the user's work: it's still named as what comes next")
 
     def test_ideas_deepen_runs_no_rounds_and_over_the_cap_still_blocks(self):
         bindir = os.path.join(self.tmp, "bin")
