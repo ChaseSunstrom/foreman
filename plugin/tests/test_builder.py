@@ -47,6 +47,13 @@ class Brief(_Tasks):
         self.assertIn("foreman:fm-builder", res["agent"])
         self.assertIn("builder", self.fm("task", "show", tid).stdout)
 
+    def test_builder_model_follows_the_tier(self):
+        # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
+        # task's on the main model; the main thread still reviews, merges and re-verifies
+        small, mid = self.task("Small one"), self.task("Mid one", tier="M")
+        self.assertIn('model: "sonnet"', json.loads(self.fm("lane", "brief", small, "--json").stdout)["agent"])
+        self.assertNotIn("model:", json.loads(self.fm("lane", "brief", mid, "--json").stdout)["agent"])
+
     def test_l_tasks_held_tasks_and_a_third_builder_are_refused(self):
         big = self.task("Rewrite the engine", tier="L")
         self.assertNotEqual(self.fm("lane", "brief", big, check=False).returncode, 0)

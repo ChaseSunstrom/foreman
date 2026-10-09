@@ -128,8 +128,10 @@ def builder_brief(p, b, args):
         x.meta["builder"] = c.now()
         x.append_log(f"builder brief: {path}")
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
-    agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree", prompt: "Read {path} and work the '
-             f'task it describes."')
+    # T-0373: an S task's builder runs on Sonnet; an M task's keeps the main model (the main thread reviews either)
+    model = ', model: "sonnet"' if b.tier == "S" else ""
+    agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
+             f'the task it describes."')
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), git merge --no-ff <branch>, fm lane rm {b.id} (takes it back), "

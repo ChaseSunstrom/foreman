@@ -2,6 +2,18 @@
 
 The main thread plans, edits and writes all state. Subagents and fm's child runs are bounded by `fm budget` (T-0227): use them whenever they buy parallelism or fresh eyes — the caps, not abstinence, keep spend in check (T-0364: "default none" left long gates idle and research serial).
 
+Models (T-0373): the main thread (Opus or Fable) plans, judges, merges and writes state; the work it hands out runs on the cheapest model that can do it, passed as the Agent call's `model` (and `effort` where Claude Code offers it):
+
+| Work | Agent | Model |
+|---|---|---|
+| find where something is, read a long log/changelog and summarize it | `foreman:fm-scout`, or general-purpose with `model: "haiku"` | Haiku |
+| recon, research, audits, debugging hypotheses | `foreman:fm-recon` / `fm-reviewer` / `fm-debugger` | Sonnet (their frontmatter) |
+| an S task in a builder lane | `foreman:fm-builder` (`fm lane brief` prints `model: "sonnet"`) | Sonnet |
+| an M task in a builder lane, an L plan's critique | `foreman:fm-builder`, `fm second plan` | the main model |
+| brainstorm lenses, research children, oracle, bench | `fm ideas` / `fm research ask` / … (`--model`) | Sonnet by default |
+
+A cheaper model's output is still checked: the main thread reviews a builder's diff, spot-checks two claims of any report, and re-runs the criteria itself.
+
 Allowed only for:
 1. read-only recon of a large codebase area → `foreman:fm-recon`
 2. web or documentation research → first `fm recall "<question>"` (it may already be known), then `fm research ask "<question>"` (T-0206: parallel web-only researchers per sub-question, every quoted claim re-fetched and checked, one note saved; ✗ claims are unverified); `foreman:fm-recon` when the answer also needs the codebase
