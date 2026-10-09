@@ -770,33 +770,62 @@ def repair(roots):
     return moved
 
 
+_SUPPLY_SKIP = {".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"}
+
+
+def _tree_hash(root, h, cap=4000):
+    """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order."""
+    n = 0
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
+        for f in sorted(files):
+            full = os.path.join(d, f)
+            n += 1
+            if n > cap or os.path.islink(full) or os.path.getsize(full) > 4_000_000:
+                h.update(os.path.relpath(full, root).encode() + b"\0skipped\0")
+                continue
+            with open(full, "rb") as fh:
+                h.update(os.path.relpath(full, root).encode() + b"\0" + fh.read())
+
+
 def _supply(claude):
-    """{id: sha256} of what each enabled plugin runs (manifest, hooks, MCP config) and of each MCP server command."""
+    """{id: sha256} of every enabled plugin's install tree and each MCP server's spec (user-wide and per project)."""
     import hashlib
     out = {}
-    plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {}).get("plugins") or {}
-    for pid, installs in sorted(plugins.items()):
+    plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
+    plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
+    for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
         h = hashlib.sha256()
         for inst in installs if isinstance(installs, list) else [installs]:
-            root = (inst or {}).get("installPath") or ""
-            for rel in (".claude-plugin/plugin.json", "hooks/hooks.json", ".mcp.json"):
-                try:
-                    with open(os.path.join(root, rel), "rb") as f:
-                        h.update(rel.encode() + b"\0" + f.read())
-                except OSError:
-                    continue
+            root = inst.get("installPath") if isinstance(inst, dict) else None
+            if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
+                _tree_hash(root, h)
         out[pid] = h.hexdigest()
-    servers = (_load_json(os.path.join(os.path.dirname(claude), ".claude.json")) or {}).get("mcpServers") or {}
-    for name, spec in sorted(servers.items()):
-        out[f"mcp:{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+    conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
+    conf = conf if isinstance(conf, dict) else {}
+    scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
+                                              sorted((conf.get("projects") or {}).items()) if isinstance(v, dict)]
+    for scope, servers in scopes:
+        for name, spec in sorted((servers if isinstance(servers, dict) else {}).items()):
+            out[f"mcp:{scope}{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
     return out
 
 
 def check_supply(claude, accept=False):
     """T-0672 (T-0479): plugins and MCP servers are code every session runs; a change between doctor runs (an update
-    or a tampered cache) is shown once, then accepted with fm doctor --accept-supply. The first run is the baseline."""
+    or a tampered cache) is shown once, then accepted with fm doctor --accept-supply. The first run is the baseline;
+    an unreadable baseline warns (review: it never re-baselines on its own, which would hide a change)."""
+    try:
+        return _check_supply(claude, accept)
+    except Exception as e:  # one odd file costs this check, never the whole doctor run
+        return Result("supply chain", "WARN", f"not checked: {type(e).__name__}: {e}")
+
+
+def _check_supply(claude, accept):
     path = os.path.join(c.state_dir(), "supply.json")
     now, seen = _supply(claude), _load_json(path)
+    if os.path.exists(path) and not isinstance(seen, dict) and not accept:
+        return Result("supply chain", "WARN", f"{path} is unreadable: fm doctor --accept-supply records a new baseline")
     if seen is None or accept:
         c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
         return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "

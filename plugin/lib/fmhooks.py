@@ -905,19 +905,21 @@ def _grant(p, b, cats, sid, via, pin=None, h=None, **data):
     b.meta["allow"] = list(dict.fromkeys(list(b.meta.get("allow") or []) + cats))
     if cats:
         b.append_log(f"user approved {', '.join(cats)} " + ("in chat" if via == "chat" else "in Claude Code's permission prompt"))
-    if set(cats) & set(_UNDO) and c.git_root(p.root):  # T-0672 (T-0478): where to come back to, before it's used
-        point = undo_point(p.root)
+    if set(cats) & set(_UNDO) and c.git_root(p.root):  # T-0672 (T-0478): where to come back to, as of this yes
+        point = undo_point(p.root, b.id)
         if point.get("head"):
-            b.append_log(f"undo point before {', '.join(sorted(set(cats) & set(_UNDO)))}: HEAD {point['head'][:12]}"
-                         + (f", uncommitted work in stash commit {point['stash'][:12]} (git stash apply <it>)"
-                            if point.get("stash") else ""))
+            b.append_log(f"undo point at this yes for {', '.join(sorted(set(cats) & set(_UNDO)))}: HEAD "
+                         f"{point['head'][:12]}" + (f", tracked uncommitted work in {point['ref']} (git stash apply "
+                                                    f"{point['ref']})" if point.get("ref") else
+                                                    ", uncommitted work NOT recorded" if point.get("dirty") else ""))
     c.save_brief(p, b)
     if cats:
         c.log_event(p, "approval_granted", task=b.id, data=dict({"allow": cats, "via": via}, **data), session=sid)
 
 
-_UNDO = {  # T-0672 (T-0478): what a destructive grant can and can't be brought back from
-    "git-destructive": "restorable: Foreman records HEAD and a stash commit of uncommitted work before it's used",
+_UNDO = {  # T-0672 (T-0478): what a destructive grant can and can't be brought back from (review: exactly)
+    "git-destructive": "partly restorable: Foreman records HEAD and tracked uncommitted changes as of this yes; "
+                       "untracked files (git clean) and remote history (a force push) are not covered",
     "rm-outside": "irreversible: files deleted outside the repo can't be brought back from git",
     "publish": "irreversible: a release, push to a registry or deploy can't be fully taken back",
     "system": "may be irreversible: system changes outside the repo aren't recorded",
@@ -928,10 +930,16 @@ def restorable(category):
     return _UNDO.get(category, "")
 
 
-def undo_point(root):
-    """T-0672: {"head", "stash"} for a repo: the commit it's on, and `git stash create`'s commit of uncommitted work
-    (it never touches the stash list or the working tree)."""
-    return {"head": c._git(root, "rev-parse", "HEAD").strip(), "stash": c._git(root, "stash", "create").strip()}
+def undo_point(root, tid=None):
+    """T-0672: {"head", "stash", "ref", "dirty"}: the commit the repo is on, and `git stash create`'s commit of tracked
+    uncommitted work (never the stash list or the working tree), kept under refs/foreman/undo/<task> so gc can't take
+    it; "dirty" when there was work but no stash commit came back (a timeout), so the log says it wasn't recorded."""
+    head = c._git(root, "rev-parse", "HEAD").strip()
+    stash = c._git(root, "stash", "create", timeout=10).strip()
+    ref = f"refs/foreman/undo/{tid or 'grant'}"
+    pinned = bool(stash) and c._git(root, "update-ref", ref, stash, fail=None) is not None
+    dirty = not stash and bool(c._git(root, "status", "--porcelain", "--untracked-files=no").strip())
+    return {"head": head, "stash": stash, "ref": ref if pinned else "", "dirty": dirty}
 
 
 _WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)

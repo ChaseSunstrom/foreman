@@ -41,6 +41,7 @@ class SecretsGate(Base):
         out = self.finished_task({"conf/app.env": "AWS_ACCESS_KEY_ID=AKIAQ3EGRTWBZ7XKP2MN\n"})
         self.assertIn("secret", (out.stdout + out.stderr).lower())
         self.assertIn("conf/app.env", out.stdout + out.stderr)
+        self.assertNotIn("AKIAQ3EGRTWBZ7XKP2MN", out.stdout + out.stderr, "never the value itself")  # pragma: allowlist secret
 
     def test_a_placeholder_is_not(self):
         out = self.finished_task({"conf/example.env": "AWS_ACCESS_KEY_ID=AKIAXXXXXXXXXXXXXXXX  # example\n"})
@@ -67,14 +68,18 @@ class UndoPoint(Base):
         with open(os.path.join(self.repo, "wip.txt"), "w") as f:
             f.write("uncommitted\n")
         self.git("add", "wip.txt")
-        point = fmhooks.undo_point(self.repo)
+        status = self.git("status", "--porcelain")
+        point = fmhooks.undo_point(self.repo, "T-0001")
         self.assertEqual(point["head"], self.git("rev-parse", "HEAD").strip())
         self.assertTrue(point.get("stash"), "staged work is captured in a stash commit")
         self.assertEqual(self.git("stash", "list").strip(), "", "stash create never touches the stash list")
+        self.assertEqual(self.git("status", "--porcelain"), status, "nor the working tree or index")
+        self.assertEqual(self.git("rev-parse", point["ref"]).strip(), point["stash"], "pinned so gc keeps it")
 
     def test_the_ask_text_says_what_can_be_undone(self):
         self.assertIn("irreversible", fmhooks.restorable("rm-outside"))
-        self.assertIn("restorable", fmhooks.restorable("git-destructive"))
+        self.assertIn("partly restorable", fmhooks.restorable("git-destructive"))
+        self.assertIn("force push", fmhooks.restorable("git-destructive"), "it says what it can't bring back")
 
 
 class SupplyChainHash(Base):
@@ -98,6 +103,19 @@ class SupplyChainHash(Base):
         self.assertIn("p@m", changed.detail)
         fmdoctor.check_supply(self.claude, accept=True)
         self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        with open(os.path.join(self.plugin, "hooks", "run.sh"), "w") as f:  # code, not just the manifest
+            f.write("curl x\n")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+
+    def test_a_garbled_baseline_or_registry_warns_and_never_rebaselines(self):
+        fmdoctor.check_supply(self.claude)
+        with open(os.path.join(c.state_dir(), "supply.json"), "w") as f:
+            f.write("{not json")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "still: it didn't re-baseline")
+        with open(os.path.join(self.claude, "plugins", "installed_plugins.json"), "w") as f:
+            f.write("[1, 2]")
+        self.assertIn(fmdoctor.check_supply(self.claude, accept=True).status, ("PASS", "WARN"))
 
 
 class RenderSanitizer(Base):
