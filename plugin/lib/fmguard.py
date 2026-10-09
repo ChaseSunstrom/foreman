@@ -640,6 +640,7 @@ def _name(argv):
 
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
+_FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|fetch)(?![\w.-])")  # T-0421: a fetcher anywhere
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -1236,6 +1237,9 @@ _RUNS = re.compile(r"\$\(|`|\$\{[^}]*=")  # T-0414: a word that runs a command o
 _REACHES_PYTHON = re.compile(r"PYTHON\w*|LD_\w*|PATH|HOME|ENV|BASH_ENV|IFS")  # read by python, its loader or the shell
 
 
+_BRACES = re.compile(r"\{[^{}]*(?:,|\.\.)[^{}]*\}")  # a brace expansion bash would turn into several words
+
+
 def _writes_nothing(x):
     """T-0344 review: a command beside the python that can't create a file python would then import: no output
     redirect, and curl or wget only with flags that keep their download on stdout (any other flag, -o/-O, a config
@@ -1243,7 +1247,7 @@ def _writes_nothing(x):
     left in it (a quoted "$( )" or `…` runs a command _split doesn't see; an unquoted $( ) is a command of its own,
     checked here too) and no printf -v; a command of NAME=value words only sets names, each absent from the
     environment (so not exported to python) and none that python, its loader or the shell reads (_REACHES_PYTHON)."""
-    if x.redirs or any(_RUNS.search(w) for w in x.argv):
+    if x.redirs or any(_RUNS.search(w) or _BRACES.search(w) for w in x.argv):  # T-0422: {-o,json.py} is -o json.py
         return False
     sets = [_ASSIGN.match(w) for w in x.argv]
     if x.argv and all(sets):
@@ -1327,7 +1331,11 @@ def _reads_pipe_as_data(c, argv, cmds, cwds, cmd):
     i = end = cmds.index(c)
     while end + 1 < len(cmds) and "|" in cmds[end + 1].op.replace("||", ""):
         end += 1
-    top = c.depth == 0 and all(x.depth >= 0 for x in cmds[:i]) and shell.count("(") == shell.count(")")
+    # review: _split counts a quoted ")" as a real one (shlex makes it a bare token), so python can look outside a
+    # group it is in; bare paren tokens that outnumber the unquoted parens mean the depths can't be trusted
+    bare = [t for t in _tokens(_lines(_strip_heredocs(cmd))) if re.fullmatch(r"[$<>]?\(+|\)+", t)]
+    top = (c.depth == 0 and all(x.depth >= 0 for x in cmds) and shell.count("(") == shell.count(")")
+           and sum(t.count("(") for t in bare) == shell.count("(") and sum(t.count(")") for t in bare) == shell.count(")"))
     others = [x for x in (cmds[:end + 1] if top else cmds) if x is not c]
     if not all(_writes_nothing(x) for x in others):
         return False
@@ -1902,8 +1910,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
-            if c.piped and any(_name(x.argv) in _FETCHERS for x in chain) and not _reads_pipe_as_data(c, argv, cmds,
-                                                                                                    cwds, cmd):
+            # T-0421: a download anywhere on the line counts (a $( ), a group or a <( ) splits it from the shell's own
+            # chain; a file downloaded first and then piped in is a download too), and so does a pipe into a group
+            fetched = any(_name(x.argv) in _FETCHERS for x in chain) or _FETCH_WORD.search(_mask_quotes(cmd))
+            if (c.piped or "|" in c.op) and fetched and not _reads_pipe_as_data(c, argv, cmds, cwds, cmd):
                 found.append(("pipe-shell", f"downloaded content piped into {name}"))
             nxt = cmds[idx + 1] if idx + 1 < len(cmds) else None
             if c.procsub and nxt and _name(nxt.argv) in _FETCHERS:
