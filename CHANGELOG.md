@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+- Foreman across projects, machines and the tools around it (T-0673: T-0443, T-0444, T-0463, T-0481, T-0482, T-0574, your picks on the punch-list page):
+  - `fm sweep "<fix>" --grep TEXT` asks every other project about a fix by putting a brief in its inbox. Nothing in that repo is edited, its fm sync mirror included, and sensitive projects are skipped. `fm friction` lists the open requests.
+  - `fm adopt` runs a baseline pass over an existing repo (map, gates with a flake rerun, secrets, dependencies) and queues the work it finds.
+  - `fm projects` and `fm doctor` show which Foreman version each project last ran and the fixes it lacks.
+  - `fm inbox gh` reads open issues into briefs, read-only through `gh`. Issue text stays untrusted: every line is prefixed, the repro command is redacted and defanged, and a deduplication match must be a whole line of Foreman's, so one issue can't hide another.
+  - A new Claude Code version runs `fm canary`'s checks, and a failure becomes a brief.
+  - `fm machine` names this machine for brief logs.
+  - `fm doctor` rehearses restoring the newest backup.
+- The guard-and-safety milestone (T-0672: T-0441, T-0462, T-0478, T-0479, T-0480, T-0502). Each part only adds a check or logging:
+  - A close warns about a likely secret in a file the task changed (placeholders aside), and about ignored files it left outside its scope.
+  - A destructive grant's ask says what can be undone, and the grant logs an undo point: HEAD plus a stash commit of uncommitted work.
+  - `fm doctor` hashes every enabled plugin and MCP server and warns when one changes, until `fm doctor --accept-supply`.
+  - Every guard block carries a rule id, and `fm friction` counts how often each rule fires.
+  - Terminal escapes in task titles were already stripped; a seeded fuzz test now pins that, and the approval phrases.
 - The drive stops offering side work it can't use (T-0700, a self-improvement finding). It doesn't offer `fm lane brief` while both builder slots are taken, which `fm lane brief` refuses, and it skips a planned task whose plan review is already saved when no lane can take it. Each such offer cost a turn.
 
 ## 1.2.16

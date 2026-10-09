@@ -2257,7 +2257,9 @@ def main_view(p):
     return Project(p.slug, main_worktree(p.root) or p.root, p.dir) if p.lane else p
 
 
-def regen_views(p, briefs=None):
+def regen_views(p, briefs=None, mirror=True):
+    """STATE/INBOX and the status files; with mirror (and fm sync on), the repo's .foreman/ mirror too. T-0673 review:
+    a capture into another project (fm sweep) passes mirror=False, so nothing lands in that repo's tree."""
     p = main_view(p)
     sd = state_dict(p, briefs)
     ts = now()
@@ -2267,7 +2269,7 @@ def regen_views(p, briefs=None):
     write_atomic(os.path.join(p.dir, "badge.txt"), badge_text(sd) + "\n")
     write_atomic(os.path.join(p.dir, "progress.line"), progress_line(sd) + "\n")
     write_atomic(os.path.join(p.dir, "status.json"), json.dumps(status_dict(sd)) + "\n")
-    if read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
+    if mirror and read_meta(p).get("sync"):  # fm sync: keep the repo's mirror current with every change
         import fmsync
         try:
             fmsync.export(p)
