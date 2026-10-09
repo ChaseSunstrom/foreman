@@ -94,6 +94,10 @@ def _hint(detail):
                 "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes.")
     if "unresolvable target" in detail:
         return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+    if re.fullmatch(r"downloaded content piped into python[0-9.]*", detail):  # T-0395
+        return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every other "
+                "command on the line is a plain data tool that writes no file (curl -s, jq, head, tail, sleep): run a "
+                "program that writes files, or a redirect, as its own command.")
     if detail.endswith("; git merge)"):
         return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
                 "checks each file it changes as that task's write.")

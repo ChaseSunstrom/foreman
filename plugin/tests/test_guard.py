@@ -793,6 +793,19 @@ class MergeHint(GuardCase):
         self.assertNotIn("fm lane merge", g.message(other, ctx))  # only a merge gets the hint
 
 
+class PipeShellHint(GuardCase):
+    def test_pipe_shell_refusal_says_how_it_passes(self):
+        # T-0395 (JARVIS): `hf download … > log &` on the same line as `curl -s URL | python3 -c "…json.load…"` was
+        # refused, and the session had to guess that splitting the line is what passes
+        ctx = self.ctx()
+        cmd = ("hf download org/model > d.log 2>&1 & sleep 1; curl -s https://e/api | "
+               "python3 -c \"import json,sys; print(json.load(sys.stdin))\"")
+        block = g.check("Bash", {"command": cmd}, ctx)
+        self.assertBlocked(block, "pipe-shell")
+        self.assertIn("own command", g.message(block, ctx))
+        self.assertIsNone(g.check("Bash", {"command": cmd.split("; ", 1)[1]}, ctx))  # the split-off part passes
+
+
 class ScratchNames(GuardCase):
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
