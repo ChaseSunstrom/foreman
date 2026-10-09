@@ -2804,10 +2804,10 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred "
-                         "record graph"),
+                         "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
-    ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
+    ("Reports", "digest cost burden usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -3092,6 +3092,22 @@ def build_parser():
     s.add_argument("action", nargs="?", default="list", choices=["list", "steer", "remote", "refresh"])
     s.add_argument("words", nargs="*")
     s.add_argument("--wake", action="store_true")
+    s = add("spec", lazy("fmchange", "cmd_spec"), help="a one-line wish as a red unittest: a tool-less child's "
+                                                        "assertions, only safe ones kept (T-0713)")
+    s.add_argument("wish")
+    s.add_argument("--module", required=True, help="the Python module the wish is about")
+    s.add_argument("--out", help="the test file (default: tests/test_spec_<wish>.py)")
+    s.add_argument("--model", default="haiku")
+    s.add_argument("--timeout", type=int, default=180)
+    s = add("rewrite", lazy("fmchange", "cmd_rewrite"), help="one rename rule across the repo; residual sites named; "
+                                                              "--convert clears them with a cheap child (T-0713)")
+    s.add_argument("old")
+    s.add_argument("new")
+    s.add_argument("--glob", help="only files matching this pattern")
+    s.add_argument("--apply", action="store_true", help="write the changes (default: a dry run)")
+    s.add_argument("--convert", action="store_true", help="with --apply: rewrite the residual lines with a cheap child")
+    s.add_argument("--model", default="haiku")
+    s.add_argument("--timeout", type=int, default=180)
     s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
                                                         "read-set, as of any moment (T-0707)")
     s.add_argument("action", choices=["blast", "pack", "build"])
@@ -3116,6 +3132,9 @@ def build_parser():
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
+    s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "
+                                                          "turns, refusals, injected context (T-0712)")
+    s.add_argument("--days", type=float, default=14)
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
@@ -3200,6 +3219,8 @@ def build_parser():
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
     s.add_argument("--cmd", metavar="TEXT", help="only this command: the guard's default verdict, never run it")
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
+    s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
+                                                          "fmguard.py file) against the working one (T-0712)")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
     import fminstr  # T-0701: the instruments, their help and arguments come from one registry
