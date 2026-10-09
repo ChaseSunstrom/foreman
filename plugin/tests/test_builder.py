@@ -66,6 +66,15 @@ class Brief(_Tasks):
         self.assertIn("Edit and Write tools", brief)
         self.assertIn("too complex", brief)
 
+    def test_brief_leaves_the_changelog_to_the_main_thread(self):
+        # T-0428: with merge=union a lane's "Unreleased" line merged under a section released after the lane started;
+        # the builder reports the line and the main thread adds it at finish
+        tid = self.task("Changelog")
+        brief = read_text(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"])
+        self.assertIn("Don't edit CHANGELOG.md", brief)
+        self.assertIn("changelog line", brief)
+        self.assertIn("final report", brief)
+
     def test_builder_model_follows_the_tier(self):
         # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
         # task's on the main model; the main thread still reviews, merges and re-verifies

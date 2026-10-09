@@ -83,3 +83,31 @@ class Batch(ForemanTestCase):
         for tid in self.ids:
             self.fm("task", "set", tid, "tier=S")
         self.assertIn(f"fm batch {' '.join(self.ids)}", self.fm("next").stdout)
+
+
+class Related(ForemanTestCase):
+    """T-0670: related items of any size are offered as one batch; the brief says how to verify it cheaply."""
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        cap = lambda block: next(w for w in self.fm("intake", block).stdout.split() if w.startswith("T-"))
+        tail = "\nCONTEXT: from the frontier brainstorm, first version and value noted"
+        self.guard = [cap(f"SECURITY: guard escape: a heredoc inside backticks hides rm {i}{tail}") for i in range(3)]
+        self.other = cap(f"FEATURE: dark mode toggle for the settings page{tail}")
+        for t in self.guard + [self.other]:
+            self.fm("task", "set", t, "tier=M")
+
+    def test_suggest_groups_related_items_only(self):
+        out = self.fm("batch", "--suggest").stdout
+        self.assertIn(f"fm batch {' '.join(self.guard)}", out)
+        self.assertNotIn(self.other, out)
+
+    def test_next_offers_the_related_group_for_any_tier(self):
+        self.assertIn(f"fm batch {' '.join(self.guard)}", self.fm("next").stdout)
+
+    def test_apply_creates_the_batches_and_their_brief_says_verify_once(self):
+        res = self.fm("batch", "--suggest", "--apply").stdout
+        host = next(w for w in res.split() if w.startswith("T-") and w not in self.guard + [self.other])
+        show = self.fm("task", "show", host).stdout
+        self.assertIn("full gates", show)
+        self.assertIn("own new tests", show)

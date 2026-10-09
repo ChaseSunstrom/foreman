@@ -382,6 +382,7 @@ class Cmd:
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
         self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
         self.depth = depth  # T-0414: the ( it sits inside, unclosed: a subshell, $( ) or <( ) (negative: a stray ))
+        self.feeds = []  # T-0589: ("<<", delimiter) and ("<<<", word): what it reads on stdin
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -393,13 +394,52 @@ def _heredoc_starts(seen, line):
     a body, so `echo '<<EOF'` hid the command after it from the guard."""
     before = "".join(x + "\n" for x in seen)
     return [(m.group(1), m.group(2)) for m in re.finditer(_HEREDOC_START, line)
-            if _top_level(_strip_comments(before + line[:m.start()]))]
+            if _inner_quote(_strip_comments(before + line[:m.start()])) is None]
+
+
+def _inner_quote(prefix):
+    """T-0669: the quote open in the innermost $( … ) or `…` where shell text ends. Each opens a fresh quoting context,
+    so the "x <<EOF" in "$(echo "x <<EOF")" is quoted text, though a flat scan reads the outer string as closed there.
+    A case arm's ) may close a context early: then more reads as quoted, never less as code (no line hides)."""
+    st, esc, i = [["", None, 0]], False, 0  # [kind, quote, paren depth]
+    while i < len(prefix):
+        ch, top = prefix[i], st[-1]
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and prefix[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            i += 2
+            continue
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
+        elif ch in "'\"":
+            top[1] = ch
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
+        i += 1
+    return "\\" if esc else st[-1][1]
 
 
 def _lines(text):
     """Newlines as command separators for the tokenizer, placed after each line so a # comment ends at its line (it ran
-    to the end of the whole command, hiding every later line: T-0158)."""
-    return text.replace("\n", "\n;")
+    to the end of the whole command, hiding every later line: T-0158). T-0669: not a newline inside quotes — that one
+    is part of the word, and a second shell (eval 'a\\⏎b') must get it back as written."""
+    mask = _mask_quotes(text)
+    return "".join(ch + ";" if ch == "\n" and mask[i] == "\n" else ch for i, ch in enumerate(text))
 
 
 def _ends_body(text, delim, starter):
@@ -407,6 +447,61 @@ def _ends_body(text, delim, starter):
     dropped for <<-. `X ` or ` X` is still body — taken for the end, the lines after it hid from the guard."""
     return text == delim or text.lstrip("\t") == delim and bool(
         re.search(r"<<-\s*(['\"]?)" + re.escape(delim) + r"\1", starter))
+
+
+# T-0576: a plain expansion of IFS (default: space, tab, newline) reads as the space it splits on. T-0585 (its
+# security review): only the plain forms; an operator form (${IFS:+word}) yields any word, and a line that may change
+# IFS (named with quotes and backslashes removed, a loop variable, a nameref; IFS=… read scopes to that read) and
+# splits anything on it can't be read that way
+_IFS_PLAIN = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{IFS\}")
+_IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
+_IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
+_IFS_IN_VALUE = re.compile(r"(?<![\w$])[A-Za-z_]\w*(?:\[[^\]]*\])?\+?=[^\s;&|()<>]*(?:\$IFS(?![A-Za-z0-9_])|\$\{IFS\})")
+_IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^'\n]*'|\"[^\"\n]*\"|[^\s;&|'\"])*[ \t]+read\b")  # one line
+_READ_REDEFINED = re.compile(r"\b(?:alias|enable|function)\b|\bread\s*\(")
+_NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
+    r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:"  # at command position
+    r"(?:declare|typeset|local|export|readonly|read|mapfile|readarray|getopts|let)\b[^;&|\n]*?\s[^\s=;&|]*[$`'\"\\]"
+    r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n|printf\b[^;&|\n]*-v\s*\S*[$`'\"\\])"
+    r"|\(\(\s*(?:[^()]*,\s*)?\$\{?\w+\}?\s*(?:[-+*/%^|&]|<<|>>)?=(?!=)|\$\{![^}]*=")  # (( $n = 1 )), not (( a == b ))
+_UNQUOTED = re.compile(r"\$[\w{@*#?!$(-]|`")
+_RUNS_HERE = re.compile(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file
+    r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:eval|source|\.)(?=\s)")
+
+
+def _ifs_unreadable(cmd):
+    """T-0585: why bash's word splitting on this line can't be read (IFS may not be the default), or None."""
+    rest = _IFS_PLAIN.sub(" ", cmd)
+    if _IFS_OP.search(rest):
+        return "IFS is expanded with an operator: the guard can't read the word it yields"
+    if _IFS_IN_VALUE.search(_mask_quotes(cmd)):  # T-0592: bash keeps it whole there; a space would end the value
+        return "IFS in an assignment's value: the guard can't read where that value is split later"
+    why = "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
+    plain, hidden = rest != cmd, _RUNS_HERE.search(rest)
+    if plain and hidden:  # T-0590: eval or source may set IFS out of sight
+        return why
+    scoped = rest if _READ_REDEFINED.search(rest) else _IFS_FOR_READ.sub(" read", rest)
+    # quoted text and heredoc bodies are data: check_bash reads what eval, bash -c and bash <<EOF run on their own;
+    # beside a plain use or an eval/source they aren't (T-0590: eval 'IFS=m'; "r$IFS" -rf ~)
+    bare = _mask_quotes(_strip_heredocs(scoped))
+    text = scoped if plain or hidden else bare
+    if _IFS_NAME.search(re.sub(r"[\\'\"]", "", text)):  # I""FS and I\FS are IFS to bash
+        split = plain or "$" in text or "`" in text
+    elif _NAME_COMPUTED.search(bare):  # ponytail: a computed name is refused only beside an expansion that splits
+        split = plain or _UNQUOTED.search(bare)
+    else:
+        return None
+    return why if split else None
+
+
+def _ifs_spaces(cmd):
+    """T-0576: an unquoted plain IFS expansion as the space bash splits on. T-0590: a # right after it stays a
+    literal, not a comment; quoted text is left as it is for the nested check that reads it (bash -c '…')."""
+    out, last = [], 0
+    for m in _IFS_PLAIN.finditer(_mask_quotes(cmd)):  # same length as cmd, quoted text blanked
+        out += [cmd[last:m.start()], " \\" if cmd[m.end():m.end() + 1] == "#" else " "]
+        last = m.end()
+    return "".join(out) + cmd[last:]
 
 
 def _join_continued(cmd):
@@ -420,7 +515,7 @@ def _join_continued(cmd):
         while i < len(lines):
             code = _strip_comments("\n".join(out + [line]))
             tail = len(code) - len(code.rstrip("\\"))
-            if not (code.endswith("\\") and tail % 2 and _top_level(code[:-1])):
+            if not (code.endswith("\\") and tail % 2 and _quote_at(code[:-1]) in (None, '"')):  # T-0669: in "…" too
                 break
             line = line[:-1] + lines[i]
             i += 1
@@ -454,8 +549,8 @@ def _live_heredocs(cmd):
     return out
 
 
-def _heredocs(cmd):
-    """(the command without its heredoc bodies, the bodies)"""
+def _heredoc_split(cmd):
+    """(the command's lines without heredoc bodies, each body's lines in order)"""
     lines, out, bodies, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
@@ -463,11 +558,34 @@ def _heredocs(cmd):
         starts = _heredoc_starts(out, line)
         out.append(line)
         for _, delim in starts:
+            bodies.append([])
             while i < len(lines) and not _ends_body(lines[i], delim, line):
-                bodies.append(lines[i])
+                bodies[-1].append(lines[i])
                 i += 1
             i += 1
-    return "\n".join(out), "\n".join(bodies)
+    return out, bodies
+
+
+def _heredocs(cmd):
+    """(the command without its heredoc bodies, the bodies)"""
+    out, bodies = _heredoc_split(cmd)
+    return "\n".join(out), "\n".join(x for b in bodies for x in b)
+
+
+# T-0589: what may read a heredoc or here-string as code (bash, sh -s, bash /dev/stdin, { bash; }, . /dev/stdin …)
+_RUNS_STDIN = re.compile(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
+
+
+def _stdin_scripts(cmd, cmds):
+    """T-0589: the heredoc bodies and here-string words on a line that also runs a shell, source or eval: which of
+    them a shell reads as its script isn't modelled (its review: /dev/stdin, a group, -c 'source /dev/stdin'), so
+    all of them, read as commands"""
+    feeds = [f for x in cmds for f in x.feeds]
+    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) or x.feeds and re.search(r"[$`]", _name(x.argv))
+                            for x in cmds):  # T-0669: $X <<EOF, when that $X is the one fed
+        return []
+    return [w for op, w in feeds if op == "<<<"] + (["\n".join(b) for b in _heredoc_split(cmd)[1]]
+                                                    if any(op == "<<" for op, _ in feeds) else [])
 
 
 def _strip_heredocs(cmd):
@@ -553,7 +671,8 @@ def _split(tokens):
                 continue
             if not empty:
                 cmds.append(cur)
-            cur = Cmd([], [], t in ("|", "|&"), op=t, depth=depth)
+            keep = empty and cur.piped and "(" in t  # T-0581: `| (bash)` and `|⏎(bash)`: the group reads the pipe
+            cur = Cmd([], [], t in ("|", "|&") or keep, op=cur.op + t if keep else t, depth=depth)
             i += 1
             continue
         if re.fullmatch(r"[<>&]+\|?", t):
@@ -569,6 +688,8 @@ def _split(tokens):
             if t.endswith("&") and re.fullmatch(r"\d+|-", nxt):
                 i += 2
                 continue
+            if t in ("<<", "<<<"):
+                cur.feeds.append((t, nxt))
             if nxt and (t.startswith(">") or t in ("&>", "&>>", "<>")):
                 cur.redirs.append(nxt)
             i += 2
@@ -717,6 +838,9 @@ def _subst_bodies(text, tails=True):
             tick = i + 1
         elif ch == "$" and text[i + 1:i + 2] == "(":
             ends.append(text[i + 2:])  # $(( … )) too: bash falls back to a subshell when )) doesn't close it
+            last = text.rfind(")")  # T-0669: and, when it ends inside a quote, up to the last ): an outer `)"`
+            if last > i + 2 and _quote_at(text[i + 2:]) is not None:  # left it open (whole code stays whole)
+                ends.append(text[i + 2:last])
             if text[i + 2:i + 3] != "(":
                 ctx.append([None, i + 2, 0])
             i += 2
@@ -788,6 +912,11 @@ def _mask_fm(cmd, ctx):
 
 def _top_level(prefix):
     """True when shell text ending here is outside every quote and escape (a quote scan: wrong only towards False)."""
+    return _quote_at(prefix) is None
+
+
+def _quote_at(prefix):
+    """The quote open where shell text ends (None, ' or "); "\\" when it ends inside an escape."""
     q, esc = None, False
     for ch in prefix:
         if esc:
@@ -798,7 +927,7 @@ def _top_level(prefix):
             q = None if ch == q else q
         elif ch in "'\"":
             q = ch
-    return q is None and not esc
+    return "\\" if esc else q
 
 
 _DYNAMIC = {"exec", "eval", "compile", "getattr", "__import__", "import_module", "importlib", "globals", "vars",
@@ -1815,7 +1944,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    cmd = _expand_literal_loops(_join_continued(cmd))  # T-0411: a loop over literal words, as the commands it runs
+    cmd = _join_continued(cmd)
+    unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
+    cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
+    cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
@@ -1825,9 +1957,13 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     shell = _strip_heredocs(cmd)
     # T-0158: every `…` and $( … ) a shell runs (unquoted heredoc bodies included), read as a command of its own
     # a tail (the text after a substitution opens) is read once as it stands: its own tails are suffixes of it already
-    for body in _subst_bodies(shell, tails) + [b for t in _live_heredocs(cmd) for b in _subst_bodies(t, tails)]:
+    live = [x for t in _live_heredocs(cmd) for x in ([t, _unescape_ticks(t)] if "\\`" in t else [t])]  # T-0669: in
+    for body in _subst_bodies(shell, tails) + [b for t in live for b in _subst_bodies(t, tails)]:  # `…` a \` is a `
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
+    lits = _line_literals(shell)  # T-0587: literal values a computed name, eval or sh -c text may use
+    for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
+        found += check_bash(script, ctx, depth + 1)
     cwd, chain = ctx.cwd, []
     raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
     # T-0330 review: ~ is $HOME, so once the command may set HOME a ~ in a value isn't the user's home any more
@@ -1888,7 +2024,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
             if base:
                 base = (base[0] + cwds, base[1] + lost, base[2])
-        for inner in _shell_c(args) if _SHELLS.match(name) else ():
+        for inner in (x for t in _shell_c(args) for x in _readings(t, {**lits, **known})) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):
                 found.append(("pipe-shell", f"{name} -c runs a downloaded script"))
@@ -1906,7 +2042,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     found += check_bash(" ".join(shlex.quote(x) for x in args[j + 1:end]), ctx, depth + 1)
         if name == "eval":
             joined = " ".join(args)
-            found += check_bash(joined, ctx, depth + 1)
+            for text in _readings(joined, {**lits, **known}):  # T-0587: q='rm -rf'; eval "$q ~"
+                found += check_bash(text, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         if _SHELLS.match(name) or name in ("source", "."):
@@ -1955,13 +2092,28 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found.append(("remote", "fm serve starts a persistent Remote Control session reachable from the "
                                         "user's claude.ai account"))
         rm_vars = env or fixed  # T-0190: a literal set once before a branch holds for rm as for a write
-        found += _check_rm(name, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
-        found += _check_git(name, args, cwd, ctx)
-        found += _check_system(name, args)
-        found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")
-        found += _check_publish(name, args)
+        names = [name]
+        if re.search(r"[$`]", name):  # T-0587: a name bash computes, read every way it may run
+            m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))", argv[0])
+            val = ({**lits, **known}.get(m.group(1) or m.group(2)) if m else None)
+            rest_args = [shlex.quote(a) for a in args]
+            if val is not None:  # its value on this line, split as bash splits it unquoted
+                found += check_bash(" ".join([val] + rest_args), ctx, depth + 1)
+            found += check_bash(" ".join(rest_args), ctx, depth + 1) if args else []  # it may expand to nothing
+            for t in _shell_c(args) + ([" ".join(args)] if args else []):  # T-0668 (review): or be bash -c, or eval
+                for x in _readings(t, {**lits, **known}):
+                    found += check_bash(x, ctx, depth + 1)
+            names += _COMPUTED_AS  # or be any dangerous command
+        for nm in names:
+            if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
+                continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
+            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
+            found += _check_git(nm, args, cwd, ctx)
+            found += _check_system(nm, args)
+            found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
+            found += _check_publish(nm, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
-    return found
+    return found + [("system", unreadable)] if unreadable else found
 
 
 def _opt_values(args, *flags):
@@ -2281,7 +2433,9 @@ def _check_rm(name, args, via_xargs, chain, cwd, ctx):
                 opts.append(a)
             else:
                 targets.append(a)
-        recursive = any(o in ("-r", "-R", "--recursive") or (not o.startswith("--") and re.search(r"[rR]", o)) for o in opts)
+        recursive = any(o in ("-r", "-R") or (not o.startswith("--") and re.search(r"[rR]", o))  # T-0668: getopt takes
+                        or (o.startswith("--") and len(o) > 2 and "recursive".startswith(o[2:].split("=")[0]))  # --rec
+                        for o in opts)
         if recursive:
             if not targets:
                 upstream = next((x for x in reversed(chain) if _name(x.argv) == "find"), None)
@@ -2520,6 +2674,53 @@ _PUBLISH = {
     "fly": ["deploy"], "flyctl": ["deploy"], "firebase": ["deploy"], "serverless": ["deploy"], "sls": ["deploy"],
     "wrangler": ["deploy", "publish"], "heroku": ["releases:rollback"],
 }
+_LIT_ASSIGN = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(?:'([^']*)'|\"([^\"$`\\]*)\"|([^\s;&|()<>'\"$`\\]*))(?=[\s;&|)]|$)")
+
+
+def _line_literals(shell):
+    """T-0587: NAME → value for a name set once on the line to a literal (spaces kept: q='rm -rf') and named nowhere
+    else but in $q / ${q}, so no loop, read, declare or second assignment can have changed it."""
+    out = {}
+    for m in _LIT_ASSIGN.finditer(_mask_quotes(shell)):  # an assignment, not quoted text that looks like one
+        k = next(k for k in (2, 3, 4) if m.group(k) is not None)
+        name, val = m.group(1), shell[m.start(k):m.end(k)]
+        rest = shell[:m.start()] + shell[m.end():]
+        if not re.search(rf"(?<![\w$]){name}(?!\w)|\$\{{[#!]?{name}[^}}]", re.sub(rf"\$(?:\{{{name}\}}|{name}(?!\w))", "", rest)):
+            out[name] = val
+    return out
+
+
+# T-0587: what a command name bash computes from an unknown value ($X, `which x`) is checked as: those whose check
+# reads the arguments (ponytail: crontab, at, nft, ufw, disk and power tools refuse nearly any arguments, so they'd
+# refuse every computed name; a bare `$X` that is shutdown stays unread)
+_COMPUTED_AS = ["rm", "git", "claude", "dd", "systemctl", "cryptsetup", "direnv", "init"] + sorted(_PUBLISH)
+_RM_LONG = ("force", "interactive", "one-file-system", "no-preserve-root", "preserve-root", "recursive", "dir", "verbose",
+            "help", "version")
+
+
+def _readings(text, vals):
+    """T-0587 (its review): text eval or sh -c runs, as written (an unknown $q: empty, conditional, a subshell's) and,
+    when it differs, with the literal values this line set: both are read, so a value adds findings, never hides one"""
+    out = [text]
+    for t in (_with_vars(text, vals), re.sub(r"\\([$`])", r"\1", text)):  # T-0669: and with \$ and \` unescaped, as
+        if t not in out:                                                 # double quotes unescape them
+            out.append(t)
+    return out
+
+
+def _rm_opts_only(args):
+    """T-0587: no option rm would refuse (one makes it exit before deleting). T-0668 (its review): getopt takes any
+    prefix of a long option (--rec), and under POSIXLY_CORRECT options end at the first operand, so only the options
+    before it count; any doubt reads as rm."""
+    for a in args:
+        if a == "--" or not a.startswith("-") or a == "-":
+            return True
+        if a.startswith("--"):
+            if not any(o.startswith(a[2:].split("=")[0]) for o in _RM_LONG):
+                return False
+        elif not re.fullmatch(r"-[fiIrRdv]+", a):
+            return False
+    return True
 
 
 def _check_publish(name, args):

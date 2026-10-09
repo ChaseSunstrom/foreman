@@ -15,7 +15,7 @@ import string
 import subprocess
 import tempfile
 import time
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -273,6 +273,25 @@ def trusted():
         return rec if isinstance(rec, dict) and rec.get("on") is True else None
     except (OSError, ValueError):
         return None
+
+
+PAUSED = "paused (fm pause): nothing unattended starts until the user runs fm pause off"
+
+
+def panicked():
+    """T-0436: fm pause's flag. While it's there nothing Foreman runs unattended starts (the drive, fm run, serve, night,
+    lane new) and autonomy reads as standard everywhere; a claude child already running keeps going."""
+    return os.path.exists(os.path.join(state_dir(), "PANIC"))
+
+
+def set_panic(on):
+    path = os.path.join(state_dir(), "PANIC")
+    if on:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(now() + "\n")
+    elif os.path.exists(path):
+        os.remove(path)
 
 
 def task_base(root, b):
@@ -1302,6 +1321,59 @@ def _topo(ids, deps, key, group, lead, brk=False):
 SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
 
 
+_REL_STOP = set("the a an and or of to in on for with from by is are be it its as at this that into one each when what how "
+                "not no all any its their our your has have".split())
+
+
+def _batchable(b, by_id):
+    return (b.status in ("captured", "planned") and not b.evidence() and not batched(b, by_id) and not b.meta.get("batch")
+            and not b.meta.get("explore") and not b.meta.get("confirm"))
+
+
+def related_groups(briefs, of=None, cap=8, floor=0.1):
+    """T-0670: items not started worth one batch: the same type, and a shared scope path or a share of their
+    distinctive words (a word in over a third of the candidates is boilerplate, not a link). Closest pairs merge first
+    and no batch grows past `cap`, so one loose link can't chain the inbox into one lump. `of`: just that item's group
+    (fm next, on every prompt: one row of pairs)."""
+    by_id = {x.id: x for x in briefs}
+    cand = [b for b in briefs if _batchable(b, by_id)]
+    words = {b.id: {w for w in re.findall(r"[a-z][a-z0-9-]{2,}", (b.title + " " + re.sub(
+        r"https?://\S+", " ", b.section("Raw request")[:600])).lower()) if w not in _REL_STOP} for b in cand}
+    df = Counter(w for ws in words.values() for w in ws)
+    common = {w for w, n in df.items() if n > max(8, len(cand) / 3)}  # a group of 8 is never its own boilerplate
+    words = {k: v - common for k, v in words.items()}
+
+    def score(a, b):
+        if a.type != b.type:
+            return 0
+        if set(a.meta.get("scope") or []) & set(b.meta.get("scope") or []):
+            return 1
+        wa, wb = words[a.id], words[b.id]
+        return len(wa & wb) / len(wa | wb) if wa | wb else 0
+    if of is not None:
+        if of not in cand:
+            return []
+        near = sorted(((score(of, x), x) for x in cand if x is not of), key=lambda t: -t[0])
+        group = [of] + [x for sc, x in near[:cap - 1] if sc >= floor]
+        return [sorted(group, key=lambda x: id_num(x.id))] if len(group) > 1 else []
+    pairs = sorted(((score(a, b), a.id, b.id) for i, a in enumerate(cand) for b in cand[i + 1:]), reverse=True)
+    home = {b.id: [b] for b in cand}
+    for sc, x, y in pairs:
+        if sc < floor:
+            break
+        gx, gy = home[x], home[y]
+        if gx is not gy and len(gx) + len(gy) <= cap:
+            gx += gy
+            for b in gy:
+                home[b.id] = gx
+    seen, out = set(), []
+    for g in home.values():
+        if id(g) not in seen and len(g) > 1:
+            seen.add(id(g))
+            out.append(sorted(g, key=lambda x: id_num(x.id)))
+    return sorted(out, key=lambda g: id_num(g[0].id))
+
+
 def batched(b, by_id):
     """T-0257: held by a batch host that is still open; a host that is gone, done or dropped holds nothing, so no
     path (a crash, drop --done-in) can hide a member for good."""
@@ -2016,7 +2088,7 @@ def next_for(p, briefs=None):
 
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
-    autonomy = read_meta(p).get("autonomy", "standard")
+    autonomy = "standard" if panicked() else read_meta(p).get("autonomy", "standard")
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
@@ -2028,12 +2100,17 @@ def _next_for(p, briefs=None):
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)"
     since = last_change(p, b.id)
     st, action = stage(b, autonomy, since), next_action(b, autonomy, since)
-    if st == "captured" and b.tier == "S":  # T-0257: small ones of a kind pay the fixed overhead once, together
+    group = []
+    if st in ("captured", "planned") and not b.meta.get("batch"):  # T-0670: related items of any size, as one
+        group = (related_groups(briefs, of=b) or [[]])[0]
+    if not group and st == "captured" and b.tier == "S":  # T-0257: small ones of a kind pay the fixed overhead once
         small = [x for x in rank_inbox(briefs) if x.tier == "S" and x.type == b.type][:5]
-        if len(small) >= 3 and b in small:
-            ids = ' '.join(sorted((x.id for x in small), key=id_num))
-            action += (f" — or fm batch {ids}" if "batch" in hints_quiet(p) else  # T-0250: ignored often: just the command
-                       f" — or batch the small {b.type} items: fm batch {ids} (one plan, gate run, review and commit)")
+        group = small if len(small) >= 3 and b in small else []
+    if group:
+        ids = ' '.join(sorted((x.id for x in group), key=id_num))
+        action += (f" — or fm batch {ids}" if "batch" in hints_quiet(p) else  # T-0250: ignored often: just the command
+                   f" — or batch the {len(group)} related {b.type} items: fm batch {ids} (one plan, gate run, review "
+                   f"and commit; per step only its own new tests, full gates once at close)")
     if st == "executing" and b.tier == "S":  # T-0266: S is 1–2 files; past that it skips M's plan and lens audits
         try:  # review: runs on every prompt — a short ledger window, code files only (docs and tests don't grow it)
             grown = [f for f in task_touches(p, b.id, window=2000) if CODE.search(f) and not TESTISH.search(f)]
@@ -2082,7 +2159,8 @@ def state_dict(p, briefs=None):
     act = active_brief(briefs, p.lane)
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)
-    autonomy = meta.get("autonomy", "standard")
+    panic = panicked()
+    autonomy = "standard" if panic else meta.get("autonomy", "standard")
     active = None
     if act:
         changed = last_change(p, act.id)
@@ -2098,7 +2176,7 @@ def state_dict(p, briefs=None):
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
-        "autonomy": autonomy,
+        "autonomy": autonomy, "panic": panic,
         "pending": pending_tasks(meta),
         "asks": [{"task": a.get("task"), "allow": list(a.get("allow") or [])}
                  for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
@@ -2114,7 +2192,11 @@ def _more(n, shown):
 
 def render_state(sd, ts=None):
     a = sd["active"]
-    out = [f"# STATE — {sd['project']}", f"_Generated {ts or now()} by fm from the briefs; do not edit._", "", "## Focus"]
+    out = [f"# STATE — {sd['project']}", f"_Generated {ts or now()} by fm from the briefs; do not edit._", ""]
+    if sd.get("panic"):
+        out += ["**PAUSED everywhere (fm pause): no drive, fm run, serve, night or lane launches; autonomy standard. "
+                "fm pause off lifts it.**", ""]
+    out.append("## Focus")
     if a:
         out.append(f"{a['id']} [{a['type']} {a['tier']}] {a['title']}")
         if a["step"]:

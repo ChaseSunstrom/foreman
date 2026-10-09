@@ -52,6 +52,8 @@ def cmd_lane(args):
         return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main)}, f"{b.id}: merged {merge.last} into {main} "
                          f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
     if args.action == "new":
+        if c.panicked():
+            raise c.PolicyError(c.PAUSED)
         if b.status in c.CLOSED or b.status in ("active", "verifying") or b.meta.get("lane"):
             raise c.PolicyError(f"{b.id} is {b.meta.get('lane') and 'already in lane ' + b.meta['lane'] or b.status}: "
                                 f"a lane takes a task nobody is working on")
@@ -96,6 +98,8 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   launch agents.
 - Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
   sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399).
+- Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
+  the main thread adds it at finish (T-0428).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
   pipeline): that's the harness, not a bug. Don't retry or rephrase it; run what it allows, commit, and list each
   refused check in your report as one for the main thread to run after the merge.
