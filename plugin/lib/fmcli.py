@@ -325,7 +325,8 @@ def task_assume(p, args):
         if not fact:
             raise UsageError("an assumption needs its text")
         check = getattr(args, "check", None)  # T-0489: a command that stays true while it holds
-        text = fact + (f" — check: `{check}`" if check else "")
+        kill = getattr(args, "kill", None)  # T-0631: what would show it false; fm next lists it while unverified
+        text = fact + (f" — check: `{check}`" if check else "") + (f" — kill: {c.plain(kill)}" if kill else "")
         b, n = mutate(p, args.id, lambda b: b.add_assumption(text), "assumption", {"text": c.redact(fact)[:200]})
         return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed]"
                    + ("; fm sentinel re-runs its check." if check else "."))
@@ -426,6 +427,11 @@ def cmd_task(args):
         return task_hypo(p, args)
     if sub == "assume":
         return task_assume(p, args)
+    if sub == "note":  # T-0630: the task's working memory, printed at checkpoint and resume
+        text = " ".join(" ".join(args.text).split())
+        b, _ = mutate(p, args.id, lambda b: b._append_line("Notes", f"- [{args.kind}] {c.redact(text)}"), "case_note",
+                      {"kind": args.kind, "text": c.redact(text)[:200]})
+        return out(args, c.brief_summary(b), f"{b.id}: {args.kind} noted.")
     if sub == "evidence":
         code, shown = 0, ""
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
@@ -1753,7 +1759,9 @@ def cmd_checkpoint(args):
     p = resolve(args)
     with c.lock(p.dir):
         b = c.checkpoint(p, note=args.note, auto=args.auto, session=session())
-    out(args, {"task": b.id if b else None}, f"Checkpoint saved{' for ' + b.id if b else ' (no active task)'}.")
+    notes = b.section("Notes").strip() if b else ""
+    out(args, {"task": b.id if b else None}, f"Checkpoint saved{' for ' + b.id if b else ' (no active task)'}."
+        + (f"\nNotes:\n{notes}" if notes else ""))
 
 
 def cmd_resume(args):
@@ -1765,7 +1773,9 @@ def cmd_resume(args):
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
              f"relying on it." if r.get("stale") else "")
-    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}\nBrief: {r['path']}")
+    notes = c.find_brief(p, r["id"]).section("Notes").strip()  # T-0630
+    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}"
+        + (f"\nNotes:\n{notes}" if notes else "") + f"\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):
@@ -2956,6 +2966,10 @@ def cmd_next(args):
         if median and took > 2 * median:
             over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
                     f"is the plan still the right size, or should it split?")
+    if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
+        beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
+                   for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
+        over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
     out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
         f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
         + over)
@@ -3263,6 +3277,10 @@ def build_parser():
     t.add_argument("--probe", help="add: the command that would tell (recorded, not run)")
     t.add_argument("--run", metavar="CMD", help="mark: run the probe now and record its exit code and output")
     t.add_argument("--timeout", type=float, default=600)
+    t = tadd("note")
+    t.add_argument("id")
+    t.add_argument("kind", choices=["fact", "question"])
+    t.add_argument("text", nargs="+")
     t = tadd("assume")
     t.add_argument("id")
     t.add_argument("action", choices=["add", "verify"])
@@ -3270,6 +3288,7 @@ def build_parser():
     g = t.add_mutually_exclusive_group()
     g.add_argument("--run", metavar="CMD", help="verify: run CMD; exit 0 marks it verified, anything else false")
     g.add_argument("--evidence", metavar="HOW", help="verify: how it was checked, when it can't run (file:line read…)")
+    t.add_argument("--kill", metavar="TEXT", help="add: what would show it false (fm next lists it until verified)")
     t.add_argument("--check", metavar="CMD", help="add: a command that stays true while the assumption holds; fm "
                                                   "sentinel re-runs it after the task is done (T-0489)")
     t.add_argument("--timeout", type=float, default=600)
@@ -3395,7 +3414,7 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
-    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender"],
+    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender", "devil"],
                    help="plan: read it from a stress-test stance, saved as its own Plan review section (T-0604)")
     s.add_argument("--timeout", type=float, default=300)
     s = add("relate", lazy("fmrelate", "cmd_relate"),

@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Reasoning and thought process (T-0693 milestone: T-0593, T-0609, T-0630, T-0631).
+  - The stuck ladder names the stall from a step's failed runs. It is either the environment (a missing command, file, port or permission), the same error again (the fix isn't reaching the cause), or errors that change each run (progress, so keep steps small).
+  - `fm second plan ID --role devil` argues for the approach the plan rejected and objects to steps that answer a different question.
+  - `fm task note ID fact|question "…"` keeps a typed case file in the brief's Notes section, and `fm checkpoint` and `fm resume` print it.
+  - `fm task assume ID add "<fact>" --kill "<what would show it false>"` records a kill criterion. `fm next` lists open beliefs with their kill criteria until each is verified.
 - Planning and decomposition, part 2 (T-0692 milestone: T-0645, T-0666).
   - Plan from history: at close, a task keeps a "Plan gaps" section listing the steps added after work started and the steps whose first run failed. `fm focus` shows "steps similar plans added late" from related finished tasks.
   - Step contracts: a step can say `(produces: PATH, …)` and `(requires: PATH, …)`. `fm focus` flags an undone step whose product already exists, and a requirement that doesn't exist and that no earlier step produces.

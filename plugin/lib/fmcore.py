@@ -2118,24 +2118,42 @@ def stuck_rung(b):
     cur = b.current_step()
     if not cur:
         return None
-    fails = 0
+    outs = []
     for line in b.evidence():
         m = _EV_RE.match(line)
         if m and m.group(1) == "step" and int(m.group(2)) == cur.n and _RAN_MARK in line:
-            fails = fails + 1 if "` → ✗ exit" in line else 0
-    hyps = sum(1 for _, st, _ in b.hypotheses() if st == "open")
+            outs = outs + [re.sub(r"\d+", "0", line.split("` → ✗ ", 1)[1].split(_RAN_MARK)[0]).strip().lower()] \
+                if "` → ✗ exit" in line else []
+    fails, hyps = len(outs), sum(1 for _, st, _ in b.hypotheses() if st == "open")
+    why = f" — {stall(outs)}" if fails >= 2 else ""  # T-0593: what kind of stall picks the rung's emphasis
     if fails >= 4:
-        return (f"stuck, rung 4: {fails} failed runs on step {cur.n}: write the diagnosis and block it (fm task block "
-                f"{b.id} \"<why>\"), then take the next task")
+        return (f"stuck, rung 4{why}: {fails} failed runs on step {cur.n}: write the diagnosis and block it (fm task "
+                f"block {b.id} \"<why>\"), then take the next task")
     if fails >= 3 and hyps >= 2:
-        return (f"stuck, rung 3: a differential table — one probe per open hypothesis, run once each, and record what "
-                f"each rules out (fm task hypo {b.id} …) before another fix")
+        return (f"stuck, rung 3{why}: a differential table — one probe per open hypothesis, run once each, and record "
+                f"what each rules out (fm task hypo {b.id} …) before another fix")
     if fails >= 3:
-        return f"stuck, rung 3: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
+        return f"stuck, rung 3{why}: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
     if fails >= 2:
-        return (f"stuck, rung 2: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger with "
-                f"what's been ruled out")
+        return (f"stuck, rung 2{why}: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger "
+                f"with what's been ruled out")
     return None
+
+
+_ENV_FAIL = re.compile(r"command not found|no such file or directory|permission denied|connection refused|"
+                       r"timed out|could not resolve|address already in use|disk full|no space left")
+
+
+def stall(outs):
+    """T-0593: the kind of stall from a step's failed runs (outputs with numbers zeroed): the environment, the same
+    error again (the fix isn't reaching the cause) or errors that change (progress: keep the steps small)."""
+    if any(_ENV_FAIL.search(o) for o in outs[-2:]):
+        return "environment: the failure is in the setup (a command, file, port or permission), fix that before the code"
+    same = next((i for i, o in enumerate(reversed(outs)) if o != outs[-1]), len(outs))
+    if same >= 2:
+        return (f"same error {same}×: the fix isn't reaching the cause; re-read the spec and the criterion "
+                f"(fm oracle) before another edit")
+    return "errors change each run (progress): take the smallest next step on the newest one"
 
 
 def andons(briefs):

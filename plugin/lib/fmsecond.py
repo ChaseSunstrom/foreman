@@ -22,6 +22,9 @@ ROLES = {  # T-0604: stress-test stances for the same plan read; each one's answ
     "naive": "Read it as a newcomer who knows only this brief: object to every step whose input, meaning or done-state "
              "you can't tell from the text.",
     "prosecutor": "Argue that this plan should not run as written: build the strongest case against it.",
+    "devil": "Be the devil's advocate: argue for the strongest approach the plan rejected (or didn't consider), and "
+             "object to any step that answers a different question than the request asked (its nouns aren't the "
+             "request's).",
     "defender": "Defend this plan against the likeliest objections; list as objections only what you can't defend.",
 }
 
