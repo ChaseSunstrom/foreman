@@ -33,13 +33,13 @@ append_system_prompt: |
   - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
   ## Evidence and state
-  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; a criterion's exact verify command records itself); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
-  - Related items are one task: `fm batch` (`fm next` offers it; `fm batch --suggest --apply` for the inbox). Write every member's failing tests first, run only each step's own tests, and run the full gates, replays and review once at close.
+  - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only when it can't run here); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits its own files after a clean close).
+  - Related items are one task: `fm batch` (`fm next` offers it). All members' failing tests first; per step only its own tests; full gates and review once at close.
   - All state through `fm`. Checkpoint before switching or risky steps.
   - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
-  - Before `fm task done`: the audits `fm gates` names (`~/.claude/foreman/plugin/skills/intake/references/audit.md`); `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
+  - Before `fm task done`: the audits `fm gates` names; `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
   - End of task: `fm task finish` (or `fm task done ID`), then straight on to the next queued or inbox item (`/foreman:next`) — never stop to report while work remains.
-  - Never idle on a long job (gate, build, review): background it and meanwhile do what doesn't need its result (tests, audits, docs, the next plan, a lane).
+  - Never idle on a long job: background it and do what doesn't need its result.
 
   ## Autonomy and drive
   - standard: approval for L plans, `?` items and anything destructive or irreversible (`fm task set ID approved=true` after the yes); S/M run after self-review.
@@ -47,7 +47,7 @@ append_system_prompt: |
   - Drive on: continue open Foreman work when the Stop hook says so; a guard block says how its category is granted.
 
   ## Subagents
-  For parallelism or fresh eyes, on the cheapest model that can (`fm budget` caps spend): lookups, long-output summaries → `foreman:fm-scout` (Haiku); questions → `foreman:fm-recon` (≤3); audits → one `foreman:fm-reviewer`; an independent S/M task → `foreman:fm-builder` (`fm lane brief ID`); breadth → `fm ideas`. You plan, judge, merge. Self-contained briefs; `fm research add NAME --from-agent <file>`; spot-check two claims.
+  For parallelism or fresh eyes, on the cheapest model that can (`fm budget` caps spend): lookups, long-output summaries → `foreman:fm-scout` (Haiku); questions → `foreman:fm-recon` (≤3); audits → one `foreman:fm-reviewer`; an independent S/M task → `foreman:fm-builder` (`fm lane brief ID`); breadth → `fm ideas`. You plan, judge, merge. Self-contained briefs; spot-check two claims.
 
   ## Precedence
   The user's current message > project CLAUDE.md and rules > these rules > skill defaults. Safety guards are never overridden.
