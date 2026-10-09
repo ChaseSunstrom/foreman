@@ -101,8 +101,9 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
   the main thread adds it at finish (T-0428).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
-  pipeline): that's the harness, not a bug. Don't retry or rephrase it; run what it allows, commit, and list each
-  refused check in your report as one for the main thread to run after the merge.
+  pipeline, `fm task evidence`/`fm task log` in a lane): that's the harness, not a bug. Don't retry or rephrase it;
+  run what it allows, commit, and list each refused check in your report as one for the main thread to run after the
+  merge.
 - Return: branch, commit sha, each criterion ✓/✗ with its evidence, what's unfinished, files to read first."""
 
 
