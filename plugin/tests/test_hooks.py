@@ -894,13 +894,13 @@ class PreToolUse(HookCase):
                        "tool_input": {"file_path": path, "content": "x"}}
             return subprocess.run([sys.executable, hook, "PreToolUse"], input=json.dumps(payload), capture_output=True,
                                   text=True, env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=20)
-        for broken in ("def classify_write(path, ctx):\n    return undefined_helper(path)\n\n\ndef _was(path, ctx):",
-                       "def classify_write(path, ctx:"):
+        for broken in ("def classify_write(path, ctx, real=True):\n    return undefined_helper(path)\n\n\ndef _was(path, ctx):",
+                       "def classify_write(path, ctx, real=True:"):
             with self.subTest(broken=broken[:30]):
                 with open(guard) as f:
                     text = f.read()
                 with open(guard, "w") as f:
-                    f.write(text.replace("def classify_write(path, ctx):", broken, 1))
+                    f.write(text.replace("def classify_write(path, ctx, real=True):", broken, 1))
                 self.assertEqual(pre(os.path.join(self.repo, "src", "ok.py")).returncode, 0, "ordinary work goes on")
                 self.assertEqual(pre(os.path.join(self.home, "plugin", "lib", "fmcore.py")).returncode, 2,
                                  "protection stays on")
@@ -1227,6 +1227,35 @@ class Stop(HookCase):
         done = parse(self.stop("Still waiting on the review."))
         self.assertIsNone(done.get("decision"), "candidates used up: now it may wait")
         self.assertIn("a1", done.get("systemMessage", ""))
+
+    def test_long_jobs_and_an_empty_queue_never_idle(self):
+        # T-0415 (JARVIS 2026-10-09, the user: "it has been sitting idle still again"): a workflow and a shell that ran
+        # for hours held every Stop in the wait branch, and with nothing else queued each turn ended to wait on CI
+        self.fm("init")
+        self.fm("autonomy", "full")
+        queued = self.task("Queued work", focus=False)
+        ci = {"id": "bci1", "type": "shell", "status": "running", "description": "watch the pipeline"}
+
+        def stop(*jobs):
+            return parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting on CI.",
+                                            "session_id": "sess-1", "background_tasks": list(jobs)}))
+        r = stop(ci)
+        self.assertEqual(r.get("decision"), "block", "no active task: the jobs don't hold the next one back")
+        self.assertIn(f"fm focus {queued}", r["reason"])
+        self.fm("focus", queued)
+        r = stop(ci)
+        self.assertIn("nothing else is queued", r["reason"])  # full autonomy: find the next work, don't wait
+        self.assertIn("end to end", r["reason"])
+        self.assertIsNone(stop(ci).get("decision"), "then it may wait on the fresh job")
+        gate = os.path.join(c.find_project(self.repo).dir, "gate.json")
+        with open(gate) as f:
+            g = json.load(f)
+        g["drive"]["sess-1"]["since"]["bci1"] -= 21 * 60  # running for 20+ min: a service, not a wait
+        with open(gate, "w") as f:
+            json.dump(g, f)
+        r = stop(ci)
+        self.assertEqual(r.get("decision"), "block")
+        self.assertIn(f"{queued} FIX step 1/2", r["reason"])
 
     def offer_for(self, tid):
         return next((json.dumps(e) for e in reversed(self.events()) if e.get("kind") == "drive_offer"

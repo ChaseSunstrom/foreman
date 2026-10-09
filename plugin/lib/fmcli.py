@@ -1897,6 +1897,25 @@ SPLIT_GROUPS = tuple(tuple(g) for g in c.routing().get("review_groups") or ())
 SPLIT_SUGGEST = 800  # diff lines past which an L review suggests --split
 
 
+def _without_secrets(root, diff):
+    """T-0413: the frozen diff a reviewer reads holds no secret: a credential file (the guard's names: .env*, *.pem …)
+    keeps its header lines, not its contents, and key=value secrets elsewhere are redacted."""
+    import types
+    import fmguard
+    ctx = types.SimpleNamespace(home=os.path.expanduser("~"), scratch=())
+    out = []
+    for block in re.split(r"(?m)^(?=diff --git )", diff):
+        names = re.findall(r'(?m)^(?:diff --git "?a/.+? "?b/|--- "?a/|\+\+\+ "?b/|(?:rename|copy) (?:from|to) "?)(.+?)"?\t?$',
+                           block)  # git quotes a name with unusual characters
+        if any(fmguard._is_credential(os.path.join(root, n), ctx) for n in names):
+            lines = block.splitlines(keepends=True)
+            cut = next((i for i, x in enumerate(lines) if x.startswith(("@@", "Binary files", "GIT binary patch"))),
+                       len(lines))
+            block = "".join(lines[:cut]) + ("(contents left out: a credential file)\n" if cut < len(lines) else "")
+        out.append(c.redact(block))
+    return "".join(out)
+
+
 def cmd_audit(args):
     """fm audit prep ID: freeze the diff since the task started and print one reviewer brief per lens."""
     import subprocess
@@ -1922,7 +1941,7 @@ def cmd_audit(args):
         raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
     path = os.path.join(p.dir, "audits", f"{b.id}.diff")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    c.write_atomic(path, r.stdout)
+    c.write_atomic(path, _without_secrets(p.root, r.stdout))  # the pre-audit below still reads the raw diff's values
     with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md"), encoding="utf-8") as f:
         ref = f.read()
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}

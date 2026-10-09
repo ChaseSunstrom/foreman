@@ -141,8 +141,10 @@ def _message(block, ctx):
                 f"task: fm task new \"<title>\" --type FIX --tier S --ac \"<done when>\" --step \"<step>\" --focus "
                 f"(bigger work: /foreman:intake; fm next says what's next).")
     if cat == "state-direct":
+        diff = re.search(r"/audits/(T-\d+)\.diff$", str(detail))  # T-0413
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
-                f"(fm task …, fm capture, fm checkpoint); direct writes are never authorized.")
+                f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
+                f"direct writes are never authorized.")
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
@@ -338,9 +340,16 @@ def _new_context_file(p, ctx):
     return False
 
 
-def classify_write(path, ctx):
+def classify_unlink(path, ctx):
+    """T-0412: rm of a symlink (no trailing slash) removes the link, never what it points at: judged by its own path."""
+    return classify_write(path, ctx, real=not os.path.islink(path))
+
+
+def classify_write(path, ctx, real=True):
     cats = []
-    for p in _variants(path):
+    # a link (real=False) is judged where it is, and where its folder really is (a link inside a linked folder)
+    for p in (_variants(path) if real else {path, os.path.join(os.path.realpath(os.path.dirname(path)),
+                                                                os.path.basename(path))}):
         mirror = os.path.join(ctx.project_root, ".foreman") if ctx.project_root else None  # fm sync writes it
         if any(d and _under(p, d) for d in [os.path.join(ctx.foreman_home, "state"), ctx.state_dir,
                                             *ctx.state_fallbacks, mirror]):
@@ -1445,6 +1454,64 @@ def _mask_quotes(text):
     return text if q else "".join(out)
 
 
+# `done` ends the loop only where a command starts (`echo done` is an argument)
+_LOOP = re.compile(r"(?<![\w$-])for\s+([A-Za-z_]\w*)\s+in\s+([^;\n]*?)\s*[;\n]\s*do\b(.*?[;\n&])\s*done(?![^\s;&|()<>])",
+                   re.S)
+_LITERAL_WORD = re.compile(r"[\w./@:+,=%-]+")
+_LOOP_SETTERS = re.compile(r"(?<![\w-])(?:read|readarray|mapfile|declare|typeset|local|export|printf|eval|unset|let|"
+                           r"source|for|while|until|select|case|function|do|done|break|continue)(?![\w-])|"
+                           r"(?:^|[\s;&|(])\.\s|<<|\$\{!")  # break/continue: V may keep an earlier word
+
+
+def _single_quoted(text, i):
+    """Whether position i of text is inside '…' as bash reads it (escapes as _mask_quotes reads them)."""
+    q, j = None, 0
+    while j < i:
+        ch = text[j]
+        if ch == "\\" and q != "'":
+            j += 2
+            continue
+        if q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+        j += 1
+    return q == "'"
+
+
+def _expand_literal_loops(cmd):
+    """T-0411: a top-level `for V in w1 w2; do BODY; done` whose words are plain literals runs BODY once per word, so
+    it is read as `BODY[w1]; BODY[w2]; V=w2`. Only when the body has no nested loop, case, heredoc or way to set V
+    (an assignment, read, eval, source …), and no $V bash leaves unexpanded ('…'); break and continue only make bash
+    do less than what is checked. Anything else is left as written (V stays unknown, as before)."""
+    # IFS: bash splits the word it substitutes; a backslash: an escaped ; or & separates nothing
+    if "for" not in cmd or "$'" in cmd or "<<" in cmd or "IFS" in cmd or "\\" in cmd:
+        return cmd
+    masked = _mask_quotes(cmd)
+    if masked == cmd and re.search(r"['\"]", cmd):  # quoting the guard can't read: leave it
+        return cmd
+    out, last = [], 0
+    for m in _LOOP.finditer(masked):
+        var, words = m.group(1), cmd[m.start(2):m.end(2)].split()
+        body, mbody = cmd[m.start(3):m.end(3)], m.group(3)
+        before = masked[:m.start()].rstrip()
+        uses = list(re.finditer(rf"\$(?:\{{{var}\}}|{var}(?!\w))", body))
+        if (before and before[-1] not in ";&|\n(" or not words or not all(_LITERAL_WORD.fullmatch(w) for w in words)
+                or _LOOP_SETTERS.search(mbody) or re.search(rf"(?<![\w$-]){var}(?!\w)", re.sub(
+                    rf"\$(?:\{{{var}\}}|{var}(?!\w))", "", body)) or any(_single_quoted(body, u.start()) for u in uses)):
+            continue
+        after = masked[m.end():].lstrip(" \t")
+        runs = "; ".join(re.sub(rf"\$(?:\{{{var}\}}|{var}(?!\w))", lambda _, w=w: w, body).strip().rstrip(";").strip()
+                         for w in words)
+        # V keeps the last word only when the loop surely ran in this shell: not behind && / || (maybe skipped) or in
+        # a pipeline (a subshell)
+        ran = not before or before[-1] in ";\n(" or before[-1] == "&" and before[-2:] not in ("&&", "|&")
+        keeps = ran and (not after or after[0] in ";\n" or after[:2] in ("&&", "||"))
+        out.append(cmd[last:m.start()] + runs + (f"; {var}={words[-1]}" if keeps else ""))
+        last = m.end()
+    return "".join(out) + cmd[last:] if out else cmd
+
+
 _MOVERS = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source|trap|mapfile|readarray)(?![\w./-])|(?:^|[\s;&|(])\.\s")
 _CD_TO = re.compile(r"(?<![\w./-])(?:cd|pushd)\s+(?:-[LPe@]+\s+)*([^\s;&|<>()'\"`$]+)")
 # a command word bash computes: a $ expansion or a quote right where a command starts
@@ -1704,7 +1771,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    cmd = _join_continued(cmd)
+    cmd = _expand_literal_loops(_join_continued(cmd))  # T-0411: a loop over literal words, as the commands it runs
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
     # command also runs an interpreter (cat > t.py <<EOF … EOF; python3 t.py)
@@ -1812,8 +1879,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         # from elsewhere is refused; a file a variable makes it write is a write target
         for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
             found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
+        unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
         for target in c.redirs + _write_targets(name, args) + git_env + _env_files(c.argv):
-            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_write)
+            how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
         for target in _tree_targets(name, args) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
