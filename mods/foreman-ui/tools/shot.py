@@ -25,7 +25,7 @@ import sys
 import unicodedata
 
 SESSION = "fmui"
-SOCKET = "fm-shot"
+SOCKET = os.environ.get("FM_SHOT_SOCKET", "fm-shot")  # T-0744: a test run uses its own, so two never collide
 CLEAN = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_") and k != "TMUX"}
 MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FG, BG = (208, 208, 208), (24, 26, 33)  # the terminal's default colours
@@ -216,6 +216,11 @@ def main():
         server = tmux("show-environment", "-g").stdout
         session = tmux("show-environment", "-t", SESSION).stdout
         tmux("kill-server", check=False)
+        if SOCKET != "fm-shot":  # a test's own socket: leave no file behind
+            try:
+                os.unlink(os.path.join(os.environ.get("TMUX_TMPDIR") or "/tmp", f"tmux-{os.getuid()}", SOCKET))
+            except OSError:
+                pass
         leaked = [ln for ln in server.splitlines() if ln.startswith("FOREMAN_")]
         if leaked:
             sys.exit(f"FAIL: the harness server's global environment has {leaked}")

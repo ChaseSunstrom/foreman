@@ -81,7 +81,7 @@ SMOOTH = 3  # stage events or fewer for a finished task: too smooth to have been
 def _failed(e):
     d = e.get("data") or {}
     if e.get("event") == "evidence":
-        return str(d.get("result") or "").startswith("exit ") and not str(d.get("result")).startswith("exit 0")
+        return bool(c.result_exit(d.get("result")))  # "✗ exit 1 · …": a failed run (T-0750)
     return e.get("event") == "check_run" and any((r or {}).get("exit") for r in d.get("results") or [])
 
 

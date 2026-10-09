@@ -57,10 +57,12 @@ def _files(b):
 def _documents(p, skip=None):
     """(kind, label, text, tier of a finished brief or None, extra) for everything recall can point to; extra has the
     age in days and, for briefs, the files they touched and their step count."""
+    retired = retired_lessons(p)
     for b in c.load_briefs(p, include_archive=True):
         if b.id == skip or b.status == "captured":
             continue
-        lesson = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+        lesson = [x.lstrip("- ").strip() for i, x in enumerate((y for y in b.section("Lessons").splitlines()
+                                                               if y.strip()), 1) if f"{b.id}.{i}" not in retired]
         label = (f"{b.id} [{b.type} {b.tier}, {b.status}, {len(b.steps())} steps] {b.title}"
                  + (f" — lesson: {lesson[0]}" if lesson else ""))
         text = " ".join([b.title, b.section("Raw request"), b.section("Interpretation"), " ".join(lesson),
@@ -428,7 +430,7 @@ def lessons(p):
         if e.get("kind") == "lesson_shown" and e.get("project") == p.slug:  # edit tripwires
             shown[e.get("task")] += 1
     fails = c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), FAILURES_KEEP)
-    rows = []
+    rows, retired = [], retired_lessons(p)
     for b in c.load_briefs(p, include_archive=True):
         texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
         if b.status != "done" or not texts:
@@ -437,16 +439,26 @@ def lessons(p):
         sigs = {r.get("sig") for r in fails if r.get("task") == b.id and r.get("sig")}
         again = sorted({r["task"] for r in fails if r.get("sig") in sigs and r.get("task") not in (None, b.id)
                         and str(r.get("at") or "") > closed})
-        rows += [{"id": f"{b.id}.{i}", "text": t, "shown": shown[b.id], "age": _age(closed), "recurred": again}
-                 for i, t in enumerate(texts, 1)]
+        rows += [{"id": f"{b.id}.{i}", "text": t, "shown": shown[b.id], "age": _age(closed), "recurred": again,
+                  "retired": retired.get(f"{b.id}.{i}")} for i, t in enumerate(texts, 1)]
     return rows
+
+
+def retired_lessons(p):
+    """T-0743: {lesson id: why} the user or a session retired; recall and tripwires leave them out."""
+    v = c.read_meta(p).get("retired_lessons")
+    return v if isinstance(v, dict) else {}
 
 
 def _render_lessons(rows):
     if not rows:
         return "No lessons recorded yet (fm task finish … --lesson)."
+    gone = [r for r in rows if r.get("retired")]
+    rows = [r for r in rows if not r.get("retired")]
     lines = [f"Lessons: {len(rows)} ({sum(1 for r in rows if r['shown'])} shown at least once); newest:"]
     lines += [f"- {r['id']} shown {r['shown']}×: {c.fit(r['text'], 110)}" for r in rows[-12:]]
+    lines += [f"- retired ({len(gone)}): " + "; ".join(f"{r['id']} ({c.fit(r['retired'], 60)})" for r in gone[-8:])] \
+        if gone else []
     cold = [r["id"] for r in rows if not r["shown"] and r["age"] >= UNRECALLED_DAYS]
     lines += [f"- never recalled ({UNRECALLED_DAYS}+ days since it closed; reword it or retire it): "
               + ", ".join(cold[-15:])] if cold else []
@@ -527,6 +539,15 @@ def cmd_recall(args):
             ("Defined:\n" + "\n".join(f"- {x}" for x in defs) if defs else "No definitions found for its names.")
             + ("\nUsed most in:\n" + "\n".join(f"- {x}" for x in uses) if uses else "")
             + "\nRead these, then answer with file:line citations."))
+    if getattr(args, "lessons", False) and getattr(args, "retire", None):  # T-0743
+        if not re.fullmatch(r"T-\d{4,}\.\d+", args.retire):
+            raise fmcli.UsageError("--retire takes a lesson id as fm recall --lessons prints it, e.g. T-0123.1")
+        if not (args.why or "").strip():
+            raise fmcli.UsageError("--retire needs --why \"<why it no longer helps>\"")
+        c.update_meta(p, retired_lessons=dict(retired_lessons(p), **{args.retire: c.redact(args.why)[:200]}))
+        write_tripwires(p)
+        c.log_event(p, "lesson_retired", data={"lesson": args.retire, "why": c.redact(args.why)[:200]})
+        return fmcli.out(args, {"retired": args.retire}, f"Retired {args.retire}: recall and tripwires leave it out.")
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
@@ -566,10 +587,10 @@ def cmd_recall(args):
 def write_tripwires(p):
     """tripwires.json: {file: [[task id, lesson]]} from finished tasks' Files touched and Lessons, so an edit of one
     of those files can surface the lesson (PreToolUse reads this small index; it never scans briefs)."""
-    index = {}
+    index, retired = {}, retired_lessons(p)
     for b in c.load_briefs(p, include_archive=True):
         lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
-        if b.status != "done" or not lesson or lesson.lower().startswith("none"):
+        if b.status != "done" or not lesson or lesson.lower().startswith("none") or f"{b.id}.1" in retired:
             continue
         for f in _files(b):
             index.setdefault(f, []).append([b.id, c.fit(c.defang(c.plain(lesson)), 200)])
