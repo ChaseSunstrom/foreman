@@ -770,7 +770,47 @@ def repair(roots):
     return moved
 
 
-def run_all(full=False):
+def _supply(claude):
+    """{id: sha256} of what each enabled plugin runs (manifest, hooks, MCP config) and of each MCP server command."""
+    import hashlib
+    out = {}
+    plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {}).get("plugins") or {}
+    for pid, installs in sorted(plugins.items()):
+        h = hashlib.sha256()
+        for inst in installs if isinstance(installs, list) else [installs]:
+            root = (inst or {}).get("installPath") or ""
+            for rel in (".claude-plugin/plugin.json", "hooks/hooks.json", ".mcp.json"):
+                try:
+                    with open(os.path.join(root, rel), "rb") as f:
+                        h.update(rel.encode() + b"\0" + f.read())
+                except OSError:
+                    continue
+        out[pid] = h.hexdigest()
+    servers = (_load_json(os.path.join(os.path.dirname(claude), ".claude.json")) or {}).get("mcpServers") or {}
+    for name, spec in sorted(servers.items()):
+        out[f"mcp:{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+    return out
+
+
+def check_supply(claude, accept=False):
+    """T-0672 (T-0479): plugins and MCP servers are code every session runs; a change between doctor runs (an update
+    or a tampered cache) is shown once, then accepted with fm doctor --accept-supply. The first run is the baseline."""
+    path = os.path.join(c.state_dir(), "supply.json")
+    now, seen = _supply(claude), _load_json(path)
+    if seen is None or accept:
+        c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
+        return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
+                                              f"{len(now)} plugin(s) and MCP server(s)")
+    changed = sorted(k for k in now if seen.get(k) not in (None, now[k]))
+    added, gone = sorted(set(now) - set(seen)), sorted(set(seen) - set(now))
+    if not (changed or added or gone):
+        return Result("supply chain", "PASS", f"{len(now)} plugin(s) and MCP server(s) unchanged")
+    return Result("supply chain", "WARN", "; ".join(x for x in (
+        f"changed: {', '.join(changed)}" if changed else "", f"new: {', '.join(added)}" if added else "",
+        f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
+
+
+def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
     settings_path = os.path.join(claude, "settings.json")
@@ -781,7 +821,8 @@ def run_all(full=False):
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
-               check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home)]
+               check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
+               check_supply(claude, accept_supply)]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
@@ -821,7 +862,7 @@ def cmd_doctor(args):
         moved = repair(integrity_roots())
         print("\n".join(f"{a} → {b}" for a, b in moved) or "Nothing to repair: no empty git objects.")
         return None
-    results = run_all(full=args.full)
+    results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
