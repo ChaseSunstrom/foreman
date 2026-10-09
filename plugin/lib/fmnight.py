@@ -16,14 +16,14 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
-NAMES = ("second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("dream", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
 def jobs(p):
     """[(name, fm argv, USD estimate)] of what tonight could do, cheapest and most useful first."""
     import fmbench
     import fmoutside
-    meta, out = c.read_meta(p), []
+    meta, out = c.read_meta(p), [("dream", ["dream"], 0.0)]  # T-0665: free: the day's failures as tripwire candidates
     if meta.get("second_session") != c.now()[:10]:
         out.append(("second session", ["second", "session", "--if-due"], fmbudget.estimate("second-session", 1, 0.05)))
     age = c.age_days(meta.get("landscape_at"))

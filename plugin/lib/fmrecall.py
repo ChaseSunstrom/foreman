@@ -139,6 +139,32 @@ def _stale(root, at, cites):
     return sorted({x for x in r.stdout.split() if x in cites})
 
 
+ACTIVE_BOOST = 1.5  # T-0663: a memory the work at hand has activated
+
+
+def activation(p):
+    """T-0663: f(kind, extra) → a multiplier: a past brief whose files the active task touched recently, or whose
+    failure signatures came back in the last week, is activated — memory by what's going on, not only by words."""
+    import datetime
+    act = c.active_brief(c.load_briefs(p), p.lane)
+    hot = {os.path.relpath(f, p.root) for f in c.task_touches(p, act.id)} if act else set()
+    week = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%S")
+    recs = c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), FAILURES_KEEP)
+    recent = {r.get("sig") for r in recs if str(r.get("at") or "") >= week}
+    sigs = {}
+    for r in recs:
+        if r.get("task"):
+            sigs.setdefault(r["task"], set()).add(r.get("sig"))
+
+    def f(kind, extra):
+        if kind != "brief":
+            return 1.0
+        files = {x for x in extra.get("files") or [] if isinstance(x, str)}
+        return ((ACTIVE_BOOST if hot and files & hot else 1.0)
+                * (ACTIVE_BOOST if sigs.get(extra.get("id"), set()) & recent else 1.0))
+    return f
+
+
 def recall(p, query, skip=None, n=HITS, cover=0.0):
     """The n most related documents to query: [(score, kind, label, tier, extra)], best first; a hit shares ≥ 2
     words, and at least `cover` of the query's words (T-0206: research asks for 2/3). Older history counts less (half
@@ -146,6 +172,7 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
     q = set(_tokens(query))
     if not q:
         return []
+    act = activation(p)
     docs = [(kind, label, _tokens(text), tier, extra) for kind, label, text, tier, extra in
             [*_documents(p, skip), *_shared_docs(p)]]
     if not docs:
@@ -165,7 +192,7 @@ def recall(p, query, skip=None, n=HITS, cover=0.0):
             continue
         s = sum(math.log(1 + (len(docs) - df[w] + 0.5) / (df[w] + 0.5)) * f * 2.2 / (f + 1.2 * (0.25 + 0.75 * len(words) / avg))
                 for w, f in tf.items())
-        scored.append((s / (1 + extra.get("age", 0) / HALF_LIFE), kind, label, tier, extra))
+        scored.append((s / (1 + extra.get("age", 0) / HALF_LIFE) * act(kind, extra), kind, label, tier, extra))
     ranked = sorted(scored, key=lambda x: -x[0])
     book = next((x for x in ranked if x[1] == "playbook"), None)  # one procedure at most: history comes first
     hits = [x for x in ranked if x[1] != "playbook" or x is book][:n]
@@ -728,3 +755,41 @@ def render_answer(question, hits, cited):
     if cited:
         lines.append(f"Cited tasks: {', '.join(cited)} (fm task show ID --story for one's whole story)")
     return "\n".join(lines)
+
+
+def dream(p, day=None):
+    """T-0665: the day's repeated failures as tripwire candidates, each with its counterfactual: a rule on the
+    signature, made at its first occurrence, would have caught every later one. Guard refusals count too.
+    [(signature, occurrences, tasks)], most repeated first."""
+    day = day or c.now()[:10]
+    seen = {}
+    for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), FAILURES_KEEP):
+        if str(r.get("at") or "")[:10] == day and r.get("sig") and not r.get("hinted"):
+            x = seen.setdefault(r["sig"], [0, set()])
+            x[0] += 1
+            x[1].add(r.get("task") or "-")
+    for e in c.ledger_tail(p, 20000):
+        d = e.get("data") or {}
+        if e.get("event") == "guard_block" and str(e.get("ts", ""))[:10] == day:
+            x = seen.setdefault(f"guard {d.get('category')}: {c.fit(str(d.get('detail') or ''), 120)}", [0, set()])
+            x[0] += 1
+            x[1].add(e.get("task") or "-")
+    return sorted(((s, n, sorted(t)) for s, (n, t) in seen.items() if n >= 2), key=lambda x: -x[1])
+
+
+def cmd_dream(args):
+    import fmcli
+    p = fmcli.resolve(args)
+    day = args.day or c.now()[:10]
+    found = dream(p, day)
+    lines = [f"- `{c.fit(c.plain(s), 160)}` — {n} times ({', '.join(t)}); a tripwire at the first would have caught "
+             f"{n - 1}" for s, n, t in found]
+    text = (f"# Dream {day}: the day's repeated failures as tripwire candidates\n\n" + ("\n".join(lines) if lines else
+            "Nothing repeated today.") + "\n\nEach is a candidate rule, not one yet: turn a real one into a test or a "
+            "tripwire (fm capture), and leave the rest.\n")
+    path = os.path.join(p.dir, "research", f"dream-{day}.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, c.redact(text))
+    c.log_event(p, "dream", data={"day": day, "candidates": len(found)})
+    return fmcli.out(args, {"day": day, "path": path, "candidates": [{"sig": s, "count": n, "tasks": t}
+                                                                     for s, n, t in found]}, text.strip())

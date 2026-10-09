@@ -510,6 +510,22 @@ def cmd_export(args):
               f"It quotes the user's corrections, lessons and decisions: read it before committing it.")
 
 
+def _lesions(p, args, fmcli):
+    """T-0664: what each ablation (fm evolve --drop) found: the bench held without the file (it may not earn the tokens
+    it costs every session) or dropped (it earns its place), newest per file."""
+    seen = {}
+    for e in c.ledger_tail(p, 50000):
+        d = e.get("data") or {}
+        if e.get("event") == "evolve" and str(d.get("why") or "").startswith("ablation") and d.get("target"):
+            seen[d["target"]] = (str(e.get("ts", ""))[:10], bool(d.get("kept")))
+    lines = [f"  {t}: {'held without it — a candidate to trim' if kept else 'dropped without it — it earns its place'}"
+             f" ({at})" for t, (at, kept) in sorted(seen.items())]
+    text = ("Lesions (fm evolve --drop: does the bench hold without the file?):\n" + "\n".join(lines) if lines else
+            "No lesions run yet.") + ("\nNext: lesion a file fm usage lists as never used: fm evolve --drop <file> "
+                                       "(a bench run, budget-checked).")
+    return fmcli.out(args, {"lesions": {t: {"at": at, "held": kept} for t, (at, kept) in seen.items()}}, text)
+
+
 def _agents(p, args, fmcli):
     """T-0647: a scorecard per agent type — spawns and tokens from the spend ledger, and for builders the lanes merged
     against removed unmerged, from this project's ledger. ponytail: reviewer findings confirmed vs rejected need audit
@@ -540,6 +556,8 @@ def cmd_usage(args):
     p = fmcli.resolve(args)
     if getattr(args, "agents", False):
         return _agents(p, args, fmcli)
+    if getattr(args, "lesions", False):
+        return _lesions(p, args, fmcli)
     since = _since(args.days)
     skills, books, cmds = collections.Counter(), collections.Counter(), collections.Counter()
     followed, ignored, pending = collections.Counter(), collections.Counter(), {}
