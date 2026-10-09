@@ -58,6 +58,14 @@ class Brief(_Tasks):
         self.assertIn("isolated in the worktree", brief)
         self.assertIn("main thread", brief)
 
+    def test_the_brief_says_edit_with_the_edit_tool(self):
+        # T-0399 (JARVIS 2026-10-09): builders edited files with `python3 - <<'E' … s.replace(…)` and `cat > f <<EOF`;
+        # Claude Code's isolation refused each as "too complex", five in ten minutes
+        tid = self.task("Edits")
+        brief = read_text(json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"])
+        self.assertIn("Edit and Write tools", brief)
+        self.assertIn("too complex", brief)
+
     def test_builder_model_follows_the_tier(self):
         # T-0373: "not everything needs to be opus if opus orchestrates": an S task's builder runs on Sonnet, an M
         # task's on the main model; the main thread still reviews, merges and re-verifies
