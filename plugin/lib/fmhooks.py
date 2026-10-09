@@ -18,6 +18,7 @@ CTX_BUDGET = 2000       # SessionStart additionalContext
 PROMPT_BUDGET = 400     # UserPromptSubmit additionalContext
 NOTE_BUDGET = 200       # PreToolUse scope note
 DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
+OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
@@ -1469,8 +1470,22 @@ def _drive(p, sd, briefs, pl, g):
         first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
         if first:  # one wait, one event (T-0152: every Stop counted again in fm friction)
             _event({"kind": "drive_wait", "session_id": sid, "task": work["id"], "running": running[:5]})
+            d["offered"] = []
         d.update(waited=running[:5], waiting_on=running[:3])  # waiting_on: said on screen, a silent end reads as a stall
-        if not first or _headless() or d.get("count", 0) >= DRIVE_MAX:
+        if _headless() or d.get("count", 0) >= DRIVE_MAX:
+            return None
+        offered = d.get("offered") or []
+        offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX else None
+        if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
+            d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
+            how = _start_how(offer)
+            _event({"kind": "drive_offer", "session_id": sid, "task": work["id"], "offer": offer["id"], "how": how})
+            return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
+                    f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
+                    f"A queued task that can't move now (it needs a device, a person, another task): fm task block ID "
+                    f"\"why\", and take the next. The drive offers another when you stop; its notification still "
+                    f"wakes you for {work['id']}.")
+        if not first:
             return None
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
@@ -1518,6 +1533,30 @@ def _drive(p, sd, briefs, pl, g):
     _event({"kind": "drive", "session_id": sid, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
+
+
+def _side_work(sd, briefs, work, full, offered):
+    """T-0401: the next queued task (then, in full autonomy, captured one) that can move while the active one's
+    background jobs run: not the active one, not offered already for this set, not waiting on the active task
+    (depends_on or what fm relate inferred), not already briefed for a builder lane."""
+    by_id = {b.id: b for b in briefs}
+    for x in sd["queue"] + (sd["inbox"] if full else []):
+        b = by_id.get(x["id"])
+        if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
+                or b.meta.get("builder")):
+            continue
+        return x
+    return None
+
+
+def _start_how(x):
+    """How to start a side task: a builder lane for planned S/M work, planning for the rest."""
+    if x.get("status") == "captured":
+        return (f"plan it (fm task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
+                f"for M/L), so it's ready to run")
+    if x.get("tier") in ("S", "M"):
+        return f"fm lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
+    return f"ground it and sharpen its plan (fm second plan {x['id']}), so it's ready when the current task lands"
 
 
 def _turn_began(p, sid, d):
