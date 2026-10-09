@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Friction batch (T-0698, from a self-improvement pass):
+  - A plain IFS inside one `'…'` string, or inside one quoted heredoc body that no shell on the line reads, is data. So a test file or commit message that names IFS is no longer refused. IFS beside it, IFS split across two pieces, or IFS in a shell's heredoc still is.
+  - A suite test fails on any name in `plugin/lib` or `plugin/hooks` that nothing binds. Several renames had left the guard failing closed on a NameError.
+  - The rules say to `fm outline` MASTER.md or Read it with an offset.
+  - Builder briefs list `fm task evidence`/`log` among the commands a lane may refuse.
 - Foreman across projects, machines and the tools around it (T-0673: T-0443, T-0444, T-0463, T-0481, T-0482, T-0574, your picks on the punch-list page):
   - `fm sweep "<fix>" --grep TEXT` asks every other project about a fix by putting a brief in its inbox. Nothing in that repo is edited, its fm sync mirror included, and sensitive projects are skipped. `fm friction` lists the open requests.
   - `fm adopt` runs a baseline pass over an existing repo (map, gates with a flake rerun, secrets, dependencies) and queues the work it finds.
