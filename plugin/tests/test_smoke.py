@@ -111,7 +111,9 @@ class SmokeInABrowser(unittest.TestCase):
         import tempfile
         cls.dir = tempfile.mkdtemp()
         nav = '<!doctype html><body><nav><a href="/good.html">Good</a></nav><p>Start</p></body>'
-        for name, body in (("bad.html", BAD), ("good.html", GOOD), ("nav.html", nav)):
+        hang = ('<!doctype html><body><div role="tablist"><button role="tab">Home</button><button role="tab" '
+                'onclick="setTimeout(() => { while (true) {} }, 0)">Freeze</button></div></body>')
+        for name, body in (("bad.html", BAD), ("good.html", GOOD), ("nav.html", nav), ("hang.html", hang)):
             with open(os.path.join(cls.dir, name), "w") as f:
                 f.write(body)
         handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=cls.dir)
@@ -133,6 +135,15 @@ class SmokeInABrowser(unittest.TestCase):
         for want in ("console error: boom", "The microphone is unavailable", "tab Telemetry: loading placeholder",
                      "HTTP 404", "wider than the screen", "overlap"):
             self.assertIn(want, found)
+
+    def test_smoke_survives_a_page_that_stops_responding(self):
+        # T-0420: JARVIS's first fm smoke ran past fm's 240 s and lost every result: a busy page hung the crawl
+        import time
+        t0 = time.time()
+        res = self.crawl("hang.html")
+        self.assertLess(time.time() - t0, 150)
+        self.assertIn("desktop start", res["views"])
+        self.assertIn("stopped responding", json.dumps(res["defects"]))
 
     def test_smoke_passes_a_healthy_page_in_a_real_browser(self):
         # review: a Tailwind placeholder: class, a clipped route announcer and a sticky header under a fixed button
