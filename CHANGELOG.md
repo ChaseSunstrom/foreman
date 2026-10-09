@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.12 — 2026-10-09
 - A "no active task" refusal names the queued task to resume: `fm focus ID` (T-0409, from JARVIS, which edited between closing a lane task and refocusing its main task, and was offered `fm task new`). The queue is read only when refusing, so normal tool calls cost nothing more.
 - `fm lane rm` removes a lane whose only leftovers are build and test caches (T-0408, from JARVIS, which deleted them by hand before each rm and hit the guard doing it). That covers `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.hypothesis`, `.tox`, `node_modules`, `.vite`, `.svelte-kit`, `.next`, `.turbo`, `.gradle`, `htmlcov` and `.coverage`, as well as `__pycache__`. Any other ignored file, such as a `.env`, still refuses: it may be someone's config.
 
