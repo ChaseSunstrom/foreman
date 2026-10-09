@@ -833,6 +833,27 @@ class PreToolUse(HookCase):
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
 
+    def test_interpreter_writes_to_secret_templates(self):
+        # T-0390 (JARVIS T-0274, 01:57 UTC, on 1.2.4): this exact command was refused as credentials
+        # (written from interpreter code) through the hook, though fmguard.check alone let it through
+        self.fm("init")
+        self.task()
+        for name, text in ((".env.example", "# --- orchestrator + sandbox\nA=1\n"),
+                           ("jarvis-core/config/secrets.yaml.example", "# --- The optional orchestrator/sandbox pair\n"
+                            'approval_secret: "PUT-APPROVAL_SECRET-FROM-.env-HERE"\nrest: 1\n')):
+            path = os.path.join(self.repo, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
+        cmd = ("python3 - <<'EOF'\np='.env.example'; s=open(p).read()\na=s.index(\"# --- orchestrator + sandbox\")\n"
+               "s=s[:a]\nopen(p,'w').write(s)\np='jarvis-core/config/secrets.yaml.example'; s=open(p).read()\n"
+               "a=s.index(\"# --- The optional orchestrator/sandbox pair\"); "
+               "b=s.index('approval_secret: \"PUT-APPROVAL_SECRET-FROM-.env-HERE\"\\n')+len('approval_secret: "
+               "\"PUT-APPROVAL_SECRET-FROM-.env-HERE\"\\n')\ns=s[:a]+s[b:]\nopen(p,'w').write(s)\nEOF\n"
+               "sed -n 1,8p .env.example")
+        r = self.pre("Bash", {"command": cmd})
+        self.assertEqual(r.returncode, 0, r.stderr)  # the real config/secrets.yaml stays guarded: test_guard ScratchNames
+
     def test_a_plugin_grant_is_used_at_most_once_even_in_a_race(self):
         # round-1 edge audit: two calls that both saw the grant must not both get through
         import fmhooks
