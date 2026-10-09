@@ -110,7 +110,7 @@ def digest(p, recheck=True):
     for _, e in ledger:
         if e.get("event") == "check_run":
             for r in (e.get("data") or {}).get("results") or []:
-                if isinstance(r, dict) and isinstance(r.get("s"), (int, float)):
+                if isinstance(r, dict) and isinstance(r.get("s"), (int, float)) and r["s"] > 0:  # T-0424: a reused pass is 0.0 s
                     runs[r.get("cmd")].append(r["s"])
     out["slow gates (latest vs usual)"] = [
         f"{cmd}: {xs[-1]:.0f}s vs usual {statistics.median(xs):.0f}s" for cmd, xs in runs.items()
