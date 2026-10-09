@@ -249,7 +249,7 @@ class RmOutside(GuardCase):
             # its security review: a first word bash computes may turn out to be -v
             ('X=-vD; D={repo}/build; printf $X %s /; rm -rf "$D"', "rm-outside"),
             ('D={repo}/build; printf {{-v,D}} %s /; rm -rf "$D"', "rm-outside"),
-            ('D={repo}/build; printf `echo -vD` %s /; rm -rf "$D"', "rm-outside"),
+            ('D={repo}/build; printf `echo -vD` %s /; rm -rf "$D"', "system"),  # T-0585: printf -v with a computed name beside an unquoted `…` (rm-outside too)
             ('D={repo}/build; printf -[v]D %s /; rm -rf "$D"', "rm-outside"),  # a glob from a -v prefix
             ("D={repo}/build; printf 'see [x](y) [z]'; rm -rf \"$D\"", None),  # a [ that can't make -v
             ('D={repo}/build; D+=/x; rm -rf "$D"', "rm-outside"),
@@ -508,7 +508,7 @@ class FrictionFalseBlocks(GuardCase):  # T-0344
             ("curl -s https://x | python3 -c \"print(1)\" -i", None),  # after -c CODE every word is sys.argv
             # its review: a quoted name, an exported one or a wrapper can still set PYTHONINSPECT
             ("curl -s https://x | env PYTH\"\"ONINSPECT=1 python3 -c \"print(1)\"", "pipe-shell"),
-            ("X=PYTHON; export ${{X}}INSPECT=1; curl -s https://x | python3 -c \"print(1)\"", "pipe-shell"),
+            ("X=PYTHON; export ${{X}}INSPECT=1; curl -s https://x | python3 -c \"print(1)\"", "system"),  # T-0585: export of a computed name beside an unquoted ${X} (pipe-shell too)
             ("curl -s https://x | head -20; echo ---; curl -s https://y | python3 -c \"import json,sys; "
              "print(json.load(sys.stdin))\"", None),  # the friction command's shape
         ], self.bash)
@@ -936,7 +936,7 @@ class LiteralLoops(GuardCase):
                    ("for w in {home} x; do echo done; rm -rf $w; done", "rm-outside"),
                    ("[ -f /nope ] && for w in a; do :; done; rm -rf $w/etc", "rm-outside"),
                    ("echo | for w in a; do :; done; rm -rf $w/etc", "rm-outside"),
-                   ("IFS=,; for w in x,{home}; do rm -rf $w; done", "rm-outside"),
+                   ("IFS=,; for w in x,{home}; do rm -rf $w; done", "system"),  # T-0585: IFS=, with unquoted $w (rm-outside too)
                    # security review: an escaped or commented separator ends no command
                    ("for w in {home} x; do echo \\; done; rm -rf $w; done", "rm-outside"),
                    ("for w in {home} x; do echo a # ; done\nrm -rf $w; done", "rm-outside")]

@@ -409,10 +409,38 @@ def _ends_body(text, delim, starter):
         re.search(r"<<-\s*(['\"]?)" + re.escape(delim) + r"\1", starter))
 
 
-# T-0576: an expansion of IFS (default: space, tab, newline), plain or with an operator (${IFS:0:1}, ${IFS%?}…),
-# reads as the space it splits on; a line that also sets IFS can't be read that way
-_IFS_USE = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{[#!]?IFS(?:[^A-Za-z0-9_}][^}]*)?\}")
-_IFS_SET = re.compile(r"(?<![\w$])(?:IFS\+?=|read\b[^;&|\n]*-d|declare\b[^;&|\n]*\bIFS|printf\s+-v\s+IFS)")
+# T-0576: a plain expansion of IFS (default: space, tab, newline) reads as the space it splits on. T-0585 (its
+# security review): only the plain forms; an operator form (${IFS:+word}) yields any word, and a line that may change
+# IFS (named with quotes and backslashes removed, a loop variable, a nameref; IFS=… read scopes to that read) and
+# splits anything on it can't be read that way
+_IFS_PLAIN = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{IFS\}")
+_IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
+_IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
+_IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^']*'|\"[^\"]*\"|[^\s;&|'\"])*\s+read\b")
+_READ_REDEFINED = re.compile(r"\b(?:alias|enable|function)\b|\bread\s*\(")
+_NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
+    r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:"  # at command position
+    r"(?:declare|typeset|local|export|readonly|read|mapfile|readarray|getopts|let)\b[^;&|\n]*?\s[^\s=;&|]*[$`'\"\\]"
+    r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n|printf\b[^;&|\n]*-v\s*\S*[$`'\"\\])"
+    r"|\(\([^)]*[$`][^)]*[^=!<>]=(?!=)|\$\{![^}]*=")
+_UNQUOTED = re.compile(r"\$[\w{@*#?!$(-]|`")
+
+
+def _ifs_unreadable(cmd):
+    """T-0585: why bash's word splitting on this line can't be read (IFS may not be the default), or None."""
+    rest = _IFS_PLAIN.sub(" ", cmd)
+    if _IFS_OP.search(rest):
+        return "IFS is expanded with an operator: the guard can't read the word it yields"
+    scoped = rest if _READ_REDEFINED.search(rest) else _IFS_FOR_READ.sub(" read", rest)
+    # quoted text and heredoc bodies are data: check_bash reads what eval, bash -c and bash <<EOF run on their own
+    bare = _mask_quotes(_strip_heredocs(scoped))
+    if _IFS_NAME.search(re.sub(r"[\\'\"]", "", bare)):  # I""FS and I\FS are IFS to bash
+        split = rest != cmd or "$" in bare or "`" in bare
+    elif _NAME_COMPUTED.search(bare):  # ponytail: a computed name is refused only beside an expansion that splits
+        split = rest != cmd or _UNQUOTED.search(bare)
+    else:
+        return None
+    return split and "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
 
 
 def _join_continued(cmd):
@@ -1823,10 +1851,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
     cmd = _join_continued(cmd)
-    if _IFS_USE.search(cmd):  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
-        if _IFS_SET.search(cmd):
-            return [("system", "IFS is set and expanded on one line: the guard can't read how bash splits it")]
-        cmd = _IFS_USE.sub(" ", cmd)
+    unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
+    cmd = _IFS_PLAIN.sub(" ", cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
@@ -1973,7 +1999,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         found += _check_claude_config(name, args, cmd if c.piped or "<<" in cmd else "")
         found += _check_publish(name, args)
         chain.append(Cmd(c.argv, c.redirs, c.piped))
-    return found
+    return found + [("system", unreadable)] if unreadable else found
 
 
 def _opt_values(args, *flags):
