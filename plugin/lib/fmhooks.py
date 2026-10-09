@@ -765,6 +765,12 @@ def _pre_tool_use(raw):
                 nxt = None
             if nxt:
                 reason += f" To continue the queued work instead: fm focus {nxt.id} ({c.fit(nxt.title, 60)})."
+        if _repeat_streak(pl.get("session_id"), block.category, str(block.detail)[:120]) >= 2:  # T-0440: 3rd in a row
+            tid = act.id if act else "ID"
+            how = (f"ask the user (fm ask {tid} {block.category} --why \"<what and why>\"), or "
+                   if block.category not in guard.NOT_AUTHORIZABLE else "")
+            reason += (f" Stop retrying: this exact refusal came 3 times in a row. Instead, {how}record why the task "
+                       f"can't go on (fm task block {tid} \"<why>\") and take the next task.")
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
                 "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
                 "cmd": _window(c.redact(_target(pl.get("tool_input") or {})), block.detail)})  # T-0172, T-0423
@@ -1130,6 +1136,18 @@ def _target(ti):
         if ti.get(k):
             return str(ti[k]).replace("\n", " ")
     return ""
+
+
+def _repeat_streak(sid, category, target):
+    """T-0440: how many of this session's latest tool events, back to back, were this same refusal."""
+    n = 0
+    for e in reversed(c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 400)):
+        if e.get("session_id") != sid or e.get("kind") not in ("guard_block", "tool", "tool_fail"):
+            continue
+        if e.get("kind") != "guard_block" or e.get("category") != category or e.get("target") != target:
+            break
+        n += 1
+    return n
 
 
 def _window(cmd, detail, width=160):
