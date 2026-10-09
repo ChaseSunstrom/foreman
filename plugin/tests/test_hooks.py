@@ -1195,6 +1195,34 @@ class Stop(HookCase):
                                "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
 
+    def test_drive_offers_queued_work_while_background_runs(self):
+        # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
+        # queued, and after one generic push every Stop let the turn end ("nothing else to do until it does")
+        self.fm("init")
+        lane = self.task("Second fix", focus=False)
+        after = self.task("Needs the active one", focus=False)
+        plan = self.task("Big feature", type_="FEATURE", tier="L", focus=False)
+        active = self.task("Current work")
+        self.fm("task", "set", after, f"depends_on={active}")
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        seen = []
+        for _ in range(2):
+            p = self.stop("Waiting for the review; nothing else to do.")
+            self.assertEqual(self.decision(p), "block")
+            reason = parse(p)["reason"]
+            self.assertIn("fm task block", reason)  # a task that can't move is blocked, not used as a reason to idle
+            seen.append(next(t for t in (lane, plan) if t in reason))
+            self.assertNotIn(after, reason)  # it waits on the active task: no use now
+        self.assertEqual(sorted(seen), sorted([lane, plan]), "each Stop offers the next candidate")
+        self.assertIn(f"fm lane brief {lane}", self.offer_for(lane))
+        done = parse(self.stop("Still waiting on the review."))
+        self.assertIsNone(done.get("decision"), "candidates used up: now it may wait")
+        self.assertIn("a1", done.get("systemMessage", ""))
+
+    def offer_for(self, tid):
+        return next((json.dumps(e) for e in reversed(self.events()) if e.get("kind") == "drive_offer"
+                     and e.get("offer") == tid), "")
+
     def test_drive_waits_while_a_background_command_runs(self):
         self.fm("init")
         self.task()
