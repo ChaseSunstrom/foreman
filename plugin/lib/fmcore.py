@@ -1318,7 +1318,8 @@ def _topo(ids, deps, key, group, lead, brk=False):
                 push(j)
 
 
-SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "followup": 1}, {"S": 1, "M": 2, "L": 4}
+SOURCE_VALUE, TIER_EFFORT = {"user": 3, "discovered": 2, "self": 2, "cross-project": 2, "followup": 1}, \
+    {"S": 1, "M": 2, "L": 4}
 
 
 _REL_STOP = set("the a an and or of to in on for with from by is are be it its as at this that into one each when what how "

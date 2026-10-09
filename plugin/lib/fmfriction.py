@@ -163,7 +163,12 @@ def digest(p, recheck=True):
     out["lessons recorded"] = [f"{e.get('task')}: {c.fit(c.plain(str(e['data']['lesson'])), 160)}" for _, e in ledger
                                if e.get("event") == "task_done" and (e.get("data") or {}).get("lesson")][-MAX_LINES:]
 
-    mine = [b for b in c.load_briefs(p) if b.meta.get("source") == "self"]
+    briefs = c.load_briefs(p)
+    out["requests from other projects (fm sweep, fm -p SLUG capture --source cross-project), open here"] = [
+        f"{b.id} {c.fit(b.title, 140)}" for b in briefs
+        if b.meta.get("source") == "cross-project" and b.status not in c.CLOSED][:MAX_LINES]  # T-0443
+
+    mine = [b for b in briefs if b.meta.get("source") == "self"]
     open_ = [b for b in mine if b.status not in c.CLOSED]
     closed = [b for b in mine if b.status == "done" and (b.meta.get("updated") or "") > start]  # dropped ones fixed nothing
     out["self-inbox: what became of earlier passes"] = (
