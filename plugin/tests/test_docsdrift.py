@@ -67,3 +67,33 @@ class DocsDrift(ForemanTestCase):
             with open(os.path.join(self.repo, rel), "w") as f:
                 f.write("Nothing to check.\n")
         self.assertEqual(self.fm("docs", "--strict", cwd=self.repo).returncode, 0)
+
+
+class TaskDocsDrift(DocsDrift):
+    """T-0035: a doc's old drift must not hold up the task that touched it; drift it added must."""
+
+    def setUp(self):
+        super().setUp()
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "docs with old drift"], check=True)
+
+    def append(self, rel, text):
+        with open(os.path.join(self.repo, rel), "a") as f:
+            f.write(text)
+
+    def test_task_docs_old_drift_is_a_note_not_a_blocker(self):
+        self.append("README.md", "The app entry point is `src/app.py`.\n")
+        blockers, notes = fmdocs.task_docs(self.repo, "README.md")
+        self.assertEqual(blockers, [])
+        self.assertTrue(any("src/gone.py" in n for n in notes))
+
+    def test_task_docs_drift_the_task_added_still_blocks(self):
+        self.append("README.md", "Run `src/never-written.py` next.\n")
+        blockers, _ = fmdocs.task_docs(self.repo, "README.md")
+        self.assertEqual(len(blockers), 1)
+        self.assertIn("src/never-written.py", blockers[0])
+
+    def test_task_docs_a_new_doc_is_all_added(self):
+        self.append("NEW.md", "See `src/missing.py`.\n")
+        blockers, _ = fmdocs.task_docs(self.repo, "NEW.md")
+        self.assertTrue(any("src/missing.py" in b for b in blockers))
