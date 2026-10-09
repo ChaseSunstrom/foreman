@@ -13,7 +13,8 @@ SHOT = os.path.join(os.path.dirname(__file__), "..", "..", "mods", "foreman-ui",
 @unittest.skipUnless(shutil.which("tmux"), "needs tmux")
 class Harness(unittest.TestCase):
     def test_foreman_variables_stay_in_the_harness_session(self):
-        env = dict(os.environ, FOREMAN_STATE="/tmp/fm-demo-state", FOREMAN_SESSION_ID="x")
+        env = dict(os.environ, FOREMAN_STATE="/tmp/fm-demo-state", FOREMAN_SESSION_ID="x",
+                   FM_SHOT_SOCKET=f"fm-shot-test-{os.getpid()}")  # T-0744: two suites at once never share it
         p = subprocess.run([sys.executable, SHOT, "selftest"], env=env, capture_output=True, text=True, timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
