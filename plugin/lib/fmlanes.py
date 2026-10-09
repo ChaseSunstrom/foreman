@@ -94,6 +94,8 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
+- Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
+  sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
   pipeline): that's the harness, not a bug. Don't retry or rephrase it; run what it allows, commit, and list each
   refused check in your report as one for the main thread to run after the merge.
