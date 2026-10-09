@@ -1326,11 +1326,32 @@ def _headless():
     return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
 
 
+def _cc_version():
+    """Claude Code's version as a tuple, read from `claude --version` at most once a day (state/claude-version); ()
+    when unknown. T-0372: only headless stops ask, and they're rare."""
+    path = os.path.join(c.state_dir(), "claude-version")
+    try:
+        if time.time() - os.path.getmtime(path) < 86400:
+            with open(path, encoding="utf-8") as f:
+                return tuple(int(x) for x in f.read().strip().split("."))
+    except (OSError, ValueError):
+        pass
+    try:
+        out = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5).stdout
+        m = re.match(r"\s*(\d+)\.(\d+)\.(\d+)", out)
+        if not m:
+            return ()
+        c.write_atomic(path, ".".join(m.groups()) + "\n")
+        return tuple(int(x) for x in m.groups())
+    except (OSError, subprocess.SubprocessError):
+        return ()
+
+
 def _headless_wait(pl):
     """T-0310: claude -p (and fm run) ends with the turn, so a background task's notification never arrives: wait for
     it in this turn. Once per stop chain."""
-    if pl.get("stop_hook_active") or not _headless():
-        return None
+    if pl.get("stop_hook_active") or not _headless() or _cc_version() >= (2, 1, 292):
+        return None  # T-0372: from 2.1.292 claude -p waits for background work and wakes on it
     bg = pl.get("background_tasks")
     running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else \
         _running(pl.get("session_id"))

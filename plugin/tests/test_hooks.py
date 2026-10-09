@@ -1132,6 +1132,10 @@ class Stop(HookCase):
         # T-0310: claude -p ends with the turn, so no notification comes (the court's R-T-0201 ended on "the suite is
         # still running"); interactive sessions keep waiting for theirs (above)
         self.fm("init")
+        os.makedirs(os.path.join(self.home, "state"), exist_ok=True)
+        cached = os.path.join(self.home, "state", "claude-version")
+        with open(cached, "w") as f:
+            f.write("2.1.200\n")  # T-0372: before 2.1.292, claude -p didn't wait for background work itself
         self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
         for env in ({"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}, {"FOREMAN_DRIVE_TASK": "T-0001"}):
             with self.subTest(env=env):
@@ -1145,6 +1149,11 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.", "session_id": "sess-1"},
                       env={"CLAUDE_CODE_ENTRYPOINT": "cli"})
         self.assertIsNone(self.decision(p))
+        with open(cached, "w") as f:
+            f.write("2.1.295\n")  # 2.1.292+: claude -p waits for background work and wakes on it
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "The suite is still running.",
+                               "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
 
     def test_drive_waits_while_a_background_command_runs(self):
         self.fm("init")

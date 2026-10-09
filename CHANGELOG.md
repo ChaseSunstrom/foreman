@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The headless-wait nudge (T-0310) now fires only on Claude Code before 2.1.292 (T-0372). Newer `claude -p` runs wait for background work and wake on it, so the nudge just made Claude poll. The version comes from `claude --version`, read at most once a day.
 
 ## 1.2.3 — 2026-10-09
 - Builder briefs (T-0379, from JARVIS's run) name the main checkout's commit. Claude Code makes a builder's worktree from the default branch, so a builder that starts behind fast-forwards to that commit, and one that has diverged stops and reports. When Claude Code's worktree isolation refuses a command (make, gradle, expo, a long pipeline), the builder no longer retries or rephrases it. It lists the check for the main thread to run after `fm lane merge`.
