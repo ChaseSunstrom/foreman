@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `curl … | python3 -c` reading a download as data passes with curl's timeout flags (`-m`, `--max-time`, `--connect-timeout`, numeric values only), its stdout-only flags (`-k -i -I -v`) and `nvidia-smi` on the same line (T-0397, from JARVIS). Flags that can write a file (`-o`, `-K`, a non-numeric `-m`) and `nvidia-smi -f/--filename` still refuse.
 
 ## 1.2.6 — 2026-10-09
 - The guard's refusal of `curl … | python3 -c` says how it passes (T-0395, from JARVIS): a `python -c` that only reads the download as data passes when every other command on the line is a plain data tool that writes nothing, so run a file-writing program or a redirect as its own command. Only the message changes.
