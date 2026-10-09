@@ -88,6 +88,33 @@ class IfsInValue(GuardCase):
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}").replace("{{home}}", "{home}")))
 
 
+class IfsInData(GuardCase):
+    def test_a_plain_ifs_in_one_piece_of_data(self):
+        # T-0698: a plain IFS anywhere made quoted text count, so a test file written through cat <<'EOF' or a '…'
+        # message naming IFS was refused. One piece of data (a '…' string, a quoted heredoc body no shell reads) is
+        # data; what a shell reads, IFS beside it or across two pieces, and "…" or <<E text (they expand) count
+        self.run_table([
+            ("cat > t.py <<'EOF'\n(\"eval 'IFS=m'; \\\"r$IFS\\\" -rf ~\", \"system\"),\nEOF", None),
+            ("cat > t.py <<'EOF'\n(\"q=x; eval \\\"$q\\\"; IFS=m; \\\"r$IFS\\\"\", \"system\"),\nEOF", None),
+            ("python3 - <<'EOF'\nprint('IFS=m', '$IFS')\nEOF", None),
+            ("grep -rn 'IFS=x.*$IFS' plugin", None),
+            ("git commit -qm 'guard: IFS=x beside a plain ${IFS} is data'", None),
+            ("bash <<'E'\nIFS=m; \"r$IFS\" -rf ~\nE", "system"),
+            ("bash <<'E'\nIFS=m\nE\necho \"r$IFS\"", "system"),
+            ("cat <<'E' | sh\nIFS=m; echo \"r$IFS\"\nE", "system"),
+            ("cat > t <<'EOF'\nIFS=m; echo \"r$IFS\"\nEOF\n. ./t", "system"),  # sourced: run here
+            ("cat <<E\nIFS=m $IFS\nE", "system"),
+            ('echo "IFS=m $IFS"', "system"),
+            ("IFS=m eval '\"r$IFS\" -rf ~'", "system"),
+            (". ./env.sh; eval 'rm -rf \"/tmp/x${IFS}\"'", "system"),
+            ("bash -c 'IFS=/ source /dev/stdin' <<< 'rm -rf \"/tmp/x${IFS}\"'", "system"),  # two pieces
+            ("echo 'a $IFS' 'IFS=m'", "system"),
+            ("echo 'a $IFS' I\\FS=m", "system"),
+            ("echo $'\\'' 'IFS=m $IFS'", "system"),  # $'…' quoting isn't read: counted
+            ("bash -c 'IFS=m; \"r${IFS}\" -rf ~'", "system"),  # read on its own
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
+
 class EvalVarsAndComputedNames(GuardCase):
     def test_a_command_name_bash_computes(self):
         # T-0587: a known variable as the command name, or in eval / sh -c text, ran unread; an unknown one is checked
