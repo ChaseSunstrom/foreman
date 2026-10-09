@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Self-improvement flywheel, first slice (T-0712).
+  - `fm burden [--days N]` measures Foreman's own cost on real sessions, per Foreman version (from the plugin root each session started on): the share of turns spent only on Foreman bookkeeping, guard refusals and refused fm calls per 100 turns, and the context Foreman's hooks injected per turn. This is the objective a self-change must lower. Last 7 days here: bookkeeping-only turns 2%, guard refusals 1.5 per 100 turns.
+  - `fm replay --candidate REF|FILE` scores another guard (a git ref of Foreman's repo, or a `fmguard.py` file) against the working one on the corpus of real past commands. Loosened verdicts are listed first and exit 1, then tightened ones. The guard from 12 guard-commits back blocks `curl … | python3 -c` as pipe-into-shell, the false block T-0716 removed.
+  - The overnight run that generates candidates waits for usage headroom.
 
 ## 1.2.22 — 2026-10-09
 - Cockpit, first slice (T-0711). The Foreman pane gains a Fleet card: every live session on this machine with project, task, context and mail, plus a tile for each session on a remote the user added. Its steer box runs `fm conductor steer`, which reaches every session here and on those remotes. The task card lists the parts `fm task split` made, with their progress.
