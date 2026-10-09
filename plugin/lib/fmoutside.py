@@ -7,6 +7,7 @@ import http.client
 import json
 import os
 import re
+import subprocess
 import time
 import tomllib
 import urllib.error
@@ -187,9 +188,70 @@ def latest(eco, name, timeout=10):
         return None, c.fit(c.plain(str(getattr(e, "reason", e))), 60)
 
 
+def _installed(root, eco, name):
+    """The version installed here, read locally (no network), or None."""
+    if eco == "pypi":
+        try:
+            import importlib.metadata
+            return importlib.metadata.version(name)
+        except Exception:  # not installed in this interpreter
+            return None
+    if eco == "npm":
+        try:
+            with open(os.path.join(root, "node_modules", name, "package.json"), encoding="utf-8") as f:
+                return json.load(f).get("version")
+        except (OSError, ValueError, AttributeError):
+            return None
+    return None
+
+
+def call_sites(root, eco, name):
+    """T-0594: ([file:line], [names used]) where the project imports the dependency, by git grep (local only)."""
+    mod = re.escape(name.lower().replace("-", "_") if eco == "pypi" else name)
+    pats = {"pypi": [rf"^\s*(from\s+{mod}(\.[\w.]+)?\s+import\s|import\s+{mod}\b)"],
+            "npm": [rf"(require\(|from\s+|import\s+)['\"]{mod}(/[^'\"]*)?['\"]"],
+            "crates": [rf"\buse\s+{mod}::"]}.get(eco, [])
+    sites, names = [], set()
+    for pat in pats:
+        try:
+            r = subprocess.run(["git", "-C", root, "grep", "-n", "-I", "-E", "-e", pat], capture_output=True, text=True,
+                               timeout=20)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        for line in r.stdout.splitlines()[:200]:
+            path, n, text = (line.split(":", 2) + ["", ""])[:3]
+            sites.append(f"{path}:{n}")
+            m = re.search(r"import\s+(.+)$", text) if eco == "pypi" and text.lstrip().startswith("from") else None
+            names.update(x.strip().split(" as ")[0] for x in (m.group(1).strip("() ").split(",") if m else []) if x.strip())
+            try:
+                with open(os.path.join(root, path), encoding="utf-8", errors="replace") as f:
+                    names.update(re.findall(rf"\b{mod}\.(\w+)", f.read(200_000)))
+            except OSError:
+                pass
+    return list(dict.fromkeys(sites)), sorted(names)
+
+
+def _calls(p, args, fmcli):
+    rows, lines = [], []
+    for eco, name, want, _ in dependencies(p.root):
+        sites, names = call_sites(p.root, eco, name)
+        have = _installed(p.root, eco, name)
+        rows.append({"name": name, "ecosystem": eco, "requires": want, "installed": have, "sites": sites,
+                     "names": names})
+        files = len({x.rsplit(":", 1)[0] for x in sites})
+        lines.append(f"{name} (requires {want}, installed {have or 'not here'}): " + (
+            f"{files} file(s) — {', '.join(sites[:5])}" + (f"; names used: {', '.join(names[:12])}" if names else "")
+            if sites else "no import site (unused, or imported under another name)"))
+    return fmcli.out(args, {"dependencies": rows}, "\n".join(lines) + (
+        "\nBefore trusting docs for one of these, read the installed version's source or --help (planning.md R2)."
+        if rows else "") if rows else "No dependencies found in requirements*.txt, pyproject.toml, package.json or Cargo.toml.")
+
+
 def cmd_deps(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "calls", False):  # T-0594: local only, no registry lookups
+        return _calls(p, args, fmcli)
     deps = dependencies(p.root)
     with ThreadPoolExecutor(8) as pool:
         found = list(pool.map(lambda d: latest(d[0], d[1]), deps))

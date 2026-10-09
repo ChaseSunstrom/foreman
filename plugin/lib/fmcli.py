@@ -1212,12 +1212,35 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
+    if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
+        honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
+                      f"\"Recommendation: …; would change if: …\"")
+    gone = _deleted(p, b)
+    why = b.section("Origins")
+    unexplained = [f for f in gone if f not in why]
+    if unexplained:  # T-0600: a Chesterton check — say why a thing existed before it goes
+        honest.append(f"deleted without saying why it existed: {', '.join(unexplained[:6])} — fm why <file>, then fm task "
+                      f"set {b.id} --section Origins --text \"- <file>: <why it was there>\"")
     if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
         honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
     if b.meta.get("replan"):  # T-0603: a surprise the plan never answered
         honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
                       f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+def _deleted(p, b):
+    """Files tracked at the task's start that are gone now (committed or not)."""
+    import subprocess
+    base = b.meta.get("base")
+    if not base or not c.git_root(p.root):
+        return []
+    try:
+        r = subprocess.run(["git", "-C", p.root, "diff", "--name-only", "--diff-filter=D", base], capture_output=True,
+                           text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [x for x in r.stdout.splitlines() if x.strip()]
 
 
 def _plan_gaps(p, b):
@@ -3309,6 +3332,8 @@ def build_parser():
 
     s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
+    s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
+    s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
@@ -3458,6 +3483,8 @@ def build_parser():
             help="dependencies a major version behind their registry's latest, with the migration question to research")
     s.add_argument("--research", type=int, nargs="?", const=3, default=0, metavar="N",
                    help="research the first N migrations now (default 3; each budget-checked)")
+    s.add_argument("--calls", action="store_true", help="each dependency's installed version and import sites with "
+                                                        "the names used, read locally, no network (T-0594)")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=600)
     s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
@@ -3502,6 +3529,10 @@ def build_parser():
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
+    s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
+                                                        "in with fm share on (never sensitive ones), file:line (T-0618)")
+    s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
+                                                         "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
     s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
