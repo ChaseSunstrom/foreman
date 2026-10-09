@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm run --parallel` keeps related work apart (T-0445, from the Foreman brainstorm). Tasks in one `fm relate` group never share a batch. Each task's footprint is now its scope plus the files `fm map` sees changing alongside it, so two tasks that would touch the same file through such a companion run one after the other. Without a map, scopes alone decide, as before.
 - Guard parity across harnesses is tested, and `fm agents list` shows what each one enforces (T-0442, from the Foreman brainstorm). A test sends the same commands and writes through Claude Code and through each of the codex, gemini and opencode adapters, in each harness's own payload shape. The commands include rm of home, curl into sh, a force push, a publish and a credential write, plus harmless ones. Every harness must decide exactly as Claude Code does. It does today, and the test keeps it that way. `fm agents list` prints which events each harness has: the guard blocks everywhere, gemini and opencode have no Stop (so no drive or done-gate), and an ask is a deny outside Claude Code.
 - Unattended runs keep a heartbeat and stop on repeated failure (T-0434, from the Foreman brainstorm). `fm run` and `fm night` write a heartbeat into the project's state dir before each session or job, and remove it on a normal exit.
   - `fm doctor` warns about a heartbeat gone stale (the run wedged or was killed). It runs the `fm notify` command once per stale episode.
