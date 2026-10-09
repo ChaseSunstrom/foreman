@@ -150,6 +150,16 @@ class PluginFiles(unittest.TestCase):
             self.assertEqual(len(handlers), 1, event)
             self.assertEqual(handlers[0]["args"], [event])
 
+    def test_the_guard_hook_fails_closed(self):
+        hooks = read_json(os.path.join(PLUGIN, "hooks", "hooks.json"))["hooks"]
+        for event, groups in hooks.items():
+            for g in groups:
+                for h in g["hooks"]:
+                    if event == "PreToolUse":
+                        self.assertEqual(h.get("onFailure"), "block")
+                    else:
+                        self.assertNotIn("onFailure", h, event)
+
     def test_rules_never_contain_a_frontmatter_delimiter(self):
         # Eval cases embed the rules in YAML frontmatter; `claude plugin eval` ends the frontmatter at any "---",
         # which left every case prompt starting mid-rules (found in the 1.1 eval run).

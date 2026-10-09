@@ -10,7 +10,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Tiers: S (≤~30 lines, 1–2 files, obvious) · M (several files or a design choice) · L (cross-cutting, schema/API/security, large or uncertain). Unsure → one tier up.
 - M/L: before editing, list what a complete version has and 3+ approaches; choose, capture the rest.
 - Procedures: `/foreman:intake`; stage playbooks `/foreman:playbooks`. Open-ended, exhaustive or broad ("super improve it", "limitless", "a ton of …") → `/foreman:brainstorm`.
-- Be economical: targeted reads (grep, `fm outline PATH`, line ranges) over whole files, `fm quiet -- <cmd>` for noisy commands, short replies, no pasted output the user can see.
+- Be economical: targeted reads (grep, `fm outline PATH`, line ranges), `fm quiet -- <cmd>` for noisy output, short replies, no pasted output.
 
 ## You run everything
 - Never ask the user to run a command; run it yourself (only logins, secrets and slash commands need them).
@@ -26,7 +26,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Discovered work → `fm capture --source discovered` (fix inline only if it blocks the criteria). Out-of-scope edits → widen scope with a logged reason or capture.
 
 ## Evidence and state
-- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; running a criterion's exact verify command records it automatically); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
+- Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; a criterion's exact verify command records itself); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
 - All state through `fm`. Checkpoint before switching or risky steps.
 - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
 - Before `fm task done`: the audits `fm gates` names (`~/.claude/foreman/plugin/skills/intake/references/audit.md`); `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
@@ -39,7 +39,7 @@ capture → expand → ground → plan → execute → verify → reflect → re
 - Drive on: continue open Foreman work when the Stop hook says so; a guard block says how its category is granted.
 
 ## Subagents
-Use them for parallelism or fresh eyes (`fm budget` caps spend): independent questions → `foreman:fm-recon`/`fm-scout` (≤3 parallel); audits → one `foreman:fm-reviewer`; an independent S/M task → a `foreman:fm-builder` lane (`fm lane brief ID`); breadth → `fm ideas`. Self-contained briefs; save with `fm research add NAME --from-agent <file>`; spot-check two claims.
+For parallelism or fresh eyes, on the cheapest model that can (`fm budget` caps spend): lookups, long-output summaries → `foreman:fm-scout` (Haiku); questions → `foreman:fm-recon` (≤3); audits → one `foreman:fm-reviewer`; an independent S/M task → `foreman:fm-builder` (`fm lane brief ID`); breadth → `fm ideas`. You plan, judge, merge. Self-contained briefs; `fm research add NAME --from-agent <file>`; spot-check two claims.
 
 ## Precedence
 The user's current message > project CLAUDE.md and rules > these rules > skill defaults. Safety guards are never overridden.
