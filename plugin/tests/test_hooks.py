@@ -1290,6 +1290,15 @@ class Stop(HookCase):
         r = stop(ci)
         self.assertEqual(r.get("decision"), "block")
         self.assertIn(f"{queued} FIX step 1/2", r["reason"])
+        # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service: it keeps holding the drive
+        agent = {"id": "a1b2", "type": "agent", "status": "running", "description": "Build T-0001"}
+        stop(ci, agent)
+        with open(gate) as f:
+            g = json.load(f)
+        g["drive"]["sess-1"]["since"]["a1b2"] -= 40 * 60
+        with open(gate, "w") as f:
+            json.dump(g, f)
+        self.assertNotIn("step 1/2", stop(ci, agent).get("reason", ""), "the agent still holds it")
 
     def test_drained_queue_checks_the_product(self):
         # T-0417 (the user: "foreman should be able to find these issues … itself"): JARVIS closed 34 tasks with the

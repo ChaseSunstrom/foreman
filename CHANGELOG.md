@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A running subagent never ages out of the drive's wait (T-0575). T-0415 made a job running for 20 minutes or more count as a service, not something to wait for. A builder lane can take 30 minutes, though, and it does finish. Now only shells, monitors and workflows age out.
 - `fm friction` labels each line from another project and counts every other project's friction (T-0435, from the brainstorm's self-improvement loop). Foreman's self-improvement pass already read every registered project's ledger, but it dropped which project a steer, correction, escape or surprise came from. Now those lines carry `[project]`. A new section counts each other project's guard blocks, corrections, steers, blocked tasks, escapes and closed tasks. A sensitive project's ledger stays out of another project's digest.
 - `fm friction` reports the errors the hooks swallowed (T-0437, from the brainstorm's observer-health capability). A hook never fails a tool call, so its exceptions went only to hooks.log, and only `fm doctor` counted them. The self-improvement digest now shows how many there were in the last 24 h, the event with the most, and the latest error line. The breaker's pause notes don't count.
 - A capture that resembles a dropped task now says so, with the reason it was dropped. A capture that a standing veto covers says that too (T-0438, from the Foreman brainstorm's intake-quality capability). This is advice only: the capture still happens, and it names `fm task drop` for when the earlier answer still holds.
