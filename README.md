@@ -90,6 +90,7 @@ install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
 configure-repo.sh     one-time for forks: point everything at your GitHub repo
 reset-claude.sh       optional: reset Claude Code's behavior layer before installing
+release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL]
 .claude-plugin/       local marketplace "foreman"
 plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
 local/ state/ backups/   machine-specific, gitignored

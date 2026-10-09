@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- One-command releases (T-0678 milestone: T-0493, T-0492). `python3 release.py VERSION` bumps plugin.json and Foreman's marketplace entries, heads the Unreleased changelog entries with the version, runs `fm check` (and undoes the bump if it fails), and commits. It refuses a dirty tree or an older version. `--push URL` merges into that remote's main from a scratch clone. `--canary` first re-runs `fm sentinel` in every local project and prints what fails there now.
 
 ## 1.2.19 — 2026-10-09
 - Planning, briefs and the queue, first versions (T-0677 milestone: T-0450, T-0451, T-0452, T-0488, T-0489, T-0490, T-0491).
