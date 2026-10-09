@@ -1,0 +1,80 @@
+# Commands the guard fuzzer (T-0433, test_guard_diff.py) found running a dangerous call the guard didn't block.
+# One Python string literal a line (repr of the command, so newlines survive); a "# …" line above a group says what it is.
+# "open " before the literal: the guard still misses it, so the test expects the escape until its guard-fix task
+# lands; then drop the mark and it must stay blocked.
+
+# 1. ${IFS} (or a continued ${I\<newline>FS}) as the space between words: the guard reads one word
+open 'rm${IFS}-rf ~'
+open 'git${IFS}push --force origin main'
+open 'claude plugin${IFS}install x@y'
+open 'timeout 5${IFS}rm -rf ~'
+
+# 2. a backslash-newline inside single quotes that a second shell reads (eval, bash -c, sh -c, trap, script -c)
+open "eval 'claude plugin ins\\\ntall x@y'"
+open "bash -c 'r\\\nm -rf ~'"
+open "trap 'g\\\nit push --force origin main' EXIT"
+
+# 3. a backslash-newline inside double quotes, which this shell removes too
+open 'D=~; rm -rf "\\\n$D"'
+open '"rm\\\n" -rf ~'
+
+# 4. a case arm's ) ends a "$( … )" body early, so a quoted or escaped name after it reads as quoted text
+open 'echo "$(case a in a) r\'\'m -rf ~;; esac)"'
+open 'echo "$(case a in a) \\rm -rf ~;; esac)"'
+
+# 5. $((…))# inside a "$( … )" hides a quoted name after it
+open 'echo "$(echo $((1))#x; git ""push"" --force origin main)"'
+
+# 6. a download piped into a ( group ) with a space or a line break before the paren
+open 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin | (bash)'
+open 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin |\n(bash)'
+
+# 7. a quoted "x <<EOF" inside a "$( … )" or "` … `" starts a heredoc in the guard's reading, hiding the next line
+open 'echo "$(echo "x <<EOF"\nrm -rf ~)"'
+open 'echo "`echo "x <<EOF"\nrm -rf ~`"'
+
+# 8. an escaped substitution in a double-quoted string eval or sh -c runs: inside \"…\", as \`…\`, or in a heredoc
+open 'sh -c "echo \\"\\$(rm -rf ~)\\""'
+open 'eval "echo \\`rm -rf ~\\`"'
+open 'eval "cat <<EOF\n\\$(rm -rf ~)\nEOF"'
+
+# 9. an escaped backtick in a heredoc inside backticks
+open 'echo `cat <<EOF\n\\`rm -rf ~\\`\nEOF`'
+
+# the fixed seed's own escapes (FM_FUZZ_SEED 433, 300 cases; two more are in class 1 above): class 1 but the last two
+# (classes 2 and 4)
+open "command ech''o $(( 1 )) $(rm${IFS}-rf ~)"
+open "echo '<<-EOF' && script -qc 'git push${IFS}--force${IFS}origin main' /dev/null"
+open 'D=x; set -o posix; D=~ :; rm${IFS}-rf "$D"'
+open '( true; echo $(true)#x; git${IFS}push --force origin main )'
+open "bash${IFS}-c 'true; git push --force origin main'"
+open 'echo a |\nxargs${IFS}-I@ rm -rf ~'
+open 'D=~; "time" D=/tmp/x; "rm"${IFS}-rf "$D"'
+open 'if true; then echo "$(true; claude plugin${IFS}install${IFS}x@y)"; fi'
+open 'cd ~\ncd /nonexistent &&\necho \'(|)\'; rm${IFS}-rf "$PWD"'
+open 'exec echo $\\\n(rm${IFS}-rf ~)'
+open 'cat <<EOF\n`claude plu\\\ngin${IFS}install x@y`\nEOF'
+open 'echo a#b && r\'\'m${IFS}-r""f ~'
+open 'D=x; for i in 1; do D=~; done; rm${IFS}-rf "$D"'
+open 'D=x; trap \'D\\\n=~\' DEBUG; rm${IFS}-rf "$D"'
+open 'D=/; (D=x); r\\m${IFS}-rf "$D"'
+open "echo a#b &&\nuntil false; do echo ${HOME}#x; rm${IFS}-rf ~; brea''k; done"
+open "nice${IFS}'claude' plugin install x@y"
+open 'f() { rm${IFS}-rf ~; }; f'
+open 'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "${S}/"'
+open 'D=~; "D=/tmp/x"; rm${IFS}-rf "$D"'
+open 'bash -c \'true; claude plugin insta""ll${IFS}x@y\''
+open 'D=${HOME}; echo "x${IFS}D=y"; "D=/tmp/x"; rm${IFS}-rf "$D"'
+open 'X=$(echo ")"; S=/tmp/ok; true); rm${IFS}-rf "$S/"'
+open 'x=$(git \\push --force origin${IFS}main)'
+open 'D=/tmp/x; X=read; $X D <<< ~; rm${IFS}-rf "$D"'
+open 'for d in /home/sb; do rm${IFS}-rf "$d"; done'
+open 'D=~; echo "x D=y"; "D=/tmp/x"; rm${IFS}-fr "$D"'
+open "bash${IFS}-c 'echo `true`#x; rm -rf ~'"
+open 'D=/tmp/x; touc\'\'h${IFS}read; rea? D <<< ~; rm${IFS}-rf "$D"'
+open "bash${IFS}-c 'echo a#b && echo `true`#x; git pus\\h --force or''igin main'"
+open 'true # c\nrm${IFS}-rf $HOME'
+open 'echo `claude${I\\\nFS}plugin install x@y`'
+open 'echo $(( 1 )) $(true; rm${IF\\\nS}-rf ~)'
+open "echo $(eval 'echo $((1))#x; '\\claude' plugin ins\\\ntall x@y')"
+open 'echo "$(echo \'<<-EOF\' &&\ncase a in a) git p\'\'ush --force origin main;; esac)"'
