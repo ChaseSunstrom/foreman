@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Performance and cost (T-0676 milestone: T-0467, T-0486, T-0449, T-0487, T-0448).
+  - `fm check` runs gates by failure odds per second of median runtime, so fail-fast stops sooner; results stay in configured order.
+  - Each `hook_ms` event carries Foreman's version, and `fm doctor` warns when the p95 of the last 200 PreToolUse runs passes the hook budget, naming the version where it rose.
+  - While usage runs ahead of pace, optional work waits with a note: the drive's side offers, the self-improvement pass and `fm ideas --deepen`. The queue and inbox keep flowing, and the caps still block.
+  - `fm task finish` logs the session's model, type, tier and grade, and `fm cost --by-model` counts them.
+  - At a step boundary of an M/L task with context nearly full, the Stop note says to checkpoint and compact there.
 - Observability, replay and trust (T-0674 milestone: T-0464, T-0483, T-0484).
   - `fm explain [block|drive]` shows what's behind the last guard block or drive/Stop decision: the rule, its inputs, the grants or settings, the ledger events and the hook breaker.
   - `fm task show ID --story` prints a task's ledger as chapters (Plan, Steps, Evidence, Reviews, Close) with times, archived months included.
