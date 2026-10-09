@@ -559,7 +559,8 @@ def _split(tokens):
                 continue
             if not empty:
                 cmds.append(cur)
-            cur = Cmd([], [], t in ("|", "|&"), op=t, depth=depth)
+            keep = empty and cur.piped and "(" in t  # T-0581: `| (bash)` and `|⏎(bash)`: the group reads the pipe
+            cur = Cmd([], [], t in ("|", "|&") or keep, op=cur.op + t if keep else t, depth=depth)
             i += 1
             continue
         if re.fullmatch(r"[<>&]+\|?", t):
