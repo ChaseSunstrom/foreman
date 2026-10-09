@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The diff a reviewer reads is 11% smaller across 48 real audit diffs, and up to 21% on one (T-0723, from the T-0717 measurement: reviewers read 3.2M tokens of diffs in 30 days). A file whose change repeats another's, such as the synced eval copies of the rules, becomes one line naming the first. Context lines are cut at 200 characters. Fixtures and lockfiles are listed with their +/- counts. Changed lines stay whole, and the pre-audit still reads the raw diff.
 - Friction (T-0729: T-0725, T-0726). `fm lane rm` unlocks a worktree Claude Code still locks for a finished builder once its branch is in main; while the branch isn't merged, it says to merge first. `fm capture` no longer calls a request a re-ask of a dropped batch just because the batch's huge request shares a few of its words: the shared words must be a fifth of the dropped request's too.
 
 ## 1.2.18 — 2026-10-09
