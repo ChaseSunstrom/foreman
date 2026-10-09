@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Orchestration, lanes and fleets, first versions (T-0675 milestone: T-0466, T-0465, T-0446, T-0447).
+  - `fm task packet ID [--out PATH]` writes one redacted markdown handoff for a person or another machine: the brief, criteria, steps, evidence, the blocker, the hypotheses tried and the next probe.
+  - `fm lane new` refuses, and the drive offers no builder lane, while the host is loaded past twice its CPUs or has under 512 MB available.
+  - A conflicting `fm lane merge` writes `audits/ID.conflict.md` (files, conflict hunks, the tasks behind main's side) with the steps to resolve it on the branch.
+  - `fm run` stops a session whose transcript hasn't moved for `--stall` minutes (default 20) and goes on; a session it can't observe is never stopped.
+  - T-0485's idle-time pre-plans and the usage-limit handoff to another agent are captured (T-0730, T-0731).
 - Outline-first reads (T-0724, the biggest lever T-0717 measured). The first full Read of a file over 600 lines (code, Markdown or a diff) gets its outline and a range to read instead. Read it again with no range to get all of it. This is per agent and resets at compaction. Over 30 days it would have caught 367 reads holding 4.1M tokens; with a range read after each, that saves about 3.1M tokens. It has its own PreToolUse entry, which never blocks a read on failure, and adds about 30 ms per Read.
 - The diff a reviewer reads is 11% smaller across 48 real audit diffs, and up to 21% on one (T-0723, from the T-0717 measurement: reviewers read 3.2M tokens of diffs in 30 days). A file whose change repeats another's, such as the synced eval copies of the rules, becomes one line naming the first. Context lines are cut at 200 characters. Fixtures and lockfiles are listed with their +/- counts. Changed lines stay whole, and the pre-audit still reads the raw diff.
 - Friction (T-0729: T-0725, T-0726). `fm lane rm` unlocks a worktree Claude Code still locks for a finished builder once its branch is in main; while the branch isn't merged, it says to merge first. `fm capture` no longer calls a request a re-ask of a dropped batch just because the batch's huge request shares a few of its words: the shared words must be a fifth of the dropped request's too.

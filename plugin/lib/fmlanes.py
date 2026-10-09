@@ -54,6 +54,9 @@ def cmd_lane(args):
     if args.action == "new":
         if c.panicked():
             raise c.PolicyError(c.PAUSED)
+        strain = c.host_strain()  # T-0465
+        if strain:
+            raise c.PolicyError(f"{strain}: no new lane until it eases; finish the lanes that run")
         if b.status in c.CLOSED or b.status in ("active", "verifying") or b.meta.get("lane"):
             raise c.PolicyError(f"{b.id} is {b.meta.get('lane') and 'already in lane ' + b.meta['lane'] or b.status}: "
                                 f"a lane takes a task nobody is working on")
@@ -211,12 +214,40 @@ def merge(p, b, main):
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
+        brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
         _git(main, "merge", "--abort")
-        raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}")
+        raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}"
+                               + (f"\nConflict brief: {brief}" if brief else ""))
     merge.last = branch
     fmcli.mutate(p, b.id, lambda x: x.append_log(f"merged {branch} ({len(files)} file(s))"), "lane_merge",
                  {"branch": branch, "files": files[:50]})
     return files
+
+
+def _conflict_brief(p, b, main, branch):
+    """T-0446: while a lane's merge is still in conflict, write what clashed (files, their conflict hunks, the tasks
+    on each side) and the steps that resolve it on the lane's branch, where the guard lets the builder's task edit."""
+    files = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
+    if not files:
+        return None
+    hunks = _git(main, "diff", "--", *files).stdout
+    path_of = b.meta.get("lane") or "<the lane's worktree>"
+    head = _git(main, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
+    mine = [f"- {e.get('task')}: {(e.get('data') or {}).get('file', '')}" for e in c.ledger_tail(p, 500)
+            if e.get("event") == "touched" and e.get("task") != b.id
+            and any(str((e.get("data") or {}).get("file", "")).endswith(f) for f in files)][-10:]
+    text = c.redact("\n\n".join([
+        f"# Conflict: {b.id} {b.title} ({branch}) into {main} ({head})",
+        "## Files\n" + "\n".join(f"- {f}" for f in files),
+        "## Main's side was last touched by\n" + ("\n".join(dict.fromkeys(mine)) or "(no task on record)"),
+        "## Resolve on the branch\n"
+        f"1. git -C {path_of} merge {head}\n2. fix the files above there (keep both sides' intent), run the "
+        f"task's tests\n3. git -C {path_of} commit -am \"Merge {head} into {branch}\"\n4. fm lane merge {b.id}",
+        "## Conflict hunks\n```diff\n" + hunks[:60_000] + "\n```"])) + "\n"
+    out = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    c.write_atomic(out, text)
+    return out
 
 
 def remove(p, b, main):

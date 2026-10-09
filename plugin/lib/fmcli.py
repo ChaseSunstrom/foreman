@@ -374,6 +374,8 @@ def cmd_task(args):
                                 f"rm {own.id}, then fm task {sub} from the main checkout); report back instead")
     if sub == "new":
         return task_new(p, args)
+    if sub == "packet":
+        return task_packet(p, args)
     if sub == "show":
         b = need_brief(p, args.id)
         if args.story:  # T-0483
@@ -520,6 +522,32 @@ def cmd_task(args):
             _settle_batch(p, b, done=False)
         return out(args, c.brief_summary(b), f"{b.id} {status}." + (f" Reason: {reason}" if reason else ""))
     raise UsageError(f"unknown task subcommand {sub}")
+
+
+def task_packet(p, args):
+    """T-0466: one markdown handoff for a person or another machine: what the task is, when it's done, the steps,
+    the evidence, why it's blocked, what was tried and the next probe. Redacted; plain text, no instructions."""
+    b = need_brief(p, args.id)
+    hyps = b.hypotheses()
+    probe = next((re.search(r"probe: `(.+?)`", t) for _, st, t in hyps if st == "open" and "probe: `" in t), None)
+    step = next((s for s in b.steps() if not s.done), None)
+    blocked = [x for x in b.section("Log").splitlines() if re.search(r"(?i)\bblock", x)][-3:]
+    parts = [f"# Handoff: {b.id} {b.title}",
+             f"{b.type} {b.tier}, {b.status}; packed {c.now()} from {p.root}",
+             "## What it is", (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section(
+                 "Raw request")).strip() or b.title),
+             "## Done when", "\n".join(f"- [{'x' if a.checked else ' '}] {a.text}" for a in b.acceptance()) or "(none)",
+             "## Steps", b.section("Steps").strip() or "(none)",
+             "## Evidence so far", "\n".join(b.evidence()) or "(none)",
+             "## Blocked", "\n".join(blocked) or "(not blocked)",
+             "## Tried", "\n".join(f"- H{n} [{st}] {t}" for n, st, t in hyps) or "(no hypotheses recorded)",
+             "## Next probe", probe.group(1) if probe else (f"step {step.n}: {step.text}" if step else "close it"),
+             "## Resume here", b.section("Resume here").strip() or "(none)"]
+    text = c.redact("\n\n".join(parts)) + "\n"
+    path = args.out or os.path.join(p.dir, "handoffs", f"{b.id}.md")
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    c.write_atomic(path, text)
+    return out(args, {"path": path, "task": b.id}, f"{b.id}: handoff packet written to {path}")
 
 
 def _lint_verify(p, cmds):
@@ -2594,6 +2622,9 @@ def build_parser():
         t.add_argument("--json", action="store_true")
         return t
 
+    t = tadd("packet")  # T-0466
+    t.add_argument("id")
+    t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
     t = tadd("new")
     t.add_argument("title")
     t.add_argument("--type", required=True)
@@ -3109,6 +3140,8 @@ def build_parser():
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
                                                            "its own lane, merged back when gated and clean (max 3)")
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
+    s.add_argument("--stall", type=float, default=20, help="minutes a session's transcript may sit still before fm "
+                                                          "run stops it and goes on (0: never; T-0447)")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")

@@ -1792,7 +1792,8 @@ def _side_work(sd, briefs, work, full, offered):
 def lanes_free(briefs):
     """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
     import fmlanes
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS and \
+        not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
 def _start_how(x, lanes=True):
