@@ -53,3 +53,27 @@ class IfsForms(GuardCase):
             ('export PATH="$HOME/bin:$PATH"; echo $PATH', None),
             ("echo $(( 1 + 2 ))", None),
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
+
+class ShellStdin(GuardCase):
+    def test_a_script_a_shell_reads_from_stdin_is_checked(self):
+        # T-0589: input redirections were dropped, so the text a shell ran from its stdin was never read
+        self.run_table([
+            ("bash <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("bash <<EOF\necho hi\nrm -rf ~\nEOF", "rm-outside"),
+            ("sh -s <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("bash -s -- a b <<-'EOF'\n\trm -rf ~\nEOF", "rm-outside"),
+            ("bash - <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("bash -e <<< 'rm -rf ~'", "rm-outside"),
+            ("cd /tmp && zsh <<'EOF'\nclaude plugin install x@y\nEOF", "plugin"),
+            # its review: which feed a shell reads as code isn't modelled, so every feed on such a line is read
+            ("bash /dev/stdin <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("{ bash; } <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("busybox sh <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            (". /dev/stdin <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("bash -c 'source /dev/stdin' <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("cat > /tmp/x.sh <<'EOF'\nrm -rf ~\nEOF", None),
+            ("python3 - <<'EOF'\nprint('rm -rf ~')\nEOF", None),
+            ("bash <<'EOF'\necho hi\nEOF", None),
+            ("grep -c x <<< 'rm -rf ~'", None),
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))

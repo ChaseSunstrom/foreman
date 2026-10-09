@@ -382,6 +382,7 @@ class Cmd:
         self.argv, self.redirs, self.piped, self.procsub = argv, redirs, piped, procsub
         self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
         self.depth = depth  # T-0414: the ( it sits inside, unclosed: a subshell, $( ) or <( ) (negative: a stray ))
+        self.feeds = []  # T-0589: ("<<", delimiter) and ("<<<", word): what it reads on stdin
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -488,8 +489,8 @@ def _live_heredocs(cmd):
     return out
 
 
-def _heredocs(cmd):
-    """(the command without its heredoc bodies, the bodies)"""
+def _heredoc_split(cmd):
+    """(the command's lines without heredoc bodies, each body's lines in order)"""
     lines, out, bodies, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
@@ -497,11 +498,33 @@ def _heredocs(cmd):
         starts = _heredoc_starts(out, line)
         out.append(line)
         for _, delim in starts:
+            bodies.append([])
             while i < len(lines) and not _ends_body(lines[i], delim, line):
-                bodies.append(lines[i])
+                bodies[-1].append(lines[i])
                 i += 1
             i += 1
-    return "\n".join(out), "\n".join(bodies)
+    return out, bodies
+
+
+def _heredocs(cmd):
+    """(the command without its heredoc bodies, the bodies)"""
+    out, bodies = _heredoc_split(cmd)
+    return "\n".join(out), "\n".join(x for b in bodies for x in b)
+
+
+# T-0589: what may read a heredoc or here-string as code (bash, sh -s, bash /dev/stdin, { bash; }, . /dev/stdin …)
+_RUNS_STDIN = re.compile(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
+
+
+def _stdin_scripts(cmd, cmds):
+    """T-0589: the heredoc bodies and here-string words on a line that also runs a shell, source or eval: which of
+    them a shell reads as its script isn't modelled (its review: /dev/stdin, a group, -c 'source /dev/stdin'), so
+    all of them, read as commands"""
+    feeds = [f for x in cmds for f in x.feeds]
+    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) for x in cmds):
+        return []
+    return [w for op, w in feeds if op == "<<<"] + (["\n".join(b) for b in _heredoc_split(cmd)[1]]
+                                                    if any(op == "<<" for op, _ in feeds) else [])
 
 
 def _strip_heredocs(cmd):
@@ -604,6 +627,8 @@ def _split(tokens):
             if t.endswith("&") and re.fullmatch(r"\d+|-", nxt):
                 i += 2
                 continue
+            if t in ("<<", "<<<"):
+                cur.feeds.append((t, nxt))
             if nxt and (t.startswith(">") or t in ("&>", "&>>", "<>")):
                 cur.redirs.append(nxt)
             i += 2
@@ -1866,6 +1891,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     for body in _subst_bodies(shell, tails) + [b for t in _live_heredocs(cmd) for b in _subst_bodies(t, tails)]:
         found += check_bash(body, ctx, depth + 1, tails=False)
     cmds = _split(_tokens(_lines(shell)))
+    for script in _stdin_scripts(cmd, cmds):  # T-0589: bash <<'EOF' … EOF and sh <<< '…' run that text
+        found += check_bash(script, ctx, depth + 1)
     cwd, chain = ctx.cwd, []
     raw = _raw_cmds(shell) if _straight_line(shell) else None  # the same commands, quotes kept (T-0161)
     # T-0330 review: ~ is $HOME, so once the command may set HOME a ~ in a value isn't the user's home any more
