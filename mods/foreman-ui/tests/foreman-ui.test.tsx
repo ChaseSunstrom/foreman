@@ -104,7 +104,9 @@ function world(on: On, views: FmView[]) {
   })
   on('session.compact', async ($, e) => {
     compacted.push(String(e.instructions ?? ''))
-    return { messages: [] }
+    // Claude Code 2.1.29x refuses a compaction that leaves no messages: the stand-in keeps what it was handed
+    const kept = (e as { messages?: unknown[] }).messages
+    return { messages: Array.isArray(kept) && kept.length ? kept : [{ role: 'user', text: 'compacted', toolUses: [] }] }
   })
   on('prompt.suggest', async ($, e) => {
     suggested.push(e.text)
