@@ -55,6 +55,15 @@ class CaptureAndIntake(ForemanTestCase):
         self.assertIn("reports live on the dashboard", out)
         self.assertNotIn("Dropped before", self.fm("capture", "fix the login timeout on slow wifi").stdout)
 
+    def test_capture_reask_ignores_a_dropped_batchs_huge_request(self):
+        # T-0726: a dropped batch quoting every member's request shared half the words of any new request
+        import itertools
+        words = " ".join("q" + "".join(x) for x in itertools.product("abcd", repeat=4))  # 256 distinct stems
+        self.fm("capture", f"rebuild members: audit diffs lane locks commit retry evidence quality {words}")
+        self.fm("task", "drop", "T-0001", "rebuilt")
+        out = self.fm("capture", "audit diffs skip lane locks").stdout
+        self.assertNotIn("Dropped before", out)
+
     def test_capture_veto_contradiction(self):
         # T-0438: a request a standing veto covers is said at capture
         self.fm("capture", "tidy the readme")
@@ -689,7 +698,7 @@ class AuditPrep(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "big.py"), "w") as f:
             f.write("".join(f"X{i} = {i}\n" for i in range(900)))
@@ -710,7 +719,7 @@ class AuditPrep(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "prints more with --verbose", "--verify", "pytest")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         with open(os.path.join(self.repo, "cli.py"), "w") as f:
             f.write("VERBOSE = True\n")  # new, uncommitted and untracked
@@ -836,7 +845,7 @@ class RoundFiveWorkflow(ForemanTestCase):
         self.fm("task", "ac", "T-0001", "add", "syncs", "--verify", "pytest")
         for sec in ("Interpretation", "Approach (options → choice → why)"):
             self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
-        self.fm("task", "set", "T-0001", "approved=true")
+        self.fm("task", "set", "T-0001", "approved=true", "--section", "Build vs reuse", "--text", "nothing fits")
         self.fm("focus", "T-0001")
         out = self.fm("audit", "prep", "--print", "T-0001", "--note", "threat: a pulled .foreman/ is untrusted",
                       "--note", "round 3 only").stdout

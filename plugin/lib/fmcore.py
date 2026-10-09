@@ -284,6 +284,27 @@ def panicked():
     return os.path.exists(os.path.join(state_dir(), "PANIC"))
 
 
+def host_strain():
+    """T-0465: why this machine shouldn't take another lane (load over twice its CPUs, or under 512 MB available), or
+    None. FOREMAN_HOST="load=…,cpus=…,mem_mb=…" stands in for /proc in tests; unreadable: None (never blocks)."""
+    try:
+        fake = dict(kv.split("=", 1) for kv in os.environ.get("FOREMAN_HOST", "").split(",") if "=" in kv)
+        load = float(fake["load"]) if "load" in fake else os.getloadavg()[0]
+        cpus = int(fake["cpus"]) if "cpus" in fake else (os.cpu_count() or 1)
+        if "mem_mb" in fake:
+            mem = float(fake["mem_mb"])
+        else:
+            with open("/proc/meminfo") as f:
+                mem = next(int(x.split()[1]) for x in f if x.startswith("MemAvailable:")) / 1024
+    except (OSError, ValueError, StopIteration, KeyError):
+        return None
+    if load > 2 * cpus:
+        return f"the host is loaded ({load:.1f} with {cpus} CPUs)"
+    if mem < 512:
+        return f"the host is low on memory ({mem:.0f} MB available)"
+    return None
+
+
 def refuse_if_paused():
     """T-0591: every launcher of a claude child calls this at its entry (and its command builder, so a path missed
     here still stops)."""
@@ -2092,6 +2113,13 @@ def next_for(p, briefs=None):
         action += (f" · revisit decision {date}: {decision[:100]} ({why}"
                    + (f"; {len(fired) - 1} more" if len(fired) > 1 else "") + ") — still holds: fm decide \"<it>\" "
                    f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
+    today = datetime.date.today().isoformat()  # T-0450: a deferral whose revisit date came
+    due = [x for x in (briefs if briefs is not None else load_briefs(p))
+           if x.status == "deferred" and str(x.meta.get("revisit") or "9999") <= today]
+    if due:
+        action += (f" · deferred {due[0].id} is due back (revisit {due[0].meta['revisit']})"
+                   + (f" and {len(due) - 1} more" if len(due) > 1 else "")
+                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until <date>")
     d = read_meta(p).get("ask_digest")
     if isinstance(d, dict) and d.get("asks"):  # T-0461
         n = len(d["asks"])

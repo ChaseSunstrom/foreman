@@ -761,6 +761,16 @@ def _pre_tool_use(raw):
             except Exception:  # a spend cap, not a safety check: a broken budget never blocks work
                 log_error("PreToolUse", _tb())
             return 0
+        if tool == "Read":  # T-0724: its own hook entry, which never blocks a read on failure
+            try:
+                d = _outline_first(pl)
+            except Exception:
+                log_error("PreToolUse", _tb())
+                d = None
+            if d:
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                         "permissionDecisionReason": d}}))
+            return 0
         if tool not in GUARDED:
             return 0
         try:
@@ -972,6 +982,51 @@ def _wait_loop(pl):
     return ("deny", "Foreman: a foreground wait loop holds this session idle until it ends. Run it with "
                     "run_in_background (its completion notification wakes you) or as a Monitor, and do other work "
                     "meanwhile: the next step, another task, a builder lane.")
+
+
+OUTLINE_LINES, OUTLINE_ROWS = 600, 80
+
+
+def _outline_first(pl):
+    """T-0724: the first full Read of a big file (per agent, between compactions) gets its outline and a pointer to
+    read a range; asked again, it reads whole. None (the Read goes ahead) for a range, a small or unreadable file, or
+    one with nothing to outline."""
+    ti = pl.get("tool_input") or {}
+    path, sid = ti.get("file_path"), str(pl.get("session_id") or "")
+    who = str(pl.get("agent_id") or "main")
+    if not isinstance(path, str) or any(ti.get(k) is not None for k in ("offset", "limit", "pages")) or not (
+            re.fullmatch(r"[\w-]{1,100}", sid) and re.fullmatch(r"[\w-]{1,100}", who)):
+        return None
+    try:
+        if os.path.getsize(path) < OUTLINE_LINES * 4:  # fewer bytes than that can't be that many real lines
+            return None
+        with open(path, "rb") as f:
+            n = f.read(5_000_000).count(b"\n")
+    except OSError:
+        return None
+    if n < OUTLINE_LINES:
+        return None
+    seen_at = os.path.join(c.state_dir(), "sessions", f"{sid}.outlined-{who}.json")  # cleared at SessionStart
+    try:
+        with open(seen_at) as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = []
+    key = os.path.realpath(path)
+    if key in seen:
+        return None
+    import fmmap
+    defs, total = fmmap.outline(path)
+    if not defs:
+        return None
+    os.makedirs(os.path.dirname(seen_at), exist_ok=True)
+    c.write_atomic(seen_at, json.dumps((seen + [key])[-200:]))
+    rows = defs if len(defs) <= OUTLINE_ROWS else [x for x in defs if x[2] == 0] or defs
+    lines = [f"{a}-{b} {'  ' * d}{name}" for a, b, d, name in rows[:OUTLINE_ROWS]]
+    more = f"\n… {len(rows) - OUTLINE_ROWS} more" if len(rows) > OUTLINE_ROWS else ""
+    return (f"Foreman: {os.path.basename(path)} is {total} lines, so here is its outline instead of the whole file. "
+            f"Read the part you need (offset and limit, e.g. offset {rows[0][0]} limit {min(200, rows[0][1] - rows[0][0] + 1)}); "
+            f"read it again with no range to get all of it.\n" + c.plain_lines("\n".join(lines)) + more)
 
 
 def _ask_prompt(pl, p, fmguard):
@@ -1737,7 +1792,8 @@ def _side_work(sd, briefs, work, full, offered):
 def lanes_free(briefs):
     """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
     import fmlanes
-    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS and \
+        not c.host_strain()  # T-0465: a strained host takes no builder lane
 
 
 def _start_how(x, lanes=True):

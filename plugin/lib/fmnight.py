@@ -61,6 +61,12 @@ def cmd_night(args):
     p = fmcli.resolve(args)
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
+    if not getattr(args, "dry_run", False):
+        try:  # T-0452: standing orders capture their tasks (no session runs, so no spend)
+            import fmorders
+            fmorders.run(p)
+        except Exception as e:  # an order file never costs the night
+            print(f"fm: warning: standing orders: {e}", file=sys.stderr)
     bad = [n for n in args.only or [] if n not in NAMES]
     if bad:
         raise fmcli.UsageError(f"no such night job: {', '.join(bad)} (jobs: {', '.join(NAMES)})")

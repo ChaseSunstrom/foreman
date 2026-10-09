@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 1.2.19 — 2026-10-09
+- Planning, briefs and the queue, first versions (T-0677 milestone: T-0450, T-0451, T-0452, T-0488, T-0489, T-0490, T-0491).
+  - `fm task defer ID WHY --until DATE`: `fm next` names it again from that day.
+  - `fm next` says how long this type and tier usually takes here.
+  - `fm orders add --every 1w|--on-change PATH "…"`, with `list`, `rm N` and `run`: standing orders capture a task when due, once per period or change, and `fm night` runs them.
+  - `fm task done` warns when the diff is a size bigger than the planned tier.
+  - `fm task assume ID add FACT --check CMD`: `fm sentinel` re-runs the check after the task is done and captures a FIX when it breaks.
+  - A FEATURE L is approved only with a "Build vs reuse" section.
+  - `fm doctor` names lib modules MASTER.md doesn't.
+  - Deferred: `fm task revert`, budget-fit ordering, a SPIKE type.
+- Orchestration, lanes and fleets, first versions (T-0675 milestone: T-0466, T-0465, T-0446, T-0447).
+  - `fm task packet ID [--out PATH]` writes one redacted markdown handoff for a person or another machine: the brief, criteria, steps, evidence, the blocker, the hypotheses tried and the next probe.
+  - `fm lane new` refuses, and the drive offers no builder lane, while the host is loaded past twice its CPUs or has under 512 MB available.
+  - A conflicting `fm lane merge` writes `audits/ID.conflict.md` (files, conflict hunks, the tasks behind main's side) with the steps to resolve it on the branch.
+  - `fm run` stops a session whose transcript hasn't moved for `--stall` minutes (default 20) and goes on; a session it can't observe is never stopped.
+  - T-0485's idle-time pre-plans and the usage-limit handoff to another agent are captured (T-0730, T-0731).
+- Outline-first reads (T-0724, the biggest lever T-0717 measured). The first full Read of a file over 600 lines (code, Markdown or a diff) gets its outline and a range to read instead. Read it again with no range to get all of it. This is per agent and resets at compaction. Over 30 days it would have caught 367 reads holding 4.1M tokens; with a range read after each, that saves about 3.1M tokens. It has its own PreToolUse entry, which never blocks a read on failure, and adds about 30 ms per Read.
+- The diff a reviewer reads is 11% smaller across 48 real audit diffs, and up to 21% on one (T-0723, from the T-0717 measurement: reviewers read 3.2M tokens of diffs in 30 days). A file whose change repeats another's, such as the synced eval copies of the rules, becomes one line naming the first. Context lines are cut at 200 characters. Fixtures and lockfiles are listed with their +/- counts. Changed lines stay whole, and the pre-audit still reads the raw diff.
+- Friction (T-0729: T-0725, T-0726). `fm lane rm` unlocks a worktree Claude Code still locks for a finished builder once its branch is in main; while the branch isn't merged, it says to merge first. `fm capture` no longer calls a request a re-ask of a dropped batch just because the batch's huge request shares a few of its words: the shared words must be a fifth of the dropped request's too.
+
 ## 1.2.18 — 2026-10-09
 - `fm recall --ask` redacts passages before indexing them, caps what one question indexes at 20 M characters, and shows at most 50 answers (T-0728, from a commit security review). SQLite's snippet put `[ ]` around a matched word inside a secret, so the redactor no longer recognised it on the way out.
 - Performance and cost (T-0676 milestone: T-0467, T-0486, T-0449, T-0487, T-0448).
