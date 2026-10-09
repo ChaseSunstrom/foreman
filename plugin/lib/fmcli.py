@@ -664,6 +664,8 @@ def task_finish(p, args):
                 x.add_audit(lens, args.audit, result, tree=tree)
             if args.docs:
                 x.set_section("Docs impact", c.redact(args.docs))
+            if getattr(args, "why_not_caught", None):  # T-0598
+                x.set_section("Why not caught", c.redact(args.why_not_caught))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
     failed = [f"{kind} {n}: {cmd} → {c.run_result(code, output)}" for kind, n, cmd, code, output in results if code]
     if failed:
@@ -672,6 +674,16 @@ def task_finish(p, args):
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
     rc = cmd_task(args)
+    why = (getattr(args, "why_not_caught", None) or "").strip()
+    if not rc and why and not why.lower().startswith("none"):  # T-0598: the catch that was missing is its own task
+        with c.lock(p.dir):
+            f = _create(p, _title(f"Catch it earlier: {why}"), "FEATURE", "S", "captured",
+                        raw=f"{b.id} ({b.title}) wasn't caught before it shipped: {why}", source="followup")
+            c.log_event(p, "capture", task=f.id, data={"source": "followup", "from": b.id}, session=session())
+            c.regen_views(p)
+        print(f"{b.id}: captured {f.id} — catch it earlier: {c.fit(why, 80)}")
+    elif not rc and b.type == "FIX" and not why and not b.section("Why not caught").strip():
+        print(f"{b.id}: what would have caught this earlier? (--why-not-caught next time; M/L fixes need it)")
     if args.commit and not rc:
         _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
     return rc
@@ -690,6 +702,10 @@ def _finish_gaps(b, args, lenses):
         gaps.append("docs impact missing: --docs \"<docs updated | none: why>\"")
     if b.tier in ("M", "L") and not args.lesson and not b.section("Lessons").strip():
         gaps.append("lesson missing: --lesson \"<what the next similar task should know>\" (or \"none: <why>\")")
+    if b.type == "FIX" and b.tier in ("M", "L") and not getattr(args, "why_not_caught", None) \
+            and not b.section("Why not caught").strip():  # T-0598: every M/L fix asks what would have caught it
+        gaps.append("why-not-caught missing: --why-not-caught \"<the test, gate or guard that would have caught it "
+                    "earlier>\" (or \"none: <why>\"); it becomes a follow-up")
     return gaps
 
 
@@ -2231,6 +2247,13 @@ def cmd_check(args):
                               tree, commands=checks)
     except Exception:
         flaky = []
+    try:  # T-0613: a failing gate is fingerprinted into failure memory, as a failing Bash run is
+        import fmrecall
+        for cmd, code, output, _ in results:
+            if code and cmd not in skipped:
+                fmrecall.note_failure(p, act.id if act else None, output)
+    except Exception:
+        pass  # failure memory is a hint; the gate's verdict stands either way
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
                                                                      **skipped.get(cmd, {})} for cmd, code, _, s in results]})
@@ -2314,32 +2337,60 @@ def cmd_sentinel(args):
     return 1 if failed else 0
 
 
-def _bisect(p, r, timeout):
-    """T-0458: git bisect, in a throwaway worktree, between the commit of the task that proved r's check (good) and
-    HEAD (bad); the first bad commit is captured as a FIX naming it and its task. None when it can't run."""
+def first_bad(p, cmd, good, bad, timeout):
+    """The first commit between good and bad where cmd fails (git bisect run in a throwaway worktree), or None."""
+    import subprocess
     import tempfile
-    good = c._git(p.root, "log", "-1", "--format=%H", f"--grep=Foreman-Task: {r['task']}", timeout=30).strip()
-    head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
-    if not good or not head or good == head:
+    if not good or not bad or good == bad:
         return None
     with tempfile.TemporaryDirectory(prefix="fm-bisect-") as t:
         wt = os.path.join(t, "wt")
-        c._git(p.root, "worktree", "add", "--detach", "-q", wt, head, timeout=120)
+        c._git(p.root, "worktree", "add", "--detach", "-q", wt, bad, timeout=120)
         if not os.path.isdir(wt):
             return None
         try:
-            c._git(wt, "bisect", "start", head, good, timeout=60)
-            import subprocess
-            run = subprocess.run(["git", "-C", wt, "bisect", "run", "sh", "-c", r["cmd"]], capture_output=True,
+            c._git(wt, "bisect", "start", bad, good, timeout=60)
+            run = subprocess.run(["git", "-C", wt, "bisect", "run", "sh", "-c", cmd], capture_output=True,
                                  text=True, timeout=max(60, timeout * 20))
             m = re.search(r"^([0-9a-f]{40}) is the first '?bad'? commit", run.stdout, re.M)  # newer git quotes it
             c._git(wt, "bisect", "reset", timeout=60)
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
-    if not m:
+    return m.group(1) if m else None
+
+
+def cmd_bisect(args):
+    """T-0612: the first commit where a check started failing, between --good (default: the active task's start
+    commit) and HEAD, with the files it changed."""
+    p = resolve(args)
+    act = c.active_brief(c.load_briefs(p), p.lane)
+    good = args.good or (act.meta.get("base") if act else None)
+    if not good:
+        raise UsageError("fm bisect --run CMD --good REF (no active task with a start commit to default to)")
+    good = c._git(p.root, "rev-parse", "--verify", "-q", f"{good}^{{commit}}", timeout=10).strip()
+    head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
+    if not good:
+        raise UsageError(f"{args.good} isn't a commit here")
+    sha = first_bad(p, args.run, good, head, args.timeout)
+    if not sha:
+        return out(args, {"sha": None}, f"No first bad commit between {good[:10]} and HEAD for `{args.run}`: it fails "
+                                        f"at the good end too, passes at HEAD, or bisect couldn't run.")
+    subject = c.plain(c._git(p.root, "log", "-1", "--format=%s", sha, timeout=10).strip())[:120]
+    files = c._git(p.root, "show", "--name-only", "--format=", sha, timeout=10).split()
+    return out(args, {"sha": sha, "subject": subject, "files": files},
+               f"First bad commit: {sha[:10]} {subject}\n  files: {', '.join(files[:12]) or '(none)'}\n  "
+               f"git show {sha[:10]} for the diff")
+
+
+def _bisect(p, r, timeout):
+    """T-0458: git bisect, in a throwaway worktree, between the commit of the task that proved r's check (good) and
+    HEAD (bad); the first bad commit is captured as a FIX naming it and its task. None when it can't run."""
+    good = c._git(p.root, "log", "-1", "--format=%H", f"--grep=Foreman-Task: {r['task']}", timeout=30).strip()
+    head = c._git(p.root, "rev-parse", "HEAD", timeout=10).strip()
+    sha = first_bad(p, r["cmd"], good, head, timeout)
+    if not sha:
         return None
-    sha = m.group(1)
     subject = c.plain(c._git(p.root, "log", "-1", "--format=%s", sha, timeout=10).strip())[:100]
     task = (re.findall(r"Foreman-Task: (T-\d+)", c._git(p.root, "log", "-1", "--format=%B", sha, timeout=10))
             or [None])[0]
@@ -2822,7 +2873,7 @@ HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred "
+                         "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
@@ -3029,6 +3080,8 @@ def build_parser():
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
+                                                             "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
                                                         "each checked alone; a red one folds into the next (T-0710)")
     t.add_argument("--stack-check", metavar="CMD", help="the check each stacked commit runs alone (default: its "
@@ -3127,6 +3180,10 @@ def build_parser():
     s.add_argument("--convert", action="store_true", help="with --apply: rewrite the residual lines with a cheap child")
     s.add_argument("--model", default="haiku")
     s.add_argument("--timeout", type=int, default=180)
+    s = add("bisect", cmd_bisect, help="the first commit where a check started failing, and its files (T-0612)")
+    s.add_argument("--run", required=True, metavar="CMD")
+    s.add_argument("--good", metavar="REF", help="a commit where it passed (default: the active task's start)")
+    s.add_argument("--timeout", type=int, default=120, help="seconds per run")
     s = add("dream", lazy("fmrecall", "cmd_dream"), help="the day's repeated failures as tripwire candidates with their "
                                                           "counterfactual (T-0665)")
     s.add_argument("--day", help="YYYY-MM-DD (default: today)")
@@ -3265,6 +3322,7 @@ def build_parser():
     s.add_argument("--task", help="recall for this task's title, request and scope")
     s.add_argument("-n", type=int, default=4)
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
+    s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
     s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "

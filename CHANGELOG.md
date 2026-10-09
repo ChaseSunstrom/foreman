@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Debugging and diagnosis (T-0686 milestone: T-0597, T-0598, T-0611, T-0612, T-0613).
+  - Proving the diagnosis is `fm task prove`. It runs the task's tests on the start tree with the fix removed (red) and on the current tree (green); this release documents and tests it.
+  - `fm task finish --why-not-caught "<the test, gate or guard that would have caught it>"`: required for M/L fixes, suggested for S. A real answer becomes a follow-up, "Catch it earlier: …".
+  - `fm next` escalates a step that keeps failing: after 2 failed runs, fresh eyes (`fm suspects`, `fm whyred`, then `foreman:fm-debugger`); after 3, hypotheses and then a differential table; after 4, block it and move on.
+  - `fm bisect --run CMD [--good REF]` finds the first commit where a check started failing, with its files, in a throwaway worktree. The good end defaults to the active task's start; it shares its bisect with `fm sentinel --bisect`.
+  - A failing `fm check` gate is fingerprinted into failure memory like a failing shell run. `fm recall --magnets` ranks the files the most FIX tasks touched.
 - Cognitive architecture, first versions (T-0685 milestone: T-0663, T-0664, T-0665).
   - Recall by activation. A past task whose files the active task touched recently, or whose failure signatures came back in the last week, counts 1.5× in `fm recall` and everywhere recall feeds.
   - `fm usage --lesions` reports what each `fm evolve --drop` ablation found: the bench held without the file (a candidate to trim) or dropped (it earns its place). It also names the next lesion to run.
