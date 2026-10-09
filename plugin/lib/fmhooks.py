@@ -216,7 +216,9 @@ def session_start(pl):
                 week = None
             if week:
                 other_note = " ".join(x for x in (other_note, week) if x)
-        meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root))
+        import fmeco  # T-0463, T-0574: the Foreman this project runs, on which machine (fm projects, fm doctor)
+        meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
+                    foreman=fmeco.stamp())
         c.write_meta(p, meta)
         synced = _sync_import(p)
         sd = c.regen_views(p)
@@ -230,6 +232,14 @@ def session_start(pl):
                               "--exclude", sid or ""], cwd=p.root, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception:  # a review that can't start must never cost the session its start
+            log_error("SessionStart", _tb())
+    if pl.get("source") in (None, "startup", "resume") and not os.environ.get("FOREMAN_NO_BACKGROUND") \
+            and not c.panicked() and fmeco.canary_due():  # T-0482: Claude Code's version; a new one runs the checks
+        try:
+            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "canary", "--if-changed"], cwd=p.root,
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        except Exception:
             log_error("SessionStart", _tb())
     try:  # T-0383: infer what builds on what (detached, once a day, when 3+ open tasks are new)
         import fmrelate

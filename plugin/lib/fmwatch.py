@@ -458,8 +458,9 @@ def _follow(build, paths, interval, refresh=30.0):
 
 def projects():
     """T-0322: every Foreman project on this device with a light summary, most recently active first."""
-    out = []
-    for p, _ in c.all_projects():
+    import fmeco
+    out, changes = [], fmeco.changelog()
+    for p, meta in c.all_projects():
         try:
             sd = c.state_dict(p)
         except Exception as e:  # one damaged project never hides the others
@@ -475,7 +476,10 @@ def projects():
                                                             "steps_total")},
                     "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "blocked": len(sd["blocked"]),
                     "waits": len(sd["pending"]) + len(sd["asks"]), "drive": bool(sd["drive"]),
-                    "autonomy": sd["autonomy"], "sensitive": sd["sensitive"], "updated": updated})
+                    "autonomy": sd["autonomy"], "sensitive": sd["sensitive"], "updated": updated,
+                    # T-0463: the Foreman its last session ran (and on which machine), and the released fixes it lacks
+                    "foreman": meta.get("foreman"), "lacks": fmeco.lacks((meta.get("foreman") or {}).get("version"),
+                                                                         changes)})
     return sorted(out, key=lambda r: r.get("updated") or 0, reverse=True)
 
 
@@ -509,6 +513,9 @@ def cmd_projects(args):
         print(json.dumps(v))
         return
     for r in v["projects"]:
-        a = r.get("active")
+        a, ran, lacks = r.get("active"), r.get("foreman") or {}, r.get("lacks") or []
         print(f"{r['project']}  {r['root']}" + (f"  · {a['id']} {a['stage']}" if a else "")
-              + f"  · queue {r.get('queue', 0)} · inbox {r.get('inbox', 0)}")
+              + f"  · queue {r.get('queue', 0)} · inbox {r.get('inbox', 0)}"
+              + (f"  · Foreman {ran['version']}" + (f" on {ran['machine']}" if ran.get("machine") else "") if
+                 ran.get("version") else "")
+              + (f", lacks {len(lacks)} fixes ({', '.join(lacks[:5])}{' …' if len(lacks) > 5 else ''})" if lacks else ""))

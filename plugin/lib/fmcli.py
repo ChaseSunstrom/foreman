@@ -1127,7 +1127,9 @@ def cmd_focus(args):
                 target.meta["base_tree"] = snap
             else:
                 target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
-        target.append_log("focused")
+        import fmeco
+        mach = fmeco.machine()  # T-0574: a named machine shows in the log fm sync carries: which machine ran what
+        target.append_log("focused" + (f" on {mach['name']}" if mach["named"] else ""))
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
             import fmrecall
@@ -2151,9 +2153,10 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export"),
-    ("Project and settings", "init autonomy drive pause sensitive trust standing budget sync share notify plugins docs doctor tidy"),
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
+                             "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects watch"),
+    ("Running elsewhere", "lane serve run session claude agents night mcp ui projects sweep machine watch"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
 
@@ -2196,7 +2199,8 @@ def build_parser():
 
     s = add("capture", cmd_capture, help="capture a request to the inbox")
     s.add_argument("text")
-    s.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
+    s.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self", "cross-project"],
+                   help="cross-project: a request from another project (fm -p SLUG capture … asks that project)")
     s.add_argument("--type")
     s.add_argument("--tier", choices=["S", "M", "L"])
     s.add_argument("--scope", action="append")
@@ -2564,6 +2568,26 @@ def build_parser():
     s.add_argument("--full", action="store_true")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
+
+    s = add("sweep", lazy("fmeco", "cmd_sweep"), help="ask every other project about a fix: where a pattern is (or what "
+                                                       "recall relates), a brief in its inbox; edits nothing there")
+    s.add_argument("fix", help="the fix, as the brief's first line")
+    s.add_argument("--grep", metavar="TEXT", help="the sibling pattern (a fixed string, git grep in each project)")
+    s.add_argument("--type", default="FIX")
+    s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
+    s = add("adopt", lazy("fmeco", "cmd_adopt"), help="take in an existing repo: map, gates (a flake rerun), secrets, "
+                                                       "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
+    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="capture work from a tracker: gh reads the repo's open issues "
+                                                       "(read-only) into briefs, their text kept as untrusted data")
+    s.add_argument("source", choices=["gh"])
+    s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
+    s.add_argument("--limit", type=int, default=30)
+    s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
+                                                         "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
+    s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")
+    s = add("machine", lazy("fmeco", "cmd_machine"), help="this machine's identity: a stable id and a name (shown in "
+                                                           "fm projects and, once named, in brief logs fm sync carries)")
+    s.add_argument("--name", help="name this machine")
 
     s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
