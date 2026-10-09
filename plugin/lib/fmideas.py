@@ -213,7 +213,9 @@ def proposals(p):
     for w in dict.fromkeys(x for _, ws in sets for x in ws):
         group = [(s, ws) for s, ws in sets if w in ws]
         shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
-        if len(group) < TASTE_REPEATS or tuple(sorted(shape)) in seen or any(h <= set(shape) for h in covered):
+        standing = any(c.STANDING_STEER.search(x) for x, _ in group)  # T-0601: said as a rule, once is enough
+        if (len(group) < TASTE_REPEATS and not standing) or tuple(sorted(shape)) in seen \
+                or any(h <= set(shape) for h in covered):
             continue
         seen.add(tuple(sorted(shape)))
         out.append({"words": shape, "count": len(group), "said": c.fit(c.plain(group[-1][0]), 160)})
@@ -515,7 +517,10 @@ Reply in exactly this shape:
 (5-12 lines: the main path, edge cases, errors and the criteria's own checks)
 ## Ambiguities
 - <question> — <the readings, and how the tests would differ>
-(or a single line "- none")"""
+(or a single line "- none")
+## Misreadings
+- <the worst plausible misreading of the request> — <one question or probe at intake that would catch it>
+(1-3 lines, worst first)"""
 
 
 def cmd_oracle(args):
@@ -532,10 +537,10 @@ def cmd_oracle(args):
         text_out = run_child("oracle", ORACLE, spec, args.model, args.timeout, project=p.slug, detail=b.id)
     except ValueError as e:
         raise fmcli.UsageError(str(e))
-    parts = {k: [] for k in ("Examples", "Ambiguities")}
+    parts = {k: [] for k in ("Examples", "Ambiguities", "Misreadings")}
     head = None
     for line in text_out.splitlines():
-        m = re.match(r"#+\s*(Examples|Ambiguities)\b", line.strip(), re.I)
+        m = re.match(r"#+\s*(Examples|Ambiguities|Misreadings)\b", line.strip(), re.I)
         if m:
             head = m.group(1).capitalize()
         elif head and line.strip().startswith("- "):
@@ -547,7 +552,9 @@ def cmd_oracle(args):
     text = ("Examples from the request alone, before the code was read (write tests from these):\n"
             + "".join(f"- {x}\n" for x in examples)
             + ("Ambiguities (decide each with fm decide, or ask, before the tests):\n" + "".join(f"- {x}\n" for x in ambiguities)
-               if ambiguities else "Ambiguities: none found.\n"))
+               if ambiguities else "Ambiguities: none found.\n")
+            + ("Misreadings (the worst plausible ones; probe each at intake, T-0621):\n"
+               + "".join(f"- {x}\n" for x in parts["Misreadings"]) if parts["Misreadings"] else ""))
     fmcli.mutate(p, b.id, lambda br: br.set_section("Oracle", text), "oracle",
                  {"examples": len(examples), "ambiguities": len(ambiguities)})
     fmcli.out(args, {"examples": examples, "ambiguities": ambiguities},

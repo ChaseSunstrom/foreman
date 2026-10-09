@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Understanding the request and the user (T-0696 milestone: T-0595, T-0601, T-0602, T-0621, T-0622).
+  - `fm clauses "<message>"` splits a multi-part request into clauses and matches each to a recent or open task. Unaccounted clauses stay listed until captured or noted (`--note N "<why>"`), and `fm next` names them.
+  - Standing steers: at close, a steer worded as a rule ("never …", "from now on", "always", "by default") is listed as a rule candidate. A standing "no" becomes a veto proposal in `fm taste` right away instead of after three repeats; adopting it still needs the user's yes.
+  - `fm outcomes` adds the fate "corrected" when the user's correction is logged against a task after it closed.
+  - `fm oracle` also returns the worst plausible misreading of the request with a probe to ask at intake, kept in the Oracle section.
+  - Asks `fm second session` found unanswered: `fm next` counts them as waiting for the user's yes, without naming them, so Claude never acts on a child's reading first (T-0289). `fm state` marks them ✋. `fm tidy --apply` defers them (never drops them) after 7 days.
 - Steps and execution craft (T-0695 milestone: T-0596, T-0610, T-0632, T-0633, T-0649, T-0650).
   - A step can say `(expect: TEXT)`. `fm task evidence --step N --run CMD` marks the run "expect ✓" or "expect missed" and warns on a miss.
   - `fm audit prep` adds a "Files vs steps" section: each changed file, the steps that name it, and whether it is outside the scope. The reviewer says which step each hunk serves.
