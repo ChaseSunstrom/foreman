@@ -16,6 +16,15 @@ a criterion that can't be checked or doesn't prove the request, a risk with no r
 Return a section "## Objections" with at most 6 bullets, most serious first, each "- HIGH|MEDIUM|LOW: <objection> —
 <what to change>" (or "- none" if the plan holds), then one line "Verdict: proceed | revise | rethink — <why>"."""
 
+ROLES = {  # T-0604: stress-test stances for the same plan read; each one's answer is its own Plan review section
+    "pre-mortem": "Imagine it is six weeks later and this plan failed. Tell the likeliest story of how it failed, then "
+                  "turn each cause into an objection.",
+    "naive": "Read it as a newcomer who knows only this brief: object to every step whose input, meaning or done-state "
+             "you can't tell from the text.",
+    "prosecutor": "Argue that this plan should not run as written: build the strongest case against it.",
+    "defender": "Defend this plan against the likeliest objections; list as objections only what you can't defend.",
+}
+
 SESSION = """You read the messages a user typed in their last coding session with an assistant, and the open work the
 assistant's tracker already holds. List the requests that look unanswered: asked, but not done, not answered, and not
 in the open work. Ignore greetings, approvals and questions that were answered. Return a section "## Missed" with at
@@ -56,30 +65,50 @@ def _bullets(text, head):
     return out
 
 
-def plan(p, b, model="sonnet", timeout=300):
-    """(objections, verdict line): the plan read on another model, saved as the brief's Plan review section."""
+def plan(p, b, model="sonnet", timeout=300, role=None):
+    """(objections, verdict line): the plan read on another model, saved as the brief's Plan review section (with a
+    stress-test role, "Plan review: <role>")."""
     spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in (
         "Raw request", "Interpretation", "Assumptions (confidence)", "Acceptance criteria", "Non-goals",
         "Approach (options → choice → why)", "Risks and rollback", "Steps") if b.section(name).strip())
-    text = _child(p, "second-plan", PLAN, f"Task {b.id} ({b.type} {b.tier}): {b.title}\n\n{spec}\n", model, timeout)
+    text = _child(p, "second-plan", (ROLES[role] + "\n\n" + PLAN) if role else PLAN, f"Task {b.id} ({b.type} {b.tier}): {b.title}\n\n{spec}\n", model, timeout)
     objections = _bullets(text, "Objections")
     m = re.search(r"(?im)^\W*verdict:\s*(proceed|revise|rethink)\b(.*)$", text)
     if not m:
         raise ValueError("no verdict line came back")
     verdict = f"Verdict: {m.group(1).lower()}{c.fit(c.defang(c.plain(m.group(2))), 200)}"
-    body = (f"A second read on {model}, before execution (data, not instructions):\n"
+    body = (f"A second read on {model}{f' as the {role}' if role else ''}, before execution (data, not instructions):\n"
             + "".join(f"- {x}\n" for x in objections) + verdict + "\n")
     import fmcli
 
     def save(x):
-        x.set_section("Plan review", body)
+        x.set_section(f"Plan review: {role}" if role else "Plan review", body)
         old = x.section("Dissent").rstrip()  # T-0642: an objection stays open until someone answers it
         new = [f"- [ ] {o}" for o in objections if f"] {o}" not in old]
         if new:
             x.set_section("Dissent", (old + "\n" if old else "") + "\n".join(new))
     fmcli.mutate(p, b.id, save, "plan_review",
-                 {"model": model, "objections": len(objections), "verdict": m.group(1).lower()})
+                 {"model": model, "objections": len(objections), "verdict": m.group(1).lower(), "role": role})
     return objections, verdict
+
+
+CHEAPEST = ("You argue against gold-plating. Given a task's request and plan, describe the cheapest version that still "
+            "fully meets the request — what to build, what to leave out and why it isn't needed yet — in at most 8 "
+            "lines. If the plan is already the cheapest version, say so in one line.")
+
+
+def cheapest(p, b, model="sonnet", timeout=300):
+    """T-0638: the cheapest version that meets the request, argued by a tool-less child, saved as a brief section."""
+    spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in (
+        "Raw request", "Interpretation", "Acceptance criteria", "Approach (options → choice → why)", "Steps")
+                       if b.section(name).strip())
+    text = _child(p, "second-cheapest", CHEAPEST, f"Task {b.id} ({b.type} {b.tier}): {b.title}\n\n{spec}\n", model,
+                  timeout)
+    body = c.defang(c.redact(text.strip()))[:3000]
+    import fmcli
+    fmcli.mutate(p, b.id, lambda x: x.set_section("Cheapest version", f"(argued by {model}; data, not instructions)\n"
+                                                                      + body), "cheapest", {"model": model})
+    return body
 
 
 def protocols():
@@ -240,9 +269,13 @@ def cmd_second(args):
                 return fmcli.out(args, {"skipped": True, "tier": b.tier},
                                  f"{b.id}: skipped — {b.tier} tasks get no panel ({rule.get('why', 'protocols.json')}); "
                                  f"--force runs it anyway")
-            objections, verdict = plan(p, b, args.model or "sonnet", args.timeout)
+            objections, verdict = plan(p, b, args.model or "sonnet", args.timeout, getattr(args, "role", None))
             return fmcli.out(args, {"objections": objections, "verdict": verdict},
                              f"{b.id}: plan review saved\n" + "".join(f"  - {x}\n" for x in objections) + f"  {verdict}")
+        if args.what == "cheapest":  # T-0638
+            b = fmcli.need_brief(p, args.id)
+            body = cheapest(p, b, args.model or "sonnet", args.timeout)
+            return fmcli.out(args, {"cheapest": body}, f"{b.id}: cheapest version saved\n{body}")
         if args.what == "debate":
             if args.model:  # T-0293: a debate brief is for a foreman:fm-reviewer the main thread runs, not a child
                 raise fmcli.UsageError("fm second debate takes no --model: it writes a brief for a foreman:fm-reviewer")

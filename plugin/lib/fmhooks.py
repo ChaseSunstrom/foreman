@@ -1233,7 +1233,7 @@ def _tripwire_note(pl, p, act):
     if sid and any(e.get("event") == "task_done" and e.get("task") == hit[0] and e.get("session_id") == sid
                    for e in c.ledger_tail(p, 400)):
         return None
-    _event({"kind": "lesson_shown", "task": hit[0], "file": rel, "session_id": sid})  # T-0454
+    _event({"kind": "lesson_shown", "task": hit[0], "file": rel, "session_id": sid, "project": p.slug})  # T-0454
     return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
 
 

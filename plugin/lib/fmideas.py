@@ -237,9 +237,36 @@ def taste_default(p, options):
     return best, ("taste record: " + "; ".join(why)) if why else "no signal in your taste record: the first option"
 
 
+OVERWRITE_DAYS = 14
+
+
+def overwrites(p, days=90):
+    """T-0655: [(file, agent task, user's commit subject, sha)]: a commit without a Foreman-Task trailer (the user's)
+    that changed a file an agent commit changed within OVERWRITE_DAYS before — taste learned from the rework."""
+    log = c._git(p.root, "log", f"--since={days}.days", "--no-renames", "--format=%x01%H%x00%ct%x00%B%x00", "--name-only",
+                 timeout=60) or ""
+    last, out = {}, []
+    for entry in reversed(log.split("\x01")[1:]):
+        sha, ts, body, names = (entry.split("\x00") + ["", "", ""])[:4]
+        task = (re.findall(r"(?m)^Foreman-Task:\s*(T-\d+)", body) or [None])[0]
+        for f in (x for x in names.split("\n") if x.strip()):
+            if task:
+                last[f] = (task, int(ts or 0))
+            elif f in last and int(ts or 0) - last[f][1] <= OVERWRITE_DAYS * 86400:
+                out.append((f, last.pop(f)[0], c.fit(c.plain(body.strip().splitlines()[0] if body.strip() else ""), 100),
+                            sha[:10]))
+    return out
+
+
 def cmd_taste(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "overwrites", False):
+        rows = overwrites(p)
+        return fmcli.out(args, {"overwrites": [{"file": f, "task": t, "subject": s, "sha": h} for f, t, s, h in rows]},
+                         ("Your rework of an agent's change (taste to learn from):\n" + "\n".join(
+                             f"  {f} after {t}: {s} ({h})" for f, t, s, h in rows[-args.n * 2:])) if rows else
+                         "No commit of yours reworked an agent's file within two weeks of it.")
     props = proposals(p)
     if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
         pick = props if args.which is None else props[args.which - 1:args.which] if args.which > 0 else []

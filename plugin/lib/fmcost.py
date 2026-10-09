@@ -5,6 +5,7 @@ import datetime
 import json
 import os
 import re
+import statistics
 
 import fmcore as c
 
@@ -282,6 +283,29 @@ def weekly_line(p):
             + (f", {len(review)} decision(s) to review" if review else "") + "; fm digest shows it.")
 
 
+def reversals(p):
+    """T-0667: {kind: (decisions, reversed)} from decisions.md — a row is reversed when a later row's [reverses: words]
+    matches its text."""
+    try:
+        with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
+            rows = [ln for ln in f if ln.startswith("| 2")]
+    except OSError:
+        return {}
+    parsed = []
+    for ln in rows:
+        cells = [x.strip() for x in ln.strip().strip("|").split("|")]
+        text = cells[1] if len(cells) > 1 else ""
+        kind = (re.match(r"\[(costly|outward)\]", text) or [None, "reversible"])[1]
+        undoes = (re.search(r"\[reverses: ([^\]]+)\]", text) or [None, None])[1]
+        parsed.append((kind, re.sub(r"\[[a-z]+(?::[^\]]*)?\]\s*", "", text).lower(), undoes))
+    out = {}
+    for i, (kind, text, _) in enumerate(parsed):
+        hit = any(u and u.lower().strip() in text for _, _, u in parsed[i + 1:])
+        n, r = out.get(kind, (0, 0))
+        out[kind] = (n + 1, r + hit)
+    return out
+
+
 def cmd_digest(args):
     """The week (or --days N) in one screen: finished work with its verification grade, lessons, decisions the user
     should review, blocked work, recurring failures and tokens."""
@@ -302,6 +326,20 @@ def cmd_digest(args):
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
     lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({b.meta.get('verified', 'ungraded')})" for b in done[-8:]]
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
+    insights = [(b.id, b.section("Insight").strip()) for b in done if b.section("Insight").strip()]  # T-0639
+    lines += ["Insights:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in insights[-6:]] if insights else []
+    redo = [(b.id, b.section("Would do differently").strip()) for b in done if b.section("Would do differently").strip()]
+    lines += ["Would do differently:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in redo[-6:]] if redo else []
+    import fmoutcomes
+    outs = fmoutcomes.outcomes(p)
+    grew = [d["changed"] / d["planned"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done"
+            and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
+    lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
+              f"the paths they planned (median; T-0644)"] if grew else []
+    lines += fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-0641, T-0619
+    rev = reversals(p)  # T-0667: how often each kind of decision got undone
+    lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
+        if any(r for _, r in rev.values()) else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
@@ -546,7 +584,48 @@ def _agents(p, args, fmcli):
         f"  {name}: {r['spawns']} spawns, {_human(r['tokens'])} tokens"
         + (f", lanes merged {r['merged']}, removed {r['removed']}" if name == "fm-builder" else "")
         for name, r in sorted(rows.items(), key=lambda kv: -kv[1]["tokens"]))) if rows else "No agent spawns recorded."
-    return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}}, text)
+    lenses, passes = yields(p, since)
+    text += ("\nAudit lenses (found something = fixed, found or captured; from the recorded results):\n" + "\n".join(
+        f"  {k}: {r['hit']} of {r['n']} found something" + (f", {r['fp']} false positive(s)" if r["fp"] else "")
+        for k, r in sorted(lenses.items(), key=lambda kv: -kv[1]["n"]))) if lenses else ""
+    text += ("\nPasses: " + " · ".join(f"{k}: {r['hit']} of {r['n']} {verb}" for k, (r, verb) in passes.items())
+             ) if passes else ""
+    return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}, "lenses": {k: dict(v) for k, v in
+                     lenses.items()}, "passes": {k: dict(r) for k, (r, _) in passes.items()}}, text)
+
+
+_HIT = re.compile(r"(?i)\b(fixed|found|caught|captured|T-\d{4,})\b")
+_CLEAN = re.compile(r"(?i)\s*(no|nothing|none|clean)\b")  # "no issues found" found nothing
+_FP = re.compile(r"(?i)(\d+)\s+false positives?\b|\bfalse positive\b|\bnot real\b")
+
+
+def yields(p, since):
+    """T-0640: ({lens: Counter(n, hit, fp)} from recorded audits, {pass: (Counter(n, hit), verb)}) since then: a lens
+    found something when its result says fixed, found, caught or captured (or names a task); false positives when it
+    says so. Passes: second plans that left dissent, second sessions that captured work."""
+    lenses = collections.defaultdict(collections.Counter)
+    second = collections.Counter()
+    for e in c.ledger_tail(p, 50000):
+        if str(e.get("ts", ""))[:19] < since:
+            continue
+        d = e.get("data") or {}
+        if e.get("event") == "audit" and d.get("lens"):
+            r, res = lenses[d["lens"]], str(d.get("result") or "")
+            fp = _FP.search(res)
+            r["n"] += 1
+            r["fp"] += int(fp.group(1)) if fp and fp.group(1) else bool(fp)
+            r["hit"] += bool(_HIT.search(_FP.sub("", res))) and not _CLEAN.match(res)
+        elif e.get("event") == "second_session" and "error" not in d:
+            second["n"] += 1
+            second["hit"] += bool(d.get("captured"))
+    plan = collections.Counter()
+    for b in c.load_briefs(p, include_archive=True):
+        if b.section("Plan review").strip() and str(b.meta.get("updated") or "")[:19] >= since:
+            plan["n"] += 1
+            plan["hit"] += bool(re.search(r"(?m)^- \[[ xX]\] ", b.section("Dissent")))
+    passes = {k: v for k, v in (("second plan", (plan, "left dissent")), ("second session", (second, "captured work")))
+              if v[0]["n"]}
+    return lenses, passes
 
 
 def cmd_usage(args):

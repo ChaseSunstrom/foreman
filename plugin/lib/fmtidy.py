@@ -101,6 +101,25 @@ def memory_dir(root):
 
 # ---------------------------------------------------------------- per-project checks
 
+def unblocked(p, b, status):
+    """T-0657: why a blocked task may be worth retrying — every task it depends on closed, or a project file its block
+    reason names changed since it was blocked — or None."""
+    deps = b.meta.get("depends_on") or []
+    if deps and all(status.get(d) in c.CLOSED for d in deps):
+        return "its dependencies are closed"
+    last = re.findall(r"(?m)^- (\S+) blocked: (.*)$", b.section("Log"))
+    at = c.parse_ts(last[-1][0]) if last else None
+    if not at:
+        return None
+    for tok in re.findall(r"[\w./-]+", last[-1][1]):
+        tok = tok.rstrip(".")
+        path = os.path.realpath(os.path.join(p.root, tok))
+        if (_looks_like_path(tok) and path.startswith(os.path.realpath(p.root) + os.sep) and os.path.isfile(path)
+                and os.path.getmtime(path) > at.timestamp() + 1):
+            return f"{tok} changed since it was blocked"
+    return None
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -133,10 +152,15 @@ def check_project(p, apply, actions):
         out.append(finding(slug, "dangling_dep", "warn", f"{a} depends on unknown {d}", f"fm task set {a} depends_on=…"))
     status = {b.id: b.status for b in briefs}
     for b in briefs:
-        deps = b.meta.get("depends_on") or []
-        if b.status == "blocked" and deps and all(status.get(d) in c.CLOSED for d in deps):
-            out.append(finding(slug, "unblockable", "warn", f"{b.id} is blocked but its dependencies are closed",
-                               f"fm task set {b.id} status=planned"))
+        why = unblocked(p, b, status) if b.status == "blocked" else None
+        if why:
+            out.append(finding(slug, "unblockable", "action", f"{b.id} is blocked but {why}",
+                               "reopened as planned: fm next picks it up", auto=True))
+            if apply:  # T-0657: what it waited on changed, so it's worth another try
+                import fmcli
+                fmcli.mutate(p, b.id, lambda x: (x.meta.update(status="planned"), x.append_log(f"reopened: {why}")),
+                             "task_set", {"status": "planned", "why": why})
+                actions.append(("reopen", b.id))
     import fmrepeats
     n = fmrepeats.open_candidates(fmrepeats.scan(p))
     if n:
