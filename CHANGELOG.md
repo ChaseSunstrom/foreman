@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Brainstorming and ideation (T-0684 milestone: T-0605, T-0606, T-0607, T-0627, T-0628).
+  - `fm ideas` writes a coverage map to `ideas.md` (distinct ideas per category) and names the thin capability axes. A later round's pack lists them as holes to fill first.
+  - `--falsify`: one more child gives every idea its quickest kill test, listed under "Kill it fast".
+  - `--crossbreed`: one more child combines the top ideas into new ones.
+  - Each brainstorm writes `ideas.json` (lens → ideas). `fm taste` shows, per lens, how many of its ideas became tasks that were built, dropped or are still open.
+  - New lenses, each with a one-line instruction for the child: reframe, flip assumptions, oblique provocation (fed the project's latest lessons), devil's idea, and worst-bugs persona. Planning's R1 pass now flips the two assumptions an M/L plan leans on most.
 - Agent types and roles (T-0683 milestone: T-0608, T-0629, T-0646, T-0647, T-0648).
   - New `fm-reproducer` agent: for a FIX it writes the failing test (or a repro script) first, confirms it fails for the reported reason, and hands back the command for `fm task prove`. It never fixes. `fm-reviewer` gains a performance lens.
   - Every agent ends its report with `Noticed:` lines. `fm research add NAME --from-agent FILE` turns each one into a discovered capture.
