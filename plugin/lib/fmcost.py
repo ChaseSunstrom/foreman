@@ -450,6 +450,8 @@ def cmd_pr(args):
     bench = _bench_runs(p, b.id)
     if bench:
         lines += ["", "### Bench"] + bench
+    claims = [x for x in b.section("Claims").splitlines() if x.strip()]
+    lines += ["", "### Claims"] + [c.plain(x) for x in claims] if claims else []  # T-0614
     lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
     if lesson:
         lines += ["", "### Notes", f"- {c.plain(lesson)}"]

@@ -665,6 +665,7 @@ def task_finish(p, args):
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
     stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
+    claims = parse_claims(getattr(args, "claim", None))  # a bad tag stops it before anything runs
     if b.status == "dropped":  # T-0679 chaos test
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
@@ -726,6 +727,9 @@ def task_finish(p, args):
                     "- " + c.redact(q.strip()).replace("=>", "→", 1) for q in args.followups))
             if getattr(args, "insight", None):
                 x.set_section("Insight", c.redact(c.plain(args.insight).strip()))
+            if claims:  # T-0614: what the close claims, each with how it's known
+                x.set_section("Claims", "".join(f"- [{t}] {x_}" + (f" — evidence: {ev}" if ev else "") + "\n"
+                                                for t, x_, ev in claims))
             if getattr(args, "differently", None):  # T-0641
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
@@ -1243,6 +1247,17 @@ def _close_warnings_of(p, b, files):
         honest.append("Standing steer(s) on this task, rule candidates: " + "; ".join(f"\"{c.fit(x, 90)}\"" for x in
                       standing[:3]) + " — a 'no' is now a proposed veto (fm taste; adopted only on the user's yes), "
                       "anything else a line for the project's CLAUDE.md or memory, asked first")
+    honest += [f"stale evidence: {path} changed after step {n}'s check last ran (`{c.fit(cmd, 60)}`): run it again"
+               for n, path, cmd in _stale_evidence(p, b)[:3]]  # T-0634
+    rates, said = catch_rates(p), []
+    for _, cmd in b.verify_cmds():  # T-0653: has this check ever caught anything here?
+        n, k = rates.get(cmd, (0, 0)) if cmd else (0, 0)
+        if k:
+            said.append(f"`{c.fit(cmd, 50)}` caught a failure in {k} task(s) here")
+        elif n >= 3:
+            said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
+    if said:
+        honest.append("Check track record: " + "; ".join(said[:4]))
     debug = _scaffolding(p, b, files)
     if debug:
         honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
@@ -1258,6 +1273,49 @@ def _close_warnings_of(p, b, files):
         honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
                       f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+_CLAIM = re.compile(r"^\s*(checked|inferred|unchecked)\s*:\s*(.+?)\s*(?:::\s*(.+))?$", re.I)
+
+
+def parse_claims(raw):
+    """T-0614: [(tag, claim, evidence or "")] from --claim values; a UsageError names a bad tag."""
+    out = []
+    for x in raw or []:
+        m = _CLAIM.match(x)
+        if not m:
+            raise UsageError(f"--claim takes 'checked|inferred|unchecked: <claim> [:: <evidence>]', got {x!r}")
+        out.append((m.group(1).lower(), c.redact(c.plain(m.group(2))), c.redact(c.plain(m.group(3) or ""))))
+    return out
+
+
+def _stale_evidence(p, b):
+    """T-0634: [(step, path, cmd)]: a file a step's newest check names changed after that check ran."""
+    newest = {}
+    for line in b.evidence():
+        m, t = c._EV_RE.match(line), c._TS_TAIL.search(line)
+        if m and m.group(1) == "step" and t and c._RAN_MARK in line and line.count("`") >= 2:
+            newest[int(m.group(2))] = (line.split("`", 2)[1], t.group(1))
+    out = []
+    for n, (cmd, ts) in sorted(newest.items()):
+        at = c.parse_ts(ts)
+        for tok in re.findall(r"[\w./-]+\.[A-Za-z0-9]{1,8}\b", cmd):
+            path = os.path.join(p.root, tok)
+            if at and os.path.isfile(path) and os.path.getmtime(path) > at.timestamp() + 1:
+                out.append((n, tok, cmd))
+    return out
+
+
+def catch_rates(p):
+    """T-0653: {command: (runs, tasks where it failed and later passed)} over this project's evidence."""
+    runs, seq = collections.Counter(), collections.defaultdict(list)
+    for e in c.ledger_tail(p, 50000):
+        d = e.get("data") or {}
+        if e.get("event") == "evidence" and d.get("cmd") and str(d.get("result") or "").startswith("exit "):
+            runs[d["cmd"]] += 1
+            seq[(d["cmd"], e.get("task"))].append(str(d["result"]).startswith("exit 0"))
+    caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
+    return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
 
 
 _EXPECT = re.compile(r"\(expect:\s*([^)]+)\)")
@@ -1356,6 +1414,24 @@ def _preflight(p, b):
     notes.append("gates ran green on this tree (baseline cached)" if green else
                  "no fm check on this tree yet: fm check now gives a baseline to compare against")
     return "Preflight: " + "; ".join(notes)
+
+
+def _forge_brief(p, b, args):
+    """T-0652: a read-only brief asking a reviewer for the smallest change that keeps each check green while breaking
+    its criterion — a forged pass means the check is too weak."""
+    rows = [(a.n, c.strip_verify(a.text), cmd) for a, (_, cmd) in zip(b.acceptance(), b.verify_cmds())]
+    body = [f"# Forge a pass: {b.id} \"{b.title}\" in {p.root} (read-only)", "",
+            "For each criterion below, read its check and the code it exercises, then name the smallest change to the "
+            "code that would keep the check passing while breaking the criterion: a forged pass. If you find one, the "
+            "check is too weak: say what a stronger check would assert. If none exists, say why the check pins it.", ""]
+    body += [f"## Criterion {n}: {text}\nCheck: `{cmd}`" if cmd else f"## Criterion {n}: {text}\nCheck: none (forge "
+             f"trivially: anything passes)" for n, text, cmd in rows]
+    body += ["", "Output per criterion: \"forged pass: <change> — stronger check: <assertion>\" or \"holds: <why>\"."]
+    path = os.path.join(p.dir, "audits", f"{b.id}.forge.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, "\n".join(body) + "\n")
+    return out(args, {"brief": path}, f"Forge brief: {path}\nRun one foreman:fm-reviewer with the prompt \"Read {path} "
+                                      f"and do what it asks.\"; a forged pass becomes a stronger check before the close.")
 
 
 def _files_vs_steps(b, files):
@@ -2882,8 +2958,9 @@ def _last_check_results(p, task):
 
 _LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)
 _REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output one section per lens, \"## <lens>: ok | "
-               "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario "
-               "and a fix; then \"## Not checked\". Only verified findings.")
+               "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario, "
+               "a reproducer (the command, input or test that shows it; without one it's a lead, not a finding: "
+               "T-0651) and a fix; then \"## Not checked\". Only verified findings.")
 
 
 _FINDING = re.compile(r"(?m)^[ \t]*(?:[-*]|\d+[.)]?)?[ \t]*(?:\*\*|#+[ \t]*)?\[?(?:CRIT(?:ICAL)?|HIGH|MED(?:IUM)?)\b[\s*:—–\]-]*(.+)$")
@@ -3005,6 +3082,8 @@ def cmd_audit(args):
     if not args.id:
         raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
+    if getattr(args, "forge", False):  # T-0652: try to break the checks before trusting them
+        return _forge_brief(p, b, args)
     base = args.base or c.task_base(p.root, b)
     if not base:
         raise UsageError(f"{b.id} has no start commit on record (focused before fm kept one): "
@@ -3379,7 +3458,8 @@ def build_parser():
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
-    t.add_argument("--ac", action="append", help="acceptance criterion (repeatable)")
+    t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
+                                                 "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
     t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
     t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
@@ -3436,6 +3516,8 @@ def build_parser():
     t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
     t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
     t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
+    t.add_argument("--claim", action="append", metavar="'TAG: CLAIM [:: EVIDENCE]'",
+                   help="a typed claim for the close and fm pr; TAG is checked, inferred or unchecked (T-0614)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -3789,6 +3871,8 @@ def build_parser():
                                                              "pre-audit of any diff (--base, default: the main branch)")
     s.add_argument("id", nargs="?")
     s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
+    s.add_argument("--forge", action="store_true", help="prep: a brief asking for a change that keeps each check "
+                                                        "green yet breaks its criterion (T-0652)")
     s.add_argument("--split", action="store_true", help="one brief per lens group (up to 3) for parallel fresh-context "
                                                         "reviewers instead of one reviewer for every lens (T-0216)")
     s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")

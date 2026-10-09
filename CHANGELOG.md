@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Verification reasoning (T-0697 milestone: T-0614, T-0615, T-0634, T-0635, T-0651, T-0652, T-0653).
+  - `fm task finish --claim "checked|inferred|unchecked: <claim> [:: <evidence>]"` records typed claims in a Claims section, and `fm pr` renders them.
+  - The oracle asks for a negative twin per criterion: a near-miss that must not pass. A run where no tests ran still counts as a failure, as it did before.
+  - The close warns about stale evidence: a file a step's check names that changed after the check last ran.
+  - Criteria name their observable, what the user will see (planning.md, the intent lens, `fm task new --ac` help).
+  - Reviewer findings need a reproducer, and a builder's report names its weakest link.
+  - `fm audit prep ID --forge` writes a brief asking for the smallest change that keeps each check green while breaking its criterion.
+  - The close shows each verify command's track record here: whether it has caught a failure before, or never failed in 3+ runs.
 - Understanding the request and the user (T-0696 milestone: T-0595, T-0601, T-0602, T-0621, T-0622).
   - `fm clauses "<message>"` splits a multi-part request into clauses and matches each to a recent or open task. Unaccounted clauses stay listed until captured or noted (`--note N "<why>"`), and `fm next` names them.
   - Standing steers: at close, a steer worded as a rule ("never …", "from now on", "always", "by default") is listed as a rule candidate. A standing "no" becomes a veto proposal in `fm taste` right away instead of after three repeats; adopting it still needs the user's yes.
