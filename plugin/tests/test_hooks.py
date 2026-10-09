@@ -1247,6 +1247,8 @@ class Stop(HookCase):
         self.assertIn("nothing else is queued", r["reason"])  # full autonomy: find the next work, don't wait
         self.assertIn("end to end", r["reason"])
         self.assertIsNone(stop(ci).get("decision"), "then it may wait on the fresh job")
+        r = stop(ci, dict(ci, id="bci2"))
+        self.assertNotIn("end to end", r.get("reason", ""), "a new set of jobs doesn't repeat the product check")
         gate = os.path.join(c.find_project(self.repo).dir, "gate.json")
         with open(gate) as f:
             g = json.load(f)
@@ -1256,6 +1258,25 @@ class Stop(HookCase):
         r = stop(ci)
         self.assertEqual(r.get("decision"), "block")
         self.assertIn(f"{queued} FIX step 1/2", r["reason"])
+
+    def test_drained_queue_checks_the_product(self):
+        # T-0417 (the user: "foreman should be able to find these issues … itself"): JARVIS closed 34 tasks with the
+        # tests green while its web UI didn't load; a drained queue ended the run instead of looking at the product
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "what does fm relate do?", "session_id": "sess-1"})
+        self.assertIsNone(self.decision(self.stop("It infers dependencies.")), "an answer isn't a drain (review)")
+        self.hook("UserPromptSubmit", {"prompt": "fix the login", "session_id": "sess-1"})
+        self.fm("task", "drop", self.task("Fix the login"), "done in the test")
+        r = parse(self.stop("All done."))
+        self.assertEqual(r.get("decision"), "block")
+        self.assertIn("queue is empty", r["reason"])
+        self.assertIn("fm capture", r["reason"])
+        self.assertNotIn("fm smoke", r["reason"])
+        self.assertIsNone(self.decision(self.stop("Checked: everything holds.")), "once per drain")
+        tid = self.task("Found a defect")
+        self.fm("task", "drop", tid, "test")
+        self.assertEqual(self.decision(self.stop("Fixed it.")), "block", "drained again: checks again")
 
     def offer_for(self, tid):
         return next((json.dumps(e) for e in reversed(self.events()) if e.get("kind") == "drive_offer"

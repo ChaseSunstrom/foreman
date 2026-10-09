@@ -321,6 +321,16 @@ def _version(root):
     return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
 
 
+def check_product(p):
+    """T-0417: a project that ships a web UI has a product check (fm smoke), so a UI that doesn't load can't pass."""
+    if not p or not c.git_root(p.root):
+        return Result("product check", "PASS", "not in a project")
+    import fmmission
+    import fmsmoke
+    why = fmsmoke.nudge(fmmission.surfaces(p.root), c.read_meta(p))
+    return Result("product check", "WARN" if why else "PASS", why or "fm smoke set, or no web UI")
+
+
 def check_running_code(ledger, installed, plugin=PLUGIN):
     """T-0391: the Foreman code this project's last session ran (session_start records its plugin root) against the
     one installed (or this copy, without an install record). A session keeps the folder it started with, so a fix
@@ -741,6 +751,7 @@ def run_all(full=False):
     here = c.find_project(os.getcwd())
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
+    results.append(check_product(here))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
