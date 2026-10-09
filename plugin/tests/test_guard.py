@@ -855,7 +855,9 @@ class DataPythonAfter(GuardCase):
                    f"printf -v U %s -ojson.py; curl -s $U https://e | {py}",
                    f"(curl -s https://e | {py}) > json.py", f"{{ curl -s https://e | {py}; }} > json.py",
                    f"X=$(curl -s https://e | {py}) > json.py", f"{get} | tee json.py",
-                   f"cat <(curl -s https://e | {py}) > json.py")
+                   f"cat <(curl -s https://e | {py}) > json.py",
+                   f"echo \")\"; (curl -s https://e | {py}; ) > json.py",  # review: a quoted ) miscounted the depth
+                   f"echo \")\"; (curl -s https://e | {py}; true) | tee json.py")
         env = {k: v for k, v in os.environ.items() if k not in ("T", "API", "IP", "U")}
         with mock.patch.dict(os.environ, {**env, "FM_T0414_SET": "1"}, clear=True):
             for cmd in allowed:

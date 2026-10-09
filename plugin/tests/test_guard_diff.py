@@ -113,7 +113,14 @@ EXTRA += [r.replace("EVIL", EVIL) for r in (
     'printf -v U %s -ojson.py; echo "EVIL" | curl -s $U file:///dev/stdin; curl -s file:///dev/null | python3 -c "import json"',
     'U=$(echo "\'); import os; os.system(\'rm -rf ~\'); print(\'"); curl -s file:///dev/null | python3 -c "print(\'$U\')"',
     '(echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json") > json.py',
-    '{ echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json"; } > json.py')]
+    '{ echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json"; } > json.py',
+    # T-0421: a download split from the shell by a substitution or a group; T-0422: a brace that hides -o json.py
+    'echo "rm -rf /home/sb" | curl -s file:///dev/stdin $(true) | bash',
+    'echo "rm -rf /home/sb" | curl -s file:///dev/stdin |(bash)',
+    'echo "EVIL" | curl -s {-o,json.py} file:///dev/stdin; curl -s file:///dev/null | python3 -c "import json"',
+    # T-0414 review: a quoted ")" before the group made the guard count python outside every ( )
+    'echo ")"; (echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json"; ) > json.py',
+    'echo ")"; (echo "EVIL" | curl -s file:///dev/stdin | python3 -c "import sys; print(sys.stdin.read(), flush=True); import json"; true) | tee json.py')]
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
