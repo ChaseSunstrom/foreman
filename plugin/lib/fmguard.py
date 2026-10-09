@@ -717,7 +717,12 @@ def _stdin_scripts(cmd, cmds):
     them a shell reads as its script isn't modelled (its review: /dev/stdin, a group, -c 'source /dev/stdin'), so
     all of them, read as commands"""
     feeds = [f for x in cmds for f in x.feeds]
-    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) or x.feeds and re.search(r"[$`]", _name(x.argv))
+
+    def reads(x):  # T-0714 (JARVIS): `. .venv/bin/activate` or `bash ./run.sh` runs a file, not its stdin
+        argv, xargs = _strip_wrappers(x.argv)
+        name = os.path.basename(argv[0]) if argv else ""
+        return name == "eval" or bool(_RUNS_STDIN.fullmatch(name)) and _reads_stdin_code(name, argv[1:], xargs)
+    if not feeds or not any(reads(x) or x.feeds and re.search(r"[$`]", _name(x.argv))
                             for x in cmds):  # T-0669: $X <<EOF, when that $X is the one fed
         return []
     return [w for op, w in feeds if op == "<<<"] + (["\n".join(b) for b in _heredoc_split(cmd)[1]]

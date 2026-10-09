@@ -255,5 +255,10 @@ class ShellStdin(GuardCase):
             ("cat > /tmp/x.sh <<'EOF'\nrm -rf ~\nEOF", None),
             ("python3 - <<'EOF'\nprint('rm -rf ~')\nEOF", None),
             ("bash <<'EOF'\necho hi\nEOF", None),
+            # T-0714 (JARVIS): a source of a file elsewhere on the line made python's heredoc read as shell
+            ("python3 - <<'EOF'\nhelp = \"(`at` on the PC)\"\nEOF\n. .venv/bin/activate && python3 -m pytest -q", None),
+            ("python3 - <<'EOF'\nx = \"`rm -rf ~`\"\nEOF\nbash ./run.sh", None),
+            ("python3 - <<'EOF'\nx = \"`rm -rf ~`\"\nEOF\nsource .venv/bin/activate", None),
+            ("python3 - <<'EOF'\nx = 1\nEOF\nbash <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
             ("grep -c x <<< 'rm -rf ~'", None),
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
