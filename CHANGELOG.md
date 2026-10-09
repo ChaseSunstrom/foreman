@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Self-improvement and learning, first versions (T-0680 milestone: T-0499, T-0454, T-0470, T-0471).
+  - The hooks log every note they put into context (hook, a short kind, its characters) and every tripwire lesson they show.
+  - The friction digest turns that into a note budget per kind, the notes repeated 3+ times (candidates for a hard check instead of prose) and how often each lesson was shown.
+  - `fm friction --reject TEXT --why WHY` records a dead end that later digests skip and count.
+  - The bench-bound half (auto-evals on a block, a holdout split, playbook drafts, tuning per model) is captured (T-0734).
 - Resilience, state and simplicity, first versions (T-0679 milestone: T-0453, T-0495, T-0468, T-0469, T-0494, T-0496).
   - The task lifecycle is one table (`fmcore.TRANSITIONS`). A chaos test runs random lifecycles, crashes them at a random write and checks that the state still loads and that every status change was a legal one. It found two bugs, now fixed: `fm task block` turned a dropped task into a blocked one, and `fm task finish` marked a dropped task done.
   - `fm usage --prune` lists the fm commands no session ran in the window, in any project, as one CLEAN capture to review. Nothing is removed.
