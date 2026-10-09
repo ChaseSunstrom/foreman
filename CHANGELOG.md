@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm audit prep` leaves secrets out of the frozen diff (T-0413, from JARVIS, whose untracked `.env.bak-…` landed in `audits/ID.diff` with its keys, and whose `rm -f` of it was refused with no fm way named). A credential file (`.env*`, `*.pem`, `id_rsa` and the guard's other names) keeps its header lines with its contents left out, and key=value secrets in other files are redacted; the pre-audit still sees the values to flag them. Refusing a direct write to an audit diff now says `fm audit prep ID` rewrites it.
 
 ## 1.2.12 — 2026-10-09
 - A "no active task" refusal names the queued task to resume: `fm focus ID` (T-0409, from JARVIS, which edited between closing a lane task and refocusing its main task, and was offered `fm task new`). The queue is read only when refusing, so normal tool calls cost nothing more.
