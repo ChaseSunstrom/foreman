@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.22 — 2026-10-09
 - Cockpit, first slice (T-0711). The Foreman pane gains a Fleet card: every live session on this machine with project, task, context and mail, plus a tile for each session on a remote the user added. Its steer box runs `fm conductor steer`, which reaches every session here and on those remotes. The task card lists the parts `fm task split` made, with their progress.
   - `fm conductor remote add NAME user@host [FM_PATH]`, `remote rm NAME` and `remote` (list). A remote's sessions are fetched over the user's own ssh (BatchMode, 5 s connect timeout) by a detached refresh every 60 s and cached, so the pane never waits on the network. Nothing is fetched from a machine that wasn't added.
 - Milestone merge train, first slice (T-0710). `fm task finish ID --commit "<msg>" --stack [--stack-check CMD]` lands a task as a stack: one commit per step, or per member for an `fm batch` host. Each file goes with the step it was last edited in (the ledger's order of edits and step evidence). Each commit is checked alone in a scratch worktree with `--stack-check` or its member's own verify commands, and one that fails alone is folded into the next. Only the task's paths are reset in the index, so other staged work stays. From 30 days of history: 30 batches cost 61M input-equivalent against about 104M estimated for their members done alone (by tier medians), cheaper in 17 of 30.
