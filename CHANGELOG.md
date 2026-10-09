@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard's PreToolUse hook declares `onFailure: "block"` (T-0371, built in a Sonnet builder lane and landed with `fm lane merge`). On Claude Code 2.1.295+, a guard that can't start, times out (5 s) or exits unexpectedly now blocks the tool call instead of letting it through. Other events keep failing open, so a broken Stop or SessionStart hook never stops a session. Older builds ignore the key.
 - `fm lane merge ID` (T-0377) merges a reviewed builder branch with `--no-ff`. Every file it changes must pass the guard as the task's own write, so it works on Foreman's own repo, where the guard refuses a plain `git merge`, and is no way around the guard. `fm lane rm` no longer refuses a lane whose only leftovers are Python caches.
 - Model routing (T-0373): the rules pick the cheapest model that can do a job, and the main model (Opus or Fable) plans, judges and merges. `fm lane brief` puts an S task's builder on Sonnet and leaves an M task on the main model. `delegate.md` has the table: Haiku for lookups and long-output summaries, Sonnet for recon, review, debugging, S builders and fm's child runs.
 
