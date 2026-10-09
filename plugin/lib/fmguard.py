@@ -628,6 +628,88 @@ def _heredocs(cmd):
 
 # T-0589: what may read a heredoc or here-string as code (bash, sh -s, bash /dev/stdin, { bash; }, . /dev/stdin …)
 _RUNS_STDIN = re.compile(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox|source|\.|eval")
+_STDIN_PATHS = {"-", "/dev/stdin", "/dev/fd/0", "/proc/self/fd/0"}
+_INLINE = {"sh": "c", "py": "cm", "js": "ep", "pl": "eE", "rb": "e", "php": "rBRFE"}  # flags whose next word is the code
+# T-0716: options whose next word is a value, not the script (bash -o posix, python3 -W ignore, node -r ./hook.js)
+_OPT_VALUE = {"sh": "oO", "py": "WXQ", "js": "rC", "pl": "IMm", "rb": "IrCEF", "php": "cdz"}
+_LONG_VALUE = {"--rcfile", "--init-file", "--require", "--import", "--loader", "--experimental-loader", "--input-type",
+               "--conditions", "--title", "--env-file"}
+# inline code that runs what it reads on stdin (python3 -c 'exec(sys.stdin.read())', perl -e 'eval <STDIN>');
+# json.load, re.compile and ast.literal_eval read data
+_RUNS_IT = re.compile(r"(?<![.\w'\"])(?:eval|compile)\b|(?<!['\"])\b(?:exec|execSync|execFile\w*|execv\w*|execl\w*|"
+                      r"Function|runpy|run(?:In\w*Context)|system|popen|Popen|subprocess|spawn\w*|instance_eval|"
+                      r"class_eval)\b(?!['\"])")  # a quoted word ('system' in rows) names it, doesn't call it
+_STDIN_WORD = re.compile(r"stdin|STDIN|<>|readFileSync\(\s*0|/dev/fd/0|php://stdin")
+_CAT_SUBST = re.compile(r"\$\(\s*(?:cat\b[^)]*|<\s*/dev/stdin\s*)\)|`\s*cat\b[^`]*`")
+_READ_RUNS = re.compile(r"(?:^|[;&|({]|\bdo|\bthen|\belse)\s*(?:eval\b|\"?\$|\S*sh\s+-\w*c\s+\"?\$)")  # read l; $l
+
+
+def _reads_stdin_code(name, args, via_xargs=False, any_word=False):
+    """T-0715: whether a shell or interpreter reads its program from stdin: no script file and no inline code (a pipe
+    into it then runs whatever the pipe carries; `curl … | python3 -c '…'` reads data, `| python3` reads code).
+    T-0716: an option's value isn't the script, -s reads stdin whatever follows, a word that doesn't look like a path
+    isn't taken for a script, and inline code that runs its stdin (or xargs' item) counts."""
+    if name in ("source", "."):
+        return bool(args) and args[0] in _STDIN_PATHS
+    if re.fullmatch(r"[gmn]?awk", name):  # awk '{system($0)}', print | "sh": each input line run as a command
+        return any(re.search(r"\bsystem\s*\(|\|\s*\"[^\"]*sh\b", a) for a in args)
+    kind = ("sh" if re.fullmatch(r"(ba|z|da|k|fi|c|tc|a|mk|ya|po|lk)?sh|busybox", name) else
+            "py" if re.fullmatch(r"python[0-9.]*|pypy[0-9.]*", name) else "js" if name in ("node", "nodejs", "deno", "bun")
+            else "pl" if name == "perl" else "rb" if name == "ruby" else "php" if name == "php" else None)
+    if kind is None:
+        return False
+    i, applet = 0, name != "busybox"
+    while i < len(args):
+        a = args[i]
+        i += 1
+        if a in _STDIN_PATHS:
+            return True
+        if a == "--":
+            continue
+        if a.startswith("--"):
+            if kind == "js" and a in ("--eval", "--print") or kind == "sh" and a == "--command":
+                return _inline_runs_stdin(kind, args[i] if i < len(args) else None, via_xargs)
+            i += a in _LONG_VALUE
+            continue
+        if a.startswith(("-", "+")) and len(a) > 1:
+            for j, f in enumerate(a[1:]):
+                if f in _INLINE[kind] and not (kind == "py" and f == "m"):
+                    code = a[j + 2:] or (args[i] if i < len(args) else None)
+                    loops = kind in ("pl", "rb") and re.search(r"[np]", a[1:j + 1])  # perl -ne: $_ is each stdin line
+                    return _inline_runs_stdin(kind, code if kind != "sh" else (args[i] if i < len(args) else None),
+                                              via_xargs, loops)
+                if kind == "py" and f == "m":
+                    return False  # a module reads stdin as data (python3 -m json.tool)
+                if kind == "sh" and f == "s" and a[0] == "-":
+                    return True  # sh -s ARGS: the arguments are $1…, the script is stdin
+                if f in _OPT_VALUE[kind]:
+                    i += j == len(a) - 2  # -o VALUE; -Wignore holds its own
+                    break
+            continue
+        if not applet:
+            if a not in ("sh", "ash"):
+                return False  # another busybox applet
+            applet = True
+            continue
+        return not (any_word or re.search(r"[/.]", a))  # a script file; a bare word (bash posix) isn't clearly one
+    return True
+
+
+def _inline_runs_stdin(kind, code, via_xargs, loops=False):
+    """Whether inline code (sh -c CODE, python3 -c CODE …) runs what it reads on stdin."""
+    if code is None or via_xargs and code.strip() in ("{}", '"$@"', "$@", "$*", "$1"):
+        return True  # no code here: xargs supplies it from the pipe
+    if kind != "sh":
+        return bool(_RUNS_IT.search(code) and (loops or _STDIN_WORD.search(code)))
+    if _CAT_SUBST.search(code) and re.search(r"\beval\b|\b(?:ba|z|da|k)?sh\s+-\w*c", code):
+        return True  # eval "$(cat)"
+    if re.search(r"\bread\b", code) and _READ_RUNS.search(code):
+        return True  # while read l; do $l; done
+    for x in _split(_tokens(code)):
+        argv, inner = _strip_wrappers(x.argv)
+        if argv and not x.piped and not x.feeds and _reads_stdin_code(os.path.basename(argv[0]), argv[1:], inner):
+            return True  # exec bash, source /dev/stdin: it inherits the pipe
+    return False
 
 
 def _stdin_scripts(cmd, cmds):
@@ -2100,6 +2182,15 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found += check_bash(text, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
+        computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
+        # ponytail: a bare `$` name inside a substitution reading is the read-to-the-end tail of "$(a) | $(b)" in
+        # quotes, not a pipe; a real `| $(echo bash)` nested inside another $( ) slips by (top level is refused)
+        if c.piped and not (name == "$" and depth) and _reads_stdin_code("bash" if computed else name, args, via_xargs, any_word=computed) and not (
+                # T-0715: echo 'rm -rf ~' | bash; T-0716: | (sh), | $SH (a computed name may be a shell); a
+                any(_name(x.argv) in _FETCHERS for x in chain) or _FETCH_WORD.search(_mask_quotes(cmd))):  # download
+            # piped in is pipe-shell's (below), which the user can grant for an installer
+            found.append(("system", f"{name} reads its program from a pipe, which the guard can't read: put it in a "
+                                    f"heredoc ({name} <<'EOF' … EOF), which it reads, or in a file"))
         if _SHELLS.match(name) or name in ("source", "."):
             # T-0421: a download anywhere on the line counts (a $( ), a group or a <( ) splits it from the shell's own
             # chain; a file downloaded first and then piped in is a download too), and so does a pipe into a group
