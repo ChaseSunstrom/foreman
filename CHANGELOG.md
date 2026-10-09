@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.3 — 2026-10-09
 - Builder briefs (T-0379, from JARVIS's run) name the main checkout's commit. Claude Code makes a builder's worktree from the default branch, so a builder that starts behind fast-forwards to that commit, and one that has diverged stops and reports. When Claude Code's worktree isolation refuses a command (make, gradle, expo, a long pipeline), the builder no longer retries or rephrases it. It lists the check for the main thread to run after `fm lane merge`.
 - The guard's PreToolUse hook declares `onFailure: "block"` (T-0371, built in a Sonnet builder lane and landed with `fm lane merge`). On Claude Code 2.1.295+, a guard that can't start, times out (5 s) or exits unexpectedly now blocks the tool call instead of letting it through. Other events keep failing open, so a broken Stop or SessionStart hook never stops a session. Older builds ignore the key.
 - `fm lane merge ID` (T-0377) merges a reviewed builder branch with `--no-ff`. Every file it changes must pass the guard as the task's own write, so it works on Foreman's own repo, where the guard refuses a plain `git merge`, and is no way around the guard. `fm lane rm` no longer refuses a lane whose only leftovers are Python caches.
