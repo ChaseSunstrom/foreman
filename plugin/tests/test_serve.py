@@ -299,3 +299,26 @@ class Run(ServeCase):
         p = self.run_fm(check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("fm serve", p.stderr)
+
+
+class Failover(ServeCase):
+    def task(self, title):
+        return json.loads(self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "works",
+                                  "--step", "fix it", "--json").stdout)["id"]
+
+    def test_a_usage_limit_past_the_wait_hands_the_task_to_the_named_agent(self):
+        # T-0731: opt-in per run (the packet goes to another provider), never by default
+        import time
+        a = self.task("one")
+        self.stub("claude", 'echo "You\'ve hit your weekly limit" >&2\nexit 1\n')
+        self.stub("codex", "cat > /dev/null\n")
+        p = self.fm("run", "--wait", "0", check=False, env=self.env())
+        self.assertNotIn("codex", self.called())  # without --failover nothing leaves
+        p = self.fm("run", "--wait", "0", "--failover", "codex", check=False, env=self.env())
+        self.assertIn(f"handed {a} to codex", p.stdout + p.stderr)
+        for _ in range(50):
+            if "codex " in self.called():
+                break
+            time.sleep(0.1)
+        self.assertIn("codex ", self.called())
+        self.assertIn(f"Handoff: {a}", read_text(os.path.join(c.find_project(self.repo).dir, "handoffs", f"{a}.md")))

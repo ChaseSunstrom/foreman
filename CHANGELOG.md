@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Runtime (T-0751 milestone: T-0731, T-0732).
+  - `fm run --failover codex|gemini|opencode`: when a usage limit outlasts `--wait`, the task's handoff packet goes to a detached `fm session` of that agent and the run stops. It is opt-in per run, because the packet leaves for that provider.
+  - `fm task revert ID` lists the task's commits, the open tasks that depend on or name it, and the `git revert` command. It never reverts anything itself.
+  - `fm run --fit` takes S tasks before M before L, so more finish before a limit. It turns on by itself while usage runs ahead of pace, and a task waiting on an open one keeps waiting.
+  - `fm lane new ID --spike` makes a throwaway lane that `fm lane merge` refuses.
 - `fm night` pre-plans: the first queued L task without a plan review gets `fm second plan` overnight. Like other optional work, it waits while usage runs ahead of pace (T-0730).
 - Test hygiene: tests always see a calm host, and the screenshot harness uses its own tmux socket, so the suite no longer fails when the machine is loaded (T-0744). Catch rates, give-up mining and plan gaps read real run results through one parser, and the check track record counts failures that `fm task finish` recorded (T-0749, T-0750).
 
