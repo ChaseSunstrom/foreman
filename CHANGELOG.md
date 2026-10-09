@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.16
 - Guard hardening batch (T-0669, which closes T-0577 to T-0584): every open fuzzer escape is now blocked, and the batch was verified once at close. Changes:
   - A newline inside quotes stays part of the word, so a second shell gets `ins\⏎tall` back and joins it (class 2).
   - A backslash-newline inside double quotes is joined, as bash does (class 3).
