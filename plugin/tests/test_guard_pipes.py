@@ -55,6 +55,26 @@ class IfsForms(GuardCase):
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
 
 
+class IfsReview2(GuardCase):
+    def test_ifs_set_where_bash_reads_it(self):
+        # T-0590 (security review of T-0585): quoted eval text, a sourced file, a nested shell's quoted text, a # after
+        # the rewritten space, and read scoping across a newline
+        self.run_table([
+            ("eval 'IFS=m'; \"r$IFS\" -rf ~", "system"),
+            ("eval 'IFS=/'; X=\"rm/-rf/$HOME\"; $X", "system"),
+            (". ./env.sh; \"r$IFS\" -rf ~", "system"),
+            ("bash -c 'IFS=m; \"r${IFS}\" -rf ~'", "system"),
+            ("echo x${IFS}#; rm -rf ~", "rm-outside"),
+            ("echo x${IFS}#\nrm -rf ~", "rm-outside"),
+            ("IFS=/\nread -r a < f; X=\"rm/-rf/$HOME\"; $X", "system"),
+            ("echo 'IFS=m'; echo \"r$IFS\"", "system"),  # beside a plain use, quoted text counts
+            ("grep -n 'IFS=' f; echo $x", None),  # without one, it's data
+            ("rm${IFS}-rf ~", "rm-outside"),
+            ("sed -n \"$(($(grep -n 'out = S(x' f | cut -d: -f1) + 1))p\" f", None),
+            ("n=x; (( $n = 1 )); echo $n", "system"),
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
+
 class ShellStdin(GuardCase):
     def test_a_script_a_shell_reads_from_stdin_is_checked(self):
         # T-0589: input redirections were dropped, so the text a shell ran from its stdin was never read
@@ -72,6 +92,10 @@ class ShellStdin(GuardCase):
             ("busybox sh <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
             (". /dev/stdin <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
             ("bash -c 'source /dev/stdin' <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("env bash <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),  # T-0590: wrappers (review of T-0589)
+            ("exec sh <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("timeout 5 bash <<'EOF'\nrm -rf ~\nEOF", "rm-outside"),
+            ("nohup env -i FOO=1 /bin/bash -s <<< 'rm -rf ~'", "rm-outside"),
             ("cat > /tmp/x.sh <<'EOF'\nrm -rf ~\nEOF", None),
             ("python3 - <<'EOF'\nprint('rm -rf ~')\nEOF", None),
             ("bash <<'EOF'\necho hi\nEOF", None),

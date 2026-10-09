@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- IFS review, round 2 (T-0590, a security review of T-0585):
+  - When a line also expands IFS plainly, or runs `eval`, `source` or `.`, an IFS set inside quoted or heredoc text counts. This refuses `eval 'IFS=m'; "r$IFS" -rf ~`, and refuses a plain IFS beside a sourced file.
+  - The rewrite touches only unquoted text. Quoted text is left for the nested check that reads it (`bash -c '…'`).
+  - A `#` right after the rewritten space stays a literal, so `echo x${IFS}#; rm -rf ~` no longer hides the `rm` as a comment.
+  - `IFS=… read` scopes to that read only on the same line.
+  - An arithmetic computed name counts only at an assignment, which ends a false refusal of `$(( $(grep …) + 1 ))`.
+  - Shells launched through `env`, `exec`, `timeout` or `nohup` with a heredoc are covered by the T-0589 check.
 - A heredoc or here-string a shell runs as its script is now checked as commands (T-0589, found while replaying T-0585). Before, the guard dropped input redirections, so a `rm -rf ~` in `bash <<'EOF'` or in `sh <<< '…'` ran with no finding. Which feed a shell reads as code isn't modelled (`/dev/stdin`, `{ bash; }`, `-c 'source /dev/stdin'`). So when a line with a heredoc or here-string also runs a shell, `source` or `eval`, every one of its bodies is read as commands. Data heredocs (`cat > f <<'EOF'`) and Python heredocs are unchanged.
 - IFS forms the guard can't read are refused instead of guessed (T-0585, from a security review of T-0576).
   - An operator form such as `${IFS:+word}` can yield any word. It was erased to a space, which hid `${IFS:+r}m -rf ~`.
