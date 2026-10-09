@@ -361,14 +361,50 @@ def cmd_evals(args):
     prompt, graders that the session classified it and ran its checks — so the referee remembers real failures."""
     import fmcli
     p = fmcli.resolve(args)
+    if args.action == "inbox":  # T-0734: what could become an eval case
+        rows = eval_inbox(p)
+        return fmcli.out(args, {"inbox": rows}, ("Eval inbox (fm evals add ID turns one into a case):\n" + "\n".join(
+            f"- {r['line']}" for r in rows)) if rows else "Eval inbox: empty.")
+    if not args.id:
+        raise fmcli.UsageError("fm evals add needs a task id")
     b = fmcli.need_brief(p, args.id)
     runs_failed = any("` → ✗ exit" in l for l in b.evidence())
     if b.status not in ("blocked", "dropped") and not runs_failed:
         raise fmcli.UsageError(f"{b.id} is {b.status} with no failed runs: eval cases come from blocked or failed work")
+    folder, files = eval_case(p, b, args.out)
+    fmcli.out(args, {"case": folder, "files": sorted(files)},
+              f"Eval case for {b.id}: {folder} ({', '.join(sorted(files))}). Review the graders, then copy it into a "
+              f"plugin's evals/ and run claude plugin eval.")
+
+
+def eval_inbox(p, n=20):
+    """T-0734: [{task, kind, line}] — tasks blocked, and guard blocks later granted for the same task and category
+    (each a false-positive candidate for the guard's own evals), newest last."""
+    events = c.ledger_tail(p, 20000)
+    rows = [{"task": e.get("task"), "kind": "blocked",
+             "line": f"{e.get('task')} blocked: {c.fit(str((e.get('data') or {}).get('reason') or ''), 120)}"}
+            for e in events if e.get("event") == "task_block" and e.get("task")]
+    for i, e in enumerate(events):
+        d = e.get("data") or {}
+        if e.get("event") == "guard_block" and e.get("task") and d.get("category"):
+            if any(x.get("event") == "approval_granted" and x.get("task") == e["task"]
+                   and d["category"] in ((x.get("data") or {}).get("allow") or []) for x in events[i + 1:]):
+                rows.append({"task": e["task"], "kind": "guard", "line": f"{e['task']} guard {d['category']} block "
+                             f"granted after (a false positive?): {c.fit(str(d.get('detail') or ''), 100)}"})
+    seen, out = set(), []
+    for r in rows:
+        if r["line"] not in seen:
+            seen.add(r["line"])
+            out.append(r)
+    return out[-n:]
+
+
+def eval_case(p, b, out_dir=None):
+    """The eval case folder for a blocked or failed task, and its files."""
     why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines()) if "blocked:" in l),
                "a check failed")
     name = "regression-" + c.kebab(b.title, 40)
-    folder = os.path.join(os.path.abspath(args.out) if args.out else os.path.join(p.dir, "evals"), name)
+    folder = os.path.join(os.path.abspath(out_dir) if out_dir else os.path.join(p.dir, "evals"), name)
     os.makedirs(os.path.join(folder, "graders"), exist_ok=True)
     request = re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip() or b.title
     with open(os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md"), encoding="utf-8") as f:
@@ -387,9 +423,7 @@ def cmd_evals(args):
                                           f"{q('|'.join(re.escape(x) for x in checks[:3]))}\n---\n")
     for rel, text in files.items():
         c.write_atomic(os.path.join(folder, rel), c.redact(text))
-    fmcli.out(args, {"case": folder, "files": sorted(files)},
-              f"Eval case for {b.id}: {folder} ({', '.join(sorted(files))}). Review the graders, then copy it into a "
-              f"plugin's evals/ and run claude plugin eval.")
+    return folder, files
 
 
 def _bench_runs(p, tid, newest=20):
@@ -589,7 +623,12 @@ def _agents(p, args, fmcli):
     lenses, passes = yields(p, since)
     text += ("\nAudit lenses (found something = fixed, found or captured; from the recorded results):\n" + "\n".join(
         f"  {k}: {r['hit']} of {r['n']} found something" + (f", {r['fp']} false positive(s)" if r["fp"] else "")
-        for k, r in sorted(lenses.items(), key=lambda kv: -kv[1]["n"]))) if lenses else ""
+        for k, r in sorted(lenses.items(), key=lambda kv: -kv[1]["n"]) if r["n"])) if any(
+        r["n"] for r in lenses.values()) else ""
+    judged = {k: r for k, r in lenses.items() if r["confirmed"] + r["rejected"]}
+    text += ("\nReviewer precision (fm task finding verdicts): " + " · ".join(
+        f"{k}: {r['confirmed']} of {r['confirmed'] + r['rejected']} confirmed" for k, r in sorted(judged.items()))
+             ) if judged else ""
     text += ("\nPasses: " + " · ".join(f"{k}: {r['hit']} of {r['n']} {verb}" for k, (r, verb) in passes.items())
              ) if passes else ""
     return fmcli.out(args, {"agents": {k: dict(v) for k, v in rows.items()}, "lenses": {k: dict(v) for k, v in
@@ -620,6 +659,13 @@ def yields(p, since):
         elif e.get("event") == "second_session" and "error" not in d:
             second["n"] += 1
             second["hit"] += bool(d.get("captured"))
+    verdicts = collections.defaultdict(collections.Counter)  # T-0743: per-finding verdicts, where recorded
+    for e in c.ledger_tail(p, 50000):
+        d = e.get("data") or {}
+        if e.get("event") == "finding" and d.get("lens") and str(e.get("ts", ""))[:19] >= since:
+            verdicts[d["lens"]][d.get("verdict")] += 1
+    for lens, v in verdicts.items():
+        lenses[lens]["confirmed"], lenses[lens]["rejected"] = v["confirmed"], v["rejected"]
     plan = collections.Counter()
     for b in c.load_briefs(p, include_archive=True):
         if b.section("Plan review").strip() and str(b.meta.get("updated") or "")[:19] >= since:

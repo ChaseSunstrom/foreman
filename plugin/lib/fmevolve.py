@@ -167,7 +167,8 @@ def cmd_evolve(args):
     import fmcli
     p = fmcli.resolve(args)
     repo = os.path.abspath(args.repo or c.git_root(c.PLUGIN_ROOT) or os.path.dirname(c.PLUGIN_ROOT))
-    cases = [x for x in fmbench._load_cases(p) if not args.ids or x["id"] in args.ids][:args.max]
+    cases = [x for x in fmbench.in_split(fmbench._load_cases(p), split="train")  # T-0734: never the holdout
+             if not args.ids or x["id"] in args.ids][:args.max]
     if not cases:
         raise fmcli.UsageError("no bench cases: fm bench build first")
     try:
@@ -176,7 +177,9 @@ def cmd_evolve(args):
     except (OSError, ValueError) as e:
         raise fmcli.UsageError(str(e))
     with c.lock(p.dir):
-        c.log_event(p, "evolve", data={k: res.get(k) for k in ("kept", "branch", "target", "why")},
+        import fmnight
+        c.log_event(p, "evolve", data=dict({k: res.get(k) for k in ("kept", "branch", "target", "why")},
+                                           model=fmnight.current_model(p)),  # T-0734: lesions per model
                     session=fmcli.session())
     text = [f"evolve {res.get('target', args.target)}: {res['why']}"] + [f"  {x}" for x in res["gate"]]
     if res["kept"]:

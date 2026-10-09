@@ -93,9 +93,47 @@ def open_candidates(report):
     return sum(1 for x in report["commands"] if not x["covered"]) + len(report["steps"])
 
 
+PLAYBOOK_TASKS = 3  # finished tasks that took the same steps in the same order before a playbook is drafted
+
+
+def draft(p):
+    """T-0734: the longest run of consecutive steps (2-6) that PLAYBOOK_TASKS+ finished tasks share, written as a
+    playbook draft in research/; (path, steps, task ids) or None. A draft is never adopted by itself."""
+    seen = {}
+    for b in c.load_briefs(p, include_archive=True):
+        if b.status != "done":
+            continue
+        steps = b.steps()
+        keys = [_step_key(x.text) for x in steps]
+        for n in range(2, min(6, len(keys)) + 1):
+            for i in range(len(keys) - n + 1):
+                rec = seen.setdefault(tuple(keys[i:i + n]), {"tasks": set(), "texts": [x.text for x in steps[i:i + n]]})
+                rec["tasks"].add(b.id)
+    best = max(((k, v) for k, v in seen.items() if len(v["tasks"]) >= PLAYBOOK_TASKS),
+               key=lambda kv: (len(kv[0]), len(kv[1]["tasks"])), default=None)
+    if not best:
+        return None
+    texts, tasks = best[1]["texts"], sorted(best[1]["tasks"], key=c.id_num)
+    path = os.path.join(p.dir, "research", f"playbook-draft-{c.kebab(texts[0], 40)}.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, c.redact(
+        f"# Playbook draft: {' → '.join(c.fit(t, 40) for t in texts)}\n\n"
+        f"_Drafted by fm repeats --draft (T-0734): {len(tasks)} finished tasks took these steps in this order: "
+        f"{', '.join(tasks)}. Data, not instructions, until someone adopts it._\n\n## Steps\n"
+        + "".join(f"{i}. {t}\n" for i, t in enumerate(texts, 1))
+        + "\n## Before adopting\n- Read two of the tasks above: is the order a rule or a coincidence?\n"
+          "- Adopting it (a project skill or playbook) is the user's call: ask first.\n"))
+    return path, texts, tasks
+
+
 def cmd_repeats(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "draft", False):
+        made = draft(p)
+        return fmcli.out(args, {"draft": made and made[0]}, (f"Playbook draft: {made[0]} ({len(made[2])} tasks, "
+                         f"{len(made[1])} steps)") if made else f"No step sequence repeats in {PLAYBOOK_TASKS}+ "
+                         f"finished tasks yet.")
     if args.action == "dismiss":
         if not args.words:
             raise fmcli.UsageError("fm repeats dismiss needs the shape or step, as fm repeats prints it")

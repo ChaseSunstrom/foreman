@@ -9,6 +9,7 @@ import subprocess
 import fmcore as c
 
 _TID = re.compile(r"\bT-\d{4,}\b")
+SMOKE_DAYS = 7  # a failing smoke run this soon after a close points at that task (weakly: smoke covers the whole UI)
 _VERSION = re.compile(r"\b\d+\.\d+\.\d+\b")  # a release task names what it ships
 
 
@@ -59,9 +60,18 @@ def outcomes(p):
         t = e.get("task")
         if e.get("event") == "correction" and t in closed and str(e.get("ts") or "") > closed[t]:
             corrected[t].append(c.fit(str((e.get("data") or {}).get("text") or ""), 100))
+    smoked = collections.defaultdict(list)  # T-0743: a smoke run that found defects within a week of the close
+    for e in c.ledger_tail(p, 50000):
+        if e.get("event") == "smoke" and (e.get("data") or {}).get("defects"):
+            at = c.parse_ts(e.get("ts"))
+            for t, ts in closed.items():
+                done = c.parse_ts(ts)
+                if at and done and 0 <= (at - done).total_seconds() <= SMOKE_DAYS * 86400:
+                    smoked[t].append(f"smoke {str(e.get('ts'))[:10]}: {e['data']['defects']} defect(s)")
     fate = lambda i: ("reverted" if i in reverted else "fixed later" if i in later else
-                      "corrected" if i in corrected else "held")
-    return {b.id: {"fate": fate(b.id), "by": reverted.get(b.id) or sorted(later.get(b.id, [])) or corrected.get(b.id, []),
+                      "corrected" if i in corrected else "smoke failed after" if i in smoked else "held")
+    return {b.id: {"fate": fate(b.id), "by": reverted.get(b.id) or sorted(later.get(b.id, [])) or corrected.get(b.id, [])
+                   or smoked.get(b.id, []),
                    "type": b.type, "tier": b.tier}
             for b in briefs if b.id in closed}
 
