@@ -243,6 +243,8 @@ def cmd_serve(args):
         p = fmcli.resolve(args)
     if action == "stop":
         return print("\n".join(stop(p.slug)) or f"fm serve isn't running for {p.slug}.")
+    if c.panicked():
+        raise c.PolicyError(c.PAUSED)
     lingering = start(p, args.permission_mode)
     print(f"Serving {p.root}: Claude Code Remote Control runs under {unit_name(p.slug)}, autonomy full, drive on. "
           f"Open it from claude.ai/code or the Claude app and send requests there.\n"
@@ -578,6 +580,8 @@ def cmd_run(args):
     finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     while finished < args.max:
+        if c.panicked():  # T-0436: before the first session and between every two
+            fail(c.PAUSED)
         b = _next_runnable(p, skip, told)
         if not b:
             break

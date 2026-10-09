@@ -59,6 +59,8 @@ def _usage():
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
+    if c.panicked():
+        raise c.PolicyError(c.PAUSED)
     bad = [n for n in args.only or [] if n not in NAMES]
     if bad:
         raise fmcli.UsageError(f"no such night job: {', '.join(bad)} (jobs: {', '.join(NAMES)})")
@@ -95,6 +97,9 @@ def cmd_night(args):
             break
         if fmbudget.usage_high():
             stopped = f"usage climbed ({fmbudget.usage_high()})"
+            break
+        if c.panicked():
+            stopped = c.PAUSED
             break
         if len(ran) >= fmserve.FAILS_MAX and all(x["exit"] for x in ran[-fmserve.FAILS_MAX:]):  # T-0434: the breaker
             stopped = f"{fmserve.FAILS_MAX} jobs failed in a row"

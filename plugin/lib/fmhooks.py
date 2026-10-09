@@ -248,7 +248,7 @@ def second_due(pl, meta, busy=False):
     """T-0276: a new session (not a compaction or /clear) in a project not reviewed today, not sensitive, and no other
     session active minutes ago (its transcript would be read as the "previous" one while it is still answering)."""
     return (not busy and pl.get("source") in (None, "startup", "resume") and meta.get("second_session") != c.now()[:10]
-            and not meta.get("sensitive"))
+            and not meta.get("sensitive") and not c.panicked())
 
 
 def _resume_turn(pl, sd):
@@ -297,6 +297,7 @@ def session_context(p, sd, other_note=None):
     head = [f"Foreman project {p.slug} ({p.root}). Drive: {'on' if sd['drive'] else 'off'}"
             + (", paused" if sd["paused"] else "") + "."
             + (" Autonomy: full." if sd.get("autonomy") == "full" else "")
+            + (" PAUSED everywhere (fm pause): nothing unattended starts; the user lifts it." if sd.get("panic") else "")
             + _grants_note(c.read_meta(p))
             + (f" State: fallback {c.state_dir()} (fm doctor)." if c.fallback_marker() else "")]
     focus, resume = [], []
@@ -1501,7 +1502,7 @@ def _scan_notices(pl, g):
 def _drive(p, sd, briefs, pl, g):
     sid = pl.get("session_id")
     full = sd.get("autonomy") == "full"
-    if not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
+    if sd.get("panic") or not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
         return None
     waiting = [t for t in sd.get("pending") or [] if t]
     if waiting and not full:
