@@ -2,6 +2,7 @@
 re-ran a command the session had just run and 135 finishes were refused and retried; a handoff is trusted only while
 its failure still reproduces."""
 import os
+import subprocess
 
 from helpers import ForemanTestCase
 from test_hooks import HookCase
@@ -65,3 +66,45 @@ class Reproduce(ForemanTestCase):
         r = self.fm("task", "packet", "T-0001", "--check", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("stale", r.stdout + r.stderr)
+
+
+class CommitOwnFiles(HookCase):
+    """T-0738: T-0706's commit took T-0707's new files: both edited neighbouring lines of shared files, so re-basing
+    T-0706's start snapshot failed and its commit fell back to everything changed since; T-0707's then had nothing."""
+
+    def edit(self, rel, text):
+        path = os.path.join(self.repo, rel)
+        with open(path, "w") as f:
+            f.write(text)
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {}})
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        with open(os.path.join(self.repo, "shared.py"), "w") as f:
+            f.write("X = 0\nY = 0\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "shared"], check=True)
+        self.fm("task", "new", "First", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.edit("shared.py", "X = 1\nY = 0\n")
+        self.fm("task", "new", "Second", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        self.edit("shared.py", "X = 1\nY = 2\n")  # the next line: the paused task's snapshot can't be re-based
+
+    def shown(self):
+        return subprocess.run(["git", "-C", self.repo, "show", "--stat", "--format=", "HEAD"], capture_output=True,
+                              text=True).stdout
+
+    def test_a_file_only_another_task_edited_stays_out(self):
+        self.edit("theirs.py", "B = 1\n")
+        self.fm("focus", "T-0001")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First")
+        self.assertIn("shared.py", self.shown())
+        self.assertNotIn("theirs.py", self.shown())
+
+    def test_a_commit_with_nothing_left_says_so(self):
+        self.fm("focus", "T-0001")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First")
+        self.fm("focus", "T-0002")
+        r = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Second", check=False)
+        self.assertIn("nothing to commit", r.stdout + r.stderr)
