@@ -194,6 +194,42 @@ class Contract(_Tasks):
         self.assertIn("credentials", p.stderr)
         self.assertTrue(os.path.exists(os.path.join(self.repo, "config", "secrets.yaml")))
 
+    def test_lane_merge_over_unrelated_uncommitted_work(self):
+        # T-0403 (JARVIS): the main thread was mid-T-0278 with uncommitted edits, so `fm lane merge T-0280` refused and
+        # the lane couldn't land; git merges safely over edits the branch doesn't touch, with nothing staged
+        with open(os.path.join(self.repo, "mine.txt"), "w") as f:
+            f.write("committed\n")
+        git(self.repo, "add", "mine.txt")
+        git(self.repo, "commit", "-qm", "mine")
+        tid, wt = self.lane("Lands beside my work")
+        with open(os.path.join(wt, "theirs.py"), "w") as f:
+            f.write("x = 1\n")
+        git(wt, "add", "theirs.py")
+        git(wt, "commit", "-qm", "builder work")
+        with open(os.path.join(self.repo, "mine.txt"), "w") as f:
+            f.write("in progress\n")  # the main thread's own uncommitted work
+        self.fm("lane", "merge", tid)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "theirs.py")))
+        with open(os.path.join(self.repo, "mine.txt")) as f:
+            self.assertEqual(f.read(), "in progress\n", "uncommitted work survives the merge")
+        self.fm("lane", "rm", tid)  # merged: its slot comes back (two builders at most)
+        clash, wt2 = self.lane("Touches my file")
+        with open(os.path.join(wt2, "mine.txt"), "w") as f:
+            f.write("theirs\n")
+        git(wt2, "commit", "-qam", "edits mine.txt")
+        p = self.fm("lane", "merge", clash, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("mine.txt", p.stderr)
+        git(self.repo, "add", "mine.txt")  # staged: a merge commit would record it
+        other, wt3 = self.lane("Unrelated again")
+        with open(os.path.join(wt3, "third.py"), "w") as f:
+            f.write("y = 2\n")
+        git(wt3, "add", "third.py")
+        git(wt3, "commit", "-qm", "third")
+        p = self.fm("lane", "merge", other, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("staged", p.stderr)
+
     def test_rm_deletes_only_the_lanes_own_branch(self):
         tid, wt = self.lane("Branches")
         git(self.repo, "branch", "release")  # merged into main
