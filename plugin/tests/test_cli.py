@@ -711,6 +711,23 @@ class AuditPrep(ForemanTestCase):
             f.write(b"\xff\xfe binary \x00\n")  # a diff that isn't UTF-8
         self.assertIn("trying to break", self.fm("audit", "prep", "--print", "T-0001", "--lens", "adversary").stdout)
 
+    def test_audit_diff_leaves_out_secrets(self):
+        # T-0413 (JARVIS): an untracked .env backup was frozen into the audit diff, secrets and all
+        self.fm("init")
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "works", "--step", "fix", "--focus")
+        with open(os.path.join(self.repo, ".env.bak-20261009-ai-container"), "w") as f:
+            f.write("DB_PASS_PHRASE=correct-horse-battery-staple\n")  # pragma: allowlist secret
+        with open(os.path.join(self.repo, "cfg.py"), "w") as f:
+            f.write('password = "hunter2hunter2"\nDEBUG = True\n')  # pragma: allowlist secret
+        out = self.fm("audit", "prep", "--print", "T-0001").stdout
+        diff = read_text(next(w for w in out.split() if w.endswith("T-0001.diff")))
+        self.assertNotIn("correct-horse-battery-staple", diff)
+        self.assertNotIn("hunter2hunter2", diff)
+        self.assertIn("diff --git a/.env.bak-20261009-ai-container b/.env.bak-20261009-ai-container", diff)
+        self.assertIn("contents left out", diff)
+        self.assertIn("DEBUG = True", diff)
+        self.assertIn("secret-looking value added in cfg.py", out, "the pre-audit still reads the raw diff")
+
     def test_lens_briefs_carry_this_projects_past_findings_for_that_lens(self):
         # round 9 (T-0018): a reviewer starts from the weak spots earlier reviews of this project found
         self.fm("init")
