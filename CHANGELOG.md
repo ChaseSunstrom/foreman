@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm night` pre-plans: the first queued L task without a plan review gets `fm second plan` overnight. Like other optional work, it waits while usage runs ahead of pace (T-0730).
+- Test hygiene: tests always see a calm host, and the screenshot harness uses its own tmux socket, so the suite no longer fails when the machine is loaded (T-0744). Catch rates, give-up mining and plan gaps read real run results through one parser, and the check track record counts failures that `fm task finish` recorded (T-0749, T-0750).
 
 ## 1.2.26 — 2026-10-09
 - Verification reasoning (T-0697 milestone: T-0614, T-0615, T-0634, T-0635, T-0651, T-0652, T-0653).
