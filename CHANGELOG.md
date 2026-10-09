@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- Zero-token instruments (T-0701, the first slice of Frontier 01). Each answers in 15–40 lines with the root cause first.
+  - `fm instruments [--json]` lists five typed tools with their input schemas and line caps.
+  - `fm sym PATH:NAME` shows a definition, the names it uses and its callers.
+  - `fm fail` reduces a test run to the failing test, its error and the failing source.
+  - `fm logs FILE [--since-good FILE]` groups a log into templates with counts, errors first, and with `--since-good` shows what's new against a good run. On 51,406 real journal lines it printed 40 lines (7.6 MB → 4.5 KB), and the first line was the crash-looping service and its missing library.
+  - `fm data FILE` gives a csv/json/jsonl/sqlite file's schema, stats and first rows.
+  - `fm trace` maps a Python or JS stack trace to repo lines, each with the commit date and task that last touched it.
+  - Review fixes: numeric lines fold into one template; new errors lead; output is redacted; reads are bounded; one bad sqlite byte no longer loses the file; symlinks can't escape the repo.
 - Autonomy and the user (T-0671 milestone: T-0439, T-0461, T-0477).
   - `fm taste` proposes a veto once the same no comes up in three steers; the user's one yes adopts it. `fm decide --ask Q --options …` then takes its default from the taste record and never pre-answers a guard category. Synonyms and plurals count too: push, force-push, plugins, credential, delete, sudo, publish.
   - In standard autonomy, non-urgent asks wait in one digest with a deadline, and each takes its default when the deadline passes. An unreadable deadline is reset, not applied.
