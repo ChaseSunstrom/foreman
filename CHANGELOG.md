@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Heredocs fed to Python are no longer read as shell just because the line also sources a file (T-0714, from JARVIS). `. .venv/bin/activate` or `bash ./run.sh` after a `python3 - <<'EOF'` edit made the guard read the body as shell, so a docstring mentioning `` `at` `` was refused as scheduling a command. Only a shell or source that reads its stdin as code (`bash`, `sh -s`, `. /dev/stdin`, `bash -c 'source /dev/stdin'`) or eval counts now. Replaying 5,000 real commands shows no change.
 - Close-out friction (T-0722: T-0718, T-0720). `fm audit prep` of a builder's task now reviews its branch from where it left main, not main's own later commits. `fm task finish --commit` checks for credentials before closing, so a flagged line leaves the task open to fix. A done task's refused commit can be retried with `fm task finish ID --commit MSG`.
 
 ## 1.2.17 — 2026-10-09
