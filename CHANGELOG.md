@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## 1.2.26 — 2026-10-09
+- Verification reasoning (T-0697 milestone: T-0614, T-0615, T-0634, T-0635, T-0651, T-0652, T-0653).
+  - `fm task finish --claim "checked|inferred|unchecked: <claim> [:: <evidence>]"` records typed claims in a Claims section, and `fm pr` renders them.
+  - The oracle asks for a negative twin per criterion: a near-miss that must not pass. A run where no tests ran still counts as a failure, as it did before.
+  - The close warns about stale evidence: a file a step's check names that changed after the check last ran.
+  - Criteria name their observable, what the user will see (planning.md, the intent lens, `fm task new --ac` help).
+  - Reviewer findings need a reproducer, and a builder's report names its weakest link.
+  - `fm audit prep ID --forge` writes a brief asking for the smallest change that keeps each check green while breaking its criterion.
+  - The close shows each verify command's track record here: whether it has caught a failure before, or never failed in 3+ runs.
+- Understanding the request and the user (T-0696 milestone: T-0595, T-0601, T-0602, T-0621, T-0622).
+  - `fm clauses "<message>"` splits a multi-part request into clauses and matches each to a recent or open task. Unaccounted clauses stay listed until captured or noted (`--note N "<why>"`), and `fm next` names them.
+  - Standing steers: at close, a steer worded as a rule ("never …", "from now on", "always", "by default") is listed as a rule candidate. A standing "no" becomes a veto proposal in `fm taste` right away instead of after three repeats; adopting it still needs the user's yes.
+  - `fm outcomes` adds the fate "corrected" when the user's correction is logged against a task after it closed.
+  - `fm oracle` also returns the worst plausible misreading of the request with a probe to ask at intake, kept in the Oracle section.
+  - Asks `fm second session` found unanswered: `fm next` counts them as waiting for the user's yes, without naming them, so Claude never acts on a child's reading first (T-0289). `fm state` marks them ✋. `fm tidy --apply` defers them (never drops them) after 7 days.
+- Steps and execution craft (T-0695 milestone: T-0596, T-0610, T-0632, T-0633, T-0649, T-0650).
+  - A step can say `(expect: TEXT)`. `fm task evidence --step N --run CMD` marks the run "expect ✓" or "expect missed" and warns on a miss.
+  - `fm audit prep` adds a "Files vs steps" section: each changed file, the steps that name it, and whether it is outside the scope. The reviewer says which step each hunk serves.
+  - The same failing command a third time on a step gets a nudge and is logged as tried, and `fm resume` lists what was tried.
+  - First focus prints a preflight: scope paths that don't exist, uncommitted files outside the scope, and whether the gates ran green on this exact tree.
+  - `fm resume` re-runs the last green check (capped at 2 minutes) and reports drift. `--no-check` skips it.
+  - The close warns about debug scaffolding in added lines: `breakpoint()`, pdb, `debugger;`, `console.log` in JS/TS outside tests, and DEBUG prints.
+- Research and knowledge (T-0694 milestone: T-0594, T-0599, T-0600, T-0618, T-0659, T-0660). Everything here is local; nothing new goes to the network.
+  - `fm deps --calls`: each dependency's installed version (read locally) and its import sites with the names used, so release notes can be read against real call sites. planning.md says to probe the installed version before trusting docs.
+  - Every `fm research ask` note ends with a Decision prompt (recommendation, would change if). A RESEARCH task that closes without a Decision section warns.
+  - Chesterton check: closing a task that deleted tracked files warns until its Origins section says why each one existed.
+  - `fm recall --repos <text>`: prior art from other projects on this machine that opted in with `fm share on` and aren't sensitive, cited file:line and redacted.
+  - `fm recall --explain "<question>"`: where the identifiers a question names are defined, and the files that use them most.
+  - `fm map --cold`: the most-changed files no session has read. `--capture` files one inbox item, and a free night job runs it. Research debt never sends these to web research.
+- Reasoning and thought process (T-0693 milestone: T-0593, T-0609, T-0630, T-0631).
+  - The stuck ladder names the stall from a step's failed runs. It is either the environment (a missing command, file, port or permission), the same error again (the fix isn't reaching the cause), or errors that change each run (progress, so keep steps small).
+  - `fm second plan ID --role devil` argues for the approach the plan rejected and objects to steps that answer a different question.
+  - `fm task note ID fact|question "…"` keeps a typed case file in the brief's Notes section, and `fm checkpoint` and `fm resume` print it.
+  - `fm task assume ID add "<fact>" --kill "<what would show it false>"` records a kill criterion. `fm next` lists open beliefs with their kill criteria until each is verified.
+- Planning and decomposition, part 2 (T-0692 milestone: T-0645, T-0666).
+  - Plan from history: at close, a task keeps a "Plan gaps" section listing the steps added after work started and the steps whose first run failed. `fm focus` shows "steps similar plans added late" from related finished tasks.
+  - Step contracts: a step can say `(produces: PATH, …)` and `(requires: PATH, …)`. `fm focus` flags an undone step whose product already exists, and a requirement that doesn't exist and that no earlier step produces.
+
 ## 1.2.25 — 2026-10-09
 - Planning and decomposition, part 1 (T-0691 milestone: T-0603, T-0604, T-0623, T-0624, T-0625, T-0626, T-0643, T-0644).
   - Replan on surprise: `fm surprise`, or an assumption verified false, on an active M/L task makes `fm next` lead with a replan. A false assumption also names the steps that cite it as `(A<n>)`. `fm task log ID "replan: …"` clears it, and a close with a replan still unanswered warns.

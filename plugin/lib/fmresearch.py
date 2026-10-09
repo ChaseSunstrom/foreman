@@ -365,6 +365,10 @@ def _ask(p, args, q):
         body += ["## Possible conflicts (similar claims that disagree, across sub-questions or models)"] + [
             f"- {x.text} ({_domain(x.url) or 'no source'}) ⟷ {y.text} ({_domain(y.url) or 'no source'})"
             for x, y in conflicts] + [""]
+    body += ["## Decision", "- Recommendation: (what to do, decided from the claims above)",  # T-0599
+             "- Would change if: (the fact that would flip it)",
+             f"- Record it: fm task set {args.task or 'ID'} --section Decision --text \"Recommendation: …; would change "
+             f"if: …\" (a RESEARCH task closing without one warns)", ""]
     name = args.name or "ask-" + (re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")[:40] or "q") + "-" \
         + time.strftime("%Y%m%d-%H%M")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", name):

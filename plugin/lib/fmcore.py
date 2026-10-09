@@ -1700,7 +1700,8 @@ def brief_summary(b):
     steps = b.steps()
     cur = next((s for s in steps if s.current), None)
     return {"id": b.id, "type": b.type, "tier": b.tier, "status": b.status, "title": b.title, "priority": b.priority,
-            "explore": bool(b.meta.get("explore")), "source": b.meta.get("source"), "scope": b.meta.get("scope") or [],
+            "explore": bool(b.meta.get("explore")), "confirm": bool(b.meta.get("confirm")),
+            "source": b.meta.get("source"), "scope": b.meta.get("scope") or [],
             "allow": b.meta.get("allow") or [], "updated": b.meta.get("updated"), "created": b.meta.get("created"),
             "steps_done": sum(s.done for s in steps), "steps_total": len(steps),
             "step": {"n": cur.n, "of": len(steps), "text": cur.text} if cur else None, "path": b.path}
@@ -1897,6 +1898,10 @@ _VETO_STOP = set("""without asking ask me you the a an it its that this these th
 before being told unless until and or to of in on for with from my your our just so too also all again yet
 make do does doing done be is are was were get got have has had use using there here then""".split())
 VETOES_KEEP = 30
+
+
+STANDING_STEER = re.compile(r"(?i)\b(always|never|from now on|every time|going forward|by default|in general|"
+                            r"any time|whenever|as a rule)\b")  # T-0601: a steer meant to last, not just this once
 
 
 def _vetoes_path(p):
@@ -2118,24 +2123,42 @@ def stuck_rung(b):
     cur = b.current_step()
     if not cur:
         return None
-    fails = 0
+    outs = []
     for line in b.evidence():
         m = _EV_RE.match(line)
         if m and m.group(1) == "step" and int(m.group(2)) == cur.n and _RAN_MARK in line:
-            fails = fails + 1 if "` → ✗ exit" in line else 0
-    hyps = sum(1 for _, st, _ in b.hypotheses() if st == "open")
+            outs = outs + [re.sub(r"\d+", "0", line.split("` → ✗ ", 1)[1].split(_RAN_MARK)[0]).strip().lower()] \
+                if "` → ✗ exit" in line else []
+    fails, hyps = len(outs), sum(1 for _, st, _ in b.hypotheses() if st == "open")
+    why = f" — {stall(outs)}" if fails >= 2 else ""  # T-0593: what kind of stall picks the rung's emphasis
     if fails >= 4:
-        return (f"stuck, rung 4: {fails} failed runs on step {cur.n}: write the diagnosis and block it (fm task block "
-                f"{b.id} \"<why>\"), then take the next task")
+        return (f"stuck, rung 4{why}: {fails} failed runs on step {cur.n}: write the diagnosis and block it (fm task "
+                f"block {b.id} \"<why>\"), then take the next task")
     if fails >= 3 and hyps >= 2:
-        return (f"stuck, rung 3: a differential table — one probe per open hypothesis, run once each, and record what "
-                f"each rules out (fm task hypo {b.id} …) before another fix")
+        return (f"stuck, rung 3{why}: a differential table — one probe per open hypothesis, run once each, and record "
+                f"what each rules out (fm task hypo {b.id} …) before another fix")
     if fails >= 3:
-        return f"stuck, rung 3: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
+        return f"stuck, rung 3{why}: state two or more hypotheses, each with one probe (fm task hypo {b.id} add …)"
     if fails >= 2:
-        return (f"stuck, rung 2: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger with "
-                f"what's been ruled out")
+        return (f"stuck, rung 2{why}: fresh eyes — fm suspects and fm whyred on the failure, then foreman:fm-debugger "
+                f"with what's been ruled out")
     return None
+
+
+_ENV_FAIL = re.compile(r"command not found|no such file or directory|permission denied|connection refused|"
+                       r"timed out|could not resolve|address already in use|disk full|no space left")
+
+
+def stall(outs):
+    """T-0593: the kind of stall from a step's failed runs (outputs with numbers zeroed): the environment, the same
+    error again (the fix isn't reaching the cause) or errors that change (progress: keep the steps small)."""
+    if any(_ENV_FAIL.search(o) for o in outs[-2:]):
+        return "environment: the failure is in the setup (a command, file, port or permission), fix that before the code"
+    same = next((i for i, o in enumerate(reversed(outs)) if o != outs[-1]), len(outs))
+    if same >= 2:
+        return (f"same error {same}×: the fix isn't reaching the cause; re-read the spec and the criterion "
+                f"(fm oracle) before another edit")
+    return "errors change each run (progress): take the smallest next step on the newest one"
 
 
 def andons(briefs):
@@ -2343,7 +2366,8 @@ def render_state(sd, ts=None):
     out += [f"{i}. {q['id']} {q['type']} {q['tier']}{' !' if q['priority'] == 'urgent' else ''} — {q['title'][:70]}"
             for i, q in enumerate(sd["queue"][:10], 1)] + _more(len(sd["queue"]), 10)
     out += ["", f"## Inbox ({len(sd['inbox'])})"]
-    out += [f"- {q['id']} [{q['type']}{'?' if q['explore'] else ''} {q['tier']}] {q['title'][:70]}"
+    out += [f"- {q['id']} [{q['type']}{'?' if q['explore'] else ''} {q['tier']}] "
+            f"{'✋ waits for your yes · ' if q.get('confirm') else ''}{q['title'][:70]}"
             for q in sd["inbox"][:5]] + _more(len(sd["inbox"]), 5)
     out += ["", f"## Blocked ({len(sd['blocked'])})"]
     out += [f"- {q['id']} — {q['reason'][:80]}" for q in sd["blocked"][:5]] + _more(len(sd["blocked"]), 5)

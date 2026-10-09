@@ -3,6 +3,7 @@
 Exit codes: 0 ok · 1 usage error / not found · 2 refused by policy · 3 lock timeout · 4 state corrupt.
 """
 import argparse
+import collections
 import json
 import os
 import re
@@ -309,6 +310,16 @@ def task_hypo(p, args):
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
+ASK_DAYS = 7  # T-0622: an unanswered ask fm second session found is deferred (never dropped) after this
+
+
+def unanswered_asks(p):
+    """T-0622: tasks fm second session captured from the last session's missed requests that are still captured."""
+    found = {e.get("task") for e in c.ledger_tail(p, 5000) if e.get("event") == "capture"
+             and (e.get("data") or {}).get("via") == "second session"}
+    return [b.id for b in c.load_briefs(p) if b.id in found and b.status == "captured"]
+
+
 def flag_replan(p, task, reason):
     """T-0603: an active M/L task's plan met a surprise; fm next leads with a replan until fm task log ID "replan: …"
     (a later trigger replaces the reason; the Log keeps each one)."""
@@ -325,7 +336,8 @@ def task_assume(p, args):
         if not fact:
             raise UsageError("an assumption needs its text")
         check = getattr(args, "check", None)  # T-0489: a command that stays true while it holds
-        text = fact + (f" — check: `{check}`" if check else "")
+        kill = getattr(args, "kill", None)  # T-0631: what would show it false; fm next lists it while unverified
+        text = fact + (f" — check: `{check}`" if check else "") + (f" — kill: {c.plain(kill)}" if kill else "")
         b, n = mutate(p, args.id, lambda b: b.add_assumption(text), "assumption", {"text": c.redact(fact)[:200]})
         return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: assumption {n} added [assumed]"
                    + ("; fm sentinel re-runs its check." if check else "."))
@@ -426,23 +438,38 @@ def cmd_task(args):
         return task_hypo(p, args)
     if sub == "assume":
         return task_assume(p, args)
+    if sub == "note":  # T-0630: the task's working memory, printed at checkpoint and resume
+        text = " ".join(" ".join(args.text).split())
+        b, _ = mutate(p, args.id, lambda b: b._append_line("Notes", f"- [{args.kind}] {c.redact(text)}"), "case_note",
+                      {"kind": args.kind, "text": c.redact(text)[:200]})
+        return out(args, c.brief_summary(b), f"{b.id}: {args.kind} noted.")
     if sub == "evidence":
         code, shown = 0, ""
         if args.run is not None:  # run it: the real exit code and output, never a typed summary
             if args.cmd is not None:
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
-            need_brief(p, args.id)
+            pre = need_brief(p, args.id)
             code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
             cmd, result, shown = args.run, c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
+            result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
         else:
             cmd, result = args.cmd, args.result
         tree = c.worktree_id(p.root)
-        b, _ = mutate(p, args.id, lambda b: b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree,
-                                                            ran=args.run is not None, inconclusive=args.inconclusive),
+        if args.run is None:
+            tried = None
+
+        def record(b):
+            b.add_evidence(cmd, result, step=args.step, ac=args.ac, tree=tree, ran=args.run is not None,
+                           inconclusive=args.inconclusive)
+            if tried:  # T-0632: what was tried, for whoever picks the step up
+                b.append_log(f"tried: `{cmd}` ×{tried} on step {args.step}, failing the same way")
+        b, _ = mutate(p, args.id, record,
                       "evidence", {"step": args.step, "ac": args.ac, "cmd": cmd, "result": result[:300],
                                    **({"inconclusive": True} if args.inconclusive else {})})
+        for w in _evidence_notes(b, args.step, result, tried):
+            print(f"fm: warning: {w}", file=sys.stderr)
         out(args, dict(c.brief_summary(b), exit=code), (shown + "\n" if shown else "") + f"{b.id}: evidence recorded"
             + (f" ({result})" if args.run is not None else "")
             + (" as inconclusive: it never counts as passing; a sharper check is next." if args.inconclusive else "."))
@@ -507,12 +534,15 @@ def cmd_task(args):
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
             b.meta["status"] = "done"
             b.meta["verified"] = b.grade()[0]
+            if gaps:  # T-0645: what this plan forgot, for the next similar plan (fm recall at focus)
+                b.set_section("Plan gaps", gaps)
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
                           planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
         first_edit = c.first_touch(p, pre.id)
+        gaps = _plan_gaps(p, pre)
         logged = {"lesson": lesson[:300]} if lesson else {}
         b, _ = mutate(p, args.id, done, "task_done", logged)
         if b.meta.get("batch"):
@@ -635,6 +665,7 @@ def task_finish(p, args):
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
     stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
+    claims = parse_claims(getattr(args, "claim", None))  # a bad tag stops it before anything runs
     if b.status == "dropped":  # T-0679 chaos test
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
@@ -696,6 +727,9 @@ def task_finish(p, args):
                     "- " + c.redact(q.strip()).replace("=>", "→", 1) for q in args.followups))
             if getattr(args, "insight", None):
                 x.set_section("Insight", c.redact(c.plain(args.insight).strip()))
+            if claims:  # T-0614: what the close claims, each with how it's known
+                x.set_section("Claims", "".join(f"- [{t}] {x_}" + (f" — evidence: {ev}" if ev else "") + "\n"
+                                                for t, x_, ev in claims))
             if getattr(args, "differently", None):  # T-0641
                 x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
@@ -1203,12 +1237,272 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
+    if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
+        honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
+                      f"\"Recommendation: …; would change if: …\"")
+    steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
+              and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
+    standing = [x for x in steers if c.STANDING_STEER.search(x)]
+    if standing:  # T-0601: a steer meant to last should outlive this task
+        honest.append("Standing steer(s) on this task, rule candidates: " + "; ".join(f"\"{c.fit(x, 90)}\"" for x in
+                      standing[:3]) + " — a 'no' is now a proposed veto (fm taste; adopted only on the user's yes), "
+                      "anything else a line for the project's CLAUDE.md or memory, asked first")
+    honest += [f"stale evidence: {path} changed after step {n}'s check last ran (`{c.fit(cmd, 60)}`): run it again"
+               for n, path, cmd in _stale_evidence(p, b)[:3]]  # T-0634
+    rates, said = catch_rates(p), []
+    for _, cmd in b.verify_cmds():  # T-0653: has this check ever caught anything here?
+        n, k = rates.get(cmd, (0, 0)) if cmd else (0, 0)
+        if k:
+            said.append(f"`{c.fit(cmd, 50)}` caught a failure in {k} task(s) here")
+        elif n >= 3:
+            said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
+    if said:
+        honest.append("Check track record: " + "; ".join(said[:4]))
+    debug = _scaffolding(p, b, files)
+    if debug:
+        honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
+    gone = _deleted(p, b)
+    why = b.section("Origins")
+    unexplained = [f for f in gone if f not in why]
+    if unexplained:  # T-0600: a Chesterton check — say why a thing existed before it goes
+        honest.append(f"deleted without saying why it existed: {', '.join(unexplained[:6])} — fm why <file>, then fm task "
+                      f"set {b.id} --section Origins --text \"- <file>: <why it was there>\"")
     if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
         honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
     if b.meta.get("replan"):  # T-0603: a surprise the plan never answered
         honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
                       f"\"replan: <what changed, or why nothing had to>\"")
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+_CLAIM = re.compile(r"^\s*(checked|inferred|unchecked)\s*:\s*(.+?)\s*(?:::\s*(.+))?$", re.I)
+
+
+def parse_claims(raw):
+    """T-0614: [(tag, claim, evidence or "")] from --claim values; a UsageError names a bad tag."""
+    out = []
+    for x in raw or []:
+        m = _CLAIM.match(x)
+        if not m:
+            raise UsageError(f"--claim takes 'checked|inferred|unchecked: <claim> [:: <evidence>]', got {x!r}")
+        out.append((m.group(1).lower(), c.redact(c.plain(m.group(2))), c.redact(c.plain(m.group(3) or ""))))
+    return out
+
+
+def _stale_evidence(p, b):
+    """T-0634: [(step, path, cmd)]: a file a step's newest check names changed after that check ran."""
+    newest = {}
+    for line in b.evidence():
+        m, t = c._EV_RE.match(line), c._TS_TAIL.search(line)
+        if m and m.group(1) == "step" and t and c._RAN_MARK in line and line.count("`") >= 2:
+            newest[int(m.group(2))] = (line.split("`", 2)[1], t.group(1))
+    out = []
+    for n, (cmd, ts) in sorted(newest.items()):
+        at = c.parse_ts(ts)
+        for tok in re.findall(r"[\w./-]+\.[A-Za-z0-9]{1,8}\b", cmd):
+            path = os.path.join(p.root, tok)
+            if at and os.path.isfile(path) and os.path.getmtime(path) > at.timestamp() + 1:
+                out.append((n, tok, cmd))
+    return out
+
+
+def catch_rates(p):
+    """T-0653: {command: (runs, tasks where it failed and later passed)} over this project's evidence."""
+    runs, seq = collections.Counter(), collections.defaultdict(list)
+    for e in c.ledger_tail(p, 50000):
+        d = e.get("data") or {}
+        if e.get("event") == "evidence" and d.get("cmd") and str(d.get("result") or "").startswith("exit "):
+            runs[d["cmd"]] += 1
+            seq[(d["cmd"], e.get("task"))].append(str(d["result"]).startswith("exit 0"))
+    caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
+    return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
+
+
+_EXPECT = re.compile(r"\(expect:\s*([^)]+)\)")
+_FAILED_RUN = re.compile(r"^- \(step (\d+)\) `(.+?)` → ✗ exit")
+
+
+def _step_checks(b, step, cmd, code, output, result):
+    """T-0596, T-0632: (result with the step's expectation marked, how many times this exact command has now failed on
+    the step when that's 3 or more, else None)."""
+    s = next((x for x in b.steps() if x.n == step), None) if step else None
+    m = _EXPECT.search(s.text) if s else None
+    if m:
+        want = m.group(1).strip()
+        result += " · expect ✓" if want.lower() in (output or "").lower() else f" · expect missed: \"{c.fit(want, 60)}\""
+    if not code or not step:
+        return result, None
+    same = 1 + sum(1 for line in b.evidence() if (r := _FAILED_RUN.match(line)) and int(r.group(1)) == step
+                   and r.group(2) == cmd.replace("`", "'").strip())
+    return result, same if same >= 3 else None
+
+
+def _evidence_notes(b, step, result, tried):
+    notes = []
+    m = re.search(r"expect missed: \"(.*)\"$", result)
+    if m:
+        notes.append(f"step {step} expected \"{m.group(1)}\" in the output and it wasn't there: check before calling the "
+                     f"step done")
+    if tried:
+        notes.append(f"this exact command has now failed {tried} times on step {step}: change something first (a "
+                     f"hypothesis with its probe, fm task hypo {b.id} add …, or a smaller step)")
+    return notes
+
+
+def _tried(b):
+    """T-0632: [(command, failures)] on the current step that failed twice or more."""
+    cur = b.current_step()
+    seen = collections.Counter(r.group(2) for line in b.evidence() if (r := _FAILED_RUN.match(line)) and cur
+                               and int(r.group(1)) == cur.n)
+    return cur.n if cur else None, [(x, n) for x, n in seen.most_common(4) if n >= 2]
+
+
+def _last_green(b):
+    """The newest command fm ran for this task that passed."""
+    return next((r.group(1) for line in reversed(b.evidence()) if c._RAN_MARK in line
+                 and (r := re.match(r"^- \((?:step|ac) \d+\) `(.+?)` → exit 0\b", line))), None)
+
+
+_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug")
+_DEBUG_PRINT = re.compile(r"^\s*(print|console\.\w+|logger?\.\w+)\(\s*f?[\"']DEBUG\b")  # matched on the raw line
+_JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
+_PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")
+_QUOTED = re.compile(r"""(["'])(?:\\.|(?!\1).)*\1""")
+
+
+def _scaffolding(p, b, files):
+    """T-0650: added lines in the task's files that look like debug scaffolding: [file:line]."""
+    import subprocess
+    base = b.meta.get("base")
+    files = [f for f in files if not f.lower().endswith(_PROSE)]  # docs may name debug calls; only code runs them
+    if not base or not files or not c.git_root(p.root):
+        return []
+    try:
+        diff = subprocess.run(["git", "-C", p.root, "diff", "-U0", base, "--", *files[:200]], capture_output=True,
+                              text=True, errors="replace", timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    hits, path, n = [], None, 0
+    for line in diff.splitlines():
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+        elif line.startswith("@@"):
+            m = re.search(r"\+(\d+)", line)
+            n = int(m.group(1)) if m else 0
+        elif line.startswith("+") and path:
+            text = _QUOTED.sub("''", line[1:])  # T-0747: a string that names a debug call isn't one
+            if _DEBUG.search(text) or _DEBUG_PRINT.search(line[1:]) or (path.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs")) and _JS_LOG.search(text)
+                                       and "/test" not in path):
+                hits.append(f"{path}:{n}")
+            n += 1
+    return hits
+
+
+def _preflight(p, b):
+    """T-0633: before step 1 — scope paths that don't exist, uncommitted files outside the scope, and whether the gates
+    already ran green on this exact tree (a baseline to compare against)."""
+    notes = [f"{s} doesn't exist (fine if a step creates it)" for s in b.meta.get("scope") or []
+             if not re.search(r"[*?\[]", s) and not os.path.exists(os.path.join(p.root, s))]
+    if c.git_root(p.root):
+        dirty = [x[3:] for x in c._git(p.root, "status", "--porcelain", fail="").splitlines() if x[3:]]
+        stray = c.scope_drift(b, dirty) if b.meta.get("scope") else []
+        notes += [f"{len(stray)} uncommitted file(s) outside the scope already: {', '.join(stray[:3])}"] if stray else []
+    tree = c.worktree_id(p.root)
+    green = any(e.get("event") == "check_run" and (e.get("data") or {}).get("tree") == tree
+                and not any(r.get("exit") for r in (e.get("data") or {}).get("results") or [])
+                for e in c.ledger_tail(p, 3000))
+    notes.append("gates ran green on this tree (baseline cached)" if green else
+                 "no fm check on this tree yet: fm check now gives a baseline to compare against")
+    return "Preflight: " + "; ".join(notes)
+
+
+def _forge_brief(p, b, args):
+    """T-0652: a read-only brief asking a reviewer for the smallest change that keeps each check green while breaking
+    its criterion — a forged pass means the check is too weak."""
+    rows = [(a.n, c.strip_verify(a.text), cmd) for a, (_, cmd) in zip(b.acceptance(), b.verify_cmds())]
+    body = [f"# Forge a pass: {b.id} \"{b.title}\" in {p.root} (read-only)", "",
+            "For each criterion below, read its check and the code it exercises, then name the smallest change to the "
+            "code that would keep the check passing while breaking the criterion: a forged pass. If you find one, the "
+            "check is too weak: say what a stronger check would assert. If none exists, say why the check pins it.", ""]
+    body += [f"## Criterion {n}: {text}\nCheck: `{cmd}`" if cmd else f"## Criterion {n}: {text}\nCheck: none (forge "
+             f"trivially: anything passes)" for n, text, cmd in rows]
+    body += ["", "Output per criterion: \"forged pass: <change> — stronger check: <assertion>\" or \"holds: <why>\"."]
+    path = os.path.join(p.dir, "audits", f"{b.id}.forge.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, "\n".join(body) + "\n")
+    return out(args, {"brief": path}, f"Forge brief: {path}\nRun one foreman:fm-reviewer with the prompt \"Read {path} "
+                                      f"and do what it asks.\"; a forged pass becomes a stronger check before the close.")
+
+
+def _files_vs_steps(b, files):
+    """T-0610: each changed file against the steps that name it (by path, file name or stem) and the scope."""
+    if not files:
+        return ""
+    steps, scope = b.steps(), b.meta.get("scope") or []
+    rows = []
+    for f in files[:40]:
+        name, stem = os.path.basename(f).lower(), os.path.splitext(os.path.basename(f))[0].lower()
+        hit = [s.n for s in steps if any(k in s.text.lower() for k in (f.lower(), name)) or
+               (len(stem) >= 4 and re.search(rf"\b{re.escape(stem)}\b", s.text.lower()))]
+        out_of_scope = scope and c.scope_drift(b, [f])
+        rows.append(f"- {f} — " + (f"step {', '.join(map(str, hit))}" if hit else "no step names it")
+                    + (" (outside the scope)" if out_of_scope else ""))
+    return ("\n\n## Files vs steps\n" + "\n".join(rows) + "\nFor each hunk, say which step it serves; a hunk that "
+            "serves none is a finding (scope creep, or a step the plan is missing).")
+
+
+def _deleted(p, b):
+    """Files tracked at the task's start that are gone now (committed or not)."""
+    import subprocess
+    base = b.meta.get("base")
+    if not base or not c.git_root(p.root):
+        return []
+    try:
+        r = subprocess.run(["git", "-C", p.root, "diff", "--name-only", "--diff-filter=D", base], capture_output=True,
+                           text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [x for x in r.stdout.splitlines() if x.strip()]
+
+
+def _plan_gaps(p, b):
+    """T-0645: the steps this plan didn't foresee — added after work started — and the steps whose first run failed,
+    from the ledger, as the brief's Plan gaps lines ("" when the plan held)."""
+    started, late, failed = False, [], {}
+    for e in c.ledger_tail(p, 20000):
+        if e.get("task") != b.id:
+            continue
+        d = e.get("data") or {}
+        started = started or e.get("event") == "focus"
+        if started and e.get("event") == "step_add" and d.get("text"):
+            late.append(c.fit(c.plain(str(d["text"])), 120))
+        elif e.get("event") == "evidence" and d.get("step") and d["step"] not in failed:
+            failed[d["step"]] = not str(d.get("result") or "").startswith("exit 0")
+    steps = {s.n: s.text for s in b.steps()}
+    lines = [f"- added late: {t}" for t in late] + [f"- failed first: step {n} {c.fit(steps[n], 100)}"
+                                                    for n, bad in sorted(failed.items()) if bad and n in steps]
+    return "\n".join(lines[:12]) + "\n" if lines else ""
+
+
+_CONTRACT = re.compile(r"\((produces|requires):\s*([^)]+)\)")
+
+
+def step_contracts(p, b):
+    """T-0666: steps may name what they produce and require, "(produces: PATH, …)" / "(requires: PATH, …)". An undone
+    step whose products already exist may not be needed; a requirement that neither exists nor comes from an earlier
+    step has no source. Hints only."""
+    made, notes = set(), []
+    for s in b.steps():
+        for kind, paths in _CONTRACT.findall(s.text):
+            for path in (x.strip() for x in paths.split(",") if x.strip()):
+                there = os.path.exists(os.path.join(p.root, path))
+                if kind == "produces" and not s.done and there:
+                    notes.append(f"step {s.n} produces {path}, which already exists: is the step still needed?")
+                if kind == "requires" and not there and path not in made:
+                    notes.append(f"step {s.n} requires {path}: it doesn't exist and no earlier step produces it")
+                if kind == "produces":
+                    made.add(path)
+    return ("Step contracts: " + "; ".join(notes[:4])) if notes else ""
 
 
 _HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
@@ -1583,6 +1877,7 @@ def cmd_focus(args):
                 c.save_brief(p, b)
         resumed = target.status not in ("active", "verifying")  # set active by hand: its pause point is stale (review)
         target.meta["status"] = "active"
+        first_focus = not target.meta.get("base")
         if not target.meta.get("base") and (head := c.git_head(p.root)):
             target.meta["base"] = head  # where the task's diff starts (fm audit prep)
         paused = target.meta.pop("paused_tree", None)
@@ -1639,7 +1934,8 @@ def cmd_focus(args):
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
-                                          step_order(target)]))  # T-0623
+                                          step_order(target), step_contracts(p, target),  # T-0623, T-0666
+                                          _preflight(p, target) if first_focus else ""]))  # T-0633
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
@@ -1710,7 +2006,9 @@ def cmd_checkpoint(args):
     p = resolve(args)
     with c.lock(p.dir):
         b = c.checkpoint(p, note=args.note, auto=args.auto, session=session())
-    out(args, {"task": b.id if b else None}, f"Checkpoint saved{' for ' + b.id if b else ' (no active task)'}.")
+    notes = b.section("Notes").strip() if b else ""
+    out(args, {"task": b.id if b else None}, f"Checkpoint saved{' for ' + b.id if b else ' (no active task)'}."
+        + (f"\nNotes:\n{notes}" if notes else ""))
 
 
 def cmd_resume(args):
@@ -1722,7 +2020,18 @@ def cmd_resume(args):
     step = f"step {r['step']['n']}/{r['step']['of']}: {r['step']['text']}" if r["step"] else f"{r['steps_done']}/{r['steps_total']} steps done"
     stale = (f"\nStale since it started (gone from the repo now): {', '.join(r['stale'])} — re-check the brief before "
              f"relying on it." if r.get("stale") else "")
-    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}\nBrief: {r['path']}")
+    b = c.find_brief(p, r["id"])
+    notes = b.section("Notes").strip()  # T-0630
+    n, tried = _tried(b)
+    extra = (f"\nTried on step {n}: " + "; ".join(f"{x} ×{k}" for x, k in tried)) if tried else ""
+    green = None if getattr(args, "no_check", False) else _last_green(b)
+    if green:  # T-0649: did anything drift since the last green check?
+        code, output = c.run_command(p.root, green, 120)
+        extra += (f"\nLast green check `{green}` still passes." if code == 0 else
+                  f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
+                  f"passed — look before going on.")
+    out(args, r, f"Resume {r['id']} [{r['type']} {r['tier']}] {r['title']} — {step}\n{r['resume']}{stale}"
+        + (f"\nNotes:\n{notes}" if notes else "") + extra + f"\nBrief: {r['path']}")
 
 
 def _queue_preview(p, args, order, briefs):
@@ -2649,8 +2958,9 @@ def _last_check_results(p, task):
 
 _LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)
 _REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output one section per lens, \"## <lens>: ok | "
-               "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario "
-               "and a fix; then \"## Not checked\". Only verified findings.")
+               "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario, "
+               "a reproducer (the command, input or test that shows it; without one it's a lead, not a finding: "
+               "T-0651) and a fix; then \"## Not checked\". Only verified findings.")
 
 
 _FINDING = re.compile(r"(?m)^[ \t]*(?:[-*]|\d+[.)]?)?[ \t]*(?:\*\*|#+[ \t]*)?\[?(?:CRIT(?:ICAL)?|HIGH|MED(?:IUM)?)\b[\s*:—–\]-]*(.+)$")
@@ -2772,6 +3082,8 @@ def cmd_audit(args):
     if not args.id:
         raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
+    if getattr(args, "forge", False):  # T-0652: try to break the checks before trusting them
+        return _forge_brief(p, b, args)
     base = args.base or c.task_base(p.root, b)
     if not base:
         raise UsageError(f"{b.id} has no start commit on record (focused before fm kept one): "
@@ -2814,11 +3126,13 @@ def cmd_audit(args):
     if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
             f"- {x}" for x in found)
+    steps = _files_vs_steps(b, files)  # T-0610: does each changed file serve a step?
+    head += steps
     blocks, sections = [], []
     for lens in lenses:
         if lens == "self":
             blocks.append("=== self (main thread) ===\n" + ref[ref.index("**self**"):].strip()
-                          + "".join(f"\n- pre-audit: {x}" for x in found))
+                          + "".join(f"\n- pre-audit: {x}" for x in found) + steps)
             continue
         context, prompt = templates[lens]
         extra = ""
@@ -2913,6 +3227,17 @@ def cmd_next(args):
         if median and took > 2 * median:
             over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
                     f"is the plan still the right size, or should it split?")
+    meta = c.read_meta(p)
+    loose = (meta.get("clauses") or {}).get("open") or []
+    over += (f" · {len(loose)} clause(s) of the last request unaccounted: capture, answer, or fm clauses --note N "
+             f"\"<why>\" (fm clauses --show)") if loose else ""
+    asks = unanswered_asks(p)
+    over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
+             f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
+    if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
+        beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
+                   for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
+        over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
     out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
         f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
         + over)
@@ -2973,7 +3298,7 @@ def _all_parsers(parser):
 
 # T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
 HELP_TIERS = [
-    ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
+    ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
@@ -3133,7 +3458,8 @@ def build_parser():
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
-    t.add_argument("--ac", action="append", help="acceptance criterion (repeatable)")
+    t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
+                                                 "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
     t.add_argument("--interpretation", help="what the request means (M/L plan gate)")
     t.add_argument("--approach", help="options → choice → why (M/L plan gate)")
@@ -3190,6 +3516,8 @@ def build_parser():
     t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
     t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
     t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
+    t.add_argument("--claim", action="append", metavar="'TAG: CLAIM [:: EVIDENCE]'",
+                   help="a typed claim for the close and fm pr; TAG is checked, inferred or unchecked (T-0614)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -3220,6 +3548,10 @@ def build_parser():
     t.add_argument("--probe", help="add: the command that would tell (recorded, not run)")
     t.add_argument("--run", metavar="CMD", help="mark: run the probe now and record its exit code and output")
     t.add_argument("--timeout", type=float, default=600)
+    t = tadd("note")
+    t.add_argument("id")
+    t.add_argument("kind", choices=["fact", "question"])
+    t.add_argument("text", nargs="+")
     t = tadd("assume")
     t.add_argument("id")
     t.add_argument("action", choices=["add", "verify"])
@@ -3227,6 +3559,7 @@ def build_parser():
     g = t.add_mutually_exclusive_group()
     g.add_argument("--run", metavar="CMD", help="verify: run CMD; exit 0 marks it verified, anything else false")
     g.add_argument("--evidence", metavar="HOW", help="verify: how it was checked, when it can't run (file:line read…)")
+    t.add_argument("--kill", metavar="TEXT", help="add: what would show it false (fm next lists it until verified)")
     t.add_argument("--check", metavar="CMD", help="add: a command that stays true while the assumption holds; fm "
                                                   "sentinel re-runs it after the task is done (T-0489)")
     t.add_argument("--timeout", type=float, default=600)
@@ -3247,6 +3580,8 @@ def build_parser():
 
     s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
+    s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
+    s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
@@ -3352,7 +3687,7 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
-    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender"],
+    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender", "devil"],
                    help="plan: read it from a stress-test stance, saved as its own Plan review section (T-0604)")
     s.add_argument("--timeout", type=float, default=300)
     s = add("relate", lazy("fmrelate", "cmd_relate"),
@@ -3396,6 +3731,8 @@ def build_parser():
             help="dependencies a major version behind their registry's latest, with the migration question to research")
     s.add_argument("--research", type=int, nargs="?", const=3, default=0, metavar="N",
                    help="research the first N migrations now (default 3; each budget-checked)")
+    s.add_argument("--calls", action="store_true", help="each dependency's installed version and import sites with "
+                                                        "the names used, read locally, no network (T-0594)")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=600)
     s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
@@ -3440,6 +3777,10 @@ def build_parser():
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
     s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
+    s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
+                                                        "in with fm share on (never sensitive ones), file:line (T-0618)")
+    s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
+                                                         "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
     s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
@@ -3453,7 +3794,13 @@ def build_parser():
     s.add_argument("--note")
     s.add_argument("--auto", action="store_true")
 
-    add("resume", cmd_resume, help="print the resume point")
+    s = add("clauses", lazy("fmrecall", "cmd_clauses"), help="split a multi-part request into clauses and match each to "
+                                                              "a task; fm next names the unaccounted ones (T-0595)")
+    s.add_argument("text", nargs="*", help="the user's message (or, with --note, why the clause needs no task)")
+    s.add_argument("--note", type=int, metavar="N", help="mark unaccounted clause N as handled (answered, or no task)")
+    s.add_argument("--show", action="store_true", help="the unaccounted clauses of the last request")
+    s = add("resume", cmd_resume, help="print the resume point, and re-run the last green check for drift")
+    s.add_argument("--no-check", action="store_true", help="don't re-run the last green check (T-0649)")
 
     s = add("queue", cmd_queue, help="ordered queue")
     s.add_argument("--replan", action="store_true")
@@ -3524,6 +3871,8 @@ def build_parser():
                                                              "pre-audit of any diff (--base, default: the main branch)")
     s.add_argument("id", nargs="?")
     s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
+    s.add_argument("--forge", action="store_true", help="prep: a brief asking for a change that keeps each check "
+                                                        "green yet breaks its criterion (T-0652)")
     s.add_argument("--split", action="store_true", help="one brief per lens group (up to 3) for parallel fresh-context "
                                                         "reviewers instead of one reviewer for every lens (T-0216)")
     s.add_argument("--lens", action="append", choices=list(c.AUDIT_LENSES), help="only this lens (repeatable)")
