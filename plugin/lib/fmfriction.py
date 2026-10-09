@@ -21,8 +21,10 @@ def _start(meta):
     return meta.get("rsi_at") or c.iso(time.time() - WINDOW_DAYS * 86400)
 
 
-def _ledgers(start):
+def _ledgers(start, here=None):
     for p, _ in c.all_projects():
+        if here and p.slug != here.slug and c.read_meta(p).get("sensitive"):
+            continue  # T-0435: a sensitive project's ledger stays out of another project's digest
         for e in c.tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), 6000):
             if (e.get("ts") or "") > start:
                 yield p, e
@@ -77,7 +79,8 @@ def digest(p, recheck=True):
     meta = c.read_meta(p)
     start = _start(meta)
     events = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000) if (e.get("ts") or "") > start]
-    ledger = list(_ledgers(start))
+    ledger = list(_ledgers(start, p))
+    label = lambda lp: "" if lp.slug == p.slug else f"[{lp.slug}] "  # T-0435: which project a line came from
     out = {}
 
     guard = [e for e in events if e.get("kind") == "guard_block"]
@@ -130,19 +133,28 @@ def digest(p, recheck=True):
         out["errors the hooks swallowed"] = [f"{len(errs)} in the last 24 h, most in {top[0]} ({top[1]}); latest: "
                                              f"{c.fit(c.plain(errs[-1][-1].strip()), 160)} (state/logs/hooks.log)"]
 
-    said = [c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for _, e in ledger
-            if e.get("event") == "correction" or (e.get("event") == "note" and
-                                                  str((e.get("data") or {}).get("text") or "").startswith("steer:"))]
+    steer = lambda e: e.get("event") == "note" and str((e.get("data") or {}).get("text") or "").startswith("steer:")
+    said = [label(lp) + c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for lp, e in ledger
+            if e.get("event") == "correction" or steer(e)]
     out["what the user corrected or steered (their words)"] = said[-MAX_LINES:]
 
     out["escapes: defects found after a task closed (the lenses that passed it)"] = [  # T-0285: review recall over time
-        f"{e.get('task')} ({', '.join((e.get('data') or {}).get('lenses') or []) or 'no lens'}) → "
+        f"{label(lp)}{e.get('task')} ({', '.join((e.get('data') or {}).get('lenses') or []) or 'no lens'}) → "
         f"{(e.get('data') or {}).get('by')} {c.fit(c.plain(str((e.get('data') or {}).get('title') or '')), 140)}"
-        for _, e in ledger if e.get("event") == "escape"][-MAX_LINES:]
+        for lp, e in ledger if e.get("event") == "escape"][-MAX_LINES:]
 
     out["surprises: where the model of the code was wrong (fm surprise)"] = [
-        f"{e.get('task') or '-'}: {c.fit(c.plain(str((e.get('data') or {}).get('text') or '')), 200)}" for _, e in ledger
-        if e.get("event") == "surprise"][-MAX_LINES:]
+        f"{label(lp)}{e.get('task') or '-'}: {c.fit(c.plain(str((e.get('data') or {}).get('text') or '')), 200)}"
+        for lp, e in ledger if e.get("event") == "surprise"][-MAX_LINES:]
+
+    others = collections.defaultdict(collections.Counter)  # T-0435: how much friction each other project had
+    for lp, e in ledger:
+        kind = "steer" if steer(e) else e.get("event")
+        if lp.slug != p.slug and kind in ("guard_block", "correction", "steer", "task_block", "escape", "surprise",
+                                          "stop_gate", "task_done"):
+            others[lp.slug][kind.replace("_", " ")] += 1
+    out["other projects (since the last pass)"] = [
+        f"{slug}: " + ", ".join(f"{n} {k}" for k, n in cnt.most_common()) for slug, cnt in sorted(others.items())][:MAX_LINES]
 
     out["lessons recorded"] = [f"{e.get('task')}: {c.fit(c.plain(str(e['data']['lesson'])), 160)}" for _, e in ledger
                                if e.get("event") == "task_done" and (e.get("data") or {}).get("lesson")][-MAX_LINES:]

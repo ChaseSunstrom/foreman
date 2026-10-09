@@ -53,6 +53,22 @@ class Friction(ForemanTestCase):
         self.assertIn("3× Read: File does not exist.", out)
         self.assertNotIn("wait on background work", out)
 
+    def test_digest_labels_downstream_project_friction(self):
+        # T-0435: _ledgers read every project's ledger but dropped which one a line came from: JARVIS's steers and
+        # corrections reached Foreman's pass unlabelled, and how much friction each project had wasn't visible
+        from helpers import git_repo
+        other, quiet = git_repo(self.tmp, "jarvis"), git_repo(self.tmp, "private")
+        for root in (other, quiet):
+            self.fm("init", cwd=root)
+            tid = first(self.fm("task", "new", "Work", "--type", "FIX", "--tier", "S", "--step", "a", "--json", cwd=root).stdout)["id"]
+            self.fm("task", "log", tid, "steer: the panels must load before anything else", cwd=root)
+        self.fm("sensitive", "on", cwd=quiet)
+        out = self.fm("friction").stdout
+        self.assertIn("[jarvis-", out)  # the steer, labelled with its project
+        self.assertIn("the panels must load before anything else", out)
+        self.assertIn("other projects", out)
+        self.assertNotIn("private-", out, "a sensitive project's ledger stays out")
+
     def test_friction_hook_errors(self):
         # T-0437: hooks never fail a tool call; the errors they swallow went only to hooks.log, where a pass never looked
         import time
