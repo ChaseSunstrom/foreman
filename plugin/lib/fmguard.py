@@ -204,7 +204,13 @@ def _is_credential(path, ctx):
     if any(_under(path, s) for s in getattr(ctx, "scratch", ()) or ()):
         return False  # T-0169: a scratch file's name says nothing of its contents (its real path is checked too)
     stem, ext = os.path.splitext(base)
-    return bool(re.search(r"(^|[._-])(tokens?|secrets?|credentials?)([._-]|$)", stem.lower())) and ext.lower() not in _DOC_EXT
+    if ext.lower() in _DOC_EXT:
+        return False
+    if re.search(r"(^|[._-])(secrets?|credentials?)([._-]|$)", stem.lower()):
+        return True
+    # a design system's tokens (colours, spacing, durations) aren't auth tokens (JARVIS: design/tokens.json was refused)
+    design = re.search(r"/(design|themes?|styles?|ui)/", path.lower()) or re.match(r"(design|theme|style)[._-]", stem.lower())
+    return bool(re.search(r"(^|[._-])tokens?([._-]|$)", stem.lower())) and not (design and stem.lower() != "token")
 
 
 # T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
