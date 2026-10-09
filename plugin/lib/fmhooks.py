@@ -108,8 +108,24 @@ def run(event, raw):
                 log_error(event, f"paused for {BREAKER_PAUSE_S // 60} min after {fails} failures in a row "
                                  f"(it runs again at {time.strftime('%H:%M', time.localtime(until))})")
     if event not in UNTIMED:
-        _event({"kind": "hook_ms", "event": event, "ms": round((time.monotonic() - t0) * 1000, 1)})
+        ms = round((time.monotonic() - t0) * 1000, 1)
+        _event({"kind": "hook_ms", "event": event, "ms": ms, "rev": _rev()})  # T-0486: fm doctor's SLO by revision
     return code
+
+
+_REV = None
+
+
+def _rev():
+    """Foreman's revision (plugin.json's version): one small read per hook process, after the timing (T-0486)."""
+    global _REV
+    if _REV is None:
+        try:
+            with open(os.path.join(c.PLUGIN_ROOT, ".claude-plugin", "plugin.json"), encoding="utf-8") as f:
+                _REV = str(json.load(f).get("version") or "?")
+        except (OSError, ValueError, AttributeError):
+            _REV = "?"
+    return _REV
 
 
 def log_error(event, text):
@@ -1598,7 +1614,8 @@ def _drive(p, sd, briefs, pl, g):
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
             return None
         offered = d.get("offered") or []
-        offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX else None
+        pace = _pace()  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
+        offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
             how = _start_how(offer, lanes_free(briefs))
@@ -1613,6 +1630,7 @@ def _drive(p, sd, briefs, pl, g):
             return None
         # T-0364: once per running set, work on what doesn't need it instead of idling (357 waits vs 11 pushes)
         d.update(count=d.get("count", 0) + 1, marks=_marks(p))
+        # the queue and inbox are the user's own requests, never optional: only side offers wait on pace (review)
         more = [x["id"] for x in sd["queue"] + (sd["inbox"] if full else []) if x["id"] != work["id"]][:3]
         if not more and full and d.get("drained") != len(briefs):  # T-0415: nothing else queued: find the next
             d["drained"] = len(briefs)  # work rather than wait; once per drain, as below, not once per set of jobs
@@ -1626,6 +1644,7 @@ def _drive(p, sd, briefs, pl, g):
                 f"audit lenses on the current diff (fm audit prep), docs, "
                 + (f"grounding and planning {', '.join(more)}, or an independent S/M task in a builder lane "
                    f"(fm lane brief ID). " if more else "planning what comes after this task. ")
+                + (f"Usage is ahead of pace ({pace}): side work is dropped; required gates still run. " if pace else "")
                 + "If nothing is independent of it, end the turn with one line naming what you wait on.")
     d.pop("waited", None)
     if pl.get("stop_hook_active") and d.get("marks") and not _progressed(p, d["marks"], sid):
@@ -1648,9 +1667,17 @@ def _drive(p, sd, briefs, pl, g):
     try:
         reason += " Next: " + c.next_for(p, briefs)[2]
         pct = _context_pct(sid)
-        if not sd["active"] and pct is not None and pct >= CONTEXT_NOTE_PCT:
+        act = sd["active"]
+        if not act and pct is not None and pct >= CONTEXT_NOTE_PCT:
             reason += (f" Context {pct}% used at a task boundary; Foreman state is saved, so this is a good point for "
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
+        elif act and act["tier"] in ("M", "L") and pct is not None and pct >= CONTEXT_NOTE_PCT:
+            n = _step_boundary(p, act["id"])  # T-0448: compact between steps, not mid-step; once per boundary
+            if n and _first_time(sid, f"compact-{act['id']}-s{n}"):
+                reason += (f" Context {pct}% used at a step boundary of {act['id']} (step {n} has its evidence): "
+                           f"checkpoint here, fm checkpoint --note \"<what the next step needs>\"; its Resume here is "
+                           f"the handoff the compacted context reads, so this is the point for the user to /compact "
+                           f"(auto-compaction will also handle it).")
     except Exception:
         log_error("Stop", _tb())
     changed = _ui_changed(sid, _turn_began(p, sid, d), d.get("ui_mtime"))
@@ -1664,6 +1691,28 @@ def _drive(p, sd, briefs, pl, g):
     _event({"kind": "drive", "session_id": sid, "project": p.slug, "task": work["id"]})
     d.update(count=d.get("count", 0) + 1, marks=_marks(p))
     return reason
+
+
+def _step_boundary(p, tid):
+    """T-0448: the step whose evidence is the task's newest work (no edit since), else None."""
+    for e in reversed(c.ledger_tail(p, 300)):
+        if e.get("task") != tid:
+            continue
+        step = (e.get("data") or {}).get("step")
+        if e.get("event") in ("evidence", "step_done") and step:
+            return step
+        if e.get("event") in ("touched", "focus"):
+            return None
+    return None
+
+
+def _pace():
+    """fmbudget.degrade(), imported only on the Stop path that offers side work; unreadable usage drops nothing."""
+    try:
+        import fmbudget
+        return fmbudget.degrade()
+    except Exception:
+        return None
 
 
 def _side_work(sd, briefs, work, full, offered):
