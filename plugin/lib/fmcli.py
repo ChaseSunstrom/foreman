@@ -433,6 +433,8 @@ def cmd_task(args):
         import fmdocs
         since, tree = c.last_change(p, args.id), c.worktree_id(p.root)
         pre = need_brief(p, args.id)
+        if pre.status == "dropped":  # T-0679 chaos test: a dropped task isn't finished by closing it again
+            raise c.PolicyError(f"{pre.id} is dropped: reopen it first (fm task set {pre.id} status=planned)")
         drift, notes = fmdocs.task_docs(p.root, pre.section("Docs impact")) if pre.tier in ("M", "L") else ([], [])
 
         lesson = c.plain(args.lesson or "").strip()
@@ -526,6 +528,9 @@ def cmd_task(args):
         until = getattr(args, "until", None)
         if until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
             raise UsageError("--until takes a date, YYYY-MM-DD")
+        cur = need_brief(p, args.id)
+        if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
+            raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         if status == "dropped" and b.meta.get("batch"):  # T-0257: a dropped batch hands its members back
             _settle_batch(p, b, done=False)
@@ -576,6 +581,8 @@ def task_finish(p, args):
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
     stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
+    if b.status == "dropped":  # T-0679 chaos test
+        raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
         _commit_task(p, b, args.commit)
         return 0
@@ -2560,7 +2567,7 @@ HELP_TIERS = [
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch"),
@@ -2818,6 +2825,8 @@ def build_parser():
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
+    s.add_argument("--prune", action="store_true",
+                   help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
@@ -2850,6 +2859,8 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=300)
     s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
                                                  "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
+    add("wiring", lazy("fmdoctor", "cmd_wiring"), help="one screen of what is wired: version, hooks, flags, standing "
+                                                        "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
                                                              "schedule or when a file changes (T-0452)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "run"])
