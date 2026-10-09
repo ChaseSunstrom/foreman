@@ -704,7 +704,7 @@ def ask(p, question, n=HITS):
         text, key = " ".join(snip.split()), re.sub(r"\W+", " ", snip).strip().lower()
         if key not in seen:  # the same words in two places (a title and its request) are one answer
             seen.add(key)
-            hits.append({"label": c.plain(label), "cites": cites.split()[:8], "text": c.defang(c.plain(text)),
+            hits.append({"label": c.plain(label), "cites": cites.split()[:8], "text": c.defang(c.redact(c.plain(text))),
                          "score": round(-score, 2)})
     return hits[:n]
 
