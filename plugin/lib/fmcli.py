@@ -3089,7 +3089,7 @@ def build_parser():
     s.add_argument("--minutes", type=float, default=20)
     s = add("conductor", lazy("fmbus", "cmd_conductor"), help="live sessions with their task, context, mail and leases; "
                                                               "steer them all (T-0708)")
-    s.add_argument("action", nargs="?", default="list", choices=["list", "steer"])
+    s.add_argument("action", nargs="?", default="list", choices=["list", "steer", "remote", "refresh"])
     s.add_argument("words", nargs="*")
     s.add_argument("--wake", action="store_true")
     s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
