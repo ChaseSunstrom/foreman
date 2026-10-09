@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+- Orchestrators of orchestrators, first slice (T-0709).
+  - `fm task split ID [--parts K] [--files …] [--dry-run]` partitions a task's files (its scope, or `fm graph pack`'s read-set) along the code's seams. It merges the most-linked groups over the work graph's code, co-change and test edges, and each part becomes a child task scoped to its files and told which seams to keep.
+  - `fm task capsule ID` is a child's return to its parent: at most 15 lines covering status, files and lines changed, verification, decisions, lessons, follow-ups and risks.
+  - A parent can't close while a child is open. Children run through lanes and builders like any task, and can split again.
+  - `fm map` now links a test to a source whose name is a short prefix plus the test's (`test_bus.py` → `fmbus.py`).
+  - The proof run (one L task as a tree against one session) waits for usage headroom.
 - Orchestrator control plane, first slice (T-0708). All of it is local and costs no tokens until something happens.
   - `fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]`: the message reaches the session on its next tool call, once. A session about to stop is held for unread mail. `--wake` types one short line into a session's tmux pane; the statusline now records `TMUX_PANE`.
   - Leases: an edit leases the function it lands in for 20 minutes, renewed with each edit; a Write leases the file. Another session's edit inside that function is refused, naming the holder and how to message it; edits elsewhere in the file go through. `fm lease list|take|drop`.
