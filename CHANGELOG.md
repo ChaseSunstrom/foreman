@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.9 — 2026-10-09
 - The drive no longer lets a session idle on background jobs while work is queued (T-0401; the user, watching JARVIS: "make sure it doesnt sit idle"). Each Stop during background work names the next queued task that can move and how to start it: a builder lane for planned S/M work, or planning for an L task or an inbox item. It also says to `fm task block` a task that can't move, instead of using it as a reason to wait. It offers up to 3 tasks per set of jobs, then waits as before. Tasks that depend on the active one, or are already in a lane, are skipped.
 
 ## 1.2.8 — 2026-10-09
