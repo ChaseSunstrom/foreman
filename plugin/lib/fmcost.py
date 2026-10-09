@@ -580,3 +580,98 @@ def _prune(args, since):
               f"Not run in {args.days:g} day(s), in any project: {len(unused)} of {len(names)} fm commands: "
               + (", ".join(unused) or "none") + (f"\nTo propose trimming them (nothing is removed): {capture}"
                                                  if capture else ""))
+
+
+# ---------------------------------------------------------------- fm burden (T-0712)
+
+BOOKKEEPING = re.compile(r"^(?:fm quiet (?:--\S+ \S+ )*-- )?fm (?:task|focus|checkpoint|capture|decide|log|next|queue|state|"
+                         r"status|ask|batch|intake|gates|resume)\b")
+INJECTS = ("hook_additional_context", "async_hook_response", "hook_blocking_error", "hook_system_message")
+
+
+def _version(root):
+    m = re.search(r"/(\d+\.\d+\.\d+)(?:/|$)", str(root or ""))
+    return m.group(1) if m else ("working copy" if root else "unknown")
+
+
+def _only_bookkeeping(cmd):
+    parts = [x.strip() for x in re.split(r"&&|;|\n", re.sub(r"^(?:cd \S+ && )+", "", cmd or "")) if x.strip()]
+    return bool(parts) and all(BOOKKEEPING.match(x) for x in parts)
+
+
+def _text(x):
+    if isinstance(x, str):
+        return x
+    if isinstance(x, list):
+        return "\n".join(_text(y) for y in x)
+    if isinstance(x, dict):
+        return _text(x.get("text") or x.get("content") or x.get("additionalContext") or x.get("blockingError")
+                     or x.get("hookSpecificOutput") or x.get("response") or "")
+    return ""
+
+
+def burden(folder, since):
+    """{session: counts}: turns, turns that were only Foreman bookkeeping, guard refusals, refused fm calls and the
+    characters Foreman's hooks put into the context."""
+    out = {}
+    for dirpath, _, files in os.walk(folder):
+        for n in files:
+            if not n.endswith(".jsonl"):
+                continue
+            tools, s = collections.defaultdict(list), out.setdefault(n[:-6], collections.Counter())  # a file: a session
+            try:
+                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
+                    for line in f:
+                        try:
+                            e = json.loads(line)
+                        except ValueError:
+                            continue
+                        if not isinstance(e, dict) or str(e.get("timestamp") or "")[:19] < since:
+                            continue
+                        m = e.get("message") if isinstance(e.get("message"), dict) else {}
+                        content = m.get("content") if isinstance(m.get("content"), list) else []
+                        if e.get("type") == "assistant" and m.get("id"):
+                            tools[m["id"]] += [x for x in content if isinstance(x, dict) and x.get("type") == "tool_use"]
+                        for x in content:
+                            if isinstance(x, dict) and x.get("type") == "tool_result":
+                                t = _text(x.get("content"))
+                                s["guard_refusals"] += "Foreman guard: blocked" in t
+                                s["fm_refusals"] += bool(re.search(r"\bfm: (?:refused|give --run)", t))
+                        a = e.get("attachment") if isinstance(e.get("attachment"), dict) else {}
+                        if a.get("type") in INJECTS:
+                            t = _text(a.get("content") or a.get("response") or a.get("blockingError") or "")
+                            if "Foreman" in t or "fm " in t:
+                                s["injected_chars"] += len(t)
+            except OSError:
+                continue
+            for uses in tools.values():
+                s["turns"] += 1
+                s["bookkeeping_turns"] += bool(uses) and all(
+                    u.get("name") == "Bash" and _only_bookkeeping((u.get("input") or {}).get("command")) for u in uses)
+    return {k: v for k, v in out.items() if v.get("turns")}
+
+
+def cmd_burden(args):
+    """fm burden: Foreman's own cost on real sessions, per Foreman version — the objective a self-change must lower."""
+    import fmcli
+    p = fmcli.resolve(args)
+    sessions = burden(transcripts_dir(p.root), _since(args.days))
+    version = {}
+    for e in c.ledger_tail(p, 50000):
+        if e.get("event") == "session_start" and e.get("session_id"):
+            version[e["session_id"]] = _version((e.get("data") or {}).get("root"))
+    by = {}
+    for sid, s in sessions.items():
+        v = by.setdefault(version.get(sid, "unknown"), collections.Counter())
+        v.update(s)
+        v["sessions"] += 1
+    rate = lambda v, k: 100 * v[k] / max(v["turns"], 1)
+    text = (f"Foreman's burden, last {args.days:g} day(s), per version (lower is better):\n" + "\n".join(
+        f"  {k}: {v['sessions']} session(s), {v['turns']} turns · bookkeeping-only turns {rate(v, 'bookkeeping_turns'):.0f}% · "
+        f"guard refusals {rate(v, 'guard_refusals'):.1f}/100 turns · refused fm calls {rate(v, 'fm_refusals'):.1f}/100 · "
+        f"injected {v['injected_chars'] / max(v['turns'], 1):.0f} chars/turn"
+        for k, v in sorted(by.items(), key=lambda kv: kv[0])) if by else
+            f"No sessions with turns in the last {args.days:g} day(s).")
+    return fmcli.out(args, {"days": args.days, "versions": {k: dict(v) for k, v in by.items()},
+                            "sessions": {k: dict(v, version=version.get(k, "unknown")) for k, v in sessions.items()}},
+                     text)

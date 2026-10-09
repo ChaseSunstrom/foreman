@@ -54,22 +54,27 @@ def _key(cmd, cwd):
     return hashlib.sha256(f"{cwd}\0{cmd}".encode("utf-8", "replace")).hexdigest()[:20]
 
 
-def _ctx(cwd):
+def _ctx(cwd, g=None):
     """The guard's context with no grants, in the folder a command runs in."""
-    import fmguard as g
+    if g is None:
+        import fmguard as g
     home = os.path.expanduser("~")
     cwd = cwd or home
     return g.Ctx(cwd=cwd, project_root=g.project_root_for(cwd, home), home=home, foreman_home=c.foreman_home(),
                  state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=["/tmp", "/var/tmp"])
 
 
-def verdicts(cmds):
-    """{key: the category the guard blocks it with, or 'allow'} with no grants, each in the folder it ran in."""
-    import fmguard as g
+def verdicts(cmds, g=None):
+    """{key: the category the guard blocks it with, or 'allow'} with no grants, each in the folder it ran in; g: another
+    guard module (a candidate, T-0712)."""
+    if g is None:
+        import fmguard as g
+    import warnings
+    warnings.simplefilter("ignore", SyntaxWarning)  # the guard parses Python inside commands; their escapes aren't ours
     home, out = os.path.expanduser("~"), {}
     for cmd, cwd in cmds:
         cwd = cwd or home
-        ctx = _ctx(cwd)
+        ctx = _ctx(cwd, g)
         try:
             b = g.check("Bash", {"command": cmd}, ctx)
             out[_key(cmd, cwd)] = b.category if b else "allow"
@@ -82,8 +87,59 @@ def _baseline_path():
     return os.path.join(c.state_dir(), "guard-replay.json")
 
 
+def candidate(ref):
+    """A candidate guard as a module: a file path, or a git ref of Foreman's own repo (its plugin/lib/fmguard.py)."""
+    import importlib.util
+    import subprocess
+    import tempfile
+    if os.path.isfile(ref):
+        path = ref
+    else:
+        repo = os.path.dirname(c.PLUGIN_ROOT)
+        src = subprocess.run(["git", "-C", repo, "show", f"{ref}:plugin/lib/fmguard.py"], capture_output=True, text=True)
+        if src.returncode:
+            raise ValueError(f"no plugin/lib/fmguard.py at {ref}: {src.stderr.strip()[:200]}")
+        path = os.path.join(tempfile.mkdtemp(prefix="fm-cand-"), "fmguard_candidate.py")
+        with open(path, "w") as f:
+            f.write(src.stdout)
+    spec = importlib.util.spec_from_file_location("fmguard_candidate", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def score(args, fmcli):
+    """T-0712: a candidate guard against the working one on the corpus: what it would loosen (allow where the working
+    guard blocks: each one a possible bypass to review) and tighten (new refusals: friction). Exit 1 when it loosens."""
+    t0 = time.monotonic()
+    try:
+        cand = candidate(args.candidate)
+    except (ValueError, OSError, SyntaxError) as e:
+        raise fmcli.UsageError(f"candidate {args.candidate}: {e}")
+    cmds = corpus(args.days)
+    now, new = verdicts(cmds), verdicts(cmds, cand)
+    by_key = {_key(cmd, cwd or os.path.expanduser("~")): cmd for cmd, cwd in cmds}
+    loosened = [k for k in now if now[k] != "allow" and new.get(k) == "allow"]
+    tightened = [k for k in now if now[k] == "allow" and new.get(k) not in (None, "allow")]
+    changed = [k for k in now if k not in loosened and k not in tightened and new.get(k) != now[k]]
+    show = lambda k: c.fit(c.redact(" ".join(by_key[k].split())), 140)
+    lines = [f"Candidate {args.candidate} on {len(cmds)} real commands ({time.monotonic() - t0:.1f} s): "
+             f"{len(loosened)} loosened, {len(tightened)} tightened, {len(changed)} recategorised"]
+    for title, keys in (("loosened (allowed now: review each as a possible bypass)", loosened),
+                        ("tightened (new refusals: friction)", tightened)):
+        if keys:
+            lines.append(f"  {title}:")
+            lines += [f"    {now[k]} → {new[k]} · {show(k)}" for k in keys[:SHOW]]
+    fmcli.out(args, {"commands": len(cmds), "loosened": len(loosened), "tightened": len(tightened),
+                     "recategorised": len(changed)}, "\n".join(lines))
+    if loosened:
+        raise SystemExit(1)
+
+
 def cmd_replay(args):
     import fmcli
+    if getattr(args, "candidate", None):
+        return score(args, fmcli)
     if args.cwd and not args.cmd:  # T-0293: accepted and ignored was worse than refused
         raise fmcli.UsageError("--cwd goes with --cmd: the folder that one command would run in")
     if args.cmd:  # T-0287: one command's verdict, asked and never run (no grants: what the guard says by default)
