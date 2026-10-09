@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Close-out friction (T-0722: T-0718, T-0720). `fm audit prep` of a builder's task now reviews its branch from where it left main, not main's own later commits. `fm task finish --commit` checks for credentials before closing, so a flagged line leaves the task open to fix. A done task's refused commit can be retried with `fm task finish ID --commit MSG`.
 
 ## 1.2.17 — 2026-10-09
 - Zero-token instruments (T-0701, the first slice of Frontier 01). Each answers in 15–40 lines with the root cause first.

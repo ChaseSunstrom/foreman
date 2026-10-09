@@ -119,6 +119,26 @@ class Flow(_Tasks):
         self.assertIsNone(self.meta(tid).get("lane"))
         self.assertTrue(os.path.exists(os.path.join(self.repo, "greet.py")))
 
+    def test_audit_prep_reviews_the_builders_branch_not_main(self):
+        # T-0718: a lane task's review brief diffed the main checkout (other tasks' commits), not the builder's work
+        tid = self.task("Add greet")
+        self.fm("lane", "brief", tid)
+        wt = os.path.join(self.tmp, "wt")
+        git(self.repo, "worktree", "add", "-q", "-b", "builder/greet", wt)
+        self.fm("focus", tid, cwd=wt)
+        with open(os.path.join(wt, "greet.py"), "w") as f:
+            f.write("def greet():\n    return 'hi'\n")
+        git(wt, "add", "greet.py")
+        git(wt, "commit", "-qm", f"greet ({tid})")
+        with open(os.path.join(self.repo, "other.py"), "w") as f:  # main moves on meanwhile
+            f.write("x = 1\n")
+        git(self.repo, "add", "other.py")
+        git(self.repo, "commit", "-qm", "other work")
+        out = self.fm("audit", "prep", tid).stdout
+        diff = read_text(re.search(r"Diff: (\S+)", out).group(1))
+        self.assertIn("greet.py", diff)
+        self.assertNotIn("other.py", diff)
+
     def meta(self, tid):
         import fmcore as c
         return c.find_brief(c.find_project(self.repo), tid).meta

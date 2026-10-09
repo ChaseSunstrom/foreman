@@ -96,6 +96,21 @@ class Secrets(ForemanTestCase):
         self.assertNotIn(GITHUB, p.stdout + p.stderr)
         self.assertEqual(self.git("log", "-1", "--format=%h").strip(), sha, "nothing committed")
         self.assertEqual(self.git("diff", "--cached", "--name-only").strip(), "", "and nothing left staged")
+        # T-0720: the leak is found before the close, so the task stays open to fix it, and a done task's
+        # commit can be retried with finish --commit
+        self.assertNotEqual(self.fm_json("task", "show", "T-0002")["status"], "done")
+        self.write("b.py", "KEY = os.environ['KEY']\n")
+        self.fm("task", "finish", "T-0002", "--run", "true", "--audit", "self check", "--commit", "Add b")
+        self.assertEqual(self.git("log", "-1", "--format=%s").strip(), "Add b")
+
+    def test_a_done_tasks_commit_can_be_retried(self):
+        self.fm("init")
+        self.fm("task", "new", "One", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "a", "--focus")
+        self.write("a.py", "x = 1\n")
+        self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check")
+        self.fm("task", "finish", "T-0001", "--commit", "Add a")  # done already: only the commit runs
+        self.assertEqual(self.git("log", "-1", "--format=%s").strip(), "Add a")
+        self.assertIn("a.py", self.git("show", "--name-only", "--format=", "HEAD"))
 
     def test_finish_commit_leaves_out_what_was_staged_before_the_task(self):
         self.fm("init")

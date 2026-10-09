@@ -523,6 +523,11 @@ def task_finish(p, args):
     --lens "<lens>: <result>", all done the --audit way), sets Docs impact, then fm task done. Anything that fails
     stops it before the audits; the failing runs stay recorded."""
     b = need_brief(p, args.id)
+    if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
+        _commit_task(p, b, args.commit)
+        return 0
+    if not args.audit:
+        raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
     lenses = []
     for spec in args.lens or []:
         lens, sep, result = spec.partition(":")
@@ -573,6 +578,8 @@ def task_finish(p, args):
     failed = [f"{kind} {n}: {cmd} → {c.run_result(code, output)}" for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
+    if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
+        _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
     rc = cmd_task(args)
     if args.commit and not rc:
@@ -580,13 +587,16 @@ def task_finish(p, args):
     return rc
 
 
-def _commit_task(p, b, message):
+def _commit_task(p, b, message, dry=False):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
-    nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it."""
+    nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
+    credential check, before the close, leaving the index as it was."""
     import fmmap
     import subprocess
     base = c.task_base(p.root, b) if c.git_root(p.root) else None
     if not base:
+        if dry:
+            return
         raise UsageError(f"{b.id} is done, but has no start point on record to tell its files apart: commit by hand")
     mirror = os.path.isdir(os.path.join(p.root, ".foreman")) and not c.mirror_ignored(p.root)
     files = fmmap.changed(p.root, base)
@@ -602,24 +612,30 @@ def _commit_task(p, b, message):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == b.id else None
         if f and not f.startswith(p.root.rstrip("/") + "/") and (r := c.git_root(os.path.dirname(f))):
             elsewhere.setdefault(r, set()).add(f)
-    for r, fs in elsewhere.items():
+    for r, fs in elsewhere.items() if not dry else ():
         print(f"{b.id}: {len(fs)} edited file(s) in {r} not committed (another repo): commit them there.")
     if not files:
-        print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
+        if not dry:
+            print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
         return
     git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
     add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
         leaks = fmsecrets.staged_leaks(p.root, files)
-        if leaks is None or leaks:
+        if dry or leaks is None or leaks:
             subprocess.run([*git, "reset", "-q", "--", *files], capture_output=True)
-            raise UsageError(f"{b.id} is done, but not committed: git couldn't show the staged lines to check them"
+        state = "not finished (still open, so fix it there)" if dry else "done, but not committed"
+        if leaks is None or leaks:
+            raise UsageError(f"{b.id} is {state}: git couldn't show the staged lines to check them"
                              if leaks is None else
-                             f"{b.id} is done, but not committed: {len(leaks)} added line(s) look like a credential (not "
+                             f"{b.id} is {state}: {len(leaks)} added line(s) look like a credential (not "
                              f"printed): " + ", ".join(f"{f}:{n} ({k})" for f, n, k in leaks[:10])
                              + f". Remove it (and rotate a real one), or mark a test fixture's line "
-                               f"`{fmsecrets.ALLOW}`, then commit.")
+                               f"`{fmsecrets.ALLOW}`, then commit"
+                             + ("." if dry else f" (fm task finish {b.id} --commit \"<message>\" retries it)."))
+    if dry:
+        return
     trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
     done = add.returncode == 0 and subprocess.run([*git, "commit", "-q", "-m", message, *trailer, "--",
@@ -2201,6 +2217,10 @@ def cmd_audit(args):
     tree = c.worktree_tree(p.root)
     if not tree:
         raise UsageError("fm audit prep needs a git repository")
+    branch, upto = b.meta.get("lane_branch"), "working tree, untracked files included"
+    if branch and not args.base and c._git(p.root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", fail=None):
+        # T-0718: a builder's work is on its branch: from where it left main, not main's own commits since
+        base, tree, upto = c._git(p.root, "merge-base", "HEAD", branch).strip() or base, branch, f"branch {branch}"
     try:
         r = subprocess.run(["git", "-C", p.root, "diff", base, tree], capture_output=True, text=True, errors="replace",
                            timeout=300)
@@ -2227,7 +2247,7 @@ def cmd_audit(args):
     if missing:
         raise UsageError(f"references/audit.md has no template for {', '.join(missing)} (its lens format changed?)")
     head = (f"Read-only audit of task {b.id} \"{b.title}\" ({b.type} {b.tier}) in {p.root}.\n"
-            f"Diff to review: {path} (git diff {base[:12]} → working tree, untracked files included; "
+            f"Diff to review: {path} (git diff {base[:12]} → {upto}; "
             f"{r.stdout.count(chr(10))} lines).")
     if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
@@ -2559,7 +2579,7 @@ def build_parser():
     t = tadd("finish")  # one-call close-out: run the checks, mark them, audits, docs, done
     t.add_argument("id")
     t.add_argument("--run", help="check for steps (and criteria without their own verify command)")
-    t.add_argument("--audit", required=True, help="how the audits were done (the self checklist, a review pass…)")
+    t.add_argument("--audit", help="how the audits were done (the self checklist, a review pass…); not needed to retry a done task's --commit")
     t.add_argument("--result", default="no findings", help="the self audit's result (S)")
     t.add_argument("--lens", action="append", help="M/L: '<lens>: <result>' per audit lens (repeatable)")
     t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
