@@ -716,6 +716,17 @@ class StateFallback(GuardCase):
 
 
 class ScratchNames(GuardCase):
+    def test_design_tokens_are_not_credentials(self):
+        # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
+        for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",
+                     f"{self.repo}/design-tokens.json", f"{self.repo}/ui/styles/tokens.json"):
+            with self.subTest(path=path):
+                self.assertFalse(self.bash(f"echo x > {path}"))
+        for path in (f"{self.repo}/token.json", f"{self.home}/.config/app/tokens.json", f"{self.repo}/design/secrets.yaml",
+                     f"{self.repo}/design/credentials.json", f"{self.repo}/tokens.json"):
+            with self.subTest(path=path):
+                self.assertBlocked(self.bash(f"echo x > {path}"), "credentials")
+
     def test_a_secret_sounding_name_in_scratch_is_not_a_credential(self):
         # T-0169 (self-improvement pass 2): `fm secrets > <scratchpad>/secrets.txt` was blocked as a credential
         self.assertFalse(self.bash("fm secrets > /tmp/claude-1000/proj/sess/scratchpad/secrets.txt"))
