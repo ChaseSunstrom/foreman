@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.2.6 — 2026-10-09
+- The guard's refusal of `curl … | python3 -c` says how it passes (T-0395, from JARVIS): a `python -c` that only reads the download as data passes when every other command on the line is a plain data tool that writes nothing, so run a file-writing program or a redirect as its own command. Only the message changes.
+- The guard's refusal of a plain `git merge` on Foreman's own repo names the way that works: `fm lane merge ID` (T-0394, from a self-improvement pass; builders and the main thread typed the merge by hand). Only the message changes.
+
 ## 1.2.5 — 2026-10-09
 - `fm status` works as an alias of `fm state` (T-0393). It was an invalid choice, though "status" is the word the rules and `/foreman:status` use.
 - `fm doctor` says which Foreman code your sessions really run (T-0391). Each session start records its plugin folder, and the new "running code" check warns when the last session ran an older Foreman than the newest one here. A session keeps the folder it started with: JARVIS ran 1.2.3 from its Folder marketplace clone while 1.2.4 was copied into cache folders it never loads.
