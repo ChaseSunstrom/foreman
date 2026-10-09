@@ -241,6 +241,7 @@ def _seed(plugin, wt, env):
 def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False):
     """(claude's JSON result, error) for one headless turn with the plugin dirs given; `keep` keeps the session so a
     later turn can --resume it (T-0243)."""
+    c.refuse_if_paused()  # T-0591
     cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)], "--setting-sources",
            "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions",
            "--max-budget-usd", f"{budget:g}"] + ([] if keep else ["--no-session-persistence"]) \
@@ -679,6 +680,8 @@ def _contest(p, args):
 
 def cmd_bench(args):
     import fmcli
+    if args.bench_cmd not in ("build", "list", "show", "compare", "models"):
+        c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)
     if args.bench_cmd == "build":
         if bool(args.commits) != bool(args.verify):

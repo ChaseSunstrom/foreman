@@ -33,6 +33,7 @@ NO_TOOLS = ["--setting-sources", "project,local", "--tools", "", "--strict-mcp-c
 
 def child_cmd(model, system):
     """The prompt (lens + pack) goes in on stdin: packs can exceed the per-argument size limit."""
+    c.refuse_if_paused()  # T-0591: fm relate's child comes through here too
     return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json", *NO_TOOLS,
             "--append-system-prompt", system]
 
@@ -285,6 +286,7 @@ def cmd_ideas(args):
     """One round of lenses, or a super brainstorm (--rounds N): each later round sees every idea so far and is asked
     only for new ones; it stops when a round adds fewer than --dry new ideas (T-0071)."""
     import fmcli
+    c.refuse_if_paused()  # T-0591
     p = fmcli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack += user_voice(p)
@@ -388,6 +390,7 @@ def cmd_oracle(args):
     """T-0226: behaviour examples and ambiguities for a task from its request, interpretation and criteria only (a
     tool-less child in a scratch folder: no code, no repo), saved in the brief's Oracle section before tests are written."""
     import fmcli
+    c.refuse_if_paused()  # T-0591
     p = fmcli.resolve(args)
     b = fmcli.need_brief(p, args.id)
     spec = "\n\n".join(f"## {name}\n{b.section(name).strip()}" for name in

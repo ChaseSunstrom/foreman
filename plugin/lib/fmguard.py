@@ -2236,6 +2236,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+            if sub == "pause" and "off" in rest[:2]:  # T-0591: the user's stop is lifted by the user
+                found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
+                                                "runs unattended, so only they lift it (they can type ! fm pause off)"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
