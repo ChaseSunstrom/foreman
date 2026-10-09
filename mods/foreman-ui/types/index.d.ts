@@ -21,6 +21,7 @@ export type FmActive = FmItem & {
   criteria: FmCriterion[]
   audits: { done: number; need: number }
   blockers: string[]
+  children?: { id: string; title: string; status: string; steps_done: number; steps_total: number }[] // T-0711
   on_task_s?: number | null // seconds since the task was first focused, when the view was built
   hypotheses?: FmHypothesis[] // T-0207/T-0228: the debugging ledger
   oracle?: { examples: number; ambiguities: string[] } | null // T-0226: examples from the spec alone
@@ -59,6 +60,9 @@ export type FmView = {
   approvals?: FmApproval[]
   closed?: { id: string; status: string; title?: string; grade?: string | null; lenses?: string[] }[] // T-0473
   signals?: { level: 'red' | 'amber'; text: string }[] // T-0472: shown as one glyph only when any
+  // T-0711: live sessions here and the cached tiles of remotes the user added (fm conductor remote add)
+  fleet?: { session: string; project?: string | null; task?: string | null; title?: string | null; context_pct?: number | null
+    mail?: number; leases?: number; remote?: string; age_s?: number | null; error?: string }[]
   recent?: string[]
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
