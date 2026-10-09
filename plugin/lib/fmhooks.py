@@ -1520,7 +1520,9 @@ def _drive(p, sd, briefs, pl, g):
     # T-0415: a job running for LONG_JOB_S is a service (a workflow, a watch, a server), not something to wait for
     now, since = time.time(), d.setdefault("since", {})
     d["since"] = since = {k: since.get(k, now) for k in running}
-    running = [k for k in running if now - since[k] < LONG_JOB_S]
+    agents = {str(t.get("id")) for t in bg if isinstance(t, dict) and t.get("type") == "agent"} if isinstance(bg, list) \
+        else set()  # T-0575: a subagent (a builder can take 30 min) is work that ends, never a service
+    running = [k for k in running if k in agents or now - since[k] < LONG_JOB_S]
     if running and sd["active"]:  # background work is out; its notification wakes the session (no active task:
         # the jobs don't hold back starting the next one)
         first = d.get("waited") != running[:5]  # sorted: the same jobs in another order aren't a new set
