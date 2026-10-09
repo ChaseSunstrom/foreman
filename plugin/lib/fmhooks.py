@@ -93,6 +93,8 @@ def run(event, raw):
             out = handler(payload) if handler else None
             if out is not None:
                 print(json.dumps(out, ensure_ascii=False))
+                _log_inject(event, ((out.get("hookSpecificOutput") or {}) if isinstance(out, dict) else {})
+                            .get("additionalContext"))
             if state:
                 _breaker_set(event, None)
         except HookBlock as e:
@@ -136,6 +138,19 @@ def log_error(event, text):
             f.write(f"{c.now()} {event} {c.redact(text).rstrip()}\n")
     except OSError:
         pass
+
+
+def _note_key(text):
+    """T-0499: a note's kind in a few words, ids, paths and numbers left out ("edited times without a check")."""
+    t = re.sub(r"^Foreman(?: [\w-]+)?:\s*", "", str(text))
+    t = re.sub(r"\bT-\d{4,}\b|\S*/\S*|\d+|[`'\"()\[\]]", " ", t)
+    return " ".join(re.findall(r"[A-Za-z][\w-]*", t)[:5]).lower()
+
+
+def _log_inject(event, text):
+    """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
+    if text:
+        _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text))})
 
 
 def _event(rec):
@@ -796,6 +811,9 @@ def _pre_tool_use(raw):
         return 2
     if block:
         reason = guard.message(block, ctx)
+        long_cmd = str((pl.get("tool_input") or {}).get("command") or "") if tool == "Bash" else ""
+        if len(long_cmd) > 160:  # T-0500: in a long command, quote the part that matched
+            reason += f"\nin: {c.redact(_window(long_cmd, block.detail))}"
         if block.category == "brief" and p:  # T-0409: the work in progress is usually right there in the queue
             try:
                 nxt = next(iter(c.order_queue(c.load_briefs(p))[0]), None)
@@ -840,6 +858,7 @@ def _pre_tool_use(raw):
         note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
+            _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
@@ -1181,6 +1200,7 @@ def _tripwire_note(pl, p, act):
     if sid and any(e.get("event") == "task_done" and e.get("task") == hit[0] and e.get("session_id") == sid
                    for e in c.ledger_tail(p, 400)):
         return None
+    _event({"kind": "lesson_shown", "task": hit[0], "file": rel, "session_id": sid})  # T-0454
     return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
 
 
@@ -1273,6 +1293,8 @@ def _window(cmd, detail, width=160):
     target = str(detail).split(" (", 1)[0].strip()
     var = re.match(r"\$\{?(\w+)", target)
     hit = target and (re.search(re.escape(target), cmd) or var and re.search(r"\$\{?" + var.group(1) + r"\b", cmd))
+    tail = os.path.basename(target.rstrip("/")) if "/" in target else ""
+    hit = hit or (len(tail) > 2 and re.search(re.escape(tail), cmd))  # T-0500: the guard names ~/x as /home/…/x
     if len(cmd) <= width or not hit:
         return c.fit(cmd, width)
     start = max(0, min(hit.start() - width // 3, len(cmd) - width + 2))

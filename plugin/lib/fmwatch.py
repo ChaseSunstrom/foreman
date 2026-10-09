@@ -383,7 +383,11 @@ def view(p):
         "inbox": [item(s) for s in sd["inbox"]][:10], "inbox_total": len(sd["inbox"]),
         "approvals": [{"task": a.get("task"), "allow": list(a.get("allow") or []), "why": c.plain(a.get("why") or "")}
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
-        "closed": [{"id": b.id, "status": b.status} for b in closed],
+        "closed": [{"id": b.id, "status": b.status, "title": c.plain(b.title)[:120],  # T-0473: the close-out card
+                    "grade": b.meta.get("verified") if b.status == "done" else None,
+                    "lenses": sorted({lens for lens, _, _ in b.audits()}) if b.status == "done" else []}
+                   for b in closed],
+        "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
         "today_done": today_done,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
@@ -406,6 +410,26 @@ def view(p):
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},
     }
+
+
+def _signals(sd, d):
+    """T-0472: what the band shows as one quiet glyph, only when something is amber or red: a gate failing now, usage
+    ahead of its pace, blocked tasks, hook errors. Calm: []."""
+    import fmbudget
+    import fmdoctor
+    out = []
+    for r in ((d.get("checks") or {}).get("data") or {}).get("results") or []:
+        if r.get("exit"):
+            out.append({"level": "red", "text": f"gate failing: {c.plain(str(r.get('cmd')))[:80]}"})
+    pace = fmbudget.degrade()
+    if pace:
+        out.append({"level": "amber", "text": f"usage ahead of pace ({c.plain(str(pace))[:80]})"})
+    if sd.get("blocked"):
+        out.append({"level": "amber", "text": f"{len(sd['blocked'])} blocked"})
+    errors = len(fmdoctor.recent_hook_errors())
+    if errors:
+        out.append({"level": "amber", "text": f"{errors} hook error(s)"})
+    return out
 
 
 def cmd_ui(args):

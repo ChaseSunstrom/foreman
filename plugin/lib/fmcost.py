@@ -514,6 +514,8 @@ def cmd_usage(args):
     nexts = (f"\n  Next followed: {sum(followed.values())} of {shown}"
              + (f"; most often not: {', '.join(f'{k} ×{v}' for k, v in ignored.most_common(3))}" if ignored else "")
              if shown else "")
+    if getattr(args, "prune", False):  # T-0468: fm commands nobody ran in the window, in any project; never deletes
+        return _prune(args, since)
     fmcli.out(args, {"days": args.days, "skills": dict(skills), "playbooks": dict(books), "commands": dict(cmds),
                      "unused": unused, "next_followed": dict(followed), "next_ignored": dict(ignored)},
               f"Last {args.days} day(s) in {p.slug}:\n  skills: "
@@ -522,3 +524,23 @@ def cmd_usage(args):
               + "\n  fm commands: " + (" · ".join(f"{k} {v}" for k, v in cmds.most_common(12)) or "none")
               + f"\n  never used: skills {', '.join(unused['skills']) or '-'}; {len(unused['playbooks'])} of "
                 f"{len(all_books)} playbooks" + nexts)
+
+
+def _prune(args, since):
+    """T-0468: the fm commands no session ran (any project) since `since`: candidates to fold or retire, proposed as
+    one CLEAN capture to review. Nothing is removed here."""
+    import argparse
+    import fmcli
+    used = set()
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200000):
+        if e.get("kind") == "tool" and e.get("tool") == "Bash" and str(e.get("ts", ""))[:19] >= since:
+            used.update(re.findall(r"(?:^|[;&|(]\s*|\s)fm\s+([a-z][a-z-]*)", str(e.get("target") or "")))
+    sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+    names = sorted(n for n in sub.choices if not n.startswith("_"))
+    unused = [n for n in names if n not in used]
+    capture = (f'fm capture "CLEAN: review fm commands not run in {args.days:g} days: {", ".join(unused[:20])}" '
+               f'--type CLEAN') if unused else ""
+    fmcli.out(args, {"days": args.days, "commands": len(names), "unused": unused, "capture": capture},
+              f"Not run in {args.days:g} day(s), in any project: {len(unused)} of {len(names)} fm commands: "
+              + (", ".join(unused) or "none") + (f"\nTo propose trimming them (nothing is removed): {capture}"
+                                                 if capture else ""))
