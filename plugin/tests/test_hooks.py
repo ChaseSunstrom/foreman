@@ -840,7 +840,7 @@ class PreToolUse(HookCase):
         self.task()
         for name, text in ((".env.example", "# --- orchestrator + sandbox\nA=1\n"),
                            ("jarvis-core/config/secrets.yaml.example", "# --- The optional orchestrator/sandbox pair\n"
-                            'approval_secret: "PUT-APPROVAL_SECRET-FROM-.env-HERE"\nrest: 1\n')):
+                            'approval_secret: "PUT-APPROVAL_SECRET-FROM-.env-HERE"\nrest: 1\n')):  # pragma: allowlist secret
             path = os.path.join(self.repo, name)
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "w") as f:
