@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.19 — 2026-10-09
 - Planning, briefs and the queue, first versions (T-0677 milestone: T-0450, T-0451, T-0452, T-0488, T-0489, T-0490, T-0491).
   - `fm task defer ID WHY --until DATE`: `fm next` names it again from that day.
   - `fm next` says how long this type and tier usually takes here.
