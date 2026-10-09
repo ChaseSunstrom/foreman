@@ -20,6 +20,13 @@ class Help(ForemanTestCase):
         self.assertLess(out.index("  next "), out.index("  sentinel "))
         self.assertEqual(self.fm().stdout, out, "fm alone prints it")
 
+    def test_status_is_state(self):
+        # T-0393: "status" is the word the rules and /foreman:status use; `fm status` was an invalid choice
+        self.fm("init")
+        p = self.fm("status", check=False)
+        self.assertEqual(p.returncode, 0, p.stderr[-300:])
+        self.assertEqual(p.stdout, self.fm("state").stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
