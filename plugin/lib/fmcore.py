@@ -275,6 +275,25 @@ def trusted():
         return None
 
 
+PAUSED = "paused (fm pause): nothing unattended starts until the user runs fm pause off"
+
+
+def panicked():
+    """T-0436: fm pause's flag. While it's there nothing Foreman runs unattended starts (the drive, fm run, serve, night,
+    lane new) and autonomy reads as standard everywhere; a claude child already running keeps going."""
+    return os.path.exists(os.path.join(state_dir(), "PANIC"))
+
+
+def set_panic(on):
+    path = os.path.join(state_dir(), "PANIC")
+    if on:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(now() + "\n")
+    elif os.path.exists(path):
+        os.remove(path)
+
+
 def task_base(root, b):
     """Where a task's own changes start (T-0078): the snapshot of the working files taken at focus, so uncommitted
     work from before the task isn't its change (no commit needed); else its start commit. None when neither exists
@@ -2016,7 +2035,7 @@ def next_for(p, briefs=None):
 
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
-    autonomy = read_meta(p).get("autonomy", "standard")
+    autonomy = "standard" if panicked() else read_meta(p).get("autonomy", "standard")
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
@@ -2082,7 +2101,8 @@ def state_dict(p, briefs=None):
     act = active_brief(briefs, p.lane)
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)
-    autonomy = meta.get("autonomy", "standard")
+    panic = panicked()
+    autonomy = "standard" if panic else meta.get("autonomy", "standard")
     active = None
     if act:
         changed = last_change(p, act.id)
@@ -2098,7 +2118,7 @@ def state_dict(p, briefs=None):
         "deferred": [b.id for b in briefs if b.status == "deferred"],
         "cycles": cycles, "dangling": [list(d) for d in dangling],
         "sensitive": bool(meta.get("sensitive")), "drive": meta.get("drive", True), "paused": bool(meta.get("paused")),
-        "autonomy": autonomy,
+        "autonomy": autonomy, "panic": panic,
         "pending": pending_tasks(meta),
         "asks": [{"task": a.get("task"), "allow": list(a.get("allow") or [])}
                  for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
@@ -2114,7 +2134,11 @@ def _more(n, shown):
 
 def render_state(sd, ts=None):
     a = sd["active"]
-    out = [f"# STATE — {sd['project']}", f"_Generated {ts or now()} by fm from the briefs; do not edit._", "", "## Focus"]
+    out = [f"# STATE — {sd['project']}", f"_Generated {ts or now()} by fm from the briefs; do not edit._", ""]
+    if sd.get("panic"):
+        out += ["**PAUSED everywhere (fm pause): no drive, fm run, serve, night or lane launches; autonomy standard. "
+                "fm pause off lifts it.**", ""]
+    out.append("## Focus")
     if a:
         out.append(f"{a['id']} [{a['type']} {a['tier']}] {a['title']}")
         if a["step"]:
