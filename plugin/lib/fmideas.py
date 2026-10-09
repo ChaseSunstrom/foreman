@@ -514,7 +514,8 @@ codes, messages), never internal APIs or names you'd have to guess.
 Reply in exactly this shape:
 ## Examples
 - GIVEN <state> WHEN <action> THEN <observable result>
-(5-12 lines: the main path, edge cases, errors and the criteria's own checks)
+(5-12 lines: the main path, edge cases, errors and the criteria's own checks; for each criterion, a negative twin:
+a near-miss input or state that must NOT pass, so a check that accepts anything is caught)
 ## Ambiguities
 - <question> — <the readings, and how the tests would differ>
 (or a single line "- none")
