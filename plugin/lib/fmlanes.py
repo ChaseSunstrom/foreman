@@ -3,6 +3,7 @@ work two tasks without touching each other's files. `new` makes one for a task (
 branch foreman/<id>) and gives the task to it; `list` shows them; `rm` removes one with nothing uncommitted, keeps its
 branch unless it is merged, and puts the task back in the queue."""
 import os
+import re
 import subprocess
 
 import fmcore as c
@@ -47,6 +48,9 @@ def cmd_lane(args):
     branch = f"foreman/{b.id}"
     if args.action == "brief":
         return builder_brief(p, b, args)
+    if args.action == "merge":
+        return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main)}, f"{b.id}: merged {merge.last} into {main} "
+                         f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
     if args.action == "new":
         if b.status in c.CLOSED or b.status in ("active", "verifying") or b.meta.get("lane"):
             raise c.PolicyError(f"{b.id} is {b.meta.get('lane') and 'already in lane ' + b.meta['lane'] or b.status}: "
@@ -134,9 +138,45 @@ def builder_brief(p, b, args):
              f'the task it describes."')
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
-                     f"git diff HEAD...<branch>), git merge --no-ff <branch>, fm lane rm {b.id} (takes it back), "
+                     f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
                      f"(skills/intake/references/delegate.md)")
+
+
+_CACHE = re.compile(r"(^|/)__pycache__(/|$)|\.py[co]$")
+
+
+def merge(p, b, main):
+    """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
+    guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
+    write by its task would (its grants, the standing yes, trust), so fm is no way around it. Refused over uncommitted
+    changes; a merge that conflicts is aborted."""
+    import fmcli
+    import fmguard
+    branch = b.meta.get("lane_branch") or f"foreman/{b.id}"
+    if _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode:
+        raise fmcli.UsageError(f"{b.id}: there is no branch {branch} to merge")
+    if _git(main, "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        raise c.PolicyError(f"{main} has uncommitted changes: commit them first, then merge")
+    meta = c.read_meta(p)
+    ctx = fmguard.Ctx(cwd=main, project_root=main, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
+                      state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
+                      allow=set(b.meta.get("allow") or []), task_id=b.id, standing=set(meta.get("standing") or {}),
+                      trusted=bool(c.trusted()))
+    files = [f for f in _git(main, "diff", "--name-only", "-z", f"HEAD...{branch}").stdout.split("\0") if f]
+    for f in files:
+        blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
+        if blk:
+            raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
+                                f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
+    r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
+    if r.returncode:
+        _git(main, "merge", "--abort")
+        raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}")
+    merge.last = branch
+    fmcli.mutate(p, b.id, lambda x: x.append_log(f"merged {branch} ({len(files)} file(s))"), "lane_merge",
+                 {"branch": branch, "files": files[:50]})
+    return files
 
 
 def remove(p, b, main):
@@ -151,11 +191,12 @@ def remove(p, b, main):
                 if x and x not in fmguard.DEFAULT_BRANCHES]
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored")  # ignored files (.env, builds) go with the folder too
-        if st.returncode or st.stdout.strip():
-            ignored = [ln[3:] for ln in st.stdout.splitlines() if ln.startswith("!! ")]
+        left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
+        if st.returncode or left:  # T-0377: python's caches are rebuilt on the next import, never anyone's work
+            ignored = [ln[3:] for ln in left if ln.startswith("!! ")]
             raise c.PolicyError(f"lane {path} has " + (f"ignored files ({', '.join(ignored[:5])}) that removing it would "
                                                        f"delete: move or delete them" if ignored and len(ignored) ==
-                                                       len(st.stdout.splitlines()) else
+                                                       len(left) else
                                                        "uncommitted work: commit it (fm task finish --commit) or remove it")
                                 + " there first; fm lane rm never discards anything")
         r = _git(main, "worktree", "remove", path)

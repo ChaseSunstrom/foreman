@@ -2603,7 +2603,7 @@ def build_parser():
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
-    s.add_argument("action", choices=["new", "list", "rm", "brief"])
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
     s.add_argument("id", nargs="?")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
