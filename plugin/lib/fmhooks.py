@@ -757,6 +757,13 @@ def _pre_tool_use(raw):
         return 2
     if block:
         reason = guard.message(block, ctx)
+        if block.category == "brief" and p:  # T-0409: the work in progress is usually right there in the queue
+            try:
+                nxt = next(iter(c.order_queue(c.load_briefs(p))[0]), None)
+            except Exception:
+                nxt = None
+            if nxt:
+                reason += f" To continue the queued work instead: fm focus {nxt.id} ({c.fit(nxt.title, 60)})."
         _event({"kind": "guard_block", "session_id": pl.get("session_id"), "category": block.category,
                 "tool": tool, "target": str(block.detail)[:120], "project": p.slug if p else None,
                 "cmd": c.fit(c.redact(_target(pl.get("tool_input") or {})), 160)})  # T-0172: groundable later
