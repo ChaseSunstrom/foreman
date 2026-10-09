@@ -706,6 +706,16 @@ def _commit_task(p, b, message, dry=False):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
+    # T-0738: a file only another task edited (since this one was created) is that task's to commit, even when this
+    # task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere)
+    mine, since = set(c.task_touches(p, b.id)), str(b.meta.get("created") or "")
+    others = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
+              if e.get("event") == "touched" and e.get("task") not in (None, b.id) and str(e.get("ts", "")) >= since
+              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    theirs = [f for f in files if f in others and f not in mine]
+    files = [f for f in files if f not in theirs]
+    if theirs and not dry:
+        print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
     files += [".foreman"] if mirror else []
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
@@ -735,6 +745,9 @@ def _commit_task(p, b, message, dry=False):
                                f"`{fmsecrets.ALLOW}`, then commit"
                              + ("." if dry else f" (fm task finish {b.id} --commit \"<message>\" retries it)."))
     if dry:
+        return
+    if add.returncode == 0 and not subprocess.run([*git, "diff", "--cached", "--quiet", "--", *files]).returncode:
+        print(f"{b.id}: nothing to commit (its files are as committed already).")  # T-0738: not a blank failure
         return
     trailer = [] if "Foreman-Task:" in message else ["--trailer", f"Foreman-Task: {b.id}"]  # fm why reads it
     # only the task's files (and so only what was scanned), whatever else was staged before (T-0132 review)
