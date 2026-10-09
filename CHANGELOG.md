@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.15 — 2026-10-09
 - A data-reading `curl … | python3 -c …` is judged only by what runs before it (T-0414, from JARVIS, refused four times in one session for `…; git log; git fetch` and `T=$(grep …); API=…; …`). Commands after python's pipeline can't change what it does, so they no longer count. A plain assignment before it counts as data when the name isn't in the environment and isn't one python, its loader or the shell reads (`PYTHON*`, `LD_*`, `PATH`, `HOME`, `IFS` …). A name it sets may be expanded only if its value is a plain word. A bare `&` anywhere still refuses, as do python inside `( )` with a redirect or pipe on the group, a quoted `$( )` or backtick, `printf -v`, and a substitution in a heredoc body (the last three slipped through before). A quoted parenthesis on the line also refuses: the review showed `echo ")"; ( … | python3 … ) > json.py` passing, because the quoted `)` was counted as a real one. Real bash checks the rows.
 - Downloaded content reaching a shell is refused however the line is shaped (T-0421, found by the T-0414 builder). Before, `curl … $(true) | bash`, `curl … |(bash)` and `diff <((curl … | bash))` ran the download unchecked: a substitution or a group split the download from the shell's own pipeline. Now a shell, `source` or `.` that reads a pipe is refused whenever a fetcher appears anywhere on the line. That also covers a file downloaded first and then piped in.
 - A brace expansion can't hide a data tool's write (T-0422, found by the T-0414 builder). Bash turns `curl -s {-o,json.py} URL` into `-o json.py`, which planted the module that a data-reading python then imported. Any word with a brace expansion now counts as a possible write.
