@@ -478,6 +478,9 @@ def _ifs_unreadable(cmd):
         return "IFS in an assignment's value: the guard can't read where that value is split later"
     why = "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
     plain, hidden = rest != cmd, _RUNS_HERE.search(rest)
+    data = _ifs_data(cmd) if plain else None
+    if data is not None:  # T-0698: IFS only in data, unless eval or source beside it may run it here
+        return why if _RUNS_HERE.search(data) or _NAME_COMPUTED.search(_mask_quotes(_strip_heredocs(data))) else None
     if plain and hidden:  # T-0590: eval or source may set IFS out of sight
         return why
     scoped = rest if _READ_REDEFINED.search(rest) else _IFS_FOR_READ.sub(" read", rest)
@@ -492,6 +495,49 @@ def _ifs_unreadable(cmd):
     else:
         return None
     return why if split else None
+
+
+def _ifs_data(cmd):
+    """T-0698: cmd with one piece of data blanked when every IFS on the line, plain or named, is in it: a '…' string
+    or the body of a quoted-delimiter heredoc no shell on the line reads. Nothing in it expands, and a shell that runs
+    it (eval, bash -c) reads it whole on its own. None when IFS is also beside it or in a second piece (bash -c
+    'IFS=/ source /dev/stdin' <<< '…${IFS}…'), or where quotes aren't read flat (`…`, and what _mask_quotes leaves)."""
+    lines, bodies, seen, i = cmd.split("\n"), [], [], 0
+    offs = [0]
+    for line in lines:
+        offs.append(offs[-1] + len(line) + 1)
+    while i < len(lines):
+        line, i = lines[i], i + 1
+        starts = _heredoc_starts(seen, line)
+        seen.append(line)
+        for quote, delim in starts:
+            first = i
+            while i < len(lines) and not _ends_body(lines[i], delim, line):
+                i += 1
+            bodies.append((offs[first], offs[i], quote))
+            i += 1
+    code = cmd
+    for s, e, _ in bodies:
+        code = code[:s] + re.sub(r"[^\n]", " ", code[s:e]) + code[e:]
+    fed = any(q for *_, q in bodies) and _stdin_scripts(cmd, _split(_tokens(_lines("\n".join(seen)))))
+    mask, pieces = "" if "`" in code else _mask_quotes(code), set()  # same length; quoted text as underscores
+    for m in _IFS_PLAIN.finditer(cmd):
+        p = m.start()
+        body = next((b for b in bodies if b[0] <= p < b[1]), None)
+        if body:
+            if not body[2] or fed:  # <<E bodies expand; a shell's are code (T-0589)
+                return None
+            pieces.add(body[:2])
+            continue
+        o, c = max(mask.rfind("'", 0, p), mask.rfind('"', 0, p)), mask.find("'", p)
+        if mask[o:o + 1] != "'" or c < 0 or set(mask[o + 1:c]) != {"_"}:  # "…" expands; code; a comment
+            return None
+        pieces.add((o + 1, c))
+    if len(pieces) != 1:
+        return None
+    (s, e), = pieces
+    out = cmd[:s] + re.sub(r"[^\n]", " ", cmd[s:e]) + cmd[e:]
+    return None if _IFS_NAME.search(re.sub(r"[\\'\"]", "", out)) else out
 
 
 def _ifs_spaces(cmd):

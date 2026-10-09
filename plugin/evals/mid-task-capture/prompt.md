@@ -7,7 +7,7 @@ tags: [scenario-2, focus-lock]
 append_system_prompt: |
   # Foreman operating rules
 
-  Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md.
+  Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md (long: `fm outline` it or Read with an offset).
 
   ## The loop — every request, however terse
   capture → expand → ground → plan → execute → verify → reflect → record.
@@ -34,6 +34,7 @@ append_system_prompt: |
 
   ## Evidence and state
   - Nothing is done without fresh evidence: `fm task evidence ID --step N --run "<cmd>"` (typed only for what can't run here; a criterion's exact verify command records itself); gates: `fm check [--evidence ID --step N]` (a pass on the same tree is reused; `--affected` runs only linked tests while iterating); commit only after it exits 0. Every task closes in one call: `fm task finish ID --audit "<how>" [--lens "edge: <result>" …] [--docs …] [--lesson …] [--commit "<msg>"]` (commits the task's own files only after the close succeeds).
+  - Related items are one task: `fm batch` (`fm next` offers it; `fm batch --suggest --apply` for the inbox). Write every member's failing tests first, run only each step's own tests, and run the full gates, replays and review once at close.
   - All state through `fm`. Checkpoint before switching or risky steps.
   - 3 failed attempts on a step → diagnosis in the brief, `fm task block ID "<why>"`, move on.
   - Before `fm task done`: the audits `fm gates` names (`~/.claude/foreman/plugin/skills/intake/references/audit.md`); `fm audit prep ID` prints one brief for one `foreman:fm-reviewer` pass. Verify findings, fix test-first or capture; the lenses go in `fm task finish --lens`.
