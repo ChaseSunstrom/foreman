@@ -1453,7 +1453,11 @@ def post_tool_use_failure(pl):
             return None
         import fmrecall
         act = c.active_brief(c.load_briefs(p), p.lane)
-        note = fmrecall.note_failure(p, act.id if act else None, str(pl.get("error") or ""))
+        err = str(pl.get("error") or "")
+        note = fmrecall.note_failure(p, act.id if act else None, err)
+        if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
+            import fmdebug
+            note = " ".join(filter(None, [note, fmdebug.line(p, err)]))
     except Exception:
         log_error("PostToolUseFailure", _tb())
         return None

@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- Debugging intuition engine, first slice (T-0706). A red run now comes with what a debugger would gather first.
+  - `fm suspects` ranks files for a failure from signals already on hand: repo frames on the stack, what the task changed, the sources linked to the failing tests, and edit recency. The failure hook adds its top 3 to a failing test run.
+  - `fm whyred CMD`: delta debugging (ddmin over hunks) of the task's change against its start tree, in a scratch copy, capped at 32 runs. It names the minimal hunks that turn a green command red.
+  - `fm record CMD` reruns a Python command with a `sys.monitoring` flight recorder (3.12+) and shows the locals of each repo frame the failure unwound through.
+  - Localisation gym: 30 seeded red episodes in a scratch copy of Foreman, each one bug plus 4 harmless edits. The root cause was in the top 3 in 29/30 (96%) and first in 27; stack-only got 15/30 and random order 60%.
+- Knowledge graph, first slice (T-0707). `fm graph` keeps one local sqlite graph per project: code edges (graphify's `graphify-out/graph.json` when present, else name mentions), test links, task→file edges from `Foreman-Task` trailers and touched events, and co-change between files, with time on every edge that has one.
+  - `fm graph blast PATH…`: dependents, co-change partners, linked tests and the FIX tasks that touched it.
+  - `fm graph pack "<task text>"`: a ranked read-set by personalized PageRank from the words, past tasks and the code graph.
+  - Both take `--as-of`. Backtest over 140 finished Foreman tasks, as of each task's creation: pack recalled 56% of the files the task changed in its top 10, against 10% for keyword retrieval on paths (better on 106 tasks, worse on 7). The blast radius of the first changed library file held 67% of the task's other changed files.
 - Ambient verification, first slice (T-0705). `fm check ambient on` (off by default): after each edit, the affected tests (the `fm check --affected` selection) run in a detached process, out of the model's turns. The model hears only a flip, passing tests that now fail or failing ones that pass again, as one note on its next tool call; a passing run is the current step's evidence. Skipped on a strained host. Replaying 10 seeded regressions in a fixture repo: 10/10 caught, reported about 0.17 s after the edit, with no test command run by the model.
 - Zero-call bookkeeping, first slice (T-0704). Over 14 days, 460 tasks closed with 618 `fm task evidence` calls that re-ran a command the session had just run, and 135 refused finishes retried one gap at a time.
   - A passing command run through the same runner as one of the task's verify commands or a project gate (e.g. `python3 plugin/tests/run.py -k X`, `npm test`, `cargo test`) records itself as the current step's evidence. Piped or `;`-chained commands don't count (their exit isn't the check's), nor do steps about failing or reproducing.

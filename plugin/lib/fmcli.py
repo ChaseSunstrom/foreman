@@ -2776,7 +2776,8 @@ HELP_TIERS = [
     ("Every task", "next capture intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export instruments sym fail logs data trace"),
+                         "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred "
+                         "record graph"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest cost usage repeats friction taste evals replay bench evolve"),
@@ -3037,6 +3038,25 @@ def build_parser():
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
+    s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
+                                                        "read-set, as of any moment (T-0707)")
+    s.add_argument("action", choices=["blast", "pack", "build"])
+    s.add_argument("words", nargs="*")
+    s.add_argument("--as-of", help="only what was known by this ISO time (backtests)")
+    s.add_argument("--top", type=int, default=15)
+    s = add("suspects", lazy("fmdebug", "cmd_suspects"), help="files ranked for a failure: stack, task change, test "
+                                                               "links, recency (T-0706)")
+    s.add_argument("file", nargs="?", help="the failing run's output (default: stdin)")
+    s.add_argument("--top", type=int, default=5)
+    s = add("whyred", lazy("fmdebug", "cmd_whyred"), help="the minimal hunks of this task's change that turn a command "
+                                                           "red (delta debugging, T-0706)")
+    s.add_argument("cmd")
+    s.add_argument("--timeout", type=int, default=300)
+    s = add("record", lazy("fmdebug", "cmd_record"), help="rerun a Python command and show the locals where its "
+                                                           "exceptions unwound (T-0706)")
+    s.add_argument("cmd")
+    s.add_argument("--top", type=int, default=4)
+    s.add_argument("--timeout", type=int, default=600)
     s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
