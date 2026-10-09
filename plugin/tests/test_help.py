@@ -1,5 +1,6 @@
 """T-0094: fm help lists every command once, in tiers (the everyday ones first); fm alone prints it."""
 import argparse
+import re
 import os
 import sys
 import unittest
@@ -25,7 +26,8 @@ class Help(ForemanTestCase):
         self.fm("init")
         p = self.fm("status", check=False)
         self.assertEqual(p.returncode, 0, p.stderr[-300:])
-        self.assertEqual(p.stdout, self.fm("state").stdout)
+        stamp = lambda t: re.sub(r"_Generated \S+", "", t)  # noqa: E731 — the two calls may straddle a second
+        self.assertEqual(stamp(p.stdout), stamp(self.fm("state").stdout))
 
 
 if __name__ == "__main__":

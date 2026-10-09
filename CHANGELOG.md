@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.5 — 2026-10-09
 - `fm status` works as an alias of `fm state` (T-0393). It was an invalid choice, though "status" is the word the rules and `/foreman:status` use.
 - `fm doctor` says which Foreman code your sessions really run (T-0391). Each session start records its plugin folder, and the new "running code" check warns when the last session ran an older Foreman than the newest one here. A session keeps the folder it started with: JARVIS ran 1.2.3 from its Folder marketplace clone while 1.2.4 was copied into cache folders it never loads.
 - `plugin/tests/run.py -p` is repeatable (T-0389). A second `-p` used to replace the first, so `run.py -p a.py -p b.py` silently ran `b.py` alone.

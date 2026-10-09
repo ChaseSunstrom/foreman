@@ -173,14 +173,14 @@ class Checks(unittest.TestCase):
         with open(ledger, "w") as f:
             for root in ("new", "old"):  # the newest session_start counts
                 f.write(json.dumps({"event": "session_start", "data": {"root": os.path.join(self.t, root)}}) + "\n")
-        r = d.check_running_code(ledger, installed)
+        r = d.check_running_code(ledger, installed, plugin=os.path.join(self.t, "new"))  # not this repo's own version
         self.assertEqual(r.status, "WARN")
         self.assertIn("1.2.3", r.detail)
         self.assertIn(os.path.join(self.t, "old"), r.detail)
         with open(ledger, "a") as f:
             f.write(json.dumps({"event": "session_start", "data": {"root": os.path.join(self.t, "new")}}) + "\n")
-        self.assertEqual(d.check_running_code(ledger, installed).status, "PASS")
-        self.assertEqual(d.check_running_code(os.path.join(self.t, "none.jsonl"), installed).status, "PASS")
+        self.assertEqual(d.check_running_code(ledger, installed, plugin=os.path.join(self.t, "new")).status, "PASS")
+        self.assertEqual(d.check_running_code(os.path.join(self.t, "none.jsonl"), installed, plugin=os.path.join(self.t, "new")).status, "PASS")
         stale = self.write("stale.json", json.dumps({"plugins": {"foreman@foreman": [
             {"installPath": os.path.join(self.t, "old")}]}}))  # a dev checkout newer than the install record
         self.assertEqual(d.check_running_code(ledger, stale, plugin=os.path.join(self.t, "old")).status, "PASS")
