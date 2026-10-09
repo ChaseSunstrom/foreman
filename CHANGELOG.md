@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- Guard hardening batch (T-0669, which closes T-0577 to T-0584): every open fuzzer escape is now blocked, and the batch was verified once at close. Changes:
+  - A newline inside quotes stays part of the word, so a second shell gets `ins\⏎tall` back and joins it (class 2).
+  - A backslash-newline inside double quotes is joined, as bash does (class 3).
+  - A substitution's tail is also read up to its last `)` when the outer `)"` leaves a quote open. This covers a case arm's `)` and `$((1))#` (classes 4 and 5).
+  - A heredoc start counts only outside quotes in its own `$( )` or backtick context, so `"$(echo "x <<EOF")"` hides no line (class 7).
+  - `eval` and `sh -c` text is also read with `\$` and `` \` `` unescaped (class 8).
+  - An unquoted heredoc body is also scanned with `` \` `` as a backtick, as it is inside backticks (class 9).
+  - A computed command name fed a heredoc or here-string reads it as code.
+
+  Quoted multi-line `python3 -c` code is no longer broken by inserted separators, so one real `curl | python3 -c` JSON reader now passes the existing data-only proof.
 - Batch by default (T-0670, at the user's request: "put them into one task/milestone, and not test every little change"):
   - `fm next` offers a batch for related items of any size. Before, it only did so for three or more small items of one type.
   - `fm batch --suggest` lists related groups across the inbox, and `--apply` makes them. Items are related when they share a type and either a scope path or their distinctive words (boilerplate common to a third of the inbox doesn't count). Closest pairs merge first, up to 8 items a batch.

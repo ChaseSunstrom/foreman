@@ -10,36 +10,36 @@
 'timeout 5${IFS}rm -rf ~'
 
 # 2. a backslash-newline inside single quotes that a second shell reads (eval, bash -c, sh -c, trap, script -c)
-open "eval 'claude plugin ins\\\ntall x@y'"
-open "bash -c 'r\\\nm -rf ~'"
-open "trap 'g\\\nit push --force origin main' EXIT"
+"eval 'claude plugin ins\\\ntall x@y'"
+"bash -c 'r\\\nm -rf ~'"
+"trap 'g\\\nit push --force origin main' EXIT"
 
 # 3. a backslash-newline inside double quotes, which this shell removes too
-open 'D=~; rm -rf "\\\n$D"'
-open '"rm\\\n" -rf ~'
+'D=~; rm -rf "\\\n$D"'
+'"rm\\\n" -rf ~'
 
 # 4. a case arm's ) ends a "$( … )" body early, so a quoted or escaped name after it reads as quoted text
-open 'echo "$(case a in a) r\'\'m -rf ~;; esac)"'
-open 'echo "$(case a in a) \\rm -rf ~;; esac)"'
+'echo "$(case a in a) r\'\'m -rf ~;; esac)"'
+'echo "$(case a in a) \\rm -rf ~;; esac)"'
 
 # 5. $((…))# inside a "$( … )" hides a quoted name after it
-open 'echo "$(echo $((1))#x; git ""push"" --force origin main)"'
+'echo "$(echo $((1))#x; git ""push"" --force origin main)"'
 
 # 6. a download piped into a ( group ) with a space or a line break before the paren
 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin | (bash)'
 'echo "rm -rf /home/sb" | curl -s file:///dev/stdin |\n(bash)'
 
 # 7. a quoted "x <<EOF" inside a "$( … )" or "` … `" starts a heredoc in the guard's reading, hiding the next line
-open 'echo "$(echo "x <<EOF"\nrm -rf ~)"'
-open 'echo "`echo "x <<EOF"\nrm -rf ~`"'
+'echo "$(echo "x <<EOF"\nrm -rf ~)"'
+'echo "`echo "x <<EOF"\nrm -rf ~`"'
 
 # 8. an escaped substitution in a double-quoted string eval or sh -c runs: inside \"…\", as \`…\`, or in a heredoc
-open 'sh -c "echo \\"\\$(rm -rf ~)\\""'
-open 'eval "echo \\`rm -rf ~\\`"'
-open 'eval "cat <<EOF\n\\$(rm -rf ~)\nEOF"'
+'sh -c "echo \\"\\$(rm -rf ~)\\""'
+'eval "echo \\`rm -rf ~\\`"'
+'eval "cat <<EOF\n\\$(rm -rf ~)\nEOF"'
 
 # 9. an escaped backtick in a heredoc inside backticks
-open 'echo `cat <<EOF\n\\`rm -rf ~\\`\nEOF`'
+'echo `cat <<EOF\n\\`rm -rf ~\\`\nEOF`'
 
 # the fixed seed's own escapes (FM_FUZZ_SEED 433, 300 cases; two more are in class 1 above): class 1 but the last two
 # (classes 2 and 4)
@@ -76,5 +76,5 @@ open 'echo `cat <<EOF\n\\`rm -rf ~\\`\nEOF`'
 'true # c\nrm${IFS}-rf $HOME'
 'echo `claude${I\\\nFS}plugin install x@y`'
 'echo $(( 1 )) $(true; rm${IF\\\nS}-rf ~)'
-open "echo $(eval 'echo $((1))#x; '\\claude' plugin ins\\\ntall x@y')"
-open 'echo "$(echo \'<<-EOF\' &&\ncase a in a) git p\'\'ush --force origin main;; esac)"'
+"echo $(eval 'echo $((1))#x; '\\claude' plugin ins\\\ntall x@y')"
+'echo "$(echo \'<<-EOF\' &&\ncase a in a) git p\'\'ush --force origin main;; esac)"'
