@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm lane rm` removes a lane whose only leftovers are build and test caches (T-0408, from JARVIS, which deleted them by hand before each rm and hit the guard doing it). That covers `.pytest_cache`, `.mypy_cache`, `.ruff_cache`, `.hypothesis`, `.tox`, `node_modules`, `.vite`, `.svelte-kit`, `.next`, `.turbo`, `.gradle`, `htmlcov` and `.coverage`, as well as `__pycache__`. Any other ignored file, such as a `.env`, still refuses: it may be someone's config.
 
 ## 1.2.11 — 2026-10-09
 - Evidence for a step moves the current step (T-0406). The user, watching JARVIS in Claude Code, saw it work on later steps while the Foreman band still showed an earlier one: T-0278 read "step 1/5, 0 done" with passing runs for steps 3–5, because only `fm task finish` ticked steps. Now a run that closes a step (evidence in, no failed run newer than a pass) ticks it and makes the next open step current, and a failed run reopens its step and makes it current. This holds for every way evidence is recorded (`fm task evidence`, `fm check --evidence`, `fm task prove`, a passing criterion check). `fm task finish` is as strict as before.
