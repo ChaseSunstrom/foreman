@@ -856,13 +856,22 @@ def _pre_tool_use(raw):
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
-        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act)]))
+        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+                                      _ambient_note(p)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _ambient_note(p):
+    """T-0705: a flip of the affected tests since the last tool call, once."""
+    if not p or not os.path.exists(os.path.join(p.dir, "ambient", "note.json")):
+        return None
+    import fmambient
+    return fmambient.note(p)
 
 
 def _guard_ctx(pl, fmguard):
@@ -1341,6 +1350,11 @@ def post_tool_use(pl, ok=True):
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
+        try:  # T-0705: the affected tests run out of the model's turns; only a flip comes back
+            import fmambient
+            fmambient.after_edit(p, path)
+        except Exception:
+            log_error("PostToolUse", _tb())
         note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
