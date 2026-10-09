@@ -422,6 +422,8 @@ def cmd_task(args):
                                                         b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
+        for w in _close_warnings(p, b, files):  # T-0672: seen, never a refusal
+            print(f"fm: warning: {w}", file=sys.stderr)
         grade, why = b.grade()
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed),
@@ -824,6 +826,43 @@ def task_done_in(p, args):
 
 
 _DONE_WHEN = re.compile(r"(?m)^>?\s*DONE-WHEN:\s*(.+)$")
+
+
+def _close_warnings(p, b, files):
+    """T-0672: what a close doesn't refuse but the user should see: a likely secret in a file the task changed (T-0441;
+    placeholder lines aside), and ignored files made since it began, outside its scope (T-0462: untracked ones are
+    scope drift, refused already; ignored output — logs, builds, scratch — slips past that)."""
+    import fmsecrets
+    out = []
+    for f in files[:200]:
+        try:
+            path = os.path.join(p.root, f)
+            if os.path.getsize(path) > 1_000_000:
+                continue
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+        except OSError:
+            continue
+        lines = text.split("\n")
+        out += [f"possible secret ({kind}) in {f}:{n}: move it to the environment or a secret store before committing"
+                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))
+                if not fmsecrets.PLACEHOLDER.search(lines[n - 1])][:3]
+    began = c.parse_ts(c.first_touch(p, b.id) or b.meta.get("created") or "")
+    if b.meta.get("scope") and began and c.git_root(p.root):
+        ignored = c._git(p.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory") or ""
+        since = began.timestamp() - 1
+        new = []
+        for x in ignored.splitlines()[:2000]:
+            try:
+                if x and not x.startswith(".foreman/") and os.path.getmtime(os.path.join(p.root, x)) >= since:
+                    new.append(x)
+            except OSError:
+                continue
+        stray = c.scope_drift(b, new)
+        if stray:
+            out.append(f"ignored files outside its scope [{', '.join(b.meta['scope'])}] left behind: "
+                       + ", ".join(stray[:10]))
+    return out
 
 
 def cmd_batch(args):
