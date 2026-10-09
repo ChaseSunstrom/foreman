@@ -408,6 +408,14 @@ class StateDirect(GuardCase):
             ("cat {fhome}/state/projects/x/STATE.md", None),
         ], self.bash)
 
+    def test_audit_diff_refusal_names_prep(self):
+        # T-0413 (JARVIS): rm -f of a frozen audit diff was refused with no fm way named to clear it
+        for r in (self.bash("rm -f {fhome}/state/projects/x/audits/T-0012.diff"),
+                  self.write("{fhome}/state/projects/x/audits/T-0012.diff")):
+            self.assertBlocked(r, "state-direct")
+            self.assertIn("fm audit prep T-0012 rewrites it", g.message(r, self.ctx()))
+        self.assertNotIn("fm audit prep", g.message(self.write("{fhome}/state/projects/x/a.md"), self.ctx()))
+
     def test_archives_clones_and_target_dirs_write_where_they_point(self):
         self.run_table([
             ("tar -xf forged.tar -C {fhome}/state", "state-direct"),
