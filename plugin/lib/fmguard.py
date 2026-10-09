@@ -417,14 +417,16 @@ def _ends_body(text, delim, starter):
 _IFS_PLAIN = re.compile(r"\$IFS(?![A-Za-z0-9_])|\$\{IFS\}")
 _IFS_OP = re.compile(r"\$\{[#!]?IFS(?![A-Za-z0-9_])")
 _IFS_NAME = re.compile(r"(?<![A-Za-z0-9_])IFS(?![A-Za-z0-9_])")
-_IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^']*'|\"[^\"]*\"|[^\s;&|'\"])*\s+read\b")
+_IFS_FOR_READ = re.compile(r"(?<![\w$])IFS=(?:\$?'[^'\n]*'|\"[^\"\n]*\"|[^\s;&|'\"])*[ \t]+read\b")  # one line
 _READ_REDEFINED = re.compile(r"\b(?:alias|enable|function)\b|\bread\s*\(")
 _NAME_COMPUTED = re.compile(  # a variable name built by an expansion: declare $'\x49FS=/', export "$n=/", (( $n = 1 ))
     r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:"  # at command position
     r"(?:declare|typeset|local|export|readonly|read|mapfile|readarray|getopts|let)\b[^;&|\n]*?\s[^\s=;&|]*[$`'\"\\]"
     r"|(?:declare|typeset|local)\b[^;&|\n]*\s-\w*n|printf\b[^;&|\n]*-v\s*\S*[$`'\"\\])"
-    r"|\(\([^)]*[$`][^)]*[^=!<>]=(?!=)|\$\{![^}]*=")
+    r"|\(\(\s*(?:[^()]*,\s*)?\$\{?\w+\}?\s*(?:[-+*/%^|&]|<<|>>)?=(?!=)|\$\{![^}]*=")  # (( $n = 1 )), not (( a == b ))
 _UNQUOTED = re.compile(r"\$[\w{@*#?!$(-]|`")
+_RUNS_HERE = re.compile(  # T-0590: code this shell runs that the line doesn't show: eval text, a sourced file
+    r"(?:^|[;&|({`\n]|\$\(|\b(?:then|do|else|elif)\s)\s*(?:builtin\s+|command\s+)?(?:eval|source|\.)(?=\s)")
 
 
 def _ifs_unreadable(cmd):
@@ -432,16 +434,32 @@ def _ifs_unreadable(cmd):
     rest = _IFS_PLAIN.sub(" ", cmd)
     if _IFS_OP.search(rest):
         return "IFS is expanded with an operator: the guard can't read the word it yields"
+    why = "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
+    plain, hidden = rest != cmd, _RUNS_HERE.search(rest)
+    if plain and hidden:  # T-0590: eval or source may set IFS out of sight
+        return why
     scoped = rest if _READ_REDEFINED.search(rest) else _IFS_FOR_READ.sub(" read", rest)
-    # quoted text and heredoc bodies are data: check_bash reads what eval, bash -c and bash <<EOF run on their own
+    # quoted text and heredoc bodies are data: check_bash reads what eval, bash -c and bash <<EOF run on their own;
+    # beside a plain use or an eval/source they aren't (T-0590: eval 'IFS=m'; "r$IFS" -rf ~)
     bare = _mask_quotes(_strip_heredocs(scoped))
-    if _IFS_NAME.search(re.sub(r"[\\'\"]", "", bare)):  # I""FS and I\FS are IFS to bash
-        split = rest != cmd or "$" in bare or "`" in bare
+    text = scoped if plain or hidden else bare
+    if _IFS_NAME.search(re.sub(r"[\\'\"]", "", text)):  # I""FS and I\FS are IFS to bash
+        split = plain or "$" in text or "`" in text
     elif _NAME_COMPUTED.search(bare):  # ponytail: a computed name is refused only beside an expansion that splits
-        split = rest != cmd or _UNQUOTED.search(bare)
+        split = plain or _UNQUOTED.search(bare)
     else:
         return None
-    return split and "IFS may be changed on a line that splits words on it: the guard can't read how bash splits them"
+    return why if split else None
+
+
+def _ifs_spaces(cmd):
+    """T-0576: an unquoted plain IFS expansion as the space bash splits on. T-0590: a # right after it stays a
+    literal, not a comment; quoted text is left as it is for the nested check that reads it (bash -c '…')."""
+    out, last = [], 0
+    for m in _IFS_PLAIN.finditer(_mask_quotes(cmd)):  # same length as cmd, quoted text blanked
+        out += [cmd[last:m.start()], " \\" if cmd[m.end():m.end() + 1] == "#" else " "]
+        last = m.end()
+    return "".join(out) + cmd[last:]
 
 
 def _join_continued(cmd):
@@ -1877,7 +1895,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         return [("rm-outside", "command nesting too deep to analyse")]
     cmd = _join_continued(cmd)
     unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
-    cmd = _IFS_PLAIN.sub(" ", cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
+    cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
     found = _interpreter_writes(cmd, ctx)  # every depth: an fm --run command is read on its own (T-0128 review)
     # T-0345: what python code starts; a script only written with cat isn't run by writing it, unless the same
