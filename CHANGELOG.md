@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- A capture that resembles a dropped task now says so, with the reason it was dropped. A capture that a standing veto covers says that too (T-0438, from the Foreman brainstorm's intake-quality capability). This is advice only: the capture still happens, and it names `fm task drop` for when the earlier answer still holds.
+- `fm friction`'s slow-gate signal takes its median over real runs only (T-0424). Before, reused passes (0.0 s) pulled the median down, so a gate looked slow every time it really ran ("fm replay 12s vs usual 0s").
 - The drive no longer offers a builder lane for a task already under way (T-0429). While a gate ran, it offered fresh lanes for T-0414 and T-0421, which were done in this checkout and only waiting on that gate. A queued task with a ticked step or recorded evidence is no longer offered as side work.
 - A guard block's event keeps the part of the command that tripped it (T-0423, from a self-improvement pass that couldn't explain two `$R` blocks). The event now records a window around the blocked target, or its variable, instead of the command's head, so a block that comes after a long heredoc can be explained.
 - Builders leave CHANGELOG.md to the main thread (T-0428). With `merge=union` (T-0427), the T-0414 lane's "Unreleased" line merged under `## 1.2.14`, because the main line released between the lane's start and its merge. The lane contract now tells a builder not to edit CHANGELOG.md and to give its changelog line in the final report; the main thread adds it at finish.

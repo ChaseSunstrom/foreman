@@ -190,6 +190,20 @@ def nearest_done(p, titles):
     return out
 
 
+def nearest_dropped(p, text, skip=None):
+    """T-0438: (id, title, why) of the dropped brief that shares at least half the request's words (2 or more), so a
+    re-ask is noticed at capture; None when there is none."""
+    q, best = set(_tokens(text)), None
+    for b in c.load_briefs(p, include_archive=True):
+        if b.status != "dropped" or b.id == skip:
+            continue
+        n = len(q & set(_tokens(" ".join([b.title, b.section("Raw request")]))))
+        if n >= max(2, (len(q) + 1) // 2) and (not best or n > best[0]):
+            why = re.findall(r"(?m)dropped: (.+)$", b.section("Log"))
+            best = (n, b.id, b.title, why[-1] if why else "")
+    return best[1:] if best else None
+
+
 def covered(text):
     """T-0256: [(command, help)] for the fm commands whose help the request mostly restates (≥ 3 shared words and
     ≥ 60% of the help's): the best two, so a request for what exists is noticed before it is built."""

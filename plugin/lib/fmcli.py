@@ -177,7 +177,7 @@ def cmd_capture(args):
         c.regen_views(p)
     _note_escapes(p, b, args.text)
     out(args, c.brief_summary(b), f"Captured as {b.id} [{b.type}, {b.tier}] (source: {args.source})."
-        + _covered_note(p, b.id, args.text))
+        + _covered_note(p, b.id, args.text) + _reask_note(p, b.id, args.text))
 
 
 def _note_escapes(p, b, text):
@@ -194,6 +194,19 @@ def _note_escapes(p, b, text):
                 c.log_event(p, "escape", task=tid, data={"by": b.id, "type": b.type, "title": c.fit(b.title, 160),
                                                          "lenses": sorted({x[0] for x in done.audits()})},
                             session=session())
+
+
+def _reask_note(p, tid, text):
+    """T-0438: a request like a dropped task, or one a standing veto covers, is said at capture, before work starts."""
+    try:
+        import fmrecall
+        hit = fmrecall.nearest_dropped(p, text, skip=tid)
+        notes = ([f"Dropped before: {hit[0]} ({c.fit(c.plain(hit[1]), 60)})"
+                  + (f": {c.fit(c.defang(c.plain(hit[2])), 120)}" if hit[2] else "")] if hit else []) + \
+            [f"Vetoed: \"{v['said']}\"" for v in c.veto_hits(p, text)][:2]
+    except Exception:  # a note; capture never fails over it
+        return ""
+    return ("\n" + "; ".join(notes) + f". If that still holds, drop this: fm task drop {tid} \"<why>\".") if notes else ""
 
 
 def _covered_note(p, tid, text):
