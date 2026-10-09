@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Orchestrator control plane, first slice (T-0708). All of it is local and costs no tokens until something happens.
+  - `fm bus send <session|all> "<text>" [--type note|steer|stop] [--wake]`: the message reaches the session on its next tool call, once. A session about to stop is held for unread mail. `--wake` types one short line into a session's tmux pane; the statusline now records `TMUX_PANE`.
+  - Leases: an edit leases the function it lands in for 20 minutes, renewed with each edit; a Write leases the file. Another session's edit inside that function is refused, naming the holder and how to message it; edits elsewhere in the file go through. `fm lease list|take|drop`.
+  - `fm conductor` lists live sessions with project, task, context, unread mail and leases. `fm conductor steer "<text>" [--wake]` steers them all.
 
 ## 1.2.21 — 2026-10-09
 - Debugging intuition engine, first slice (T-0706). A red run now comes with what a debugger would gather first.
