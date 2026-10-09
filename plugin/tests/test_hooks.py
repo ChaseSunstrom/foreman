@@ -894,13 +894,13 @@ class PreToolUse(HookCase):
                        "tool_input": {"file_path": path, "content": "x"}}
             return subprocess.run([sys.executable, hook, "PreToolUse"], input=json.dumps(payload), capture_output=True,
                                   text=True, env=dict(os.environ, FOREMAN_HOME=self.home), cwd=self.repo, timeout=20)
-        for broken in ("def classify_write(path, ctx):\n    return undefined_helper(path)\n\n\ndef _was(path, ctx):",
-                       "def classify_write(path, ctx:"):
+        for broken in ("def classify_write(path, ctx, real=True):\n    return undefined_helper(path)\n\n\ndef _was(path, ctx):",
+                       "def classify_write(path, ctx, real=True:"):
             with self.subTest(broken=broken[:30]):
                 with open(guard) as f:
                     text = f.read()
                 with open(guard, "w") as f:
-                    f.write(text.replace("def classify_write(path, ctx):", broken, 1))
+                    f.write(text.replace("def classify_write(path, ctx, real=True):", broken, 1))
                 self.assertEqual(pre(os.path.join(self.repo, "src", "ok.py")).returncode, 0, "ordinary work goes on")
                 self.assertEqual(pre(os.path.join(self.home, "plugin", "lib", "fmcore.py")).returncode, 2,
                                  "protection stays on")

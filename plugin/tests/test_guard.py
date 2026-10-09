@@ -747,7 +747,7 @@ class Authorization(GuardCase):
         # T-0185 (brainstorm round 4): a false block cost a guessed rewrite; when the guard couldn't pin the target
         # down, its message says the rewrite that lets it
         os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)
-        for cmd, hint in (("for f in a; do echo hi > {fhome}/plugin/lib/$f; done", "set its variable once before"),
+        for cmd, hint in (("for f in *.txt; do echo hi > {fhome}/plugin/lib/$f; done", "set its variable once before"),
                           ("ls | head; rm -rf $X/old", "name the path literally"),
                           ("python3 - <<'PY'\nimport os\nos.replace('a', '{fhome}/plugin/lib/fmguard.py')\nPY",
                            "builtin open() on literal paths"),
@@ -838,6 +838,65 @@ class FocusHint(GuardCase):
                 self.assertIn("own command", g.message(block, ctx))
         plain = g.check("Bash", {"command": f"echo x > {self.repo}/f.txt"}, ctx)
         self.assertNotIn("own command", g.message(plain, ctx))
+
+
+class SymlinkRemoval(GuardCase):
+    def test_removing_a_symlink_judges_the_link(self):
+        # T-0412 (JARVIS builder): jarvis-web/node_modules in the lane was a link to the main checkout's; `rm` of it
+        # (which unlinks only the link) was refused as a write outside the worktree
+        lane = os.path.join(self.repo, ".claude", "worktrees", "agent-x")
+        os.makedirs(os.path.join(lane, "web"), exist_ok=True)
+        os.makedirs(os.path.join(self.repo, "web", "node_modules"), exist_ok=True)
+        link = os.path.join(lane, "web", "node_modules")
+        if not os.path.islink(link):
+            os.symlink(os.path.join(self.repo, "web", "node_modules"), link)
+        ctx = g.Ctx(cwd=lane, project_root=lane, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                    allow=set(), task_id="T-0007", confine=(lane, self.repo))
+        for cmd in ("rm web/node_modules", "rm -f web/node_modules && git status --short", "unlink web/node_modules",
+                    "rm -rf web/node_modules"):
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, ctx))
+        for cmd in ("rm -rf web/node_modules/", "echo x > web/node_modules/pkg.json", "rm -rf web/node_modules/*"):
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(g.check("Bash", {"command": cmd}, ctx), "confine")  # through the link: the main's
+        # security review: a link inside a linked folder is removed where that folder really is (the main checkout)
+        mainweb = os.path.join(lane, "mainweb")
+        if not os.path.islink(mainweb):
+            os.symlink(os.path.join(self.repo, "web"), mainweb)
+        inner = os.path.join(self.repo, "web", "cfg")
+        if not os.path.islink(inner):
+            os.symlink("/tmp", inner)
+        self.assertBlocked(g.check("Bash", {"command": "rm mainweb/cfg"}, ctx), "confine")
+
+
+class LiteralLoops(GuardCase):
+    def test_literal_for_loops_expand(self):
+        # T-0411 (JARVIS): `for w in agent-a agent-b; do find .claude/worktrees/$w … -exec rm -r {} + ; done` was
+        # refused as an unresolvable target; with plain literal words bash runs the body once per word, so check each
+        wt = os.path.join(self.repo, ".claude", "worktrees")
+        for a in ("agent-a", "agent-b"):
+            os.makedirs(os.path.join(wt, a), exist_ok=True)
+        ok = ["for w in agent-a agent-b; do find .claude/worktrees/$w -name __pycache__ -type d -prune -exec rm -r {} + ; "
+              "rm -rf .claude/worktrees/$w/.pytest_cache; done",
+              "for w in agent-a agent-b\ndo\n  git -C .claude/worktrees/${w} status --short | head -3\ndone; echo done"]
+        for cmd in ok:
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, self.ctx()))  # no .format: {} and ${w} are bash's
+        refused = [("for w in a b; do rm -rf ~/$w; done", "rm-outside"),  # each value is still checked
+                   ("for d in ~; do rm -rf $d; done", "rm-outside"),  # ~ expands: not a plain literal
+                   ("for d in x; do d=~; rm -rf $d; done", "rm-outside"),  # the body reassigns it
+                   ("for f in {fhome}; do echo x > $f/plugin/lib/fmguard.py; done", "core"),
+                   ("for f in a; do :; done; echo x > {fhome}/plugin/lib/$f", "core"),  # $f after the loop is a
+                   # review: `done` as an argument doesn't end the loop; a loop behind && / || / | may not run in this
+                   # shell, so V stays unknown after it; IFS splits the word bash substitutes
+                   ("for w in {home} x; do echo done; rm -rf $w; done", "rm-outside"),
+                   ("[ -f /nope ] && for w in a; do :; done; rm -rf $w/etc", "rm-outside"),
+                   ("echo | for w in a; do :; done; rm -rf $w/etc", "rm-outside"),
+                   ("IFS=,; for w in x,{home}; do rm -rf $w; done", "rm-outside"),
+                   # security review: an escaped or commented separator ends no command
+                   ("for w in {home} x; do echo \\; done; rm -rf $w; done", "rm-outside"),
+                   ("for w in {home} x; do echo a # ; done\nrm -rf $w; done", "rm-outside")]
+        self.run_table(refused, self.bash)                                               # (not a known value here)
 
 
 class ScratchNames(GuardCase):

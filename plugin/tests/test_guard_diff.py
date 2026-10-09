@@ -89,7 +89,15 @@ EXTRA = ['D=~; rm -rf "$D"', 'D=/; false && D=x; rm -rf "$D"', 'D=/; (D=x); rm -
          "cd ~\necho # a'\ntrue || cd /tmp\nrm -rf \"$PWD\" # b'", "cd /tmp; trap -- 'cd ~' DEBUG; rm -rf \"$PWD\"",
          'cd /tmp; eval {c,#}d; rm -rf "$PWD"', 'cd ~; cd /tmp extra; rm -rf "$PWD"',
          "cd /tmp; source /dev/stdin <<< 'cd ~'; rm -rf \"$PWD\"",
-         "cd /tmp; mapfile -C 'cd ~ #' -c 1 < /etc/hostname; rm -rf \"$PWD\"", 'true |\nS=/tmp/x; rm -rf "${S}/home/sb"']
+         "cd /tmp; mapfile -C 'cd ~ #' -c 1 < /etc/hostname; rm -rf \"$PWD\"", 'true |\nS=/tmp/x; rm -rf "${S}/home/sb"',
+         # T-0411: a loop over literal words is read as the commands it runs; break keeps an earlier word
+         'for d in /home/sb; do rm -rf "$d"; done', 'for d in x /home/sb; do rm -rf "$d"; done',
+         'for d in x; do d=/home/sb; rm -rf "$d"; done', 'for d in /home/sb; do :; done; rm -rf "$d"',
+         'for d in /home/sb x; do break; done; rm -rf "$d"', 'for d in /home/sb x; do continue; done; rm -rf "$d/../sb"',
+         'for d in a; do rm -rf "${d}x"; done; rm -rf "/home/s${d}"'.replace('/home/s${d}', '/home/sb'),
+         'for d in /home/sb x; do echo done; rm -rf "$d"; done', 'false && for d in x; do :; done; rm -rf "/home/sb$d"',
+         'true | for d in x; do :; done; rm -rf "/home/sb$d"', 'IFS=,; for d in x,/home/sb; do rm -rf $d; done',
+         'for d in /home/sb x; do echo \\; done; rm -rf "$d"; done', 'for d in /home/sb x; do echo a # ; done\nrm -rf "$d"; done']
 STUB = '#!/bin/sh\nprintf "%s\\t%s\\n" "$(basename "$0")" "$*" >> "$FM_DIFF_LOG"\n'
 HOME = "/home/sb"
 
