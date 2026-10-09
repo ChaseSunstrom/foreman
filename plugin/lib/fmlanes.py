@@ -172,7 +172,9 @@ def merge(p, b, main):
                       state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(), scratch=[],
                       allow=set(b.meta.get("allow") or []), task_id=b.id, standing=set(meta.get("standing") or {}),
                       trusted=bool(c.trusted()))
-    files = [f for f in _git(main, "diff", "--name-only", "-z", f"HEAD...{branch}").stdout.split("\0") if f]
+    # T-0382: --no-renames, so a file moved away is listed by its old path too (a rename deletes it from main)
+    files = [f for f in _git(main, "diff", "--name-only", "--no-renames", "-z", f"HEAD...{branch}").stdout.split("\0")
+             if f]
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:

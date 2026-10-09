@@ -204,8 +204,8 @@ def _is_credential(path, ctx):
     if any(_under(path, s) for s in getattr(ctx, "scratch", ()) or ()):
         return False  # T-0169: a scratch file's name says nothing of its contents (its real path is checked too)
     stem, ext = os.path.splitext(base)
-    if ext.lower() in _DOC_EXT:
-        return False
+    if ext.lower() in _DOC_EXT or ext.lower() in (".example", ".sample", ".template", ".dist", ".tmpl"):
+        return False  # T-0386: secrets.yaml.example is the placeholder copy, as .env.example is
     if re.search(r"(^|[._-])(secrets?|credentials?)([._-]|$)", stem.lower()):
         return True
     # a design system's tokens (colours, spacing, durations) aren't auth tokens (JARVIS: design/tokens.json was refused)
@@ -1181,6 +1181,7 @@ def _top(shell):
     s, prev = re.sub(r"`[^`]*`", "S", shell), None
     while s != prev:
         s, prev = re.sub(r"\$\([^()]*\)", "S", s), s
+    s = _mask_quotes(s)  # T-0384: a quoted ( | or ; is text
     straight = "!" not in s and _straight_line(s)
     # T-0339: a ; list with && in it: each &&-segment is a chain of its own, the segments run in order; T-0355: its
     # elements may be pipelines (a pipe runs in subshells, so only a cd outside one moves the shell)
@@ -1381,6 +1382,93 @@ def _mask_substs(shell):
         shell = t
 
 
+def _mask_quotes(text):
+    """T-0384: the text inside '…' and "…" as underscores, same length, the quotes kept: a quoted ( | ; & or keyword
+    is a literal, never a branch (a jq filter or sed script made the whole line read as branchy). A # comment is
+    blanked to its line's end too (its review: a quote in a comment paired with one in a later comment hid a ||).
+    Escapes and comments as _strip_comments reads them; unchanged (fails closed) under $'…', an unclosed quote or a
+    substitution inside double quotes, whose own quotes don't pair with the outer ones."""
+    if "$'" in text:
+        return text
+    out, q, i = [], None, 0
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\" and q != "'":
+            out.append(text[i:i + 2] if q is None else "_" * len(text[i:i + 2]))
+            i += 2
+            continue
+        if q == '"' and (ch == "`" or text.startswith("$(", i) or (text.startswith("${", i)
+                                                                    and not re.match(r"\$\{\w+\}", text[i:]))):
+            return text
+        if q is None and ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):
+            j = text.find("\n", i)
+            j = len(text) if j < 0 else j
+            out.append("_" * (j - i))
+            i = j
+            continue
+        if q and ch != q:
+            out.append("_")
+        else:
+            q = None if q else (ch if ch in "'\"" else None)
+            out.append(ch)
+        i += 1
+    return text if q else "".join(out)
+
+
+_MOVERS = re.compile(r"(?<![\w./-])(?:cd|pushd|popd|eval|source|trap|mapfile|readarray)(?![\w./-])|(?:^|[\s;&|(])\.\s")
+_CD_TO = re.compile(r"(?<![\w./-])(?:cd|pushd)\s+(?:-[LPe@]+\s+)*([^\s;&|<>()'\"`$]+)")
+# a command word bash computes: a $ expansion or a quote right where a command starts
+_COMPUTED = re.compile(r"(?:^|[;&|(\n]|\b(?:then|do|else|elif|time|!))\s*[\"']?\$")
+
+
+def _cd_targets(code):
+    """T-0384: the literal folders shell text's cd and pushd lines name, quotes and backslashes removed as bash does."""
+    code = _strip_comments(code)
+    return list(dict.fromkeys(_CD_TO.findall(code) + _CD_TO.findall(re.sub(r"[\\'\"]", "", code))))
+
+
+def _moves_text(code):
+    """T-0384: whether shell text may cd this shell: a mover word, also once quotes and backslashes are removed (c\\d
+    and c""d are cd), a command word it computes, or a brace, glob or substitution that may make one."""
+    code = _strip_comments(code)
+    return bool(_MOVERS.search(code) or _MOVERS.search(re.sub(r"[\\'\"]", "", code)) or _COMPUTED.search(code)
+                or re.search(r"[`{*?\[]|\$\(", code))
+
+
+def _moves_shell(name, args, cwds, ctx, shell=""):
+    """T-0384: (whether eval, source, ., trap or mapfile -C may run a cd in this shell or one more of themselves, the
+    literal folders its cd and pushd lines name). Computed text, a script found on PATH, one that isn't a plain file
+    (its review: /dev/stdin, a FIFO), one the command also names elsewhere (it may write it first), one given
+    arguments, or one it can't read may move it; a literal or a readable script with none of those doesn't."""
+    if name in ("mapfile", "readarray"):
+        cbs = [args[j + 1] for j, a in enumerate(args[:-1]) if a == "-C"] + [a[2:] for a in args if a.startswith("-C")
+                                                                              and len(a) > 2]
+        return (bool(cbs) and any(_moves_text(cb) or not cb for cb in cbs)), [d for cb in cbs for d in _cd_targets(cb)]
+    if name in ("eval", "trap"):
+        rest = args[1:] if args[:1] == ["--"] else args
+        if name == "trap" and rest[:1] and rest[0].startswith("-"):
+            return rest[0] not in ("-p", "-l", "-P"), []  # -p and -l only print
+        text = " ".join(rest) if name == "eval" else (rest[0] if rest else "")
+        return bool(re.search(r"[$`\\]", text) or _moves_text(text)), _cd_targets(text)
+    if len(args) != 1 or "/" not in args[0] or _unresolvable(args[0]):
+        return True, []  # source NAME searches PATH first; arguments become its $1 …
+    if shell.count(os.path.basename(args[0])) > 1:
+        return True, []
+    moves, places = False, []
+    for base in cwds:
+        path = _resolve(_expand(args[0], ctx), base)
+        if not os.path.isfile(path) or re.match(r"/(?:dev|proc|sys)/", os.path.realpath(path)):
+            return True, places
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                code = f.read(1_000_000)
+        except OSError:
+            return True, places
+        if _moves_text(code):
+            moves, places = True, places + _cd_targets(code)
+    return moves, places
+
+
 def _prefix_vars(shell, cmds, home=None):
     """T-0183: NAME=literal values a branchy command sets in its straight top-level prefix (the commands before its
     first branch, pipe, subshell, group or keyword run first, in this shell), for names written bare nowhere else in
@@ -1389,8 +1477,9 @@ def _prefix_vars(shell, cmds, home=None):
     # value of the same length, so `f=$(ls …); S=/tmp/x; … > $S/a` knows S; f stays unknown, and a name also set
     # inside a substitution is written twice (counts, below, reads the real text)
     full, shell = shell, _mask_substs(shell)
-    s = re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell)
-    cut = next((m.start() for m in re.finditer(r"&&|\|\|?|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
+    s = _mask_quotes(re.sub(r"\$\{\w+\}|\d*>&\d*-?|&>>?", lambda m: " " * len(m.group(0)), shell))
+    # T-0384: a pipeline is no cut either: its parts run in subshells and set nothing here (dropped below)
+    cut = next((m.start() for m in re.finditer(r"&&|\|\||(?<!\|)\|&|&|[(){}`]|\$\(|\b(?:if|then|else|elif|fi|for|while|until|do|"
                                                 r"done|case|esac|select|function|coproc)\b", s) if m.group(0) != "&&"), len(s))
     # what an && may skip is set for sure only if everything after it runs only when the chain got that far:
     # `false && HOME=/x; rm $HOME` runs the rm anyway (T-0338 review), `S=/x && rm $S/a && ls | head` doesn't
@@ -1409,7 +1498,16 @@ def _prefix_vars(shell, cmds, home=None):
         prefix = "; ".join(e.strip() for e in keep if e.strip())
     else:  # T-0330: a ; list mixed with && (D=~/x; mkdir -p $D && cd $D && tar xf -) isn't straight either
         prefix = shell[:seps[-1].start()] if seps and (cut < len(s) or not _straight_line(full) or full != shell) else ""
-    raw = _raw_cmds(prefix) if prefix and _straight_line(prefix) else None
+    # T-0384: drop the pipelines (no lastpipe without a shopt, a setter that voids all of this) and read the rest
+    # with quoted text masked, as _raw_cmds reads quotes
+    mp = _mask_quotes(prefix)
+    if "$'" not in prefix and (mp != prefix or not re.search(r"['\"]", prefix)):  # unchanged with quotes: unread
+        cuts = [0] + [x for m in re.finditer(r";|\n|&&", mp) if not (m.group(0) == "\n" and re.search(  # its review: a
+            r"\|&?\s*$", mp[:m.start()])) for x in (m.start(), m.end())] + [len(prefix)]  # | ends no pipeline
+        prefix = "; ".join(prefix[a:b].strip() for a, b in zip(cuts[::2], cuts[1::2])
+                           if prefix[a:b].strip() and not re.search(r"(?<!\|)\|(?!\|)", mp[a:b]))
+        mp = _mask_quotes(prefix)
+    raw = _raw_cmds(prefix) if prefix and _straight_line(mp) else None
     env = {}
     for words in raw or []:
         env = _track_vars(words, env, home)
@@ -1563,6 +1661,9 @@ def _track_vars(words, env, home=None):
             return None
         env.pop(m.group(1), None)
     word = next((w for w in words if not _ASSIGNISH.match(w)), "")
+    m = re.fullmatch(r"\$(?:\{(\w+)\}|(\w+))(/[^$`*?\[\s'\"\\{]*)", word)
+    if m and (m.group(1) or m.group(2)) in env:  # T-0384: $S/tool with S a known literal (no space, glob or $) is a
+        word = env[m.group(1) or m.group(2)] + m.group(3)  # path, and a path is never a builtin
     if re.search(r"[$`*?\[]", word):
         return None  # T-0162: a name bash computes ($X, `…`, a glob) can turn out to be a builtin
     name = _unquote(word) or ""
@@ -1631,11 +1732,21 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 if not _unresolvable(tgt):
                     cwd = _resolve(_expand(tgt, ctx), cwd)
                 d = "" if _unresolvable(tgt) else _expand(tgt, ctx)
-                certain = not piped and (and_chain or in_chain or ((straight or mixed) and os.path.isabs(d) and (
-                    os.path.normpath(d) in made or (os.path.isdir(d) and os.access(d, os.X_OK)))))
+                can_fail = len(dirs) > 1 or not (os.path.isabs(d) and (os.path.normpath(d) in made or (  # review: cd a b
+                    os.path.isdir(d) and os.access(d, os.X_OK))))  # fails with too many arguments
+                certain = not piped and (and_chain or in_chain or ((straight or mixed) and not can_fail))
                 cwds, lost = _moved(cwds, lost, tgt, certain, cdpath, ctx)
-                if base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
+                if base and c.op not in ("&&", "|", "|&") and not piped and not can_fail:
+                    base = (list(cwds), list(lost), base[2])  # T-0384: a head cd that can't fail: the chain stops after
+                elif base:  # the chain may stop after any cd in it: every folder it reaches stays possible (its review)
                     base = (base[0] + cwds, base[1] + lost, base[2])
+        moves, places = (_moves_shell(name, args, cwds, ctx, shell) if name in ("eval", "source", ".", "trap",
+                                                                               "mapfile", "readarray") else (0, []))
+        if moves:  # T-0384: it may cd here: anywhere, or any folder it names after a cd
+            for d in ["$OLDPWD"] + places:
+                cwds, lost = _moved(cwds, lost, d, False, cdpath, ctx)
+            if base:
+                base = (base[0] + cwds, base[1] + lost, base[2])
         for inner in _shell_c(args) if _SHELLS.match(name) else ():
             found += check_bash(inner, ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(inner):

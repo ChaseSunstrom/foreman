@@ -208,6 +208,25 @@ class UserPromptSubmit(HookCase):
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nCLEAN: b"}))
         self.assertIn("CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE", ctx)
 
+    def test_urgent_tag_mid_task_says_switch_now(self):
+        # T-0385: JARVIS got "CLEAN!: …" mid-task with only "Message has 1 intake item (CLEAN!)" and finished three
+        # tasks before starting it; the rules say an urgent tag checkpoints the active task and switches at once
+        self.fm("init")
+        quiet = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX!: the login page crashes"}))
+        self.assertNotIn("checkpoint", quiet)  # nothing active: nothing to switch from
+        tid = self.task()
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "CLEAN!: deep clean the repo now"}))
+        self.assertIn(f"fm checkpoint", ctx)
+        self.assertIn(tid, ctx)
+        self.assertIn("now", ctx)
+
+    def test_open_ended_request_points_at_mission(self):
+        # T-0375: the mission and its brainstorm seeds are composed by fm, not left for the model to write by hand
+        self.fm("init")
+        for prompt in ("super improve it", "make it genuinely fully featured"):
+            with self.subTest(prompt=prompt):
+                self.assertIn("fm mission", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt})))
+
     def test_open_ended_request_points_at_brainstorm(self):
         self.fm("init")
         self.assertIn("brainstorm", self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "super improve it"})))
@@ -814,6 +833,27 @@ class PreToolUse(HookCase):
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
 
+    def test_interpreter_writes_to_secret_templates(self):
+        # T-0390 (JARVIS T-0274, 01:57 UTC, on 1.2.4): this exact command was refused as credentials
+        # (written from interpreter code) through the hook, though fmguard.check alone let it through
+        self.fm("init")
+        self.task()
+        for name, text in ((".env.example", "# --- orchestrator + sandbox\nA=1\n"),
+                           ("jarvis-core/config/secrets.yaml.example", "# --- The optional orchestrator/sandbox pair\n"
+                            'approval_secret: "PUT-APPROVAL_SECRET-FROM-.env-HERE"\nrest: 1\n')):  # pragma: allowlist secret
+            path = os.path.join(self.repo, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as f:
+                f.write(text)
+        cmd = ("python3 - <<'EOF'\np='.env.example'; s=open(p).read()\na=s.index(\"# --- orchestrator + sandbox\")\n"
+               "s=s[:a]\nopen(p,'w').write(s)\np='jarvis-core/config/secrets.yaml.example'; s=open(p).read()\n"
+               "a=s.index(\"# --- The optional orchestrator/sandbox pair\"); "
+               "b=s.index('approval_secret: \"PUT-APPROVAL_SECRET-FROM-.env-HERE\"\\n')+len('approval_secret: "
+               "\"PUT-APPROVAL_SECRET-FROM-.env-HERE\"\\n')\ns=s[:a]+s[b:]\nopen(p,'w').write(s)\nEOF\n"
+               "sed -n 1,8p .env.example")
+        r = self.pre("Bash", {"command": cmd})
+        self.assertEqual(r.returncode, 0, r.stderr)  # the real config/secrets.yaml stays guarded: test_guard ScratchNames
+
     def test_a_plugin_grant_is_used_at_most_once_even_in_a_race(self):
         # round-1 edge audit: two calls that both saw the grant must not both get through
         import fmhooks
@@ -1132,6 +1172,10 @@ class Stop(HookCase):
         # T-0310: claude -p ends with the turn, so no notification comes (the court's R-T-0201 ended on "the suite is
         # still running"); interactive sessions keep waiting for theirs (above)
         self.fm("init")
+        os.makedirs(os.path.join(self.home, "state"), exist_ok=True)
+        cached = os.path.join(self.home, "state", "claude-version")
+        with open(cached, "w") as f:
+            f.write("2.1.200\n")  # T-0372: before 2.1.292, claude -p didn't wait for background work itself
         self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
         for env in ({"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"}, {"FOREMAN_DRIVE_TASK": "T-0001"}):
             with self.subTest(env=env):
@@ -1145,6 +1189,11 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Waiting.", "session_id": "sess-1"},
                       env={"CLAUDE_CODE_ENTRYPOINT": "cli"})
         self.assertIsNone(self.decision(p))
+        with open(cached, "w") as f:
+            f.write("2.1.295\n")  # 2.1.292+: claude -p waits for background work and wakes on it
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "The suite is still running.",
+                               "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
+        self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
 
     def test_drive_waits_while_a_background_command_runs(self):
         self.fm("init")

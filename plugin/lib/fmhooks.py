@@ -220,7 +220,8 @@ def session_start(pl):
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
-    c.log_event(p, "session_start", data={"source": pl.get("source")}, session=sid)
+    c.log_event(p, "session_start", data={"source": pl.get("source"), "root": c.PLUGIN_ROOT},  # T-0391: the code
+                session=sid)  # this session runs (fm doctor compares it with the installed one)
     if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time
         try:
             subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "second", "session", "--if-due",
@@ -228,6 +229,12 @@ def session_start(pl):
                              stderr=subprocess.DEVNULL, start_new_session=True)
         except Exception:  # a review that can't start must never cost the session its start
             log_error("SessionStart", _tb())
+    try:  # T-0383: infer what builds on what (detached, once a day, when 3+ open tasks are new)
+        import fmrelate
+        if fmrelate.due(meta, [x["id"] for x in ([sd["active"]] if sd["active"] else []) + sd["queue"] + sd["inbox"]]):
+            fmrelate.spawn(p)
+    except Exception:
+        log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:
@@ -463,15 +470,19 @@ def user_prompt_submit(pl):
                      + (" plus block lines" if r.context or r.constraints or r.done_when or r.skip
                         or any(i.own for i in r.items) else "")
                      + "; canonical order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE (fm intake prints it)")
+        a = sd["active"] if sd else None
+        if a and any(i.urgent for i in r.items):  # T-0385: JARVIS finished three tasks before an urgent one
+            parts.append(f"Urgent: fm checkpoint {a['id']} now and switch to it (don't finish {a['id']} first)")
     if c.is_plan_only(text):
         parts.append("Plan-only request: drive won't start implementation until the next message")
     if r.overrides:
         parts.append("Override word: " + ", ".join(r.overrides))
     elif c.is_exhaustive(text):
-        parts.append("Exhaustive request (everything / fully featured): the Foreman procedure is /foreman:brainstorm in "
-                     "super mode (fm ideas --rounds 4: rounds build on each other until dry), then every grounded idea")
+        parts.append("Exhaustive request (everything / fully featured): run fm mission --request \"<their words>\" (it "
+                     "composes the mission, lenses and fm ideas line), then /foreman:brainstorm super mode (--rounds 4) until dry")
     elif not r.items and c.is_open_ended(text):
-        parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm")
+        parts.append("Open-ended request with no concrete target; the Foreman procedure for it is /foreman:brainstorm, "
+                     "seeded by fm mission --request \"<their words>\"")
     elif c.is_broad(text):
         parts.append("Broad request: sweep the whole space before planning (fm ideas --lens 'capability map' "
                      "--lens approaches, or a capability list in the brief)")
@@ -1326,11 +1337,32 @@ def _headless():
     return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
 
 
+def _cc_version():
+    """Claude Code's version as a tuple, read from `claude --version` at most once a day (state/claude-version); ()
+    when unknown. T-0372: only headless stops ask, and they're rare."""
+    path = os.path.join(c.state_dir(), "claude-version")
+    try:
+        if time.time() - os.path.getmtime(path) < 86400:
+            with open(path, encoding="utf-8") as f:
+                return tuple(int(x) for x in f.read().strip().split("."))
+    except (OSError, ValueError):
+        pass
+    try:
+        out = subprocess.run(["claude", "--version"], capture_output=True, text=True, timeout=5).stdout
+        m = re.match(r"\s*(\d+)\.(\d+)\.(\d+)", out)
+        if not m:
+            return ()
+        c.write_atomic(path, ".".join(m.groups()) + "\n")
+        return tuple(int(x) for x in m.groups())
+    except (OSError, subprocess.SubprocessError):
+        return ()
+
+
 def _headless_wait(pl):
     """T-0310: claude -p (and fm run) ends with the turn, so a background task's notification never arrives: wait for
     it in this turn. Once per stop chain."""
-    if pl.get("stop_hook_active") or not _headless():
-        return None
+    if pl.get("stop_hook_active") or not _headless() or _cc_version() >= (2, 1, 292):
+        return None  # T-0372: from 2.1.292 claude -p waits for background work and wakes on it
     bg = pl.get("background_tasks")
     running = [str(t.get("id")) for t in bg if isinstance(t, dict)] if isinstance(bg, list) else \
         _running(pl.get("session_id"))

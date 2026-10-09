@@ -16,9 +16,11 @@ import fmcore as c
 import fmrecall
 
 LENSES = ["user value", "unspoken needs", "delight", "capability map", "approaches", "reliability", "performance",
-          "security and safety", "simplicity", "bold bets"]
+          "security and safety", "simplicity", "bold bets", "beautiful UI and motion", "every device and surface",
+          "agents of agents", "privacy and local-first"]
 PACK_WORDS = 2000
 # T-0099: unspoken needs and delight by default (the user wanted what they can't put into words, and more creative ideas)
+# T-0375: fm mission adds the UI, device, agent and privacy lenses when the project has those surfaces
 # T-0364: capability map (everything a complete version has) and approaches (every way to solve it): breadth
 DEFAULT_LENSES = ["user value", "unspoken needs", "delight", "capability map", "approaches", "reliability", "simplicity",
                   "bold bets"]
