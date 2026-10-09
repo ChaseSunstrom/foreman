@@ -234,11 +234,12 @@ def session_start(pl):
         except Exception:  # a review that can't start must never cost the session its start
             log_error("SessionStart", _tb())
     if pl.get("source") in (None, "startup", "resume") and not os.environ.get("FOREMAN_NO_BACKGROUND") \
-            and not c.panicked() and fmeco.canary_due():  # T-0482: Claude Code's version; a new one runs the checks
-        try:
-            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "canary", "--if-changed"], cwd=p.root,
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                             start_new_session=True)
+            and not c.panicked():  # T-0482: Claude Code's version; a new one runs the checks
+        try:  # review: canary_due too, inside — a surprise there must never blank the session start
+            if fmeco.canary_due():
+                subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "canary", "--if-changed"], cwd=p.root,
+                                 stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
         except Exception:
             log_error("SessionStart", _tb())
     try:  # T-0383: infer what builds on what (detached, once a day, when 3+ open tasks are new)
