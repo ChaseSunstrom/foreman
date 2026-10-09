@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Milestone merge train, first slice (T-0710). `fm task finish ID --commit "<msg>" --stack [--stack-check CMD]` lands a task as a stack: one commit per step, or per member for an `fm batch` host. Each file goes with the step it was last edited in (the ledger's order of edits and step evidence). Each commit is checked alone in a scratch worktree with `--stack-check` or its member's own verify commands, and one that fails alone is folded into the next. Only the task's paths are reset in the index, so other staged work stays. From 30 days of history: 30 batches cost 61M input-equivalent against about 104M estimated for their members done alone (by tier medians), cheaper in 17 of 30.
 - Orchestrators of orchestrators, first slice (T-0709).
   - `fm task split ID [--parts K] [--files …] [--dry-run]` partitions a task's files (its scope, or `fm graph pack`'s read-set) along the code's seams. It merges the most-linked groups over the work graph's code, co-change and test edges, and each part becomes a child task scoped to its files and told which seams to keep.
   - `fm task capsule ID` is a child's return to its parent: at most 15 lines covering status, files and lines changed, verification, decisions, lessons, follow-ups and risks.
