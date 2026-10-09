@@ -170,6 +170,22 @@ class Contract(_Tasks):
         self.assertIn("credentials", p.stderr)
         self.assertFalse(os.path.exists(os.path.join(self.repo, "config", "secrets.yaml")))
 
+    def test_lane_merge_checks_both_sides_of_a_rename(self):
+        # T-0382 (security review): git diff --name-only shows a rename by its new name only, so a lane that moves a
+        # guarded file away (deleting it from main) must be judged by its old path too
+        os.makedirs(os.path.join(self.repo, "config"))
+        with open(os.path.join(self.repo, "config", "secrets.yaml"), "w") as f:
+            f.write("k: v\n")
+        git(self.repo, "add", "config")
+        git(self.repo, "commit", "-qm", "a secret")
+        tid, wt = self.lane("Mover")
+        git(wt, "mv", "config/secrets.yaml", "notes.txt")
+        git(wt, "commit", "-qm", "moves the secret")
+        p = self.fm("lane", "merge", tid, check=False)
+        self.assertNotEqual(p.returncode, 0, "a rename is a delete of the old path")
+        self.assertIn("credentials", p.stderr)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, "config", "secrets.yaml")))
+
     def test_rm_deletes_only_the_lanes_own_branch(self):
         tid, wt = self.lane("Branches")
         git(self.repo, "branch", "release")  # merged into main

@@ -179,6 +179,15 @@ class Checks(unittest.TestCase):
         r = d.check_git_hygiene(repo)
         self.assertEqual(r.status, "FAIL")
         self.assertIn("config.py", r.detail)
+        subprocess.run(["git", "-C", repo, "rm", "-q", "--cached", "config.py"], check=True)
+        self.write("r/notes.txt", "".join(f"line {i}\n" for i in range(40)))
+        subprocess.run(["git", "-C", repo, "add", "notes.txt"], check=True)
+        subprocess.run(["git", "-C", repo, "commit", "-qm", "notes"], check=True)
+        subprocess.run(["git", "-C", repo, "mv", "notes.txt", "moved.txt"], check=True)
+        with open(os.path.join(repo, "moved.txt"), "a") as f:  # T-0382: a rename that also adds a secret
+            f.write("API_KEY = 'sk-ant-api03-abcdefghijklmnopqrstu'\n")  # pragma: allowlist secret
+        subprocess.run(["git", "-C", repo, "add", "moved.txt"], check=True)
+        self.assertIn("moved.txt", d.check_git_hygiene(repo).detail)
 
     def test_backup(self):
         home = os.path.join(self.t, "fh")

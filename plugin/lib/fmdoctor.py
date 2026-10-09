@@ -280,7 +280,9 @@ def check_core_integrity(home):
 
 def check_git_hygiene(repo):
     tracked = _run(["git", "-C", repo, "ls-files", "-ci", "--exclude-standard"]).stdout.split()
-    staged = _run(["git", "-C", repo, "diff", "--cached", "--name-only", "--diff-filter=AM"]).stdout.split()
+    # T-0382: --no-renames, or a staged rename that also adds a secret (R, not A or M) is never scanned
+    staged = [f for f in _run(["git", "-C", repo, "diff", "--cached", "--name-only", "--no-renames", "--diff-filter=AM",
+                               "-z"]).stdout.split("\0") if f]
     secrets = [p for p in staged if (lambda t: c.redact(t) != t)(_run(["git", "-C", repo, "show", f":{p}"]).stdout)]
     bad = [f"ignored but tracked: {', '.join(tracked)}"] if tracked else []
     bad += [f"secret-like content staged in: {', '.join(secrets)}"] if secrets else []
