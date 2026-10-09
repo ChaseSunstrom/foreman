@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Cache economics, first slice (T-0703). Over 30 days, cache reads were 78% of spend (every turn re-reads the whole context; this machine's sessions average 258–339k tokens per turn).
+  - `fm cost --sessions`: per session, turns, context per turn, the cache read/write/fresh/output split and cache busts (turns that re-wrote over half of a 30k+ context).
+  - The Stop hook's task-boundary note now also fires past 200k context tokens, not only at 60% of the window, and names the tokens.
+  - foreman-ui compacts at a task close past `freshTokens` (default 200,000) as well as `freshAt` percent.
 
 ## 1.2.20 — 2026-10-09
 - Verification and product checking, first versions (T-0682 milestone: T-0457, T-0501, T-0458, T-0475, T-0474, T-0460).
