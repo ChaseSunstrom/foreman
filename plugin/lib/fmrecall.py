@@ -17,6 +17,7 @@ will would should could also only just more most each other such via per new use
 fix fixes fixed task tasks brief step steps done test tests run runs work does doing foreman none""".split())
 _ROW = re.compile(r"^\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(.+?)\s*\|\s*(.*?)\s*\|")
 MAX_READ = 20_000  # chars of a research note that count
+INDEX_MAX, HITS_MAX = 20_000_000, 50  # fm recall --ask: characters indexed per question, answers shown (T-0728)
 LINE, TOTAL, HITS = 170, 800, 4
 TIERS = {"S": 0, "M": 1, "L": 2}
 
@@ -694,9 +695,16 @@ def ask(p, question, n=HITS):
     except sqlite3.OperationalError:  # a Python whose SQLite lacks FTS5: the plain recall, labels only
         return [{"label": c.plain(label), "cites": _TID.findall(label), "text": "", "score": round(s, 2)}
                 for s, _, label, _, _ in recall(p, question, n=n)]
-    db.executemany("INSERT INTO m VALUES (?, ?, ?)",
-                   ((label, " ".join(dict.fromkeys(cites + _TID.findall(text))), text[:MAX_READ])
-                    for label, cites, text in _passages(p)))
+    def capped():  # T-0728: redacted before indexing (snippet's [ ] inside a secret hid it from the redactor), and
+        left = INDEX_MAX  # no more than INDEX_MAX characters indexed for one question
+        for label, cites, text in _passages(p):
+            text = c.redact(text[:MAX_READ])
+            left -= len(text)
+            if left < 0:
+                return
+            yield label, " ".join(dict.fromkeys(cites + _TID.findall(text))), text
+    n = max(1, min(n, HITS_MAX))
+    db.executemany("INSERT INTO m VALUES (?, ?, ?)", capped())
     rows = db.execute("SELECT label, cites, snippet(m, 2, '[', ']', '…', 24), bm25(m) FROM m WHERE m MATCH ? "
                       "ORDER BY bm25(m) LIMIT ?", (" OR ".join(f'"{w}"' for w in words), n * 3)).fetchall()
     hits, seen = [], set()
