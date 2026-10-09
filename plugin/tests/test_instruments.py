@@ -124,6 +124,24 @@ class Logs(Case):
         self.assertFalse([r for r in rows if "GET" in r and r.startswith("new ")])
         self.assertEqual(rows[:len(new)], new, "new templates lead")
 
+    def test_its_review_numeric_lines_fold_errors_lead_and_secrets_are_redacted(self):
+        # T-0701 review: a mostly-numeric line never reached the 0.5 similarity, so 1000 access lines became 1000
+        # templates; new INFO templates pushed a new ERROR past the cap; a token in a line was printed as it was
+        good = os.path.join(self.tmp, "good.log")
+        bad = os.path.join(self.tmp, "bad.log")
+        with open(good, "w") as f:
+            f.write("".join(f"2024-01-01 12:00:{i % 60:02} GET /health 200 {i % 9}ms\n" for i in range(1000)))
+        with open(bad, "w") as f:
+            f.write("".join(f"2024-01-01 12:00:{i % 60:02} GET /health 200 {i % 9}ms\n" for i in range(1000)))
+            f.write("".join(f"INFO step{k} started\n" for k in range(45)))
+            f.write("ERROR auth failed with token sk-ant-api03-" + "z" * 40 + "\n")
+        out = self.tool("logs", bad)
+        self.assertRegex(out, r"(?m)^ +1000  GET /health")
+        out = self.tool("logs", bad, "--since-good", good)
+        self.assertTrue(out.splitlines()[1].startswith("new") and "ERROR auth failed" in out.splitlines()[1], out)
+        self.assertNotIn("z" * 20, out)
+        self.assertNotIn("z" * 20, self.fm("logs", bad, "--json").stdout)
+
 
 class Data(Case):
     def test_a_csv_as_schema_stats_and_samples(self):
@@ -157,6 +175,22 @@ class Data(Case):
         self.assertIn("sqlite, 1 table", out.splitlines()[0])
         self.assertIn("orders: 120 rows, 6 columns", out)
         self.assertIn("'N/A'×2", next(ln for ln in out.splitlines() if ln.split()[:1] == ["amount"]))
+
+    def test_its_review_bad_bytes_huge_numbers_and_long_files(self):
+        # T-0701 review: one non-UTF-8 sqlite value lost the file, an int over 1e308 crashed, jsonl was read whole
+        db = os.path.join(self.tmp, "bad.db")
+        with sqlite3.connect(db) as con:
+            con.execute("CREATE TABLE t (name TEXT)")
+            con.execute("INSERT INTO t VALUES (CAST(X'FF61' AS TEXT))")
+            con.execute("INSERT INTO t VALUES ('ok')")
+        con.close()
+        self.assertIn("t: 2 rows", self.tool("data", db))
+        big = os.path.join(self.tmp, "big.jsonl")
+        with open(big, "w") as f:
+            f.write('{"n": 1' + "0" * 400 + ', "key": "sk-ant-api03-' + "q" * 40 + '"}\n' + '{"n": 2}\n' * 5)
+        out = self.tool("data", big)
+        self.assertIn("jsonl, 6 rows", out.splitlines()[0])
+        self.assertNotIn("q" * 20, out)
 
 
 class Trace(Case):
