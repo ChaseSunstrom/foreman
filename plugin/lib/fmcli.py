@@ -406,6 +406,8 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "packet":
         return task_packet(p, args)
+    if sub == "revert":
+        return task_revert(p, args)
     if sub == "dissent":  # T-0642
         import fmsecond
         return fmsecond.task_dissent(p, args)
@@ -606,6 +608,27 @@ def _repro(b):
             cmd = line.split("`", 2)[1]
             failed = cmd if "` → ✗ exit" in line else None if cmd == failed else failed
     return failed or b.red_green_cmd()
+
+
+def task_revert(p, args):
+    """T-0732: what undoing a task would touch — its commits, and the open tasks that depend on or name it — and the
+    command that undoes it. It never reverts by itself: reverting under a dependent is the user's call."""
+    b = need_brief(p, args.id)
+    log = c._git(p.root, "log", "-n", "3000", "--format=%h%x1f%s%x1f%b%x1e", fail="") if c.git_root(p.root) else ""
+    own = re.compile(rf"\b{re.escape(b.id)}\b")
+    rows = [(r.strip().split("\x1f") + ["", "", ""])[:3] for r in log.split("\x1e") if r.strip()]
+    shas = [(h, subj) for h, subj, body in rows
+            if (own.search(subj) or f"Foreman-Task: {b.id}" in body) and not subj.startswith("Revert ")]
+    deps = [x for x in c.load_briefs(p) if x.id != b.id and x.status not in c.CLOSED
+            and (b.id in c._deps(x) or own.search(" ".join([x.title, x.section("Raw request")])))]
+    lines = [f"{b.id} {b.title}: {len(shas)} commit(s)"] + [f"  {h} {c.fit(s_, 90)}" for h, s_ in shas[:20]]
+    lines += ["Open tasks that depend on or name it (check each before undoing):"] + [
+        f"  {x.id} {c.fit(x.title, 70)} — " + ("depends on it" if b.id in c._deps(x) else "names it") for x in deps] \
+        if deps else ["No open task depends on it."]
+    lines += [f"Undo with: git revert --no-edit {' '.join(h for h, _ in shas)}" if shas else
+              "No commit names it (nothing to revert by id)."]
+    return out(args, {"task": b.id, "commits": [h for h, _ in shas], "dependents": [x.id for x in deps]},
+               "\n".join(lines))
 
 
 def task_packet(p, args):
@@ -3448,6 +3471,8 @@ def build_parser():
     t.add_argument("--dry-run", action="store_true", help="show the partition only")
     t = tadd("capsule")  # T-0709
     t.add_argument("id")
+    t = tadd("revert")  # T-0732
+    t.add_argument("id")
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
@@ -4082,6 +4107,7 @@ def build_parser():
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
     s.add_argument("id", nargs="?")
+    s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")
@@ -4121,6 +4147,11 @@ def build_parser():
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
     s.add_argument("--stall", type=float, default=20, help="minutes a session's transcript may sit still before fm "
                                                           "run stops it and goes on (0: never; T-0447)")
+    s.add_argument("--fit", action="store_true", help="small tasks first (S, M, then L), so more finish before a usage "
+                                                      "limit; on by itself while usage runs ahead of pace (T-0732)")
+    s.add_argument("--failover", choices=["codex", "gemini", "opencode"],
+                   help="opt-in for this run: when a usage limit outlasts --wait, hand the task's packet to this agent "
+                        "(it leaves for that provider; T-0731)")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
