@@ -2,6 +2,7 @@
 decisions and research notes, ranked by BM25 over their words. Stdlib only, computed on demand by fm (never in a
 hook). Recalled text is data from past work: plain (no control characters), one capped line per hit.
 Also from the same history: fm explain (T-0464), fm task show ID --story (T-0483) and fm recall --ask (T-0484)."""
+import collections
 import json
 import math
 import os
@@ -80,6 +81,9 @@ def _documents(p, skip=None):
         text = c.plain(str(r.get("text") or ""))
         yield "surprise", f"surprise {str(r.get('at') or '')[:10]} ({r.get('task') or '-'}): {c.fit(text, 200)}", text, \
             None, {"age": _age(r.get("at"))}
+    import fmoutcomes
+    for at, _, orig, _ in fmoutcomes.reverts(p, 50):  # T-0657: a reverted commit is a wrong turn worth remembering
+        yield "wrong turn", f"wrong turn {at[:10]}: \"{c.fit(orig, 160)}\" was reverted", orig, None, {"age": _age(at)}
     folder = os.path.join(p.dir, "research")
     try:
         names = sorted(n for n in os.listdir(folder) if n.endswith(".md"))
@@ -352,9 +356,63 @@ def seen_before(p, sig, task):
     return None
 
 
+def log_shown(p, hits, task):
+    """T-0617: a recalled brief with a lesson was put in front of task's session at focus."""
+    for _, kind, label, _, x in hits:
+        if kind == "brief" and " — lesson: " in label and x.get("id"):
+            c.log_event(p, "lesson_shown", task=task, data={"of": x["id"], "via": "focus"})
+
+
+UNRECALLED_DAYS = 7
+
+
+def lessons(p):
+    """T-0617: every finished task's lessons by stable id (T-0123.1: the task, then its place in the Lessons section,
+    which only grows), how often the task's lessons were shown (focus recall, edit tripwires), and two flags: never
+    shown UNRECALLED_DAYS after it closed, or a failure its task met came back in another task after it closed."""
+    import fmoutcomes
+    shown = collections.Counter()
+    for e in c.ledger_tail(p, 50000):
+        if e.get("event") == "lesson_shown":
+            shown[(e.get("data") or {}).get("of")] += 1
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000):
+        if e.get("kind") == "lesson_shown" and e.get("project") == p.slug:  # edit tripwires
+            shown[e.get("task")] += 1
+    fails = c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), FAILURES_KEEP)
+    rows = []
+    for b in c.load_briefs(p, include_archive=True):
+        texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+        if b.status != "done" or not texts:
+            continue
+        closed = fmoutcomes.done_at(b)
+        sigs = {r.get("sig") for r in fails if r.get("task") == b.id and r.get("sig")}
+        again = sorted({r["task"] for r in fails if r.get("sig") in sigs and r.get("task") not in (None, b.id)
+                        and str(r.get("at") or "") > closed})
+        rows += [{"id": f"{b.id}.{i}", "text": t, "shown": shown[b.id], "age": _age(closed), "recurred": again}
+                 for i, t in enumerate(texts, 1)]
+    return rows
+
+
+def _render_lessons(rows):
+    if not rows:
+        return "No lessons recorded yet (fm task finish … --lesson)."
+    lines = [f"Lessons: {len(rows)} ({sum(1 for r in rows if r['shown'])} shown at least once); newest:"]
+    lines += [f"- {r['id']} shown {r['shown']}×: {c.fit(r['text'], 110)}" for r in rows[-12:]]
+    cold = [r["id"] for r in rows if not r["shown"] and r["age"] >= UNRECALLED_DAYS]
+    lines += [f"- never recalled ({UNRECALLED_DAYS}+ days since it closed; reword it or retire it): "
+              + ", ".join(cold[-15:])] if cold else []
+    back = [f"{r['id']} in {', '.join(r['recurred'][:3])}" for r in rows if r["recurred"]]
+    lines += ["- recurred (its task's failure came back after it; the lesson didn't stop it): "
+              + "; ".join(back[-10:])] if back else []
+    return "\n".join(lines)
+
+
 def cmd_recall(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "lessons", False):
+        rows = lessons(p)
+        return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
     if args.corrections:
         rows = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-(args.n * 5):]
         return fmcli.out(args, rows, "\n".join(f"- {str(e.get('ts', ''))[:10]} {e.get('task') or '-'}: "

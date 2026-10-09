@@ -43,3 +43,7 @@ Evidence is a command plus its actual result. "Tests pass" needs the test comman
 - A check that couldn't have failed (no test selected, a grep that matches either way, output you can't read) is inconclusive: record it with `--inconclusive` (it never counts) and write a sharper check.
 - A fact the plan rests on goes in as `fm task assume ID add "<fact>"`; check it before building on it (`fm task assume ID verify N --run CMD`, or `--evidence "<file:line read>"`). A false one changes the plan.
 - When the code wasn't what you expected, `fm surprise "<expected> → <observed>"`: friction and recall bring it back to the next related task.
+
+## Forks and precedent
+- Classify each fork before taking it (T-0636). A **one-way door** — costly or outward: a schema, a public interface, data loss, money, something sent — gets a plan note, a second read (`fm second plan`) and `fm decide --kind costly|outward`. A **two-way door** — reversible in a commit — is decided on the spot and logged (`fm decide`), never deliberated.
+- When sources disagree, the order is: the user's words > vetoes > decisions > lessons > your defaults (T-0654). Say which one a decision rests on: `fm decide "<it>" --cites "<the user's message, veto or decision>"`; `fm recall` finds the candidates.

@@ -490,6 +490,27 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     return res
 
 
+def hygiene(p, args):
+    """T-0656: cases whose result is the same in every saved run (2+ runs): they discriminate nothing, so they cost a
+    replay each without telling one plugin version from another; listed as candidates to drop, nothing is removed."""
+    import fmcli
+    seen = {}
+    for path in sorted(glob.glob(os.path.join(_results_dir(p), "*.json"))):
+        try:
+            with open(path, encoding="utf-8") as f:
+                res = json.load(f)
+        except (OSError, ValueError):
+            continue
+        for x in res.get("cases") or []:
+            if isinstance(x, dict) and x.get("id"):
+                seen.setdefault(x["id"], []).append(bool(x.get("pass")))
+    flat = {k: v for k, v in seen.items() if len(v) >= 2 and len(set(v)) == 1}
+    lines = [f"- {k}: {'passed' if v[0] else 'failed'} in all {len(v)} runs" for k, v in sorted(flat.items())]
+    text = ("Cases that never discriminate (candidates to drop from bench/cases.json):\n" + "\n".join(lines)) if lines \
+        else f"Every case with 2+ runs ({sum(len(v) >= 2 for v in seen.values())}) has differed at least once."
+    return fmcli.out(args, {"flat": {k: {"pass": v[0], "runs": len(v)} for k, v in flat.items()}}, text)
+
+
 def _results_dir(p):
     return os.path.join(p.dir, "bench", "results")
 
@@ -680,11 +701,13 @@ def _contest(p, args):
 
 def cmd_bench(args):
     import fmcli
-    if args.bench_cmd not in ("build", "list", "show", "compare", "models"):
+    if args.bench_cmd not in ("build", "list", "show", "compare", "models", "hygiene"):
         c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)
     if args.bench_cmd == "seed-review":
         return seed_review(p, args)
+    if args.bench_cmd == "hygiene":
+        return hygiene(p, args)
     if args.bench_cmd == "build":
         if bool(args.commits) != bool(args.verify):
             raise fmcli.UsageError("--commits RANGE and --verify CMD go together (CMD may use {tests})")

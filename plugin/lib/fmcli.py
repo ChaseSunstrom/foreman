@@ -11,7 +11,8 @@ import time
 
 import fmcore as c
 
-EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title"}
+EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title",
+            "confidence"}
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -308,6 +309,15 @@ def task_hypo(p, args):
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
+def flag_replan(p, task, reason):
+    """T-0603: an active M/L task's plan met a surprise; fm next leads with a replan until fm task log ID "replan: …"
+    (a later trigger replaces the reason; the Log keeps each one)."""
+    b, reason = (c.find_brief(p, task) if task else None), " ".join(c.redact(reason).split())  # one frontmatter line
+    if b and b.status == "active" and b.tier in ("M", "L"):
+        mutate(p, b.id, lambda x: (x.meta.update(replan=reason), x.append_log(f"plan revision needed: {reason}")),
+               "replan_needed", {"reason": reason[:200]})
+
+
 def task_assume(p, args):
     """T-0254: the brief's assumptions say whether they were checked. A check that fails marks it false, not an error."""
     if args.action == "add":
@@ -335,6 +345,10 @@ def task_assume(p, args):
             raise UsageError(f"{b.id} has no assumption {n}")
     b, _ = mutate(p, args.id, mark, "assumption",
                   {"n": n, "status": status, "how": c.redact(how)[:300]})
+    if status == "false":  # T-0643: the steps that rest on it are named for re-check
+        cite = [s.n for s in b.steps() if re.search(rf"\bA{n}\b", s.text)]
+        flag_replan(p, b.id, f"assumption {n} is false" + (
+            f"; step {', '.join(map(str, cite))} cite{'s' if len(cite) == 1 else ''} it" if cite else ""))
     return out(args, dict(c.brief_summary(b), status=status), (shown + "\n" if shown else "") + (
         f"{b.id}: assumption {n} verified." if status == "verified" else
         f"{b.id}: assumption {n} is false — re-check the plan, and log it: fm surprise \"<expected> → <observed>\"."))
@@ -364,6 +378,7 @@ def cmd_surprise(args):
         with open(os.path.join(p.dir, "surprises.jsonl"), "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
     c.log_event(p, "surprise", task=task, data={"text": text[:300]})
+    flag_replan(p, task, "surprise: " + c.fit(text, 160))
     return out(args, rec, f"Surprise logged{f' on {task}' if task else ''}: fm friction and fm recall will bring it back.")
 
 
@@ -401,7 +416,11 @@ def cmd_task(args):
     if sub == "ac":
         return task_ac(p, args)
     if sub == "log":
-        b, _ = mutate(p, args.id, lambda b: b.append_log(args.text), "note", {"text": args.text[:300]})
+        def note(b):
+            b.append_log(args.text)
+            if args.text.strip().lower().startswith("replan:"):  # T-0603: the plan was re-read and revised
+                b.meta.pop("replan", None)
+        b, _ = mutate(p, args.id, note, "note", {"text": args.text[:300]})
         return out(args, c.brief_summary(b), f"{b.id}: logged.")
     if sub == "hypo":
         return task_hypo(p, args)
@@ -491,7 +510,8 @@ def cmd_task(args):
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
-            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"])
+            logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
+                          planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
         first_edit = c.first_touch(p, pre.id)
         logged = {"lesson": lesson[:300]} if lesson else {}
         b, _ = mutate(p, args.id, done, "task_done", logged)
@@ -671,6 +691,13 @@ def task_finish(p, args):
                 x.set_section("Docs impact", c.redact(args.docs))
             if getattr(args, "why_not_caught", None):  # T-0598
                 x.set_section("Why not caught", c.redact(args.why_not_caught))
+            if getattr(args, "followups", None):  # T-0639: the questions the user will likely ask, answered
+                x.set_section("Follow-up answers", "\n".join(
+                    "- " + c.redact(q.strip()).replace("=>", "→", 1) for q in args.followups))
+            if getattr(args, "insight", None):
+                x.set_section("Insight", c.redact(c.plain(args.insight).strip()))
+            if getattr(args, "differently", None):  # T-0641
+                x.set_section("Would do differently", c.redact(c.plain(args.differently).strip()))
     mutate(p, b.id, record, "finish", {"runs": len(runs), "failed": sum(1 for r in results if r[3])})
     failed = [f"{kind}{f' {n}' if n else ''}: {cmd} → {c.run_result(code, output)}"
               for kind, n, cmd, code, output in results if code]
@@ -1175,7 +1202,49 @@ def _close_warnings_of(p, b, files):
     still = fmsecond.open_dissent(b)  # T-0642: an objection nobody answered is worth one line at the close
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
-    return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else [])
+    honest = _honest(p, b)  # T-0661
+    if b.tier == "L" and not b.section("Risks and rollback").strip():  # T-0626
+        honest.append("an L task closed with no Risks and rollback section: what undoes it if it goes wrong?")
+    if b.meta.get("replan"):  # T-0603: a surprise the plan never answered
+        honest.append(f"closed with a replan never answered ({c.fit(b.meta['replan'], 100)}): fm task log {b.id} "
+                      f"\"replan: <what changed, or why nothing had to>\"")
+    return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
+
+
+_HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
+_UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
+
+
+def step_order(b):
+    """T-0623: a step that explores an unknown placed after one that's hard to undo (a fixed vocabulary; a hint)."""
+    steps = b.steps()
+    for i, s in enumerate(steps):
+        if _HARD.search(s.text):
+            late = next((t for t in steps[i + 1:] if _UNKNOWN.search(t.text) and not _HARD.search(t.text)), None)
+            if late:
+                return (f"Step order: step {late.n} ({c.fit(late.text, 50)}) explores an unknown after step {s.n} "
+                        f"({c.fit(s.text, 50)}) does something hard to undo — unknowns first, then reversible, then "
+                        f"irreversible (planning.md R2).")
+    return ""
+
+
+def _honest(p, b):
+    """T-0661: hindsight rewriting (criteria text or checks edited after work started) and suspiciously smooth results
+    (an M/L task other than a FIX whose every recorded run passed first time); logged as closeout_flags."""
+    log = b.section("Log").splitlines()
+    start = next((i for i, x in enumerate(log) if re.match(r"- \S+ focused\b", x)), None)
+    edits = [re.sub(r"^- \S+ ", "", x) for x in log[start:]] if start is not None else []
+    edits = [x for x in edits if re.match(r"criterion \d+ (text|verify):", x)]
+    runs = [x for x in b.evidence() if c._RAN_MARK in x]
+    smooth = b.tier in ("M", "L") and b.type != "FIX" and runs and not any("✗" in x for x in runs)
+    out = ([f"criteria edited after work started (re-check they weren't loosened to fit the result): "
+            + "; ".join(c.fit(x, 140) for x in edits[:3])] if edits else []) + (
+        [f"suspiciously smooth: all {len(runs)} recorded run(s) passed the first time; was a test seen failing "
+         f"before the change?"] if smooth else [])
+    if out:
+        c.log_event(p, "closeout_flags", task=b.id, data={"kinds": (["criteria_edited"] if edits else [])
+                                                          + (["smooth"] if smooth else [])})
+    return out
 
 
 def _not_verified(p, b, files):
@@ -1389,6 +1458,8 @@ def task_set(p, args):
                 raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
                                  f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
+        if k == "confidence" and not (v.isdigit() and 0 <= int(v) <= 100):  # T-0619
+            raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -1536,7 +1607,9 @@ def cmd_focus(args):
         related = ""
         if not target.section("Related").strip():  # recall at planning time, kept for fresh sessions (T-0043)
             import fmrecall
-            related = fmrecall.render(fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id), target.tier)
+            hits = fmrecall.recall(p, fmrecall.brief_query(target), skip=target.id)
+            related = fmrecall.render(hits, target.tier)
+            fmrecall.log_shown(p, hits, target.id)  # T-0617
             if target.meta.get("scope") and c.git_root(p.root):  # the tests that go with the scope (T-0044)
                 import fmmap
                 try:
@@ -1562,9 +1635,16 @@ def cmd_focus(args):
     if warn:
         print(warn, file=sys.stderr)
     stale = c.stale_refs(p, target) if resumed and target.meta.get("base") else []  # T-0113: picked up again
+    import fmoutcomes
+    try:
+        record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
+                                          fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
+                                          step_order(target)]))  # T-0623
+    except Exception:  # a report: it never stops a focus
+        record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
-        + (f"\n{related}" if related else "")
+        + (f"\n{related}" if related else "") + (f"\n{record}" if record else "")
         + f"\nDone needs: {', '.join(g for g, _ in gates(target.type, target.tier))} (fm gates)")
 
 
@@ -1916,18 +1996,19 @@ def cmd_decide(args):
     except ValueError as e:                                                                          # their own args
         raise UsageError(str(e))
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
-                    getattr(args, "revisited", None), revisit)
+                    getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None))
     out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
-                    revisit="", locked=False):
+                    revisit="", locked=False, cites=None):
     def cell(v):
         return c.redact((v or "").replace("|", "\\|").replace("\n", " ").strip())
     words = lambda v: cell(v).replace("]", ")")  # a tag's words can't close the tag early
     tags = ("" if kind == "reversible" else f"[{kind}] ") + (
         f"[reverses: {words(reverses)}] " if reverses else "") + (
-        f"[revisited: {words(settles)}] " if settles else "") + revisit
+        f"[revisited: {words(settles)}] " if settles else "") + (
+        f"[cites: {words(cites)}] " if cites else "") + revisit  # T-0654: what the decision rests on
     text = re.sub(r"^\[", "(", cell(decision))  # review: free text can't open with a tag fm would read
     row = f"| {c.now()[:10]} | {tags}{text} | {cell(why)} | {cell(rejected)} |\n"
     path = os.path.join(p.dir, "decisions.md")
@@ -2821,8 +2902,20 @@ def cmd_next(args):
     if b and b.status != "active":  # T-0451: what this kind of task usually takes here (fm next only: not the hooks)
         import fmwatch
         usual = fmwatch.typical(c.ledger_tail(p, 5000)).get(f"{b.type}/{b.tier}")
+    over = ""
+    if b and b.status == "active":  # T-0644: past twice the usual, re-frame before pushing on
+        import fmwatch
+        events = c.ledger_tail(p, 5000)
+        median = fmwatch.typical(events).get(f"{b.type}/{b.tier}")
+        began = min((c.parse_ts(e.get("ts")) for e in events if e.get("event") == "focus" and e.get("task") == b.id
+                     and c.parse_ts(e.get("ts"))), default=None)
+        took = (time.time() - began.timestamp()) / 60 if began else 0
+        if median and took > 2 * median:
+            over = (f" · on it {took:.0f} min, over twice the usual {median:g} min for a {b.type} {b.tier}: re-frame — "
+                    f"is the plan still the right size, or should it split?")
     out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
-        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else ""))
+        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
+        + over)
 
 
 def cmd_autonomy(args):
@@ -2887,7 +2980,7 @@ HELP_TIERS = [
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
-    ("Reports", "digest cost burden dream usage repeats friction taste evals replay bench evolve"),
+    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -2964,6 +3057,7 @@ def build_parser():
     s.add_argument("--kind", choices=["reversible", "costly", "outward"], default="reversible",
                    help="costly/outward: listed for the user's review (fm decide --review)")
     s.add_argument("--reverses", help="words from the earlier decision this one undoes")
+    s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
     s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
@@ -3093,6 +3187,9 @@ def build_parser():
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
+    t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
+    t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
     t.add_argument("--why-not-caught", metavar="TEXT", help="FIX: the test, gate or guard that would have caught it "
                                                              "earlier (captured as a follow-up), or 'none: why' (T-0598)")
     t.add_argument("--stack", action="store_true", help="with --commit: one commit per step (per member of a batch), "
@@ -3158,6 +3255,9 @@ def build_parser():
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
+    s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
+                                                                 "by a task naming them, or held; track record (T-0616)")
+    s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case")
     s.add_argument("action", choices=["add"])
     s.add_argument("id")
@@ -3245,13 +3345,15 @@ def build_parser():
     s.add_argument("id")
     s = add("second", lazy("fmsecond", "cmd_second"),
             help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
-    s.add_argument("what", choices=["plan", "debate", "session"])
+    s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
     s.add_argument("id", nargs="?", help="plan, debate: the task")
     s.add_argument("--review", help="debate: the research note holding the earlier review")
     s.add_argument("--model", help="plan, session: the child's model, another than the main one (default sonnet)")
     s.add_argument("--if-due", action="store_true", help="session: only once a day")
     s.add_argument("--exclude", help="session: the current session's id (its transcript isn't the previous one)")
     s.add_argument("--force", action="store_true", help="plan: run it on a tier protocols.json gives no panel")
+    s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender"],
+                   help="plan: read it from a stress-test stance, saved as its own Plan review section (T-0604)")
     s.add_argument("--timeout", type=float, default=300)
     s = add("relate", lazy("fmrelate", "cmd_relate"),
             help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "
@@ -3337,6 +3439,7 @@ def build_parser():
     s.add_argument("-n", type=int, default=4)
     s.add_argument("--corrections", action="store_true", help="the user's recent corrections (for /foreman:reflect)")
     s.add_argument("--magnets", action="store_true", help="files the most FIX tasks touched (T-0613)")
+    s.add_argument("--lessons", action="store_true", help="lessons by id: times shown, never recalled, recurred (T-0617)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
     s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
@@ -3473,6 +3576,10 @@ def build_parser():
     b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
     b.add_argument("--model", default="sonnet")
     b.add_argument("--seed", type=int, default=0)
+    b = bsp.add_parser("hygiene", help="cases that pass or fail the same in every saved run: they tell no version "
+                                        "from another (T-0656)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
     for name in ("build", "list", "run", "show", "compare", "gate", "models"):
         b = bsp.add_parser(name)
         b.add_argument("--json", action="store_true")
@@ -3614,6 +3721,8 @@ def build_parser():
                    help="the user's yes or no to the proposed vetoes (all, or N)")
     s.add_argument("which", nargs="?", type=int, metavar="N")
     s.add_argument("-n", type=int, default=8)
+    s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
+                                                            "agent's (T-0655)")
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
