@@ -1127,8 +1127,13 @@ def _not_verified(p, b, files):
         m = fmmap.load(p)
     except Exception:  # the map is a hint: no map, no warning
         return None
+    import fnmatch
     ran = " ".join(b.evidence())
-    bare = [f for f in files if c.CODE.search(f) and not fmmap._TEST.search(f)
+    meta = c.read_meta(p)
+    passed = {l.split("`", 2)[1] for l in b.evidence() if c._RAN_MARK in l and "` → exit 0" in l}
+    gates = [(meta.get("check_paths") or {}).get(g) or ["*"] for g in meta.get("checks") or [] if g in passed]
+    bare = [f for f in files if c.CODE.search(f) and not fmmap._TEST.search(f)  # T-0736: a passing gate covers its paths
+            and not any(fnmatch.fnmatch(f, g) for globs in gates for g in globs)
             and not any(t in files or t in ran for t in fmmap.tests_for(m, [f]))]
     return (f"not verified: {', '.join(bare[:8])}{' …' if len(bare) > 8 else ''} — no linked test changed or ran "
             f"(fm task prove {b.id} --hunks names the hunks no check notices)") if bare else None
