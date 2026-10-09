@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.10 — 2026-10-09
 - A "no active task" refusal whose own command runs `fm focus` (or `fm task new … --focus`) now says to run the focus as its own command first (T-0404, from JARVIS: refused twice in a row). The guard reads the whole command before any of it runs. Only the message changes.
 - `fm lane merge` lands a builder's branch while the main thread is mid-task (T-0403, from JARVIS: T-0280 couldn't land during T-0278). Uncommitted edits the branch doesn't touch stay put and the merge goes ahead, as git's own does. A staged change (the merge commit would record it) or an edit to a file the branch also changes still refuses, by name.
 
