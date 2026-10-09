@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm pause` is one flag that stops everything Foreman runs unattended, in every project (T-0436, from the Foreman brainstorm). The drive goes quiet, `fm run`, `serve`, `night` and `lane new` refuse to start, and autonomy reads as standard. STATE and the session note say so, and `fm pause off` lifts it. A session already running finishes its turn.
 - IFS review, round 2 (T-0590, a security review of T-0585):
   - When a line also expands IFS plainly, or runs `eval`, `source` or `.`, an IFS set inside quoted or heredoc text counts. This refuses `eval 'IFS=m'; "r$IFS" -rf ~`, and refuses a plain IFS beside a sourced file.
   - The rewrite touches only unquoted text. Quoted text is left for the nested check that reads it (`bash -c '…'`).
