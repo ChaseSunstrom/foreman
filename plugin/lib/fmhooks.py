@@ -1555,7 +1555,7 @@ def _drive(p, sd, briefs, pl, g):
         offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
-            how = _start_how(offer)
+            how = _start_how(offer, lanes_free(briefs))
             _event({"kind": "drive_offer", "session_id": sid, "task": work["id"], "offer": offer["id"], "how": how})
             return (f"Foreman drive: background work is still running ({', '.join(running[:3])}); don't idle on it. "
                     f"Start {offer['id']} ({offer['tier']} {offer['type']}: {c.fit(offer['title'], 80)}) now: {how}. "
@@ -1624,22 +1624,32 @@ def _side_work(sd, briefs, work, full, offered):
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
+    lanes = lanes_free(briefs)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
         if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
                 or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
                 or b.section("Verification evidence").strip()):
             continue
+        if (x.get("status") != "captured" and b.section("Plan review").strip()
+                and not (lanes and x.get("tier") in ("S", "M"))):  # T-0700: planned and reviewed, no lane free:
+            continue                                                 # nothing left to do on it from here
         return x
     return None
 
 
-def _start_how(x):
-    """How to start a side task: a builder lane for planned S/M work, planning for the rest."""
+def lanes_free(briefs):
+    """T-0700: whether fm lane brief would take another builder (it refuses past fmlanes.BUILDERS)."""
+    import fmlanes
+    return sum(1 for b in briefs if b.meta.get("builder") and b.status not in c.CLOSED) < fmlanes.BUILDERS
+
+
+def _start_how(x, lanes=True):
+    """How to start a side task: a builder lane for planned S/M work while a slot is free, planning for the rest."""
     if x.get("status") == "captured":
         return (f"plan it (fm task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
                 f"for M/L), so it's ready to run")
-    if x.get("tier") in ("S", "M"):
+    if x.get("tier") in ("S", "M") and lanes:
         return f"fm lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
     return f"ground it and sharpen its plan (fm second plan {x['id']}), so it's ready when the current task lands"
 
