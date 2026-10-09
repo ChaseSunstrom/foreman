@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A shell or interpreter reading its program from a pipe is refused (T-0715, found probing the T-0698 review). `echo 'rm -rf ~' | bash` ran unread; so did `| sh -s`, `| python3`, `| node -` and `| source /dev/stdin`. None of 5,000 real commands does this, and a heredoc, which the guard reads, does the same job. Inline code (`-c`, `-e`, `-m`) and a script file are unchanged. A download piped in stays `pipe-shell`, which can be granted for an installer.
 - Friction batch (T-0698, from a self-improvement pass):
   - A plain IFS inside one `'…'` string, or inside one quoted heredoc body that no shell on the line reads, is data. So a test file or commit message that names IFS is no longer refused. IFS beside it, IFS split across two pieces, or IFS in a shell's heredoc still is.
   - A suite test fails on any name in `plugin/lib` or `plugin/hooks` that nothing binds. Several renames had left the guard failing closed on a NameError.
