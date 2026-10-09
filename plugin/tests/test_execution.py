@@ -87,12 +87,14 @@ class Scaffold(Base):
         subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.repo, "commit", "-qm", "x"], check=True)
         self.task()
-        self.write("x.py", "def f():\n    breakpoint()\n    print('ok')\n    return 1\n")
+        self.write("x.py", "def f():\n    breakpoint()\n    print('ok')\n    msg = 'left a breakpoint() in'\n    print('DEBUG rows', 3)\n    return 1\n")
         import fmcli
         warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py"])
         hit = [w for w in warns if "debug scaffolding" in w]
         self.assertTrue(hit and "x.py:2" in hit[0], warns)
         self.assertNotIn("x.py:3", hit[0])
+        self.assertNotIn("x.py:4", hit[0])
+        self.assertIn("x.py:5", hit[0])
 
     def test_prose_files_that_mention_debug_calls_stay_quiet(self):
         self.write("NOTES.md", "# notes\n")

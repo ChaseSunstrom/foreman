@@ -1288,10 +1288,11 @@ def _last_green(b):
                  and (r := re.match(r"^- \((?:step|ac) \d+\) `(.+?)` → exit 0\b", line))), None)
 
 
-_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug|"
-                    r"\b(print|console\.\w+|logger?\.\w+)\(.*\bDEBUG\b")
+_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug")
+_DEBUG_PRINT = re.compile(r"^\s*(print|console\.\w+|logger?\.\w+)\(\s*f?[\"']DEBUG\b")  # matched on the raw line
 _JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
 _PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")
+_QUOTED = re.compile(r"""(["'])(?:\\.|(?!\1).)*\1""")
 
 
 def _scaffolding(p, b, files):
@@ -1314,8 +1315,8 @@ def _scaffolding(p, b, files):
             m = re.search(r"\+(\d+)", line)
             n = int(m.group(1)) if m else 0
         elif line.startswith("+") and path:
-            text = line[1:]
-            if _DEBUG.search(text) or (path.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs")) and _JS_LOG.search(text)
+            text = _QUOTED.sub("''", line[1:])  # T-0747: a string that names a debug call isn't one
+            if _DEBUG.search(text) or _DEBUG_PRINT.search(line[1:]) or (path.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs")) and _JS_LOG.search(text)
                                        and "/test" not in path):
                 hits.append(f"{path}:{n}")
             n += 1
