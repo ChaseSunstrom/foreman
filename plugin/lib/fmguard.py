@@ -94,6 +94,9 @@ def _hint(detail):
                 "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes.")
     if "unresolvable target" in detail:
         return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+    if detail.endswith("; git merge)"):
+        return (" On Foreman's own repo, land a reviewed builder branch with fm lane merge ID: it merges --no-ff and "
+                "checks each file it changes as that task's write.")
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.")
@@ -1785,8 +1788,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for target in c.redirs + _write_targets(name, args) + git_env + _env_files(c.argv):
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_write)
         for target in _tree_targets(name, args) + git_env:
-            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,
-                                  " (a tree write over it)")
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
+                                  " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
+                                                             else "") + ")")  # refusal names fm lane merge
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):

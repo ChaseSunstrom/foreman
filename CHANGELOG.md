@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard's refusal of a plain `git merge` on Foreman's own repo names the way that works: `fm lane merge ID` (T-0394, from a self-improvement pass; builders and the main thread typed the merge by hand). Only the message changes.
 
 ## 1.2.5 — 2026-10-09
 - `fm status` works as an alias of `fm state` (T-0393). It was an invalid choice, though "status" is the word the rules and `/foreman:status` use.
