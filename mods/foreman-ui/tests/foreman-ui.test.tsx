@@ -91,10 +91,10 @@ function world(on: On, views: FmView[]) {
   })
   const suggested: string[] = []
   const played: string[] = []
-  const usage = { percent: 30, limits: [] as { kind: string; percentUsed: number }[] }
+  const usage = { percent: 30, tokens: undefined as number | undefined, limits: [] as { kind: string; percentUsed: number }[] }
   mock.store(on)
   on('session.usage', async () => ({
-    value: { startedAt: 0, context: { window: 1000, percent: usage.percent }, rateLimits: usage.limits, cost: { usd: 1.5 } },
+    value: { startedAt: 0, context: { window: 1000, percent: usage.percent, tokens: usage.tokens }, rateLimits: usage.limits, cost: { usd: 1.5 } },
   }))
   const compacted: string[] = []
   const noticed: string[] = []
@@ -606,6 +606,16 @@ test('below the threshold nothing compacts', async ($, on) => {
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await clock.advance(35000)
   expect(compacted).toEqual([])
+})
+
+test('a task closing past freshTokens compacts even at a low share of a 1M window', async ($, on) => {
+  const { compacted, clock, usage, toasted } = world(on, [CALM, DONE])
+  usage.percent = 25
+  usage.tokens = 250000
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(34000)
+  expect(compacted.length).toBe(1)
+  expect(toasted.some(t => t.includes('250k tokens'))).toBe(true)
 })
 
 test('freshAt 0 turns it off', { options: { freshAt: 0 } }, async ($, on) => {

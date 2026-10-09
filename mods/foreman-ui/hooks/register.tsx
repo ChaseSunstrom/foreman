@@ -293,12 +293,18 @@ function economyText(limits: readonly { kind: string; percentUsed: number }[]): 
   )
 }
 
-// A task just closed: with the context past freshAt, compact so the next task starts on what still matters (T-0098).
+// A task just closed: with the context past freshAt percent or freshTokens tokens, compact so the next task starts on
+// what still matters (T-0098). Every turn re-reads the whole context, so tokens, not a share of a 1M window, set the
+// cost (T-0703).
 async function freshen($: EngineInterface) {
-  if (!cfg.freshAt) return
-  const percent = (await $.session.usage().catch(() => null))?.context.percent
-  if (typeof percent !== 'number' || percent < cfg.freshAt) return
-  $.ui.toast(`Task closed at context ${Math.round(percent)}% · compacting so the next task starts fresh`, { timeoutMs: 8000 })
+  if (!cfg.freshAt && !cfg.freshTokens) return
+  const context = (await $.session.usage().catch(() => null))?.context
+  const percent = context?.percent, tokens = context?.tokens
+  const byPct = !!cfg.freshAt && typeof percent === 'number' && percent >= cfg.freshAt
+  const byTokens = !!cfg.freshTokens && typeof tokens === 'number' && tokens >= cfg.freshTokens
+  if (!byPct && !byTokens) return
+  const at = typeof tokens === 'number' ? `${Math.round(tokens / 1000)}k tokens` : `${Math.round(percent ?? 0)}%`
+  $.ui.toast(`Task closed at context ${at} · compacting so the next task starts fresh`, { timeoutMs: 8000 })
   await $.session.compact({ instructions: FRESH }).catch(() => undefined)
 }
 
@@ -413,6 +419,7 @@ function captureBox($: EngineInterface, e: ResolveInput) {
 
 export const register: Register = (on, options) => {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
+  cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''

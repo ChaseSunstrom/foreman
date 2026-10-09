@@ -21,6 +21,7 @@ DRIVE_MAX = 50          # consecutive drive continuations without a user prompt
 OFFERS_MAX = 3          # T-0401: queued tasks offered, one per Stop, while one set of background jobs runs
 LONG_JOB_S = 20 * 60    # T-0415: a background job running longer no longer holds the drive
 CONTEXT_NOTE_PCT = 60     # context use at a task boundary worth mentioning (context rot)
+CONTEXT_NOTE_TOKENS = 200_000  # T-0703: every turn re-reads the context, so past this a 1M window costs at 20%
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
 GUARDED = FILE_TOOLS | {"Bash"}
 # async events (latency irrelevant) and per-batch MessageDisplay are not timed
@@ -1588,14 +1589,16 @@ def _evidence_gate(p, act, pl, g, closed=()):
             f"fm task evidence {act.id} {flag}\"<cmd>\" \"<result>\", or state why it can't be verified.")
 
 
-def _context_pct(sid):
-    """Context-window use for a session, from the statusline's snapshot (state/sessions/<id>.json)."""
+def _context(sid):
+    """(percent, tokens) of the context window a session uses, from the statusline's snapshot
+    (state/sessions/<id>.json); (None, 0) when there's none."""
     try:
         with open(os.path.join(c.state_dir(), "sessions", f"{sid}.json")) as f:
-            pct = json.load(f).get("context_pct")
-        return int(pct) if pct is not None else None
-    except (OSError, ValueError, TypeError):
-        return None
+            snap = json.load(f)
+        pct = int(snap["context_pct"]) if snap.get("context_pct") is not None else None
+        return pct, int(pct * int(snap.get("context_size") or 0) / 100) if pct is not None else 0
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None, 0
 
 
 BG_WAIT_S = 2 * 3600  # backstop: a start older than this is assumed finished (T-0096: 6 h stalled a 5-day session)
@@ -1743,15 +1746,17 @@ def _drive(p, sd, briefs, pl, g):
                  "when a question or approval is needed, or with `fm drive off`."))
     try:
         reason += " Next: " + c.next_for(p, briefs)[2]
-        pct = _context_pct(sid)
+        pct, tokens = _context(sid)
+        big = pct is not None and (pct >= CONTEXT_NOTE_PCT or tokens >= CONTEXT_NOTE_TOKENS)
+        used = f"{pct}%" + (f" ({tokens // 1000}k tokens)" if tokens else "")
         act = sd["active"]
-        if not act and pct is not None and pct >= CONTEXT_NOTE_PCT:
-            reason += (f" Context {pct}% used at a task boundary; Foreman state is saved, so this is a good point for "
+        if not act and big:
+            reason += (f" Context {used} used at a task boundary; Foreman state is saved, so this is a good point for "
                        f"the user to /compact or start a fresh session (auto-compaction will also handle it).")
-        elif act and act["tier"] in ("M", "L") and pct is not None and pct >= CONTEXT_NOTE_PCT:
+        elif act and act["tier"] in ("M", "L") and big:
             n = _step_boundary(p, act["id"])  # T-0448: compact between steps, not mid-step; once per boundary
             if n and _first_time(sid, f"compact-{act['id']}-s{n}"):
-                reason += (f" Context {pct}% used at a step boundary of {act['id']} (step {n} has its evidence): "
+                reason += (f" Context {used} used at a step boundary of {act['id']} (step {n} has its evidence): "
                            f"checkpoint here, fm checkpoint --note \"<what the next step needs>\"; its Resume here is "
                            f"the handoff the compacted context reads, so this is the point for the user to /compact "
                            f"(auto-compaction will also handle it).")
