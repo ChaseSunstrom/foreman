@@ -507,12 +507,15 @@ def cmd_task(args):
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
             b.meta["status"] = "done"
             b.meta["verified"] = b.grade()[0]
+            if gaps:  # T-0645: what this plan forgot, for the next similar plan (fm recall at focus)
+                b.set_section("Plan gaps", gaps)
             if files:  # recall's "Start here" and edit tripwires for the next related task
                 b.set_section("Files touched", "".join(f"- {f}\n" for f in files[:30]))
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
                           planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
         first_edit = c.first_touch(p, pre.id)
+        gaps = _plan_gaps(p, pre)
         logged = {"lesson": lesson[:300]} if lesson else {}
         b, _ = mutate(p, args.id, done, "task_done", logged)
         if b.meta.get("batch"):
@@ -1211,6 +1214,46 @@ def _close_warnings_of(p, b, files):
     return out + ([drift] if drift else []) + ([bare] if bare else []) + ([dissent] if dissent else []) + honest
 
 
+def _plan_gaps(p, b):
+    """T-0645: the steps this plan didn't foresee — added after work started — and the steps whose first run failed,
+    from the ledger, as the brief's Plan gaps lines ("" when the plan held)."""
+    started, late, failed = False, [], {}
+    for e in c.ledger_tail(p, 20000):
+        if e.get("task") != b.id:
+            continue
+        d = e.get("data") or {}
+        started = started or e.get("event") == "focus"
+        if started and e.get("event") == "step_add" and d.get("text"):
+            late.append(c.fit(c.plain(str(d["text"])), 120))
+        elif e.get("event") == "evidence" and d.get("step") and d["step"] not in failed:
+            failed[d["step"]] = not str(d.get("result") or "").startswith("exit 0")
+    steps = {s.n: s.text for s in b.steps()}
+    lines = [f"- added late: {t}" for t in late] + [f"- failed first: step {n} {c.fit(steps[n], 100)}"
+                                                    for n, bad in sorted(failed.items()) if bad and n in steps]
+    return "\n".join(lines[:12]) + "\n" if lines else ""
+
+
+_CONTRACT = re.compile(r"\((produces|requires):\s*([^)]+)\)")
+
+
+def step_contracts(p, b):
+    """T-0666: steps may name what they produce and require, "(produces: PATH, …)" / "(requires: PATH, …)". An undone
+    step whose products already exist may not be needed; a requirement that neither exists nor comes from an earlier
+    step has no source. Hints only."""
+    made, notes = set(), []
+    for s in b.steps():
+        for kind, paths in _CONTRACT.findall(s.text):
+            for path in (x.strip() for x in paths.split(",") if x.strip()):
+                there = os.path.exists(os.path.join(p.root, path))
+                if kind == "produces" and not s.done and there:
+                    notes.append(f"step {s.n} produces {path}, which already exists: is the step still needed?")
+                if kind == "requires" and not there and path not in made:
+                    notes.append(f"step {s.n} requires {path}: it doesn't exist and no earlier step produces it")
+                if kind == "produces":
+                    made.add(path)
+    return ("Step contracts: " + "; ".join(notes[:4])) if notes else ""
+
+
 _HARD = re.compile(r"(?i)\b(deploy|release|publish|push|migrat(?:e|ion)|delete|drop|merge|send)(?:s|es|d|ed|ing)?\b")
 _UNKNOWN = re.compile(r"(?i)\b(spike|probe|prototype|investigate|measure|find out|unknown)\w*")
 
@@ -1639,7 +1682,7 @@ def cmd_focus(args):
     try:
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
-                                          step_order(target)]))  # T-0623
+                                          step_order(target), step_contracts(p, target)]))  # T-0623, T-0666
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
