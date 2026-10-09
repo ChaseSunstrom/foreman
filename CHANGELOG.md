@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.23 — 2026-10-09
 - Intent and change skills, first slice (T-0713).
   - `fm spec "<wish>" --module M [--out FILE]` turns a one-line wish into a red unittest. One tool-less child (Haiku by default) proposes assertions; only safe ones are kept (comparisons over calls into M and literals: no imports, dunders, eval or open). The file is run once to show it red. A real run on "calc.mul multiplies two numbers…" gave 7 assertions, all red.
   - `fm rewrite OLD NEW [--glob G] [--apply] [--convert]` renames in one rule: Python by tokens (strings and comments untouched), other code by whole word. It names every residual site: strings, comments, and other spellings such as OldName, oldName, OLD_NAME, old-name. `--convert` hands the residual lines to a cheap child and keeps only lines that lose every spelling of the old name. On a copy of Foreman's library, `regen_views → refresh_views` changed 38 code sites in 14 files; the 2 residuals inside the guard's regex strings were converted, leaving 0 residual sites, and every file still parses.
