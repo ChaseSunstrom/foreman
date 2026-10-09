@@ -379,6 +379,9 @@ def cmd_task(args):
         return task_new(p, args)
     if sub == "packet":
         return task_packet(p, args)
+    if sub in ("split", "capsule"):  # T-0709
+        import fmsplit
+        return (fmsplit.task_split if sub == "split" else fmsplit.task_capsule)(p, args)
     if sub == "show":
         b = need_brief(p, args.id)
         if args.story:  # T-0483
@@ -458,6 +461,9 @@ def cmd_task(args):
         def done(b):
             reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
+            import fmsplit  # T-0709: a parent closes after its children
+            reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"
+                        for k in fmsplit.open_children(p, b)]
             outside = c.scope_drift(b, files)
             if outside and not c.scope_reason_covers(b, touches, outside):
                 latest = max(outside, key=lambda f: touches.get(f, ""))  # T-0168: a reason counts after this edit
@@ -2920,6 +2926,13 @@ def build_parser():
         t.add_argument("--json", action="store_true")
         return t
 
+    t = tadd("split")  # T-0709
+    t.add_argument("id")
+    t.add_argument("--parts", type=int, help="how many children (default: about 4 files each, 2–4)")
+    t.add_argument("--files", nargs="+", help="the files to split (default: its scope, else fm graph pack's read-set)")
+    t.add_argument("--dry-run", action="store_true", help="show the partition only")
+    t = tadd("capsule")  # T-0709
+    t.add_argument("id")
     t = tadd("packet")  # T-0466
     t.add_argument("id")
     t.add_argument("--out", help="where to write it (default: the project's handoffs/ID.md)")
