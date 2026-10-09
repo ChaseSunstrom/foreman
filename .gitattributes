@@ -1,0 +1,2 @@
+# T-0427: every task adds a line under "## Unreleased"; a builder lane's line and the main line's merge as both
+CHANGELOG.md merge=union
