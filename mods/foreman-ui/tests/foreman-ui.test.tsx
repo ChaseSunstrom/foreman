@@ -453,6 +453,26 @@ test('quick capture files an idea without interrupting Claude', async ($, on) =>
   await ui.unmount()
 })
 
+test('the pane: a fleet deck with a remote tile, one steer for all, and the parts of a split task', async ($, on) => {
+  // T-0711: the cockpit's first slice
+  const fleet = [
+    { session: 'sess-abcdef12', project: 'demo-1a2b3c', task: 'T-0007', title: 'Login times out', context_pct: 31, mail: 1 },
+    { session: 'j-1', project: 'jarvis-d7aeca', task: 'T-0341', title: 'Calendar tools', context_pct: 38, remote: 'jarvis', age_s: 20 },
+  ]
+  const children = [{ id: 'T-0012', title: 'Login times out — part 1: auth.py', status: 'done', steps_done: 1, steps_total: 1 }]
+  const { calls } = world(on, [{ ...CALM, fleet, active: { ...CALM.active!, children } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /▍Fleet/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /JARVIS/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /jarvis-d7aeca · T-0341 Calendar tools/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /ctx 31% · mail 1/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /T-0012 Login times out — part 1: auth\.py/ })).toBeDefined()
+  await ui.input({ key: 'steer', text: 'freeze the public API' })
+  expect(calls).toContainEqual(['fm', 'conductor', 'steer', 'freeze the public API'])
+  await ui.unmount()
+})
+
 test('a write the guard refuses never reaches the files card', async ($, on) => {
   const { answer } = world(on, [VIEW])
   answer.deny = 'Foreman guard: blocked core: plugin/lib/x.py is protected core.'

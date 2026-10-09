@@ -291,26 +291,127 @@ def cmd_lease(args):
         + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held.")
 
 
+REMOTE_S = 60  # a remote's tiles are refreshed (detached, over the user's own ssh) when older than this
+REMOTE_FM = "$HOME/.claude/foreman/plugin/bin/fm"
+
+
+def rows(sessions=None):
+    """The conductor's view of each live session here."""
+    leases = _leases().values()
+    out = []
+    for s in live() if sessions is None else sessions:
+        sid = s["session_id"]
+        p = c.find_project(s["cwd"]) if s.get("cwd") and os.path.isdir(s["cwd"]) else None
+        act = c.active_brief(c.load_briefs(p), p.lane) if p else None
+        out.append({"session": sid, "project": s.get("project"), "task": act.id if act else None,
+                    "title": c.fit(act.title, 80) if act else None, "context_pct": s.get("context_pct"),
+                    "seen": s.get("ts"), "tmux": bool(s.get("tmux_pane")), "mail": len(unread(sid, mark=False)),
+                    "leases": sum(v["session"] == sid for v in leases)})
+    return out
+
+
+def remotes():
+    """{name: {"target": ssh target, "fm": its fm path}}: only machines the user added (fm conductor remote add)."""
+    try:
+        with open(os.path.join(_dir(), "remotes.json")) as f:
+            data = json.load(f)
+        return {k: v for k, v in data.items() if isinstance(v, dict) and v.get("target")}
+    except (OSError, ValueError):
+        return {}
+
+
+def _ssh(r, command, timeout=20):
+    return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", r["target"], command],
+                          capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+
+
+def refresh(name):
+    """Fetch a remote's live sessions into its cache (run detached by fleet())."""
+    r = remotes().get(name)
+    if not r:
+        return
+    try:
+        out = _ssh(r, f"{r.get('fm') or REMOTE_FM} conductor --json")
+        data = {"ts": c.now(), "sessions": json.loads(out.stdout).get("sessions") or []} if not out.returncode else \
+            {"ts": c.now(), "sessions": [], "error": c.fit(out.stderr.strip() or f"exit {out.returncode}", 160)}
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        data = {"ts": c.now(), "sessions": [], "error": c.fit(str(e), 160)}
+    c.write_atomic(os.path.join(_dir(), f"remote-{name}.json"), json.dumps(data))
+
+
+def fleet():
+    """Live sessions here and the cached tiles of each added remote; a stale cache starts a detached refresh."""
+    import datetime
+    out = rows()
+    for name in remotes():
+        path = os.path.join(_dir(), f"remote-{name}.json")
+        try:
+            with open(path) as f:
+                cache = json.load(f)
+        except (OSError, ValueError):
+            cache = {}
+        try:
+            age = (datetime.datetime.now(datetime.timezone.utc) - datetime.datetime.fromisoformat(
+                str(cache.get("ts")).replace("Z", "+00:00"))).total_seconds()
+        except ValueError:
+            age = None
+        if (age is None or age > REMOTE_S) and not os.environ.get("FOREMAN_NO_BACKGROUND"):
+            subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "conductor", "refresh", name],
+                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             start_new_session=True)
+        out += [dict(x, remote=name, age_s=round(age) if age is not None else None) for x in cache.get("sessions") or []
+                if isinstance(x, dict)]
+        if cache.get("error"):
+            out.append({"session": "-", "remote": name, "error": cache["error"]})
+    return out
+
+
 def cmd_conductor(args):
     import fmcli
+    import shlex
+    if args.action == "remote":
+        data = remotes()
+        if args.words[:1] == ["add"] and len(args.words) in (3, 4):
+            name, target = args.words[1], args.words[2]
+            if not re.fullmatch(r"[\w.-]{1,40}", name) or not re.fullmatch(r"[\w.@:-]{1,200}", target):
+                raise fmcli.UsageError("fm conductor remote add NAME [user@]host [FM_PATH]")
+            data[name] = {"target": target, "fm": args.words[3] if len(args.words) == 4 else REMOTE_FM}
+        elif args.words[:1] == ["rm"] and len(args.words) == 2:
+            data.pop(args.words[1], None)
+            try:
+                os.unlink(os.path.join(_dir(), f"remote-{args.words[1]}.json"))
+            except OSError:
+                pass
+        elif args.words:
+            raise fmcli.UsageError("fm conductor remote [add NAME [user@]host [FM_PATH] | rm NAME]")
+        if args.words:
+            c.write_atomic(os.path.join(_dir(), "remotes.json"), json.dumps(data, indent=1))
+        return fmcli.out(args, {"remotes": data}, "\n".join(f"{k}: {v['target']}" for k, v in data.items())
+                         or "No remotes (fm conductor remote add NAME user@host). Nothing is fetched from elsewhere.")
+    if args.action == "refresh":
+        for name in args.words or list(remotes()):
+            refresh(name)
+        return 0
     sessions = live()
     if args.action == "steer":
         if not args.words:
             raise fmcli.UsageError("fm conductor steer \"<text>\" [--wake]")
-        send("all", " ".join(args.words), "steer", fmcli.session())
+        text = " ".join(args.words)
+        send("all", text, "steer", fmcli.session())
         woke = [s["session_id"] for s in sessions if args.wake and wake(s["session_id"])]
-        return fmcli.out(args, {"sessions": len(sessions), "woke": woke},
-                         f"Steer sent to {len(sessions)} live session(s)" + (f"; woke {len(woke)}" if woke else "") + ".")
-    leases = _leases().values()
-    rows = []
-    for s in sessions:
-        sid = s["session_id"]
-        p = c.find_project(s["cwd"]) if s.get("cwd") and os.path.isdir(s["cwd"]) else None
-        act = c.active_brief(c.load_briefs(p), p.lane) if p else None
-        rows.append({"session": sid, "project": s.get("project"), "task": act.id if act else None,
-                     "context_pct": s.get("context_pct"), "seen": s.get("ts"), "tmux": bool(s.get("tmux_pane")),
-                     "mail": len(unread(sid, mark=False)), "leases": sum(v["session"] == sid for v in leases)})
-    return fmcli.out(args, {"sessions": rows}, ("Live sessions:\n" + "\n".join(
+        reached = []
+        for name, r in remotes().items():  # the user's own machines, added by them
+            try:
+                ok = not _ssh(r, f"{r.get('fm') or REMOTE_FM} bus send all {shlex.quote(text)} --type steer").returncode
+            except (OSError, subprocess.SubprocessError):
+                ok = False
+            reached.append(name) if ok else None
+        return fmcli.out(args, {"sessions": len(sessions), "woke": woke, "remotes": reached},
+                         f"Steer sent to {len(sessions)} live session(s)" + (f" and {', '.join(reached)}" if reached
+                                                                             else "")
+                         + (f"; woke {len(woke)}" if woke else "") + ".")
+    found = rows(sessions)
+    return fmcli.out(args, {"sessions": found}, ("Live sessions:\n" + "\n".join(
         f"  {r['session'][:8]}  {r['project'] or '-'}  {r['task'] or 'no task'}  ctx {r['context_pct']}%  "
         f"seen {str(r['seen'])[11:16]}  mail {r['mail']}  leases {r['leases']}" + ("  tmux" if r["tmux"] else "")
-        for r in rows)) if rows else "No live sessions (none wrote a statusline in the last 15 min).")
+        for r in found)) if found else "No live sessions (none wrote a statusline in the last 15 min).")

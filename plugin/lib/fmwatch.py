@@ -349,6 +349,9 @@ def view(p):
     if active:
         focused = next((e.get("ts") for e in events if e.get("event") == "focus" and e.get("task") == act.id), None)
         active["on_task_s"] = round((c.age_days(focused) or 0) * 86400) if focused else None
+        active["children"] = [{"id": k.id, "title": c.plain(k.title)[:120], "status": k.status,  # T-0711: the tree
+                               "steps_done": sum(s.done for s in k.steps()), "steps_total": len(k.steps())}
+                              for k in briefs if k.meta.get("parent") == act.id]
 
     def item(s):
         b = by_id.get(s["id"])
@@ -388,6 +391,7 @@ def view(p):
                     "lenses": sorted({lens for lens, _, _ in b.audits()}) if b.status == "done" else []}
                    for b in closed],
         "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
+        "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
@@ -410,6 +414,11 @@ def view(p):
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},
     }
+
+
+def _fleet():
+    import fmbus
+    return fmbus.fleet()
 
 
 def _signals(sd, d):

@@ -323,6 +323,15 @@ async function capture($: EngineInterface, text: string) {
   await refresh($)
 }
 
+// T-0711: one steer for every live session here and on the remotes the user added (fm conductor steer)
+async function steer($: EngineInterface, text: string) {
+  const said = text.trim()
+  if (!said) return
+  const r = await run($, ['conductor', 'steer', said])
+  $.ui.toast(r.exitCode === 0 ? `↯ ${lastLine({ stdout: r.stdout }) || 'Steer sent'}` : `fm conductor: ${lastLine({ stderr: r.stderr })}`)
+  await refresh($)
+}
+
 async function openPane($: EngineInterface, focus: boolean) {
   // ~76 columns docked: the cards fit, and the transcript and band keep the rest (T-0122: the share left them ~37)
   return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true, columns: 76 } : { id: PANE, title: 'Foreman', columns: 76 })
@@ -1010,7 +1019,7 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = $.ui.resolve(e)
     const v = await read($, view)
     const err = await read($, error)
     if (!v?.project) {
@@ -1144,6 +1153,15 @@ export const register: Register = (on, options) => {
                 <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
                   {'  '}
                   {c.checked ? '✓' : '○'} {c.n}. {c.text}
+                </Text>
+              ))}
+              {/* T-0711: the plan tree — the parts fm task split made, each with its progress */}
+              {(a.children ?? []).length > 0 && <Text color={hex(C.dim)}>parts</Text>}
+              {(a.children ?? []).map(k => (
+                <Text key={`kid-${k.id}`} color={k.status === 'done' ? hex(C.dim) : k.status === 'active' ? hex(C.accent) : undefined} wrap="truncate-end">
+                  {'  '}
+                  {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'} {k.id} {k.title}
+                  {k.steps_total ? `  ${k.steps_done}/${k.steps_total}` : ''}
                 </Text>
               ))}
               {/* T-0228: the debugging ledger, the oracle's open questions and a batch's members, where the task is */}
@@ -1391,6 +1409,36 @@ export const register: Register = (on, options) => {
                 </Box>
               ))}
             {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
+          </Box>
+        )}
+
+        {(v.fleet ?? []).length > 0 && (
+          // T-0711: the fleet deck — every live session here, a tile per remote session, one steer for all
+          <Box key="card-fleet" {...card()}>
+            {head('Fleet', C.agent, `${(v.fleet ?? []).filter(s => !s.error).length}`)}
+            {(v.fleet ?? []).slice(0, LIST).map(s => (
+              <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
+                <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
+                <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
+                  <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
+                    {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
+                  </Text>
+                </Box>
+                <Text wrap="truncate-end" color={s.error ? hex(C.warn) : undefined}>
+                  {s.error ?? `${s.project ?? '-'} · ${s.task ?? 'no task'}${s.title ? ` ${s.title}` : ''}`}
+                </Text>
+                {!s.error && (
+                  <Box flexShrink={0} key={`fleet-ctx-${s.remote ?? 'here'}-${s.session}`}>
+                    <Text color={hex(C.dim)}>
+                      {`ctx ${s.context_pct ?? '?'}%${s.mail ? ` · mail ${s.mail}` : ''}${s.remote && s.age_s != null ? ` · ${elapsed(s.age_s * 1000)} ago` : ''}`}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
+            ))}
+            {e.surface !== 'mobile' && (
+              <Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />
+            )}
           </Box>
         )}
 
