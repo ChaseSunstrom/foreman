@@ -174,6 +174,58 @@ class PipeIntoShell(GuardCase):
             ("echo hi | bash -e script.sh", None),
         ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
 
+    def test_its_review_option_values_groups_names_and_inline_readers(self):
+        # T-0716: an option's value read as the script, -s with arguments, a group or wrapper, a computed name, or
+        # inline code that runs its stdin each let piped text run unread
+        self.run_table([
+            ("echo 'rm -rf ~' | bash -o posix", "system"),
+            ("echo 'rm -rf ~' | bash -eo pipefail", "system"),
+            ("echo 'rm -rf ~' | bash -s foo", "system"),
+            ("echo 'rm -rf ~' | bash --rcfile x.rc", "system"),
+            ("echo 'import os' | python3 -W ignore", "system"),
+            ("echo 'import os' | python3 -X dev", "system"),
+            ("cat x.js | node -r esm", "system"),
+            ("cat x.js | node --require esm", "system"),
+            ("cat x.pl | perl -I lib", "system"),
+            ("cat x.rb | ruby -r json", "system"),
+            ("echo 'rm -rf ~' | bash posix", "system"),  # not a script path: what it runs is unclear
+            ("echo 'rm -rf ~' | { bash; }", "system"),
+            ("echo 'rm -rf ~' | (sh)", "system"),
+            ("echo 'rm -rf ~' | env bash", "system"),
+            ("echo 'rm -rf ~' | timeout 5 bash", "system"),
+            ("echo 'rm -rf ~' | $SH", "system"),
+            ("echo 'rm -rf ~' | bash -c 'source /dev/stdin'", "system"),
+            ("echo 'rm -rf ~' | bash -c 'exec bash'", "system"),
+            ("echo 'rm -rf ~' | sh -c 'eval \"$(cat)\"'", "system"),
+            ("echo 'import os' | python3 -c 'import sys; exec(sys.stdin.read())'", "system"),
+            ("cat x.js | node -e 'eval(require(\"fs\").readFileSync(0, \"utf8\"))'", "system"),
+            ("echo x | perl -e 'eval join \"\", <STDIN>'", "system"),
+            # data readers stay allowed
+            ("cat log | python3 -W ignore parse.py", None),
+            ("cat log | bash -o pipefail ./run.sh", None),
+            ("cat x | perl -I lib tool.pl", None),
+            ("cat x | node -r esm tool.js", None),
+            ("ls | $PAGER less.txt", None),
+            ("cat data | python3 -c 'import sys; print(len(sys.stdin.read()))'", None),
+            ("ls | bash -c 'while read f; do echo \"$f\"; done'", None),
+            ("ls | xargs -n1 echo", None),
+            ("fm state --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d)'", None),
+            ("cat x | python3 -c 'import re,sys; p=re.compile(\"a\"); print(sum(1 for l in sys.stdin if p.search(l)))'", None),
+            ("cat x | python3 -c 'import ast,sys; print(ast.literal_eval(sys.stdin.read()))'", None),
+            ("cat x | perl -ne 'print if /a/'", None),
+            ("cat x | awk '{print $1}'", None),
+            ("fm replay --json | python3 -c \"import json,sys; d=json.load(sys.stdin); print('system' in json.dumps(d))\"", None),
+            ("ls | $GREP pattern", None),
+            ("echo 'rm -rf ~' | $(echo bash)", "system"),
+            ("for f in *.md; do echo \"$(grep -m1 '^s:' $f) | $(grep -m1 '^# ' $f | cut -c1-9)\"; done", None),
+            # inline code that runs each line it reads
+            ("cat cmds | perl -ne 'system $_'", "system"),
+            ("cat cmds | awk '{system($0)}'", "system"),
+            ("cat cmds | bash -c 'while read l; do $l; done'", "system"),
+            ("cat cmds | xargs -I{} sh -c '{}'", "system"),
+            ("cat cmds | xargs sh -c", "system"),
+        ], lambda cmd: self.bash(cmd.replace("{", "{{").replace("}", "}}")))
+
 
 class ShellStdin(GuardCase):
     def test_a_script_a_shell_reads_from_stdin_is_checked(self):
