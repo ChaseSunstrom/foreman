@@ -4,8 +4,8 @@ rebuilt only when HEAD moves. Stdlib and git only; run by fm commands, never by 
 import collections
 import json
 import os
-import subprocess
 import re
+import subprocess
 
 import fmcore as c
 
@@ -183,11 +183,48 @@ def compact(p, limit=500):
     return line if len(line) <= limit else line[:limit - 1] + "…"
 
 
+COLD_DAYS = 90  # how far back "hot" looks
+
+
+def cold(p, n=30):
+    """T-0660: [(file, commits)] among the n files changed most in the last COLD_DAYS that no session in this project
+    has read or edited (the events' Read and Edit targets): the hot path nobody has looked at."""
+    try:
+        log = subprocess.run(["git", "-C", p.root, "log", f"--since={COLD_DAYS} days ago", "--name-only", "--format="],
+                             capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    counts = collections.Counter(x for x in log.splitlines() if x.strip())
+    seen = set()
+    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 50000):
+        if e.get("kind") == "tool" and e.get("tool") in ("Read", "Edit") and e.get("project") == p.slug \
+                and e.get("target"):
+            t = str(e["target"])
+            seen.add(os.path.relpath(t, p.root) if os.path.isabs(t) else t)
+    return [(f, k) for f, k in counts.most_common(n) if f not in seen and os.path.isfile(os.path.join(p.root, f))]
+
+
 def cmd_map(args):
     import fmcli
     p = fmcli.resolve(args)
     if not c.git_root(p.root):
         raise fmcli.UsageError("fm map needs a git repository")
+    if getattr(args, "cold", False):
+        rows = cold(p)
+        made = None
+        if rows and args.capture and not any(b.meta.get("source") == "cold" and b.status not in c.CLOSED
+                                             for b in c.load_briefs(p)):  # one open item at a time
+            files = ", ".join(f for f, _ in rows[:8])
+            with c.lock(p.dir):
+                made = fmcli._create(p, f"Read the hot files no session has read: {c.fit(files, 160)}", "RESEARCH",
+                                     "S", "captured", raw=f"Research debt (fm map --cold, T-0660): read and note what "
+                                     f"each does — {files}. Local reading only.", source="cold")
+                c.log_event(p, "capture", task=made.id, data={"source": "cold", "type": "RESEARCH"})
+                c.regen_views(p)
+        return fmcli.out(args, {"cold": [{"file": f, "commits": k} for f, k in rows], "captured": made.id if made else None},
+                         (f"Hot files no session has read (commits in {COLD_DAYS} days):\n" + "\n".join(
+                             f"  {f} ({k})" for f, k in rows[:20]) if rows else "Every hot file has been read.")
+                         + (f"\nCaptured {made.id}." if made else ""))
     m = load(p, args.rebuild)
     fmcli.out(args, m, render(m))
 

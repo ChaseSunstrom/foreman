@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- Research and knowledge (T-0694 milestone: T-0594, T-0599, T-0600, T-0618, T-0659, T-0660). Everything here is local; nothing new goes to the network.
+  - `fm deps --calls`: each dependency's installed version (read locally) and its import sites with the names used, so release notes can be read against real call sites. planning.md says to probe the installed version before trusting docs.
+  - Every `fm research ask` note ends with a Decision prompt (recommendation, would change if). A RESEARCH task that closes without a Decision section warns.
+  - Chesterton check: closing a task that deleted tracked files warns until its Origins section says why each one existed.
+  - `fm recall --repos <text>`: prior art from other projects on this machine that opted in with `fm share on` and aren't sensitive, cited file:line and redacted.
+  - `fm recall --explain "<question>"`: where the identifiers a question names are defined, and the files that use them most.
+  - `fm map --cold`: the most-changed files no session has read. `--capture` files one inbox item, and a free night job runs it. Research debt never sends these to web research.
 - Reasoning and thought process (T-0693 milestone: T-0593, T-0609, T-0630, T-0631).
   - The stuck ladder names the stall from a step's failed runs. It is either the environment (a missing command, file, port or permission), the same error again (the fix isn't reaching the cause), or errors that change each run (progress, so keep steps small).
   - `fm second plan ID --role devil` argues for the approach the plan rejected and objects to steps that answer a different question.
