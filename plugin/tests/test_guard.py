@@ -101,6 +101,72 @@ class KnownVars(GuardCase):
             ("cd {fhome} && cd /nonexistent && cd /tmp; echo x > plugin/lib/fmguard.py", "core"),
         ], self.bash)
 
+    def test_jarvis_cd_and_pipeline_false_positives(self):
+        # T-0384 (JARVIS, four refusals in an hour): writes only into the scratchpad or a builder's own folder were
+        # refused with no task, because quoted text (a jq filter, a sed script) read as branches, a head `cd /abs &&`
+        # into a folder that exists was taken as possibly failed for the rest of the line, and a pipeline before S=
+        # hid the S= from the guard
+        S = tempfile.mkdtemp()
+        os.makedirs(os.path.join(S, "a", "b"))
+        sub = os.path.join(self.repo, "a", "b")
+        os.makedirs(sub, exist_ok=True)
+        ctx = lambda cwd=self.repo: g.Ctx(cwd=cwd, project_root=self.repo, home=self.home, foreman_home=self.fhome,
+                                          scratch=[S], allow=set(), task_id=None, unbriefed=self.repo)
+        jq = "jq -r '.[]|select(.status!=\"success\")|\"\\(.id) \\(.name)\"' j553.json"
+        ok = [f'cd {S} && ./gl.sh "pipelines/553" > p553.json; jq -r .status p553.json; ./gl.sh "p/553/jobs" > '
+              f'j553.json; {jq}',
+              f'fm focus T-0156 2>&1 | tail -1; S={S}; $S/gl.sh "p/553" > $S/p553.json; jq -r .status $S/p553.json; '
+              f'$S/gl.sh "p/553/jobs?per_page=100" > $S/j553.json; {jq.replace("j553.json", "$S/j553.json")}',
+              f"cd {S}/a/b && cat > loops.py <<'EOF'\n\"\"\"Loops (``loops-check.py``): (a|b); c.\"\"\"\nEOF\n"
+              f"sed -e 's/later-check/loops-check/g; s/\"later.py\"/\"loops.py\"/' ../../later.py > ../../loops.py\n"
+              f"chmod --reference=../../later.py ../../loops.py"]
+        for cmd in ok:
+            with self.subTest(cmd=cmd):
+                self.assertIsNone(g.check("Bash", {"command": cmd}, ctx(sub)))
+        blocked = [f"cd {S}/missing && echo x > a; echo '(|)' > b",  # the cd can fail: b lands here
+                   f"ls /nonexistent && cd {S}; echo '(|)' > b",  # the chain may stop before the cd
+                   f"cd {S} | true; echo '(|)' > b",  # a piped cd moves its subshell only
+                   f"true | S={S}/; echo x > ${{S}}b.txt",  # an S= in a pipeline sets nothing here
+                   f"S={S}/; fm next | tail -1; echo x > $S/../b.txt; S=; echo '(|)' > ${{S}}c.txt",  # set twice
+                   f"cd {S} && true; eval 'cd {self.repo}'; echo '(|)' > b"]  # an eval'd cd moves the shell
+        for cmd in blocked:
+            with self.subTest(cmd=cmd):
+                self.assertBlocked(g.check("Bash", {"command": cmd}, ctx(sub)), "brief")
+
+    def test_an_evald_or_sourced_cd_moves_the_shell(self):
+        # T-0384: eval and source run their text in this shell, so a cd in them moves it: the folder after one is
+        # anywhere, not where the guard last saw a cd
+        os.makedirs(os.path.join(self.fhome, "plugin", "lib"), exist_ok=True)  # only a folder that exists takes a cd
+        script = os.path.join(self.home, "go.sh")
+        with open(script, "w") as f:
+            f.write(f"cd {self.fhome}/plugin/lib\n")
+        self.run_table([
+            ("cd /tmp; eval 'cd {fhome}/plugin/lib'; echo x > fmguard.py", "core"),
+            ("cd /tmp && eval \"cd {fhome}/plugin/lib\" && echo x > fmguard.py", "core"),
+            (f"cd /tmp; source {script}; echo x > fmguard.py", "core"),
+            (f"cd /tmp; . {script}; echo x > fmguard.py", "core"),
+        ], self.bash)
+        lib = os.path.join(self.fhome, "plugin", "lib")
+        args_sh, plain = os.path.join(self.home, "args.sh"), os.path.join(self.home, "plain.sh")
+        with open(args_sh, "w") as f:
+            f.write('"$@"\n')
+        with open(plain, "w") as f:
+            f.write("c\\d " + lib + "\n")
+        self.run_table([  # its review: each shape that moved the shell where the guard thought it stayed
+            ("echo # a'\ntrue || cd /tmp\necho x > fmguard.py # b'", "core"),  # a quote in a comment is text
+            (f"cd /tmp; source /dev/stdin <<< 'cd {lib}'; echo x > fmguard.py", "core"),
+            (f"cd /tmp; echo 'cd {lib}' > {plain}; . {plain}; echo x > fmguard.py", "core"),  # rewritten first
+            (f"cd /tmp; . {args_sh} cd {lib}; echo x > fmguard.py", "core"),
+            (f"cd /tmp; . {plain}; echo x > fmguard.py", "core"),  # c\d is cd
+            (f"cd /tmp; trap -- 'cd {lib}' DEBUG; echo x > fmguard.py", "core"),
+            (f"cd /tmp; eval {{c,#}}d {lib}; echo x > fmguard.py", "core"),
+            (f"cd {lib}; cd /tmp extra; echo x > fmguard.py", "core"),  # too many arguments: the cd fails
+            (f"cd /tmp; mapfile -C 'cd {lib} #' -c 1 < /etc/hostname; echo x > fmguard.py", "core"),
+        ], lambda cmd: g.check("Bash", {"command": cmd}, self.ctx(cwd=lib)))  # no .format: {c,#} is bash's
+        ctx = g.Ctx(cwd=lib, project_root=self.repo, home=self.home, foreman_home=self.fhome, scratch=["/tmp"],
+                    allow=set(), task_id=None, unbriefed=self.repo)
+        self.assertIsNotNone(g.check("Bash", {"command": f"true |\nS=/tmp/x; echo hi > $S/../..{self.repo}/b"}, ctx))
+
     def test_a_substitution_keeps_literal_variables_known(self):
         # T-0370: "f=$(ls <state>); …; S=/tmp/…; … > $S/x" was refused as a state write 6 times: the ( ) of $(…)
         # turned off variable tracking for the whole line; a substitution runs in a subshell and sets nothing here
