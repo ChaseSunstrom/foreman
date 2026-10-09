@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Unattended runs keep a heartbeat and stop on repeated failure (T-0434, from the Foreman brainstorm). `fm run` and `fm night` write a heartbeat into the project's state dir before each session or job, and remove it on a normal exit.
+  - `fm doctor` warns about a heartbeat gone stale (the run wedged or was killed). It runs the `fm notify` command once per stale episode.
+  - Two failed night jobs in a row stop the night. In `fm run`, two parallel lanes in a row that end unfinished stop the run.
+  - A task a session blocks, with its reason, doesn't count as a failure: the run moves on.
+  - A usage-limit wait never counts.
 - A third identical refusal in a row escalates (T-0440, from the brainstorm's "refusals that carry their fix"). When the guard refuses the same thing three times running in a session, with nothing else in between, the refusal stops inviting a retry. It says to ask the user (`fm ask`, for a category the user can grant) or to block the task with a reason and take the next one. The deny itself never changes. A test also pins that every guard category's refusal names an allowed next step.
 - A running subagent never ages out of the drive's wait (T-0575). T-0415 made a job running for 20 minutes or more count as a service, not something to wait for. A builder lane can take 30 minutes, though, and it does finish. Now only shells, monitors and workflows age out.
 - `fm friction` labels each line from another project and counts every other project's friction (T-0435, from the brainstorm's self-improvement loop). Foreman's self-improvement pass already read every registered project's ledger, but it dropped which project a steer, correction, escape or surprise came from. Now those lines carry `[project]`. A new section counts each other project's guard blocks, corrections, steers, blocked tasks, escapes and closed tasks. A sensitive project's ledger stays out of another project's digest.
