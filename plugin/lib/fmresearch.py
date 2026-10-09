@@ -234,6 +234,7 @@ def verify(claims, fetch=None):
 
 
 def _child(model, tools, system):
+    c.refuse_if_paused()  # T-0591
     return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
             "--setting-sources", "project,local",
             "--tools", tools, *(["--allowed-tools", tools] if tools else []), *NO_MCP, "--append-system-prompt", system]
@@ -256,6 +257,7 @@ def _line(x):
 
 def cmd_ask(args):
     import fmcli
+    c.refuse_if_paused()  # T-0591
     p = fmcli.resolve(args)
     if args.file:  # T-0239: a queue of questions, one note each (each budget-checked on its own)
         if args.name or args.sub or args.question:

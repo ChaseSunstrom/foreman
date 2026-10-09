@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 1.2.18 — 2026-10-09
+- `fm recall --ask` redacts passages before indexing them, caps what one question indexes at 20 M characters, and shows at most 50 answers (T-0728, from a commit security review). SQLite's snippet put `[ ]` around a matched word inside a secret, so the redactor no longer recognised it on the way out.
+- Performance and cost (T-0676 milestone: T-0467, T-0486, T-0449, T-0487, T-0448).
+  - `fm check` runs gates by failure odds per second of median runtime, so fail-fast stops sooner; results stay in configured order.
+  - Each `hook_ms` event carries Foreman's version, and `fm doctor` warns when the p95 of the last 200 PreToolUse runs passes the hook budget, naming the version where it rose.
+  - While usage runs ahead of pace, optional work waits with a note: the drive's side offers, the self-improvement pass and `fm ideas --deepen`. The queue and inbox keep flowing, and the caps still block.
+  - `fm task finish` logs the session's model, type, tier and grade, and `fm cost --by-model` counts them.
+  - At a step boundary of an M/L task with context nearly full, the Stop note says to checkpoint and compact there.
+- Observability, replay and trust (T-0674 milestone: T-0464, T-0483, T-0484).
+  - `fm explain [block|drive]` shows what's behind the last guard block or drive/Stop decision: the rule, its inputs, the grants or settings, the ledger events and the hook breaker.
+  - `fm task show ID --story` prints a task's ledger as chapters (Plan, Steps, Evidence, Reviews, Close) with times, archived months included.
+  - `fm recall --ask "QUESTION"` ranks passages from briefs, the ledger, decisions and research with SQLite FTS5's BM25 ranking, redacts them and cites the task ids behind each.
+- `fm pause` now holds every claude launcher (T-0591, from the T-0436 review). `fm session start|send`, `fm ideas`, `fm oracle`, `fm research ask`, `fm bench` (its run commands) and `fm relate` refuse while paused, and the SessionStart relate spawn waits. Each command builder checks the pause too, so a missed path still stops. `fm pause off` is the user's to run: the guard refuses it from Claude and says to type `! fm pause off`.
+- Heredocs fed to Python are no longer read as shell just because the line also sources a file (T-0714, from JARVIS). `. .venv/bin/activate` or `bash ./run.sh` after a `python3 - <<'EOF'` edit made the guard read the body as shell, so a docstring mentioning `` `at` `` was refused as scheduling a command. Only a shell or source that reads its stdin as code (`bash`, `sh -s`, `. /dev/stdin`, `bash -c 'source /dev/stdin'`) or eval counts now. Replaying 5,000 real commands shows no change.
+- Close-out friction (T-0722: T-0718, T-0720). `fm audit prep` of a builder's task now reviews its branch from where it left main, not main's own later commits. `fm task finish --commit` checks for credentials before closing, so a flagged line leaves the task open to fix. A done task's refused commit can be retried with `fm task finish ID --commit MSG`.
+
 ## 1.2.17 — 2026-10-09
 - Zero-token instruments (T-0701, the first slice of Frontier 01). Each answers in 15–40 lines with the root cause first.
   - `fm instruments [--json]` lists five typed tools with their input schemas and line caps.
