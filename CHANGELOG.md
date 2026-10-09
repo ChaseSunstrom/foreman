@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Model routing (T-0373): the rules pick the cheapest model that can do a job, and the main model (Opus or Fable) plans, judges and merges. `fm lane brief` puts an S task's builder on Sonnet and leaves an M task on the main model. `delegate.md` has the table: Haiku for lookups and long-output summaries, Sonnet for recon, review, debugging, S builders and fm's child runs.
 
 ## 1.2.2 — 2026-10-09
 - Guard: a design system's tokens file (`design/tokens.json`, `theme/tokens.yaml`, `design-tokens.json`) is no longer taken for a credential. JARVIS's UI work was refused mid-run on `/opt/jarvis/design/tokens.json`. `token.json`, a tokens file anywhere else, and every `secret`/`credential` name still count.
