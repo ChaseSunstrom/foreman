@@ -375,13 +375,30 @@ def status(agent):
             "config": _config_dirs()[agent]}
 
 
+CLAUDE_EVENTS = ("SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop")
+ROLES = {"SessionStart": "context", "UserPromptSubmit": "context", "PreToolUse": "blocks (guard)",
+         "PostToolUse": "records", "Stop": "keeps working (drive, done-gate)"}
+
+
+def matrix():
+    """T-0442: per harness, what each of Claude Code's hook events does there, from EVENTS: the guard blocks, the drive
+    keeps the session working, the rest is context or records; "absent" where the harness has no such hook."""
+    out = {"claude": {e: ROLES[e] for e in CLAUDE_EVENTS}}
+    for a in NAMES:
+        mapped = set(EVENTS[a].values())
+        out[a] = {e: ROLES[e] if e in mapped else "absent" for e in CLAUDE_EVENTS}
+    return out
+
+
 def cmd_agents(args):
     import fmcli
     try:
         if args.action == "list":
-            rows = [status(a) for a in NAMES]
-            return fmcli.out(args, {"v": 1, "agents": rows}, "\n".join(
-                f"{r['agent']:9} {'wired' if r['installed'] else 'not wired':10} {r['detail'] or ''}" for r in rows))
+            rows, m = [status(a) for a in NAMES], matrix()
+            return fmcli.out(args, {"v": 1, "agents": rows, "matrix": m}, "\n".join(
+                f"{r['agent']:9} {'wired' if r['installed'] else 'not wired':10} {r['detail'] or ''}" for r in rows)
+                + "\n\nWhat each harness enforces (T-0442; an ask is a deny outside Claude Code):\n" + "\n".join(
+                f"{a:9} " + "; ".join(f"{e}: {v}" for e, v in row.items()) for a, row in m.items()))
         if not args.agent:
             raise ValueError(f"fm agents {args.action} needs an agent: {', '.join(NAMES)}")
         on = args.action == "install"
