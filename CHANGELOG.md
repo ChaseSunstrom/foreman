@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.8 — 2026-10-09
 - Builder briefs tell builders to change files with the Edit and Write tools only (T-0399, from JARVIS). Claude Code's worktree isolation refuses shell heredocs, `python3 - <<…` rewrites, `cat > f` and sed as "too complex": five refusals in ten minutes.
 
 ## 1.2.7 — 2026-10-09
