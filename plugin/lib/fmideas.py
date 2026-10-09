@@ -291,7 +291,13 @@ def cmd_ideas(args):
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
     pack += user_voice(p)
     lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
-    runs = len(lenses) * max(1, args.rounds) + max(0, getattr(args, "deepen", 0) or 0)
+    deepen = max(0, getattr(args, "deepen", 0) or 0)
+    pace = fmbudget.degrade() if deepen else None
+    if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
+        print(f"fm: usage ahead of pace ({pace}): --deepen dropped (0 rounds, optional work); the lenses still run",
+              file=sys.stderr)
+        deepen = 0
+    runs = len(lenses) * max(1, args.rounds) + deepen
     try:
         fmbudget.check("ideas", fmbudget.estimate("ideas", runs, 0.06), "fewer --lens, --rounds or --deepen")
     except fmbudget.BudgetError as e:
@@ -335,12 +341,12 @@ def cmd_ideas(args):
         if n > 1 and len(new) < args.dry:
             break
     deepened = {}
-    if getattr(args, "deepen", 0):  # T-0099: build off the biggest categories, one yes-and child each
+    if deepen:  # T-0099: build off the biggest categories, one yes-and child each
         cats = {}
         for r in results:
             for t, cat in r.get("categories", {}).items():
                 cats.setdefault(cat, []).append(t)
-        top = sorted(cats, key=lambda k: -len(cats[k]))[:args.deepen]
+        top = sorted(cats, key=lambda k: -len(cats[k]))[:deepen]
         got = []
         for cat in top:  # one child per category, each with its own pack
             got += [dict(r, round=rounds + 1, category=cat) for r in

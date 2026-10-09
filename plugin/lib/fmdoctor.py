@@ -114,6 +114,42 @@ def check_hook_latency(bench, busy=None):
     return Result("hook latency", "FAIL" if over else "PASS", "; ".join(over) or f"all {len(bench)} fixtures, worst p95 {worst} ms")
 
 
+SLO_RUNS = 200  # T-0486: the recent PreToolUse runs the SLO judges (state/events.jsonl, hook_ms)
+
+
+def _p95(xs):
+    xs = sorted(xs)
+    return xs[min(len(xs) - 1, int(len(xs) * 0.95))]  # as bench_hooks takes it
+
+
+def check_hook_slo():
+    """T-0486: the guard's real latency, from the hooks' own timings, against bench_hooks' budget; over it, the Foreman
+    revision where it rose (the first whose own p95 is over, after one under). In-process time: import time isn't in it."""
+    try:
+        if os.path.join(PLUGIN, "tests") not in sys.path:
+            sys.path.insert(0, os.path.join(PLUGIN, "tests"))
+        import bench_hooks
+        slo = bench_hooks.BUDGET_MS["default"]
+    except Exception:  # an install without the tests folder
+        slo = 150
+    runs = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 20000) if e.get("kind") == "hook_ms"
+            and e.get("event") == "PreToolUse" and isinstance(e.get("ms"), (int, float))][-SLO_RUNS:]
+    if len(runs) < 20:
+        return Result("hook SLO", "PASS", f"{len(runs)} PreToolUse run(s) recorded; it judges from 20")
+    p95 = _p95([e["ms"] for e in runs])
+    if p95 <= slo:
+        return Result("hook SLO", "PASS", f"PreToolUse p95 {p95:.0f} ms over the last {len(runs)} runs (SLO {slo} ms)")
+    by = {}
+    for e in runs:  # first-seen order
+        by.setdefault(str(e.get("rev") or "?"), []).append(e["ms"])
+    revs = [(r, _p95(ms)) for r, ms in by.items()]
+    rose = next(((cur, prev) for prev, cur in zip(revs, revs[1:]) if prev[1] <= slo < cur[1]), None)
+    where = (f"it rose at {rose[0][0]} (p95 {rose[0][1]:.0f} ms; {rose[1][0]} before it: {rose[1][1]:.0f} ms)" if rose
+             else f"over since {revs[0][0]} at least (the oldest revision in the window)")
+    return Result("hook SLO", "WARN", f"PreToolUse p95 {p95:.0f} ms over the last {len(runs)} runs > the {slo} ms SLO "
+                                      f"(bench_hooks' budget); {where}")
+
+
 def check_hook_exit_codes(bench):
     bad = [f"{k}: {v['exit_codes']} (expected {EXPECTED_EXIT.get(k, [0])})" for k, v in bench.items()
            if v["exit_codes"] != EXPECTED_EXIT.get(k, [0])]
@@ -858,7 +894,7 @@ def run_all(full=False, accept_supply=False):
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
-    results += [check_hook_errors(), check_hook_writers(settings, home), check_name_collisions(settings),
+    results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),
                 check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"), os.path.join(claude, "CLAUDE.md")),
                 check_frontmatter()]
     projects = [p for p, _ in c.all_projects()]
