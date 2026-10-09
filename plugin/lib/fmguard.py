@@ -717,7 +717,12 @@ def _stdin_scripts(cmd, cmds):
     them a shell reads as its script isn't modelled (its review: /dev/stdin, a group, -c 'source /dev/stdin'), so
     all of them, read as commands"""
     feeds = [f for x in cmds for f in x.feeds]
-    if not feeds or not any(_RUNS_STDIN.fullmatch(_name(x.argv)) or x.feeds and re.search(r"[$`]", _name(x.argv))
+
+    def reads(x):  # T-0714 (JARVIS): `. .venv/bin/activate` or `bash ./run.sh` runs a file, not its stdin
+        argv, xargs = _strip_wrappers(x.argv)
+        name = os.path.basename(argv[0]) if argv else ""
+        return name == "eval" or bool(_RUNS_STDIN.fullmatch(name)) and _reads_stdin_code(name, argv[1:], xargs)
+    if not feeds or not any(reads(x) or x.feeds and re.search(r"[$`]", _name(x.argv))
                             for x in cmds):  # T-0669: $X <<EOF, when that $X is the one fed
         return []
     return [w for op, w in feeds if op == "<<<"] + (["\n".join(b) for b in _heredoc_split(cmd)[1]]
@@ -2231,6 +2236,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
+            if sub == "pause" and "off" in rest[:2]:  # T-0591: the user's stop is lifted by the user
+                found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
+                                                "runs unattended, so only they lift it (they can type ! fm pause off)"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):

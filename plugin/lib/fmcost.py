@@ -151,6 +151,8 @@ def _task_at(timeline, ts):
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "by_model", False):
+        return _by_model(p, args, fmcli)
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
@@ -199,6 +201,24 @@ def cmd_cost(args):
             + (f"\nContext at the first reply of a session (median): {_human(base)} tokens, re-read every turn"
                if base else "") + when)
     fmcli.out(args, data, text)
+
+
+def _by_model(p, args, fmcli):
+    """T-0487: tasks finished per model and type/tier, with their verification grades, from task_done events (those
+    since T-0487 carry them); what a router picking the cheapest model that passes would read."""
+    since, rows = _since(args.days), {}
+    for e in c.ledger_tail(p, 20000):
+        d = e.get("data") or {}
+        if e.get("event") == "task_done" and d.get("tier") and str(e.get("ts", ""))[:19] >= since:
+            r = rows.setdefault(str(d.get("model") or "unknown"), {}).setdefault(f"{d.get('type')} {d['tier']}",
+                                                                                   {"passed": 0, "verified": {}})
+            r["passed"] += 1
+            r["verified"][str(d.get("verified"))] = r["verified"].get(str(d.get("verified")), 0) + 1
+    lines = [f"Tasks finished by model, last {args.days:g} day(s):" if rows else
+             f"No finished task recorded its model in the last {args.days:g} day(s) (fm task finish records it)."]
+    lines += [f"  {m} · {k}: {r['passed']} passed ({', '.join(f'{n} {g}' for g, n in sorted(r['verified'].items()))})"
+              for m, kinds in sorted(rows.items()) for k, r in sorted(kinds.items())]
+    return fmcli.out(args, {"days": args.days, "by_model": rows}, "\n".join(lines))
 
 
 def _week(p, days):

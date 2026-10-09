@@ -133,6 +133,12 @@ def subagent_pause():
     return None
 
 
+def degrade():
+    """T-0449: why optional work (the drive's side tasks, the friction pass, brainstorm deepening) is dropped, or None:
+    the pace subagents wait on. Never a cap: check() still refuses what's over one, and required gates still run."""
+    return subagent_pause()
+
+
 def effective():
     """(caps after economy, why they were halved or None)."""
     cur, high = caps(), usage_high()
