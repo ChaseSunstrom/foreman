@@ -1,6 +1,6 @@
 # Foreman operating rules
 
-Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md.
+Foreman is the discipline layer for all work here. State CLI: `fm` (on PATH). System map: ~/.claude/foreman/MASTER.md (long: `fm outline` it or Read with an offset).
 
 ## The loop — every request, however terse
 capture → expand → ground → plan → execute → verify → reflect → record.

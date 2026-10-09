@@ -148,14 +148,84 @@ def taste(p, n=8):
             "corrected": [fit((e.get("data") or {}).get("text"), 200) for e in ledger if e.get("event") == "correction"][-n:]}
 
 
+# T-0439: a no the user keeps steering with becomes a veto to propose; their other steers and finished requests say
+# which option they'd pick
+TASTE_REPEATS = 3
+_NO = re.compile(r"(?i)\b(?:no|not|never|don['’]?t|do not|stop|avoid|without)\b")
+_STEER_STOP = {"keep", "prefer", "instead", "rather", "should", "shouldn", "want", "avoid", "never", "don", "not",
+               "stop", "more", "less", "only", "please", "let", "lets", "like", "better", "steer"}
+
+
+def _key_words(text):
+    return list(dict.fromkeys(w for w in re.findall(r"[a-z0-9]{3,}", (text or "").lower())
+                              if w not in c._VETO_STOP and w not in _STEER_STOP))
+
+
+def proposals(p):
+    """[{words, count, said}]: key words shared by TASTE_REPEATS or more steers that say no, as vetoes to propose; none
+    a recorded veto or a declined proposal already covers (its words a subset of the shape)."""
+    notes = [str((e.get("data") or {}).get("text") or "") for e in c.ledger_tail(p, 3000) if e.get("event") == "note"]
+    sets = [(s, _key_words(s)) for s in (t[len("steer:"):].strip() for t in notes if t.startswith("steer:")) if _NO.search(s)]
+    covered = [set(v["words"]) for v in c.vetoes(p)] + [set(w) for w in c.read_meta(p).get("taste_declined") or []]
+    out, seen = [], set()
+    for w in dict.fromkeys(x for _, ws in sets for x in ws):
+        group = [(s, ws) for s, ws in sets if w in ws]
+        shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
+        if len(group) < TASTE_REPEATS or tuple(sorted(shape)) in seen or any(h <= set(shape) for h in covered):
+            continue
+        seen.add(tuple(sorted(shape)))
+        out.append({"words": shape, "count": len(group), "said": c.fit(c.plain(group[-1][0]), 160)})
+    return out
+
+
+def taste_default(p, options):
+    """(option, why): the option the user's record favours — none a recorded veto covers (unless every one is), then the
+    most key words shared with their finished requests and their steers that aren't a no; a tie keeps the caller's order."""
+    vetoed = {o: c.veto_hits(p, o) for o in options}
+    free = [o for o in options if not vetoed[o]] or list(options)
+    t = taste(p, 50)
+    liked = {w for s in [k["title"] for k in t["kept"]] + [s for s in t["steered"] if not _NO.search(s)]
+             for w in _key_words(s)}
+    best = max(free, key=lambda o: sum(w in liked for w in _key_words(o)))
+    why = ["avoids the veto " + "; ".join(f"\"{vetoed[o][0]['said']}\"" for o in options if o not in free)] \
+        if len(free) < len(options) else [f"every option hits a veto (\"{vetoed[options[0]][0]['said']}\"): the "
+                                          f"least bad by your record"] if options and all(vetoed.values()) else []
+    hits = [w for w in _key_words(best) if w in liked]
+    why += [f"like your steers and finished requests ({', '.join(hits)})"] if hits else []
+    return best, ("taste record: " + "; ".join(why)) if why else "no signal in your taste record: the first option"
+
+
 def cmd_taste(args):
     import fmcli
     p = fmcli.resolve(args)
-    t = taste(p, args.n)
+    props = proposals(p)
+    if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
+        pick = props if args.which is None else props[args.which - 1:args.which] if args.which > 0 else []
+        if not pick:
+            raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " "))
+        if args.action == "adopt":
+            for x in pick:
+                c.add_veto(p, f"{x['said']} (steered {x['count']} times)", words=x["words"])
+        else:
+            with c.lock(p.dir):
+                meta = c.read_meta(p)
+                meta["taste_declined"] = ((meta.get("taste_declined") or []) + [x["words"] for x in pick])[-c.VETOES_KEEP:]
+                c.write_meta(p, meta)
+        c.log_event(p, f"taste_{args.action}", data={"words": [x["words"] for x in pick]}, session=c.session_id())
+        return fmcli.out(args, {"action": args.action, "proposals": pick},
+                         f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
+                         + "; ".join(f"never {' '.join(x['words'])}" for x in pick) + ".")
+    t = dict(taste(p, args.n), proposed=props)
     lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]
     for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
                        ("Steered", t["steered"]), ("Corrected", t["corrected"])):
         lines += [f"{head}:"] + [f"  {r}" for r in rows] if rows else []
+    if props:
+        lines += ["Proposed vetoes (a no you keep steering with):"]
+        lines += [f"  {i}. never {' '.join(x['words'])} — steered {x['count']} times, last: {x['said']}"
+                  for i, x in enumerate(props, 1)]
+        lines += ["Ask the user once (one AskUserQuestion, adopt first): yes → fm taste adopt (all) or fm taste adopt N; "
+                  "no → fm taste decline N."]
     fmcli.out(args, t, "\n".join(lines))
 
 

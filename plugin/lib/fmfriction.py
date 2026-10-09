@@ -93,6 +93,10 @@ def digest(p, recheck=True):
     out["guard blocks (each a stop Claude had to work around; a false one costs a rewrite)"] = [
         f"{n}× {cat}: {target}" + (f" — e.g. `{example[(cat, target)]}`" if (cat, target) in example else "")
         + (f" — {now[i]}" if i in now else "") for i, ((cat, target), n) in enumerate(shown)]
+    rules = collections.Counter(e["rule"] for e in guard if e.get("rule"))  # T-0672: which checks fire most
+    if rules:
+        out["guard rules by fire count (a rule that fires often on harmless work is the one to look at)"] = [
+            f"{n}× {r}" for r, n in rules.most_common(MAX_LINES)]
 
     failed = [e for e in events if e.get("kind") == "tool_fail"]  # T-0301: grouped by why, not by which file
     why = lambda e: (e.get("tool"), c.fit(c.plain(str(e.get("error") or "no error recorded")), 90))
@@ -159,7 +163,12 @@ def digest(p, recheck=True):
     out["lessons recorded"] = [f"{e.get('task')}: {c.fit(c.plain(str(e['data']['lesson'])), 160)}" for _, e in ledger
                                if e.get("event") == "task_done" and (e.get("data") or {}).get("lesson")][-MAX_LINES:]
 
-    mine = [b for b in c.load_briefs(p) if b.meta.get("source") == "self"]
+    briefs = c.load_briefs(p)
+    out["requests from other projects (fm sweep, fm -p SLUG capture --source cross-project), open here"] = [
+        f"{b.id} {c.fit(b.title, 140)}" for b in briefs
+        if b.meta.get("source") == "cross-project" and b.status not in c.CLOSED][:MAX_LINES]  # T-0443
+
+    mine = [b for b in briefs if b.meta.get("source") == "self"]
     open_ = [b for b in mine if b.status not in c.CLOSED]
     closed = [b for b in mine if b.status == "done" and (b.meta.get("updated") or "") > start]  # dropped ones fixed nothing
     out["self-inbox: what became of earlier passes"] = (

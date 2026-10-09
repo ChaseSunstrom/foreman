@@ -245,9 +245,25 @@ def check_file_map(home, master_path):
 
 
 def check_backup(home):
+    """T-0574: the newest backups/*.tgz is read through to its end, as a restore would (gzip checks its CRC there);
+    nothing is written."""
+    import tarfile
     d = os.path.join(home, "backups")
     tgz = sorted(f for f in os.listdir(d) if f.endswith(".tgz")) if os.path.isdir(d) else []
-    return Result("backup", "PASS" if tgz else "FAIL", f"latest {tgz[-1]}" if tgz else "no backups/*.tgz")
+    if not tgz:
+        return Result("backup", "FAIL", "no backups/*.tgz")
+    files = 0
+    try:  # ponytail: reads every member's bytes, never extracts; a real extract into a temp dir if this misses one
+        with tarfile.open(os.path.join(d, tgz[-1]), "r:gz") as t:
+            for m in t:
+                if m.isfile():
+                    files += 1
+                    f = t.extractfile(m)
+                    while f and f.read(1 << 20):
+                        pass
+    except (OSError, EOFError, tarfile.TarError, ValueError) as e:
+        return Result("backup", "FAIL", f"the newest backup {tgz[-1]} doesn't restore: {c.fit(str(e), 120)}")
+    return Result("backup", "PASS", f"latest {tgz[-1]}: restore rehearsal read {files} files")
 
 
 def check_validate(home):
@@ -359,6 +375,21 @@ def check_running_code(ledger, installed, plugin=PLUGIN):
         return Result("running code", "WARN", f"the last session ran Foreman {ran} from {root}, but {want} is at "
                                               f"{want_root}: restart that session, or put the fix in {root}")
     return Result("running code", "PASS", f"sessions run Foreman {ran} from {root}")
+
+
+def check_version_skew(projects, changes=None):
+    """T-0463: projects whose last session ran a Foreman older than released fixes, with the task ids they lack."""
+    import fmeco
+    changes = fmeco.changelog() if changes is None else changes
+    behind = []
+    for p, meta in projects:
+        ran = (meta.get("foreman") or {}).get("version")
+        lacks = fmeco.lacks(ran, changes)
+        if lacks:
+            behind.append(f"{p.slug} ran {ran}, lacks {len(lacks)} ({', '.join(lacks[:4])}{' …' if len(lacks) > 4 else ''})")
+    return Result("version skew", "WARN" if behind else "PASS",
+                  "; ".join(behind[:6]) + " — restart their sessions on the new Foreman" if behind else
+                  "every project's last session ran the newest released Foreman (or none recorded one yet)")
 
 
 def check_python(v=sys.version_info[:3], refresh=None, child=False):
@@ -739,7 +770,76 @@ def repair(roots):
     return moved
 
 
-def run_all(full=False):
+_SUPPLY_SKIP = {".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"}
+
+
+def _tree_hash(root, h, cap=4000):
+    """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order."""
+    n = 0
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
+        for f in sorted(files):
+            full = os.path.join(d, f)
+            n += 1
+            if n > cap or os.path.islink(full) or os.path.getsize(full) > 4_000_000:
+                h.update(os.path.relpath(full, root).encode() + b"\0skipped\0")
+                continue
+            with open(full, "rb") as fh:
+                h.update(os.path.relpath(full, root).encode() + b"\0" + fh.read())
+
+
+def _supply(claude):
+    """{id: sha256} of every enabled plugin's install tree and each MCP server's spec (user-wide and per project)."""
+    import hashlib
+    out = {}
+    plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
+    plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
+    for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
+        h = hashlib.sha256()
+        for inst in installs if isinstance(installs, list) else [installs]:
+            root = inst.get("installPath") if isinstance(inst, dict) else None
+            if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
+                _tree_hash(root, h)
+        out[pid] = h.hexdigest()
+    conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
+    conf = conf if isinstance(conf, dict) else {}
+    scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
+                                              sorted((conf.get("projects") or {}).items()) if isinstance(v, dict)]
+    for scope, servers in scopes:
+        for name, spec in sorted((servers if isinstance(servers, dict) else {}).items()):
+            out[f"mcp:{scope}{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
+    return out
+
+
+def check_supply(claude, accept=False):
+    """T-0672 (T-0479): plugins and MCP servers are code every session runs; a change between doctor runs (an update
+    or a tampered cache) is shown once, then accepted with fm doctor --accept-supply. The first run is the baseline;
+    an unreadable baseline warns (review: it never re-baselines on its own, which would hide a change)."""
+    try:
+        return _check_supply(claude, accept)
+    except Exception as e:  # one odd file costs this check, never the whole doctor run
+        return Result("supply chain", "WARN", f"not checked: {type(e).__name__}: {e}")
+
+
+def _check_supply(claude, accept):
+    path = os.path.join(c.state_dir(), "supply.json")
+    now, seen = _supply(claude), _load_json(path)
+    if os.path.exists(path) and not isinstance(seen, dict) and not accept:
+        return Result("supply chain", "WARN", f"{path} is unreadable: fm doctor --accept-supply records a new baseline")
+    if seen is None or accept:
+        c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
+        return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
+                                              f"{len(now)} plugin(s) and MCP server(s)")
+    changed = sorted(k for k in now if seen.get(k) not in (None, now[k]))
+    added, gone = sorted(set(now) - set(seen)), sorted(set(seen) - set(now))
+    if not (changed or added or gone):
+        return Result("supply chain", "PASS", f"{len(now)} plugin(s) and MCP server(s) unchanged")
+    return Result("supply chain", "WARN", "; ".join(x for x in (
+        f"changed: {', '.join(changed)}" if changed else "", f"new: {', '.join(added)}" if added else "",
+        f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
+
+
+def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
     settings_path = os.path.join(claude, "settings.json")
@@ -750,7 +850,8 @@ def run_all(full=False):
                                     os.path.join(PLUGIN, ".claude-plugin", "plugin.json"),
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
-               check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home)]
+               check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
+               check_supply(claude, accept_supply)]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
@@ -770,6 +871,7 @@ def run_all(full=False):
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
+    results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
@@ -789,7 +891,7 @@ def cmd_doctor(args):
         moved = repair(integrity_roots())
         print("\n".join(f"{a} → {b}" for a, b in moved) or "Nothing to repair: no empty git objects.")
         return None
-    results = run_all(full=args.full)
+    results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
