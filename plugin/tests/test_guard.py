@@ -793,6 +793,17 @@ class ScratchNames(GuardCase):
             with self.subTest(path=path):
                 self.assertBlocked(self.bash(f"echo x > {path}"), "credentials")
 
+    def test_secret_templates_are_not_credentials(self):
+        # T-0386 (JARVIS builder, 2026-10-09): jarvis-core/config/secrets.yaml.example — the placeholder copy every
+        # repo keeps beside the real file — was refused as a credential, as .env.example already isn't
+        for name in ("secrets.yaml.example", "credentials.json.sample", "secrets.toml.template", "secret.yml.dist",
+                     "tokens.json.tmpl"):
+            with self.subTest(name=name):
+                self.assertFalse(self.bash(f"echo x > {self.repo}/config/{name}"))
+        for name in ("secrets.yaml", "secrets.example.yaml", "id_ed25519.example"):  # a key's name stays strict
+            with self.subTest(name=name):
+                self.assertBlocked(self.bash(f"echo x > {self.repo}/config/{name}"), "credentials")
+
     def test_a_secret_sounding_name_in_scratch_is_not_a_credential(self):
         # T-0169 (self-improvement pass 2): `fm secrets > <scratchpad>/secrets.txt` was blocked as a credential
         self.assertFalse(self.bash("fm secrets > /tmp/claude-1000/proj/sess/scratchpad/secrets.txt"))
