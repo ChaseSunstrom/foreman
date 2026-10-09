@@ -1196,8 +1196,12 @@ def _top(shell):
     return straight, straight and "&&" in s, mixed
 
 
-_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true"}
-_CURL_SAFE = re.compile(r"-[sSLf]+|--(?:silent|show-error|location|fail|compressed)")  # flags that write no file
+_DATA_TOOLS = {"curl", "wget", "head", "tail", "echo", "printf", "jq", "cat", "wc", "grep", "cut", "tr", "sleep", "true",
+               "nvidia-smi"}  # T-0397: a GPU query (its -f/--filename, which logs to a file, voids it)
+# flags that write no file; T-0397: -k -i -I -v (stdout or stderr only) and a timeout fused to them (-sSm5)
+_CURL_SAFE = re.compile(r"-[sSLfkiIv]*m\d+(?:\.\d+)?|-[sSLfkiIv]+|--(?:silent|show-error|location|fail|compressed|insecure|"
+                        r"include|head|verbose|(?:max-time|connect-timeout)=\d+(?:\.\d+)?)")
+_CURL_TIMES = re.compile(r"-[sSLfkiIv]*m|--max-time|--connect-timeout")  # T-0397: take a number next
 _WGET_SAFE = {"-q", "--quiet", "-nv"}
 
 
@@ -1214,13 +1218,17 @@ def _writes_nothing(x):
         while i < len(args):
             w, v = args[i], args[i + 1] if i + 1 < len(args) else ""
             if w in ("-H", "--header", "-A", "--user-agent", "-X", "--request") or \
-                    w in ("-w", "--write-out") and "%output{" not in v or w in ("-o", "--output") and v == "/dev/null":
+                    w in ("-w", "--write-out") and "%output{" not in v or w in ("-o", "--output") and v == "/dev/null" \
+                    or _CURL_TIMES.fullmatch(w) and re.fullmatch(r"\d+(?:\.\d+)?", v):
                 i += 2
             elif w.startswith("-") and not _CURL_SAFE.fullmatch(w):
                 return False
             else:
                 i += 1
         return True
+    if name == "nvidia-smi":  # T-0397: -f/--filename logs to a file; every other option prints
+        return not any(w == "-f" or (w.startswith("-f") and not w.startswith("--")) or w.startswith("--filename")
+                       for w in args)
     if name == "wget":  # every -O must name stdout (the last one wins: -qO- URL -O json.py writes json.py)
         outs, i = [], 0
         while i < len(args):
