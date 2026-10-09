@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.17 — 2026-10-09
 - Zero-token instruments (T-0701, the first slice of Frontier 01). Each answers in 15–40 lines with the root cause first.
   - `fm instruments [--json]` lists five typed tools with their input schemas and line caps.
   - `fm sym PATH:NAME` shows a definition, the names it uses and its callers.
