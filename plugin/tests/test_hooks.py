@@ -833,6 +833,15 @@ class PreToolUse(HookCase):
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
 
+    def test_brief_refusal_names_the_task_to_resume(self):
+        # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
+        # `fm task new` though the work in progress was right there in the queue
+        self.fm("init")
+        tid = self.task("Work in progress", focus=False)
+        r = self.pre("Write", {"file_path": os.path.join(self.repo, "notes.md"), "content": "x"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn(f"fm focus {tid}", r.stderr)
+
     def test_interpreter_writes_to_secret_templates(self):
         # T-0390 (JARVIS T-0274, 01:57 UTC, on 1.2.4): this exact command was refused as credentials
         # (written from interpreter code) through the hook, though fmguard.check alone let it through
