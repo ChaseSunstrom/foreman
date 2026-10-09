@@ -833,6 +833,23 @@ class PreToolUse(HookCase):
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
 
+    def test_foreground_wait_loops_are_refused(self):
+        # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
+        # `until grep -q "^exit" e2e.log; do sleep 20; done` held the session in the foreground for 10 minutes
+        self.fm("init")
+        self.task()
+        wait = 'L=e2e.log; until grep -aq "^exit " $L; do sleep 20; done; tail -5 $L'
+        p = self.pre("Bash", {"command": wait, "timeout": 600000})
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("run_in_background", p.stdout)
+        for ok in ({"command": wait, "run_in_background": True},  # its notification wakes the session
+                   {"command": "until curl -sf localhost:8000/health; do sleep 1; done"},  # a short poll
+                   {"command": "for f in a b; do echo $f; done"},
+                   {"command": "while read -r l; do echo \"$l\"; done < f.txt"}):
+            with self.subTest(cmd=ok["command"]):
+                self.assertEqual(self.pre("Bash", ok).returncode, 0)
+        self.assertEqual(self.pre("Bash", {"command": "while true; do curl -s x; sleep 30; done"}).returncode, 2)
+
     def test_brief_refusal_names_the_task_to_resume(self):
         # T-0409 (JARVIS): after closing a lane task it edited docs before refocusing T-0278; the refusal offered
         # `fm task new` though the work in progress was right there in the queue
