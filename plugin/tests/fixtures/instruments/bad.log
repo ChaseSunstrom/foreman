@@ -1,0 +1,240 @@
+2026-10-09T10:00:00.547Z INFO http POST /api/checkout 201 106ms req=688d3e48
+2026-10-09T10:00:00.802Z INFO cache hit key=user:433 ttl=60
+2026-10-09T10:00:01.464Z INFO http GET /api/items/2617 200 50ms req=c328a72c
+2026-10-09T10:00:01.754Z INFO http GET /api/items/8411 200 64ms req=7518b101
+2026-10-09T10:00:01.861Z INFO cache hit key=user:191 ttl=300
+2026-10-09T10:00:02.310Z WARN slow query 551ms table=items
+2026-10-09T10:00:03.094Z WARN slow query 2077ms table=orders
+2026-10-09T10:00:03.787Z INFO http GET /api/items/3632 200 10ms req=2eaa7f3b
+2026-10-09T10:00:04.021Z INFO http GET /api/items/4442 200 76ms req=e4e48dd7
+2026-10-09T10:00:04.374Z INFO http GET /api/items/8413 200 10ms req=a58f3aef
+2026-10-09T10:00:05.070Z INFO scheduler tick 31 jobs queued
+2026-10-09T10:00:05.363Z INFO scheduler tick 3 jobs queued
+2026-10-09T10:00:05.865Z INFO http GET /api/items/6701 200 30ms req=a4e095bd
+2026-10-09T10:00:06.198Z INFO http POST /api/checkout 201 146ms req=54575622
+2026-10-09T10:00:07.027Z INFO http GET /api/items/8513 200 55ms req=85646960
+2026-10-09T10:00:07.815Z WARN slow query 2452ms table=orders
+2026-10-09T10:00:08.546Z INFO http GET /api/items/7304 200 69ms req=875b15b0
+2026-10-09T10:00:08.669Z WARN slow query 2526ms table=items
+2026-10-09T10:00:09.244Z INFO http GET /api/items/4104 200 74ms req=04072755
+2026-10-09T10:00:10.130Z DEBUG worker 2 picked job 46966
+2026-10-09T10:00:10.276Z INFO http GET /api/items/6647 200 20ms req=5183ef83
+2026-10-09T10:00:10.880Z DEBUG worker 1 picked job 52856
+2026-10-09T10:00:10.983Z INFO http POST /api/checkout 201 33ms req=bac7adac
+2026-10-09T10:00:11.365Z INFO http GET /api/items/7095 200 28ms req=4b7d0b35
+2026-10-09T10:00:11.931Z INFO http GET /api/items/4355 200 37ms req=074dce11
+2026-10-09T10:00:12.624Z INFO http GET /api/items/5004 200 47ms req=13830d71
+2026-10-09T10:00:13.337Z INFO http GET /api/items/2153 200 40ms req=53182e4e
+2026-10-09T10:00:13.803Z INFO http GET /api/items/6010 200 61ms req=98729e7c
+2026-10-09T10:00:14.414Z INFO http GET /api/items/8945 200 52ms req=9ff907a7
+2026-10-09T10:00:15.063Z INFO http GET /api/items/3542 200 40ms req=c0b57aaf
+2026-10-09T10:00:15.171Z INFO http GET /api/items/1790 200 69ms req=052be1ce
+2026-10-09T10:00:15.451Z DEBUG worker 8 picked job 36216
+2026-10-09T10:00:16.304Z WARN slow query 2842ms table=orders
+2026-10-09T10:00:16.781Z INFO http GET /api/items/8620 200 74ms req=83cee9b9
+2026-10-09T10:00:17.440Z INFO cache hit key=user:412 ttl=60
+2026-10-09T10:00:17.936Z INFO scheduler tick 2 jobs queued
+2026-10-09T10:00:18.012Z INFO cache hit key=user:21 ttl=900
+2026-10-09T10:00:18.754Z INFO cache hit key=user:333 ttl=900
+2026-10-09T10:00:19.391Z INFO http GET /api/items/5212 200 49ms req=46dfcea2
+2026-10-09T10:00:19.517Z INFO http POST /api/checkout 201 73ms req=9539ad59
+2026-10-09T10:00:20.084Z INFO http GET /api/items/46 200 42ms req=6d513b1d
+2026-10-09T10:00:20.861Z INFO cache hit key=user:284 ttl=900
+2026-10-09T10:00:21.183Z INFO http GET /api/items/2795 200 69ms req=46d34530
+2026-10-09T10:00:21.735Z INFO http GET /api/items/539 200 37ms req=ed10a47b
+2026-10-09T10:00:22.428Z INFO http GET /api/items/6488 200 77ms req=32b6ec01
+2026-10-09T10:00:23.260Z WARN slow query 1210ms table=items
+2026-10-09T10:00:23.316Z DEBUG worker 4 picked job 55197
+2026-10-09T10:00:23.682Z INFO http GET /api/items/126 200 40ms req=cf07255b
+2026-10-09T10:00:24.137Z INFO http GET /api/items/5755 200 73ms req=b3acac23
+2026-10-09T10:00:24.437Z INFO http GET /api/items/415 200 46ms req=c6e9b7d1
+2026-10-09T10:00:25.311Z INFO cache hit key=user:408 ttl=60
+2026-10-09T10:00:25.524Z INFO cache hit key=user:117 ttl=300
+2026-10-09T10:00:26.265Z INFO http POST /api/checkout 201 51ms req=48eb7c64
+2026-10-09T10:00:27.009Z DEBUG worker 3 picked job 31351
+2026-10-09T10:00:27.387Z INFO http GET /api/items/4728 200 19ms req=632b9629
+2026-10-09T10:00:28.273Z INFO http GET /api/items/5758 200 55ms req=c9bce485
+2026-10-09T10:00:28.348Z INFO http GET /api/items/9977 200 31ms req=e7cb3593
+2026-10-09T10:00:29.127Z INFO http GET /api/items/643 200 73ms req=1c15d694
+2026-10-09T10:00:29.495Z INFO http POST /api/checkout 201 187ms req=57f8db03
+2026-10-09T10:00:29.838Z DEBUG worker 2 picked job 55687
+2026-10-09T10:00:30.599Z DEBUG worker 8 picked job 67670
+2026-10-09T10:00:30.704Z INFO cache hit key=user:497 ttl=900
+2026-10-09T10:00:30.995Z INFO http GET /api/items/5089 200 20ms req=8715bbd2
+2026-10-09T10:00:31.184Z DEBUG worker 3 picked job 93761
+2026-10-09T10:00:31.379Z INFO http POST /api/checkout 201 49ms req=7a3d54ec
+2026-10-09T10:00:32.135Z INFO http GET /api/items/1812 200 42ms req=90bf6118
+2026-10-09T10:00:32.643Z INFO cache hit key=user:24 ttl=60
+2026-10-09T10:00:33.172Z INFO http GET /api/items/8898 200 44ms req=f2a83fdf
+2026-10-09T10:00:33.230Z INFO http GET /api/items/6477 200 21ms req=b2987240
+2026-10-09T10:00:33.583Z INFO cache hit key=user:183 ttl=300
+2026-10-09T10:00:33.868Z INFO cache hit key=user:322 ttl=900
+2026-10-09T10:00:34.330Z INFO http GET /api/items/3728 200 23ms req=16fdf592
+2026-10-09T10:00:34.521Z DEBUG worker 1 picked job 5197
+2026-10-09T10:00:35.196Z INFO http GET /api/items/2889 200 24ms req=d4921da2
+2026-10-09T10:00:35.633Z INFO cache hit key=user:220 ttl=900
+2026-10-09T10:00:36.323Z INFO cache hit key=user:332 ttl=60
+2026-10-09T10:00:36.679Z INFO cache hit key=user:483 ttl=300
+2026-10-09T10:00:37.097Z INFO cache hit key=user:58 ttl=60
+2026-10-09T10:00:37.406Z DEBUG worker 2 picked job 54480
+2026-10-09T10:00:38.151Z WARN slow query 1284ms table=items
+2026-10-09T10:00:38.994Z INFO http GET /api/items/9738 200 30ms req=24b1c71b
+2026-10-09T10:00:39.514Z INFO http GET /api/items/5594 200 4ms req=934d263b
+2026-10-09T10:00:40.409Z INFO http GET /api/items/8993 200 44ms req=837bbf1b
+2026-10-09T10:00:41.281Z INFO http POST /api/checkout 201 168ms req=3178b6e0
+2026-10-09T10:00:41.781Z INFO cache hit key=user:149 ttl=900
+2026-10-09T10:00:42.516Z INFO scheduler tick 63 jobs queued
+2026-10-09T10:00:43.079Z DEBUG worker 8 picked job 52565
+2026-10-09T10:00:43.363Z INFO http GET /api/items/5915 200 62ms req=2ba69416
+2026-10-09T10:00:43.752Z INFO http GET /api/items/4076 200 61ms req=ecba0afa
+2026-10-09T10:00:44.425Z INFO http GET /api/items/9397 200 70ms req=1448c828
+2026-10-09T10:00:45.073Z DEBUG worker 4 picked job 19499
+2026-10-09T10:00:45.820Z INFO http GET /api/items/5525 200 44ms req=29ab7bca
+2026-10-09T10:00:46.671Z INFO http GET /api/items/7425 200 54ms req=fb77b446
+2026-10-09T10:00:47.177Z DEBUG worker 6 picked job 10633
+2026-10-09T10:00:47.421Z INFO http POST /api/checkout 201 101ms req=259bebd2
+2026-10-09T10:00:47.650Z INFO http GET /api/items/7339 200 28ms req=88058706
+2026-10-09T10:00:48.317Z INFO http GET /api/items/9429 200 46ms req=93671412
+2026-10-09T10:00:49.103Z INFO http GET /api/items/444 200 65ms req=40680a06
+2026-10-09T10:00:49.568Z INFO scheduler tick 52 jobs queued
+2026-10-09T10:00:49.881Z INFO http GET /api/items/305 200 22ms req=e00aa1da
+2026-10-09T10:00:50.146Z INFO http GET /api/items/4225 200 64ms req=42bbdb4a
+2026-10-09T10:00:50.977Z INFO http GET /api/items/7795 200 15ms req=19e8b848
+2026-10-09T10:00:51.698Z INFO http GET /api/items/8223 200 29ms req=b47c2043
+2026-10-09T10:00:52.316Z DEBUG worker 4 picked job 58875
+2026-10-09T10:00:52.876Z DEBUG worker 1 picked job 9577
+2026-10-09T10:00:53.752Z INFO http GET /api/items/341 200 36ms req=cb17cdc7
+2026-10-09T10:00:54.528Z INFO http GET /api/items/8170 200 30ms req=d77b6ad8
+2026-10-09T10:00:55.161Z INFO http GET /api/items/4092 200 23ms req=5f84992a
+2026-10-09T10:00:55.538Z INFO http GET /api/items/2291 200 41ms req=e616b1e5
+2026-10-09T10:00:56.289Z INFO http GET /api/items/2765 200 62ms req=0340494b
+2026-10-09T10:00:57.038Z INFO http GET /api/items/252 200 7ms req=c2daca17
+2026-10-09T10:00:57.226Z INFO http GET /api/items/7985 200 20ms req=7d301a23
+2026-10-09T10:00:57.814Z WARN slow query 816ms table=items
+2026-10-09T10:00:58.084Z WARN slow query 1304ms table=orders
+2026-10-09T10:00:58.551Z DEBUG worker 5 picked job 53334
+2026-10-09T10:00:59.033Z INFO http POST /api/checkout 201 182ms req=adc4ccd4
+2026-10-09T10:00:59.088Z WARN slow query 702ms table=items
+2026-10-09T10:00:59.848Z INFO cache hit key=user:195 ttl=60
+2026-10-09T10:01:00.742Z WARN slow query 1585ms table=items
+2026-10-09T10:01:01.276Z INFO http POST /api/checkout 201 81ms req=bf742b65
+2026-10-09T10:01:02.015Z ERROR db: connection refused to db-primary:5432 after 4 retries (pool 18/20 busy)
+2026-10-09T10:01:02.484Z DEBUG worker 5 picked job 52845
+2026-10-09T10:01:02.831Z INFO http GET /api/items/8532 200 33ms req=e3ef5404
+2026-10-09T10:01:03.518Z ERROR http POST /api/checkout 500 4ms req=bac80608
+2026-10-09T10:01:03.881Z INFO http POST /api/checkout 201 71ms req=8a878e2f
+2026-10-09T10:01:04.062Z DEBUG worker 5 picked job 54467
+2026-10-09T10:01:04.553Z DEBUG worker 6 picked job 10277
+2026-10-09T10:01:04.684Z WARN slow query 2286ms table=items
+2026-10-09T10:01:05.218Z DEBUG worker 7 picked job 71997
+2026-10-09T10:01:05.309Z INFO cache hit key=user:8 ttl=60
+2026-10-09T10:01:05.867Z INFO cache hit key=user:383 ttl=300
+2026-10-09T10:01:06.514Z INFO http GET /api/items/8830 200 38ms req=4d14aa60
+2026-10-09T10:01:07.096Z DEBUG worker 5 picked job 40910
+2026-10-09T10:01:07.400Z INFO cache hit key=user:192 ttl=300
+2026-10-09T10:01:08.122Z ERROR http POST /api/checkout 500 3ms req=f4ba6e1a
+2026-10-09T10:01:08.590Z INFO http POST /api/checkout 201 171ms req=a187e966
+2026-10-09T10:01:09.265Z INFO http POST /api/checkout 201 51ms req=ece6615d
+2026-10-09T10:01:09.365Z DEBUG worker 5 picked job 28659
+2026-10-09T10:01:09.962Z WARN slow query 2198ms table=orders
+2026-10-09T10:01:10.686Z INFO http POST /api/checkout 201 95ms req=8ed41415
+2026-10-09T10:01:11.512Z WARN slow query 1445ms table=items
+2026-10-09T10:01:11.595Z INFO http GET /api/items/3014 200 58ms req=ac49726e
+2026-10-09T10:01:11.986Z INFO cache hit key=user:10 ttl=300
+2026-10-09T10:01:12.131Z INFO http GET /api/items/3723 200 77ms req=6f89264f
+2026-10-09T10:01:12.488Z INFO http GET /api/items/5739 200 60ms req=130b6491
+2026-10-09T10:01:13.030Z INFO http GET /api/items/9037 200 17ms req=7ab5392e
+2026-10-09T10:01:13.886Z INFO cache hit key=user:68 ttl=300
+2026-10-09T10:01:14.527Z ERROR http POST /api/checkout 500 9ms req=b2b5b52a
+2026-10-09T10:01:14.887Z INFO http GET /api/items/8865 200 18ms req=4833734f
+2026-10-09T10:01:15.269Z INFO http GET /api/items/3334 200 19ms req=e7518b69
+2026-10-09T10:01:15.564Z INFO http GET /api/items/2807 200 22ms req=73031f67
+2026-10-09T10:01:15.884Z ERROR db: connection refused to db-primary:5432 after 5 retries (pool 20/20 busy)
+2026-10-09T10:01:16.661Z INFO http POST /api/checkout 201 107ms req=172a3165
+2026-10-09T10:01:16.797Z DEBUG worker 3 picked job 97174
+2026-10-09T10:01:17.370Z DEBUG worker 2 picked job 1373
+2026-10-09T10:01:18.230Z INFO http POST /api/checkout 201 125ms req=f1fa2261
+2026-10-09T10:01:18.374Z DEBUG worker 3 picked job 58058
+2026-10-09T10:01:18.819Z INFO cache hit key=user:450 ttl=300
+2026-10-09T10:01:19.457Z DEBUG worker 6 picked job 87937
+2026-10-09T10:01:20.116Z INFO http GET /api/items/9909 200 41ms req=d909f03f
+2026-10-09T10:01:20.634Z INFO http GET /api/items/1442 200 37ms req=4a62bce1
+2026-10-09T10:01:20.875Z INFO http GET /api/items/5451 200 22ms req=ed7361c5
+2026-10-09T10:01:21.296Z INFO http POST /api/checkout 201 61ms req=57bc9fa6
+2026-10-09T10:01:21.746Z DEBUG worker 7 picked job 18699
+2026-10-09T10:01:22.567Z INFO http GET /api/items/6159 200 69ms req=8d2ae89b
+2026-10-09T10:01:23.445Z INFO http GET /api/items/8397 200 22ms req=1ffb013c
+2026-10-09T10:01:24.241Z INFO http GET /api/items/9450 200 68ms req=e1af4084
+2026-10-09T10:01:24.338Z INFO cache hit key=user:413 ttl=900
+2026-10-09T10:01:25.042Z DEBUG worker 6 picked job 19334
+2026-10-09T10:01:25.297Z DEBUG worker 6 picked job 91901
+2026-10-09T10:01:25.538Z DEBUG worker 6 picked job 52638
+2026-10-09T10:01:25.915Z DEBUG worker 6 picked job 6760
+2026-10-09T10:01:26.120Z INFO cache hit key=user:148 ttl=900
+2026-10-09T10:01:26.294Z INFO scheduler tick 9 jobs queued
+2026-10-09T10:01:26.905Z INFO http GET /api/items/5600 200 54ms req=3d39553c
+2026-10-09T10:01:27.356Z INFO http GET /api/items/1081 200 55ms req=fab54d94
+2026-10-09T10:01:27.474Z INFO http GET /api/items/3912 200 67ms req=07dc6844
+2026-10-09T10:01:27.651Z DEBUG worker 5 picked job 80649
+2026-10-09T10:01:27.919Z INFO http GET /api/items/5328 200 30ms req=793b2b02
+2026-10-09T10:01:27.972Z INFO cache hit key=user:240 ttl=60
+2026-10-09T10:01:28.517Z INFO http POST /api/checkout 201 167ms req=79aa7669
+2026-10-09T10:01:29.116Z WARN slow query 1621ms table=orders
+2026-10-09T10:01:29.764Z DEBUG worker 5 picked job 10356
+2026-10-09T10:01:30.471Z INFO http GET /api/items/2713 200 39ms req=f4dee6a6
+2026-10-09T10:01:31.298Z INFO cache hit key=user:360 ttl=300
+2026-10-09T10:01:32.113Z INFO cache hit key=user:322 ttl=60
+2026-10-09T10:01:32.741Z INFO http POST /api/checkout 201 136ms req=ab9315bd
+2026-10-09T10:01:33.582Z WARN slow query 1804ms table=items
+2026-10-09T10:01:34.473Z ERROR db: connection refused to db-primary:5432 after 3 retries (pool 20/20 busy)
+2026-10-09T10:01:34.807Z INFO http GET /api/items/9591 200 71ms req=dc5d4403
+2026-10-09T10:01:35.245Z INFO http GET /api/items/9169 200 62ms req=002e162a
+2026-10-09T10:01:35.791Z INFO cache hit key=user:65 ttl=60
+2026-10-09T10:01:36.291Z DEBUG worker 8 picked job 91706
+2026-10-09T10:01:36.824Z INFO http GET /api/items/3673 200 7ms req=43fc2770
+2026-10-09T10:01:37.122Z WARN slow query 1399ms table=orders
+2026-10-09T10:01:37.741Z DEBUG worker 2 picked job 25502
+2026-10-09T10:01:37.937Z INFO cache hit key=user:318 ttl=900
+2026-10-09T10:01:38.595Z INFO http GET /api/items/8307 200 61ms req=219ec060
+2026-10-09T10:01:38.858Z DEBUG worker 2 picked job 12768
+2026-10-09T10:01:39.284Z ERROR http POST /api/checkout 500 3ms req=89994fa6
+2026-10-09T10:01:39.378Z INFO http POST /api/checkout 201 27ms req=36ced620
+2026-10-09T10:01:40.114Z INFO http GET /api/items/4924 200 47ms req=4d159e84
+2026-10-09T10:01:40.193Z INFO http GET /api/items/4092 200 4ms req=ac35e5fa
+2026-10-09T10:01:40.665Z DEBUG worker 3 picked job 14743
+2026-10-09T10:01:40.751Z INFO http GET /api/items/875 200 71ms req=adab23e5
+2026-10-09T10:01:41.051Z DEBUG worker 3 picked job 81032
+2026-10-09T10:01:41.549Z DEBUG worker 4 picked job 85035
+2026-10-09T10:01:41.864Z INFO cache hit key=user:38 ttl=300
+2026-10-09T10:01:41.990Z INFO http GET /api/items/6701 200 25ms req=43f8e538
+2026-10-09T10:01:42.495Z INFO http GET /api/items/3423 200 47ms req=3eaa60c7
+2026-10-09T10:01:43.231Z DEBUG worker 3 picked job 6984
+2026-10-09T10:01:43.428Z INFO http GET /api/items/243 200 37ms req=f31c8271
+2026-10-09T10:01:43.611Z INFO http GET /api/items/1827 200 34ms req=bb54b8bb
+2026-10-09T10:01:44.476Z INFO http POST /api/checkout 201 81ms req=59c0767c
+2026-10-09T10:01:45.182Z INFO http GET /api/items/7743 200 59ms req=f8013cb7
+2026-10-09T10:01:45.731Z INFO cache hit key=user:89 ttl=60
+2026-10-09T10:01:46.217Z INFO cache hit key=user:480 ttl=300
+2026-10-09T10:01:46.835Z WARN slow query 2649ms table=orders
+2026-10-09T10:01:47.130Z WARN slow query 2387ms table=orders
+2026-10-09T10:01:47.256Z DEBUG worker 8 picked job 64121
+2026-10-09T10:01:47.569Z DEBUG worker 3 picked job 51771
+2026-10-09T10:01:48.441Z INFO http GET /api/items/589 200 39ms req=a1b570e2
+2026-10-09T10:01:48.940Z DEBUG worker 1 picked job 48175
+2026-10-09T10:01:49.485Z INFO http POST /api/checkout 201 71ms req=72fbf666
+2026-10-09T10:01:49.852Z INFO http GET /api/items/377 200 75ms req=e87a1d5a
+2026-10-09T10:01:50.284Z INFO http GET /api/items/3940 200 74ms req=57048efc
+2026-10-09T10:01:50.457Z INFO http GET /api/items/2745 200 13ms req=8d444a15
+2026-10-09T10:01:51.106Z ERROR http POST /api/checkout 500 3ms req=ed8748d3
+2026-10-09T10:01:51.173Z INFO http POST /api/checkout 201 189ms req=92954d2c
+2026-10-09T10:01:51.892Z INFO cache hit key=user:130 ttl=900
+2026-10-09T10:01:52.333Z INFO cache hit key=user:242 ttl=60
+2026-10-09T10:01:53.071Z DEBUG worker 4 picked job 57444
+2026-10-09T10:01:53.212Z DEBUG worker 6 picked job 17720
+2026-10-09T10:01:53.489Z INFO cache hit key=user:233 ttl=300
+2026-10-09T10:01:54.129Z INFO http GET /api/items/1920 200 40ms req=bbda5f05
+2026-10-09T10:01:54.742Z INFO cache hit key=user:436 ttl=900
+2026-10-09T10:01:55.577Z INFO http POST /api/checkout 201 41ms req=160d8020
+2026-10-09T10:01:56.339Z ERROR http POST /api/checkout 500 3ms req=70575870
+2026-10-09T10:01:56.479Z INFO http GET /api/items/7846 200 36ms req=64fa2ba9
+2026-10-09T10:01:56.870Z DEBUG worker 5 picked job 18270
