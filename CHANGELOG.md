@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.24 — 2026-10-09
 - Deliberation (T-0687 milestone: T-0642, T-0662).
   - Dissent that survives: `fm second plan` also records each objection as an open item in the brief's Dissent section. `fm task dissent ID add "<objection>" | resolve N "<how>"` manages them, and the close lists any still open.
   - Panels sized by stakes: `plugin/protocols.json` says what deliberation each tier gets. `fm second plan` on an S task says it's skipped (`--force` runs it). `fm next` names `fm second plan` for an L plan that has no review yet and isn't approved.
