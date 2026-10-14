@@ -653,6 +653,16 @@ def check_hook_events(registered=None):
     return Result("hook events", "PASS", f"{len(registered)} events registered (after changes: /reload-plugins)")
 
 
+def check_worktree_base(settings):
+    """T-0803: Agent isolation worktrees start from worktree.baseRef; the default ('fresh', the remote's default branch)
+    makes a builder lane start behind the branch being worked, and the builder stops (T-0379)."""
+    ref = ((settings or {}).get("worktree") or {}).get("baseRef") or "fresh"
+    if ref == "head":
+        return Result("worktree base", "PASS", "builder lanes start from the current HEAD")
+    return Result("worktree base", "WARN", f"worktree.baseRef is {ref!r}: builder lanes start from the remote's default "
+                                           "branch, not yours (fm install-user sets head)")
+
+
 def check_plugins():
     import fmplugins
     found = fmplugins.check()
@@ -902,7 +912,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply)]
+               check_supply(claude, accept_supply), check_worktree_base(settings)]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))

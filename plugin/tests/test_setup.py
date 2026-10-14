@@ -85,6 +85,19 @@ class Install(SetupCase):
         self.run_fm("uninstall-user")
         self.assertEqual(self.load()["outputStyle"], "Concise")
 
+    def test_builder_worktrees_start_from_head(self):
+        # T-0803: worktree.baseRef 'fresh' (the default) made both builder lanes start from origin/main, days behind
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["worktree"], {"baseRef": "head"})
+        self.run_fm("uninstall-user")
+        self.assertNotIn("worktree", self.load())
+        with open(self.settings, "w") as f:
+            json.dump(dict(ORIGINAL, worktree={"baseRef": "fresh", "symlinkDirectories": ["node_modules"]}), f)
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["worktree"]["baseRef"], "fresh", "the user's own choice stays")
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load()["worktree"], {"baseRef": "fresh", "symlinkDirectories": ["node_modules"]})
+
     def test_second_install_is_a_noop(self):
         self.run_fm("install-user")
         s1, md1, m1 = self.load(), read_text(self.claude_md), read_text(self.manifest_path())
