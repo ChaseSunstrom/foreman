@@ -148,8 +148,9 @@ class PluginFiles(unittest.TestCase):
         self.assertEqual(set(hooks), HOOK_EVENTS)
         for event, groups in hooks.items():
             handlers = [h for g in groups for h in g["hooks"]]
-            # T-0724: PreToolUse has a second entry, for Read (outline-first), with its own failure rule
-            self.assertEqual(len(handlers), 2 if event == "PreToolUse" else 1, event)
+            # T-0724: PreToolUse has a second entry, for Read (outline-first), with its own failure rule; T-0784: a
+            # third, for the tools that send content off the machine
+            self.assertEqual(len(handlers), 3 if event == "PreToolUse" else 1, event)
             self.assertTrue(all(h["args"] == [event] for h in handlers), event)
 
     def test_the_guard_hook_fails_closed(self):

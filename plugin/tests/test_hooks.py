@@ -5,7 +5,7 @@ import os
 import time
 import unittest
 
-from helpers import ForemanTestCase, read_text
+from helpers import ForemanTestCase, read_json, read_text
 
 import fmcore as c
 
@@ -845,6 +845,30 @@ class PreToolUse(HookCase):
         self.assertNotIn("plugin", c.find_brief(self.project(), tid).meta.get("allow") or [])
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
+
+    def test_sensitive_repo_keeps_content_home(self):
+        # T-0784: fm sensitive on kept reviews and AGENTS.md lessons home, but Claude Code's newer tools publish to
+        # claude.ai, phones, other sessions and cloud routines, and the guard's matcher never saw them
+        self.fm("init")
+        self.task()
+        outward = [("PushNotification", {"message": "done", "status": "proactive"}), ("Artifact", {"file_path": "x.html"}),
+                   ("ArtifactData", {"action": "set", "url": "u"}), ("SendMessage", {"to": "w", "message": "m"}),
+                   ("RemoteTrigger", {"action": "run"}), ("mcp__claude_ai_Claude_Docs__batch", {})]
+        denied = lambda p: "deny" in p.stdout
+        for tool, ti in outward:
+            self.assertFalse(denied(self.pre(tool, ti)), tool)
+        self.fm("sensitive", "on")
+        for tool, ti in outward:
+            p = self.pre(tool, ti)
+            self.assertTrue(denied(p), tool)
+            self.assertIn("fm sensitive off", p.stdout)
+        for tool, ti in (("ArtifactData", {"action": "list", "url": "u"}), ("Artifact", {"action": "read", "url": "u"}),
+                         ("mcp__claude_ai_Claude_Docs__query", {})):
+            self.assertFalse(denied(self.pre(tool, ti)), f"{tool} only reads")
+        matcher = next(m["matcher"] for m in read_json(os.path.join(c.PLUGIN_ROOT, "hooks", "hooks.json"))["hooks"]
+                       ["PreToolUse"] if "PushNotification" in m["matcher"])
+        for tool, _ in outward:
+            self.assertRegex(tool, f"^(?:{matcher})$")
 
     def test_foreground_wait_loops_are_refused(self):
         # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
