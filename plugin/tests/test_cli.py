@@ -944,6 +944,32 @@ class DecisionsResearchSelf(ForemanTestCase):
         self.assertIsNone(c.find_project(self.repo))
 
 
+class ResearchListShow(ForemanTestCase):
+    def test_list_newest_first_and_show_prints(self):
+        self.fm("init")
+        self.fm("research", "add", "older", input="# Old notes\nbody one\n")
+        folder = os.path.join(c.find_project(self.repo).dir, "research")
+        os.utime(os.path.join(folder, "older.md"), (1, 1))
+        self.fm("research", "add", "newer", input="plain first line\n")
+        os.makedirs(os.path.join(folder, "brainstorm-0102"))
+        with open(os.path.join(folder, "brainstorm-0102", "ideas.md"), "w") as f:
+            f.write("# Ideas\nidea-zebra\n")
+        os.utime(os.path.join(folder, "brainstorm-0102", "ideas.md"), (2, 2))
+        out = self.fm("research", "list").stdout
+        self.assertLess(out.index("newer"), out.index("brainstorm-0102"))
+        self.assertLess(out.index("brainstorm-0102"), out.index("older"))
+        self.assertIn("Old notes", out)
+        self.assertIn("body one", self.fm("research", "show", "older.md").stdout)
+        self.assertIn("idea-zebra", self.fm("research", "show", "brainstorm-0102").stdout)
+
+    def test_show_unknown_names_closest(self):
+        self.fm("init")
+        self.fm("research", "add", "auth-recon", input="x\n")
+        r = self.fm("research", "show", "auth-recn", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("auth-recon", r.stderr + r.stdout)
+
+
 class AskClosed(ForemanTestCase):
     """T-0302: a grant only works while its task is active, so a yes on a closed task would be a yes for nothing."""
 
@@ -971,17 +997,17 @@ if __name__ == "__main__":
 
 class VerifyLint(ForemanTestCase):
     def test_a_verify_that_cannot_run_is_refused_before_anything_is_written(self):
-        # T-0765: 'python3 -m pytest' (not installed) and 'fm research list' (no such action) were accepted; once a
+        # T-0765: 'python3 -m pytest' (not installed) and 'fm research nosuch' (no such action; research list exists since T-0802) were accepted; once a
         # criterion has evidence it can't be edited, so each task was dropped and recreated
         self.fm("init")
-        for verify in ("python3 -m no_such_module_t0765 -q", "fm research list", "cd plugin && fm tsk show T-0001"):
+        for verify in ("python3 -m no_such_module_t0765 -q", "fm research nosuch", "cd plugin && fm tsk show T-0001"):
             r = self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--ac", f"works :: {verify}", check=False)
             self.assertNotEqual(r.returncode, 0, verify)
             self.assertIn("can't run", r.stderr, verify)
         self.assertEqual(json.loads(self.fm("state", "--json").stdout).get("inbox") or [], [], "nothing was written")
         tid = json.loads(self.fm("task", "new", "Y", "--type", "FIX", "--tier", "S", "--json",
                                  "--ac", "works :: python3 -m json.tool --help && fm task show T-0001").stdout)["id"]
-        r = self.fm("task", "ac", tid, "add", "more :: fm research list", check=False)
+        r = self.fm("task", "ac", tid, "add", "more :: fm research nosuch", check=False)
         self.assertIn("can't run", r.stderr)
         self.assertEqual(len(c.find_brief(c.find_project(self.repo), tid).acceptance()), 1)
         self.fm("task", "ac", tid, "add", "more :: fm state")
