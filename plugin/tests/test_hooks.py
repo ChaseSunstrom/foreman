@@ -866,6 +866,10 @@ class PreToolUse(HookCase):
         tid = self.task(steps=("start", "fix data.py"))
         self.pre("Edit", {"file_path": os.path.join(self.repo, "a.py"), "old_string": "a", "new_string": "b"})
         self.assertEqual(c.find_brief(self.project(), tid).current_step().n, 1)
+        # T-0839 (round-2 review): a name with no extension is an ordinary word ("run fm check")
+        self.fm("task", "step", tid, "add", "run fm check")
+        self.pre("Edit", {"file_path": os.path.join(self.repo, "bin", "fm"), "old_string": "a", "new_string": "b"})
+        self.assertEqual(c.find_brief(self.project(), tid).current_step().n, 1)
 
     def test_a_plugin_yes_covers_one_change(self):
         # T-0029: plugins are new code in every session; each one gets its own yes (core stays per task)

@@ -16,5 +16,5 @@ try:
     sys.stdout.flush()
 except BrokenPipeError:  # T-0825: the reader quit (fm … | head): end quietly, not with Python's flush complaint
     os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-    code = 0
+    code = 141  # T-0839: as a shell reports SIGPIPE; a command cut short mid-change must not read as success
 sys.exit(code)

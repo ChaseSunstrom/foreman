@@ -75,9 +75,9 @@ def main():
     try:
         os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8", errors="replace") as f:  # T-0839: a lone surrogate
             f.write(full)
-    except OSError:
+    except (OSError, ValueError):
         return 0  # no full text to point at: the output passes through untouched
     new_out, new_err = compact(out, path), compact(err, path)
     if new_out is None and new_err is None:
