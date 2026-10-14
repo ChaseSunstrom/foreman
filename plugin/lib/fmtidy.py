@@ -321,17 +321,22 @@ def check_global(apply, actions, plugins=False):
             for old in rotated[:-ROTATED_KEEP]:
                 os.remove(os.path.join(logs, old))
             actions.append(("global", kind))
-    sessions = os.path.join(c.state_dir(), "sessions")
-    if os.path.isdir(sessions):
-        old = [f for f in os.listdir(sessions)
-               if time.time() - os.path.getmtime(os.path.join(sessions, f)) > SNAPSHOT_MAX_DAYS * 86400]
+    def stale(d):
+        names = os.listdir(d) if os.path.isdir(d) else []
+        return [os.path.join(d, f) for f in names
+                if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400]
+    for kind, what, old in (
+            ("old_snapshots", "statusline snapshot(s)",  # by-pid/ is pruned by SessionStart (T-0777)
+             [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)]),
+            ("old_outputs", "sessions' compact-output full texts (T-0811)",
+             stale(os.path.join(c.state_dir(), "outputs")))):
         if old:
-            out.append(finding(None, "old_snapshots", "action", f"{len(old)} statusline snapshot(s) older than "
-                               f"{SNAPSHOT_MAX_DAYS}d", "delete (derived cache)", auto=True))
+            out.append(finding(None, kind, "action", f"{len(old)} {what} older than {SNAPSHOT_MAX_DAYS}d",
+                               "delete (derived cache)", auto=True))
             if apply:
                 for f in old:
-                    os.remove(os.path.join(sessions, f))
-                actions.append(("global", "old_snapshots"))
+                    shutil.rmtree(f) if os.path.isdir(f) else os.remove(f)
+                actions.append(("global", kind))
     if plugins:
         out += _check_plugins()
     return out

@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import time
 
 from helpers import ForemanTestCase, read_text
 
@@ -115,6 +116,23 @@ class Apply(TidyCase):
         self.assertLess(os.path.getsize(events), 1024)
         rotated = [f for f in os.listdir(os.path.join(self.home, "state", "logs")) if f.startswith("events-")]
         self.assertEqual(len(rotated), 1)
+
+    def test_prunes_old_full_outputs_and_snapshots_but_not_the_pid_map(self):
+        # T-0811: compact output's full texts (T-0783) piled up; sessions/by-pid/ (T-0777) is a folder, not a snapshot
+        state = os.path.join(self.home, "state")
+        old, new = os.path.join(state, "outputs", "old-sess"), os.path.join(state, "outputs", "new-sess")
+        by_pid, snap = os.path.join(state, "sessions", "by-pid"), os.path.join(state, "sessions", "old.json")
+        for d in (old, new, by_pid):
+            os.makedirs(d)
+            open(os.path.join(d, "x.txt"), "w").close()
+        open(snap, "w").close()
+        week_ago = time.time() - 8 * 86400
+        for x in (old, by_pid, snap):
+            os.utime(x, (week_ago, week_ago))
+        self.assertIn("old_outputs", self.kinds(self.tidy()))
+        self.tidy("--apply")
+        self.assertEqual(sorted(os.listdir(os.path.join(state, "outputs"))), ["new-sess"])
+        self.assertEqual(os.listdir(os.path.join(state, "sessions")), ["by-pid"])
 
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")
