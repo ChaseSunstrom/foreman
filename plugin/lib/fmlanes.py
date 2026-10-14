@@ -225,6 +225,7 @@ def merge(p, b, main):
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
     pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
+    pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
         brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
@@ -237,6 +238,8 @@ def merge(p, b, main):
             x.meta["base"] = pre_merge
             x.meta.pop("base_tree", None)
             x.meta.pop("paused_tree", None)
+            if pre_tree:
+                x.meta["base_tree"] = pre_tree
         x.append_log(f"merged {branch} ({len(files)} file(s))")
     fmcli.mutate(p, b.id, merged, "lane_merge", {"branch": branch, "files": files[:50]})
     return files

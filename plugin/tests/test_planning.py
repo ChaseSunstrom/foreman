@@ -2,6 +2,7 @@
 standing orders, tier drift at done, assumption re-checks, a build-vs-reuse line before an L feature is approved, and
 MASTER.md naming every module."""
 import os
+import subprocess
 
 from helpers import ForemanTestCase
 
@@ -69,6 +70,18 @@ class TierDrift(Base):
             self.write(f"f{i}.py", "x = 1\n" * 60)
         p = self.fm("task", "finish", t, "--run", "true", "--audit", "self check")
         self.assertIn("planned S", p.stderr + p.stdout)
+
+    def test_a_touched_file_it_left_unchanged_adds_no_lines(self):
+        # T-0812: a file missing from the diff was counted whole, as if new (T-0777: 226 lines read as 7,354)
+        self.write("big.py", "x = 1\n" * 2000)
+        subprocess.run(["git", "-C", self.repo, "add", "big.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "big"], check=True)
+        t = self.new("Small change")
+        self.fm("focus", t)
+        c.log_event(self.p, "touched", task=t, data={"file": os.path.join(self.repo, "big.py")})
+        self.write("small.py", "y = 2\n")
+        p = self.fm("task", "finish", t, "--run", "true", "--audit", "self check")
+        self.assertNotIn("planned S", p.stderr + p.stdout)
 
 
 class AssumptionCheck(Base):

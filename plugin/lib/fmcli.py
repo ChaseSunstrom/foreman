@@ -1256,7 +1256,7 @@ def _close_warnings(p, b, files):
 
 
 _CACHES = re.compile(r"(?:^|/)(?:__pycache__|\.pytest_cache|\.mypy_cache|node_modules|\.venv|venv|\.tox|\.cache|"
-                     r"\.foreman|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
+                     r"\.foreman|\.claude|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
 
 
 def _close_warnings_of(p, b, files):
@@ -1636,8 +1636,10 @@ def _tier_drift(p, b, files):
         add, rem, name = (row.split("\t") + ["", "", ""])[:3]
         seen.add(name)
         lines += (int(add) if add.isdigit() else 0) + (int(rem) if rem.isdigit() else 0)
-    for f in files[:500]:  # new, untracked files: every line is added
-        if f not in seen:
+    at_base = set((c._git(p.root, "ls-tree", "-r", "--name-only", base, "--", *files[:500], timeout=30)
+                   or "").splitlines())
+    for f in files[:500]:  # new files: every line is added (one at the start and not in the diff is unchanged: T-0812)
+        if f not in seen and f not in at_base:
             try:
                 with open(os.path.join(p.root, f), "rb") as fh:
                     lines += fh.read(2_000_000).count(b"\n")
