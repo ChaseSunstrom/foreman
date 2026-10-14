@@ -1,6 +1,21 @@
 # Changelog
 
 ## Unreleased
+- Claude Code integration, round 1 of a recursive improvement loop (T-0760 brainstorm: 609 ideas in 30 clusters).
+  - Never idle without tmux: a plugin monitor (`foreman-mail`) runs `fm bus watch` for the whole session and prints one line per new bus message for it; `fm bus send --wake` skips tmux when that watcher's heartbeat is fresh. The watcher finds its session through the SessionStart hook's process tree, and drops its heartbeat when ended by a signal (T-0777, T-0819, T-0820).
+  - Phone push: the Stop hook asks once for PushNotification when an ask is open or the queue drains in full autonomy (T-0778). Sessions are named after their task (sessionTitle, T-0781).
+  - Agents carry effort, maxTurns and omitClaudeMd, validated by `fm doctor` (T-0768); lane briefs pass a per-tier effort (S medium, M high, T-0779); Foreman's `claude -p` children carry `--max-budget-usd` (T-0776); wiring sets `worktree.baseRef=head` (T-0803); `fm doctor` names the Claude Code features the installed version is too old for (T-0785).
+  - Sensitive repos keep content home: PushNotification, Artifact, SendMessage, RemoteTrigger and other outward tools are refused there, and the gate fails closed (T-0784, T-0821).
+  - `fm page` renders the queue and a brainstorm catalogue as one self-contained HTML page for a claude.ai Artifact, with home paths refused and the bare username replaced (T-0786, T-0821). `fm research list` and `fm research show NAME` (T-0802).
+- Opt-in compact output: `fm compact-output on` adds a PostToolUse hook that sends Bash outputs over 6,000 characters to the model as head, every failure line and tail, with the full text (capped at 2M characters) in a file; measured on 30 days of real outputs at about 1M tokens saved. Off until turned on; `fm tidy` prunes the saved texts after 7 days (T-0783, T-0811, T-0821, T-0824).
+- Correctness.
+  - One-off headless `claude -p` sessions answer and stop; only `fm run`'s sessions drive the queue (T-0775). Bench replays aren't one-off (T-0820).
+  - A run whose output reports failing tests counts as a failure even when a pipe hides the exit, in `fm check` and in verify commands run from Bash (T-0773, T-0820). A verify that can't run at all is refused when the criterion is added (T-0765).
+  - A lane-merged task is measured from the main checkout's files before the merge, so its close checks see its whole diff (T-0804, T-0812); tier drift counts only real diff lines; `fm lane brief` refuses a task its builder couldn't focus (T-0823); a lane's edits under `.claude/worktrees/` count as the repo files they are (T-0807).
+  - `fm task finish` refuses a close that leaves Foreman's self docs failing (T-0764); `fm task new --redo ID` keeps a dropped task's start point (T-0767); `fm task set` takes list fields as `a,b` or `[a, b]` (T-0810).
+  - `fm` ends quietly when its reader quits (`fm … | head`, T-0825).
+- Guard: a data heredoc writing an unrun source file isn't interpreter code driving Foreman (T-0766); a literal `cd DIR && python3 -` resolves relative writes in DIR only (T-0774); a data-only `python -c` may send output to /dev/null; state-direct refusals point to `fm research add`; path-only rule ids read `:path` (T-0817).
+- Builders run only the affected tests (T-0806); the hook benchmark judges by CPU time on a busy machine (T-0805); `fm audit prep` asks for ReportFindings fields (T-0780).
 
 ## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).
