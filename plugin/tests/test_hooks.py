@@ -1112,6 +1112,32 @@ class PreToolUse(HookCase):
 
 
 class PostToolUse(HookCase):
+    def test_compact_output(self):
+        # T-0783 end to end: fm compact-output on registers the hook in the user's settings; that command, given a
+        # 20,000-char failing run, hands back under 8,000 chars with every failure line and the full text's path
+        import subprocess
+        import sys
+        home = os.path.join(self.tmp, "userhome")
+        os.makedirs(os.path.join(home, ".claude"))
+        env = {"HOME": home}
+        self.fm("compact-output", "on", env=env)
+        settings = read_json(os.path.join(home, ".claude", "settings.json"))
+        [cmd] = [h["command"] for g in settings["hooks"]["PostToolUse"] for h in g["hooks"]]
+        lines = [f"test_{i} ... ok" for i in range(700)]
+        lines[350], lines[420] = "FAIL: test_350 (m.T.test_350)", "AssertionError: 2 != 3"
+        text = "\n".join(lines + ["FAILED (failures=1)"])
+        self.assertGreater(len(text), 10000)
+        payload = {"session_id": "s1", "tool_name": "Bash", "hook_event_name": "PostToolUse",
+                   "tool_response": {"stdout": text * 2, "stderr": "", "interrupted": False, "isImage": False}}
+        p = subprocess.run([sys.executable, cmd], input=json.dumps(payload), capture_output=True, text=True,
+                           env=dict(os.environ, FOREMAN_HOME=self.home), timeout=30)
+        out = json.loads(p.stdout)["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+        self.assertLess(len(out), 8000)
+        for must in ("FAIL: test_350", "AssertionError: 2 != 3", "FAILED (failures=1)", "full output: "):
+            self.assertIn(must, out)
+        self.fm("compact-output", "off", env=env)
+        self.assertNotIn("hooks", read_json(os.path.join(home, ".claude", "settings.json")))
+
     def test_edit_records_touched_file_and_event(self):
         self.fm("init")
         tid = self.task()

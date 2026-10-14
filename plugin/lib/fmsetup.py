@@ -183,6 +183,52 @@ def cmd_install(args):
 
 # ---------------------------------------------------------------- uninstall
 
+def _compact_cmd():
+    return os.path.join(c.PLUGIN_ROOT, "hooks", "compact")  # the running plugin's copy, wherever it lives
+
+
+def _without_compact(settings):
+    """settings without Foreman's compact-output hook (and any hooks objects it leaves empty); True when it was there."""
+    hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
+    groups = hooks.get("PostToolUse") or []
+    keep = [g for g in groups if not any(isinstance(h, dict) and h.get("command") == _compact_cmd()
+                                         for h in (g.get("hooks") or []))]
+    if len(keep) == len(groups):
+        return False
+    if keep:
+        hooks["PostToolUse"] = keep
+    else:
+        hooks.pop("PostToolUse", None)
+    if not hooks:
+        settings.pop("hooks", None)
+    return True
+
+
+def cmd_compact_output(args):
+    """fm compact-output [on|off] (T-0783): a PostToolUse Bash hook in ~/.claude/settings.json that hands big outputs
+    to the model as head, failure lines and tail with the full text in a file. Off is no hook at all (no cost)."""
+    P = paths()
+    s = _load(P["settings"], {})
+    on = any(isinstance(h, dict) and h.get("command") == _compact_cmd()
+             for g in ((s.get("hooks") or {}).get("PostToolUse") or []) for h in (g.get("hooks") or []))
+    if args.state in (None, "status"):
+        print(f"compact output: {'on' if on else 'off'}" + (" (new sessions shorten Bash outputs over 6,000 characters)"
+                                                            if on else " (fm compact-output on to shorten big outputs)"))
+        return 0
+    if (args.state == "on") == on:
+        print(f"compact output: already {args.state}")
+        return 0
+    _backup(P)
+    if args.state == "on":
+        s.setdefault("hooks", {}).setdefault("PostToolUse", []).append(
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": _compact_cmd(), "timeout": 10}]})
+    else:
+        _without_compact(s)
+    c.write_atomic(P["settings"], json.dumps(s, indent=2) + "\n")
+    print(f"compact output: {args.state} in {P['settings']} (backup in {P['backups']}); new sessions pick it up")
+    return 0
+
+
 def cmd_uninstall(args):
     import fmserve
     if args.dry_run:
@@ -255,6 +301,8 @@ def cmd_uninstall(args):
     if m.get("outputStyle_set") and new_s.get("outputStyle") == OUTPUT_STYLE:
         new_s.pop("outputStyle")
         actions.append("outputStyle removed")
+    if _without_compact(new_s):  # T-0783: fm compact-output on's hook goes with the rest
+        actions.append("compact-output hook removed")
     for k in ("enabledPlugins", "extraKnownMarketplaces"):  # emptied by `claude plugin uninstall`/`marketplace remove`
         if new_s.get(k) == {}:
             new_s.pop(k)
