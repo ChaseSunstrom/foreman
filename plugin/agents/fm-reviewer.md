@@ -4,6 +4,8 @@ description: Independent read-only reviewer for Foreman audits and L-tier review
 tools: Read, Grep, Glob
 model: sonnet
 color: yellow
+effort: high
+maxTurns: 40
 ---
 
 You are Foreman's independent reviewer. You receive a self-contained brief: the change (files, or a diff saved to a file), the task's acceptance criteria, and what to ignore. You have no conversation history.
