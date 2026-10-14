@@ -6,7 +6,7 @@ import os
 import subprocess
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text
 
 first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
@@ -167,3 +167,15 @@ class Lanes(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuilderGates(unittest.TestCase):
+    def test_builders_run_affected_tests_and_leave_the_full_gates_to_the_merge(self):
+        # T-0806: two lanes and the main thread ran three full gate runs at once (load 74): tests timed out, lanes
+        # reported load as red gates, and the merge re-ran the full gates anyway
+        import fmlanes
+        agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
+        for text in (fmlanes.CONTRACT, agent):
+            self.assertIn("fm check --affected --evidence", text)
+            self.assertIn("full gates run after the merge", text)
+            self.assertNotRegex(text, r"`fm check --evidence")
