@@ -1053,3 +1053,13 @@ class Redo(ForemanTestCase):
         b = c.find_brief(p, again)
         self.assertIn("fix.py", fmmap.changed(p.root, c.task_base(p.root, b)))
         self.assertIn(old, read_text(b.path))
+
+
+class SetLists(ForemanTestCase):
+    def test_list_fields_accept_brackets(self):
+        # T-0810: scope=[a,b] stored "[a" and "b]" as globs
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        for value in ("[plugin/a.py, plugin/b.py]", '["plugin/a.py","plugin/b.py"]', "plugin/a.py,plugin/b.py"):
+            self.fm("task", "set", tid, f"scope={value}")
+            self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])
