@@ -685,6 +685,16 @@ def task_packet(p, args):
     return out(args, {"path": path, "task": b.id}, f"{b.id}: handoff packet written to {path}")
 
 
+def _refuse_unrunnable(p, cmds):
+    """T-0765: a verify that can't run at all is refused before the brief changes: once it has evidence it can't be
+    edited (T-0342), and the only way out was dropping and recreating the task."""
+    for cmd in filter(None, cmds):
+        why = c.unrunnable(cmd, p.root)
+        if why:
+            raise UsageError(f"verify `{cmd}` can't run: {why}. Fix it before adding it: a criterion with evidence "
+                             f"can't be edited later")
+
+
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
         if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
@@ -1737,6 +1747,7 @@ def task_new(p, args):
         raise UsageError(f"unknown type {args.type!r}")
     if args.tier not in ("S", "M", "L"):
         raise UsageError("tier must be S, M or L")
+    _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
     with c.lock(p.dir):
         if args.from_id:
             b = need_brief(p, args.from_id)
@@ -1874,6 +1885,7 @@ def task_ac(p, args):
     if args.action == "add":
         text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
         text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
+        _refuse_unrunnable(p, [verify])
         b, _ = mutate(p, args.id, lambda b: b.add_ac(text, verify), "ac_add", {"text": text})
         _lint_verify(p, [verify])
         return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
@@ -1884,6 +1896,7 @@ def task_ac(p, args):
     if args.action == "edit":
         if args.verify is None and not args.text:
             raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
+        _refuse_unrunnable(p, [args.verify])
         try:
             b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, args.text, args.verify), "ac_edit", {"ac": n})
         except KeyError as e:

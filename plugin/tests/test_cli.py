@@ -967,3 +967,21 @@ class AskClosed(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerifyLint(ForemanTestCase):
+    def test_a_verify_that_cannot_run_is_refused_before_anything_is_written(self):
+        # T-0765: 'python3 -m pytest' (not installed) and 'fm research list' (no such action) were accepted; once a
+        # criterion has evidence it can't be edited, so each task was dropped and recreated
+        self.fm("init")
+        for verify in ("python3 -m no_such_module_t0765 -q", "fm research list", "cd plugin && fm tsk show T-0001"):
+            r = self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--ac", f"works :: {verify}", check=False)
+            self.assertNotEqual(r.returncode, 0, verify)
+            self.assertIn("can't run", r.stderr, verify)
+        self.assertEqual(json.loads(self.fm("state", "--json").stdout).get("inbox") or [], [], "nothing was written")
+        tid = json.loads(self.fm("task", "new", "Y", "--type", "FIX", "--tier", "S", "--json",
+                                 "--ac", "works :: python3 -m json.tool --help && fm task show T-0001").stdout)["id"]
+        r = self.fm("task", "ac", tid, "add", "more :: fm research list", check=False)
+        self.assertIn("can't run", r.stderr)
+        self.assertEqual(len(c.find_brief(c.find_project(self.repo), tid).acceptance()), 1)
+        self.fm("task", "ac", tid, "add", "more :: fm state")

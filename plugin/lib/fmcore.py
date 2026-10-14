@@ -2666,6 +2666,44 @@ def lint_verify(cmd, root):
     return problems
 
 
+def unrunnable(cmd, root):
+    """T-0765: why a verify command can't run at all, or None: `python -m MOD` whose module that python can't import
+    there, or `fm …` words fm's own parser rejects. Literal `cd DIR` links move where later parts run; anything this
+    can't read for sure (variables, substitutions, an unreadable quote) is left alone."""
+    import io
+    import shlex
+    cwd = root
+    for part in re.split(r"&&|\|\||;|\|", cmd or ""):
+        if re.search(r"[$`]", part):
+            return None  # what runs depends on the shell: past here nothing is known for sure
+        try:
+            words = [w for w in shlex.split(part) if not re.match(r"^\w+=", w)]
+        except ValueError:
+            return None
+        words = words[:next((i for i, w in enumerate(words) if re.match(r"^\d*[<>]", w)), len(words))]
+        if not words:
+            continue
+        if words[0] == "cd" and len(words) == 2:
+            cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1])))
+        elif re.fullmatch(r"python[0-9.]*", words[0]) and "-m" in words[:-1] and shutil.which(words[0]):
+            mod = words[words.index("-m") + 1].split(".")[0]
+            r = subprocess.run([words[0], "-c", "import importlib.util,sys; sys.exit(not importlib.util.find_spec("
+                                "sys.argv[1]))", mod], cwd=cwd if os.path.isdir(cwd) else root, capture_output=True,
+                               timeout=20)
+            if r.returncode:
+                return f"{words[0]} can't import {mod} (No module named {mod})"
+        elif words[0] == "fm":
+            import fmcli
+            err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                    fmcli.build_parser().parse_args(words[1:])
+            except SystemExit as e:
+                if e.code:
+                    return f"fm doesn't take `{' '.join(words)}` ({fit(' '.join(err.getvalue().split()), 160)})"
+    return None
+
+
 _RULED = re.compile(r"(?i)\b(ruled out|tried|dead end|didn't work|rejected):\s*(.+)")
 
 
