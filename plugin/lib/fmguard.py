@@ -1213,6 +1213,27 @@ def _open_targets(code):
     return targets
 
 
+def _chain_dir(starters, shell, ctx):
+    """T-0774: the one folder every python unit runs in, when each starter changes folder only by `cd DIR &&` links
+    (python runs only after each succeeded) to absolute, ~ or ./ ../ targets (no CDPATH lookup, no `cd -`) and nothing
+    else in the command changes folder; None when that isn't certain (every named folder counts then). Review: a
+    regex for folder changes misses "cd", \\cd, source and eval, so the rest of the command may hold nothing but the
+    heredocs' own end lines."""
+    ends = {m.group(1) for s in starters for m in [re.search(r"<<-?\s*'(\w+)'", s)] if m}
+    if any(line.strip() and line.strip() not in ends for line in shell.splitlines()):
+        return None
+    dirs = set()
+    for s in starters:
+        d = ctx.cwd
+        for t in re.findall(r"\bcd\s+([\w./~@+:=,-]+)\s*&&", s):
+            t = _expand(t, ctx)
+            if _unresolvable(t) or not re.match(r"(/|\./|\.\./|\.\.?$)", t):
+                return None
+            d = _resolve(t, d)
+        dirs.add(d)
+    return dirs.pop() if len(dirs) == 1 else None
+
+
 def _proved_writes(cmd, ctx):
     """T-0176: the files a command's python can write, as paths, when every interpreter in it is a quoted heredoc fed
     straight to python whose writes _open_targets proves; None otherwise (the coarse rule decides). A relative path
@@ -1233,8 +1254,10 @@ def _proved_writes(cmd, ctx):
         targets += found
     bases = [ctx.cwd]
     if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", around):
-        bases += [d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
-                  if os.path.isdir(d)]
+        only = _chain_dir(starters, shell, ctx)
+        bases = [only] if only else bases + [
+            d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
+            if os.path.isdir(d)]
     import ast
     mods = {a.name for code in units for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Import) for a in n.names}
     if any(os.path.exists(os.path.join(b, m + x)) for b in bases for m in mods for x in (".py", "")):
