@@ -155,6 +155,15 @@ class Lanes(ForemanTestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("fm focus", p.stderr)
 
+    def test_the_brief_agent_line_names_effort_by_tier(self):
+        # T-0779: S builders run at medium effort, M at high, beside the model
+        for tier, effort in (("S", "medium"), ("M", "high")):
+            extra = ["--interpretation", "x", "--approach", "x"] if tier != "S" else []
+            tid = first(self.fm("task", "new", f"T{tier}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true",
+                                "--step", "s", *extra, "--json").stdout)["id"]
+            agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
+            self.assertIn(f'effort: "{effort}"', agent)
+
 
 if __name__ == "__main__":
     unittest.main()
