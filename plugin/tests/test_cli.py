@@ -10,6 +10,7 @@ import unittest
 from helpers import ForemanTestCase, read_text, read_json
 
 import fmcore as c
+import fmcli
 
 
 class Init(ForemanTestCase):
@@ -713,6 +714,23 @@ class AuditPrep(ForemanTestCase):
         self.assertEqual(sorted(sum(lenses, [])), sorted(["intent", "adversary", "edge", "operator", "maintainer"]))
         self.assertTrue(all(lenses), "no empty group")
 
+    def test_brief_asks_for_report_findings_fields_and_prep_names_the_tool(self):
+        # T-0780: findings reach the host review UI; the ranked lines still parse (_FINDING)
+        self.fm("init")
+        self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("X = 1\n")
+        out = self.fm("audit", "prep", "T-0001").stdout
+        self.assertIn("ReportFindings", out)
+        for field in ("file", "line", "short_summary", "failure_scenario", "category"):
+            self.assertIn(field, fmcli._REVIEW_OUT)
+        self.assertIn("HIGH/MEDIUM/LOW", fmcli._REVIEW_OUT)
+        self.assertTrue(fmcli._FINDING.search("- HIGH a.py:3 boom"))
+
     def test_prep_freezes_the_diff_and_prints_lens_briefs(self):
         self.fm("init")
         self.fm("task", "new", "Add --verbose", "--type", "FEATURE", "--tier", "L", "--step", "add it")
@@ -799,7 +817,7 @@ class AuditPrep(ForemanTestCase):
         path = next(w for w in out.split() if w.endswith("T-0001.review.md"))
         self.assertIn("trying to break", read_text(path))
         self.assertNotIn("trying to break", out)
-        self.assertLess(len(out), 700)
+        self.assertLess(len(out), 800)
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
