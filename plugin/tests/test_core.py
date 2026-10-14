@@ -223,6 +223,15 @@ class Redaction(unittest.TestCase):
 
 
 class Ledger(ForemanTestCase):
+    def test_lane_worktree_paths_map_to_repo_paths(self):
+        # T-0807: builders edit in .claude/worktrees/<lane>/, so after the merge the close's scope check saw those
+        # paths, not the repo files they stand for (T-0779, T-0786, T-0804 each needed a logged reason)
+        p = c.init_project(self.repo)
+        wt = os.path.join(p.root, ".claude", "worktrees", "agent-a1b2", "plugin", "lib", "a.py")
+        c.log_event(p, "touched", task="T-0001", data={"file": wt})
+        c.log_event(p, "touched", task="T-0001", data={"file": os.path.join(p.root, "README.md")})
+        self.assertEqual(sorted(c.task_touches(p, "T-0001")), ["README.md", "plugin/lib/a.py"])
+
     def test_tail_returns_n_events_beyond_64k(self):
         p = c.init_project(self.repo)
         c.log_event(p, "touched", task="T-0001", data={"file": "x.py"})
