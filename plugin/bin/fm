@@ -11,4 +11,10 @@ except Exception:
     pass
 import fmcli  # noqa: E402
 
-sys.exit(fmcli.main())
+try:
+    code = fmcli.main()
+    sys.stdout.flush()
+except BrokenPipeError:  # T-0825: the reader quit (fm … | head): end quietly, not with Python's flush complaint
+    os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+    code = 0
+sys.exit(code)
