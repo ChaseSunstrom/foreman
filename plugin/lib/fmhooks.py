@@ -244,6 +244,11 @@ def session_start(pl):
                 os.remove(os.path.join(folder, name))
             except OSError:  # another SessionStart got it first
                 pass
+        try:  # T-0777: the session's plugin monitor (fm bus watch) finds its id through its parent processes
+            import fmbus
+            fmbus.record_pid(sid)
+        except Exception:
+            log_error("SessionStart", _tb())
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
