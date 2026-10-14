@@ -849,7 +849,7 @@ class PreToolUse(HookCase):
     def test_the_step_pointer_follows_edits_and_asks_once_after_eight(self):
         # T-0759: work on a later step without moving the band
         self.fm("init")
-        tid = self.task(steps=("reproduce in auth.py", "fix", "wire billing.py"))
+        tid = self.task(steps=("reproduce in auth.py", "fix", "wire src/billing.py"))  # a path names it too
         edit = lambda f: self.ctx_of(self.pre("Edit", {"file_path": os.path.join(self.repo, f),
                                                        "old_string": "a", "new_string": "b"}))
         cur = lambda: c.find_brief(self.project(), tid).current_step().n
@@ -859,6 +859,13 @@ class PreToolUse(HookCase):
         notes = [edit("other.py") for _ in range(9)]
         self.assertEqual([i for i, n in enumerate(notes) if n], [6])  # the 8th edit on step 3, once
         self.assertIn(f"fm task step {tid} current N", notes[6])
+
+    def test_a_short_file_name_inside_a_longer_one_moves_nothing(self):
+        # T-0759 review: "a.py" is a substring of "data.py" in a later step's text
+        self.fm("init")
+        tid = self.task(steps=("start", "fix data.py"))
+        self.pre("Edit", {"file_path": os.path.join(self.repo, "a.py"), "old_string": "a", "new_string": "b"})
+        self.assertEqual(c.find_brief(self.project(), tid).current_step().n, 1)
 
     def test_a_plugin_yes_covers_one_change(self):
         # T-0029: plugins are new code in every session; each one gets its own yes (core stays per task)

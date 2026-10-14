@@ -1311,20 +1311,25 @@ def _step_note(pl, p, act):
     cur = act.current_step()
     if not (cur and _in_project(path, p)):
         return None
-    name, note = os.path.basename(path).lower(), None
-    named = [s for s in act.steps() if not s.done and name in s.text.lower()]
+    word, note = re.compile(rf"(?<![\w.-]){re.escape(os.path.basename(path))}(?![\w-])", re.I), None  # a.py ≠ data.py
+    named = [s for s in act.steps() if not s.done and word.search(s.text)]
     if len(named) == 1 and named[0].n > cur.n:
-        with c.lock(p.dir):
-            b = c.find_brief(p, act.id)
-            b.set_current(named[0].n)
-            c.save_brief(p, b)
-            c.log_event(p, "step_current", task=act.id, data={"step": named[0].n, "auto": True},
-                        session=pl.get("session_id"))
-            c.regen_views(p)
-        cur = named[0]
-        note = f"Foreman: {os.path.basename(path)} is in step {cur.n} ({cur.text}); it is now the current step. "
+        try:
+            with c.lock(p.dir, timeout=LOCK_QUICK):
+                b = c.find_brief(p, act.id)
+                b.set_current(named[0].n)
+                c.save_brief(p, b)
+                c.log_event(p, "step_current", task=act.id, data={"step": named[0].n, "auto": True},
+                            session=pl.get("session_id"))
+                c.regen_views(p)
+            cur = named[0]
+            note = c.fit(f"Foreman: {os.path.basename(path)} is in step {cur.n} ({cur.text}); it is now the current "
+                         f"step.", 240) + " "  # review: step text is the brief's, bounded like the other notes
+        except c.LockTimeout:  # busy: the next edit moves it; the other notes still go out
+            pass
     c.log_event(p, "step_edit", task=act.id, data={"step": cur.n}, session=pl.get("session_id"))
-    seen = [e for e in c.ledger_tail(p, 400) if e.get("task") == act.id and e.get("event") in ("step_edit", "step_current", "step_done")]
+    seen = [e for e in c.ledger_tail(p, 400)
+            if e.get("task") == act.id and e.get("event") in ("step_edit", "step_current", "step_done")]
     n = 0
     for e in reversed(seen):  # edits since the step last moved
         if e["event"] != "step_edit" or (e.get("data") or {}).get("step") != cur.n:
