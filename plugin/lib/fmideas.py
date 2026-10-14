@@ -52,6 +52,7 @@ def child_cmd(model, system):
     """The prompt (lens + pack) goes in on stdin: packs can exceed the per-argument size limit."""
     c.refuse_if_paused()  # T-0591: fm relate's child comes through here too
     return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json", *NO_TOOLS,
+            "--max-budget-usd", f"{fmbudget.effective()[0]['run']:g}",  # T-0776: a hard stop at the per-command cap
             "--append-system-prompt", system]
 
 
