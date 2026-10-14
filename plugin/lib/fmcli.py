@@ -2569,6 +2569,49 @@ def cmd_research(args):
                                                                   f"{', '.join(made)}" if made else ""))
 
 
+def _research_items(p):
+    """(name, path of the file to read, mtime) for each note and brainstorm folder, newest first (T-0802)."""
+    folder = os.path.join(p.dir, "research")
+    items = []
+    for n in os.listdir(folder) if os.path.isdir(folder) else []:
+        path = os.path.join(folder, n)
+        if os.path.islink(path):
+            continue
+        if os.path.isdir(path):
+            path = os.path.join(path, "ideas.md")
+        elif n.endswith(".md"):
+            n = n[:-3]
+        else:
+            continue
+        if os.path.isfile(path) and not os.path.islink(path):
+            items.append((n, path, os.path.getmtime(path)))
+    return sorted(items, key=lambda i: i[2], reverse=True)
+
+
+def cmd_research_list(args):
+    p = resolve(args)
+    rows = []
+    for n, path, mt in _research_items(p):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            first = next((ln.strip("# \t\r\n") for ln in f if ln.strip()), "")
+        rows.append({"name": n, "date": time.strftime("%Y-%m-%d", time.localtime(mt)), "title": c.fit(first, 80),
+                     "bytes": os.path.getsize(path)})
+    out(args, rows, "\n".join(f"{r['name']}  {r['date']}  {r['bytes']}B  {r['title']}" for r in rows)
+        or "(no research saved)")
+
+
+def cmd_research_show(args):
+    p = resolve(args)
+    name = args.name[:-3] if args.name.endswith(".md") else args.name
+    items = {n: path for n, path, _ in _research_items(p)}
+    if name not in items:
+        import difflib
+        near = difflib.get_close_matches(name, list(items), n=1)
+        raise UsageError(f"no research named {name!r}" + (f"; closest: {near[0]}" if near else ""))
+    with open(items[name], encoding="utf-8", errors="replace") as f:
+        print(f.read(), end="")
+
+
 def cmd_drive(args):
     p = resolve(args)
     c.update_meta(p, drive=args.state == "on")
@@ -3486,6 +3529,12 @@ def build_parser():
                                                            "transcript")
     r.add_argument("--task")
     r.add_argument("--json", action="store_true")
+    r = rsp.add_parser("list", help="saved research, newest first (T-0802)")
+    r.set_defaults(fn=cmd_research_list)
+    r.add_argument("--json", action="store_true")
+    r = rsp.add_parser("show", help="print one saved research note or brainstorm's ideas.md (T-0802)")
+    r.set_defaults(fn=cmd_research_show)
+    r.add_argument("name")
     r = rsp.add_parser("ask", help="recall first, then parallel web researchers per sub-question; every quoted claim "
                                    "is checked against the page it cites; one note saved (T-0206)")
     r.set_defaults(fn=lazy("fmresearch", "cmd_ask"))
