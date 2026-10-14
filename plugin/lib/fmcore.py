@@ -363,6 +363,9 @@ def run_command(root, cmd, timeout=600, env=None):
         if pr.returncode == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
             # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
             return 5, redact(out) + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
+        if pr.returncode == 0 and _FAILED_SUMMARY.search(out or ""):  # T-0773: `… | tail` exits with tail's 0
+            return 1, redact(out) + ("\nfm: the output reports failing tests but the command exited 0 (a pipe such as "
+                                     "| tail hides the exit), so it counts as a failure")
         return pr.returncode, redact(out)
     except subprocess.TimeoutExpired:
         try:
@@ -378,6 +381,9 @@ def run_command(root, cmd, timeout=600, env=None):
 
 _NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
                        r"0 examples, 0 failures)")
+# test runners' failure summaries: unittest, pytest, jest, cargo, go
+_FAILED_SUMMARY = re.compile(r"(?m)^(FAILED \((failures|errors)=\d|=+ .*\b\d+ (failed|errors?)\b.* =+$|Tests: .*\b\d+ failed\b|"
+                             r"test result: FAILED\b|--- FAIL: )")
 _SOME_TESTS = re.compile(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
 
 

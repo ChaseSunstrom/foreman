@@ -711,3 +711,24 @@ class HookImportCost(unittest.TestCase):
         with self.assertRaises(TypeError):
             R(1, nope=2)
         self.assertNotEqual(R(1), R(2))
+
+
+class RunCommand(unittest.TestCase):
+    def test_a_pipe_cannot_hide_a_failing_test_run(self):
+        # T-0773: 'unittest … | tail -3' exits with tail's 0; evidence read "exit 0 · FAILED (errors=1)" twice in a day
+        root = os.path.dirname(__file__)
+        for summary in ("FAILED (errors=1)", "FAILED (failures=2, errors=1)", "==== 3 failed, 10 passed in 1.2s ====",
+                        "Tests:       1 failed, 4 passed, 5 total", "test result: FAILED. 3 passed; 1 failed",
+                        "--- FAIL: TestX (0.00s)"):
+            code, out = c.run_command(root, f"printf 'Ran 3 tests in 0.1s\\n\\n{summary}\\n' | tail -3")
+            self.assertNotEqual(code, 0, summary)
+            self.assertIn("reports failing tests", out)
+        for ok in ("Ran 3 tests in 0.1s\\n\\nOK", "==== 10 passed in 1.2s ====", "test result: ok. 3 passed; 0 failed"):
+            code, _ = c.run_command(root, f"printf '{ok}\\n' | tail -3")
+            self.assertEqual(code, 0, ok)
+        import tempfile  # the real producer, not a hand-written summary (T-0750's lesson)
+        with tempfile.TemporaryDirectory() as d:
+            with open(os.path.join(d, "test_x.py"), "w") as f:
+                f.write("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.fail('no')\n")
+            code, out = c.run_command(d, "python3 -m unittest test_x 2>&1 | tail -3")
+            self.assertEqual(code, 1, out)
