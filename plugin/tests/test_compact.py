@@ -78,6 +78,15 @@ class Compact(unittest.TestCase):
         self.assertNotIn("cut", out["stdout"])
         self.assertTrue(out["stdout"].startswith(wide))
 
+    def test_a_runaway_output_is_saved_as_its_head_and_tail(self):
+        # T-0824 (round 2): the full text had no size cap, so one runaway command could fill the disk
+        huge = "first line\n" + "x" * 99 + "\n" + ("y" * 99 + "\n") * 30000 + "last line\n"
+        code, out, full = run(huge)
+        self.assertLess(len(full), len(huge))
+        self.assertLessEqual(len(full), 2_100_000)
+        self.assertTrue(full.startswith("first line") and full.endswith("last line\n"))
+        self.assertIn("characters cut", full)
+
 
 if __name__ == "__main__":
     unittest.main()

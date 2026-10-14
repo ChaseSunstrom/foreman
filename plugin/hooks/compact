@@ -10,6 +10,7 @@ import re
 import sys
 
 LIMIT, HEAD, TAIL, HITS, WIDE = 6000, 40, 60, 40, 400
+SAVE_MAX = 2_000_000  # T-0824: characters of full text kept per output (head and tail): a runaway can't fill the disk
 FAILURE = re.compile(r"(?i)(error|exception|traceback|fatal|panic|fail(?:ed|ure|ing|s)?\b|denied|assert|warn(?:ing)?\b|"
                      r"segfault|killed|timed? ?out|not found|refused|cannot|can't|✗)")  # inside names: AssertionError
 
@@ -66,9 +67,13 @@ def main():
     folder = os.path.join(state, "outputs", sid)
     full = out + (("\n[stderr]\n" + err) if err else "")
     name = hashlib.sha1(full.encode("utf-8", "replace")).hexdigest()[:12]  # a file name, not a security use
+    if len(full) > SAVE_MAX:
+        half = SAVE_MAX // 2
+        full = (full[:half] + f"\n[Foreman: {len(full) - 2 * half:,} characters cut from the middle of this output]\n"
+                + full[-half:])
     path = os.path.join(folder, name + ".txt")
     try:
-        os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only, like transcripts
+        os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
         with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(full)
