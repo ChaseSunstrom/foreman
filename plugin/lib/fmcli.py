@@ -736,7 +736,7 @@ def task_finish(p, args):
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
     gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses)
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -812,6 +812,19 @@ def _finish_gaps(b, args, lenses):
         gaps.append("why-not-caught missing: --why-not-caught \"<the test, gate or guard that would have caught it "
                     "earlier>\" (or \"none: <why>\"); it becomes a follow-up")
     return gaps
+
+
+def _self_docs_gaps(p, b):
+    """CLEAN T-0764: a close that touches fmcli.py or plugin/skills must leave Foreman's own docs naming real commands
+    and skills (fm doctor's self docs check), so the close is refused, not caught later."""
+    import fmdoctor
+    import fmmap
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    if not base or not any(f == "plugin/lib/fmcli.py" or f.startswith("plugin/skills/")
+                           for f in fmmap.changed(p.root, base)):
+        return []
+    res = fmdoctor.check_self_docs()
+    return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
 
 
 def _commit_task(p, b, message, dry=False, stack=False, check=None):
