@@ -165,11 +165,32 @@ def record_pid(sid):
         try:
             os.kill(int(n), 0)
         except ProcessLookupError:
-            os.remove(os.path.join(d, n))
+            try:
+                os.remove(os.path.join(d, n))
+            except OSError:  # T-0820: an overlapping SessionStart removed it first
+                pass
         except (OSError, ValueError):
             pass
     for pid, start in _chain(os.getppid(), 4) if sid else []:  # sh, a re-exec'd python, then claude
         c.write_atomic(os.path.join(d, str(pid)), json.dumps({"sid": sid, "start": start}))
+        if _comm(pid) == "claude":  # T-0820: never past it, into the session whose Bash ran this claude -p
+            break
+
+
+def _comm(pid):
+    """A process's command name ("claude"), or ""."""
+    try:
+        with open(f"/proc/{pid}/comm") as f:
+            return f.read().strip()
+    except OSError:
+        pass
+    if os.path.isdir("/proc"):
+        return ""
+    try:  # no procfs (macOS, BSD)
+        return subprocess.run(["ps", "-o", "comm=", "-p", str(pid)], capture_output=True, text=True,
+                              timeout=5).stdout.strip().rsplit("/", 1)[-1]
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 def _by_pid():

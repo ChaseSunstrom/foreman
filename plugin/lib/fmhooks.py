@@ -1467,7 +1467,8 @@ def _auto_evidence(pl, p, ok):
         return
     if ok:
         r = pl.get("tool_response")
-        code, output = 0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+        code, output = c.judged(0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict)
+                                else str(r or ""))  # T-0820: what fm's own runs count as failing, Bash's runs too
     else:
         err = str(pl.get("error") or "")
         m = re.match(r"Exit code (\d+)", err)
@@ -1724,7 +1725,8 @@ def _headless():
 def _oneoff():
     """T-0775: a claude -p session Foreman didn't start (fm run sets FOREMAN_DRIVE_TASK) answers its prompt: no queue
     in its context, no drive, no claim on the project's session. The guard still applies."""
-    return os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli" and not os.environ.get("FOREMAN_DRIVE_TASK")
+    return (os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli" and not os.environ.get("FOREMAN_DRIVE_TASK")
+            and not os.environ.get("FOREMAN_BENCH"))  # T-0820: a bench replay measures Foreman at work
 
 
 ONEOFF_NOTE = ("Foreman: this is a one-off headless session (claude -p, not fm run). Answer the prompt and stop: don't "

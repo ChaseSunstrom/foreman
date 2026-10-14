@@ -360,13 +360,7 @@ def run_command(root, cmd, timeout=600, env=None):
         return 127, f"could not run bash: {e}"
     try:
         out, _ = pr.communicate(timeout=timeout)
-        if pr.returncode == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
-            # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
-            return 5, redact(out) + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
-        if pr.returncode == 0 and _FAILED_SUMMARY.search(out or ""):  # T-0773: `… | tail` exits with tail's 0
-            return 1, redact(out) + ("\nfm: the output reports failing tests but the command exited 0 (a pipe such as "
-                                     "| tail hides the exit), so it counts as a failure")
-        return pr.returncode, redact(out)
+        return judged(pr.returncode, redact(out))
     except subprocess.TimeoutExpired:
         try:
             os.killpg(pr.pid, 9)
@@ -377,6 +371,18 @@ def run_command(root, cmd, timeout=600, env=None):
         except subprocess.TimeoutExpired:  # a grandchild kept the pipe open after leaving the group
             out = ""
         return 124, redact((out or "") + f"\ntimed out after {timeout:g}s")
+
+
+def judged(code, out):
+    """(exit code, output) of a finished run, with an exit 0 that proves nothing or hides a failure counted as one;
+    fm's own runs and verify commands run in Bash (T-0820) both go through it."""
+    if code == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
+        # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
+        return 5, out + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
+    if code == 0 and _FAILED_SUMMARY.search(out or ""):  # T-0773: `… | tail` exits with tail's 0
+        return 1, out + ("\nfm: the output reports failing tests but the command exited 0 (a pipe such as | tail "
+                         "hides the exit), so it counts as a failure")
+    return code, out
 
 
 _NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"

@@ -111,6 +111,29 @@ class Watch(Base):
                 w.kill()
             self.assertFalse(os.path.exists(beat), f"{sig.name} left the heartbeat")
 
+    def test_session_start_survives_a_racing_cleanup_and_keeps_to_its_own_claude(self):
+        # T-0820 (round-1 review): an overlapping SessionStart removing the same dead entry crashed record_pid, and a
+        # claude -p run from a session's Bash re-mapped that session's claude to itself
+        import fmbus
+        d = os.path.join(self.home, "state", "sessions", "by-pid")
+        os.makedirs(d, exist_ok=True)
+        real_remove, real_chain = os.remove, fmbus._chain
+        def racing_remove(path):
+            real_remove(path)
+            raise FileNotFoundError(path)  # the other SessionStart got there first
+        open(os.path.join(d, "999999"), "w").close()  # a dead pid's entry
+        names = {101: "sh", 102: "claude", 103: "bash", 104: "claude"}  # hook → sh → child claude -p → bash → parent
+        os.remove, fmbus._chain = racing_remove, lambda pid, depth: [(p, "t") for p in names][:depth]
+        real_comm = fmbus._comm if hasattr(fmbus, "_comm") else None
+        fmbus._comm = lambda pid: names.get(pid, "")
+        try:
+            fmbus.record_pid("sess-child")
+        finally:
+            os.remove, fmbus._chain = real_remove, real_chain
+            if real_comm:
+                fmbus._comm = real_comm
+        self.assertEqual(sorted(os.listdir(d)), ["101", "102"], "up to its own claude, not the parent session's")
+
     def test_it_finds_its_session_from_the_session_start_hook(self):
         import fmbus
         saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}

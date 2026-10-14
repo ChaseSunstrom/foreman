@@ -816,6 +816,17 @@ class AutoEvidence(HookCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": ok})
         self.assertEqual(len(c.find_brief(self.project(), tid).evidence()), n, "other commands record nothing")
 
+    def test_a_piped_verify_that_hides_its_failure_is_recorded_as_failing(self):
+        # T-0820 (round-1 review): T-0773's exit-0 failure check ran only in fm's own runs, not in Bash's
+        self.fm("init")
+        tid = self.task()
+        self.fm("task", "ac", tid, "add", "suite passes", "--verify", "python3 -m unittest test_x 2>&1 | tail -3")
+        for out, code in (("FAILED (failures=2)", "✗ exit 1"), ("Ran 0 tests in 0.000s\n\nOK", "✗ exit 5")):
+            self.hook("PostToolUse", {"tool_name": "Bash", "tool_response": {"stdout": out, "stderr": "",
+                                                                            "interrupted": False},
+                                      "tool_input": {"command": "python3 -m unittest test_x 2>&1 | tail -3"}})
+            self.assertIn(code, c.find_brief(self.project(), tid).evidence()[-1], out)
+
     def test_a_passing_criterion_check_also_verifies_the_current_step(self):
         # T-0149 (self-improvement pass 1): it was tagged (ac N) only, so the Stop gate kept asking for step evidence
         self.fm("init")
@@ -1359,6 +1370,11 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
                                "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
         self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+        # T-0820: a bench replay's claude -p measures Foreman at work, not a one-off answer
+        import fmbench
+        bench = dict(fmbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",
+                     FOREMAN_HOME=self.home, CLAUDE_ENV_FILE=self.env_file)
+        self.assertNotIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=bench)))
 
     def test_drive_offers_queued_work_while_background_runs(self):
         # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
