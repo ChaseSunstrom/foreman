@@ -193,3 +193,4 @@ class BuilderGates(unittest.TestCase):
             self.assertIn("fm check --affected --evidence", text)
             self.assertIn("full gates run after the merge", text)
             self.assertNotRegex(text, r"`fm check --evidence")
+        self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808
