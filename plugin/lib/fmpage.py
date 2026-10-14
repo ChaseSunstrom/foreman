@@ -12,13 +12,24 @@ import time
 import fmcore as c
 
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "page.html")
-ABSOLUTE = re.compile(r"(?<![\w.-])(?:/home/|/Users/|/root/|~/)")
+ABSOLUTE = re.compile(r"(?<![\w.-])(?:/home/|/Users/|/root/)")  # a bare ~/ names no user (review of T-0786)
 CLUSTER = ("id", "capability", "mark", "why", "grounding", "value", "effort", "risk")
 IDEA = ("n", "title", "type", "value", "effort", "lens")
 
 
 class Leak(Exception):
     pass
+
+
+def _private():
+    """Review of T-0786: the user's home and name in any spelling a path takes (/var/home/x, -home-x- in an encoded
+    folder name, C:\\Users\\x), not only the three prefixes."""
+    import getpass
+    home, user = os.path.expanduser("~").rstrip("/"), getpass.getuser()
+    parts = [re.escape(home)] if home not in ("", "/") else []
+    if user and len(user) >= 2:
+        parts.append(rf"(?:^|[/\\-]){re.escape(user)}(?:[/\\-]|$)")
+    return re.compile("|".join(parts), re.I) if parts else None
 
 
 def clean(obj, where=""):
@@ -29,7 +40,8 @@ def clean(obj, where=""):
         return [clean(v, f"{where}[{i}]") for i, v in enumerate(obj)]
     if isinstance(obj, str):
         obj = c.redact(obj)
-        if ABSOLUTE.search(obj):
+        mine = _private()
+        if ABSOLUTE.search(obj) or re.search(r"(?i)\b[a-z]:\\users\\", obj) or mine and mine.search(obj):
             raise Leak(where)
     return obj
 
@@ -49,6 +61,11 @@ def now_data(p):
 
 def load_catalogue(p, name):
     import fmcli
+    if name.endswith(".json") and os.path.lexists(name):  # a catalogue file anywhere (the brainstorm's scratch copy)
+        if os.path.islink(name) or not os.path.isfile(name):
+            raise fmcli.UsageError(f"{name} must be a plain file, not a link")
+        with open(name, encoding="utf-8") as f:
+            return _clusters(fmcli, name, json.load(f))
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,80}", name):
         raise fmcli.UsageError(f"catalogue name must be a plain file name, got {name!r}")
     folder = os.path.join(p.dir, "research")
@@ -59,8 +76,15 @@ def load_catalogue(p, name):
             break
     else:
         raise fmcli.UsageError(f"no catalogue {name!r}: save it as research/{name}.json or research/{name}/catalogue.json")
+    return _clusters(fmcli, name, rows)
+
+
+def _clusters(fmcli, name, rows):
     if not isinstance(rows, list):
         raise fmcli.UsageError(f"catalogue {name!r} must be a list of clusters")
+    bad = [r.get("id") for r in rows if isinstance(r, dict) and not re.fullmatch(r"[\w-]{1,100}", str(r.get("id")))]
+    if bad:  # the page keeps picks at db doc picks/<id>: a slash would reach elsewhere in the store
+        raise fmcli.UsageError(f"catalogue {name!r}: cluster id {bad[0]!r} must be letters, digits, _ or -")
     return [dict({k: r.get(k) for k in CLUSTER}, ideas=[{k: i.get(k) for k in IDEA} for i in r.get("ideas") or []])
             for r in rows if isinstance(r, dict)]
 
@@ -75,12 +99,12 @@ def cmd_page(args):
     p = fmcli.resolve(args)
     meta = c.read_meta(p)
     if args.url:
-        if not re.fullmatch(r"https://claude\.ai/\S+", args.url):
+        if not re.fullmatch(r"https://claude\.ai/(?:code/)?artifact/[\w-]{6,80}", args.url):
             raise fmcli.UsageError("--url must be the https://claude.ai/... link the Artifact tool returned")
         meta = c.update_meta(p, page_url=args.url)
     catalogue = load_catalogue(p, args.catalogue) if args.catalogue else []
-    data = {"eyebrow": f"Foreman · {time.strftime('%Y-%m-%d')} · {p.slug}" + (f" · {args.catalogue}" if args.catalogue else ""),
-            "title": f"{p.slug}: now" + (" and the catalogue" if catalogue else ""),
+    data = {"eyebrow": f"Foreman · {time.strftime('%Y-%m-%d')} · {p.slug}" + (f" · {os.path.basename(args.catalogue).removesuffix('.json')}" if args.catalogue else ""),
+            "title": f"{os.path.basename(p.root.rstrip('/')).replace('-', ' ').title()} Board",  # a name, stable
             "lede": "What Foreman is working on, what waits, and what just closed.",
             "now": now_data(p), "catalogue": catalogue}
     try:
@@ -92,6 +116,8 @@ def cmd_page(args):
         page = f.read()
     page = page.replace("__TITLE__", html.escape(data["title"])).replace("__DATA__", embed(data))
     path = os.path.abspath(args.out) if args.out else os.path.join(p.dir, "page.html")
+    if not path.endswith(".html") or os.path.islink(path):  # review: --out never overwrites another kind of file
+        raise fmcli.UsageError(f"--out must be a .html file that isn't a link: {path}")
     c.write_atomic(path, page)
     url = meta.get("page_url")
     fmcli.out(args, {"path": path, "url": url, "queue": len(data["now"]["queue"]), "clusters": len(catalogue)},

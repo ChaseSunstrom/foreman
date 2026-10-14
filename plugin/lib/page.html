@@ -157,6 +157,7 @@ footer { color: var(--muted); font-size: 13px; max-width: 72ch; }
     if (!db) return;
     const cur = picks[id] && picks[id].choice;
     const next = cur === choice ? "" : choice;
+    if (!/^[\w-]{1,100}$/.test(id)) return;  // a doc id, never a path into the store
     try { await db.doc("picks/" + id).set({ choice: next, at: new Date().toISOString() }); }
     catch (e) { document.getElementById("sync").textContent = "Couldn't save that pick: " + (e && e.message || "try again"); }
   }

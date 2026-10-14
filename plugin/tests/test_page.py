@@ -15,7 +15,7 @@ CATALOGUE = [
      "grounding": "plugin/lib/fmserve.py", "value": 4, "effort": "M", "risk": "low",
      "ideas": [{"n": 7, "title": "Publish the queue", "type": "FEATURE", "value": "4", "effort": "S", "lens": "user"}]},
 ]
-ABSOLUTE = re.compile(r"/home/|/Users/|/root/|~/")
+ABSOLUTE = re.compile(r"/home/|/Users/|/root/")
 
 
 class Page(ForemanTestCase):
@@ -67,7 +67,7 @@ class Page(ForemanTestCase):
         self.assertFalse(os.path.exists(os.path.join(self.p.dir, "page.html")))
         self.fm("task", "drop", tid, "test")
         os.makedirs(os.path.join(self.p.dir, "research", "brain"), exist_ok=True)
-        bad = [dict(CATALOGUE[0], grounding="see ~/.claude/rules")]
+        bad = [dict(CATALOGUE[0], grounding="see /home/someone/.claude/rules")]  # a bare ~/ names no user: allowed
         with open(os.path.join(self.p.dir, "research", "brain", "catalogue.json"), "w") as f:
             json.dump(bad, f)
         r = self.fm("page", "--catalogue", "brain", check=False)
@@ -82,3 +82,54 @@ class Page(ForemanTestCase):
         r = self.fm("page", "--catalogue", "nope", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("nope", r.stderr)
+
+
+class PageHardening(ForemanTestCase):
+    """Review of T-0786 (commit security review): four classes of hole in fm page."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.p = c.find_project(self.repo)
+
+    def write_cat(self, rows, name="cat.json"):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w") as f:
+            json.dump(rows, f)
+        return path
+
+    def test_home_and_user_in_any_spelling_are_refused(self):
+        import getpass
+        user, home = getpass.getuser(), os.path.expanduser("~")
+        for text in (f"see /var{home}/x", f"/tmp/claude-1000/-home-{user}--proj/scratch", f"C:\\Users\\{user}\\x",
+                     f"{home}/notes"):
+            r = self.fm("page", "--catalogue", self.write_cat([{"id": "a", "capability": text}]), check=False)
+            self.assertNotEqual(r.returncode, 0, text)
+            self.assertIn("catalogue[0].capability", r.stderr)
+        self.fm("page", "--catalogue", self.write_cat([{"id": "a", "capability": "see ~/.claude and plugin/lib"}]))
+
+    def test_only_an_artifact_link_is_recorded(self):
+        for bad in ("https://claude.ai.evil.example/x", "https://claude.ai/../x", "https://claude.ai/artifact/a b"):
+            self.assertNotEqual(self.fm("page", "--url", bad, check=False).returncode, 0, bad)
+        self.fm("page", "--url", "https://claude.ai/code/artifact/0f6e2b1c-9d3a-4c1e-8f7a-2b3c4d5e6f70")
+
+    def test_out_and_catalogue_paths_are_plain_files(self):
+        victim = os.path.join(self.tmp, "notes.txt")
+        with open(victim, "w") as f:
+            f.write("keep me\n")
+        self.assertNotEqual(self.fm("page", "--out", victim, check=False).returncode, 0, "only .html")
+        link = os.path.join(self.tmp, "page.html")
+        os.symlink(victim, link)
+        self.assertNotEqual(self.fm("page", "--out", link, check=False).returncode, 0, "no symlinked output")
+        self.assertEqual(read_text(victim), "keep me\n")
+        cat = self.write_cat([{"id": "a", "capability": "x"}])
+        catlink = os.path.join(self.tmp, "linked.json")
+        os.symlink(cat, catlink)
+        self.assertNotEqual(self.fm("page", "--catalogue", catlink, check=False).returncode, 0, "no symlinked input")
+
+    def test_cluster_ids_are_plain_names(self):
+        # the page writes picks to db doc "picks/<id>": an id with a slash would write elsewhere in the store
+        r = self.fm("page", "--catalogue", self.write_cat([{"id": "a/b/c", "capability": "x"}]), check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("id", r.stderr)
+        self.assertIn('/^[\\w-]{1,100}$/', read_text(os.path.join(c.PLUGIN_ROOT, "lib", "page.html")))
