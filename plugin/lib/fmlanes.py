@@ -132,6 +132,9 @@ def builder_brief(p, b, args):
     if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
         where = f" in {b.meta['lane']}" if b.meta.get("lane") else ""
         raise c.PolicyError(f"{b.id} is {b.status}{where}: a builder takes a task nobody is working on")
+    gaps = c.plan_gaps(b, c.read_meta(p).get("autonomy", "standard"))
+    if gaps:  # T-0823: the builder's first act is fm focus, which refuses these
+        raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
         raise fmcli.UsageError(f"{b.id} has no criterion with a verify command: a builder needs checks it can run "
                                f"(fm task ac {b.id} add \"…\" --verify \"<cmd>\")")

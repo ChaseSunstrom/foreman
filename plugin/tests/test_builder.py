@@ -47,6 +47,15 @@ class Brief(_Tasks):
         self.assertIn("foreman:fm-builder", res["agent"])
         self.assertIn("builder", self.fm("task", "show", tid).stdout)
 
+    def test_an_under_planned_task_gets_no_brief(self):
+        # T-0823: a builder launched for a task fm focus refuses (no Interpretation) could only stop and report
+        tid = json.loads(self.fm("task", "new", "Half planned", "--type", "FIX", "--tier", "M", "--ac",
+                                 "ok :: python3 -c 'print(1)'", "--step", "s", "--json").stdout)["id"]
+        r = self.fm("lane", "brief", tid, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Interpretation", r.stderr)
+        self.assertNotIn("builder", self.fm("task", "show", tid).stdout.split("---")[1], "no slot taken")
+
     def test_the_brief_names_its_base_and_the_isolation_rule(self):
         # T-0379 (JARVIS 2026-10-09): Claude Code makes the worktree from the default branch, so a builder can start on
         # stale code; and its isolation refuses make/gradle/"too complex" commands, which builders retried again and again
