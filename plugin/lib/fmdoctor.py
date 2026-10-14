@@ -449,6 +449,42 @@ def check_python(v=sys.version_info[:3], refresh=None, child=False):
     return Result("python", "FAIL", f"python3 is {have}; Foreman needs 3.12.7+ (rerun install.sh to install one)")
 
 
+# T-0785: (feature, minimum Claude Code, globs under plugin/, regex showing it is used); a feature no file uses isn't checked
+CC_FEATURES = [
+    ("hook onFailure", (2, 1, 295), ["hooks/*.json"], r'"onFailure"'),
+    ("agent omitClaudeMd", (2, 1, 271), ["agents/*.md"], r"(?m)^omitClaudeMd:"),
+    ("agent effort/maxTurns", (2, 1, 78), ["agents/*.md"], r"(?m)^(effort|maxTurns):"),
+    ("hook if", (2, 1, 85), ["hooks/*.json"], r'"if"\s*:'),
+    ("plugin monitors", (2, 1, 105), ["monitors/monitors.json"], r"."),
+    ("PostToolUse updatedToolOutput", (2, 1, 121), ["lib/fmhooks.py"], r"updatedToolOutput"),
+    ("UserPromptSubmit sessionTitle", (2, 1, 94), ["lib/fmhooks.py"], r"sessionTitle"),
+    ("worktree.baseRef setting", (2, 1, 133), ["settings.json"], r"baseRef"),
+]
+
+
+def check_cc_features(version=None, plugin=PLUGIN):
+    """T-0785: WARN naming each Foreman feature in use that the installed Claude Code is too old for (it would
+    silently do nothing). `version`: stubbed (tuple); default fmhooks._cc_version(); () = unknown, nothing to compare."""
+    if version is None:
+        import fmhooks
+        version = fmhooks._cc_version()
+    if not version:
+        return Result("claude code features", "PASS", "Claude Code version unknown; not compared")
+    old = []
+    for name, need, globs, pat in CC_FEATURES:
+        if version >= need:
+            continue
+        for g in globs:
+            if any(re.search(pat, open(f, encoding="utf-8", errors="replace").read())
+                   for f in glob.glob(os.path.join(plugin, g))):
+                old.append(f"{name} (needs {'.'.join(map(str, need))})")
+                break
+    have = ".".join(map(str, version))
+    return Result("claude code features", "WARN" if old else "PASS",
+                  f"Claude Code {have} is too old for {', '.join(old)}; upgrade it (claude update)" if old
+                  else f"Claude Code {have} supports every Claude Code feature Foreman uses")
+
+
 def check_scripts(home, full=False):
     bad = []
     for s in SCRIPTS:
@@ -931,7 +967,7 @@ def run_all(full=False, accept_supply=False):
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
-                check_routing()]
+                check_routing(), check_cc_features()]
     return results
 
 

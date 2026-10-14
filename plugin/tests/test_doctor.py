@@ -27,6 +27,20 @@ class Checks(unittest.TestCase):
             f.write(text)
         return path
 
+    def test_claude_code_features(self):
+        # T-0785: a feature the installed Claude Code is too old for silently does nothing; only used features count
+        self.write("pl/agents/a.md", "---\nname: a\nomitClaudeMd: true\n---\n")
+        self.write("pl/hooks/hooks.json", '{"hooks": {"Stop": [{"hooks": [{"onFailure": "block"}]}]}}')
+        pl = os.path.join(self.t, "pl")
+        r = d.check_cc_features((2, 1, 100), pl)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("omitClaudeMd", r.detail)
+        self.assertIn("onFailure", r.detail)
+        self.assertNotIn("monitors", r.detail)
+        self.assertNotIn("sessionTitle", r.detail)
+        self.assertEqual(d.check_cc_features((2, 1, 299), pl).status, "PASS")
+        self.assertEqual(d.check_cc_features((), pl).status, "PASS")  # unknown version: nothing to compare
+
     def test_mod_release(self):
         # T-0191: every other session draws the installed foreman-ui; it lagged this repo (0.4.0 vs 0.5.0) unnoticed
         repo = os.path.join(self.t, "fhome")
