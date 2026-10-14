@@ -164,6 +164,19 @@ class SessionStart(HookCase):
 
 
 class UserPromptSubmit(HookCase):
+    def test_session_is_named_after_its_task(self):
+        # T-0781: the resume picker showed Claude Code's own session names, never the task being worked
+        self.fm("init")
+        title = lambda p: ((parse(p) or {}).get("hookSpecificOutput") or {}).get("sessionTitle")
+        start = lambda: self.hook("SessionStart", {"source": "startup"}, env={"CLAUDE_ENV_FILE": self.env_file})
+        self.assertIsNone(title(start()), "no active task: no name")
+        tid = self.task("Fix the login timeout on slow wifi")
+        self.assertTrue((title(start()) or "").startswith(f"{tid} Fix the login"))
+        self.assertIsNone(title(self.hook("UserPromptSubmit", {"prompt": "go on"})), "same task: no rename")
+        other = self.task("Second thing")
+        self.assertEqual(title(self.hook("UserPromptSubmit", {"prompt": "next"})), f"{other} Second thing")
+        self.assertIsNone(title(self.hook("UserPromptSubmit", {"prompt": "more"})))
+
     def test_intake_block_is_summarised(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nFEATURE!: b\nCLEAN?: c\nCONTEXT: d"}))

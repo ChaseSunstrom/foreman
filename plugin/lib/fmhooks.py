@@ -177,6 +177,27 @@ def _title_seq(sd):
     return f"\x1b]0;foreman · {_clean(label, 80)}\x07"
 
 
+def _session_title(sid, sd):
+    """T-0781: Claude Code's own session name (resume picker, /resume) after the active task, once per task change:
+    'T-NNNN <title>'; None when no task is active or this session already carries that name."""
+    a = sd.get("active") if sd else None
+    if not a or not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return None
+    path = os.path.join(c.state_dir(), "sessions", f"{sid}.title")
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == a["id"]:
+                return None
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, a["id"])
+    except OSError:
+        return None
+    return f"{a['id']} {_clean(a.get('title') or '', 50)}".strip()
+
+
 def _progress_seq(sd):
     a = sd.get("active") if sd else None
     if a and a["steps_total"]:
@@ -283,6 +304,8 @@ def session_start(pl):
     except Exception:
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
+        out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:
         out["initialUserMessage"] = first
@@ -571,6 +594,9 @@ def user_prompt_submit(pl):
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
                                      "additionalContext": ("Foreman: " + ". ".join(parts) + ".")[:PROMPT_BUDGET]}
+    name = _session_title(pl.get("session_id"), sd)
+    if name:  # T-0781: the focus moved since this session was last named
+        out.setdefault("hookSpecificOutput", {"hookEventName": "UserPromptSubmit"})["sessionTitle"] = name
     return out
 
 
