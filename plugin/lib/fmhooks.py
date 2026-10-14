@@ -787,6 +787,25 @@ def _committed(name):
     return mod
 
 
+OUTWARD = {"PushNotification", "Artifact", "ArtifactData", "ArtifactComments", "SendMessage", "RemoteTrigger"}
+OUTWARD_MCP = "mcp__claude_ai_Claude_Docs__"
+_READS = {"get", "list", "query", "profiles", "read", "open", "quickstart", "guide", "export"}
+
+
+def _outward_denial(pl):
+    """T-0784: in a sensitive project (fm sensitive on) Claude Code's tools that send content off the machine are
+    refused; reads (an artifact's rows, a doc) and everything in other projects pass."""
+    tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
+    action = str(ti.get("action") or "") if isinstance(ti, dict) else ""
+    if action in _READS or tool.startswith(OUTWARD_MCP) and tool[len(OUTWARD_MCP):] in _READS:
+        return None
+    p = c.find_project(_cwd(pl))
+    if not p or not c.read_meta(p).get("sensitive"):
+        return None
+    return (f"Foreman: this repo is marked sensitive (fm sensitive on), so {tool} can't send its content off the machine "
+            f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
+
+
 def _guard_decision(pl, guard):
     ctx, p, act = _guard_ctx(pl, guard)
     found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
@@ -816,6 +835,16 @@ def _pre_tool_use(raw):
             if d:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                          "permissionDecisionReason": d}}))
+            return 0
+        if tool in OUTWARD or tool.startswith(OUTWARD_MCP):  # T-0784: content leaving the machine
+            try:
+                why = _outward_denial(pl)
+            except Exception:
+                log_error("PreToolUse", _tb())
+                why = None
+            if why:
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                         "permissionDecisionReason": why}}))
             return 0
         if tool not in GUARDED:
             return 0
