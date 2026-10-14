@@ -14,6 +14,7 @@ import fmcore as c
 LIVE_S = 15 * 60       # a session whose statusline wrote within this is live
 LEASE_S = 20 * 60      # an edit holds its function this long, renewed by each edit
 FRESH_ALL_S = 15 * 60  # a session reading mail for the first time gets broadcasts this recent
+WATCH_S = 10           # a watcher whose heartbeat is this fresh delivers wakes; older, tmux is tried
 KEEP = 500             # messages kept
 TYPES = ("note", "steer", "stop")
 _DEF = re.compile(r"^(\s*)(?:(?:export|pub|async|static|public|private)\s+)*(?:def|class|function|fn|func)\s+(\w+)")
@@ -89,9 +90,21 @@ def note(sid):
     return ("Foreman mail: " + render(msgs)) if msgs else None
 
 
+def watched(sid):
+    """T-0777: the session runs fm bus watch (its plugin monitor), which beat within WATCH_S."""
+    sid = _sid(sid)
+    try:
+        names = [n for n in os.listdir(_dir()) if n.startswith(f"watch-{sid}")] if sid else []
+        return any(time.time() - os.path.getmtime(os.path.join(_dir(), n)) < WATCH_S for n in names)
+    except OSError:
+        return False
+
+
 def wake(sid):
-    """One short line typed into the session's tmux pane (the statusline recorded it), so an idle session reads its
-    mail; False when no pane is known."""
+    """Wake an idle session to read its mail: its watcher (fm bus watch) prints the mail itself; else one short line
+    typed into its tmux pane (the statusline recorded it). False when neither is known."""
+    if watched(sid):
+        return True
     snap = _snapshot(sid)
     pane = (snap or {}).get("tmux_pane")
     if not pane or not re.fullmatch(r"%\d+", str(pane)):
@@ -113,6 +126,124 @@ def _snapshot(sid):
             return json.load(f)
     except (OSError, ValueError):
         return None
+
+
+def _proc(pid):
+    """(parent pid, start time) of a live process, or None."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            rest = f.read().rsplit(")", 1)[1].split()
+        return int(rest[1]), rest[19]
+    except (OSError, IndexError, ValueError):
+        pass
+    if os.path.isdir("/proc"):
+        return None
+    try:  # no procfs (macOS, BSD)
+        out = subprocess.run(["ps", "-o", "ppid=,lstart=", "-p", str(pid)], capture_output=True, text=True,
+                             timeout=5).stdout.split(None, 1)
+        return (int(out[0]), out[1].strip()) if len(out) == 2 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+
+
+def _chain(pid, depth):
+    """pid and its ancestors, nearest first, each with its start time."""
+    out = []
+    while pid > 1 and len(out) < depth and (info := _proc(pid)):
+        out.append((pid, info[1]))
+        pid = info[0]
+    return out
+
+
+def record_pid(sid):
+    """SessionStart: the hook's ancestors (the claude process among them) map to this session, so a monitor the
+    session runs finds its id by walking its own parents (fm bus watch). Entries of dead processes go."""
+    sid = _sid(sid)
+    d = os.path.join(c.state_dir(), "sessions", "by-pid")
+    os.makedirs(d, exist_ok=True)
+    for n in os.listdir(d):
+        try:
+            os.kill(int(n), 0)
+        except ProcessLookupError:
+            os.remove(os.path.join(d, n))
+        except (OSError, ValueError):
+            pass
+    for pid, start in _chain(os.getppid(), 4) if sid else []:  # sh, a re-exec'd python, then claude
+        c.write_atomic(os.path.join(d, str(pid)), json.dumps({"sid": sid, "start": start}))
+
+
+def _by_pid():
+    """(session id, its claude pid) from the nearest recorded ancestor of this process, or (None, None)."""
+    d = os.path.join(c.state_dir(), "sessions", "by-pid")
+    for pid, start in _chain(os.getpid(), 12):
+        try:
+            with open(os.path.join(d, str(pid))) as f:
+                rec = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if rec.get("start") == start and rec.get("sid"):  # not a reused pid
+            return rec["sid"], pid
+    return None, None
+
+
+def own_session():
+    return _sid(c.session_id()) or _by_pid()[0]
+
+
+def watch(sid=None, interval=2.0, out=None, stop=None):
+    """T-0777, the plugin monitor: one line per new message for this session (or all), nothing otherwise; never marks
+    mail read (the PreToolUse note does). Polls mail.jsonl's size every interval, beats a heartbeat so senders skip
+    tmux (wake), and ends with its session: parent gone, claude process gone, or stdout closed."""
+    import sys
+    out, ppid = out or sys.stdout, os.getppid()
+    stop = stop or (lambda: os.getppid() != ppid)
+    mail, since, sig, beat, anchor = os.path.join(_dir(), "mail.jsonl"), time.time(), None, None, None
+    tries = 30
+    try:
+        while not stop():
+            if not anchor and (tries := tries - 1) >= 0:  # SessionStart records the claude process (first minute)
+                found, anchor = _by_pid()
+                sid = sid or _sid(c.session_id()) or found
+            if anchor:
+                try:
+                    os.kill(anchor, 0)
+                except ProcessLookupError:
+                    return
+                except OSError:
+                    pass
+            if sid:
+                beat = beat or os.path.join(_dir(), f"watch-{_sid(sid)}")
+                try:
+                    os.utime(beat)
+                except OSError:
+                    open(beat, "a").close()
+                try:
+                    st = os.stat(mail)
+                    now_sig = (st.st_size, st.st_mtime_ns)
+                except OSError:
+                    now_sig = None
+                if now_sig and now_sig != sig:
+                    sig = now_sig
+                    try:
+                        with open(mail) as f:
+                            msgs = [json.loads(x) for x in f if x.strip()]
+                    except (OSError, ValueError):
+                        msgs = []
+                    for m in msgs:
+                        if m.get("t", 0) > since and _for(m, _sid(sid)):
+                            out.write(f"Foreman {m.get('type', 'note')} from {str(m.get('from'))[:8]}: "
+                                      f"{c.fit(' '.join(str(m.get('text', '')).split()), 160)} (read it: fm bus read)\n")
+                            out.flush()
+                    since = max([since] + [m.get("t", 0) for m in msgs])
+            time.sleep(interval)
+    except (BrokenPipeError, KeyboardInterrupt):
+        pass
+    finally:
+        if beat:
+            try:
+                os.remove(beat)
+            except OSError:
+                pass
 
 
 def live():
@@ -261,6 +392,9 @@ def cmd_bus(args):
                 if args.wake and wake(s)]
         return fmcli.out(args, dict(msg, woke=woke), f"Sent to {msg['to']}" + (f"; woke {len(woke)}" if woke else "")
                          + ".")
+    if args.action == "watch":
+        watch(args.words[0] if args.words else None)
+        return 0
     msgs = unread(me or (args.words[0] if args.words else ""), mark=True)
     return fmcli.out(args, {"messages": msgs}, render(msgs) if msgs else "No unread mail.")
 

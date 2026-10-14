@@ -3747,10 +3747,12 @@ def build_parser():
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
                                                   "yours (T-0708)")
-    s.add_argument("action", choices=["send", "read"])
+    s.add_argument("action", choices=["send", "read", "watch"],
+                   help="watch: the plugin monitor's stream of this session's new mail (T-0777)")
     s.add_argument("words", nargs="*")
     s.add_argument("--type", default="note", choices=["note", "steer", "stop"])
-    s.add_argument("--wake", action="store_true", help="type one short line into a tmux-hosted session")
+    s.add_argument("--wake", action="store_true",
+                   help="wake an idle session: its watcher prints the mail, else one line typed into its tmux pane")
     s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
     s.add_argument("target", nargs="?", help="FILE[::SYMBOL]")
