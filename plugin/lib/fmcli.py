@@ -3038,7 +3038,10 @@ _LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)
 _REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output one section per lens, \"## <lens>: ok | "
                "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario, "
                "a reproducer (the command, input or test that shows it; without one it's a lead, not a finding: "
-               "T-0651) and a fix; then \"## Not checked\". Only verified findings.")
+               "T-0651) and a fix; then \"## Not checked\". Only verified findings. Keep each finding on one "
+               "HIGH/MEDIUM/LOW line, then give ReportFindings' fields under it: file (repo-relative), line, summary "
+               "(one sentence), short_summary (<=60 chars), failure_scenario (concrete inputs/state -> wrong output), "
+               "category (kebab-case), verdict (CONFIRMED|PLAUSIBLE, optional); most severe first.")
 
 
 _FINDING = re.compile(r"(?m)^[ \t]*(?:[-*]|\d+[.)]?)?[ \t]*(?:\*\*|#+[ \t]*)?\[?(?:CRIT(?:ICAL)?|HIGH|MED(?:IUM)?)\b[\s*:—–\]-]*(.+)$")
@@ -3252,6 +3255,8 @@ def cmd_audit(args):
            f"fm task audit {b.id} <lens> …" + (f" (a {r.stdout.count(chr(10))}-line L diff: fm audit prep {b.id} --split "
                                                f"gives each lens group a fresh reviewer, in parallel)" if big else "")
            if sections else f"Record it with fm task audit {b.id} self …")
+    if sections:  # T-0780: verified findings reach the host's review UI before they become lenses
+        how += "\nReport the verified findings with ReportFindings (empty list if none) before recording lenses."
     try:  # T-0276: installed review skills that fit a lens; their findings count as that lens
         import fmplugins
         fit = fmplugins.lens_skills(p, [x for x in lenses if x != "self"])
