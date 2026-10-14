@@ -10,13 +10,15 @@ import unittest
 SCRIPT = os.path.join(os.path.dirname(__file__), "..", "hooks", "compact")
 
 
-def run(stdout, stderr="", **extra):
+def run(stdout, stderr="", state=None, **extra):
     with tempfile.TemporaryDirectory() as home:
         pl = dict({"session_id": "s-1", "tool_name": "Bash", "tool_input": {"command": "pytest"}, "cwd": home,
                    "hook_event_name": "PostToolUse", "tool_response": {"stdout": stdout, "stderr": stderr,
                                                                       "interrupted": False, "isImage": False}}, **extra)
+        env = {k: v for k, v in os.environ.items() if k != "FOREMAN_STATE"}
+        env.update(FOREMAN_HOME=home, **({"FOREMAN_STATE": state} if state else {}))
         p = subprocess.run([sys.executable, SCRIPT], input=json.dumps(pl), capture_output=True, text=True, timeout=30,
-                           env=dict(os.environ, FOREMAN_HOME=home))
+                           env=env)
         out = json.loads(p.stdout)["hookSpecificOutput"]["updatedToolOutput"] if p.stdout.strip() else None
         full = None
         if out:
@@ -57,6 +59,24 @@ class Compact(unittest.TestCase):
     def test_stderr_failures_survive_too(self):
         code, out, _ = run("\n".join(f"line {i}" for i in range(3000)), stderr="fatal: not a git repository\n")
         self.assertIn("fatal: not a git repository", out["stdout"] + out["stderr"])
+
+    def test_state_dir_write_errors_and_no_false_footer(self):
+        # T-0821 (round-1 review): FOREMAN_STATE moves Foreman's state, so the full text goes there; a folder it can't
+        # write leaves the output untouched instead of crashing the hook; nothing cut claims no cut
+        big = "\n".join(f"line {i}" for i in range(3000))
+        with tempfile.TemporaryDirectory() as state:
+            code, out, full = run(big, state=state)
+            self.assertEqual(full, big)
+            self.assertIn(os.path.join(os.path.realpath(state), "outputs", "s-1"),
+                          os.path.realpath(re.search(r"full output: ([^\s\]]+)", out["stdout"]).group(1)))
+            blocker = os.path.join(state, "file")
+            open(blocker, "w").close()
+            p = run(big, state=os.path.join(blocker, "state"))
+            self.assertEqual((p[0], p[1]), (0, None), "can't write: the output passes through")
+        wide = "\n".join("w" * 300 for _ in range(50))  # over the limit in few lines, none past WIDE
+        code, out, _ = run(wide)
+        self.assertNotIn("cut", out["stdout"])
+        self.assertTrue(out["stdout"].startswith(wide))
 
 
 if __name__ == "__main__":
