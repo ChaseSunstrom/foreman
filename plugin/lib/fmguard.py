@@ -733,10 +733,11 @@ def _strip_heredocs(cmd):
     return _heredocs(cmd)[0]
 
 
-def _drop_data_heredocs(cmd):
+def _drop_data_heredocs(cmd, only=None):
     """T-0171: the command without the bodies of heredocs that only write text: cat or tee as the line's first word,
     a quoted delimiter (nothing in the body expands) and no pipe or substitution on the line. For the interpreter gate
-    only: a script written with cat isn't run by writing it. Anything else keeps its body."""
+    only: a script written with cat isn't run by writing it. Anything else keeps its body, and so does a data
+    heredoc whose line `only` (when given) rejects."""
     lines, out, seen, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
@@ -745,7 +746,8 @@ def _drop_data_heredocs(cmd):
         out.append(line)
         seen.append(line)
         for quote, delim in starts:
-            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line)
+            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line) \
+                and (only is None or only(line))
             while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
                     out.append(lines[i])
@@ -1240,6 +1242,22 @@ def _proved_writes(cmd, ctx):
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
 
 
+_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*'\w+'\s*$")
+
+
+def _writes_unrun_source(line, cmd, ctx):
+    """T-0761: a data heredoc writing one file of Foreman's own code that the command never names again is a source
+    edit (a core path write the user's yes gates), not interpreter code run here. Run or imported by name, it is."""
+    m = _SOURCE_WRITE.fullmatch(line.strip())
+    if not m:
+        return False
+    path = _resolve(_expand(m.group(1), ctx), ctx.cwd)
+    stem = re.escape(os.path.splitext(os.path.basename(path))[0])
+    real = os.path.realpath(path)  # a symlink in plugin/lib to a scratch script isn't Foreman's code
+    return any(_strictly_under(real, os.path.realpath(os.path.join(ctx.foreman_home, "plugin", d)))
+               for d in _CORE_DIRS) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
+
+
 def _run_dir(starter, cwd):
     """The folder `python -` runs in (its sys.path[0]) after the starter's `cd` chain, or None when it can't be known."""
     d = cwd
@@ -1392,7 +1410,7 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(cmd, ctx.cwd):
+    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
                          "whose text names its modules, use the Edit or Write tool)")]  # T-0740: 9 repeats in a day
     code = _interp_code(cmd)

@@ -1002,6 +1002,21 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_writing_a_foreman_source_file_is_not_driving_it(self):
+        # T-0761: a source edit (cat >> plugin/lib/fmx.py <<'EOF') naming fmcore's writers, beside a test run, was this
+        # core block, which a standing yes can't cover (6x in a week); running or importing what it wrote still is
+        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+                                  for _, d in g.check_bash(self.sub(cmd), self.ctx()))
+        body = "import fmcore\nfmcore.write_meta(p, {{}})\nEOF\n"
+        for cmd in ("cat >> {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q {fhome}/plugin/tests",
+                    "tee -a {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q"):
+            self.assertFalse(driving(cmd), cmd)
+        for cmd in ("cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 {fhome}/plugin/lib/fmx.py",
+                    "cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 -c 'import fmx'",
+                    "cat > /tmp/x.py <<'EOF'\n" + body + "python3 -m pytest -q",
+                    "cat > {fhome}/plugin/lib/fmx.py <<EOF\n" + body + "python3 -m pytest -q"):  # unquoted: expands
+            self.assertTrue(driving(cmd), cmd)
+
     def test_a_quoted_heredoc_marker_hides_nothing(self):
         # T-0178: a quoted heredoc marker was taken for a heredoc, so every later line was a body the guard never read
         for cmd in ("echo '<<EOF'\ngit push --force origin main\nEOF", 'echo "x <<EOF"\ngit push --force origin main',
