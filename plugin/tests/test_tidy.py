@@ -126,13 +126,19 @@ class Apply(TidyCase):
             os.makedirs(d)
             open(os.path.join(d, "x.txt"), "w").close()
         open(snap, "w").close()
+        os.makedirs(os.path.join(state, "bus"), exist_ok=True)
+        beat, mail = os.path.join(state, "bus", "watch-dead"), os.path.join(state, "bus", "mail.jsonl")
+        seen = os.path.join(state, "bus", "seen-dead")
+        for x in (beat, mail, seen):  # T-0819: a crashed session's watcher heartbeat and read mark
+            open(x, "w").close()
         week_ago = time.time() - 8 * 86400
-        for x in (old, by_pid, snap):
+        for x in (old, by_pid, snap, beat, mail, seen):
             os.utime(x, (week_ago, week_ago))
-        self.assertIn("old_outputs", self.kinds(self.tidy()))
+        self.assertTrue({"old_outputs", "old_heartbeats"} <= self.kinds(self.tidy()))
         self.tidy("--apply")
         self.assertEqual(sorted(os.listdir(os.path.join(state, "outputs"))), ["new-sess"])
         self.assertEqual(os.listdir(os.path.join(state, "sessions")), ["by-pid"])
+        self.assertEqual(os.listdir(os.path.join(state, "bus")), ["mail.jsonl"], "only heartbeats go")
 
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")

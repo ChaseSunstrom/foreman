@@ -87,6 +87,30 @@ class Watch(Base):
         self.assertFalse(os.path.exists(beat), "a stopped watcher drops its heartbeat")
         self.assertIn("use the new parser", self.note("sess-w")[1].get("additionalContext", ""), "never marks read")
 
+    def test_a_watcher_ended_by_a_signal_drops_its_heartbeat(self):
+        # T-0819: Claude Code ends a monitor with a signal, which skipped the finally: watch-<sid> outlived the session
+        import signal
+        import subprocess
+        import sys
+        import time
+        import fmbus
+        from helpers import FM
+        beat = os.path.join(fmbus._dir(), "watch-sess-sig")
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            w = subprocess.Popen([sys.executable, FM, "bus", "watch", "sess-sig"], cwd=self.repo,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(200):
+                    if os.path.exists(beat):
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(os.path.exists(beat))
+                w.send_signal(sig)
+                w.wait(10)
+            finally:
+                w.kill()
+            self.assertFalse(os.path.exists(beat), f"{sig.name} left the heartbeat")
+
     def test_it_finds_its_session_from_the_session_start_hook(self):
         import fmbus
         saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
