@@ -180,7 +180,9 @@ def builder_brief(p, b, args):
 # what a build or test run leaves and rebuilds, never anyone's work (T-0377: python's; T-0408: the test, lint, package
 # and bundler caches builders' runs leave, which JARVIS deleted by hand before each fm lane rm)
 _CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.hypothesis|\.tox|\.nox|node_modules|"
-                    r"\.vite|\.svelte-kit|\.next|\.turbo|\.parcel-cache|\.gradle|\.kotlin|htmlcov)(/|$)|\.py[co]$|"
+                    r"\.vite|\.svelte-kit|\.next|\.turbo|\.parcel-cache|\.gradle|\.kotlin|htmlcov|"
+                    # T-0833: build output; a lane starts with no ignored files, so these are its own builds
+                    r"target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)(/|$)|\.py[co]$|"
                     r"(^|/)\.coverage(\.[\w.-]+)?$")
 
 
@@ -285,7 +287,7 @@ def remove(p, b, main):
     branches = [x for x in dict.fromkeys([f"foreman/{b.id}", b.meta.get("lane_branch")])
                 if x and x not in fmguard.DEFAULT_BRANCHES]
     if os.path.isdir(path):
-        st = _git(path, "status", "--porcelain", "--ignored")  # ignored files (.env, builds) go with the folder too
+        st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
         if st.returncode or left:  # T-0377/T-0408: caches are rebuilt on the next run, never anyone's work
             ignored = [ln[3:] for ln in left if ln.startswith("!! ")]
