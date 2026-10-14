@@ -226,6 +226,8 @@ def session_start(pl):
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
+    if _oneoff():
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ONEOFF_NOTE}}
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file and sid:
         with open(env_file, "a") as f:
@@ -457,6 +459,8 @@ def user_prompt_submit(pl):
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
+    if _oneoff():  # T-0775: the prompt is a question, not intake
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ONEOFF_NOTE}}
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
         for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
@@ -1600,9 +1604,11 @@ def stop(pl):
         d0 = g["drive"].get(sid) or {}
         # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
-        nudge = None if reload_due else (_evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED})
-                                         or _question_nudge(pl) or _headless_wait(pl))
-        reason = nudge or _drive(p, sd, briefs, pl, g)
+        oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
+        nudge = None if reload_due else _headless_wait(pl) if oneoff else (
+            _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl)
+            or _headless_wait(pl))
+        reason = nudge or (None if oneoff else _drive(p, sd, briefs, pl, g))
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
@@ -1636,6 +1642,17 @@ def _question_nudge(pl):
 
 def _headless():
     return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
+
+
+def _oneoff():
+    """T-0775: a claude -p session Foreman didn't start (fm run sets FOREMAN_DRIVE_TASK) answers its prompt: no queue
+    in its context, no drive, no claim on the project's session. The guard still applies."""
+    return os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli" and not os.environ.get("FOREMAN_DRIVE_TASK")
+
+
+ONEOFF_NOTE = ("Foreman: this is a one-off headless session (claude -p, not fm run). Answer the prompt and stop: don't "
+               "focus, plan, capture or work queued Foreman tasks unless the prompt asks for that; the drive and "
+               "never-stop rules apply to interactive sessions and fm run, not here. The guard still applies.")
 
 
 def _cc_version():
