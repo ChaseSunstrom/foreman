@@ -1305,13 +1305,23 @@ def _tripwire_note(pl, p, act):
 def _step_note(pl, p, act):
     """T-0759: the step pointer follows the work. An edited file named in exactly one later step and not the current
     one moves the pointer there; the 8th edit on a step with no evidence says once how to move it."""
+    try:  # T-0839: a surprise here costs this note, not the guard's other notes
+        return _step_note_of(pl, p, act)
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
+def _step_note_of(pl, p, act):
     if not (p and act and pl.get("tool_name") in FILE_TOOLS):
         return None
     path = _edit_path(pl)
     cur = act.current_step()
     if not (cur and _in_project(path, p)):
         return None
-    word, note = re.compile(rf"(?<![\w.-]){re.escape(os.path.basename(path))}(?![\w-])", re.I), None  # a.py ≠ data.py
+    name = os.path.basename(path)  # T-0839: a bare word (bin/fm, "run fm check") names a step only by its path
+    name = name if "." in name.lstrip(".") else os.path.relpath(path, p.root)
+    word, note = re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", re.I), None  # a.py ≠ data.py
     named = [s for s in act.steps() if not s.done and word.search(s.text)]
     if len(named) == 1 and named[0].n > cur.n:
         try:

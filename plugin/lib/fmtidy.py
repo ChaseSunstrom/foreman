@@ -322,23 +322,31 @@ def check_global(apply, actions, plugins=False):
                 os.remove(os.path.join(logs, old))
             actions.append(("global", kind))
     def stale(d):
-        names = os.listdir(d) if os.path.isdir(d) else []
-        return [os.path.join(d, f) for f in names
-                if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400]
+        out = []
+        for f in os.listdir(d) if os.path.isdir(d) else []:
+            try:  # T-0839: a heartbeat its watcher removes between listdir and here
+                if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400:
+                    out.append(os.path.join(d, f))
+            except OSError:
+                pass
+        return out
     for kind, what, old in (
             ("old_snapshots", "statusline snapshot(s)",  # by-pid/ is pruned by SessionStart (T-0777)
              [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)]),
             ("old_outputs", "sessions' compact-output full texts (T-0811)",
              stale(os.path.join(c.state_dir(), "outputs"))),
-            ("old_heartbeats", "mail heartbeat(s) and read marks of ended sessions (T-0819)",  # live: rewritten often
-             [f for f in stale(os.path.join(c.state_dir(), "bus"))
-              if os.path.basename(f).startswith(("watch-", "seen-"))])):
+            ("old_heartbeats", "mail watcher heartbeat(s) of ended sessions (T-0819)",  # a live one beats every 2 s;
+             [f for f in stale(os.path.join(c.state_dir(), "bus"))  # seen-<sid> stays: a resumed session's read mark
+              if os.path.basename(f).startswith("watch-")])):
         if old:
             out.append(finding(None, kind, "action", f"{len(old)} {what} older than {SNAPSHOT_MAX_DAYS}d",
                                "delete (derived cache)", auto=True))
             if apply:
                 for f in old:
-                    shutil.rmtree(f) if os.path.isdir(f) else os.remove(f)
+                    try:
+                        shutil.rmtree(f) if os.path.isdir(f) else os.remove(f)
+                    except OSError:  # gone meanwhile
+                        pass
                 actions.append(("global", kind))
     if plugins:
         out += _check_plugins()

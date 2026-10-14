@@ -184,6 +184,20 @@ _CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache
                     # T-0833: build output; a lane starts with no ignored files, so these are its own builds
                     r"target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)(/|$)|\.py[co]$|"
                     r"(^|/)\.coverage(\.[\w.-]+)?$")
+_BUILD = re.compile(r"(^|/)(target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)/?$")
+_SECRETISH = re.compile(r"(?i)\.(pem|key|p12|pfx|jks|keystore)$|^\.env($|\.)|\.env$|^id_(rsa|ed25519|ecdsa)|"
+                        r"^credentials?(\.\w+)?$")  # narrow: target/ holds env_logger-*.d and libsecret-*.rlib
+
+
+def _secretish(lane, rel):
+    """T-0839 (round-2 review): files under an ignored build dir whose names look like keys or config, which no build
+    makes and lane rm would otherwise delete with the folder."""
+    out = []
+    for root, _, names in os.walk(os.path.join(lane, rel)):
+        out += [os.path.relpath(os.path.join(root, n), lane) for n in names if _SECRETISH.search(n)]
+        if len(out) >= 5:
+            break
+    return out
 
 
 def merge(p, b, main):
@@ -289,6 +303,8 @@ def remove(p, b, main):
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
+        left += [f"!! {x}" for ln in st.stdout.splitlines() if ln.startswith("!! ") and _BUILD.search(ln[3:])
+                 for x in _secretish(path, ln[3:])]  # T-0839: build output is rebuilt; a key kept in it isn't
         if st.returncode or left:  # T-0377/T-0408: caches are rebuilt on the next run, never anyone's work
             ignored = [ln[3:] for ln in left if ln.startswith("!! ")]
             raise c.PolicyError(f"lane {path} has " + (f"ignored files ({', '.join(ignored[:5])}) that removing it would "

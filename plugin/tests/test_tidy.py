@@ -138,7 +138,8 @@ class Apply(TidyCase):
         self.tidy("--apply")
         self.assertEqual(sorted(os.listdir(os.path.join(state, "outputs"))), ["new-sess"])
         self.assertEqual(os.listdir(os.path.join(state, "sessions")), ["by-pid"])
-        self.assertEqual(os.listdir(os.path.join(state, "bus")), ["mail.jsonl"], "only heartbeats go")
+        self.assertEqual(sorted(os.listdir(os.path.join(state, "bus"))), ["mail.jsonl", "seen-dead"],
+                         "only heartbeats go: a read mark keeps a resumed session from re-reading old mail (T-0839)")
 
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")

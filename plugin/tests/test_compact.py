@@ -78,6 +78,12 @@ class Compact(unittest.TestCase):
         self.assertNotIn("cut", out["stdout"])
         self.assertTrue(out["stdout"].startswith(wide))
 
+    def test_a_lone_surrogate_doesnt_crash_the_hook(self):
+        # T-0839 (round-2 review): json accepts \ud800; writing it as utf-8 raised, past the OSError pass-through
+        code, out, full = run("line\n" * 2000 + "bad \ud800 char\n")
+        self.assertEqual(code, 0)
+        self.assertIn("bad", full)
+
     def test_a_runaway_output_is_saved_as_its_head_and_tail(self):
         # T-0824 (round 2): the full text had no size cap, so one runaway command could fill the disk
         huge = "first line\n" + "x" * 99 + "\n" + ("y" * 99 + "\n") * 30000 + "last line\n"

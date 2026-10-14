@@ -285,6 +285,14 @@ class Contract(_Tasks):
         p = self.fm("lane", "rm", kept, check=False)
         self.assertNotEqual(p.returncode, 0, "an ignored .env may be someone's config: never discarded")
         self.assertIn(".env", p.stderr)
+        # T-0839 (round-2 review): a build dir is rebuilt, but a secret kept inside one isn't
+        hid, wt3 = self.lane("Secret in a build dir")
+        os.makedirs(os.path.join(wt3, "target", "debug"))
+        with open(os.path.join(wt3, "target", "debug", "app.pem"), "w") as f:
+            f.write("key\n")
+        p = self.fm("lane", "rm", hid, check=False)
+        self.assertNotEqual(p.returncode, 0, "a key inside target/ isn't build output")
+        self.assertIn("app.pem", p.stderr)
 
     def test_rm_deletes_only_the_lanes_own_branch(self):
         tid, wt = self.lane("Branches")
