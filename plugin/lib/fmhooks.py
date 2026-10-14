@@ -1613,8 +1613,11 @@ def stop(pl):
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
-    if not reason and ((act and needs_user(msg)) or (had_work and not d["had_work"])):
+    drained = bool(had_work and not d["had_work"])
+    if not reason and ((act and needs_user(msg)) or drained):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
+    if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
+        reason = _push_nudge(sid, sd, drained)
     out = {"terminalSequence": seq}
     if reason:
         out.update(decision="block", reason=reason)
@@ -1625,6 +1628,20 @@ def stop(pl):
         out["systemMessage"] = (f"Foreman: the drive waits for background work ({', '.join(waiting_on)}) and continues "
                                 f"when it finishes (type continue to go on now)")
     return out
+
+
+def _push_nudge(sid, sd, drained):
+    """T-0778: a full-autonomy turn ending on an open ask (fm ask) or a drained queue asks for one PushNotification
+    (phone over Remote Control, desktop otherwise; the tool skips itself when the user is at the terminal). Once per
+    ask set or drain hour, so never a loop."""
+    waiting = sorted(t for t in sd.get("pending") or [] if t)
+    key = ("ask-" + "-".join(waiting)) if waiting else f"drain-{c.now()[:13]}" if drained else None
+    if not key or not _first_time(sid, "push-" + re.sub(r"[^\w-]", "", key)):
+        return None
+    lead = f"Foreman needs your yes on {', '.join(waiting[:3])}" if waiting else "Foreman: the queue is done"
+    return (f"Foreman: the user may be away from the terminal. Send one PushNotification (status proactive, one line "
+            f"under 200 characters) that leads with what they'd act on, like \"{lead}: <the one thing>\", then end "
+            f"the turn.")
 
 
 def _question_nudge(pl):

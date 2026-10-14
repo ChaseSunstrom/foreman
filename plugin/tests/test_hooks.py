@@ -1259,6 +1259,22 @@ class Stop(HookCase):
                                "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
 
+    def test_push_once_when_the_user_is_needed(self):
+        # T-0778: Foreman's only alert was a desktop terminal sequence; PushNotification also reaches the phone and
+        # skips itself when the user is at the terminal. One request per ask, never a loop
+        self.fm("init")
+        self.fm("autonomy", "full")
+        tid = self.task()
+        self.fm_ask(tid, "plugin")
+        p = self.stop("Waiting on your yes for the plugin install.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("PushNotification", parse(p)["reason"])
+        self.assertIn(tid, parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop("Sent.", active=True)), "the chain ends after the push")
+        self.assertNotIn("PushNotification", (parse(self.stop("Still waiting.")) or {}).get("reason", ""), "once per ask")
+        self.fm("autonomy", "standard")
+        self.assertNotIn("PushNotification", (parse(self.stop("Waiting.", session="sess-2")) or {}).get("reason", ""))
+
     def test_a_oneoff_headless_session_never_drives(self):
         # T-0775: an ad-hoc claude -p got the queue in its context and the drive's push, focused a queued task and
         # edited the main checkout until it timed out; only fm run's sessions (FOREMAN_DRIVE_TASK) work the queue
@@ -1565,6 +1581,9 @@ class Stop(HookCase):
         self.fm("autonomy", "full")
         t1 = self.task()
         self.fm_ask(t1, "core")
+        first = self.stop("T-0001 needs your approval for core.")  # T-0778: one push request, then the turn ends
+        self.assertIn("PushNotification", parse(first)["reason"])
+        self.assertIsNone(self.decision(self.stop("Sent.", active=True)))
         self.assertIsNone(self.decision(self.stop("T-0001 needs your approval for core.")))
         t2 = self.task("Other", focus=False)
         p = self.stop("Waiting on core for T-0001.")
