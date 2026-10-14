@@ -2554,8 +2554,12 @@ def task_touches(p, tid, window=None):
     for e in ledger_tail(p, window or TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
-            files[os.path.relpath(f, p.root)] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
+            rel = _WORKTREE_PREFIX.sub("", os.path.relpath(f, p.root))  # T-0807: a lane's edit is the repo file
+            files[rel] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
     return files
+
+
+_WORKTREE_PREFIX = re.compile(r"^\.claude/worktrees/[^/]+/")  # Claude Code's lane worktrees inside the checkout
 
 
 _INSTRUCTION = re.compile(r"(?i)(ignore|disregard|forget) (all |any |the )?(previous|prior|above|earlier|your) "
