@@ -98,6 +98,24 @@ class Install(SetupCase):
         self.run_fm("uninstall-user")
         self.assertEqual(self.load()["worktree"], {"baseRef": "fresh", "symlinkDirectories": ["node_modules"]})
 
+    def test_compact_output_is_a_user_hook_only_while_on(self):
+        # T-0783: off costs nothing (no hook at all); on adds one PostToolUse Bash hook; uninstall takes it away
+        hooks = lambda: [h for g in (self.load().get("hooks") or {}).get("PostToolUse", []) for h in g["hooks"]
+                         if h.get("command", "").endswith("/hooks/compact")]
+        self.run_fm("install-user")
+        self.assertEqual(hooks(), [])
+        self.assertEqual(self.run_fm("compact-output", "on").returncode, 0)
+        self.assertEqual(len(hooks()), 1)
+        self.run_fm("compact-output", "on")
+        self.assertEqual(len(hooks()), 1, "on twice adds it once")
+        self.assertIn("on", self.run_fm("compact-output").stdout)
+        self.run_fm("compact-output", "off")
+        self.assertEqual(hooks(), [])
+        self.assertNotIn("hooks", self.load(), "an emptied hooks object goes too")
+        self.run_fm("compact-output", "on")
+        self.run_fm("uninstall-user")
+        self.assertEqual(hooks(), [])
+
     def test_second_install_is_a_noop(self):
         self.run_fm("install-user")
         s1, md1, m1 = self.load(), read_text(self.claude_md), read_text(self.manifest_path())

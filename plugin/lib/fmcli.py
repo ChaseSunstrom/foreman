@@ -3436,7 +3436,7 @@ HELP_TIERS = [
     ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
@@ -4322,6 +4322,9 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--record-disabled", action="append", metavar="PLUGIN_ID",
                    help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
+    s = add("compact-output", lazy("fmsetup", "cmd_compact_output"),
+            help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
+    s.add_argument("state", nargs="?", choices=["on", "off", "status"])
     s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
     return ap
