@@ -1832,7 +1832,7 @@ def task_set(p, args):
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
-        changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
+        changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
     section_text = None
     if args.section:
         section_text = args.text if args.text is not None else (open(args.file).read() if args.file else None)
@@ -1866,6 +1866,13 @@ def task_set(p, args):
             b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
     b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [], "section": args.section})
     out(args, c.brief_summary(b), f"{b.id} updated.")
+
+
+def _list_value(v):
+    """T-0810: a,b or [a, b] or ["a","b"]: the items, without one pair of brackets or the quotes around each."""
+    v = v.strip()
+    v = v[1:-1] if v.startswith("[") and v.endswith("]") else v
+    return [x.strip().strip("'\"").strip() for x in v.split(",") if x.strip().strip("'\"").strip()]
 
 
 def task_step(p, args):
