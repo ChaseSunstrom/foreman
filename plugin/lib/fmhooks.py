@@ -844,9 +844,10 @@ def _pre_tool_use(raw):
         if tool in OUTWARD or tool.startswith(OUTWARD_MCP):  # T-0784: content leaving the machine
             try:
                 why = _outward_denial(pl)
-            except Exception:
+            except Exception:  # T-0821: fails closed, as hooks.json's onFailure: block promises
                 log_error("PreToolUse", _tb())
-                why = None
+                why = (f"Foreman: the sensitive-repo check for {tool} failed (fm doctor shows the error), so it's "
+                       "refused until that check works again.")
             if why:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                          "permissionDecisionReason": why}}))
@@ -1731,7 +1732,9 @@ def _oneoff():
 
 ONEOFF_NOTE = ("Foreman: this is a one-off headless session (claude -p, not fm run). Answer the prompt and stop: don't "
                "focus, plan, capture or work queued Foreman tasks unless the prompt asks for that; the drive and "
-               "never-stop rules apply to interactive sessions and fm run, not here. The guard still applies.")
+               "never-stop rules apply to interactive sessions and fm run, not here. The guard still applies: if the "
+               "prompt asks for an edit, create one S brief first (fm task new … --focus), since unbriefed edits are "
+               "refused.")
 
 
 def _cc_version():
