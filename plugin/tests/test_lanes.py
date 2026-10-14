@@ -57,6 +57,20 @@ class Lanes(ForemanTestCase):
         self.assertNotIn("Lane work", self.git("log", "--format=%s", "main"))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "lane.py")))
 
+    def test_a_merged_lanes_task_is_measured_from_the_main_commit_before_the_merge(self):
+        # T-0804: main-thread commits made while the lane ran were counted as the lane task's out-of-scope edits
+        tid = self.new("Lane work", self.lane)
+        for root, name in ((self.lane, "lane.py"), (self.repo, "main_work.py")):
+            with open(os.path.join(root, name), "w") as f:
+                f.write("x = 1\n")
+            self.git("add", name, cwd=root)
+            self.git("commit", "-qm", name, cwd=root)
+        self.fm("lane", "merge", tid)
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        self.assertNotIn("base_tree", meta)
+        changed = self.git("diff", "--name-only", meta["base"], "HEAD").split()
+        self.assertEqual(changed, ["lane.py"])
+
     def test_tidy_sweeps_stale_lanes(self):
         # T-0186: a closed task's lane and its branch stayed until someone ran fm lane rm
         home = {"HOME": self.tmp}  # tidy's global checks stay off the real ~/.claude
