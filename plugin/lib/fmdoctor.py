@@ -458,7 +458,7 @@ CC_FEATURES = [
     ("plugin monitors", (2, 1, 105), ["monitors/monitors.json"], r"."),
     ("PostToolUse updatedToolOutput", (2, 1, 121), ["lib/fmhooks.py"], r"updatedToolOutput"),
     ("UserPromptSubmit sessionTitle", (2, 1, 94), ["lib/fmhooks.py"], r"sessionTitle"),
-    ("worktree.baseRef setting", (2, 1, 133), ["settings.json"], r"baseRef"),
+    ("worktree.baseRef setting", (2, 1, 133), ["lib/fmsetup.py"], r"baseRef"),  # wired into ~/.claude (T-0803)
 ]
 
 
