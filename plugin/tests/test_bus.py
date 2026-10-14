@@ -116,6 +116,16 @@ class Watch(Base):
         self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi again", "--wake", env=env).stdout)
         self.assertTrue(os.path.exists(log), "a stale watcher: tmux stays the fallback")
 
+    def test_the_monitor_entry_uses_only_the_keys_claude_code_reads(self):
+        # strict keys, and `claude plugin validate --strict` doesn't check them
+        root = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(root, "monitors", "monitors.json")) as f:
+            entries = json.load(f)
+        for e in entries:
+            self.assertLessEqual(set(e), {"name", "command", "description", "when"}, e)
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}/bin/fm bus watch", e["command"])
+            self.assertTrue(os.access(os.path.join(root, "bin", "fm"), os.X_OK))
+
 
 class Lease(Base):
     def test_an_edit_leases_its_function_against_other_sessions(self):
