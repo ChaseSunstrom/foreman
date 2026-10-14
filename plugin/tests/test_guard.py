@@ -1002,6 +1002,23 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_a_literal_cd_chain_picks_the_folder_python_writes_in(self):
+        # T-0774: 'cd <scratchpad> && python3 - <<EOF open("clusters.py","w")' was refused as a write in the Foreman
+        # home: every folder the command names counted, though python only runs after the cd succeeded
+        with tempfile.TemporaryDirectory(dir="/tmp") as s:
+            body = " - <<'EOF'\nopen('state/x.json', 'w').write('a')\nEOF"  # relative: Foreman state from its home
+            paths = lambda cmd: " ".join(str(d) for _, d in g.check_bash(self.sub(cmd), self.ctx(cwd=self.fhome)))
+            home_x = os.path.join(self.fhome, "state", "x.json")
+            self.assertNotIn(home_x, paths(f"cd {s} && python3" + body))
+            self.assertNotIn(home_x, paths(f"cd {os.path.dirname(s)} && cd ./{os.path.basename(s)} && python3" + body))
+            self.assertIn(home_x, paths(f"cd {os.path.dirname(s)} && cd - && python3" + body), "cd - is OLDPWD")
+            for cmd in (f"cd {s}; python3" + body, f"cd /nope; cd {s} && python3" + body,
+                        f"D={s}; cd $D && python3" + body, f"pushd {s} >/dev/null\ncd {s} && python3" + body,
+                        # review (adversary): a cd the folder-change regex can't see, on a line of its own
+                        f"cd {s}\n\"cd\" {self.fhome}\ncd . && python3" + body, f"\\cd {self.fhome}\ncd . && python3" + body,
+                        f"source x.sh\ncd {s} && python3" + body):
+                self.assertIn(home_x, paths(cmd), cmd)
+
     def test_writing_a_foreman_source_file_is_not_driving_it(self):
         # T-0761: a source edit (cat >> plugin/lib/fmx.py <<'EOF') naming fmcore's writers, beside a test run, was this
         # core block, which a standing yes can't cover (6x in a week); running or importing what it wrote still is
