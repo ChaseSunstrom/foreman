@@ -27,6 +27,8 @@ def compact(text, path):
     if len(text) <= LIMIT or len(lines) <= HEAD + TAIL:
         if len(text) <= LIMIT:
             return None
+        if all(len(l) <= WIDE for l in lines):
+            return None  # T-0821: few lines, none long: nothing to cut
         lines = [clip(l) for l in lines]  # few, very long lines
         return "\n".join(lines) + f"\n[Foreman: long lines cut at {WIDE} characters; full output: {path} ]"
     middle, seen, hits = lines[HEAD:-TAIL], set(), []
@@ -56,15 +58,22 @@ def main():
     if len(out) + len(err) <= LIMIT:
         return 0
     home = os.environ.get("FOREMAN_HOME") or os.path.join(os.path.expanduser("~"), ".claude", "foreman")
+    # T-0821: FOREMAN_STATE as fmcore.state_dir reads it. ponytail: state_dir's fallback for an unwritable default
+    # isn't mirrored (that case passes through below); import its logic if sandboxed sessions need compacting
+    state = os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"])) if os.environ.get("FOREMAN_STATE") \
+        else os.path.join(home, "state")
     sid = re.sub(r"[^\w-]", "", str(pl.get("session_id") or "session"))[:100] or "session"
-    folder = os.path.join(home, "state", "outputs", sid)
-    os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only, like transcripts
+    folder = os.path.join(state, "outputs", sid)
     full = out + (("\n[stderr]\n" + err) if err else "")
     name = hashlib.sha1(full.encode("utf-8", "replace")).hexdigest()[:12]  # a file name, not a security use
     path = os.path.join(folder, name + ".txt")
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        f.write(full)
+    try:
+        os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only, like transcripts
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(full)
+    except OSError:
+        return 0  # no full text to point at: the output passes through untouched
     new_out, new_err = compact(out, path), compact(err, path)
     if new_out is None and new_err is None:
         new_out = out + f"\n[Foreman: full output: {path} ]"  # stdout and stderr each under the limit, together over it

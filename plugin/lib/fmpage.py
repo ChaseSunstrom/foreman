@@ -22,14 +22,14 @@ class Leak(Exception):
 
 
 def _private():
-    """Review of T-0786: the user's home and name in any spelling a path takes (/var/home/x, -home-x- in an encoded
-    folder name, C:\\Users\\x), not only the three prefixes."""
+    """Review of T-0786: the user's home in any spelling a path takes (/var/home/x, -home-x- in an encoded folder
+    name), not only the three prefixes. T-0821: plus the bare username as a /, \\ or - delimited word, which clean()
+    replaces with 'user' rather than refusing (a repo named after the user isn't a path)."""
     import getpass
     home, user = os.path.expanduser("~").rstrip("/"), getpass.getuser()
-    parts = [re.escape(home)] if home not in ("", "/") else []
-    if user and len(user) >= 2:
-        parts.append(rf"(?:^|[/\\-]){re.escape(user)}(?:[/\\-]|$)")
-    return re.compile("|".join(parts), re.I) if parts else None
+    parts = [re.escape(home), re.escape(home.replace("/", "-")) + "(?![^/\\\\-])"] if home not in ("", "/") else []
+    word = rf"(?:^|(?<=[/\\-])){re.escape(user)}(?=[/\\-]|$)" if user and len(user) >= 2 else None
+    return (re.compile("|".join(parts), re.I) if parts else None), (re.compile(word, re.I) if word else None)
 
 
 def clean(obj, where=""):
@@ -40,9 +40,10 @@ def clean(obj, where=""):
         return [clean(v, f"{where}[{i}]") for i, v in enumerate(obj)]
     if isinstance(obj, str):
         obj = c.redact(obj)
-        mine = _private()
-        if ABSOLUTE.search(obj) or re.search(r"(?i)\b[a-z]:\\users\\", obj) or mine and mine.search(obj):
+        home, user = _private()
+        if ABSOLUTE.search(obj) or re.search(r"(?i)\b[a-z]:\\users\\", obj) or home and home.search(obj):
             raise Leak(where)
+        obj = user.sub("user", obj) if user else obj
     return obj
 
 
@@ -82,11 +83,12 @@ def load_catalogue(p, name):
 def _clusters(fmcli, name, rows):
     if not isinstance(rows, list):
         raise fmcli.UsageError(f"catalogue {name!r} must be a list of clusters")
-    bad = [r.get("id") for r in rows if isinstance(r, dict) and not re.fullmatch(r"[\w-]{1,100}", str(r.get("id")))]
+    rows = [r for r in rows if isinstance(r, dict) and r.get("id") is not None]  # T-0821: no id, no pick: skipped
+    bad = [r["id"] for r in rows if not re.fullmatch(r"[\w-]{1,100}", str(r["id"]))]
     if bad:  # the page keeps picks at db doc picks/<id>: a slash would reach elsewhere in the store
         raise fmcli.UsageError(f"catalogue {name!r}: cluster id {bad[0]!r} must be letters, digits, _ or -")
-    return [dict({k: r.get(k) for k in CLUSTER}, ideas=[{k: i.get(k) for k in IDEA} for i in r.get("ideas") or []])
-            for r in rows if isinstance(r, dict)]
+    ideas = lambda r: [i for i in r.get("ideas") if isinstance(i, dict)] if isinstance(r.get("ideas"), list) else []
+    return [dict({k: r.get(k) for k in CLUSTER}, ideas=[{k: i.get(k) for k in IDEA} for i in ideas(r)]) for r in rows]
 
 
 def embed(data):
@@ -120,9 +122,12 @@ def cmd_page(args):
         raise fmcli.UsageError(f"--out must be a .html file that isn't a link: {path}")
     c.write_atomic(path, page)
     url = meta.get("page_url")
-    fmcli.out(args, {"path": path, "url": url, "queue": len(data["now"]["queue"]), "clusters": len(catalogue)},
-              f"Wrote {path} ({len(data['now']['queue'])} queued, {len(catalogue)} clusters)\n"
-              f"Publish (main thread): Artifact file_path {path} capabilities {{\"db\": {{}}, \"user\": {{}}}}"
-              + (f" url {url}" if url else "") + "\n"
-              "Picks: read with ArtifactData list collection picks (one doc per cluster id: {choice: add|veto|\"\", at}); "
-              "after a first publish, record its link with fm page --url URL")
+    publish = ("Publish: refused here, this repo is marked sensitive (the Artifact tool is denied); fm sensitive off "
+               "if the user wants it shared" if meta.get("sensitive") else  # T-0821: the outward gate's rule
+               f"Publish (main thread): Artifact file_path {path} capabilities {{\"db\": {{}}, \"user\": {{}}}}"
+               + (f" url {url}" if url else "") + "\n"
+               "Picks: read with ArtifactData list collection picks (one doc per cluster id: {choice: add|veto|\"\", "
+               "at}); after a first publish, record its link with fm page --url URL")
+    fmcli.out(args, {"path": path, "url": url, "queue": len(data["now"]["queue"]), "clusters": len(catalogue),
+                     "sensitive": bool(meta.get("sensitive"))},
+              f"Wrote {path} ({len(data['now']['queue'])} queued, {len(catalogue)} clusters)\n" + publish)

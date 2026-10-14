@@ -870,6 +870,15 @@ class PreToolUse(HookCase):
         for tool, _ in outward:
             self.assertRegex(tool, f"^(?:{matcher})$")
 
+    def test_the_outward_gate_fails_closed(self):
+        # T-0821 (round-1 review): hooks.json says onFailure: block, but an error in the check let the tool through
+        self.fm("init")
+        with open(os.path.join(self.project().dir, "meta.json"), "w") as f:
+            f.write("{not json")
+        p = self.pre("PushNotification", {"message": "done", "status": "proactive"})
+        self.assertIn("deny", p.stdout)
+        self.assertNotIn("deny", self.pre("ArtifactData", {"action": "list", "url": "u"}).stdout, "reads still pass")
+
     def test_foreground_wait_loops_are_refused(self):
         # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
         # `until grep -q "^exit" e2e.log; do sleep 20; done` held the session in the foreground for 10 minutes
@@ -1349,6 +1358,7 @@ class Stop(HookCase):
         for event, payload in (("SessionStart", {"source": "startup"}), ("UserPromptSubmit", {"prompt": "what is 2+2"})):
             ctx = self.ctx_of(self.hook(event, payload, env=oneoff))
             self.assertIn("one-off", ctx, event)
+            self.assertIn("one S brief first", ctx, "T-0821: an edit still needs a brief; the note says so")
             self.assertNotIn(tid, ctx, event)
             self.assertNotIn("Next:", ctx, event)
         self.assertNotIn("sess-1", json.dumps(c.read_meta(self.project()).get("session") or {}),

@@ -108,6 +108,31 @@ class PageHardening(ForemanTestCase):
             self.assertIn("catalogue[0].capability", r.stderr)
         self.fm("page", "--catalogue", self.write_cat([{"id": "a", "capability": "see ~/.claude and plugin/lib"}]))
 
+    def test_the_username_as_a_word_is_redacted_not_refused(self):
+        # T-0821 (round-1 review): a repo or tool named after the user isn't a path; only real home paths refuse
+        import getpass
+        user = getpass.getuser()
+        self.fm("page", "--catalogue", self.write_cat([{"id": "a", "capability": f"{user}-tools/build"}]))
+        html = read_text(os.path.join(self.p.dir, "page.html"))
+        self.assertIn("user-tools/build", html)
+        self.assertNotIn(f"{user}-tools", html)
+
+    def test_clusters_without_an_id_or_with_odd_ideas_are_skipped(self):
+        rows = [{"capability": "no id"}, {"id": "ok", "capability": "x", "ideas": ["junk", {"n": 1, "title": "t"}]},
+                {"id": "bad-ideas", "ideas": 7}]
+        self.fm("page", "--catalogue", self.write_cat(rows))
+        data = json.loads(re.search(r'<script type="application/json" id="data">(.*?)</script>',
+                                    read_text(os.path.join(self.p.dir, "page.html")), re.S).group(1))
+        self.assertEqual([x["id"] for x in data["catalogue"]], ["ok", "bad-ideas"])
+        self.assertEqual([i["n"] for i in data["catalogue"][0]["ideas"]], [1])
+
+    def test_a_sensitive_repo_says_publishing_is_refused(self):
+        # T-0821 (round-1 review): the outward gate denies Artifact here, so the page mustn't offer that publish
+        self.fm("sensitive", "on")
+        r = self.fm("page")
+        self.assertNotIn("Artifact file_path", r.stdout)
+        self.assertIn("sensitive", r.stdout)
+
     def test_only_an_artifact_link_is_recorded(self):
         for bad in ("https://claude.ai.evil.example/x", "https://claude.ai/../x", "https://claude.ai/artifact/a b"):
             self.assertNotEqual(self.fm("page", "--url", bad, check=False).returncode, 0, bad)
