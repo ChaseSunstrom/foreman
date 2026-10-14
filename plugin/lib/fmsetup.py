@@ -118,6 +118,12 @@ def plan_install(P):
             actions.append(f"env.{k}={v} ({WHY[k]})")
     if not env and not env_existed:
         new_s.pop("env")
+    wt = new_s.get("worktree") if isinstance(new_s.get("worktree"), dict) else None
+    if not (wt or {}).get("baseRef"):  # T-0803: builder lanes start from the branch being worked, not origin's default
+        new_m.setdefault("worktree_created", wt is None)
+        new_s["worktree"] = dict(wt or {}, baseRef="head")
+        new_m["worktree_baseRef_set"] = True
+        actions.append("worktree.baseRef = head (builder lanes start from your current branch, not the remote's)")
     if "outputStyle" not in new_s:  # the user's own style always wins
         new_s["outputStyle"] = OUTPUT_STYLE
         new_m["outputStyle_set"] = True
@@ -240,6 +246,12 @@ def cmd_uninstall(args):
                 env.pop(k)
         if not env and m.get("env_created"):
             new_s.pop("env")
+    wt = new_s.get("worktree")
+    if m.get("worktree_baseRef_set") and isinstance(wt, dict) and wt.get("baseRef") == "head":
+        wt.pop("baseRef")
+        if not wt and m.get("worktree_created"):
+            new_s.pop("worktree")
+        actions.append("worktree.baseRef removed")
     if m.get("outputStyle_set") and new_s.get("outputStyle") == OUTPUT_STYLE:
         new_s.pop("outputStyle")
         actions.append("outputStyle removed")

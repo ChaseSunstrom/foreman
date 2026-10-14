@@ -96,6 +96,14 @@ class Checks(unittest.TestCase):
                                        "omitClaudeMd: true\n---\nbody\n")
         self.assertNotIn("a.md", d.check_frontmatter(root).detail)
 
+    def test_worktree_base(self):
+        # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
+        self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")
+        for s in ({}, {"worktree": {"baseRef": "fresh"}}):
+            r = d.check_worktree_base(s)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("baseRef", r.detail)
+
     def test_self_docs_match_the_code(self):
         self.assertEqual(d.check_self_docs().status, "PASS", d.check_self_docs().detail)
 
