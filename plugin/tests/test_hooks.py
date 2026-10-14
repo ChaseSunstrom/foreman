@@ -1259,6 +1259,28 @@ class Stop(HookCase):
                                "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
 
+    def test_a_oneoff_headless_session_never_drives(self):
+        # T-0775: an ad-hoc claude -p got the queue in its context and the drive's push, focused a queued task and
+        # edited the main checkout until it timed out; only fm run's sessions (FOREMAN_DRIVE_TASK) work the queue
+        self.fm("init")
+        self.fm("autonomy", "full")
+        tid = self.task()
+        self.task("Queued next", focus=False)
+        oneoff = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "CLAUDE_ENV_FILE": self.env_file}
+        for event, payload in (("SessionStart", {"source": "startup"}), ("UserPromptSubmit", {"prompt": "what is 2+2"})):
+            ctx = self.ctx_of(self.hook(event, payload, env=oneoff))
+            self.assertIn("one-off", ctx, event)
+            self.assertNotIn(tid, ctx, event)
+            self.assertNotIn("Next:", ctx, event)
+        self.assertNotIn("sess-1", json.dumps(c.read_meta(self.project()).get("session") or {}),
+                         "a one-off doesn't claim the project's session")
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "4.", "session_id": "sess-1"},
+                      env=oneoff)
+        self.assertIsNone(self.decision(p))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
+                               "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
+        self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+
     def test_drive_offers_queued_work_while_background_runs(self):
         # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
         # queued, and after one generic push every Stop let the turn end ("nothing else to do until it does")
