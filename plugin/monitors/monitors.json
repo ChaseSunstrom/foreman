@@ -1,0 +1,8 @@
+[
+  {
+    "name": "foreman-mail",
+    "command": "${CLAUDE_PLUGIN_ROOT}/bin/fm bus watch",
+    "description": "Foreman mail for this session: one line per new bus message (fm bus send, conductor steers), so an idle session wakes without tmux",
+    "when": "always"
+  }
+]

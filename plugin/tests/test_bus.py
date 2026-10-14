@@ -46,6 +46,77 @@ class Bus(Base):
         self.assertIn("bump the version", r["reason"])
 
 
+class Watch(Base):
+    """T-0777: a plugin monitor runs fm bus watch for the whole session; each line it prints wakes Claude."""
+
+    def test_it_prints_each_new_message_for_its_session_once(self):
+        import io
+        import threading
+        import time
+        import fmbus
+        fmbus.send("sess-w", "old news", sender="sess-1")
+        buf, done = io.StringIO(), threading.Event()
+        t = threading.Thread(target=fmbus.watch, kwargs={"sid": "sess-w", "interval": 0.05, "out": buf,
+                                                         "stop": done.is_set})
+        t.start()
+        try:
+            beat = os.path.join(fmbus._dir(), "watch-sess-w")
+            for _ in range(100):
+                if os.path.exists(beat):
+                    break
+                time.sleep(0.05)
+            self.assertTrue(os.path.exists(beat), "the watcher keeps a heartbeat")
+            fmbus.send("sess-w", "use the new parser", sender="sess-1")
+            fmbus.send("sess-z", "not yours", sender="sess-1")
+            fmbus.send("all", "freeze the API", kind="steer", sender="sess-1")
+            for _ in range(100):
+                if buf.getvalue().count("\n") >= 2:
+                    break
+                time.sleep(0.05)
+            time.sleep(0.3)  # more polls: nothing printed twice
+        finally:
+            done.set()
+            t.join(5)
+        lines = buf.getvalue().splitlines()
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn("use the new parser", lines[0])
+        self.assertIn("freeze the API", lines[1])
+        self.assertIn("fm bus read", lines[0])
+        self.assertNotIn("not yours", buf.getvalue())
+        self.assertNotIn("old news", buf.getvalue())
+        self.assertFalse(os.path.exists(beat), "a stopped watcher drops its heartbeat")
+        self.assertIn("use the new parser", self.note("sess-w")[1].get("additionalContext", ""), "never marks read")
+
+    def test_it_finds_its_session_from_the_session_start_hook(self):
+        import fmbus
+        saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
+        try:
+            self.assertIsNone(fmbus.own_session())
+            self.hook("SessionStart", {"session_id": "sess-pid", "source": "startup"})
+            self.assertEqual(fmbus.own_session(), "sess-pid", "this process is the hook's parent")
+        finally:
+            os.environ.update({k: v for k, v in saved.items() if v})
+
+    def test_wake_prefers_a_fresh_watcher_over_tmux(self):
+        import time
+        import fmbus
+        bin_ = os.path.join(self.tmp, "bin")
+        os.makedirs(bin_)
+        log = os.path.join(self.tmp, "tmux.log")
+        with open(os.path.join(bin_, "tmux"), "w") as f:
+            f.write(f"#!/bin/sh\necho \"$@\" >> {log}\n")
+        os.chmod(os.path.join(bin_, "tmux"), 0o755)
+        env = {"PATH": bin_ + os.pathsep + os.environ["PATH"]}
+        self.snap("sess-w", tmux_pane="%7")
+        beat = os.path.join(fmbus._dir(), "watch-sess-w")
+        open(beat, "w").close()
+        self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi", "--wake", env=env).stdout)
+        self.assertFalse(os.path.exists(log), "the watcher delivers it: nothing typed into tmux")
+        os.utime(beat, (time.time() - 60, time.time() - 60))
+        self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi again", "--wake", env=env).stdout)
+        self.assertTrue(os.path.exists(log), "a stale watcher: tmux stays the fallback")
+
+
 class Lease(Base):
     def test_an_edit_leases_its_function_against_other_sessions(self):
         path = os.path.join(self.repo, "mod.py")
