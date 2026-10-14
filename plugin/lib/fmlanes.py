@@ -105,6 +105,7 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Stay in your worktree; never touch the main checkout, other worktrees or Foreman's state except through fm.
 - Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then
   `fm check --affected --evidence {id}` (the tests linked to your files; the full gates run after the merge, T-0806).
+  Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
