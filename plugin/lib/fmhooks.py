@@ -937,7 +937,7 @@ def _pre_tool_use(raw):
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
         note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _ambient_note(p), _bus_note(pl)]))
+                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
@@ -1300,6 +1300,40 @@ def _tripwire_note(pl, p, act):
         return None
     _event({"kind": "lesson_shown", "task": hit[0], "file": rel, "session_id": sid, "project": p.slug})  # T-0454
     return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
+
+
+def _step_note(pl, p, act):
+    """T-0759: the step pointer follows the work. An edited file named in exactly one later step and not the current
+    one moves the pointer there; the 8th edit on a step with no evidence says once how to move it."""
+    if not (p and act and pl.get("tool_name") in FILE_TOOLS):
+        return None
+    path = _edit_path(pl)
+    cur = act.current_step()
+    if not (cur and _in_project(path, p)):
+        return None
+    name, note = os.path.basename(path).lower(), None
+    named = [s for s in act.steps() if not s.done and name in s.text.lower()]
+    if len(named) == 1 and named[0].n > cur.n:
+        with c.lock(p.dir):
+            b = c.find_brief(p, act.id)
+            b.set_current(named[0].n)
+            c.save_brief(p, b)
+            c.log_event(p, "step_current", task=act.id, data={"step": named[0].n, "auto": True},
+                        session=pl.get("session_id"))
+            c.regen_views(p)
+        cur = named[0]
+        note = f"Foreman: {os.path.basename(path)} is in step {cur.n} ({cur.text}); it is now the current step. "
+    c.log_event(p, "step_edit", task=act.id, data={"step": cur.n}, session=pl.get("session_id"))
+    seen = [e for e in c.ledger_tail(p, 400) if e.get("task") == act.id and e.get("event") in ("step_edit", "step_current", "step_done")]
+    n = 0
+    for e in reversed(seen):  # edits since the step last moved
+        if e["event"] != "step_edit" or (e.get("data") or {}).get("step") != cur.n:
+            break
+        n += 1
+    if n == 8 and not act.has_evidence(step=cur.n):
+        note = (note or "") + (f"Foreman: 8 edits on step {cur.n} with no evidence; if the work is on another step: "
+                               f"fm task step {act.id} current N.")
+    return note.strip() if note else None
 
 
 def _scope_note(pl, p, act):
