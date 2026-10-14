@@ -985,3 +985,27 @@ class VerifyLint(ForemanTestCase):
         self.assertIn("can't run", r.stderr)
         self.assertEqual(len(c.find_brief(c.find_project(self.repo), tid).acceptance()), 1)
         self.fm("task", "ac", tid, "add", "more :: fm state")
+
+
+class Redo(ForemanTestCase):
+    def test_a_recreated_task_keeps_the_dropped_tasks_diff(self):
+        # T-0767: T-0761 was dropped (a locked criterion named a check that couldn't run) and recreated as T-0766;
+        # the new task's snapshot was taken after the edits, so finish --commit said "nothing to commit"
+        import fmmap
+        self.fm("init")
+        new = lambda *a: json.JSONDecoder().raw_decode(self.fm(
+            "task", "new", *a, "--type", "FIX", "--tier", "S", "--json", "--ac", "works :: fm state",
+            "--step", "do it").stdout)[0]["id"]
+        old = new("First try", "--focus")
+        with open(os.path.join(self.repo, "fix.py"), "w") as f:
+            f.write("x = 1\n")
+        live = new("Not dropped")
+        r = self.fm("task", "new", "Again", "--type", "FIX", "--tier", "S", "--redo", live, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("dropped", r.stderr)
+        self.fm("task", "drop", old, "wrong check")
+        again = new("Second try", "--redo", old, "--focus")
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, again)
+        self.assertIn("fix.py", fmmap.changed(p.root, c.task_base(p.root, b)))
+        self.assertIn(old, read_text(b.path))
