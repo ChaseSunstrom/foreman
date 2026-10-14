@@ -884,7 +884,13 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
             print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
         return
     git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
-    add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
+    # T-0837: a file untracked (git rm --cached) and deleted is on neither side: git add fails its pathspec, while
+    # git commit -- <it> below takes the staged deletion as it is
+    known = set(subprocess.run([*git, "ls-files", "--", *files], capture_output=True, text=True).stdout.splitlines())
+    addable = [f for f in files if f in known or os.path.lexists(os.path.join(p.root, f))
+               or any(k.startswith(f.rstrip("/") + "/") for k in known)]
+    add = subprocess.run([*git, "add", "-A", "--", *addable], capture_output=True, text=True) if addable else \
+        subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
         leaks = fmsecrets.staged_leaks(p.root, files)
