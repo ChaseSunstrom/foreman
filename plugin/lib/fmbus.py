@@ -393,6 +393,10 @@ def cmd_bus(args):
         return fmcli.out(args, dict(msg, woke=woke), f"Sent to {msg['to']}" + (f"; woke {len(woke)}" if woke else "")
                          + ".")
     if args.action == "watch":
+        import signal
+        import sys
+        for s in (signal.SIGTERM, signal.SIGHUP):  # T-0819: Claude Code ends a monitor with a signal; exit runs finally
+            signal.signal(s, lambda *_: sys.exit(0))
         watch(args.words[0] if args.words else None)
         return 0
     msgs = unread(me or (args.words[0] if args.words else ""), mark=True)

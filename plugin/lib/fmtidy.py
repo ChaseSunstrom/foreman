@@ -329,7 +329,10 @@ def check_global(apply, actions, plugins=False):
             ("old_snapshots", "statusline snapshot(s)",  # by-pid/ is pruned by SessionStart (T-0777)
              [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)]),
             ("old_outputs", "sessions' compact-output full texts (T-0811)",
-             stale(os.path.join(c.state_dir(), "outputs")))):
+             stale(os.path.join(c.state_dir(), "outputs"))),
+            ("old_heartbeats", "mail heartbeat(s) and read marks of ended sessions (T-0819)",  # live: rewritten often
+             [f for f in stale(os.path.join(c.state_dir(), "bus"))
+              if os.path.basename(f).startswith(("watch-", "seen-"))])):
         if old:
             out.append(finding(None, kind, "action", f"{len(old)} {what} older than {SNAPSHOT_MAX_DAYS}d",
                                "delete (derived cache)", auto=True))
