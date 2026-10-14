@@ -6,6 +6,7 @@ Also imported by `fm doctor`.
 """
 import json
 import os
+import resource
 import statistics
 import subprocess
 import sys
@@ -17,6 +18,19 @@ PLUGIN = os.path.dirname(HERE)
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
 FM = os.path.join(PLUGIN, "bin", "fm")
 BUDGET_MS = {"default": 150, "MessageDisplay": 100}
+
+
+def load_per_core():
+    try:
+        return os.getloadavg()[0] / (os.cpu_count() or 1)
+    except OSError:
+        return 0.0
+
+
+def within(wall_p95, cpu_p95, budget, load):
+    """T-0805: a quiet machine judges wall time (what the user waits); a busy one (load per core above 1) judges the
+    hook's own CPU time, which load doesn't inflate but a code regression (more imports, more work) does."""
+    return (cpu_p95 if load > 1 else wall_p95) <= budget
 
 
 def _scratch_project(tmp):
@@ -51,17 +65,22 @@ def run_bench(runs=30):
             event = name.split(":")[0]
             body = json.dumps(dict({"session_id": "bench", "cwd": repo, "hook_event_name": event},
                                    **json.loads(json.dumps(payload).replace("{cwd}", repo))))
-            times, codes = [], set()
+            times, cpus, codes = [], [], set()
             for _ in range(runs):
-                t0 = time.perf_counter()
+                t0, r0 = time.perf_counter(), resource.getrusage(resource.RUSAGE_CHILDREN)
                 p = subprocess.run([HOOK, event], input=body, capture_output=True, text=True, env=env, cwd=repo)
+                r1 = resource.getrusage(resource.RUSAGE_CHILDREN)
                 times.append((time.perf_counter() - t0) * 1000)
+                cpus.append((r1.ru_utime - r0.ru_utime + r1.ru_stime - r0.ru_stime) * 1000)
                 codes.add(p.returncode)
             times.sort()
+            cpus.sort()
             budget = BUDGET_MS.get(event, BUDGET_MS["default"])
-            p95 = times[min(len(times) - 1, int(len(times) * 0.95))]
-            results[name] = {"p50": round(statistics.median(times), 1), "p95": round(p95, 1), "budget": budget,
-                             "ok": p95 <= budget, "exit_codes": sorted(codes)}
+            at = min(len(times) - 1, int(len(times) * 0.95))
+            p95, cpu95, load = times[at], cpus[at], load_per_core()
+            results[name] = {"p50": round(statistics.median(times), 1), "p95": round(p95, 1), "cpu_p95": round(cpu95, 1),
+                             "budget": budget, "load": round(load, 2), "ok": within(p95, cpu95, budget, load),
+                             "exit_codes": sorted(codes)}
     return results
 
 
@@ -74,6 +93,9 @@ def main():
         print(f"{'hook':<24}{'p50 ms':>8}{'p95 ms':>8}{'budget':>8}  exit")
         for k, v in res.items():
             print(f"{k:<24}{v['p50']:>8}{v['p95']:>8}{v['budget']:>8}  {v['exit_codes']}{'' if v['ok'] else '  OVER BUDGET'}")
+        busy = max((v["load"] for v in res.values()), default=0)
+        if busy > 1:
+            print(f"machine busy (load {busy:.1f} per core): judged by each hook's CPU time, not wall time (T-0805)")
     return 0 if all(v["ok"] for v in res.values()) else 1
 
 
