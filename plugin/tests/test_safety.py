@@ -155,6 +155,19 @@ class RuleIds(Base):
         b = g.check("Bash", {"command": "rm -rf /home/other"}, ctx)
         self.assertTrue(a.rule.startswith("rm-outside:"), a.rule)
         self.assertEqual(a.rule, b.rule, "the same check fires the same rule whatever the path")
+        self.assertEqual(g.Block("brief", os.path.join(self.repo, "a.py")).rule, "brief:path", "T-0815: not 'other'")
+
+    def test_a_state_write_is_pointed_at_fm_research_not_at_naming_it(self):
+        # T-0814: state-direct can't be granted: when research/ was the real target, "name it literally" only moved the
+        # same block to the next try
+        research = os.path.join(self.home, "state", "projects", "p", "research")
+        os.makedirs(research)
+        ctx = g.Ctx(cwd=research, project_root=self.repo, home=os.path.expanduser("~"), foreman_home=self.home,
+                    scratch=[], allow=set(), task_id="T-1")
+        b = g.check("Bash", {"command": "D=$(pwd); curl -sfL https://x.example/a.md -o $D/a.md"}, ctx)
+        self.assertEqual(b.category, "state-direct", b.detail)
+        text = g.message(b, ctx)
+        self.assertIn("fm research add", text)
 
     def test_guard_block_events_carry_it_and_friction_counts_it(self):
         self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")

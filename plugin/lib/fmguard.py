@@ -53,7 +53,7 @@ def rule_id(category, detail):
     """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
     paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
     words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
-    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or 'other'}"
+    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or ('path' if '/' in detail else 'other')}"
 
 
 def findings(tool_name, tool_input, ctx):
@@ -108,13 +108,16 @@ def _focuses(cmd):
         return False
 
 
-def _hint(detail):
+def _hint(detail, cat=""):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
+    research = (" If it is a download or notes for the project's research, write it to the scratchpad and file it with "
+                "fm research add NAME --file PATH.") if cat == "state-direct" else ""  # T-0814
     if "(not known before it runs" in detail:
         return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
-                "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes.")
+                "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes." + research)
     if "unresolvable target" in detail:
-        return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+        return (" If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+                + research)
     if re.fullmatch(r"downloaded content piped into python[0-9.]*", detail):  # T-0395
         return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every command "
                 "before it, or after it in its pipeline, is a plain data tool that writes no file (curl -s, jq, head, "
@@ -127,12 +130,12 @@ def _hint(detail):
                 "checks each file it changes as that task's write.")
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
-                "re, json, textwrap or sys, so only those count, or use the Edit tool.")
-    return ""
+                "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
+    return research
 
 
 def message(block, ctx):
-    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "")
+    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "", block.category)
 
 
 def _message(block, ctx):
@@ -1634,7 +1637,7 @@ def _reads_pipe_as_data(c, argv, cmds, cwds, cmd):
     from _split), as does a substitution in a live heredoc body. A name set here may be read only where its every value
     is a plain word: no space, glob, quote, $ or leading -, so it can't split into flags or close a string in CODE."""
     name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
-    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and not c.redirs and len(args) >= 2
+    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and set(c.redirs) <= {"/dev/null"} and len(args) >= 2
             and args[0] == "-c"):
         return False
     shell = _mask_quotes(_strip_heredocs(cmd))
