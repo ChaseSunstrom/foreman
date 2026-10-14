@@ -1125,7 +1125,8 @@ class Brief:
         if self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
                               f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
-                              f"with a reason and recreate it with the right check")
+                              f"with a reason and recreate it with the right check (fm task new … --redo {self.id} keeps its "
+                              f"diff)")
         lines, k, changes = [], 0, []
         for line in self.section("Acceptance criteria").splitlines():
             m = _AC_RE.match(line)

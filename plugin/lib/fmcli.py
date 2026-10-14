@@ -1748,6 +1748,9 @@ def task_new(p, args):
     if args.tier not in ("S", "M", "L"):
         raise UsageError("tier must be S, M or L")
     _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    redo = need_brief(p, args.redo) if getattr(args, "redo", None) else None
+    if redo and redo.status != "dropped":
+        raise UsageError(f"--redo takes a dropped task; {redo.id} is {redo.status}")
     with c.lock(p.dir):
         if args.from_id:
             b = need_brief(p, args.from_id)
@@ -1764,6 +1767,13 @@ def task_new(p, args):
         else:
             b = _create(p, args.title, type_, args.tier, "planned", raw=args.raw, scope=args.scope or (),
                         depends=args.depends or (), source=args.source)
+        if redo:  # T-0767: its diff starts where the dropped task's did, and the files it edited are this task's
+            b.meta.update({k: redo.meta[k] for k in ("base", "base_tree") if redo.meta.get(k)})
+            b.append_log(f"redo of {redo.id}: takes over its start point and edited files")
+            c.save_brief(p, b)
+            for rel, at in c.task_touches(p, redo.id).items():
+                c.log_event(p, "touched", task=b.id, data={"file": os.path.join(p.root, rel), "tool": "redo", "at": at},
+                            session=session())
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
         c.regen_views(p)
@@ -3533,6 +3543,7 @@ def build_parser():
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
+    t.add_argument("--redo", metavar="ID", help="recreate a dropped task: keep its start point and edited files")
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
