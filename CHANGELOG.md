@@ -13,7 +13,10 @@
   - A run whose output reports failing tests counts as a failure even when a pipe hides the exit, in `fm check` and in verify commands run from Bash (T-0773, T-0820). A verify that can't run at all is refused when the criterion is added (T-0765).
   - A lane-merged task is measured from the main checkout's files before the merge, so its close checks see its whole diff (T-0804, T-0812); tier drift counts only real diff lines; `fm lane brief` refuses a task its builder couldn't focus (T-0823); a lane's edits under `.claude/worktrees/` count as the repo files they are (T-0807).
   - `fm task finish` refuses a close that leaves Foreman's self docs failing (T-0764); `fm task new --redo ID` keeps a dropped task's start point (T-0767); `fm task set` takes list fields as `a,b` or `[a, b]` (T-0810).
-  - `fm` ends quietly when its reader quits (`fm … | head`, T-0825).
+  - `fm` ends quietly when its reader quits (`fm … | head`), exiting 141 like a shell's SIGPIPE (T-0825, T-0839).
+  - The step pointer follows the work: an edit to a file named only in a later step moves the current step there, and the 8th edit on a step with no evidence says once how to move it (T-0759, T-0839).
+  - `fm lane rm` removes a lane whose only leftovers are build output (target/, build/, dist/, zig, cmake), but refuses when a key, `.env` or credentials file sits inside one (T-0833, T-0839). `fm task finish --commit` handles a file the task untracked and deleted (T-0837).
+  - The stray repo-root `skill-index.json` cache (local paths) is no longer tracked (T-0836).
 - Guard: a data heredoc writing an unrun source file isn't interpreter code driving Foreman (T-0766); a literal `cd DIR && python3 -` resolves relative writes in DIR only (T-0774); a data-only `python -c` may send output to /dev/null; state-direct refusals point to `fm research add`; path-only rule ids read `:path` (T-0817).
 - Builders run only the affected tests (T-0806); the hook benchmark judges by CPU time on a busy machine (T-0805); `fm audit prep` asks for ReportFindings fields (T-0780).
 
