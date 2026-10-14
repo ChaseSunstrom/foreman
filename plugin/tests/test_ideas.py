@@ -185,3 +185,14 @@ class Ideas(ForemanTestCase):
         self.assertEqual(len(deep), 1, "one yes-and round for the top category (speed: 2 ideas)")
         self.assertIn("Idea for user value", deep[0]["stdin"])
         self.assertIn("## Deepened: speed", read_text(os.path.join(res["dir"], "ideas.md")))
+
+
+class ChildCommand(ForemanTestCase):
+    def test_children_carry_the_run_cap(self):
+        """T-0776: a runaway child stops at fm budget's per-command cap."""
+        import fmbudget
+        import fmideas
+        import fmresearch
+        cap = f"{fmbudget.effective()[0]['run']:g}"
+        for argv in (fmideas.child_cmd("haiku", "s"), fmresearch._child("haiku", "WebFetch", "s")):
+            self.assertEqual(argv[argv.index("--max-budget-usd") + 1], cap)
