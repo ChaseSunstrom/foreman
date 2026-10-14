@@ -1,0 +1,212 @@
+<title>__TITLE__</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* fm page (T-0786): a work-order sheet — what's on now, the queue, then (optionally) one punch-list row per catalogue cluster. */
+:root {
+  --paper: #f5f6f2; --sheet: #ffffff; --ink: #1d2226; --muted: #5d666c; --rule: #d9ddd6;
+  --accent: #c2560f; --build: #2f7a4f; --done: #4f6273; --later: #a0700f; --skip: #8a8f93;
+  --chip: #eceee8; --focus: #1f6fbf;
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --paper: #15181a; --sheet: #1c2023; --ink: #e6e8e3; --muted: #9aa3a8; --rule: #30363a;
+  --accent: #f08a3e; --build: #5cbf86; --done: #8fa6ba; --later: #e0aa45; --skip: #7d8488;
+  --chip: #262b2f; --focus: #6fb0f0; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --paper: #15181a; --sheet: #1c2023; --ink: #e6e8e3; --muted: #9aa3a8; --rule: #30363a;
+  --accent: #f08a3e; --build: #5cbf86; --done: #8fa6ba; --later: #e0aa45; --skip: #7d8488;
+  --chip: #262b2f; --focus: #6fb0f0; color-scheme: dark }
+body { background: var(--paper); color: var(--ink); font: 15px/1.5 var(--body); }
+.wrap { max-width: 960px; margin: 0 auto; padding-block: 28px 64px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 22px; }
+header { display: grid; gap: 8px; }
+.eyebrow { font: 500 12px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+h1 { font: 700 clamp(30px, 6vw, 46px)/1.02 var(--display); letter-spacing: .01em; margin: 0; text-wrap: balance; }
+h2.sec { font: 700 24px/1.1 var(--display); letter-spacing: .02em; margin: 8px 0 0; }
+.lede { color: var(--muted); max-width: 64ch; margin: 0; }
+.tally { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 14px 0; border-block: 2px solid var(--ink);
+  font-variant-numeric: tabular-nums; }
+.tally div { display: grid; }
+.tally b { font: 700 28px/1 var(--display); }
+.tally span { font: 500 11px/1.4 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.filters button, .pick button { font: 500 13px/1 var(--body); border: 1px solid var(--rule); background: var(--sheet);
+  color: var(--ink); border-radius: 999px; padding: 8px 12px; cursor: pointer; }
+.filters button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+button:focus-visible, summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sync { font: 400 12px/1.4 var(--mono); color: var(--muted); margin-left: auto; }
+.list { display: grid; gap: 10px; }
+.row { background: var(--sheet); border: 1px solid var(--rule); border-left: 5px solid var(--m, var(--rule)); border-radius: 4px;
+  padding: 14px 16px; display: grid; gap: 10px; min-width: 0; }
+.row[data-mark="build"] { --m: var(--build); } .row[data-mark="done"] { --m: var(--done); }
+.row[data-mark="later"] { --m: var(--later); } .row[data-mark="skip"] { --m: var(--skip); }
+.row[data-mark="active"] { --m: var(--accent); }
+.top { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.stamp { font: 700 14px/1 var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--m);
+  border: 2px solid var(--m); padding: 4px 7px 3px; border-radius: 2px; transform: rotate(-2deg); }
+.cap { font: 600 17px/1.3 var(--body); flex: 1 1 320px; min-width: 0; margin: 0; text-wrap: balance; }
+.meta { font: 400 12px/1.4 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.why { margin: 0; max-width: 72ch; }
+details { min-width: 0; }
+summary { cursor: pointer; font: 500 13px/1.4 var(--body); color: var(--muted); }
+.ground { margin: 8px 0 0; font: 400 13px/1.55 var(--mono); color: var(--muted); overflow-wrap: anywhere; }
+ol.ideas { margin: 8px 0 0; padding-left: 0; list-style: none; display: grid; gap: 4px; }
+ol.ideas li { display: flex; gap: 10px; font-size: 14px; min-width: 0; }
+ol.ideas .n { font: 400 12px/1.7 var(--mono); color: var(--muted); min-width: 3.2ch; text-align: right; flex: none; }
+ol.ideas .t { min-width: 0; overflow-wrap: anywhere; }
+ol.ideas .l { font: 400 12px/1.6 var(--mono); color: var(--muted); }
+.pick { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pick .lbl { font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.pick button[aria-pressed="true"][data-c="add"] { background: var(--build); color: var(--sheet); border-color: var(--build); }
+.pick button[aria-pressed="true"][data-c="veto"] { background: var(--accent); color: var(--sheet); border-color: var(--accent); }
+.pick button:disabled { opacity: .5; cursor: not-allowed; }
+.empty { color: var(--muted); padding: 16px 0; }
+footer { color: var(--muted); font-size: 13px; max-width: 72ch; }
+@media (prefers-reduced-motion: reduce) { .stamp { transform: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1 id="title"></h1>
+    <p class="lede" id="lede"></p>
+  </header>
+  <section aria-labelledby="now-h" style="display:grid;gap:12px">
+    <h2 class="sec" id="now-h">Now</h2>
+    <div class="tally" id="now-tally" aria-label="Counts"></div>
+    <div class="list" id="now"></div>
+  </section>
+  <section id="cat" aria-labelledby="cat-h" style="display:grid;gap:12px" hidden>
+    <h2 class="sec" id="cat-h">Catalogue</h2>
+    <p class="lede">Tick <b>Build</b> on a row to pull it forward, or <b>Veto</b> to drop it; Claude reads your picks at the next session start.</p>
+    <div class="tally" id="tally" aria-label="Totals"></div>
+    <nav class="filters" id="filters" aria-label="Filter by mark"><span class="sync" id="sync">Loading picks…</span></nav>
+    <div class="list" id="list" aria-live="polite"></div>
+  </section>
+  <footer>Generated by fm page. The page holds ids, titles, tiers, marks and counts only; no code, absolute paths or secrets.</footer>
+</div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(() => {
+  const all = JSON.parse(document.getElementById("data").textContent);
+  const data = all.catalogue || [], now = all.now;
+  const ORDER = ["build", "done", "later", "skip"];
+  const picks = {};
+  let filter = "all", db = null;
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const cell = (t, n, label) => { const d = el("div"); d.append(el("b", null, String(n)), el("span", null, label)); t.append(d); };
+
+  document.getElementById("eyebrow").textContent = all.eyebrow;
+  document.getElementById("title").textContent = all.title;
+  document.getElementById("lede").textContent = all.lede;
+
+  function renderNow() {
+    const t = document.getElementById("now-tally");
+    cell(t, now.active ? 1 : 0, "active"); cell(t, now.queue.length, "queued");
+    cell(t, now.inbox, "inbox"); cell(t, now.blocked, "blocked");
+    const L = document.getElementById("now");
+    const row = (mark, stamp, title, meta) => {
+      const r = el("article", "row"); r.dataset.mark = mark; const top = el("div", "top");
+      top.append(el("span", "stamp", stamp), el("h3", "cap", title), el("span", "meta", meta)); r.append(top); return r;
+    };
+    const a = now.active;
+    L.append(a ? row("active", a.id, a.title, `${a.type} ${a.tier}` + (a.step ? ` · step ${a.step.n}/${a.step.of}` : ""))
+               : el("p", "empty", "No active task."));
+    if (now.queue.length) {
+      const d = el("details"); d.open = true; d.append(el("summary", null, `Queue (${now.queue.length})`));
+      const ol = el("ol", "ideas");
+      now.queue.forEach((q, i) => { const li = el("li"); const t = el("span", "t", q.title + " ");
+        t.append(el("span", "l", `${q.id} · ${q.type} ${q.tier}`)); li.append(el("span", "n", "#" + (i + 1)), t); ol.append(li); });
+      d.append(ol); L.append(d);
+    }
+    if (now.closed.length) {
+      const d = el("details"); d.append(el("summary", null, `Last closed (${now.closed.length})`));
+      const ol = el("ol", "ideas");
+      now.closed.forEach(q => { const li = el("li"); const t = el("span", "t", q.title + " ");
+        t.append(el("span", "l", `${q.type}`)); li.append(el("span", "n", q.id), t); ol.append(li); });
+      d.append(ol); L.append(d);
+    }
+  }
+
+  function tally() {
+    const t = document.getElementById("tally"); t.textContent = "";
+    const ideas = data.reduce((n, c) => n + (c.ideas || []).length, 0);
+    cell(t, ideas, "ideas"); cell(t, data.length, "capabilities");
+    ORDER.forEach(m => cell(t, data.filter(c => c.mark === m).length, m));
+    cell(t, Object.values(picks).filter(p => p && p.choice).length, "your picks");
+  }
+
+  function filters() {
+    const f = document.getElementById("filters"); const sync = document.getElementById("sync");
+    f.querySelectorAll("button").forEach(b => b.remove());
+    ["all", ...ORDER].forEach(m => {
+      const b = el("button", null, m === "all" ? "All" : m[0].toUpperCase() + m.slice(1));
+      b.type = "button"; b.id = "filter-" + m; b.setAttribute("aria-pressed", String(filter === m));
+      b.addEventListener("click", () => { filter = m; filters(); list(); });
+      f.insertBefore(b, sync);
+    });
+  }
+
+  async function choose(id, choice) {
+    if (!db) return;
+    const cur = picks[id] && picks[id].choice;
+    const next = cur === choice ? "" : choice;
+    try { await db.doc("picks/" + id).set({ choice: next, at: new Date().toISOString() }); }
+    catch (e) { document.getElementById("sync").textContent = "Couldn't save that pick: " + (e && e.message || "try again"); }
+  }
+
+  function list() {
+    const L = document.getElementById("list"); L.textContent = "";
+    const rows = data.filter(c => filter === "all" || c.mark === filter);
+    if (!rows.length) { L.append(el("p", "empty", "No capabilities carry this mark.")); return; }
+    for (const c of rows) {
+      const ideas = c.ideas || [];
+      const r = el("article", "row"); r.dataset.mark = c.mark;
+      const top = el("div", "top");
+      top.append(el("span", "stamp", c.mark), el("h3", "cap", c.capability),
+                 el("span", "meta", `value ${c.value} · effort ${c.effort} · risk ${c.risk} · ${ideas.length} ideas`));
+      const why = el("p", "why", c.why);
+      const g = el("details"); g.append(el("summary", null, "Grounding"), el("p", "ground", c.grounding));
+      const d = el("details"); d.append(el("summary", null, `All ${ideas.length} ideas`));
+      const ol = el("ol", "ideas");
+      for (const i of ideas) {
+        const li = el("li"); const t = el("span", "t", i.title + " ");
+        t.append(el("span", "l", `${i.type}${i.value ? " · v" + i.value : ""}${i.effort ? i.effort : ""} · ${i.lens}`));
+        li.append(el("span", "n", "#" + i.n), t); ol.append(li);
+      }
+      d.append(ol);
+      const p = el("div", "pick"); p.append(el("span", "lbl", "Your pick"));
+      const cur = picks[c.id] && picks[c.id].choice;
+      [["add", c.mark === "build" || c.mark === "done" ? "Keep" : "Build"], ["veto", "Veto"]].forEach(([k, label]) => {
+        const b = el("button", null, label); b.type = "button"; b.id = `pick-${c.id}-${k}`; b.dataset.c = k;
+        b.setAttribute("aria-pressed", String(cur === k)); b.disabled = !db;
+        b.addEventListener("click", () => choose(c.id, k)); p.append(b);
+      });
+      r.append(top, why, g, d, p); L.append(r);
+    }
+  }
+
+  renderNow();
+  if (!data.length) return;
+  document.getElementById("cat").hidden = false;
+  tally(); filters(); list();
+  const use = window.claude && window.claude.use;
+  (use ? window.claude.use("db") : Promise.resolve(null)).then(h => {
+    const sync = document.getElementById("sync");
+    db = h;
+    if (!db) { sync.textContent = "Picks need a signed-in view of this page."; list(); return; }
+    sync.textContent = "Picks save as you tap.";
+    db.collection("picks").onSnapshot(snap => {
+      for (const k in picks) delete picks[k];
+      snap.docs.forEach(doc => { picks[doc.id] = doc.data(); });
+      tally(); list();
+    }, () => { sync.textContent = "Picks are read-only right now."; });
+  }, () => { document.getElementById("sync").textContent = "Picks are unavailable here."; });
+})();
+</script>

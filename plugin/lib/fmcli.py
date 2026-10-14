@@ -3432,7 +3432,7 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
+    ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -4210,6 +4210,12 @@ def build_parser():
     s.add_argument("--crossbreed", action="store_true", help="one more child: the top ideas combined (T-0628)")
     s.add_argument("--timeout", type=int, default=300)
 
+    s = add("page", lazy("fmpage", "cmd_page"),
+            help="now (active task, queue, counts) and optionally a research catalogue as one HTML page for a claude.ai "
+                 "Artifact; prints the publish line and how to read the Build/Veto picks back (T-0786)")
+    s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
+    s.add_argument("--url", help="record the Artifact link from a first publish, printed on later runs")
+    s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s = add("serve", lazy("fmserve", "cmd_serve"),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
