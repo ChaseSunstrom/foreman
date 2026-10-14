@@ -272,9 +272,9 @@ class Contract(_Tasks):
         # T-0408 (JARVIS): before each fm lane rm the session deleted __pycache__ and .pytest_cache by hand (and hit the
         # guard doing it); a test run's caches are rebuilt on the next run, never anyone's work
         with open(os.path.join(self.repo, ".git", "info", "exclude"), "a") as f:
-            f.write(".pytest_cache/\nnode_modules/\n.env\n")
+            f.write(".pytest_cache/\nnode_modules/\n.env\ntarget/\n")
         tid, wt = self.lane("Caches only")
-        for d in (".pytest_cache/v/cache", "node_modules/x"):
+        for d in (".pytest_cache/v/cache", "node_modules/x", "target/debug", "voltc/target/release"):  # T-0833: builds
             os.makedirs(os.path.join(wt, d))
             open(os.path.join(wt, d, "f"), "w").close()
         self.fm("lane", "rm", tid)
