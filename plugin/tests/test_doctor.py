@@ -88,6 +88,13 @@ class Checks(unittest.TestCase):
         self.assertIn("Write", r.detail)
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
+        # T-0768: Claude Code ignores a mistyped effort, maxTurns or omitClaudeMd, so the saving silently never happens
+        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes"):
+            self.write("plug/agents/a.md", f"---\nname: a\ndescription: agent\ntools: Read\n{field}\n---\nbody\n")
+            self.assertIn(field.split(":")[0], d.check_frontmatter(root).detail, field)
+        self.write("plug/agents/a.md", "---\nname: a\ndescription: agent\ntools: Read\neffort: low\nmaxTurns: 20\n"
+                                       "omitClaudeMd: true\n---\nbody\n")
+        self.assertNotIn("a.md", d.check_frontmatter(root).detail)
 
     def test_self_docs_match_the_code(self):
         self.assertEqual(d.check_self_docs().status, "PASS", d.check_self_docs().detail)

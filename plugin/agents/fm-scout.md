@@ -4,6 +4,9 @@ description: Cheap, fast read-only lookup (Haiku). Finds where something is defi
 tools: Read, Grep, Glob
 model: haiku
 color: blue
+effort: low
+maxTurns: 20
+omitClaudeMd: true
 ---
 
 You are Foreman's scout: a fast lookup, not an analyst. You get one concrete question (a symbol, a string, a feature, a config key) and the paths to search.

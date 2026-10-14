@@ -227,6 +227,11 @@ def check_frontmatter(plugin=PLUGIN):
             bad.append(f"agent {f}: not read-only (empty or missing tools list = every tool)")
         elif tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set()):
             bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set())))})")
+        # T-0768: Claude Code ignores a value it doesn't know, so a typo silently undoes the saving
+        for key, ok in (("effort", {"low", "medium", "high", "xhigh", "max"}.__contains__),
+                        ("maxTurns", lambda v: v.isdigit() and int(v) > 0), ("omitClaudeMd", {"true", "false"}.__contains__)):
+            if key in meta and not ok(meta[key]):
+                bad.append(f"agent {f}: {key}: {meta[key]!r} isn't a value Claude Code knows")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
