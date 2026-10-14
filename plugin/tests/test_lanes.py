@@ -67,9 +67,13 @@ class Lanes(ForemanTestCase):
             self.git("commit", "-qm", name, cwd=root)
         self.fm("lane", "merge", tid)
         meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
-        self.assertNotIn("base_tree", meta)
         changed = self.git("diff", "--name-only", meta["base"], "HEAD").split()
         self.assertEqual(changed, ["lane.py"])
+        # T-0812: closed from the main checkout, it re-snapshotted its start from the merged files: its diff was empty
+        self.fm("lane", "rm", tid)
+        self.fm("focus", tid)
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        self.assertEqual(self.git("diff", "--name-only", meta.get("base_tree") or meta["base"]).split(), ["lane.py"])
 
     def test_tidy_sweeps_stale_lanes(self):
         # T-0186: a closed task's lane and its branch stayed until someone ran fm lane rm

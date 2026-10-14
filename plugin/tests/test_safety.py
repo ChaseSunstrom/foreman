@@ -62,6 +62,17 @@ class CleanupGate(Base):
         self.assertIn("tmp/", text.split("left behind", 1)[1])
         self.assertNotIn("src/app.py", text.split("left behind", 1)[1].split("\n")[0])
 
+    def test_claude_codes_worktrees_folder_is_not_left_behind(self):
+        # T-0812: an isolated builder's worktree, removed when it ends, leaves the empty .claude/worktrees/
+        with open(os.path.join(self.repo, ".gitignore"), "w") as f:
+            f.write("**/.claude/worktrees/\n")  # Claude Code adds this line to .git/info/exclude
+        self.git("add", ".gitignore")
+        self.git("commit", "-qm", "ignore worktrees")
+        os.makedirs(os.path.join(self.repo, ".claude", "worktrees", "agent-a1"))
+        open(os.path.join(self.repo, ".claude", "worktrees", "agent-a1", "x.py"), "w").close()
+        out = self.finished_task({"src/app.py": "x = 1\n"}, scope=["src/**"])
+        self.assertNotIn("left behind", out.stdout + out.stderr)
+
 
 class UndoPoint(Base):
     def test_an_undo_point_names_head_and_a_stash_of_uncommitted_work(self):
