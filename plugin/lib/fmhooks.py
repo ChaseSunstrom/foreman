@@ -1575,9 +1575,19 @@ def _rule_hits(pl, p):
     tool, ti = pl.get("tool_name"), pl.get("tool_input") or {}
     if not p:
         return []
-    if tool == "Bash":
-        return c.rule_hits(p, "bash", str(ti.get("command") or ""))
-    return c.rule_hits(p, "path", _edit_path(pl) or "") if tool in FILE_TOOLS else []
+    if tool == "Bash":  # T-0971 review: a Bash write to a path is an edit of it too
+        import fmguard
+        cmd = str(ti.get("command") or "")
+        paths = [os.path.normpath(os.path.join(_cwd(pl), os.path.expanduser(t))) for t in fmguard.write_targets(cmd)]
+        return c.rule_hits(p, "bash", cmd) + [h for x in paths for h in _path_hits(p, x)]
+    return _path_hits(p, _edit_path(pl) or "") if tool in FILE_TOOLS else []
+
+
+def _path_hits(p, path):
+    """Path rules on a path and on where it really points (a symlink doesn't hide the file it writes)."""
+    hits = c.rule_hits(p, "path", path)
+    real = os.path.realpath(path) if path else ""
+    return hits + ([h for h in c.rule_hits(p, "path", real) if h[0] not in {x[0] for x in hits}] if real != path else [])
 
 
 def _veto_note(pl, p):

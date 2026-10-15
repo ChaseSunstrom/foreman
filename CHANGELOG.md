@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm rule` (T-0971): your own regex rules on Bash commands or edited paths that block (denied with your why) or warn (a note), checked in PreToolUse after the guard. A path rule also covers Bash writes to the path and symlinks to it; a command too long to check fails closed. `fm rule rm` is yours to type; `fm rule add --from-veto N` turns a recorded veto into a stop.
+- Test first at edit time (T-0969): the first source edit of a FIX/FEATURE task with no changed test and no failing run gets one line to write and record the failing test; once per task, never a block.
 - A criterion whose check never actually ran (the command, file or test module it names didn't exist) can still be fixed with `fm task ac edit`; a check that ran and failed stays locked. Both recorded demo sessions had to drop and redo their task over this (T-0985).
 - The README's live demo is a real session now (T-0979): Claude Code 2.1.301 with the current pane, working a real Foreman fix in a copy of this repo from one typed request to a red-then-green proof, close and commit. `demo/record_live.py --repo DIR --request TEXT [--dry] [--max-frames N]` records one; names, e-mails (account and git) and the home path are scrubbed.
 - Postures and rivals (T-0963): `fm posture lite|full` (yours to type: only the guard, the evidence gate and `fm ask` grants run in a lite project); `fm compact-output shadow` records what it would cut and never shortens; verify commands that read Foreman's own task files are flagged; `fm bench duel --vs none` races Foreman against Claude with only the guard; a near-empty builder or reviewer report is logged and named by `fm next`.
