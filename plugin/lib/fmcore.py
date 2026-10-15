@@ -10,6 +10,7 @@ import heapq
 import json
 import os
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -208,26 +209,29 @@ def mirror_ignored(root):
         return False
 
 
-def worktree_tree(root):
+def worktree_tree(root, timeout=None):
     """The full git tree object of the working files (see worktree_id); `git diff <rev> <tree>` shows every change
     since <rev>, untracked files included. The throwaway index starts as a copy of the real one (mtimes kept, so git's
-    racy-entry checks still hold): git then re-hashes only files whose stat data changed instead of the whole tree."""
+    racy-entry checks still hold): git then re-hashes only files whose stat data changed instead of the whole tree.
+    `timeout`: seconds for the whole (T-0884: the PreToolUse hook has 5), None when it runs out."""
     if not root or not git_root(root):
         return None
+    end = time.monotonic() + timeout if timeout else None
+    left = lambda usual: max(0.001, end - time.monotonic()) if end else usual  # noqa: E731
     with tempfile.TemporaryDirectory() as t:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(t, "index"))
         try:
             real = subprocess.run(["git", "-C", root, "rev-parse", "--path-format=absolute", "--git-path", "index"],
-                                  capture_output=True, text=True, timeout=10).stdout.strip()
+                                  capture_output=True, text=True, timeout=left(10)).stdout.strip()
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
             # fm sync's mirror (.foreman/**.md) changes with every fm call: not the work being audited. Anything else
             # put in that folder still counts. An ignored mirror needs no exclude, and git add refuses one naming it.
             spec = [] if mirror_ignored(root) else [":(exclude,glob).foreman/**/*.md"]
             subprocess.run(["git", "-C", root, "add", "-A", "--", ".", *spec], env=env,
-                           capture_output=True, timeout=120, check=True)
+                           capture_output=True, timeout=left(120), check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
-                                  timeout=60, check=True).stdout.strip()
+                                  timeout=left(60), check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
     return tree or None
@@ -254,6 +258,46 @@ def rebase_snapshot(root, base, paused, now):
                                   check=True).stdout.strip() or None
         except (OSError, subprocess.SubprocessError):
             return None
+
+
+SNAPSHOTS = "refs/foreman/snapshots/"
+
+
+def snapshot(root, why, timeout=None, what="tree"):
+    """T-0884: what a command is about to discard, kept under refs/foreman/snapshots/<UTC stamp>-<sha7>[-stash]: the
+    working files (untracked included, ignored not) as a commit when they differ from HEAD, or (what "stash drop
+    <ref>" / "stash clear") the stash commits themselves. [short sha] saved, [] when there's nothing to lose;
+    RuntimeError when the files couldn't be read in `timeout` seconds."""
+    top = git_root(root)
+    if not top:
+        return []
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    if what.startswith("stash"):
+        ref = (what.split() + ["stash@{0}"])[2] if what.startswith("stash drop") else None
+        shas = ([_git(top, "rev-parse", "--verify", "-q", ref, timeout=5).strip()] if ref
+                else _git(top, "stash", "list", "--format=%H", timeout=5).split())
+        for sha in filter(None, shas):
+            _git(top, "update-ref", f"{SNAPSHOTS}{stamp}-{sha[:7]}-stash", sha, timeout=5)
+        return [x[:12] for x in shas if x]
+    tree = worktree_tree(top, timeout)
+    if not tree:
+        raise RuntimeError(f"the working files couldn't be read{f' in {timeout:g} s' if timeout else ''}")
+    if tree == _git(top, "rev-parse", "-q", "--verify", "HEAD^{tree}", timeout=5).strip():
+        return []
+    head = git_head(top)
+    sha = _git(top, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "-c", "commit.gpgSign=false",
+               "commit-tree", tree, *(["-p", head] if head else []), "-m", f"Foreman snapshot before: {why}",
+               timeout=5).strip()
+    if not sha or _git(top, "update-ref", f"{SNAPSHOTS}{stamp}-{sha[:7]}", sha, timeout=5, fail=None) is None:
+        raise RuntimeError("git couldn't record the snapshot")
+    return [sha[:12]]
+
+
+def restore_line(top, sha, what="tree"):
+    """T-0884: the command that brings a snapshot back from anywhere in the repo (newer files are left alone)."""
+    if what.startswith("stash"):
+        return f"git -C {shlex.quote(top)} stash apply {sha}"
+    return f"git -C {shlex.quote(top)} restore --source={sha} --worktree -- :/"
 
 
 def pause_snapshot(root, b):

@@ -30,6 +30,10 @@
   - `fm repeats` never suggests a narrowed test run as a gate (T-0857). `fm friction --brief` marks the pass in progress so it isn't called for again while its recon runs; distinct notes of one kind no longer count as repeats (T-0858, T-0860).
   - Guard: a bare `git init` (or `-q`) in a folder that already holds `.git` isn't a tree write over core; any other form, or any `GIT_*` variable in the command, still is, and the refusal says to chain the cd with `&&` or pass the path (T-0859).
   - `fm check --affected` runs a test file the task added or changed even before the map links it (T-0875). Evidence runs drop bytecode older than its source, so a same-second, same-size edit never runs stale code (T-0876). A check's track record counts `fm task prove`'s failing start-tree run (T-0880).
+- Round 5 (54 ideas, every one grounded against the code; 7 built).
+  - Work snapshots: before a Bash command discards uncommitted work (`git reset --hard`, `checkout -- .`, `restore`, `clean -f`, `switch -f`, an `--abort`, `worktree remove --force`, `stash drop`/`clear`…), Foreman saves it under `refs/foreman/snapshots` within 3 s and says so (or that it couldn't); `fm snapshots` lists them with the command that brings one back; `fm tidy` prunes them after 14 days (T-0884).
+  - `fm night` runs the sentinel: closed tasks' checks against HEAD, a new failure bisected and captured (T-0888). `fm why` quotes the user's own request behind a line (T-0889). `fm projects --next` ranks every project's next action in one list (T-0890).
+  - CI: the suite runs on push and pull requests on Linux (Python 3.12 and 3.14), macOS reported (T-0882).
 
 ## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).

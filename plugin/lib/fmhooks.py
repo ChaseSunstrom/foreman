@@ -994,16 +994,30 @@ def _pre_tool_use(raw):
 
 
 def _snapshot_note(pl, guard):
-    """T-0884: a command about to discard uncommitted work (git reset --hard, checkout --, clean -f…) gets the work saved
-    under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash."""
+    """T-0884: a command about to discard uncommitted work (git reset --hard, checkout --, clean -f, stash drop…) gets
+    it saved under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash. The hook has 5 s
+    and blocks on a timeout, so the save gets SNAPSHOT_S and says when it couldn't."""
     cmd = str((pl.get("tool_input") or {}).get("command") or "")
     if "git" not in cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
         return None
-    cwd = _cwd(pl)
-    roots = {c.git_root(os.path.join(cwd, w)) for w in guard.discards_work(cmd, cwd)} - {None}
-    saved = [s for r in sorted(roots) if (s := c.snapshot(r, c.fit(c.redact(cmd), 200)))]
-    return (f"Foreman saved the uncommitted work this command may discard (snapshot {', '.join(saved)}): fm snapshots "
-            f"lists it with the command that brings it back.") if saved else None
+    saved, failed, why = [], [], c.fit(c.plain(c.redact(cmd)), 200)
+    for where, what in dict.fromkeys(guard.discards_work(cmd, _cwd(pl))):
+        top = c.git_root(where)
+        if not top:
+            continue
+        try:
+            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})"
+                      for sha in c.snapshot(top, why, SNAPSHOT_S, what)]
+        except RuntimeError as e:
+            failed.append(f"{top}: {e}")
+    notes = [f"Foreman saved what this command may discard: {'; '.join(saved)}. fm snapshots lists every save."
+             ] if saved else []
+    notes += [f"Foreman couldn't save the uncommitted work before this command ({'; '.join(failed)}): if it matters, "
+              "commit or stash it first."] if failed else []
+    return " ".join(notes) or None
+
+
+SNAPSHOT_S = 3.0  # of the PreToolUse hook's 5 s
 
 
 def _bus_note(pl):

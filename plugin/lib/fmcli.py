@@ -2919,6 +2919,26 @@ def first_bad(p, cmd, good, bad, timeout):
     return m.group(1) if m else None
 
 
+def cmd_snapshots(args):
+    """T-0884: the working files Foreman saved before a command discarded uncommitted work, newest first, each with
+    the command that brings it back (it restores the saved files and leaves newer ones alone)."""
+    p = resolve(args)
+    top = c.git_root(p.root)
+    rows = []
+    for ln in (c._git(top, "for-each-ref", "--sort=-refname", "--format=%(refname)%09%(objectname)%09%(subject)",
+                      c.SNAPSHOTS, timeout=30) if top else "").splitlines():
+        ref, sha, subject = (ln.split("\t", 2) + ["", ""])[:3]
+        stash = ref.endswith("-stash")
+        rows.append({"ref": ref, "sha": sha[:12], "at": ref[len(c.SNAPSHOTS):].split("-", 1)[0],
+                     "before": c.plain(subject.removeprefix("Foreman snapshot before: ")),
+                     "kind": "stash" if stash else "tree",
+                     "restore": c.restore_line(top, sha[:12], "stash" if stash else "tree")})
+    text = "\n".join(f"{r['at']}  {r['sha']}  {'stash: ' if r['kind'] == 'stash' else 'before: '}{r['before']}\n"
+                     f"  restore: {r['restore']}" for r in rows)
+    return out(args, {"snapshots": rows}, text or "No snapshots: Foreman saves one before a command discards "
+                                                   "uncommitted work (git reset --hard, checkout --, clean -f…).")
+
+
 def cmd_bisect(args):
     """T-0612: the first commit where a check started failing, between --good (default: the active task's start
     commit) and HEAD, with the files it changed."""
@@ -3478,7 +3498,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why snapshots outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
@@ -3970,6 +3990,8 @@ def build_parser():
     s.add_argument("--force", action="store_true", help="replace an AGENTS.md fm export didn't write")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
+    add("snapshots", cmd_snapshots, help="uncommitted work Foreman saved before a command discarded it, and how to "
+                                         "bring it back")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
