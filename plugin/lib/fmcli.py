@@ -584,8 +584,14 @@ def cmd_task(args):
             print(f"fm: warning: {w}", file=sys.stderr)
         grade, why = b.grade()
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
-        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed),
+        own = {a.n for a in b.acceptance() if c.verify_of(a.text) and any(  # T-0900: proven by its own command
+            ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
+        by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
+        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
+                              check_by_hand=by_hand),
                    f"{b.id} done (verification: {grade} — {why})." + (
+            "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
+            if by_hand else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
