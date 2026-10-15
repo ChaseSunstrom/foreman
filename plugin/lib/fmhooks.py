@@ -1920,6 +1920,21 @@ def stop(pl):
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
     drained = bool(had_work and not d["had_work"])
+    if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"]:
+        try:  # T-0950: the queue just drained: Foreman looks for work itself (an answer to a question isn't a drain)
+            import fmscout
+            made, slow = fmscout.idle(p) if fmscout.due(p) else ([], False)
+            if made:
+                reason = ((reason + "\n\n") if reason else "") + (
+                    f"Foreman scout found work nobody asked for yet: {', '.join(made)} (fm task show ID says why). "
+                    f"Plan it and work it (fm next); drop one that isn't worth it with its reason.")
+            elif slow:
+                reason = ((reason + "\n\n") if reason else "") + (
+                    "Foreman scout: the queue is empty. Run `fm scout --slow` (zero tokens: a newer Claude Code, "
+                    "dependencies with no stack card, doctor failures, stale skill sources); plan and work what it "
+                    "captures, and stop if it captures nothing.")
+        except Exception:
+            log_error("Stop", _tb())
     if not reason and ((act and needs_user(msg)) or drained):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
     if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
