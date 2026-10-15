@@ -26,7 +26,9 @@ import unicodedata
 
 SESSION = "fmui"
 SOCKET = os.environ.get("FM_SHOT_SOCKET", "fm-shot")  # T-0744: a test run uses its own, so two never collide
-CLEAN = {k: v for k, v in os.environ.items() if not k.startswith("FOREMAN_") and k != "TMUX"}
+# T-0903: nor this session's Claude Code identity (CLAUDECODE, CLAUDE_CODE_SESSION_ID, its messaging socket…): the
+# harnessed Claude Code is a session of its own, not this one's child
+CLEAN = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE_", "CLAUDECODE")) and k != "TMUX"}
 MOD = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FG, BG = (208, 208, 208), (24, 26, 33)  # the terminal's default colours
 
@@ -130,32 +132,46 @@ def cells(line):
 def snap(a):
     if a.cmd in ("self", "watch") and not os.environ.get("TMUX_PANE"):
         sys.exit("not inside tmux: snapshot the window instead (spectacle -b -n -a -o OUT.png)")
-    from PIL import Image, ImageDraw, ImageFont
     if a.cmd in ("self", "watch"):  # the pane this Claude Code session runs in, on the user's own tmux server (read-only)
         raw = subprocess.run(["tmux", "capture-pane", "-p", "-e", "-t", os.environ["TMUX_PANE"], "-S", str(-a.back)],
                              capture_output=True, text=True, check=True).stdout
     else:
         raw = tmux("capture-pane", "-p", "-e", "-t", SESSION).stdout
     raw = _OSC.sub("", raw)
-    rows = raw.rstrip("\n").split("\n")
     with open(os.path.splitext(a.out)[0] + ".txt", "w") as f:
         f.write(_SGR.sub("", raw))
-    font = ImageFont.truetype("/usr/share/fonts/TTF/Hack-Regular.ttf", 15)
-    bold = ImageFont.truetype("/usr/share/fonts/TTF/Hack-Bold.ttf", 15)
+    rows = render(raw, a.out)
+    print(f"{a.out} ({rows} rows)")
+
+
+_FONTS = {}
+
+
+def render(raw, out, cols=None, rows=None):
+    """T-0903: a captured screen (SGR colours, no OSC) drawn to a PNG at out; its row count. cols and rows fix the
+    size, so every frame of a recording is the same."""
+    from PIL import Image, ImageDraw, ImageFont
+    if not _FONTS:
+        _FONTS.update(font=ImageFont.truetype("/usr/share/fonts/TTF/Hack-Regular.ttf", 15),
+                      bold=ImageFont.truetype("/usr/share/fonts/TTF/Hack-Bold.ttf", 15), pick={},
+                      fallbacks=[ImageFont.truetype(f, 15) for f in FALLBACK if os.path.exists(f)])
+    font, bold, pick, fallbacks = _FONTS["font"], _FONTS["bold"], _FONTS["pick"], _FONTS["fallbacks"]
+    height, rows = rows, raw.rstrip("\n").split("\n")
+    if height:
+        rows = (rows + [""] * height)[:height]
     cw, ch = round(font.getlength("M")), 19
-    fallbacks = [ImageFont.truetype(f, 15) for f in FALLBACK if os.path.exists(f)]
+
     def sig(f, c):  # the pixels a font draws for c: a missing glyph draws the same box as a surely-missing one
         im = Image.new("L", (32, 32))
         ImageDraw.Draw(im).text((0, 0), c, font=f, fill=255)
         return im.tobytes()
-    pick = {}
 
     def face(c, b):  # Hack lacks ✓ ⚑ ◆ and friends: the first font that has the glyph draws it
         if c not in pick:
             pick[c] = next((f for f in fallbacks if sig(f, c) != sig(f, "\U0010FFFD")), None) \
                 if sig(font, c) == sig(font, "\U0010FFFD") else None
         return pick[c] or (bold if b else font)
-    cols = max(sum(c[4] for c in cells(r)) for r in rows) if rows else 80
+    cols = cols or (max(sum(c[4] for c in cells(r)) for r in rows) if rows else 80)
     img = Image.new("RGB", (max(cols, 1) * cw + 16, len(rows) * ch + 16), BG)
     d = ImageDraw.Draw(img)
     for y, row in enumerate(rows):
@@ -169,8 +185,8 @@ def snap(a):
             elif c != " ":
                 d.text((px, py + 1), c, font=face(c, b), fill=fg)
             x += w
-    img.save(a.out)
-    print(f"{a.out} ({len(rows)} rows)")
+    img.save(out)
+    return len(rows)
 
 
 def watch(a):

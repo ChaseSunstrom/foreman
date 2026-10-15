@@ -1,0 +1,171 @@
+#!/usr/bin/env python3
+"""Record Claude Code itself, with the foreman-ui mod, fixing a seeded bug through Foreman (T-0903): the band above the
+prompt, the animated tool rows, the step bar and the status line, as a user sees them.
+
+A throwaway repo (calc.add subtracts) and a Foreman state of its own (FOREMAN_STATE, so the task is T-0001 and nothing
+of yours is touched) under /tmp/fm-live-<time>; Claude Code runs in shot.py's tmux harness (its own server) with the
+mod from this checkout; the request is typed in, and the coloured screen is captured until the task is done. Writes
+demo/live.cast (each capture a full redraw, waits squeezed to MAX_GAP s), demo/live.svg (svg-term-cli via npx; GitHub
+plays it inline) and demo/live.mp4 (shot.py's renderer + ffmpeg). Your home folder, user name and account e-mail are
+replaced before anything is written. A real model turn: it costs a little usage (default --model sonnet).
+
+    python3 demo/record_live.py [--model sonnet] [--max 600] [--no-svg]"""
+import argparse
+import getpass
+import importlib.util
+import json
+import os
+import pwd
+import re
+import subprocess
+import sys
+import tempfile
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+spec = importlib.util.spec_from_file_location("shot", os.path.join(ROOT, "mods", "foreman-ui", "tools", "shot.py"))
+shot = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(shot)
+
+COLS, ROWS = 170, 46
+REQUEST = "FIX: calc.add(2, 3) returns -1 instead of 5"
+BUG = "def add(a, b):\n    return a - b\n"
+MAX_GAP = 1.2  # seconds a still screen is held at most (the model thinking), so the video stays watchable
+
+
+def scrubber():
+    """What must not reach a published recording: the home folder, the user and real name, the account e-mail."""
+    home, me = os.path.expanduser("~"), pwd.getpwuid(os.getuid())
+    names = [getpass.getuser(), *re.split(r"[ ,]+", me.pw_gecos)]
+    try:
+        acct = json.load(open(os.path.join(home, ".claude.json"))).get("oauthAccount") or {}
+        for k, v in acct.items():
+            if isinstance(v, str) and "mail" in k.lower():
+                names.append(v)
+            elif isinstance(v, str) and "name" in k.lower():
+                names += re.split(r"[ ,']+", v)
+    except (OSError, ValueError):
+        pass
+    names = sorted({n for n in names if len(n) > 2}, key=len, reverse=True)
+    # whole words only: a name inside another word ("purchase") is left alone
+    pat = re.compile(r"(?<![\w.@-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w@-])", re.I) if names else None
+
+    def scrub(s):
+        s = s.replace(home, "~")
+        return pat.sub("you", s) if pat else s
+    return scrub
+
+
+def seed(work):
+    repo = os.path.join(work, "calc")
+    os.makedirs(repo)
+    with open(os.path.join(repo, "calc.py"), "w") as f:
+        f.write(BUG)
+    with open(os.path.join(repo, "README.md"), "w") as f:
+        f.write("# calc\n\nA tiny calculator. `add(a, b)` should return the sum.\n")
+    for cmd in (["init", "-q", "-b", "main"], ["add", "."], ["-c", "user.email=demo@example.com", "-c", "user.name=demo",
+                                                            "commit", "-qm", "seed"]):
+        subprocess.run(["git", "-C", repo, *cmd], check=True)
+    return repo
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--model", default="sonnet")
+    ap.add_argument("--max", type=int, default=600, help="seconds to wait for the task to close")
+    ap.add_argument("--no-svg", action="store_true")
+    ap.add_argument("--from-cast", action="store_true", help="no new session: render demo/live.cast again")
+    a = ap.parse_args()
+    if a.from_cast:
+        with open(os.path.join(HERE, "live.cast"), encoding="utf-8") as f:
+            return render([json.loads(ln) for ln in f][1:], a)
+    work = tempfile.mkdtemp(prefix=f"fm-live-{int(time.time())}-", dir="/tmp")
+    repo, scrub = seed(work), scrubber()
+    os.environ["FOREMAN_STATE"] = os.path.join(work, "state")  # shot.start hands it to the session alone
+    shot.CLEAN["DISABLE_AUTOUPDATER"] = "1"  # its banner ("Auto-update failed…") is this machine's, not the product's
+    shot.start(argparse.Namespace(dir=repo, cols=COLS, rows=ROWS, model=a.model))
+    frames, t0 = [], time.time()
+
+    def grab():
+        raw = scrub(shot._OSC.sub("", shot.tmux("capture-pane", "-p", "-e", "-t", shot.SESSION, check=False).stdout))
+        if raw.strip() and (not frames or frames[-1][1] != raw):
+            frames.append((time.time() - t0, raw))
+        return shot._SGR.sub("", raw)
+
+    def done():
+        return any("status: done" in open(os.path.join(d, f)).read() for d, _, fs in os.walk(os.environ["FOREMAN_STATE"])
+                   for f in fs if f.startswith("T-0001") and f.endswith(".md"))
+    try:
+        for _ in range(60):  # the folder-trust question, then an idle prompt
+            text = grab()
+            if "trust this folder" in text.lower():  # its default is "No, exit"
+                shot.tmux("send-keys", "-t", shot.SESSION, "Down")
+                shot.tmux("send-keys", "-t", shot.SESSION, "Enter")
+                time.sleep(1.5)
+            elif "? for shortcuts" in text or "bypass permissions on" in text.lower():
+                break
+            time.sleep(0.5)
+        time.sleep(1)
+        for ch in REQUEST:  # typed, so the recording shows it being asked
+            shot.tmux("send-keys", "-t", shot.SESSION, "-l", ch)
+            grab()
+            time.sleep(0.05)
+        shot.tmux("send-keys", "-t", shot.SESSION, "Enter")
+        end, closed = time.time() + a.max, None
+        while time.time() < end:
+            time.sleep(0.5)
+            grab()
+            if closed is None and done():
+                closed = time.time()
+            if closed and time.time() - closed > 12:  # the closing turn's summary
+                break
+        if not closed:
+            sys.exit(f"T-0001 didn't close in {a.max} s; screens kept: {len(frames)} (nothing written)")
+    finally:
+        shot.tmux("kill-session", "-t", shot.SESSION, check=False)
+    write(frames, a)
+
+
+def write(frames, a):
+    cast, t, last = os.path.join(HERE, "live.cast"), 0.0, None
+    events = []
+    for ts, raw in frames:
+        t += min(MAX_GAP, ts - last) if last is not None else 0.5
+        last = ts
+        events.append([round(t, 3), "o", "\x1b[H\x1b[2J" + raw.rstrip("\n").replace("\n", "\r\n")])
+    events.append([round(t + 4, 3), "o", ""])  # hold the last screen
+    with open(cast, "w", encoding="utf-8") as f:
+        f.write(json.dumps({"version": 2, "width": COLS, "height": ROWS, "title": "Foreman in Claude Code",
+                            "env": {"TERM": "xterm-256color"}}) + "\n" + "".join(json.dumps(e) + "\n" for e in events))
+    print(f"{len(frames)} screens, {t:.0f} s → {cast}")
+    render(events, a)
+
+
+def render(events, a):
+    cast = os.path.join(HERE, "live.cast")
+    if not a.no_svg:
+        svg = os.path.join(HERE, "live.svg")
+        subprocess.run(["npx", "-y", "svg-term-cli@2.1.1", "--in", cast, "--out", svg, "--window", "--width",
+                        str(COLS), "--height", str(ROWS), "--padding", "12"], check=True)
+        print(f"rendered → {svg} ({os.path.getsize(svg) // 1024} KB)")
+    with tempfile.TemporaryDirectory(prefix="fm-live-frames-") as d:  # the MP4: each screen for as long as it showed
+        lines = []
+        for i, (ev, nxt) in enumerate(zip(events, events[1:])):
+            png = os.path.join(d, f"{i:05d}.png")
+            shot.render(shot._OSC.sub("", ev[2][len("\x1b[H\x1b[2J"):].replace("\r\n", "\n")), png, cols=COLS,
+                        rows=ROWS)  # every frame the full screen: ffmpeg sizes the video by the first
+            lines += [f"file '{png}'", f"duration {max(0.04, nxt[0] - ev[0]):.3f}"]
+        lines.append(f"file '{png}'")
+        listing = os.path.join(d, "list.txt")
+        with open(listing, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        mp4 = os.path.join(HERE, "live.mp4")
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", listing, "-fps_mode", "vfr",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", mp4],
+                       check=True)
+        print(f"video → {mp4} ({os.path.getsize(mp4) // 1024} KB)")
+
+
+if __name__ == "__main__":
+    main()

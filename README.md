@@ -5,9 +5,9 @@
 **The discipline layer for Claude Code.** Foreman makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until it's done or needs you, while a guard hook stops the commands you'd never want run in bypass mode.
 
 <p align="center">
-  <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
+  <img src="demo/live.svg" width="960" alt="Claude Code with the foreman-ui mod: asked to fix calc.add, Claude plans task T-0001, edits the code, is refused a close until a red-then-green proof exists, proves it, closes and commits; the Foreman pane shows the task card with its stages, files, fleet, queue and activity">
 </p>
-<p align="center"><sub>The real <code>fm</code> and guard hook on a seeded bug, with no model calls. Run it yourself: <code>fm demo</code> (add <code>--pace 1</code> to watch it at this speed).</sub></p>
+<p align="center"><sub>Claude Code with the foreman-ui mod, recorded as it fixes a seeded bug: one typed request, the rest is Claude working through Foreman. Sped up where the model thinks; <a href="demo/live.mp4">MP4</a>.</sub></p>
 
 ## Why
 
@@ -36,7 +36,11 @@ Or from inside Claude Code:
 /plugin install foreman@foreman
 ```
 
-Then just ask Claude for something: `fix the login timeout on slow wifi`. To see it work before you trust it with your repo, run `fm demo`.
+Then just ask Claude for something: `fix the login timeout on slow wifi`. To see it work before you trust it with your repo, run `fm demo`: the real `fm` and guard hook on a seeded bug, in a throwaway repo, with no model calls and nothing left behind (`--pace 1` plays it at this speed).
+
+<p align="center">
+  <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
+</p>
 
 <details>
 <summary><b>More ways to install, requirements and flags</b></summary>
@@ -295,6 +299,7 @@ python3 plugin/tests/bench_hooks.py --runs 50                   # hook latency
 python3 plugin/tests/e2e/roundtrip.py                           # install/uninstall/reinstall in a sandbox HOME
 python3 plugin/tests/e2e/scenarios.py                           # live §12 scenarios (uses claude -p; costs tokens)
 python3 demo/record.py [--mp4]                                  # re-record the demo above (demo/demo.cast, .svg, .mp4)
+python3 demo/record_live.py [--from-cast]                       # re-record Claude Code + the mod (demo/live.*; a Sonnet turn)
 ```
 
 ```
@@ -308,7 +313,7 @@ reset-claude.sh       optional: reset Claude Code's behavior layer before instal
 release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL]
 .claude-plugin/       local marketplace "foreman"
 plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
-demo/                 the README's recording of fm demo and the script that makes it
+demo/                 the README's recordings (Claude Code with the mod; fm demo) and the scripts that make them
 local/ state/ backups/   machine-specific, gitignored
 ```
 

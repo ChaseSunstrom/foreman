@@ -48,7 +48,7 @@ The procedure is enforced by the harness, not recalled: each task's stage (captu
 | `MASTER.md` | this map | Claude (via tasks) | on demand | — |
 | `README.md` | repo overview, install | Claude | on demand | — |
 | `CHANGELOG.md` | per-version changes | Claude | on demand | — |
-| `demo/` | the README's recording of `fm demo --pace 1` (`demo.cast` asciinema v2, animated `demo.svg`, `demo.mp4` to share) and `record.py`, which re-records it through a pseudo-terminal and renders it with svg-term-cli (npx), headless Chromium and ffmpeg (T-0902) | Claude | when the demo changes | — |
+| `demo/` | the README's recordings. `live.*` (T-0903): Claude Code with the foreman-ui mod fixing a seeded bug, made by `record_live.py`: a throwaway repo and `FOREMAN_STATE` under `/tmp/fm-live-*`, Claude Code (Sonnet, auto-updater off) in `shot.py`'s tmux harness (its own server; this session's `CLAUDE_*`/`FOREMAN_*` never passed on), the request typed, the coloured screen captured until T-0001 is done, home/user/account names scrubbed, waits squeezed to 1.2 s; `live.cast`, `live.svg` (svg-term-cli), `live.mp4` (`shot.render` at a fixed 170x46 + ffmpeg); `--from-cast` re-renders without a new session. `demo.*` (T-0902): `fm demo --pace 1` recorded through a pseudo-terminal by `record.py` (`--mp4` via headless Chromium) | Claude | when the demo changes | — |
 | `install.sh` | one-line bootstrap: clone, plugins, marketplace + plugin, bypass, wiring | user/Claude | run by user | — |
 | `setup-plugins.sh` | curated plugin setup, `--dry-run` | user/Claude | run by user | — |
 | `configure-repo.sh` | point install at a GitHub repo (one-time) | user | run by user | — |
