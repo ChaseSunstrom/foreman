@@ -45,22 +45,44 @@ def safe(line, module):
     return "assert " + ast.unparse(tree.body)
 
 
+_EX_CALL = r"((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*\((?:[^()]|\([^()]*\))*\))"
+_EX_VALUE = r"""(-?\d+(?:\.\d+)?|'[^']*'|"[^"]*"|True|False|None|\[[^\]]*\]|\{[^}]*\})"""
+_EXAMPLE = re.compile(_EX_CALL + r"\s*(?:->|=>|==|\breturns?\b|\bshould (?:be|return|equal|give)\b|\bgives?\b)\s*"
+                      + _EX_VALUE)
+
+
+def examples(wish, module):
+    """T-0897: the examples the user already wrote (f(2) -> 4, f(2) should return 4, m.f(2) == 4) as safe assertions on
+    module, in the wish's order."""
+    out = []
+    for call, value in _EXAMPLE.findall(wish):
+        call = call if call.startswith(module + ".") else f"{module}.{call}"
+        if (s := safe(f"assert {call} == {value}", module.split(".")[0])) and s not in out:
+            out.append(s)
+    return out
+
+
 def cmd_spec(args):
     import fmcli
     import fmideas
     p = fmcli.resolve(args)
     if not re.fullmatch(r"[A-Za-z_][\w.]*", args.module) or any(x.startswith("_") for x in args.module.split(".")):
         raise fmcli.UsageError("--module takes an importable module name, e.g. calc or app.billing")
+    own = examples(args.wish, args.module)
     prompt = (f"Wish: {args.wish}\nModule under test: `{args.module}` (already imported as `{args.module}`).\n"
               f"Write 3 to 8 assertions with concrete inputs and expected outputs that will hold once the wish is done. "
-              f"Call only functions of `{args.module}` and literals.")
+              f"Call only functions of `{args.module}` and literals." + (
+                  "\nThe user's own examples, already kept (agree with them; add others):\n" + "\n".join(own) if own else ""))
     try:
         text = fmideas.run_child("spec", SPEC_SYSTEM, prompt, args.model, args.timeout, project=p.slug)
     except ValueError as e:
-        raise fmcli.UsageError(str(e))
+        if not own:
+            raise fmcli.UsageError(str(e))
+        text = ""  # the user's examples are a spec on their own
     lines = [x.strip().strip("`") for x in text.splitlines() if x.strip()]
-    kept = [s for x in lines if (s := safe(x, args.module.split(".")[0]))]
-    dropped = len([x for x in lines if x.startswith(("assert", "import", "from"))]) - len(kept)
+    theirs = [s for x in lines if (s := safe(x, args.module.split(".")[0]))]
+    kept = own + [s for s in dict.fromkeys(theirs) if s not in own]
+    dropped = len([x for x in lines if x.startswith(("assert", "import", "from"))]) - len(theirs)
     if not kept:
         raise fmcli.UsageError(f"no safe assertion came back ({c.fit(c.plain(text), 160)})")
     slug = re.sub(r"[^a-z0-9]+", "_", args.wish.lower()).strip("_")[:40] or "wish"

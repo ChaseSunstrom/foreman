@@ -53,6 +53,25 @@ class Spec(Base):
         self.assertIn("red", r.stdout)
         self.assertIn("2 assertion", r.stdout)
 
+    def test_the_users_own_examples_come_first_and_survive_a_failed_child(self):
+        # T-0897: the wish already says what it means; those examples are the spec's first lines, verbatim
+        self.write("calc.py", "def add(a, b):\n    return a + b\n")
+        wish = 'multiply: mul(2, 3) -> 6, and mul(-1, 4) should return -4; also calc.mul(0, 9) == 0'
+        self.fm("spec", wish, "--module", "calc", "--out", "test_ex.py", env=self.env)
+        text = self.read("test_ex.py")
+        first = [ln.strip() for ln in text.splitlines() if ln.strip().startswith("assert")][:3]
+        self.assertEqual(first, ["assert calc.mul(2, 3) == 6", "assert calc.mul(-1, 4) == -4",
+                                 "assert calc.mul(0, 9) == 0"])
+        self.assertEqual(text.count("calc.mul(2, 3) == 6"), 1, "the child's copy of the same example isn't repeated")
+        broken = os.path.join(self.tmp, "broken")
+        os.makedirs(broken)
+        with open(os.path.join(broken, "claude"), "w") as f:
+            f.write("#!/bin/sh\nexit 1\n")
+        os.chmod(os.path.join(broken, "claude"), 0o755)
+        r = self.fm("spec", wish, "--module", "calc", "--out", "test_ex2.py",
+                    env={"PATH": broken + os.pathsep + os.environ["PATH"]})
+        self.assertIn("3 assertion", r.stdout)  # the child failed: the user's examples are enough
+
 
 class Rewrite(Base):
     def setUp(self):
