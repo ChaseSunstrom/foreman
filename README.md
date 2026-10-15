@@ -36,7 +36,7 @@ Or from inside Claude Code:
 /plugin install foreman@foreman
 ```
 
-Then just ask Claude for something: `fix the login timeout on slow wifi`. To see it work before you trust it with your repo, run `fm demo`: the real `fm` and guard hook on a seeded bug, in a throwaway repo, with no model calls and nothing left behind (`--pace 1` plays it at this speed).
+Then just ask Claude for something: `fix the login timeout on slow wifi`. To see it work before you trust it with your repo, run `fm demo`: the real `fm` and guard hook on a seeded bug, in a throwaway repo, with no model calls and nothing left behind (`--pace 1` plays it at this speed). Bare `fm` in a project says where things stand and what's next; `eval "$(fm complete --shell bash)"` in your `~/.bashrc` (or `--shell zsh`) gives tab completion for commands, options and live task ids.
 
 <p align="center">
   <img src="demo/demo.svg" width="860" alt="fm demo: Foreman refuses an edit made before any task exists and an rm -rf ~, records a failing test, the fix and a passing test, refuses to close the task until the audit is given, then closes and commits it">
