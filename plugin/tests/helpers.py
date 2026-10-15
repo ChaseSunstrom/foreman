@@ -78,7 +78,7 @@ class ForemanTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def fm(self, *args, cwd=None, check=True, env=None, input=None):
-        e = dict(os.environ, FOREMAN_HOME=self.home)
+        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1")  # fm run never takes a real inhibitor lock
         e.pop("CLAUDE_CODE_SESSION_ID", None)  # tests may run inside a live Claude Code session
         e.update(env or {})
         p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,
