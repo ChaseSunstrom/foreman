@@ -31,6 +31,17 @@
         "off"
       ],
       "default": "blue"
+    },
+    "motion": {
+      "type": "string",
+      "title": "Motion",
+      "description": "full: the pane's charts move at about 30 fps while work runs. calm: everything moves at the 8 fps frame clock. off: no animation; the pane redraws only when something changes.",
+      "options": [
+        "full",
+        "calm",
+        "off"
+      ],
+      "default": "full"
     }
   }
 }
