@@ -1829,7 +1829,7 @@ def _auto_evidence(pl, p, ok):
         err = str(pl.get("error") or "")
         m = re.match(r"Exit code (\d+)", err)
         code, output = (int(m.group(1)) if m else 1), err.split("\n", 1)[-1]
-    result, tree = c.run_result(code, c.redact(output)), c.worktree_id(p.root)
+    result, tree = c.run_result(code, c.redact(output), cmd), c.worktree_id(p.root)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         b = c.find_brief(p, act.id)
         for n in hits:
