@@ -2332,6 +2332,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
                 found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
                                                 "runs unattended, so only they lift it (they can type ! fm pause off)"))
+            if sub == "rule" and "rm" in rest:  # T-0971: a flag before the word counts too; `add rm` is a rare miss
+                found.append(("self-authorize", "fm rule rm is the user's to run: their rule stops what they said to "
+                                                "stop, so only they lift it (they can type ! fm rule rm N)"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
