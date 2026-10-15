@@ -983,6 +983,16 @@ class DecisionsResearchSelf(ForemanTestCase):
         self.assertIn("Use tomllib; would change if we need writes", text)
         self.assertIn(tid, text)
 
+    def test_a_close_names_what_only_a_person_can_check(self):
+        # T-0900: "the CSV opens in Excel" had no command of its own; a generic --run closed it as if proven
+        self.fm("init")
+        self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "S", "--ac", "it writes rows :: true",
+                "--ac", "the CSV opens in Excel", "--step", "build it", "--focus")
+        out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check").stdout
+        card = out.split("Check by hand", 1)[1] if "Check by hand" in out else ""
+        self.assertIn("the CSV opens in Excel", card)
+        self.assertNotIn("it writes rows", card)
+
     def test_a_stored_verify_the_guard_refuses_is_not_run(self):
         # T-0901: a verify command that never passed the hook (stored before the guard read them, or a brief another
         # clone synced in) gets the guard's checks before fm runs it; fm itself is run directly here, as such a brief is
