@@ -2666,6 +2666,33 @@ def cmd_research(args):
                                                                   f"{', '.join(made)}" if made else ""))
 
 
+_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to|get to)"
+                      r"\s+[^.\n!?]{4,140}")
+
+
+def capture_promises(p, text, sid=None):
+    """T-0899: what a reply that ends the turn promises for later ("I'll also…", "I'll follow up on…") becomes an inbox
+    item, once (an open one of the same title is enough); code blocks don't count. Returns the new ids."""
+    said = re.sub(r"```.*?(?:```|$)", " ", text or "", flags=re.S)
+    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)))[:5]
+    if not found:
+        return []
+    made = []
+    with c.lock(p.dir):
+        have = {b.title.lower() for b in c.load_briefs(p) if b.status not in c.CLOSED}
+        for x in found:
+            title = _title(f"Promised: {x}")
+            if title.lower() in have:
+                continue
+            b = _create(p, title, "FEATURE", "S", "captured", raw=f"{x}\n(promised in Claude's reply; captured so it "
+                                                                  f"isn't lost)", source="followup")
+            c.log_event(p, "capture", task=b.id, data={"source": "promise"}, session=sid)
+            made.append(b.id)
+        if made:
+            c.regen_views(p)
+    return made
+
+
 def _research_items(p):
     """(name, path of the file to read, mtime) for each note and brainstorm folder, newest first (T-0802)."""
     folder = os.path.join(p.dir, "research")
