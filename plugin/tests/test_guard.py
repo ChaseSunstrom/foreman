@@ -186,6 +186,19 @@ class KnownVars(GuardCase):
             ("T=$(mktemp -d) && echo x > $T/a && rm -r $T", None),  # T-0892: a fresh temp folder is scratch
             ('T="$(mktemp -d)"; rm -rf "$T"', None),
             ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it elsewhere: still unknown
+            # review: a TMPDIR set, or a mktemp shadowed, in the same command puts the folder elsewhere
+            ('export TMPDIR={fhome}; T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
+            ('TMPDIR={fhome} T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
+            ('export TMPDIR=$HOME; T=$(mktemp -d); rm -rf "$T/.."', "rm-outside"),
+            ('TMPDIR=~ ; T=$(mktemp -d); rm -rf $T/..', "rm-outside"),
+            ("mktemp(){{ echo /; }}; T=$(mktemp -d); rm -rf $T", "rm-outside"),
+            ("function mktemp {{ echo /; }}; T=$(mktemp -d); rm -rf $T", "rm-outside"),
+            ("alias mktemp='echo /'; T=$(mktemp -d); rm -rf $T", "rm-outside"),
+            ("PATH={fhome}/bin:$PATH; T=$(mktemp -d); rm -rf $T", "rm-outside"),
+            ("hash -p {fhome}/mk mktemp; T=$(mktemp -d); rm -rf $T", "rm-outside"),
+            (". ./defs.sh; T=$(mktemp -d); rm -rf $T", "rm-outside"),  # a sourced file can define mktemp
+            ("source defs.sh && T=$(mktemp -d) && rm -rf $T", "rm-outside"),
+            ('eval "$(echo bWs= | base64 -d)"; T=$(mktemp -d); rm -rf $T', "rm-outside"),
             ("D=/tmp/ok; D=$(echo /); rm -rf $D", "rm-outside"),  # reassigned from a substitution: unknown again
             ("S=/tmp/x; $(echo cd) {fhome}/state; echo hi > $S/a", "state-direct"),  # a computed command name
         ], self.bash)

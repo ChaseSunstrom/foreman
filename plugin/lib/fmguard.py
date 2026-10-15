@@ -2093,9 +2093,14 @@ def _shell_c(args):
 # T-0892: NAME=$(mktemp -d) (no -p/--tmpdir/template) is a fresh folder in TMPDIR or /tmp: read as that literal path,
 # so `rm -r $T` later is a known target, and `$T/../..` still resolves to what it would remove
 _MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)(?:\$\(\s*mktemp\s+-d\s*\)|`\s*mktemp\s+-d\s*`)\2""")
+# T-0906: a command that sets TMPDIR or PATH, defines its own mktemp or repoints it (hash -p, enable) makes the folder
+# somewhere else (after eval or source the guard already treats T as unknown: see the KnownVars cases)
+_MKTEMP_MOVED = re.compile(r"\b(?:TMPDIR|PATH)\+?=|\bmktemp\s*\(\s*\)|\b(?:function|alias)\s+mktemp\b|\b(?:hash|enable)\s")
 
 
 def _mktemp_literal(cmd):
+    if _MKTEMP_MOVED.search(cmd):
+        return cmd
     return _MKTEMP_D.sub(lambda m: m.group(1) + os.path.join(os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp"), cmd)
 
 
