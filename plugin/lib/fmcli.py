@@ -1395,6 +1395,9 @@ def catch_rates(p):
             for cmd, code in d.get("ran") or []:
                 runs[cmd] += 1
                 seq[(cmd, e.get("task"))].append(not code)
+        elif e.get("event") == "prove" and d.get("cmd") and "red" in d:  # T-0880: its start-tree run failed first
+            runs[d["cmd"]] += 2
+            seq[(d["cmd"], e.get("task"))] += [not d["red"], not d.get("green")]
     caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
     return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
 
