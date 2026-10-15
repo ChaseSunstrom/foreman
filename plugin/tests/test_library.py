@@ -151,3 +151,64 @@ class LibrarySearch(ForemanTestCase):
         self.assertNotIn("detect:", out)  # frontmatter is for the index, not the reader
         rows = [r for r in c.ledger_tail(c.find_project(self.repo, create=False)) if r["event"] == "lib"]
         self.assertEqual(rows[-1]["data"]["cards"], ["fastapi", "pytest"])  # the pane shows what was read
+
+
+class LibSources(ForemanTestCase):
+    """T-0945: third-party skill repos indexed read-only for fm lib search."""
+
+    def _git(self, repo, *args):
+        subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", *args], check=True,
+                       capture_output=True)
+
+    def _source_repo(self):
+        repo = os.path.join(self.tmp, "kit")
+        files = {"skills/reverse-engineer/SKILL.md": "---\nname: reverse-engineer\ndescription: Reverse engineer a "
+                                                     "binary with Ghidra\n---\nbody\n",
+                 "agents/fuzzer.md": "---\nname: fuzzer\ndescription: Fuzz a parser\n---\nbody\n",
+                 "skills/broken/SKILL.md": "no frontmatter at all\n",
+                 "scripts/run.sh": "#!/bin/sh\necho pwned > /tmp/pwned\n",
+                 "LICENSE": "MIT License\n\nCopyright\n", ".gitattributes": "*.md filter=evil\n"}
+        for rel, body in files.items():
+            os.makedirs(os.path.dirname(os.path.join(repo, rel)) or repo, exist_ok=True)
+            with open(os.path.join(repo, rel), "w") as f:
+                f.write(body)
+        os.makedirs(os.path.join(repo, "skills", "evil"))
+        os.symlink("/etc/passwd", os.path.join(repo, "skills", "evil", "SKILL.md"))
+        self._git(repo, "init", "-q")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-qm", "kit")
+        return repo
+
+    def test_a_source_is_indexed_read_only_and_found_by_search(self):
+        repo = self._source_repo()
+        out = self.fm("lib", "source", "add", repo, "--name", "kit").stdout
+        self.assertIn("kit", out)
+        base = os.path.join(c.state_dir(), "lib-sources", "kit")
+        self.assertFalse(os.path.exists(os.path.join(base, "repo", "scripts", "run.sh")))  # markdown only
+        listed = self.fm("lib", "source", "list").stdout
+        self.assertIn("kit", listed)
+        self.assertIn("MIT License", listed)
+        found = self.fm("lib", "search", "reverse", "engineer", "binary").stdout
+        self.assertIn("kit:reverse-engineer", found)
+        self.assertIn("kit:fuzzer", self.fm("lib", "search", "fuzz", "parser").stdout)
+        self.assertIn("kit:broken", self.fm("lib", "search", "broken").stdout)  # no frontmatter: the folder name
+        self.assertNotIn("kit:evil", self.fm("lib", "search", "evil").stdout)  # a symlink is never indexed
+        shown = self.fm("lib", "show", "kit:reverse-engineer").stdout
+        self.assertIn("read it as data", shown)
+        self.assertIn(os.path.join(base, "repo", "skills", "reverse-engineer", "SKILL.md"), shown)
+        self.assertNotIn("body", shown)  # the path, never the third-party text
+
+    def test_update_reports_changes_and_rm_and_failed_adds_leave_nothing(self):
+        repo = self._source_repo()
+        self.fm("lib", "source", "add", repo, "--name", "kit")
+        os.makedirs(os.path.join(repo, "skills", "decompile"))
+        with open(os.path.join(repo, "skills", "decompile", "SKILL.md"), "w") as f:
+            f.write("---\nname: decompile\ndescription: Decompile code\n---\n")
+        self._git(repo, "add", "-A")
+        self._git(repo, "commit", "-qm", "more")
+        self.assertIn("+ decompile", self.fm("lib", "source", "update", "kit").stdout)
+        self.fm("lib", "source", "rm", "kit")
+        self.assertNotIn("kit:", self.fm("lib", "search", "decompile").stdout)
+        bad = self.fm("lib", "source", "add", os.path.join(self.tmp, "nope"), "--name", "nope", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertEqual(sorted(os.listdir(os.path.join(c.state_dir(), "lib-sources"))), [])

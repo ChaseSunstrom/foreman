@@ -55,7 +55,7 @@ The plugin-system install changes nothing outside the plugin: the hooks and the 
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude`, and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude` (tested on 2.1.301; the pane needs 2.1.299 or later), and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
 
 **Flags:**
 
@@ -116,6 +116,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - Cards cost no context until they are read. `fm lib` picks the ones that match your repo's manifests and files, and the session start names them.
 - `fm lib show fastapi pytest --section verify` reads just the parts you need.
 - `fm lib search` also finds installed plugins' skills, disabled ones included, so a big skill pack can stay off and still be found.
+- `fm lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Foreman's state, with no hooks, filters, submodules or symlinks, and nothing run. `fm lib source defaults` adds six vetted ones (wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea): about 870 skills and agents, searchable next to the cards at no context cost.
 
 **Verifies.**
 - `fm check` runs the project's gates and reuses a pass on an identical tree.
