@@ -2739,7 +2739,23 @@ def lint_verify(cmd, root):
         problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
+    live = sorted({m.group(1) for seg in re.split(r"&&|\|\||;|\|", cmd or "") for m in [_LIVE.match(seg.strip())] if m})
+    if live:  # T-0943: fm check and fm lane merge would run it unattended, against whatever credentials are ambient
+        problems.append(f"it reaches a live service ({', '.join(live)}): keep it a manual check (fm task evidence ID "
+                        f"--ac N CMD RESULT), or point it at a sandbox")
     return problems
+
+
+# T-0943: commands that act on or read a live account, cluster or database (local checks like terraform validate or
+# plan, helm lint, kubectl kustomize, a psql without a host stay quiet)
+_LIVE = re.compile(r"(?:\w+=\S*\s+)*(aws|gcloud|az|kubectl|psql|mysql|mongosh|redis-cli|terraform|tofu|helm|pulumi)\b"
+                   r"(?=\s+(?!--?(?:version|help)\b)\S)(?:(?<=aws)|(?<=gcloud)|(?<=az)"
+                   r"|(?<=kubectl)(?=.*\b(?:get|apply|delete|describe|logs|exec|rollout|scale|patch|create|edit|"
+                   r"port-forward|top|drain|cordon)\b)"
+                   r"|(?<=psql)(?=.*(?:\s-h\s*\S|--host|postgres(?:ql)?://))|(?<=mysql)(?=.*(?:\s-h\s*\S|--host|mysql://))"
+                   r"|(?<=mongosh)(?=.*(?:mongodb(?:\+srv)?://|--host))|(?<=redis-cli)(?=.*(?:\s-h\s*\S|redis://))"
+                   r"|(?<=terraform)(?=\s+(?:apply|destroy|import|refresh)\b)|(?<=tofu)(?=\s+(?:apply|destroy|import)\b)"
+                   r"|(?<=helm)(?=\s+(?:install|upgrade|uninstall|rollback)\b)|(?<=pulumi)(?=\s+(?:up|destroy|refresh)\b))")
 
 
 def unrunnable(cmd, root):
