@@ -39,7 +39,8 @@ def tmux(*args, check=True):
 
 def start(a, cmd=None):
     tmux("kill-session", "-t", SESSION, check=False)
-    env = ["-e", "COLORTERM=truecolor"] + (["-e", f"FOREMAN_STATE={os.environ['FOREMAN_STATE']}"]
+    # T-0995: a one-off: the drive never pushes it into the queue (it once planned three tasks and took the focus)
+    env = ["-e", "COLORTERM=truecolor", "-e", "FOREMAN_ONEOFF=1"] + (["-e", f"FOREMAN_STATE={os.environ['FOREMAN_STATE']}"]
                                           if os.environ.get("FOREMAN_STATE") else [])
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
          cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else ""))

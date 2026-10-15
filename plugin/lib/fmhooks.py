@@ -2184,13 +2184,15 @@ def _headless():
 def _oneoff():
     """T-0775: a claude -p session Foreman didn't start (fm run sets FOREMAN_DRIVE_TASK) answers its prompt: no queue
     in its context, no drive, no claim on the project's session. The guard still applies."""
+    if os.environ.get("FOREMAN_ONEOFF") == "1":  # T-0995: an interactive one-off too (the UI harness, shot.py)
+        return True
     return (os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli" and not os.environ.get("FOREMAN_DRIVE_TASK")
             and not os.environ.get("FOREMAN_BENCH"))  # T-0820: a bench replay measures Foreman at work
 
 
-ONEOFF_NOTE = ("Foreman: this is a one-off headless session (claude -p, not fm run). Answer the prompt and stop: don't "
-               "focus, plan, capture or work queued Foreman tasks unless the prompt asks for that; the drive and "
-               "never-stop rules apply to interactive sessions and fm run, not here. The guard still applies: if the "
+ONEOFF_NOTE = ("Foreman: this is a one-off session (claude -p or FOREMAN_ONEOFF=1, not fm run). Answer the prompt and "
+               "stop: don't focus, plan, capture or work queued Foreman tasks unless the prompt asks for that; the drive "
+               "and never-stop rules apply to working sessions and fm run, not here. The guard still applies: if the "
                "prompt asks for an edit, create one S brief first (fm task new … --focus), since unbriefed edits are "
                "refused.")
 
