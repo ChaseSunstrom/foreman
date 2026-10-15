@@ -122,13 +122,13 @@ class BoardClose(Base):
         self.committed("app.js", "let a = 1;\n")
         self.task()
         self.write("x.py", "<" * 7 + " HEAD\nA = 1\n" + "=" * 7 + "\nA = 2\n" + ">" * 7 + " theirs\n")
-        self.write("app.js", "let a = 1;\ndebugger;\nconsole.log(a);\n")
+        self.write("app.js", "let a = 1;\ndebugger;\nconsole.log(a);\n  debugger\n")
         import fmcli
         warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py", "app.js"])
         conflict = [w for w in warns if "conflict marker" in w]
         self.assertTrue(conflict and all(f"x.py:{n}" in conflict[0] for n in (1, 3, 5)), warns)
         debug = [w for w in warns if "debug scaffolding" in w]
-        self.assertTrue(debug and "app.js:2" in debug[0] and "app.js:3" in debug[0], warns)
+        self.assertTrue(debug and all(f"app.js:{n}" in debug[0] for n in (2, 3, 4)), warns)  # with or without ;
 
     def test_finish_prints_one_verdict_line_before_the_warnings(self):
         self.committed("x.py", "A = 1\n")
@@ -160,3 +160,22 @@ class BoardClose(Base):
         subprocess.run(["git", "-C", self.repo, "fetch", "-q", remote, "main:refs/remotes/origin/main"], check=True)
         import fmcli
         self.assertEqual(fmcli._landed(self.p, c.find_brief(self.p, "T-0002")), f"Landed: committed {sha} · pushed")
+
+    def test_landed_counts_only_this_tasks_files_and_shows_on_a_commit_retry(self):
+        self.committed("x.py", "A = 1\n")
+        self.committed("y.py", "B = 1\n")
+        self.task()
+        self.write("x.py", "A = 2\n")
+        self.write("y.py", "B = 2\n")  # another task's edit, still uncommitted
+        c.log_event(self.p, "touched", task="T-0009", data={"file": os.path.join(self.repo, "y.py")})
+        out = self.finish("--commit", "x").stdout
+        sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True,
+                             text=True).stdout.strip()
+        self.assertEqual(out.strip().splitlines()[-1], f"Landed: committed {sha} · not pushed")
+        self.assertIn("Landed: committed", self.fm("task", "finish", "T-0001", "--commit", "again").stdout)
+
+    def test_tier_drift_has_a_short_kind_in_the_verdict(self):
+        import fmcli
+        self.assertEqual(fmcli._warning_kind("T-0956 was planned S, but its diff is M-sized (3 files, 90 lines): x"),
+                         "tier drift")
+        self.assertEqual(fmcli._warning_kind("debug scaffolding in added lines: a.py:3"), "debug scaffolding")

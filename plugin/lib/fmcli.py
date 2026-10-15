@@ -582,7 +582,7 @@ def cmd_task(args):
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
         warns = _close_warnings(p, b, files)  # T-0672: seen, never a refusal
         if warns:  # T-0956: the verdict first, then the details
-            kinds = dict.fromkeys(re.split(r"[:(\[]| in ", w, maxsplit=1)[0].strip() for w in warns)
+            kinds = dict.fromkeys(_warning_kind(w) for w in warns)
             print(f"fm: {len(warns)} warning{'' if len(warns) == 1 else 's'}: {', '.join(kinds)}", file=sys.stderr)
         for w in warns:
             print(f"fm: warning: {w}", file=sys.stderr)
@@ -773,6 +773,8 @@ def task_finish(p, args):
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
         _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check)
+        if not getattr(args, "json", False):
+            print(_landed(p, b))
         return 0
     if not args.audit:
         raise UsageError("fm task finish needs --audit \"<how the audits were done>\"")
@@ -865,19 +867,47 @@ def task_finish(p, args):
     return rc
 
 
+def _theirs(p, b, files):
+    """T-0738: the files only another task edited (while this one was being worked): that task's to commit, even when
+    this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
+    this task's first focus, not its capture: edits made before it started say nothing about its own changes."""
+    events = c.ledger_tail(p, c.TASK_WINDOW)
+    mine = set(c.task_touches(p, b.id))
+    first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
+    since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
+    others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
+              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
+              and (i > first if first is not None else str(e.get("ts", "")) >= since)
+              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    return [f for f in files if f in others and f not in mine]
+
+
 def _landed(p, b):
-    """T-0956: the close's last line: where the task's files ended up — committed (sha, pushed or not) or not."""
+    """T-0956: the close's last line: where the task's own files ended up — committed (sha, pushed or not) or not.
+    Another task's files are left out, as the commit leaves them out; git that can't answer says unknown."""
     import fmmap
     base = c.task_base(p.root, b) if c.git_root(p.root) else None
-    files = [f for f in fmmap.changed(p.root, base) if not f.startswith(".foreman/")] if base else []
+    if not base:
+        return "Landed: unknown (no git start point on record)"
+    files = [f for f in fmmap.changed(p.root, base) if not f.startswith(".foreman/")]
+    files = [f for f in files if f not in set(_theirs(p, b, files))][:500]
     if not files:
         return "Landed: no file changes in git"
     dirty = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "--", *files, timeout=30).splitlines()
     if dirty:
         return f"Landed: not committed ({len(dirty)} file{'' if len(dirty) == 1 else 's'} uncommitted)"
-    sha = c._git(p.root, "log", "-1", "--format=%h", "--", *files, timeout=30).strip()
-    pushed = c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip() if sha else ""
+    sha = c._git(p.root, "--literal-pathspecs", "log", "-1", "--format=%h", "--", *files, timeout=30).strip()
+    if not sha:
+        return "Landed: unknown (git could not say)"
+    pushed = c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip()
     return f"Landed: committed {sha} · {'pushed' if pushed else 'not pushed'}"
+
+
+def _warning_kind(w):
+    """A close warning's kind for the verdict line: its text before the first ':', '(', '[' or ' in '."""
+    if re.match(r"T-\d+ was planned [SML], but its diff is", w):
+        return "tier drift"
+    return re.split(r"[:(\[]| in ", w, maxsplit=1)[0].strip()
 
 
 def _finish_gaps(b, args, lenses):
@@ -932,18 +962,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
         out = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "-z", "-uall", "--no-renames", "--", *touched,
                      timeout=30)
         files += [e[3:] for e in out.split("\0") if len(e) > 3]
-    # T-0738: a file only another task edited (while this one was being worked) is that task's to commit, even when
-    # this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
-    # this task's first focus, not its capture: edits made before it started say nothing about its own changes
-    events = c.ledger_tail(p, c.TASK_WINDOW)
-    mine = set(c.task_touches(p, b.id))
-    first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
-    since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
-    others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
-              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
-              and (i > first if first is not None else str(e.get("ts", "")) >= since)
-              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
-    theirs = [f for f in files if f in others and f not in mine]
+    theirs = _theirs(p, b, files)
     files = [f for f in files if f not in theirs]
     if theirs and not dry:
         print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
@@ -1536,7 +1555,7 @@ def _last_green(b):
                  and (r := re.match(r"^- \((?:step|ac) \d+\) `(.+?)` → exit 0\b", line))), None)
 
 
-_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger;|TODO[- ]?debug")
+_DEBUG = re.compile(r"\bbreakpoint\(\)|\bi?pdb\.set_trace\(|^\s*debugger\b\s*;?\s*(?:\/\/.*)?$|TODO[- ]?debug")
 _DEBUG_PRINT = re.compile(r"^\s*(print|console\.\w+|logger?\.\w+)\(\s*f?[\"']DEBUG\b")  # matched on the raw line
 _JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
 _PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")
