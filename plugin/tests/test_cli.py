@@ -735,6 +735,21 @@ class AuditPrep(ForemanTestCase):
         self.assertEqual(sorted(sum(lenses, [])), sorted(["intent", "adversary", "edge", "operator", "maintainer"]))
         self.assertTrue(all(lenses), "no empty group")
 
+    def test_long_compacted_diff_tells_the_reviewer_to_read_in_parts(self):
+        # T-0983 (written by the recorded demo session, T-0979): a diff over ~1500 compacted lines doesn't fit one Read
+        self.fm("init")
+        self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "big.py"), "w") as f:
+            f.write("".join(f"X{i} = {i}\n" for i in range(1600)))
+        self.assertIn("read it in parts", self.fm("audit", "prep", "--print", "T-0001").stdout)
+        with open(os.path.join(self.repo, "big.py"), "w") as f:
+            f.write("X = 1\n")
+        self.assertNotIn("read it in parts", self.fm("audit", "prep", "--print", "T-0001").stdout)
+
     def test_brief_asks_for_report_findings_fields_and_prep_names_the_tool(self):
         # T-0780: findings reach the host review UI; the ranked lines still parse (_FINDING)
         self.fm("init")
