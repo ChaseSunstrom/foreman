@@ -2364,7 +2364,7 @@ def cmd_sensitive(args):
         root = c.git_root(args.path or os.getcwd()) or os.path.abspath(args.path or ".")
         hits = sensitive_signals(root)
         return out(args, {"root": root, "signals": hits},
-                   "\n".join([f"Signals that {root} is sensitive:"] + [f"  {h}" for h in hits[:40]]
+                   "\n".join([f"Signals that {root} is sensitive:"] + [f"  {c.plain(h)}" for h in hits[:40]]
                              + ["fm sensitive on would mark it; nothing was changed."]) if hits else
                    f"No signals in {root} (.env*, *.pem, secret or prod in a path); nothing was changed.")
     if args.path:
@@ -3181,16 +3181,21 @@ def cmd_oops(args):
     as they are now (that save is a snapshot too, so the restore can itself be undone)."""
     import shlex
     import subprocess
-    rows =_snapshot_rows(resolve(args))
+    rows = _snapshot_rows(resolve(args))
     if not rows:
         return out(args, {"snapshot": None}, _NO_SNAPSHOTS)
     r = rows[0]
     head = f"Newest snapshot {r['sha']} ({r['at']}), {'a stash' if r['kind'] == 'stash' else 'before: ' + r['before']}"
     if not args.apply:
         return out(args, {"snapshot": r, "applied": False},
-                   f"{head}\n  restore: {r['restore']}\nfm oops --apply runs it (newer files are left alone).")
-    saved = c.snapshot(r["top"], f"fm oops --apply {r['sha']}", timeout=30)
-    run = subprocess.run(shlex.split(r["restore"]), capture_output=True, text=True, timeout=120)
+                   f"{head}\n  restore: {r['restore']}\nfm oops --apply runs it: files in the snapshot are overwritten (the "
+                   f"current ones are saved as a snapshot first, so a second fm oops --apply undoes it); files it "
+                   f"doesn't have are left alone.")
+    try:
+        saved = c.snapshot(r["top"], f"fm oops --apply {r['sha']}", timeout=30)
+    except RuntimeError as e:  # fail closed: nothing is restored over files that couldn't be saved first
+        raise UsageError(f"couldn't save the current files first, so nothing was restored: {e}")
+    run = c._git(r["top"], *shlex.split(r["restore"])[3:], timeout=120, proc=True)  # git -C TOP …: fmcore's runner
     if run.returncode:
         raise UsageError(f"{r['restore']} failed: {(run.stderr or run.stdout).strip()[-300:]}")
     return out(args, {"snapshot": r, "applied": True, "saved_first": saved},
@@ -3207,13 +3212,16 @@ def cmd_round(args):
     nums = [int(t[6:]) for t in c._git(top, "tag", "--list", "round-*", timeout=10).split() if t[6:].isdigit()]
     prev = f"round-{max(nums)}" if nums else None
     tag = f"round-{max(nums, default=0) + 1}"
-    log = c._git(top, "log", "--format=%s%x1f%b%x1e", f"{prev}..HEAD" if prev else "HEAD", timeout=60)
+    got = c._git(top, "log", "--format=%s%x1f%b%x1e", f"{prev}..HEAD" if prev else "HEAD", timeout=60, proc=True)
+    if got.returncode:
+        raise UsageError(f"git log failed, so no round was tagged: {got.stderr.strip()[:200]}")
+    log = got.stdout
     named = set()
     for rec in log.split("\x1e"):
         subj, _, body = rec.strip().partition("\x1f")
         if subj and not subj.startswith("Revert "):
             named |= set(re.findall(r"\bT-\d{4,}\b", subj)) | set(re.findall(r"Foreman-Task: (T-\d{4,})", body))
-    done = [b for b in c.load_briefs(p) if b.id in named and b.status == "done"]
+    done = [b for b in c.load_briefs(p, include_archive=True) if b.id in named and b.status == "done"]
     if c._git(top, "tag", tag, "HEAD", timeout=10, fail=None) is None:
         raise UsageError(f"git couldn't tag HEAD {tag}")
     lines = [f"Tagged HEAD {tag}: {len(done)} task(s) closed since {prev or 'the first commit'}."]
@@ -3227,7 +3235,7 @@ def cmd_show(args):
     first = args.words[0]
     if re.fullmatch(r"T-\d+(\.\d+)?", first, re.I):
         argv = ["task", "show", first.upper()]
-    elif os.path.exists(re.sub(r":\d+$", "", first)):
+    elif len(args.words) == 1 and os.path.isfile(re.sub(r":\d+$", "", first)):  # a folder or more words: recall
         argv = ["why", first]
     else:
         argv = ["recall", *args.words]

@@ -69,6 +69,8 @@ class BoardVerbs(ForemanTestCase):
         self.assertEqual(self.fm("show", "T-0001").stdout, self.fm("task", "show", "T-0001").stdout)
         self.assertEqual(self.fm("show", "README.md:1").stdout, self.fm("why", "README.md:1").stdout)
         self.assertEqual(self.fm("show", "login", "timeout").stdout, self.fm("recall", "login", "timeout").stdout)
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)  # a folder, or a path with more words: recall
+        self.assertEqual(self.fm("show", "tests", "failing").stdout, self.fm("recall", "tests", "failing").stdout)
 
     def test_release_check_runs_doctor_and_demo_in_a_temporary_home(self):
         before = sorted(os.listdir(self.home))
