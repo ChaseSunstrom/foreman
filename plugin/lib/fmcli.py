@@ -4715,6 +4715,8 @@ def build_parser():
     s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
     s.add_argument("--url", help="record the Artifact link from a first publish, printed on later runs")
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
+    s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
+                                                   "in state picks.json; needs --catalogue (T-0962)")
     s = add("serve", lazy("fmserve", "cmd_serve"),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
@@ -4804,6 +4806,7 @@ def build_parser():
     s = add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
     s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
+    s.add_argument("--demo", action="store_true", help="print a canned view (every key a real one has) as JSON")
     s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
                                                                 "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
