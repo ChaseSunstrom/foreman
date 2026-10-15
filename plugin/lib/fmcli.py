@@ -4255,6 +4255,8 @@ def build_parser():
     s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
+    s.add_argument("--forecast", action="store_true", help="when the 5-hour and weekly usage windows fill at the "
+                   "pace so far (T-0973)")
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
     s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "

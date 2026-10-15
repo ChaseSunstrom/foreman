@@ -109,6 +109,38 @@ def rate_limits():
     return {}
 
 
+WINDOWS = {"five_hour": 5 * 3600, "seven_day": 7 * 86400}
+
+
+def forecast(now=None):
+    """T-0973: per usage window in the newest statusline snapshot, {used, resets_at, projected (percent at reset at
+    the pace so far), full_at (when it fills, if before the reset; else None)}. A straight line from the window's
+    start: early in a window the projection swings, which the caller says."""
+    snaps = sorted(glob.glob(os.path.join(c.state_dir(), "sessions", "*.json")), key=os.path.getmtime)
+    now = now or time.time()
+    for path in reversed(snaps[-3:]):
+        try:
+            with open(path, encoding="utf-8") as f:
+                rl = json.load(f).get("rate_limits") or {}
+        except (OSError, ValueError, AttributeError):
+            continue
+        out = {}
+        for k, span in WINDOWS.items():
+            w = rl.get(k) or {}
+            used, resets = w.get("used_percentage"), w.get("resets_at")
+            if not isinstance(used, (int, float)) or isinstance(used, bool) or not isinstance(resets, (int, float)) \
+                    or not 0 < resets - now <= span:
+                continue  # no reading, a reset already past, or a millisecond epoch: no pace to tell
+            gone = span - (resets - now)
+            rate = used / gone if gone > 0 else 0  # percent per second so far
+            full_at = now + (100 - used) / rate if rate and used < 100 else (now if used >= 100 else None)
+            out[k] = {"used": used, "resets_at": resets, "projected": round(used + rate * (resets - now), 1),
+                      "full_at": full_at if full_at is not None and full_at < resets else None}
+        if out:
+            return out
+    return {}
+
+
 def usage_high():
     """'weekly usage 85%' when the newest statusline snapshot is past 80% weekly or 90% of the 5-hour window, else
     None: the same thresholds as foreman-ui's economy mode (T-0198)."""
