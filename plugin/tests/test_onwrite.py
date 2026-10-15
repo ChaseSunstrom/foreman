@@ -5,6 +5,7 @@ import glob
 import json
 import os
 import shutil
+import subprocess
 import time
 
 from test_hooks import HookCase, parse
@@ -27,7 +28,7 @@ class OnWrite(HookCase):
         return path
 
     def post(self, path, tool="Write", **extra):
-        return self.hook("PostToolUse", dict({"tool_name": tool, "tool_input": {"file_path": path},
+        return self.hook("PostToolUseValidate", dict({"tool_name": tool, "tool_input": {"file_path": path},
                                               "tool_response": {}, "session_id": "s1"}, **extra))
 
     def blocked(self, proc):
@@ -69,9 +70,10 @@ class OnWrite(HookCase):
     def test_foremans_own_skills_agents_and_json_pass(self):
         import fmhooks
         root = os.path.dirname(PLUGIN)
+        tracked = subprocess.run(["git", "-C", root, "ls-files", "*.json"], capture_output=True, text=True).stdout
         files = glob.glob(os.path.join(PLUGIN, "**", "SKILL.md"), recursive=True) + \
-            glob.glob(os.path.join(PLUGIN, "agents", "*.md")) + glob.glob(os.path.join(root, "**", "*.json"),
-                                                                       recursive=True)
+            glob.glob(os.path.join(PLUGIN, "agents", "*.md")) + [os.path.join(root, f) for f in tracked.split()]
+        # tracked files only: state/ holds runtime files (a guard tripfile is empty on purpose), never shipped
         self.assertGreater(len(files), 10)
         bad = [(f, fmhooks._syntax_note(f) or fmhooks._frontmatter_problem(f)) for f in files]
         self.assertEqual([b for b in bad if b[1]], [])
@@ -99,7 +101,7 @@ class OnWrite(HookCase):
     def test_a_project_validator_is_capped_at_five_seconds(self):
         self.fm("check", "onwrite", "*.slow", "sleep 30; cat {file}")
         t0 = time.monotonic()
-        proc = self.hook("PostToolUse", {"tool_name": "Write", "session_id": "s1", "tool_response": {},
+        proc = self.hook("PostToolUseValidate", {"tool_name": "Write", "session_id": "s1", "tool_response": {},
                                          "tool_input": {"file_path": self.write("x.slow", "x")}}, timeout=20)
         self.assertLess(time.monotonic() - t0, 12)
         self.assertEqual(self.blocked(proc), "", "a timeout says nothing about the file: it doesn't block")
@@ -110,12 +112,13 @@ class OnWrite(HookCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("{file}", p.stderr)
 
-    def test_post_tool_use_is_sync_for_file_tools_only(self):
+    def test_validation_is_its_own_sync_entry_beside_the_catch_all(self):
+        # a plain matcher only: the catch-all keeps recording every tool, the sync entry only validates writes
         with open(os.path.join(PLUGIN, "hooks", "hooks.json"), encoding="utf-8") as f:
             groups = json.load(f)["hooks"]["PostToolUse"]
         sync = [g for g in groups if not any(h.get("async") for h in g["hooks"])]
-        self.assertEqual([g["matcher"] for g in sync], ["Write|Edit|MultiEdit|NotebookEdit"])
-        import re
-        rest = re.compile([g["matcher"] for g in groups if g not in sync][0])
-        self.assertFalse(any(rest.search(t) for t in ("Write", "Edit", "MultiEdit", "NotebookEdit")))
-        self.assertTrue(all(rest.search(t) for t in ("Bash", "Read", "mcp__x__y", "Skill", "WriteFoo")))
+        self.assertEqual([(g["matcher"], g["hooks"][0]["args"]) for g in sync],
+                         [("Write|Edit|MultiEdit|NotebookEdit", ["PostToolUseValidate"])])
+        rest = [g for g in groups if g not in sync]
+        self.assertEqual([(g.get("matcher"), g["hooks"][0]["args"]) for g in rest], [(None, ["PostToolUse"])])
+

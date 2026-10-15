@@ -1623,15 +1623,28 @@ def post_tool_use(pl, ok=True):
             fmbus.after_edit(pl, p, path)
         except Exception:
             log_error("PostToolUse", _tb())
-        problem, note = _onwrite(p, path)
-        if problem:  # T-0947: the write isn't done until it validates; Claude (or the subagent) fixes it first
-            c.log_event(p, "enforce", task=act.id if act else None, data={"file": path, "problem": problem[:300]},
-                        session=pl.get("session_id"))
-            return {"decision": "block", "reason": problem}
-        note = note or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
+        note = _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
+
+
+def post_tool_validate(pl):
+    """T-0947: the write validators, from their own sync PostToolUse entry (matcher Write|Edit|MultiEdit|NotebookEdit)
+    beside the async catch-all that records every tool: a block needs a sync hook, and a plain matcher keeps every
+    other tool's recording on the catch-all (a lookahead matcher could be rejected by some Claude Code surface)."""
+    tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
+    p = c.find_project(_cwd(pl))
+    if not p or tool not in FILE_TOOLS:
+        return None
+    path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
+    problem, note = _onwrite(p, path)
+    if problem:  # the write isn't done until it validates; Claude (or the subagent) fixes it first
+        act = c.active_brief(c.load_briefs(p), p.lane)
+        c.log_event(p, "enforce", task=act.id if act else None, data={"file": path, "problem": problem[:300]},
+                    session=pl.get("session_id"))
+        return {"decision": "block", "reason": problem}
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 
 
@@ -2400,7 +2413,7 @@ def session_end(pl):
 
 
 HANDLERS = {
-    "SessionStart": session_start, "UserPromptSubmit": user_prompt_submit, "PostToolUse": post_tool_use,
+    "SessionStart": session_start, "UserPromptSubmit": user_prompt_submit, "PostToolUse": post_tool_use, "PostToolUseValidate": post_tool_validate,
     "PostToolUseFailure": post_tool_use_failure, "PreCompact": pre_compact, "Stop": stop,
     "TaskCompleted": task_completed, "SubagentStart": subagent_start, "SubagentStop": subagent_stop,
     "MessageDisplay": message_display, "Notification": notification, "SessionEnd": session_end,
