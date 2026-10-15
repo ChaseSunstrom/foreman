@@ -259,16 +259,19 @@ def cmd_impact(args):
 _COMMON_STEMS = {"index", "main", "init", "__init__", "utils", "util", "types", "setup", "config", "common", "helpers"}
 
 
-def tour(p, b):
-    """T-0248: the task's changed files in reading order — a file before the files that name it (fm impact's name-stem
-    heuristic) — each with its +/- lines, the files it uses, and the step being worked when it was last edited."""
+def tour(p, b, since=None):
+    """T-0248: the task's changed files (T-0885: or everything since `since`'s merge base with HEAD, uncommitted work
+    included) in reading order — a file before the files that name it (fm impact's name-stem heuristic) — each with
+    its +/- lines, the files it uses, the step being worked when it was last edited, and a review-risk verdict."""
     import graphlib
-    commits = _git(p.root, "log", "--format=%H", "-F", f"--grep=({b.id}").split() if b.status == "done" else []
+    commits = _git(p.root, "log", "--format=%H", "-F", f"--grep=({b.id}").split() if b and b.status == "done" else []
     if len(commits) == 1:  # finished and committed: its own commit, not everything since
         numstat = _git(p.root, "show", "--numstat", "--no-renames", "--format=", commits[0])
+        diff = _git(p.root, "show", "--no-renames", "--format=", commits[0])
     else:
-        base = c.task_base(p.root, b)
+        base = _git(p.root, "merge-base", since, "HEAD").strip() if since else c.task_base(p.root, b)
         numstat = (c.task_diff(p.root, base, "--numstat", "--no-renames") or "") if base else ""
+        diff = (c.task_diff(p.root, base, "--no-renames") or "") if base else ""
     sizes = {}
     for line in numstat.splitlines():
         parts = line.split("\t")
@@ -282,7 +285,7 @@ def tour(p, b):
                 texts[f] = fh.read(200_000)
         except OSError:
             texts[f] = ""  # deleted
-    usable = [g for g in files if not c.TESTISH.search(g) and len(_name_stem(g)) >= 4
+    usable = [g for g in files if _CODE.search(g) and not c.TESTISH.search(g) and len(_name_stem(g)) >= 4
               and _name_stem(g).lower() not in _COMMON_STEMS]  # a test uses code; "index" or "ui" names everything
     uses = {f: sorted(g for g in usable if g != f and re.search(rf"\b{re.escape(_name_stem(g))}\b", texts[f]))
             if _CODE.search(f) else [] for f in files}
@@ -291,29 +294,80 @@ def tour(p, b):
     except graphlib.CycleError:  # a cycle: the most-used first
         order = sorted(files, key=lambda f: (-sum(f in u for u in uses.values()), f))
     order = [f for f in order if _CODE.search(f)] + [f for f in order if not _CODE.search(f)]  # docs and data last
-    first, touched = sorted(b.first_evidence().items()), c.task_touches(p, b.id)
-    rows = []
+    first, touched = (sorted(b.first_evidence().items()), c.task_touches(p, b.id)) if b else ([], {})
+    blocks = {(re.search(r"^diff --git a/.+? b/(.+)$", x, re.M) or [None, None])[1]: x
+              for x in re.split(r"(?m)^(?=diff --git )", diff)}
+    m, rows = load(p), []
     for f in order:
         at = touched.get(f)
         step = next((n for n, ts in first if at and ts >= at), None) if at else None
         add, rm = sizes.get(f, (0, 0))
-        rows.append({"path": f, "add": add, "del": rm, "uses": uses[f], "step": step,
-                     "deleted": not os.path.exists(os.path.join(p.root, f))})
+        gone = not os.path.exists(os.path.join(p.root, f))
+        risk, why, score = _risk(p, m, f, add, rm, gone, set(files), blocks.get(f, ""))
+        rows.append({"path": f, "add": add, "del": rm, "uses": uses[f], "step": step, "deleted": gone, "risk": risk,
+                     "why": why, "score": score})
     return rows
+
+
+_DOC = re.compile(r"(?i)\.(md|markdown|rst|txt|adoc)$")
+_RUNS_ELSEWHERE = re.compile(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
+                             r"setup\.py$)")
+
+
+def _risk(p, m, f, add, rm, gone, changed, diff):
+    """T-0885: (review | glance | skim, [reasons]) for one changed file, from signals Foreman already keeps."""
+    if c.TESTISH.search(f):
+        return ("review", [f"tests removed (−{rm})"], 3) if rm > 20 and add < rm / 2 else ("skim", ["test"], 0)
+    if _DOC.search(f):
+        return "skim", ["docs"], 0
+    if is_generated(os.path.join(p.root, f)):
+        return "skim", ["generated"], 0
+    why, score = [], 0
+    hit = c.sensitive([f], diff)
+    if hit:
+        why.append(f"security-sensitive ({', '.join(hit[:3])})")
+        score += 3
+    if _RUNS_ELSEWHERE.search(f) or c._MANIFEST.search(f):
+        why.append("runs in CI, on install or brings dependencies")
+        score += 2
+    if add + rm > 50:
+        why.append(f"{add + rm} lines")
+        score += 2 if add + rm > 200 else 1
+    if _CODE.search(f) and not gone and not (set(tests_for(m, [f])) & changed) and not any(
+            c.TESTISH.search(g) and _name_stem(g) == _name_stem(f) for g in changed):
+        why.append("no test changed with it")
+        score += 1
+    if gone and _CODE.search(f):
+        why.append("deleted code")
+        score += 1
+    if f in m.get("hot", []):
+        why.append("a hot file (changed often)")
+        score += 1
+    return ("review" if score >= 3 else "glance" if score else "skim"), why or ["small, with its test"], score
 
 
 def cmd_tour(args):
     import fmcli
     p = fmcli.resolve(args)
-    b = fmcli.need_brief(p, args.id)
-    rows = tour(p, b)
+    if not args.id and not args.since:
+        raise fmcli.UsageError("fm tour ID (a task's changes) or fm tour --since REF (everything since REF, e.g. main)")
+    b = fmcli.need_brief(p, args.id) if args.id else None
+    if args.since and not _git(p.root, "merge-base", args.since, "HEAD").strip():
+        raise fmcli.UsageError(f"no common history with {args.since}")
+    rows, name = tour(p, b, args.since if not b else None), b.id if b else f"since {args.since}"
     text = "\n".join(
-        f"{i}. {r['path']}  +{r['add']} −{r['del']}" + (" (deleted)" if r["deleted"] else "")
-        + (f"  step {r['step']}" if r["step"] else "") + (f"  — uses {', '.join(r['uses'])}" if r["uses"] else "")
+        f"{i}. [{r['risk']}] {r['path']}  +{r['add']} −{r['del']}" + (" (deleted)" if r["deleted"] else "")
+        + (f"  step {r['step']}" if r["step"] else "") + (f"  — {'; '.join(r['why'])}" if r["risk"] != "skim" else "")
+        + (f"  — uses {', '.join(r['uses'])}" if r["uses"] else "")
         for i, r in enumerate(rows, 1))
-    fmcli.out(args, {"id": b.id, "files": rows},
-              c.plain_lines(f"{b.id} reading order (a file before the files that use it):\n{text}") if rows
-              else f"{b.id}: no changes since it was focused.")
+    group = lambda k: [r["path"] for r in sorted(rows, key=lambda r: -r["score"]) if r["risk"] == k]  # noqa: E731
+    first = group("review")
+    head = (f"Review first: {', '.join(first[:8]) or 'nothing'}{f' and {len(first) - 8} more' if len(first) > 8 else ''}"
+            f" · glance: {len(group('glance'))} · "
+            f"safe to skim: {len(group('skim'))} (tests, docs, generated, small tested changes)")
+    fmcli.out(args, {"id": b.id if b else None, "since": args.since, "files": rows},
+              c.plain_lines(f"{name}: {head}\nReading order (a file before the files that use it):\n{text}") if rows
+              else f"{name}: no changes{' since it was focused' if b else ''}.")
 
 
 _DEF = re.compile(r"^(\s*)(?:(?:export|default|pub(?:\([\w:]+\))?|async|static|public|private|protected|abstract|final|"

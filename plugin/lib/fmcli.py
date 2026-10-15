@@ -3981,8 +3981,10 @@ def build_parser():
                                                         "the names used, read locally, no network (T-0594)")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=600)
-    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
-    s.add_argument("id")
+    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's (or, --since REF, a range's) changed files in reading "
+                                                   "order with sizes and a review-risk verdict: what to review first")
+    s.add_argument("id", nargs="?")
+    s.add_argument("--since", metavar="REF", help="everything since REF's merge base with HEAD, uncommitted included")
     s = add("export", lazy("fmcost", "cmd_export"),
             help="AGENTS.md for other harnesses: working rules, corrections, map, lessons, decisions, playbooks")
     s.add_argument("what", choices=["agents"])
