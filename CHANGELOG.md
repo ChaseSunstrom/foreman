@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.28 — 2026-10-15
 - Claude Code integration, round 1 of a recursive improvement loop (T-0760 brainstorm: 609 ideas in 30 clusters).
   - Never idle without tmux: a plugin monitor (`foreman-mail`) runs `fm bus watch` for the whole session and prints one line per new bus message for it; `fm bus send --wake` skips tmux when that watcher's heartbeat is fresh. The watcher finds its session through the SessionStart hook's process tree, follows it when Claude Code resumes another conversation in the same process, and drops its heartbeat when ended by a signal (T-0777, T-0819, T-0820, T-0841). A resume in the same process is no longer reported as "another session" (T-0841).
   - Phone push: the Stop hook asks once for PushNotification when an ask is open or the queue drains in full autonomy (T-0778). Sessions are named after their task (sessionTitle, T-0781).
