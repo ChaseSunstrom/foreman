@@ -3083,7 +3083,10 @@ def affected(p):
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
-    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
+    # T-0875: a changed test file always runs, linked or not (a new one isn't in the map until it's committed); by its
+    # name, so a helper under tests/ isn't run alone (pytest exits 5 when it collects nothing)
+    own = {f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)}
+    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own)
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
