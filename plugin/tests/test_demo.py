@@ -54,3 +54,17 @@ class Demo(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DemoNext(ForemanTestCase):
+    # T-0919: run inside a project, the demo ends on that project's own next step, not a generic "fm init"
+    def test_inside_a_project_the_demo_ends_with_its_next_step(self):
+        tmpdir = os.path.join(self.tmp, "tmpdir")
+        os.makedirs(tmpdir)
+        out = self.fm("demo", env={"TMPDIR": tmpdir}).stdout
+        self.assertIn("fm init in your repo", out)  # not a project yet
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        out = self.fm("demo", env={"TMPDIR": tmpdir}).stdout
+        self.assertIn("Back in this project", out)
+        self.assertIn("T-0001", out.split("Back in this project", 1)[1])
