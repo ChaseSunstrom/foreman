@@ -2163,6 +2163,22 @@ def revisit_tag(root, trigger):
     return f"[revisit: when {os.path.relpath(path, top)} changes @{file_digest(path)}]"
 
 
+def deferral_due(root, revisit, today):
+    """T-0450 a date that came; T-0958 "when PATH changes @hash" (fm task defer --until): the file changed or is gone.
+    A path outside the project is never read."""
+    m = _REVISIT_TAG.fullmatch(f"[revisit: {revisit}]") if revisit else None
+    if not m or m.group(1):
+        return str(revisit or "9999") <= today
+    top = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(top, m.group(2)))
+    if not path.startswith(top + os.sep):
+        return False
+    try:
+        return file_digest(path) != m.group(3)
+    except OSError:
+        return True
+
+
 def fired_decisions(p):
     """T-0247: [(date, decision, why)] for decisions whose revisit trigger fired and no later row settled
     (fm decide … --revisited WORDS, or --reverses WORDS)."""
@@ -2286,7 +2302,7 @@ def next_for(p, briefs=None):
                    f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
     today = datetime.date.today().isoformat()  # T-0450: a deferral whose revisit date came
     due = [x for x in (briefs if briefs is not None else load_briefs(p))
-           if x.status == "deferred" and str(x.meta.get("revisit") or "9999") <= today]
+           if x.status == "deferred" and deferral_due(p.root, x.meta.get("revisit"), today)]
     if due:
         action += (f" · deferred {due[0].id} is due back (revisit {due[0].meta['revisit']})"
                    + (f" and {len(due) - 1} more" if len(due) > 1 else "")

@@ -548,6 +548,11 @@ def cmd_recall(args):
         write_tripwires(p)
         c.log_event(p, "lesson_retired", data={"lesson": args.retire, "why": c.redact(args.why)[:200]})
         return fmcli.out(args, {"retired": args.retire}, f"Retired {args.retire}: recall and tripwires leave it out.")
+    if getattr(args, "export_rules", False):
+        path, n, files = export_rules(p)
+        return fmcli.out(args, {"path": path, "lessons": n, "paths": files},
+                         f"{n} lesson(s) → {os.path.relpath(path, p.root)}"
+                         + (f", loaded with {len(files)} file(s)" if files else ", always loaded (no files touched)"))
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
@@ -595,6 +600,25 @@ def write_tripwires(p):
         for f in _files(b):
             index.setdefault(f, []).append([b.id, c.fit(c.defang(c.plain(lesson)), 200)])
     c.write_atomic(os.path.join(p.dir, "tripwires.json"), json.dumps(index))
+
+
+def export_rules(p):
+    """T-0958: finished tasks' live lessons as a Claude Code rule, .claude/rules/foreman-lessons.md, its paths:
+    frontmatter the files those tasks touched (none: no frontmatter, so it always loads). (path, lessons, files)."""
+    retired, rows, files = retired_lessons(p), [], []
+    for b in c.load_briefs(p, include_archive=True):
+        texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+        live = [t for i, t in enumerate(texts, 1) if b.status == "done" and f"{b.id}.{i}" not in retired
+                and not t.lower().startswith("none")]
+        if live:
+            rows += [f"- {c.fit(c.defang(c.plain(t)), 300)} ({b.id})" for t in live]
+            files += [f for f in _files(b) if f not in files]
+    head = ("---\npaths:\n" + "".join(f"  - {json.dumps(f)}\n" for f in files) + "---\n") if files else ""
+    path = os.path.join(p.root, ".claude", "rules", "foreman-lessons.md")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    c.write_atomic(path, head + "# Lessons from finished tasks (written by fm recall --export-rules; regenerated, "
+                   "don't edit)\n\n" + "\n".join(rows) + "\n")
+    return path, len(rows), files
 
 
 def tripwire(p, rel, active=None):
