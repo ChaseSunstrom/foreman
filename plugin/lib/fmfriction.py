@@ -324,7 +324,7 @@ def minutes(days=7):
     """T-0959: {kind: minutes} lost to friction in the last `days`, from the global events: each guard block and failed
     tool call costs a retry, a failed call also the time it ran, and every hook its run time."""
     since = c.iso(time.time() - days * 86400)
-    ev = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200000) if (e.get("ts") or "") >= since]
+    ev = list(c.global_events(since))  # rotated logs too
     ms = lambda kind: sum(e["ms"] for e in ev if e.get("kind") == kind and isinstance(e.get("ms"), (int, float)))
     n = lambda kind: sum(e.get("kind") == kind for e in ev)
     return {"guard blocks": round(n("guard_block") * RETRY_S / 60, 1),

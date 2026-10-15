@@ -215,6 +215,8 @@ def _epoch(ts):
         return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
     except ValueError:
         return None
+
+
 SPLIT = {"cache_read_input_tokens": "cache read", "cache_creation_input_tokens": "cache write", "input_tokens": "fresh",
          "output_tokens": "output"}
 
@@ -756,8 +758,8 @@ def _prune(args, since):
     import argparse
     import fmcli
     used = set()
-    for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200000):
-        if e.get("kind") == "tool" and e.get("tool") == "Bash" and str(e.get("ts", ""))[:19] >= since:
+    for e in c.global_events(since):  # rotated logs too, or a verb used before the last fm tidy reads as unused
+        if e.get("kind") == "tool" and e.get("tool") == "Bash":
             used.update(re.findall(r"(?:^|[;&|(]\s*|\s)fm\s+([a-z][a-z-]*)", str(e.get("target") or "")))
     sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
     names = sorted(n for n in sub.choices if not n.startswith("_"))
