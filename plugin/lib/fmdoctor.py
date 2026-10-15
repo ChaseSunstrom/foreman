@@ -668,6 +668,38 @@ def _fm_commands():
 _FM_MENTION = re.compile(r"(?:^|[\s;|&(])fm\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
 
 
+# T-0954: zero-width, bidi and tag characters hide instructions from the person reading the file; a ZWJ between two
+# non-ASCII characters is an emoji sequence, not hidden text
+_INVISIBLE = re.compile(  # emoji glue (a ZWJ or VS15/16 after a non-ASCII character) is fine; a run of it isn't
+    "[\u00ad\u061c\u180e\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufe00-\ufe0d"
+    "\U000e0000-\U000e007f\U000e0100-\U000e01ef]"
+    "|(?:^|[\x00-\x7f])[\u200d\ufe0e\ufe0f]|[\u200d\ufe0e\ufe0f]{2}|\u200d(?:$|[\x00-\x7f])", re.M)
+
+
+def instruction_files(plugin=PLUGIN):
+    """The files Claude reads as instructions: the user's CLAUDE.md, CLAUDE.local.md and rules; Foreman's rules,
+    skills (with their references and cards), agents, commands and output styles."""
+    claude = os.path.join(os.path.expanduser("~"), ".claude")
+    mine = [os.path.join(claude, "CLAUDE.md"), os.path.join(claude, "CLAUDE.local.md")] + glob.glob(
+        os.path.join(claude, "rules", "*.md"))
+    return mine + sorted(set(glob.glob(os.path.join(plugin, "skills", "**", "*.md"), recursive=True)
+                             + [x for d in ("rules", "agents", "commands", "output-styles")
+                                for x in glob.glob(os.path.join(plugin, d, "*.md"))]))
+
+
+def check_invisible_text(paths):
+    """WARN with file:line for each line of an instruction file holding invisible characters."""
+    hits = []
+    for path in dict.fromkeys(paths):
+        text = _read(path) or ""
+        for n, line in enumerate((text[1:] if text.startswith("\ufeff") else text).split("\n"), 1):
+            if _INVISIBLE.search(line):
+                hits.append(f"{path.replace(os.path.expanduser('~'), '~', 1)}:{n}")
+    return Result("invisible text", "WARN" if hits else "PASS",
+                  ("zero-width, bidi or tag characters (hidden instructions?) at " + ", ".join(hits[:8])
+                   + (f" and {len(hits) - 8} more" if len(hits) > 8 else "")) if hits else "instruction files clean")
+
+
 def check_self_docs(home=None, plugin=PLUGIN):
     """Foreman's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
     agent, and README's install flags match install.sh --help."""
@@ -679,8 +711,11 @@ def check_self_docs(home=None, plugin=PLUGIN):
         if "playbooks" not in d:  # ported third-party procedures don't talk about fm
             docs += [os.path.join(d, f) for f in files if f.endswith(".md")]
     for path in docs:
-        text = re.sub(r"```.*?```", "", _read(path) or "", flags=re.S)  # fences would shift backtick pairing
-        for span in re.findall(r"`([^`\n]+)`", text):
+        raw = _read(path) or ""
+        text = re.sub(r"```.*?```", "", raw, flags=re.S)  # fences would shift backtick pairing
+        fenced = [ln for block in re.findall(r"```[^\n]*\n(.*?)```", raw, flags=re.S)  # T-0954: usage examples
+                  for ln in block.splitlines() if re.match(r"\s*(?:\$\s+)?fm\s", ln)]
+        for span in re.findall(r"`([^`\n]+)`", text) + fenced:
             for m in _FM_MENTION.finditer(span):
                 top, sub = m.group(1), m.group(2)
                 if top not in cmds:
@@ -1037,7 +1072,8 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply), check_worktree_base(settings)]
+               check_supply(claude, accept_supply), check_worktree_base(settings),
+               check_invisible_text(instruction_files())]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))

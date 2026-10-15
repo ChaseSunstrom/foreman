@@ -434,3 +434,43 @@ class DoctorDualInstall(ForemanTestCase):
         self.assertEqual(d.check_dual_install(self.fmhome, self.known, self.installed).status, "PASS")
         os.remove(self.installed)
         self.assertEqual(d.check_dual_install(self.fmhome, self.known, self.installed).status, "PASS")
+
+
+class BoardDoctor(unittest.TestCase):  # T-0954
+    def test_invisible_text_in_instruction_files_warns_with_file_and_line(self):
+        with tempfile.TemporaryDirectory() as t:
+            bad, clean = os.path.join(t, "CLAUDE.md"), os.path.join(t, "rules.md")
+            with open(bad, "w", encoding="utf-8") as f:
+                f.write("# Rules\nbe nice​\nok ‮evil‬\nhidden \U000E0041 tag\n")
+            with open(clean, "w", encoding="utf-8") as f:
+                f.write("# Rules\nnothing hidden — even em dashes and émojis 🎉\n")
+            r = d.check_invisible_text([bad, clean, os.path.join(t, "missing.md")])
+            self.assertEqual(r.status, "WARN")
+            for line in (2, 3, 4):
+                self.assertIn(f"CLAUDE.md:{line}", r.detail)
+            self.assertNotIn("rules.md", r.detail)
+            self.assertEqual(d.check_invisible_text([clean]).status, "PASS")
+            for hidden in ("joined⁠", "﻿mid-file", "soft­hyphen", "vs︁", "é‍‍é",
+                           "a️", "sup\U000e0101"):
+                with open(bad, "w", encoding="utf-8") as f:
+                    f.write("ok\n" + hidden + "\n")
+                self.assertEqual(d.check_invisible_text([bad]).status, "WARN", repr(hidden))
+            with open(clean, "w", encoding="utf-8") as f:
+                f.write("﻿# BOM first\nfamily 👨‍👩‍👧 and ❤️\n")
+            self.assertEqual(d.check_invisible_text([clean]).status, "PASS")
+
+    def test_the_shipped_instruction_files_are_clean(self):
+        files = [f for f in d.instruction_files() if f.startswith(PLUGIN)]
+        self.assertTrue(any(f.endswith(os.path.join("output-styles", "foreman.md")) for f in files))
+        self.assertTrue(any(os.sep + "references" + os.sep in f for f in files))
+        self.assertEqual(d.check_invisible_text(files).status, "PASS")
+
+    def test_readme_naming_an_fm_verb_the_parser_lacks_fails(self):
+        with tempfile.TemporaryDirectory() as t:
+            with open(os.path.join(t, "README.md"), "w") as f:
+                f.write("Run `fm nosuchverb` to see.\n\n```bash\n$ fm fencedverb --x\nfm task new \"t\"\n```\n")
+            r = d.check_self_docs(t)
+            self.assertEqual(r.status, "FAIL")
+            self.assertIn("`fm nosuchverb` isn't an fm command", r.detail)
+            self.assertIn("`fm fencedverb` isn't an fm command", r.detail)  # usage examples sit in fences
+            self.assertNotIn("`fm task", r.detail)

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Doctor (T-0954): an `invisible text` check warns with file:line when CLAUDE.md, your rules, or Foreman's rules, skills, agents, commands or output styles hold zero-width, bidi, tag or variation characters that could hide instructions. The docs check now also reads `fm` commands inside code fences.
 - Scout (T-0950): Foreman finds its own work. When the queue drains under full autonomy, `fm scout` captures what nobody asked for yet: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly self-improvement pass and a weekly brainstorm. Each finding is captured once under its own key, at most 3 a run and 5 open. `fm night` runs it first; skill sources older than a week are refreshed.
 - `fm check --affected` also runs tests that historically change with the edited files (T-0952).
 - A criterion whose verify command reaches a live service (aws, gcloud, kubectl, terraform apply, …) gets a lint warning (T-0943).
