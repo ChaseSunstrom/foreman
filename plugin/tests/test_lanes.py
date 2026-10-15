@@ -198,3 +198,76 @@ class BuilderGates(unittest.TestCase):
             self.assertIn("full gates run after the merge", text)
             self.assertNotRegex(text, r"`fm check --evidence")
         self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808
+
+
+class BoardLanes(ForemanTestCase):
+    """T-0961: the merge base is on disk before git merge runs (a merge that dies midway still measures the task from
+    there) and a failed merge leaves the old one; one git runner (fmcore's) behind fmlanes, fmsecrets, fmmap, fmbench."""
+
+    def git(self, root, *args):
+        return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, check=True).stdout
+
+    def lane(self, text):
+        self.fm("init")
+        self.fm("task", "new", "Lane work", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        path = json.loads(self.fm("lane", "new", "T-0001", "--json").stdout)["path"]
+        with open(os.path.join(path, "shared.py"), "w") as f:
+            f.write(text)
+        self.git(path, "add", "shared.py")
+        self.git(path, "commit", "-qm", "lane change")
+        return path
+
+    def base(self):
+        import fmcore as c
+        return c.load_briefs(c.find_project(self.repo))[0].meta.get("base")
+
+    def test_the_base_is_saved_before_git_merge_runs(self):
+        import fmcli
+        import fmcore as c
+        import fmlanes
+        self.lane("x = 2\n")
+        head, seen, real = self.git(self.repo, "rev-parse", "HEAD").strip(), [], fmlanes._git
+
+        def spy(root, *args, **kw):
+            if args[:2] == ("merge", "--no-ff"):
+                seen.append(self.base())
+            return real(root, *args, **kw)
+        fmlanes._git = spy
+        try:
+            p = c.find_project(self.repo)
+            fmlanes.merge(p, fmcli.need_brief(p, "T-0001"), self.repo, unverified="test")
+        finally:
+            fmlanes._git = real
+        self.assertEqual(seen, [head], "on disk before git merge ran")
+        self.assertEqual(self.base(), head)
+
+    def test_a_failed_merge_leaves_no_stale_base(self):
+        with open(os.path.join(self.repo, "shared.py"), "w") as f:
+            f.write("x = 1\n")
+        self.git(self.repo, "add", "shared.py")
+        self.git(self.repo, "commit", "-qm", "base")
+        self.lane("x = 2\n")
+        before = self.base()
+        with open(os.path.join(self.repo, "shared.py"), "w") as f:
+            f.write("x = 3\n")
+        self.git(self.repo, "commit", "-qam", "main change")
+        r = self.fm("lane", "merge", "T-0001", "--unverified", "test", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.base(), before, "the pre-merge base is taken back with the aborted merge")
+
+    def test_one_git_runner(self):
+        import ast
+        import fmcore as c
+        lib = os.path.join(os.path.dirname(__file__), "..", "lib")
+        defs = lambda m: {n.name for n in ast.walk(ast.parse(read_text(os.path.join(lib, m + ".py"))))
+                          if isinstance(n, ast.FunctionDef)}
+        for m in ("fmcore", "fmguard"):
+            self.assertIn("_git", defs(m), m)
+        for m in ("fmlanes", "fmsecrets", "fmmap", "fmbench"):
+            self.assertNotIn("_git", defs(m), f"{m} runs git through fmcore._git")
+        r = c._git(self.repo, "rev-parse", "--verify", "-q", "refs/heads/nope", proc=True)
+        self.assertNotEqual(r.returncode, 0)
+        r = c._git(os.path.join(self.tmp, "missing"), "status", proc=True)
+        self.assertNotEqual(r.returncode, 0, "git that can't run is a failed process, not an exception")
+        r = c._git(self.repo, "rev-parse", "HEAD", proc=True)
+        self.assertEqual((r.returncode, len(r.stdout.strip())), (0, 40))

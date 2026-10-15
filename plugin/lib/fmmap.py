@@ -2,6 +2,7 @@
 files that change most, and which tests go with which source files (by name) — kept in the project's state dir and
 rebuilt only when HEAD moves. Stdlib and git only; run by fm commands, never by a hook."""
 import collections
+import functools
 import json
 import os
 import re
@@ -16,8 +17,7 @@ HOT = 8
 OUT_MAX = 1500
 
 
-def _git(root, *args):
-    return c._git(root, *args, timeout=30)
+_git = functools.partial(c._git, timeout=30)  # T-0961: fmcore's runner, stdout or ""
 
 
 def _name_stem(path):
