@@ -43,6 +43,8 @@ CONTEXT: Django app; don't touch migrations
 DONE-WHEN: all tests pass and the CSV opens in Excel
 ```
 
+To watch it work before giving it yours, run `fm demo`: in a throwaway repo with a seeded bug, the real `fm` and guard refuse an edit without a task and an `rm -rf ~`, record a failing test, the fix and a passing test, and refuse a close until the audit is given. No model is called, it takes about a second, and nothing is left behind.
+
 Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE after a baseline check. Mid-task ideas are captured and queued; `NOW:` switches tasks, `PAUSE` checkpoints, `STATUS` shows where things stand. You never have to run a command: say it in plain words ("is foreman ok?", "clean up", "this repo is sensitive") and Claude does it.
 
 - **Open-ended requests** ("super improve it", "just get it done") get a brainstorm first: several tool-less sub-agents, each with a different lens, then Claude checks every idea against the real code and queues the best. Each brainstorm runs up to six short `claude -p` (Sonnet) sessions, which count against your plan's usage.
