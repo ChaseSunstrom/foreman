@@ -1,5 +1,7 @@
 # Foreman
 
+[![tests](https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml/badge.svg)](https://github.com/ChaseSunstrom/foreman/actions/workflows/test.yml)
+
 A discipline layer for Claude Code. Give it a terse request (`FIX: login times out on slow wifi`, or just "fix the login timeout") and it classifies, plans, sequences, executes, verifies with recorded evidence, and records the work in one central place. It stays on the current task, captures new requests instead of chasing them, resumes at the exact step after `/compact` or a new session, blocks dangerous commands in bypass mode, and keeps going through the queue until it's done or needs you.
 
 Everything is documented in [`MASTER.md`](MASTER.md): how to prompt it, every file, how the parts interact, operations and limitations.
