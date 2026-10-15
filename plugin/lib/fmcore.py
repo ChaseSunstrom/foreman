@@ -2786,7 +2786,12 @@ def lint_verify(cmd, root):
     if live:  # T-0943: fm check and fm lane merge would run it unattended, against whatever credentials are ambient
         problems.append(f"it reaches a live service ({', '.join(live)}): keep it a manual check (fm task evidence ID "
                         f"--ac N CMD RESULT), or point it at a sandbox")
+    if _STATE_READ.search(cmd or ""):  # T-0963: it passes when the records say so, not when the code works
+        problems.append("it reads Foreman's state (.foreman, state/tasks or briefs), not the code: check the behaviour")
     return problems
+
+
+_STATE_READ = re.compile(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bstate/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b")
 
 
 # T-0943: commands that act on or read a live account, cluster or database (local checks like terraform validate or
