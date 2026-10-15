@@ -2260,9 +2260,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
         # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
         init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
-        bare_init = init and not lost and not git_env and not _git_pos(args[1:], ("-b", "--initial-branch")) and all(
-            os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not any(
-            a.startswith(("--separate-git-dir", "--template", "--object-format", "--ref-format")) for a in args)
+        # security review: git takes unique prefixes of long options (--templ= is --template) and GIT_* env can plant
+        # a template dir, so only `git init` / `git init -q` qualify, and only when nothing in the command sets GIT_*
+        bare_init = init and not lost and not git_env and all(a in ("-q", "--quiet") for a in args[1:]) and all(
+            os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
+            r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
         for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)

@@ -92,7 +92,12 @@ class GitChannels(GuardCase):
             self.assertIsNone(self.bash("git init -q", cwd=lib))
             self.assertIsNone(self.bash("cd {fhome}/plugin/lib && git init", cwd=self.repo))
             for cmd in ("git init .", "git init --separate-git-dir /tmp/g", "git init --template=/tmp/t",
-                        "git init sub"):
+                        "git init sub", "git init --bare", "git init -q --bare",  # --bare writes HEAD, objects/ here
+                        # security review: git takes unique prefixes of long options, and env can plant templates
+                        "git init --templ=/tmp/t", "git init --sep=/tmp/g", "git init --obj=sha256", "git init --sha",
+                        "git init --ba", "GIT_TEMPLATE_DIR=/tmp/t git init",
+                        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.templateDir GIT_CONFIG_VALUE_0=/tmp/t git init",
+                        "export GIT_TEMPLATE_DIR=/tmp/t; git init"):
                 self.assertIsNotNone(self.bash(cmd, cwd=lib), cmd)
         finally:
             shutil.rmtree(os.path.join(lib, ".git"))
