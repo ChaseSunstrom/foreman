@@ -31,21 +31,20 @@ TEST_FILE = c.TESTISH  # T-0295: one test-file pattern
 LFS_DRIVER = {"clean": "git-lfs clean -- %f", "smudge": "git-lfs smudge -- %f", "process": "git-lfs filter-process"}
 
 
-def _git(root, *args, timeout=120):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # nothing points it at another repo
+def _safe_git(root, *args, timeout=120):
+    """fmcore's _git (T-0961: the one runner; the CompletedProcess) with the session's configured commands off."""
     # T-0280 review: a replay runs in bypass mode in a worktree that shares the repo's config, so git run after it
     # (grading, judging, cleanup) must not run a command the session configured: no fsmonitor, no hooks — and
     # (T-0290) no filter driver, from any config file (a session may have written one anywhere), whatever
     # .gitattributes names it — but git-lfs, so LFS repos still check out content: its driver is always git-lfs's own
     # fixed commands, never the configured values (T-0299: a prefix check let `git-lfs smudge -- %f; <cmd>` run)
-    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in subprocess.run(
-        ["git", "-C", root, "config", "--get-regexp", r"^filter\."], capture_output=True, text=True, timeout=timeout,
-        env=env).stdout.split("\n")) if m}
+    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in c._git(
+        root, "config", "--get-regexp", r"^filter\.", timeout=timeout).split("\n")) if m}
     neutral = [x for d in sorted(drivers - {"lfs"}) for k in ("clean=", "smudge=", "process=", "required=false")
                for x in ("-c", f"filter.{d}.{k}")]
     neutral += [x for k, v in LFS_DRIVER.items() for x in ("-c", f"filter.lfs.{k}={v}")]
-    return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral,
-                           *args], capture_output=True, text=True, timeout=timeout, env=env)
+    return c._git(root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral, *args, timeout=timeout,
+                  proc=True)
 
 
 @contextlib.contextmanager
@@ -53,16 +52,16 @@ def _worktree(root, rev):
     """A detached worktree of the repo at rev in a temporary folder: (folder, worktree). Always removed."""
     tmp = tempfile.mkdtemp(prefix="fm-bench-")
     wt = os.path.join(tmp, "repo")
-    r = _git(root, "worktree", "add", "--detach", "-q", wt, rev)
+    r = _safe_git(root, "worktree", "add", "--detach", "-q", wt, rev)
     if r.returncode:
         shutil.rmtree(tmp, ignore_errors=True)
         raise OSError(f"git worktree add {rev[:10]}: {r.stderr.strip()[:200]}")
     try:
         yield tmp, wt
     finally:
-        _git(root, "worktree", "remove", "--force", wt)
+        _safe_git(root, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
-        _git(root, "worktree", "prune")
+        _safe_git(root, "worktree", "prune")
 
 
 # Credentials a replay never needs (claude's own login stays): forge, cloud and package-registry tokens.
@@ -95,7 +94,7 @@ def has_guard(plugin):
 
 def _grade(wt, case, env, timeout=900):
     """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored."""
-    r = _git(wt, "checkout", case["commit"], "--", *case["tests"])
+    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"])
     if r.returncode:  # grading without the hidden tests would grade whatever the session left
         return [("restore the hidden tests", r.returncode, r.stderr.strip()[-200:])]
     out = []
@@ -119,10 +118,10 @@ def _prompt(b):
 
 def _commit(p, tid):
     """(sha, parent) of the one commit naming the task, or (None, why not)."""
-    commits = _git(p.root, "log", "--format=%H", "-F", f"--grep=({tid})").stdout.split()
+    commits = _safe_git(p.root, "log", "--format=%H", "-F", f"--grep=({tid})").stdout.split()
     if len(commits) != 1:
         return None, f"{len(commits)} commits name it (one is needed)"
-    base = _git(p.root, "rev-parse", "-q", "--verify", f"{commits[0]}^").stdout.strip()
+    base = _safe_git(p.root, "rev-parse", "-q", "--verify", f"{commits[0]}^").stdout.strip()
     return (commits[0], base) if base else (None, "a root commit")
 
 
@@ -140,7 +139,7 @@ def build(p, ids=None, last=30, judged=False):
             skipped.append(f"{b.id}: {base}")
             continue
         # added or changed files only (a deleted test can't be restored), NUL-separated (no quoted names)
-        files = _git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha).stdout.split("\0")
+        files = _safe_git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha).stdout.split("\0")
         tests = sorted(f for f in files if f and TEST_FILE.search(f))
         verify = [v for _, v in b.verify_cmds() if v]
         prompt = _prompt(b)
@@ -165,14 +164,14 @@ def build_commits(p, rng, verify, last=30):
     """T-0222: (cases, skipped) from a repo's own commits: one that adds or changes test files and source becomes a
     case (prompt: its message; verify: the given command, {tests} → its test files), validated fail-to-pass."""
     cases, skipped = [], []
-    for sha in _git(p.root, "rev-list", "--no-merges", f"--max-count={last}", rng).stdout.split():
+    for sha in _safe_git(p.root, "rev-list", "--no-merges", f"--max-count={last}", rng).stdout.split():
         cid = f"C-{sha[:10]}"
-        base = _git(p.root, "rev-parse", "-q", "--verify", f"{sha}^").stdout.strip()
-        files = [f for f in _git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha)
+        base = _safe_git(p.root, "rev-parse", "-q", "--verify", f"{sha}^").stdout.strip()
+        files = [f for f in _safe_git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha)
                  .stdout.split("\0") if f]
         tests = sorted(f for f in files if TEST_FILE.search(f))
         src = [f for f in files if not TEST_FILE.search(f) and not DOC_FILE.search(f)]
-        msg = _git(p.root, "log", "-1", "--format=%B", sha).stdout.strip()
+        msg = _safe_git(p.root, "log", "-1", "--format=%B", sha).stdout.strip()
         if not base or not tests or not src:
             skipped.append(f"{cid}: " + ("a root commit" if not base else "no test files" if not tests else "tests only"))
             continue
@@ -280,8 +279,8 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
     left in the worktree against the base) and final reply, against the case's rubric and the user's taste."""
     import fmideas
     import fmsecond
-    _git(wt, "add", "-A")
-    diff = _git(wt, "diff", "--cached", "--no-ext-diff", "--no-textconv", case["base"]).stdout
+    _safe_git(wt, "add", "-A")
+    diff = _safe_git(wt, "diff", "--cached", "--no-ext-diff", "--no-textconv", case["base"]).stdout
     t = fmideas.taste(p, 5)
     fence = lambda s: re.sub(r"</?(?:diff|reply)>", "", s)  # the fences can't be closed from inside
     prompt = "\n".join([f"Task: {case['prompt']}", "", "Rubric:"] + [f"- {r}" for r in case.get("rubric") or []]
@@ -480,7 +479,7 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results,
            **({"extra": list(extra)} if extra else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
-    _git(p.root, "worktree", "prune")  # a killed earlier run's worktree
+    _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
     for case in cases:
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
@@ -595,7 +594,7 @@ def stranger(p, plugin, model=None, budget=3.0, timeout=20):
                 f.write(text)
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "-c",
                                                       "commit.gpgsign=false", "commit", "-qm", "toy"]):
-            _git(repo, *args)
+            _safe_git(repo, *args)
         env = _env(plugin, state)
         res, error = _session(repo, env, [plugin], STRANGER.format(readme=c.fit(readme, 16000)), model, budget, timeout)
         fmbudget.record("bench", res.get("total_cost_usd"), project=p.slug, detail="stranger")
@@ -716,10 +715,10 @@ def _contest(p, args):
                        f"{name} hurts here: {why}")  # the pane shows the verdict without the gate's lines
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
         else:  # versions: the same cases on Foreman at REV (a worktree of its repo) and on this one
-            top = _git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel").stdout.strip()
+            top = _safe_git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel").stdout.strip()
             source = os.path.abspath(args.source or top)
             sha = "" if args.rev.startswith("-") else \
-                _git(source, "rev-parse", "-q", "--verify", args.rev + "^{commit}").stdout.strip()
+                _safe_git(source, "rev-parse", "-q", "--verify", args.rev + "^{commit}").stdout.strip()
             if not top or not sha:
                 raise fmcli.UsageError(f"{args.rev}: no such revision in {source}")
             old = f"version-{sha[:10]}-{stamp}"
@@ -817,7 +816,7 @@ def cmd_bench(args):
             raise fmcli.UsageError(str(e))
         stamp, by_model = time.strftime("%Y%m%d-%H%M%S"), {}
         os.makedirs(_results_dir(p), exist_ok=True)
-        _git(p.root, "worktree", "prune")
+        _safe_git(p.root, "worktree", "prune")
         for m in models:
             results = []
             for case in cases:
