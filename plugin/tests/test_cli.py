@@ -1145,3 +1145,26 @@ class BareFm(ForemanTestCase):
             out = self.fm(cwd=d).stdout
         self.assertIn("fm <command> -h for its options.", out)
         self.assertNotIn("Next:", out)
+
+
+class Completion(ForemanTestCase):
+    # T-0924: tab completion from the real parser and the live briefs
+    def test_completes_verbs_subcommands_options_and_live_task_ids(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        words = lambda *w: self.fm("complete", "--", *w).stdout.split()  # noqa: E731
+        self.assertIn("capture", words("cap"))
+        self.assertNotIn("init", words("cap"))
+        self.assertIn("finish", words("task", ""))
+        self.assertIn("evidence", words("task", "ev"))
+        self.assertEqual(words("focus", "T-"), ["T-0001"])
+        self.assertIn("T-0001", words("task", "show", ""))
+        self.assertIn("--type", words("task", "new", "x", "--ty"))
+
+    def test_prints_a_hook_for_bash_and_zsh(self):
+        bash = self.fm("complete", "--shell", "bash").stdout
+        self.assertIn("complete -F _fm fm", bash)
+        self.assertIn("fm complete --", bash)
+        self.assertIn("bashcompinit", self.fm("complete", "--shell", "zsh").stdout)
+        r = subprocess.run(["bash", "-n"], input=bash, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)

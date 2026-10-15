@@ -3613,7 +3613,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
@@ -3653,6 +3653,36 @@ Foreman state CLI (the only writer of Foreman state). Start here:
 
 fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
 """
+
+
+_BASH_HOOK = """_fm() {
+  local IFS=$'\\n'
+  COMPREPLY=($(fm complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
+}
+complete -F _fm fm
+"""
+
+
+def cmd_complete(args):
+    """T-0924: what can come next, from the real parser (verbs, a verb's subcommands, its options) and the live
+    briefs (open task ids where an id goes); --shell prints the hook: eval "$(fm complete --shell bash)"."""
+    if args.shell:
+        return print(("autoload -U +X bashcompinit && bashcompinit\n" if args.shell == "zsh" else "") + _BASH_HOOK, end="")
+    words = list(args.words) or [""]
+    cur, node = words[-1], build_parser()
+    for w in words[:-1]:  # walk down the subcommands typed so far
+        sub = next((a for a in node._actions if isinstance(a, argparse._SubParsersAction)), None)
+        if sub and w in sub.choices:
+            node = sub.choices[w]
+    sub = next((a for a in node._actions if isinstance(a, argparse._SubParsersAction)), None)
+    if cur.startswith("-"):
+        found = sorted({o for a in node._actions for o in a.option_strings if o.startswith(cur)})
+    elif sub:
+        found = sorted(n for n in sub.choices if n.startswith(cur))
+    else:
+        p = c.find_project(os.getcwd())
+        found = sorted(b.id for b in c.load_briefs(p) if b.status not in c.CLOSED and b.id.startswith(cur)) if p else []
+    print("\n".join(found))
 
 
 def build_parser():
@@ -4030,6 +4060,10 @@ def build_parser():
     s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
     s.add_argument("--timeout", type=float, default=600)
     s.add_argument("words", nargs=argparse.REMAINDER)
+    s = add("complete", cmd_complete, help="tab completion: candidates for the words typed so far; --shell bash|zsh "
+                                           "prints the hook to source")
+    s.add_argument("--shell", choices=["bash", "zsh"])
+    s.add_argument("words", nargs="*")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
