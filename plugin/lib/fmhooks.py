@@ -58,6 +58,8 @@ def _lite(raw):
 
 BREAKER_FAILS, BREAKER_PAUSE_S = 3, 600  # T-0087: failures in a row that pause an event, and for how long
 UNBREAKABLE = {"PreToolUse", "TaskCompleted"}  # gates: the guard fails closed, TaskCompleted refuses unevidenced work
+# T-0963 review: what a lite project still runs: the gates, and an fm ask's dialog and grant (PostToolUse grants only)
+LITE_KEEPS = UNBREAKABLE | {"PermissionRequest", "PostToolUse"}
 
 
 def breaker():
@@ -91,7 +93,16 @@ def _breaker_set(event, entry):
 
 def run(event, raw):
     t0 = time.monotonic()
-    if event != "PreToolUse" and (_quiet() or (_lite(raw) and event not in UNBREAKABLE)):  # lite keeps the gates
+    if event != "PreToolUse" and (_quiet() or (event not in LITE_KEEPS and _lite(raw))):  # lite keeps the gates
+        return 0
+    if event == "PostToolUse" and _lite(raw):  # lite: only the grant an approved fm ask dialog gives
+        try:
+            pl = json.loads(raw) if raw.strip() else {}
+            p = c.find_project(_cwd(pl))
+            if p and pl.get("tool_name") == "Bash":
+                _grant_prompted(pl, p)
+        except Exception:
+            log_error(event, _tb())
         return 0
     if event == "PreToolUse":
         code = _pre_tool_use(raw)

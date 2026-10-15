@@ -307,10 +307,15 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
 def _bare_guard(plugin):
     """T-0963: the plugin's guard alone, as --settings hooks for a session that loads no plugin: bypass mode stays
     guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Foreman's but the guard."""
-    hook = {"type": "command", "command": shlex.quote(os.path.join(plugin, "hooks", "hook")) + " PreToolUse",
-            "timeout": 5}
-    return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
-                                                 "hooks": [hook]}]}})
+    # T-0963 security review: the plugin's own PreToolUse entries, every matcher and its onFailure kept, the root
+    # resolved, so the bare arm is guarded exactly as a session with the plugin is
+    with open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8") as f:
+        entries = json.load(f)["hooks"]["PreToolUse"]
+    root = shlex.quote(plugin)
+    for e in entries:
+        for h in e.get("hooks") or []:
+            h["command"] = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
+    return json.dumps({"hooks": {"PreToolUse": entries}})
 
 
 def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False):
@@ -730,8 +735,10 @@ def _contest(p, args):
             ok, lines = gate(b, a, args.cost_tolerance)  # bare Claude is the reference Foreman has to beat
             sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
             why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
+            cost_only = all("cost" in x for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
             verdict = ("Foreman helps: more passes than Claude with no plugins" if ok and sa > sb else
                        "no difference on these cases: Claude with no plugins does as well" if ok else
+                       f"Foreman passes more, at a cost: {why}" if sa > sb and cost_only else
                        f"Foreman hurts here against Claude with no plugins: {why}")
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
         elif args.bench_cmd == "duel":

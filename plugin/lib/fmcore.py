@@ -2791,7 +2791,8 @@ def lint_verify(cmd, root):
     return problems
 
 
-_STATE_READ = re.compile(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bstate/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b")
+_STATE_READ = re.compile(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
+                         r"|\bstate/projects/[^/\s]+/(?:tasks|briefs)\b|\bstate/(?:tasks|briefs)/T-\d+|\$\{?FOREMAN_STATE\b")  # a task file, not a repo's own state/
 
 
 # T-0943: commands that act on or read a live account, cluster or database (local checks like terraform validate or

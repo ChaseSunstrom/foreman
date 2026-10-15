@@ -10,6 +10,7 @@ from helpers import ForemanTestCase, read_json
 import test_bench_family as tbf
 
 import fmcore as c
+import fmhooks
 
 
 class BoardPosture(ForemanTestCase):
@@ -25,6 +26,32 @@ class BoardPosture(ForemanTestCase):
         self.assertEqual(write().returncode, 2, "lite: the guard still refuses an unbriefed edit")
         self.fm("posture", "full")
         self.assertTrue(start(), "full again: the hooks are back")
+
+    def test_lite_keeps_the_unbreakable_gates_and_only_the_user_turns_it_on(self):
+        # T-0963 security review: lite must not switch off what refuses unevidenced work, and an agent may not
+        # lower the posture itself (like fm pause off, it's the user's to type)
+        import fmguard
+        self.fm("init")
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
+        self.fm("posture", "lite")
+        done = self.hook("TaskCompleted", {"task_subject": "T-0001 step 1", "cwd": self.repo})
+        self.assertEqual(done.returncode, 2, "lite: TaskCompleted still refuses a step with no evidence")
+        ctx = fmguard.Ctx(cwd=self.repo, project_root=self.repo, home=self.tmp, foreman_home=self.home,
+                          state_dir=c.state_dir(), state_fallbacks=[])
+        cats = lambda cmd: [cat for cat, _ in fmguard.check_bash(cmd, ctx)]  # noqa: E731
+        for cmd in ("fm posture lite", "fm posture --json lite", "fm posture -p x lite", "fm pause -p x off",
+                    "fm pause --json off"):
+            self.assertIn("self-authorize", cats(cmd), cmd)  # review: a flag before the word slipped past
+        self.assertNotIn("self-authorize", cats("fm posture full"))
+        self.assertNotIn("self-authorize", cats("fm posture"))
+        # review: an fm ask still grants in a lite project (the dialog's PermissionRequest and the grant's PostToolUse)
+        self.assertIn("PermissionRequest", fmhooks.LITE_KEEPS)
+        self.assertIn("PostToolUse", fmhooks.LITE_KEEPS)
+
+    def test_lint_flags_foreman_state_not_a_repos_own_state_folder(self):
+        self.assertTrue(c.lint_verify("cat ~/.claude/foreman/state/projects/x/tasks/T-1.md", self.repo))
+        self.assertTrue(c.lint_verify("grep done .foreman/tasks/T-0001.md", self.repo))
+        self.assertFalse(c.lint_verify("python3 -m pytest tests/state/tasks", self.repo), "a repo's own state/tasks folder")
 
     def test_compact_output_shadow_records_savings_and_never_rewrites(self):
         home = os.path.join(self.tmp, "userhome")

@@ -130,7 +130,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - The guard reads every Bash command and file edit before it runs, including the commands fm stores and runs later.
 - Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back; `fm oops` shows the newest and `fm oops --apply` restores it.
 - `fm sensitive on` keeps a repo's content from leaving the machine; `fm sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
-- `fm posture lite` keeps only the guard in a repo where the rest of Foreman is in the way (no injected notes, no drive); `fm posture full` brings it back.
+- `fm posture lite` (yours to type: `! fm posture lite`; Claude may not lower it) keeps only the guard and the evidence gate in a repo where the rest of Foreman is in the way (no injected notes, no drive); `fm posture full` brings it back.
 
 **Shows you what happened.**
 - `fm tour --since main` ranks a whole branch, or a night's run, by review risk and says which files are safe to skim.
