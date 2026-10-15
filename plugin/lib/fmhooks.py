@@ -1806,7 +1806,7 @@ def stop(pl):
         reason = _push_nudge(sid, sd, drained)
     out = {"terminalSequence": seq}
     promised = []
-    if not reason and not oneoff:  # T-0899: the turn ends here, so a promise in it is only kept if it's captured
+    if not reason and not oneoff and re.search(r"(?i)\bI(?:['’]ll| will)\b", msg):  # T-0899: kept only if captured
         try:
             import fmcli
             promised = fmcli.capture_promises(p, msg, sid)

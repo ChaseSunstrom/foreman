@@ -2672,19 +2672,22 @@ def cmd_research(args):
                                                                   f"{', '.join(made)}" if made else ""))
 
 
-_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to|get to)"
-                      r"\s+[^.\n!?]{4,140}")
+_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to)"
+                      r"\s+(?!(?:note|mention|say|point out|add that)\b)[^.\n!?]{4,140}")
+_OFFER = re.compile(r"(?i)\b(?:if|want|would|could|happy|can|shall|like)\b")  # T-0908: "If you want, I'll also…" offers
 
 
 def capture_promises(p, text, sid=None):
     """T-0899: what a reply that ends the turn promises for later ("I'll also…", "I'll follow up on…") becomes an inbox
     item, once (an open one of the same title is enough); code blocks don't count. Returns the new ids."""
     said = re.sub(r"```.*?(?:```|$)", " ", text or "", flags=re.S)
-    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)))[:5]
+    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)
+                               if not _OFFER.search(re.split(r"[.!?\n]", said[:m.start()])[-1])
+                               and not re.search(r"(?i)\bif you\b", m.group(0))))[:3]
     if not found:
         return []
     made = []
-    with c.lock(p.dir):
+    with c.lock(p.dir, timeout=1):  # the Stop hook: a promise lost to a busy lock beats a stalled stop
         have = {b.title.lower() for b in c.load_briefs(p) if b.status not in c.CLOSED}
         for x in found:
             title = _title(f"Promised: {x}")
