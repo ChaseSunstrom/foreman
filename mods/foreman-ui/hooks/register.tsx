@@ -902,7 +902,7 @@ export const register: Register = (on, options) => {
             ) : (
               <Text key={`ln-${i}`} wrap="wrap">
                 {b.parts.map((p, j) => (
-                  <Text key={j} weight={p.weight="bold" ? 'bold' : 'regular'} {...(p.color !== undefined ? { color: hex(p.color) } : {})}>
+                  <Text key={j} weight={p.bold ? 'bold' : 'regular'} {...(p.color !== undefined ? { color: hex(p.color) } : {})}>
                     {p.text}
                   </Text>
                 ))}
