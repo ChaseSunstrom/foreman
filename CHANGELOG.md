@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.30 — 2026-10-15
 - Stack library (T-0933, T-0941): 1,078 on-demand cards in 27 areas.
   - The areas are languages, Python, Node, web, JVM, .NET, mobile, Rust, Go, C/C++ and embedded, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, tools, games, hardware, docs, idioms, building Claude Code extensions, and practice.
   - Each card has a summary, Verify commands, Test first, Do, Avoid and Review. None is loaded until read.
