@@ -405,6 +405,28 @@ def _version(root):
     return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
 
 
+def check_dual_install(home=None, known=None, installed=None):
+    """T-0923: Foreman installed from a marketplace that isn't this home (GitHub, another folder) beside install.sh's
+    copy here: sessions run whichever they started with, and the two drift apart. Different versions warn."""
+    home = home or c.foreman_home()
+    entry = next(iter(((_load_json(installed or os.path.expanduser("~/.claude/plugins/installed_plugins.json")) or {})
+                       .get("plugins") or {}).get("foreman@foreman") or []), None)
+    if not entry or not os.path.isdir(os.path.join(home, "plugin")):
+        return Result("installs", "PASS", "one Foreman install")
+    src = ((_load_json(known or os.path.expanduser("~/.claude/plugins/known_marketplaces.json")) or {})
+           .get("foreman") or {}).get("source") or {}
+    if src.get("source") == "directory" and os.path.realpath(src.get("path") or "") == os.path.realpath(home):
+        return Result("installs", "PASS", f"the foreman marketplace is this home ({home})")
+    there = entry.get("version") or _version(entry.get("installPath") or "")
+    here = _version(os.path.join(home, "plugin"))
+    where = src.get("repo") or src.get("url") or src.get("path") or "another marketplace"
+    if there == here:
+        return Result("installs", "PASS", f"two Foreman installs at {here}: {where} and {home}")
+    return Result("installs", "WARN", f"two Foreman installs: {there} from {where} and {here} in {home}; a session runs "
+                  "whichever it started with. Keep one: claude plugin update foreman@foreman (or uninstall it and keep "
+                  "this home's)")
+
+
 def check_product(p):
     """T-0417: a project that ships a web UI has a product check (fm smoke), so a UI that doesn't load can't pass."""
     if not p or not c.git_root(p.root):
@@ -1003,6 +1025,7 @@ def run_all(full=False, accept_supply=False):
                           f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --repair regenerates them"
                           if stale else "status views match the briefs"))
     here = c.find_project(os.getcwd())
+    results.append(check_dual_install())
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
