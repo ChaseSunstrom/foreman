@@ -618,8 +618,24 @@ def cmd_notify(args):
     fmcli.out(args, {"notify": cmd}, f"fm run notifies with: {cmd}" if cmd else "No notify command: fm notify '<cmd>'")
 
 
+def _inhibit():
+    """T-0955: re-exec fm run under systemd-inhibit so the machine doesn't sleep mid-run, once (the env guard). A host
+    whose logind can't answer --list runs uninhibited rather than not at all."""
+    if os.environ.get("FOREMAN_INHIBITED") or not shutil.which("systemd-inhibit"):
+        return
+    try:
+        if subprocess.run(["systemd-inhibit", "--list", "--no-pager"], capture_output=True, timeout=10).returncode:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    os.execvpe("systemd-inhibit", ["systemd-inhibit", "--what=sleep:idle", "--who=Foreman", "--why=fm run",
+                                   sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]],
+               dict(os.environ, FOREMAN_INHIBITED="1"))
+
+
 def cmd_run(args):
     import fmcli
+    _inhibit()
     p = fmcli.resolve(args)
     if c.read_meta(p).get("serve"):
         raise c.PolicyError(f"fm serve is running Remote Control for {p.slug}; a second writer would collide. Send "
@@ -634,7 +650,11 @@ def cmd_run(args):
     if os.path.exists(log) and os.path.getsize(log) > RUN_LOG_MAX:
         os.replace(log, log + ".1")
 
-    def fail(msg):
+    def fail(msg, quarantine=None):
+        if quarantine:  # T-0955: blocked with the reason, so the next fm run takes the next task instead
+            why = f"fm run: {msg}"
+            fmcli.mutate(p, quarantine, lambda b: (b.meta.update(status="blocked"), b.append_log(f"blocked: {why}")),
+                         "task_block", {"reason": why})
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
         _notify(p, f"fm run stopped: {msg}")
         sys.exit(1)
@@ -745,11 +765,11 @@ def cmd_run(args):
             print(f"{b.id} {after.status}{how}")
             _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
         elif _fingerprint(after) == before:
-            fail(f"{b.id}: no progress in a fresh session; stopping")
+            fail(f"{b.id}: no progress in a fresh session; stopping", quarantine=b.id)
         else:
             sessions[b.id] = sessions.get(b.id, 0) + 1
             if sessions[b.id] >= SESSIONS_PER_TASK:
-                fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping")
+                fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping", quarantine=b.id)
     _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
           + ("; the queue has nothing else runnable" if finished < args.max else f"; stopped at --max {args.max}"))

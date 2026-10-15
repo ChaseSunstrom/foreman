@@ -4155,6 +4155,8 @@ def build_parser():
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
                  "refused at high usage; fm digest reports it")
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
+    s.add_argument("--print-timer", action="store_true",
+                   help="print a systemd user timer + service and a crontab line for fm night here; install nothing")
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")
