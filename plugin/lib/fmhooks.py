@@ -47,6 +47,15 @@ def _quiet():
     return os.environ.get("FOREMAN_QUIET", "") not in ("", "0")
 
 
+def _lite(raw):
+    """T-0963: fm posture lite marks a project where only the guard's hook runs; any doubt reads as full."""
+    try:
+        p = c.find_project(_cwd(json.loads(raw) if raw.strip() else {}))
+        return bool(p) and c.read_meta(p).get("posture") == "lite"
+    except Exception:
+        return False
+
+
 BREAKER_FAILS, BREAKER_PAUSE_S = 3, 600  # T-0087: failures in a row that pause an event, and for how long
 UNBREAKABLE = {"PreToolUse", "TaskCompleted"}  # gates: the guard fails closed, TaskCompleted refuses unevidenced work
 
@@ -82,7 +91,7 @@ def _breaker_set(event, entry):
 
 def run(event, raw):
     t0 = time.monotonic()
-    if event != "PreToolUse" and _quiet():
+    if event != "PreToolUse" and (_quiet() or _lite(raw)):
         return 0
     if event == "PreToolUse":
         code = _pre_tool_use(raw)
@@ -2538,7 +2547,16 @@ def subagent_stop(pl):
                           "transcript": pl.get("agent_transcript_path"),
                           "summary_chars": len(pl.get("last_assistant_message") or "")},
                     session=pl.get("session_id"))
+        chars = len((pl.get("last_assistant_message") or "").strip())
+        if re.search(r"(?:^|:)fm-(?:builder|reviewer)$", str(pl["agent_type"])) and chars < HOLLOW_CHARS:
+            # T-0963: async, so it can't block; fm next names it so the main thread reads the transcript first
+            c.log_event(p, "hollow_return", task=act.id if act else None,
+                        data={"agent_type": pl["agent_type"], "agent_id": pl.get("agent_id"), "chars": chars,
+                              "transcript": pl.get("agent_transcript_path")}, session=pl.get("session_id"))
     return None
+
+
+HOLLOW_CHARS = 80  # T-0963: a builder or reviewer report shorter than this says nothing a merge can trust
 
 
 # ---------------------------------------------------------------- display, notifications, end

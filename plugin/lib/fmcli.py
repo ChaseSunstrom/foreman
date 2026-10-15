@@ -2860,6 +2860,19 @@ def cmd_drive(args):
     out(args, {"drive": args.state == "on"}, f"{p.slug}: drive {args.state}.")
 
 
+def cmd_posture(args):
+    """T-0963: lite runs only the guard's hook here (no injections, no bookkeeping); full is every hook."""
+    p = resolve(args)
+    if not args.state:
+        posture = c.read_meta(p).get("posture") or "full"
+        return out(args, {"posture": posture}, f"{p.slug}: posture {posture}.")
+    c.update_meta(p, posture=args.state)
+    with c.lock(p.dir):
+        c.log_event(p, "posture", data={"posture": args.state}, session=session())
+    what = "only the guard's hook runs here" if args.state == "lite" else "every hook runs"
+    out(args, {"posture": args.state}, f"{p.slug}: posture {args.state} ({what}).")
+
+
 def cmd_pause(args):
     """T-0436: one flag for every project. It grants nothing, and lifting it only lets back what ran before, so
     either way it's no consent to guard."""
@@ -3724,6 +3737,13 @@ def cmd_next(args):
     asks = unanswered_asks(p)
     over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
+    hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
+              and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
+    if hollow:
+        d = hollow[-1].get("data") or {}
+        over += (f" · {len(hollow)} hollow subagent return(s) today: the last, {d.get('agent_type')}"
+                 f"{' on ' + hollow[-1]['task'] if hollow[-1].get('task') else ''}, said {d.get('chars')} chars: read its "
+                 f"transcript ({d.get('transcript') or 'no path'}) before trusting or merging its work")
     if b and b.status == "active":  # T-0631: beliefs still open, each with what would kill it
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
@@ -3804,7 +3824,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo show recall explain surprise vetoes why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
+    ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing budget sync share notify compact-output complete wiring "
                              "plugins docs doctor release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
@@ -4453,6 +4473,9 @@ def build_parser():
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
 
+    s = add("posture", cmd_posture, help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
+    s.add_argument("state", nargs="?", choices=["lite", "full"])
+
     s = add("pause", cmd_pause, help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
 
@@ -4626,7 +4649,9 @@ def build_parser():
         b.add_argument("--json", action="store_true")
         b.add_argument("-p", "--project", default=argparse.SUPPRESS)
         if name == "duel":
-            b.add_argument("plugin", help="a plugin folder, or an installed plugin's id")
+            b.add_argument("plugin", nargs="?", help="a plugin folder, or an installed plugin's id")
+            b.add_argument("--vs", choices=["none"], help="none: Foreman against Claude with no plugins (only the "
+                                                          "guard, as a settings hook) instead of a rival (T-0963)")
         if name == "versions":
             b.add_argument("rev", help="the earlier Foreman revision (a commit, tag or HEAD~N)")
             b.add_argument("--source", help="the Foreman checkout REV is in (default: the running one's repo)")
@@ -4822,7 +4847,8 @@ def build_parser():
                    help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
     s = add("compact-output", lazy("fmsetup", "cmd_compact_output"),
             help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
-    s.add_argument("state", nargs="?", choices=["on", "off", "status"])
+    s.add_argument("state", nargs="?", choices=["on", "off", "shadow", "status"],
+                   help="shadow: record what it would cut (fm compact-output shows the total), never shorten")
     s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
     return ap
