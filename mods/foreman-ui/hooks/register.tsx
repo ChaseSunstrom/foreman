@@ -39,7 +39,7 @@ import {
   toolFace,
   typeColor,
 } from './kit'
-import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, LANES, LIST, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, cfg, laneOf, running, starts, ticks, took } from './state'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, HOLD_MS, IDLE_FRAMES, LANES, LIST, PANE, QUIET_MS, SHELL_MAX_MS, STEP_MS, STOP_MS, TIMELINE_MS, cfg, laneOf, running, starts, ticks, took } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
@@ -261,7 +261,8 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
-  if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
+  // the mascot's idle blink, at the poll's pace; it also redraws a held card's ease when the frame clock is off (T-0938)
+  if (cfg.mascot !== 'off' || (await $.clock.now()) < heldUntil) await update($, beat, n => n + 1)
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
   const listed = running.length ? await $.agent.list().catch(() => null) : null
@@ -390,6 +391,31 @@ let closing: Closing | null = null
 const CLOSING_MS = 6000
 const SWEEP_MS = 900
 
+// T-0938: the pane holds still while calls come and go. A volatile card keeps the most rows it drew within HOLD_MS, then
+// gives them back one per STEP_MS; one whose list emptied lingers, dimmed, naming what it last showed. Under every
+// Motion setting: this is stability, not animation. The clock keeps a calm pace until heldUntil, so the ease is drawn.
+const held = new Map<string, { rows: number; at: number }>() // card → its tallest recent height, and when it drew it
+const lastSeen = new Map<string, { text: string; at: number }>() // card → what it last listed, and when
+let heldUntil = 0
+export function stable(key: string, rows: number, now: number): number {
+  const h = held.get(key)
+  const age = h ? now - h.at : -1 // a clock that went back (a new session) starts over
+  const out = !h || age < 0 ? rows : Math.max(rows, h.rows - (age < HOLD_MS ? 0 : Math.floor((age - HOLD_MS) / STEP_MS) + 1))
+  if (out === rows) held.set(key, { rows, at: now })
+  else heldUntil = Math.max(heldUntil, h!.at + HOLD_MS + (h!.rows - rows) * STEP_MS)
+  return out
+}
+/** A volatile card's height and, once its list is empty, what it last showed; null when it should be gone. */
+function settle(key: string, rows: number, last: string | null, now: number, idle = 4) {
+  if (last !== null) lastSeen.set(key, { text: last, at: now })
+  const l = lastSeen.get(key)
+  const h = stable(key, last !== null ? rows : idle, now)
+  if (last !== null) return { h, gone: null }
+  if (!l || now < l.at || (now - l.at >= HOLD_MS && h <= idle)) return null
+  heldUntil = Math.max(heldUntil, l.at + HOLD_MS)
+  return { h, gone: l }
+}
+
 let painting = false
 async function repaint($: EngineInterface) {
   if (painting) return // a slow blit: skip a tick rather than pile them up
@@ -422,13 +448,15 @@ async function wake($: EngineInterface) {
 async function advance($: EngineInterface) {
   const f = await read($, frame)
   if (starts.size) lastActive = f // a long build is live work: its row keeps moving (finally always clears starts)
-  const quiet = !turns.size && !starts.size && (await $.clock.now()) >= flashUntil // a step's glow is still fading
-  if (quiet && !bgLive && f - lastActive > 2) {
+  const now = await $.clock.now()
+  const quiet = !turns.size && !starts.size && now >= flashUntil // a step's glow is still fading
+  const easing = now < heldUntil // a card still holds its height or lingers (T-0938)
+  if (quiet && !bgLive && !easing && f - lastActive > 2) {
     await update($, frame, n => n + 1) // one last redraw, so what faded (a glow, the done card) is drawn settled
     return sleep()
   }
   if (!bgLive && f - lastActive > IDLE_FRAMES) return sleep()
-  if (quiet && bgLive && ++calm % 4) return // only background work: a calmer pace (~2 frames a second)
+  if (quiet && (bgLive || easing) && ++calm % 4) return // only background work or an ease: a calmer pace (~2 frames a second)
   await update($, frame, n => n + 1)
 }
 
@@ -1190,6 +1218,19 @@ export const register: Register = (on, options) => {
     const asks = v.approvals ?? []
     const plans = queue.flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : []))
     const nowCalls = [...running].filter(([, x]) => !x.agent)
+    // T-0938: the volatile cards' held heights (border, head, a row per item); Now, Subagents and Shells linger
+    const nowCard = settle('now', 3 + Math.min(4, nowCalls.length) + (nowCalls.length > 4 ? 1 : 0), nowCalls[0] ? `${nowCalls[0][1].verb} ${nowCalls[0][1].target}`.trim() : null, clockNow)
+    const lastSub = subs.at(-1)
+    const subsCard = settle('agents', 3 + subs.length, lastSub ? `${lastSub.type} ${lastSub.description}`.trim() : null, clockNow)
+    const shellsCard = settle('shells', 3 + bgShells.length, bgShells.at(-1)?.command ?? null, clockNow)
+    const asksH = asks.length ? stable('asks', 3 + asks.reduce((t, x) => t + Math.ceil((x.task.length + x.allow.join(', ').length + x.why.length + 6) / inner), 0), clockNow) : 0
+    const gatesH = checks?.results.length && !isFolded('gates') ? stable('gates', 3 + checks.results.length, clockNow) : undefined // a fold shrinks at once
+    const idleLine = (g: { text: string; at: number }) => (
+      <Text color={hex(C.dim)} wrap="truncate-end">
+        idle · last: {g.text} · {Math.max(0, Math.round((clockNow - g.at) / 1000))}s ago
+      </Text>
+    )
+    if (clockNow < heldUntil) await Promise.all([read($, frame), read($, beat)]) // redraw the ease as it goes
     const mascotW = cfg.mascot === 'off' ? 0 : 13 + Math.min(4, subs.filter(s => !s.done).length) * 8
     const heroW = Math.max(16, inner - mascotW)
     // the swim lanes: the last half hour of tool calls, a row per kind that ran
@@ -1207,7 +1248,7 @@ export const register: Register = (on, options) => {
     const gaugeW = Math.max(6, Math.min(16, inner - (days.length ? days.length * 2 + 1 : 0) - 24))
 
     const gate = checks && checks.results.length > 0 && (
-      <Box key="card-gates" {...card(failing ? C.err : null)}>
+      <Box key="card-gates" {...card(failing ? C.err : null)} minHeight={gatesH}>
         {head(
           'Gates',
           failing ? C.err : C.ok,
@@ -1260,7 +1301,7 @@ export const register: Register = (on, options) => {
         })()}
 
         {asks.length > 0 && (
-          <Box key="card-asks" {...card(C.warn)}>
+          <Box key="card-asks" {...card(C.warn)} minHeight={asksH}>
             {head('Needs you', C.warn, `${asks.length} waiting`)}
             {asks.map(x => (
               <Text color={hex(C.warn)} wrap="wrap" key={`ask-${x.task}`}>
@@ -1383,8 +1424,14 @@ export const register: Register = (on, options) => {
           {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
         </Box>
 
+        {nowCard?.gone && (
+          <Box key="card-now" {...card()} minHeight={nowCard.h}>
+            {head('Now', C.dim)}
+            {idleLine(nowCard.gone)}
+          </Box>
+        )}
         {nowCalls.length > 0 && (
-          <Box key="card-now" {...card(C.accent)}>
+          <Box key="card-now" {...card(C.accent)} minHeight={nowCard?.h}>
             {head('Now', C.accent, `${nowCalls.filter(([, x]) => x.icon !== '⚠').length} running`)}
             {nowCalls.slice(0, 4).map(([id, x], i) => {
               if (x.icon === '⚠')
@@ -1414,8 +1461,14 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
+        {subsCard?.gone && (
+          <Box key="card-agents" {...card()} minHeight={subsCard.h}>
+            {head('Subagents', C.dim)}
+            {idleLine(subsCard.gone)}
+          </Box>
+        )}
         {subs.length > 0 && (
-          <Box key="card-agents" {...card()}>
+          <Box key="card-agents" {...card()} minHeight={subsCard?.h}>
             {head('Subagents', C.agent, `${subs.filter(s => !s.done).length} running`)}
             {subs.map(s => (
               <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
@@ -1442,8 +1495,14 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
+        {shellsCard?.gone && (
+          <Box key="card-shells" {...card()} minHeight={shellsCard.h}>
+            {head('Background shells', C.dim)}
+            {idleLine(shellsCard.gone)}
+          </Box>
+        )}
         {bgShells.length > 0 && (
-          <Box key="card-shells" {...card()}>
+          <Box key="card-shells" {...card()} minHeight={shellsCard?.h}>
             {head('Background shells', C.accent2, `${bgShells.length} running · Claude picks up when they finish`)}
             {bgShells.map((x, i) => (
               <Box flexDirection="row" gap={1} key={`shell-${x.id}`}>
