@@ -4112,6 +4112,7 @@ def build_parser():
     s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "
                                                           "turns, refusals, injected context (T-0712)")
     s.add_argument("--days", type=float, default=14)
+    s.add_argument("--by-verb", action="store_true", help="the fm verbs no session called in the window (T-0959)")
     s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
@@ -4331,6 +4332,7 @@ def build_parser():
     g.add_argument("--mark", action="store_true", help="record a finished pass: the next digest starts after it")
     g.add_argument("--every", type=int, help="fm next calls for a pass every N closed tasks (0: off)")
     g.add_argument("--reject", metavar="TEXT", help="a dead end: later digests skip lines with TEXT (T-0471)")
+    g.add_argument("--minutes", action="store_true", help="minutes lost in the last week, by kind (T-0959)")
     s.add_argument("--why", help="--reject: why it's a dead end")
 
     s = add("repeats", lazy("fmrepeats", "cmd_repeats"),

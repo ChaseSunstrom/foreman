@@ -207,6 +207,14 @@ def cmd_cost(args):
 
 
 BUST_MIN = 30000  # a turn re-writing over half of a context this big lost its cache (T-0703)
+CACHE_TTL_S = 300  # the prompt cache's default lifetime: a bust after a longer gap is the ttl, else a context edit
+
+
+def _epoch(ts):
+    try:
+        return datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 SPLIT = {"cache_read_input_tokens": "cache read", "cache_creation_input_tokens": "cache write", "input_tokens": "fresh",
          "output_tokens": "output"}
 
@@ -216,19 +224,22 @@ def _sessions(msgs, args, fmcli):
     and the cache busts: turns that re-wrote over half of a context past BUST_MIN tokens."""
     rows = {}
     for ts, sid, u in sorted(msgs, key=lambda x: x[0]):
-        r = rows.setdefault(sid, {"session": sid, "turns": 0, "busts": 0, "ctx": 0, "prev": 0,
-                                  "tokens": collections.Counter()})
+        r = rows.setdefault(sid, {"session": sid, "turns": 0, "busts": 0, "ctx": 0, "prev": 0, "prev_t": None,
+                                  "causes": collections.Counter(), "tokens": collections.Counter()})
         ctx = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         w = u.get("cache_creation_input_tokens") or 0
-        r["busts"] += r["prev"] > BUST_MIN and ctx > BUST_MIN and w > ctx / 2
-        r["turns"], r["ctx"], r["prev"] = r["turns"] + 1, r["ctx"] + ctx, ctx
+        t = _epoch(ts)
+        if r["prev"] > BUST_MIN and ctx > BUST_MIN and w > ctx / 2:  # T-0959: the cache expired, or the prefix changed
+            r["busts"] += 1
+            r["causes"]["ttl" if t and r["prev_t"] and t - r["prev_t"] > CACHE_TTL_S else "context edit"] += 1
+        r["turns"], r["ctx"], r["prev"], r["prev_t"] = r["turns"] + 1, r["ctx"] + ctx, ctx, t
         for k in WEIGHTS:
             r["tokens"][k] += u.get(k) or 0
     out = []
     for r in rows.values():
         spend = {k: r["tokens"][k] * WEIGHTS[k] for k in WEIGHTS}
         out.append({"session": r["session"], "turns": r["turns"], "avg_context": r["ctx"] // r["turns"],
-                    "busts": r["busts"], "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
+                    "busts": r["busts"], "bust_causes": dict(sorted(r["causes"].items())), "tokens": dict(r["tokens"]), "input_equivalent": round(sum(spend.values())),
                     "split": {SPLIT[k]: round(100 * v / (sum(spend.values()) or 1)) for k, v in sorted(spend.items(), key=lambda kv: list(SPLIT).index(kv[0]))}})
     out.sort(key=lambda s: -s["input_equivalent"])
     text = (f"Sessions, last {args.days:g} day(s), costliest first (the context a turn re-reads is most of the cost):\n"
@@ -236,6 +247,7 @@ def _sessions(msgs, args, fmcli):
                         f"≈ {_human(s['input_equivalent'])} input-equivalent (" + ", ".join(
                             f"{k} {v}%"
                             for k, v in s["split"].items()) + f"), {s['busts']} bust{'s' * (s['busts'] != 1)}"
+                        + (" (" + ", ".join(f"{n} {k}" for k, n in s["bust_causes"].items()) + ")" if s["busts"] else "")
                         for s in out[:15]) if out else f"No token usage in the last {args.days:g} day(s).")
     return fmcli.out(args, {"days": args.days, "sessions": out}, text)
 
@@ -831,6 +843,8 @@ def cmd_burden(args):
     """fm burden: Foreman's own cost on real sessions, per Foreman version — the objective a self-change must lower."""
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "by_verb", False):  # T-0959: the verbs no session called carry their weight for nothing
+        return _prune(args, _since(args.days))
     sessions = burden(transcripts_dir(p.root), _since(args.days))
     version = {}
     for e in c.ledger_tail(p, 50000):
