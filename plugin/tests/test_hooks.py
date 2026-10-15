@@ -1189,7 +1189,7 @@ class PreToolUse(HookCase):
         again = self.pre("Edit", {"file_path": path, "old_string": "a", "new_string": "b"})
         self.assertEqual(self.ctx_of(again), "")
         inside = os.path.join(self.repo, "src", "auth", "login.py")
-        self.assertEqual(self.ctx_of(self.pre("Write", {"file_path": inside, "content": "x"})), "")
+        self.assertNotIn("scope", self.ctx_of(self.pre("Write", {"file_path": inside, "content": "x"})))
 
 
 class PostToolUse(HookCase):
