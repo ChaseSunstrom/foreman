@@ -20,7 +20,7 @@ Claude Code is fast. Left to itself it also fails in familiar ways: it edits bef
 | **Guards bypass mode** | A fail-closed guard stops recursive deletes outside the project, force-pushes, credential reads, `curl \| sh`, publishes and edits to Foreman itself. Before a git command throws away uncommitted work, Foreman saves that work first. |
 | **Stays on task** | One active task. New requests go to the inbox instead of being chased. `NOW:` switches tasks on purpose. |
 | **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. |
-| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. `fm run` and `fm serve` keep it working headless. |
+| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. When the queue drains it finds its own next work (`fm scout`: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly brainstorm), so you never have to ask. `fm run` and `fm serve` keep it working headless. |
 | **Learns** | Lessons, tripwires and a self-improvement loop turn your corrections and Foreman's own friction into fixes. |
 
 ## Quick start
@@ -137,7 +137,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
 - `fm digest` sums up the week.
 
-**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
+**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
 **Improves itself.** `fm friction` digests Foreman's own friction, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
@@ -206,6 +206,8 @@ Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, 
 - `fm agents list` shows what's wired, and `fm agents uninstall X` takes out exactly what install added.
 - Codex also gets the drive and done-gate (its Stop hook).
 - Two things stay Claude Code only: Gemini's AfterAgent would discard the answer it blocks, and the `fm ask` permission prompt needs Claude Code to show it.
+
+**MCP:** `fm mcp` serves the project to any MCP client over stdio, read-only: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`). Paths must resolve inside the project, values can't start with `-`, each is length-capped, each call has a timeout, and everything sent is redacted. `fm mcp register claude` prints the `claude mcp add` line. `fm mcp new NAME --wrap 'CMD' [--sub a,b]` writes a stdlib-only MCP server for any CLI, plus a test that drives it over stdio. The server runs argv, never a shell; each argument is a plain value or one of the subcommands; it has a timeout and an output cap; and it refuses to wrap destructive commands (`rm`, `git push`, a shell…). Register it with `fm mcp register claude DIR`.
 - A config with comments (JSONC) is left alone with a note.
 - The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `fm agents uninstall`, needs your yes.
 

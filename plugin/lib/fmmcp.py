@@ -2,36 +2,117 @@
 stdlib only — so other agents and clients can read the project's state, next action, recall, research notes and
 briefs. Each tool runs the matching read-only fm command (the CLI stays the one implementation); everything sent is
 redacted; a sensitive project serves nothing. Registering it (`claude mcp add foreman -- fm mcp`) is the user's
-step: the guard asks for the plugin category."""
+step: the guard asks for the plugin category.
+T-0946: plus the stack library (lib_suggest, lib_search, lib_show) and the read-only instruments (outline, sym,
+impact, why, fail on given text, logs, data, trace), whose path inputs must resolve inside the project; every value
+is length-capped and never starts with '-'; each call has a timeout. `fm mcp new` scaffolds a server for any CLI;
+`fm mcp register` prints the line that adds one to a harness."""
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
 import fmcore as c
+import fminstr
 
 VERSION = "2025-06-18"
 _TEXT = {"type": "object", "properties": {}, "additionalProperties": False}
+PATH_CAP, QUERY_CAP, TEXT_CAP = 1000, 500, 200_000
+SECTIONS = ["verify", "test", "do", "avoid", "review"]
+
+
+def _obj(required=(), **props):
+    return {"type": "object", "properties": props, "required": list(required), "additionalProperties": False}
+
+
+def _str(desc, cap=PATH_CAP, **more):
+    return {"type": "string", "description": desc, "maxLength": cap, **more}
+
+
+def _instr(name):
+    """An instrument's input schema, from fminstr's registry, with each value capped."""
+    s = fminstr.schema(name)
+    for v in s["properties"].values():
+        v["maxLength"] = PATH_CAP
+    return s
+
+
+def _say(name):
+    cap, summary, _ = fminstr.TOOLS[name]
+    return f"{summary[0].upper()}{summary[1:]} (at most {cap} lines; paths inside the project only)."
+
+
+_FAIL = dict(_instr("fail"), properties={"text": _str("the test runner's failure output", TEXT_CAP)}, required=["text"])
 TOOLS = [
-    ("state", "The project's Foreman state: active task, queue, inbox, blocked work.", _TEXT, lambda a: ["state"]),
-    ("next", "The one next required action and its procedure.", _TEXT, lambda a: ["next"]),
+    ("state", "The project's Foreman state: active task, queue, inbox, blocked work.", _TEXT, lambda a, p: ["state"]),
+    ("next", "The one next required action and its procedure.", _TEXT, lambda a, p: ["next"]),
     ("recall", "Past work, decisions, lessons and research related to a question.",
      {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]},
-     lambda a: ["recall", _need(a, "query", r"[^\x00-][^\x00]{0,499}")]),  # review: no leading -, so never a flag
+     lambda a, p: ["recall", _need(a, "query", r"[^\x00-][^\x00]{0,499}")]),  # review: no leading -, so never a flag
     ("research_list", "The names of the project's saved research notes, newest first.", _TEXT, None),
     ("research_read", "One saved research note by name (from research_list).",
      {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}, None),
     ("task_show", "A task's brief: request, interpretation, criteria, steps, evidence and log.",
      {"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]},
-     lambda a: ["task", "show", _need(a, "id", r"T-[0-9]{4,}")]),
+     lambda a, p: ["task", "show", _need(a, "id", r"T-[0-9]{4,}")]),
     ("checks", "The project's last gate run (fm check): each command, its exit and time.", _TEXT, None),
+    # T-0946: the stack library
+    ("lib_suggest", "Stack-library cards that fit this project's languages, frameworks and tools.", _TEXT,
+     lambda a, p: ["lib", "suggest"]),
+    ("lib_search", "Stack-library cards and installed plugins' skills matching topic words.",
+     _obj(["query"], query=_str("topic words", QUERY_CAP)), lambda a, p: ["lib", "search", _val(a, "query", QUERY_CAP)]),
+    ("lib_show", "One stack-library card (from lib_search or lib_suggest), or only some of its sections.",
+     _obj(["name"], name=_str("a card name, or plugin:skill", 200), section=_str("only this section", 20, enum=SECTIONS)),
+     lambda a, p: ["lib", "show", _val(a, "name", 200)] + (["--section", _val(a, "section", 20, SECTIONS)]
+                                                           if "section" in a else [])),
+    # T-0946: the read-only instruments, paths confined to the project
+    ("outline", "A file's definitions with line ranges.", _obj(["path"], path=_str("a file in the project")),
+     lambda a, p: ["outline", _inside(p, a, "path")]),
+    ("impact", "Likely tests and dependents of a path.", _obj(["path"], path=_str("a path in the project")),
+     lambda a, p: ["impact", _inside(p, a, "path")]),
+    ("why", "The commits and Foreman tasks behind FILE[:LINE], with their lessons.",
+     _obj(["target"], target=_str("FILE or FILE:LINE in the project")),
+     lambda a, p: ["why", _inside(p, a, "target", r"(.*?)(?::\d+)?")]),
+    ("sym", _say("sym"), _instr("sym"), lambda a, p: ["sym", _inside(p, a, "target", r"(.*):[^:/]+")]),
+    ("fail", _say("fail").replace("paths inside the project only", "from the given text"), _FAIL, None),
+    ("logs", _say("logs"), _instr("logs"),
+     lambda a, p: ["logs", _inside(p, a, "file")] + (["--since-good", _inside(p, a, "since_good")]
+                                                     if "since_good" in a else [])),
+    ("data", _say("data"), _instr("data"), lambda a, p: ["data", _inside(p, a, "file")]),
+    ("trace", _say("trace"), _instr("trace"), lambda a, p: ["trace", _inside(p, a, "file")]),
 ]
 MAX_LINE = 1_000_000
 
 
 class _Bad(Exception):
     pass
+
+
+def _val(args, key, cap, choices=None):
+    """A string argument: present, at most cap characters, never an option (no leading '-'), no NUL."""
+    v = args.get(key)
+    if not isinstance(v, str) or not v:
+        raise _Bad(f"{key}: expected a string")
+    if len(v) > cap:
+        raise _Bad(f"{key}: over {cap} characters")
+    if v.startswith("-") or "\x00" in v:
+        raise _Bad(f"{key}: may not start with '-' or hold a NUL")
+    if choices and v not in choices:
+        raise _Bad(f"{key}: one of {', '.join(choices)}")
+    return v
+
+
+def _inside(p, args, key, shape=r"(.*)"):
+    """A path argument (group 1 of shape) that resolves, links followed, inside the project's root."""
+    v = _val(args, key, PATH_CAP)
+    m = re.fullmatch(shape, v, re.S)
+    root = os.path.realpath(p.root)
+    real = os.path.realpath(os.path.join(root, m.group(1))) if m and m.group(1) else ""
+    if not real or os.path.commonpath([root, real]) != root:
+        raise _Bad(f"{key}: {c.fit(c.plain(v), 80)} is outside the project; only paths under its root are served")
+    return v
 
 
 def _need(args, key, pattern):
@@ -41,9 +122,18 @@ def _need(args, key, pattern):
     return v
 
 
-def _fm(p, argv):
-    r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *argv], cwd=p.root,
-                       capture_output=True, text=True, timeout=120, env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"))
+def _timeout():
+    try:
+        return float(os.environ.get("FOREMAN_MCP_TIMEOUT") or 120)
+    except ValueError:
+        return 120.0
+
+
+def _fm(p, argv, stdin=""):
+    # T-0946: stdin is given (empty by default), so a tool never reads the server's own message stream
+    r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *argv], cwd=p.root, input=stdin,
+                       capture_output=True, text=True, timeout=_timeout(),
+                       env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"))
     return (r.stdout if r.returncode == 0 else (r.stderr or r.stdout)), r.returncode != 0
 
 
@@ -54,6 +144,8 @@ def _call(p, name, args):
     tool = next((t for t in TOOLS if t[0] == name), None)
     if not tool:
         return f"no such tool: {c.fit(c.plain(str(name)), 60)}", True
+    if not isinstance(args, dict) or set(args) - set(tool[2]["properties"]):
+        return f"arguments: an object with only {', '.join(tool[2]['properties']) or 'no keys'}", True
     try:
         folder = os.path.join(p.dir, "research")
         if name == "research_list":
@@ -75,9 +167,16 @@ def _call(p, name, args):
             return "\n".join([f"fm check at {run.get('ts')}:"] + [
                 f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('cmd')} (exit {r.get('exit')}, {r.get('s')} s)"
                 for r in rows if isinstance(r, dict)]), False
-        return _fm(p, tool[3](args))
+        if name == "fail":
+            text = args.get("text")
+            if not isinstance(text, str) or not text.strip() or len(text) > TEXT_CAP:
+                return f"text: the failure output, 1 to {TEXT_CAP} characters", True
+            return _fm(p, ["fail"], text)
+        return _fm(p, tool[3](args, p))
     except _Bad as e:
         return str(e), True
+    except subprocess.TimeoutExpired as e:
+        return f"timed out after {e.timeout:g} s", True
     except (OSError, subprocess.SubprocessError) as e:
         return f"{type(e).__name__}: {c.fit(str(e), 200)}", True
 
@@ -109,6 +208,13 @@ def _answer(p, msg):
 
 def cmd_mcp(args):
     import fmcli
+    if args.action == "new":
+        return cmd_new(args)
+    if args.action == "register":
+        return cmd_register(args)
+    if args.words:
+        raise fmcli.UsageError("fm mcp takes no words: fm mcp (serve) · fm mcp new NAME --wrap 'CMD' · "
+                               "fm mcp register claude [DIR]")
     p = fmcli.resolve(args)
     while True:
         line = sys.stdin.readline(MAX_LINE)
@@ -136,3 +242,106 @@ def cmd_mcp(args):
         if out is not None:
             sys.stdout.write(json.dumps(out) + "\n")
             sys.stdout.flush()
+
+
+# ---------------------------------------------------------------- fm mcp new / register (T-0946)
+_SHELL = re.compile(r"[|;&<>$`\\\n\x00]")
+# Commands a generated server never wraps, whatever its arguments: they delete, escalate or run arbitrary code
+_NEVER = {"rm", "rmdir", "unlink", "shred", "dd", "truncate", "sudo", "su", "doas", "sh", "bash", "zsh", "dash", "ksh",
+          "fish", "csh", "tcsh", "eval", "exec", "xargs", "env", "nohup", "kill", "killall", "pkill", "chmod", "chown",
+          "reboot", "shutdown", "halt"}
+# Dispatchers whose free arguments could pick a destructive subcommand: they need --sub
+_DISPATCH = {"git", "npm", "pnpm", "yarn", "pip", "pip3", "uv", "cargo", "docker", "podman", "kubectl", "gh", "brew",
+             "apt", "apt-get", "dnf", "pacman", "systemctl"}
+_GIT_READ = {"status", "log", "diff", "show", "blame", "grep", "ls-files", "ls-tree", "rev-parse", "shortlog",
+             "describe", "cat-file"}
+TEMPLATE = os.path.join(c.PLUGIN_ROOT, "templates", "mcp-server")
+
+
+def _refusal(argv, ctx):
+    """Why a generated server can't run argv (plus caller arguments), or None."""
+    import fmguard
+    exe = os.path.basename(argv[0])
+    if exe in _NEVER or exe.startswith("mkfs"):
+        return f"{exe} deletes, escalates or runs arbitrary code"
+    if exe == "git" and len(argv) > 1 and argv[1] not in _GIT_READ:
+        return f"git {argv[1]} isn't one of git's read-only subcommands ({', '.join(sorted(_GIT_READ))})"
+    found = fmguard.check_bash(shlex.join(argv), ctx)
+    return "the guard flags it: " + "; ".join(f"{cat}: {d}" for cat, d in found) if found else None
+
+
+def cmd_new(args):
+    import fmcli
+    import fmguard
+    name = (args.words or [""])[0]
+    if len(args.words) != 1 or not re.fullmatch(r"[a-z][a-z0-9_-]{0,39}", name):
+        raise fmcli.UsageError("fm mcp new NAME --wrap 'CMD' [--sub a,b] [--dir DIR] [--force]: NAME is lowercase "
+                               "letters, digits, - and _")
+    if not args.wrap or _SHELL.search(args.wrap):
+        raise fmcli.UsageError("--wrap 'CMD': a command as plain words; a generated server runs argv, never a shell, "
+                               "so no pipes, ;, &, redirections, $ or backquotes")
+    try:
+        wrap = shlex.split(args.wrap)
+    except ValueError as e:
+        raise fmcli.UsageError(f"--wrap: {e}")
+    if wrap and "/" in wrap[0]:  # a relative ./tool would break once a harness starts the server from elsewhere
+        wrap[0] = os.path.abspath(wrap[0])
+    subs = list(dict.fromkeys(s.strip() for s in (args.sub or "").split(",") if s.strip()))
+    bad = [s for s in subs if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,40}", s)]
+    if not wrap or bad:
+        raise fmcli.UsageError(f"--sub: plain subcommand names, comma-separated (not {', '.join(bad)})" if bad
+                               else "--wrap needs a command")
+    if not subs and os.path.basename(wrap[0]) in _DISPATCH and len(wrap) == 1:
+        raise fmcli.UsageError(f"{wrap[0]} alone would let a caller pick any subcommand: name them with --sub "
+                               f"(e.g. --sub status,log)")
+    home = os.path.expanduser("~")
+    ctx = fmguard.Ctx(cwd=os.getcwd(), project_root=fmguard.project_root_for(os.getcwd(), home), home=home,
+                      foreman_home=c.foreman_home(), state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks())
+    for argv in [wrap + [s] for s in subs] or [wrap]:
+        why = _refusal(argv, ctx)
+        if why:
+            raise fmcli.UsageError(f"refused: {shlex.join(argv)}: {why}. A generated MCP server never wraps a "
+                                   "destructive command")
+    d = os.path.abspath(args.dir or name)
+    files = ["server.py", "test_server.py"]
+    if os.path.exists(d) and (not os.path.isdir(d) or os.listdir(d) and not args.force):
+        raise fmcli.UsageError(f"{d} isn't an empty folder; fm mcp new writes {' and '.join(files)} there "
+                               "(--force writes them anyway, replacing those two)")
+    os.makedirs(d, exist_ok=True)
+    desc = (f"Runs `{shlex.join(wrap)}{' SUB' if subs else ''} ARGS…` (argv only, never a shell; each argument a "
+            "plain value, never an option).")
+    fill = {'"__NAME__"': json.dumps(name), '["__WRAP__"]': json.dumps(wrap), '["__SUBS__"]': json.dumps(subs),
+            '"__DESCRIPTION__"': json.dumps(desc)}
+    for f in files:
+        with open(os.path.join(TEMPLATE, f), encoding="utf-8") as src:
+            text = src.read()
+        for k, v in fill.items():
+            text = text.replace(k, v, 1)
+        c.write_atomic(os.path.join(d, f), text)
+    os.chmod(os.path.join(d, "server.py"), 0o755)
+    print(f"Wrote a stdlib MCP server for `{shlex.join(wrap)}`" + (f" (subcommands: {', '.join(subs)})" if subs else "")
+          + ":\n" + "\n".join(f"  {os.path.join(d, f)}" for f in files)
+          + f"\nTest it: python3 {shlex.quote(os.path.join(d, 'test_server.py'))}"
+          + f"\nRegister it: fm mcp register claude {shlex.quote(d)}")
+
+
+def cmd_register(args):
+    import fmcli
+    harness, rest = (args.words or [""])[0], (args.words or [])[1:]
+    if harness not in ("claude", "codex", "gemini") or len(rest) > 1:
+        raise fmcli.UsageError("fm mcp register claude|codex|gemini [DIR]: DIR is a folder fm mcp new wrote "
+                               "(default: Foreman's own server)")
+    name, cmd = "foreman", ["fm", "mcp"]
+    if rest:
+        server = os.path.join(os.path.abspath(rest[0]), "server.py")
+        if not os.path.isfile(server):
+            raise fmcli.UsageError(f"no server.py in {rest[0]} (fm mcp new writes one)")
+        with open(server, encoding="utf-8", errors="replace") as f:
+            m = re.search(r'^NAME = "([a-z][a-z0-9_-]{0,39})"$', f.read(), re.M)
+        name, cmd = (m.group(1) if m else os.path.basename(os.path.dirname(server))), ["python3", server]
+    if harness == "claude":  # the form in Claude Code's MCP docs: claude mcp add NAME -- COMMAND [ARGS…]
+        return print(f"claude mcp add {name} -- {shlex.join(cmd)}")
+    # T-0946: only formats confirmed in the harness's current docs are printed; none is confirmed here yet
+    print(f"No {harness} registration format is confirmed against {harness}'s current docs, so none is printed: check "
+          f"its MCP docs and register this stdio server as {name!r}, command: {shlex.join(cmd)}"
+          + ("" if rest else f"\n(fm agents install {harness} already wires Foreman's own server into its config.)"))

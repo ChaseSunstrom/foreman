@@ -3234,7 +3234,13 @@ def affected(p):
     # T-0875: a changed test file always runs, linked or not (a new one isn't in the map until it's committed); by its
     # name, so a helper under tests/ isn't run alone (pytest exits 5 when it collects nothing)
     own = {f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)}
-    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own)
+    # T-0952: a test that historically changes with a changed file (the map's co-change pairs, either way round):
+    # hooks.json has no test named after it, but the wiring tests change with it
+    istest = lambda f: c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)  # noqa: E731
+    pairs = m.get("pairs") or {}
+    paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
+        a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
+    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
@@ -3631,7 +3637,7 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
+    ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -3992,6 +3998,10 @@ def build_parser():
     s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
+    s = add("scout", lazy("fmscout", "cmd_scout"), help="find work nobody asked for yet: a newer Claude Code, stack cards "
+            "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
+    s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
+    s.add_argument("--dry", action="store_true", help="list what it would capture; capture nothing")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
@@ -4122,8 +4132,16 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
     s.add_argument("--model", default="haiku", help="the child's model (default haiku)")
     s.add_argument("--timeout", type=float, default=300)
-    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
-                                                 "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
+    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research, briefs, stack "
+                                                 "library and instruments as read-only MCP tools over stdio; new: "
+                                                 "scaffold a tested MCP server wrapping any CLI; register: the "
+                                                 "harness's add line (T-0946)")
+    s.add_argument("action", nargs="?", default="serve", choices=["serve", "new", "register"])
+    s.add_argument("words", nargs="*", help="new: NAME · register: claude|codex|gemini [DIR]")
+    s.add_argument("--wrap", metavar="'CMD'", help="new: the command the server runs, as argv (no shell)")
+    s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
+    s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
+    s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
     add("wiring", lazy("fmdoctor", "cmd_wiring"), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
