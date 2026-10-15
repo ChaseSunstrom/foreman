@@ -128,14 +128,15 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 **Protects.**
 - The guard reads every Bash command and file edit before it runs, including the commands fm stores and runs later.
-- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back.
-- `fm sensitive on` keeps a repo's content from leaving the machine.
+- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back; `fm oops` shows the newest and `fm oops --apply` restores it.
+- `fm sensitive on` keeps a repo's content from leaving the machine; `fm sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
 
 **Shows you what happened.**
 - `fm tour --since main` ranks a whole branch, or a night's run, by review risk and says which files are safe to skim.
 - `fm why FILE:LINE` traces a line back to the task and the words you asked in.
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
-- `fm digest` sums up the week.
+- `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
+- `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence; `fm round close` tags a round and lists what it closed.
 
 **Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
@@ -329,7 +330,7 @@ install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
 configure-repo.sh     one-time for forks: point everything at your GitHub repo
 reset-claude.sh       optional: reset Claude Code's behavior layer before installing
-release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL]
+release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL] (fm release-check first)
 .claude-plugin/       local marketplace "foreman"
 plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
 demo/                 the README's recordings (Claude Code with the mod; fm demo) and the scripts that make them

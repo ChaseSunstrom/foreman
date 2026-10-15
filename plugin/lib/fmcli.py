@@ -2338,7 +2338,35 @@ def cmd_log(args):
     out(args, rec, None)
 
 
+_SENSITIVE_PATH = re.compile(r"(^|/)(\.env(?!.*\.(example|sample|template)$)[^/]*|[^/]*\.pem)$"
+                             r"|(^|[/._-])(secrets?|prod(uction)?)([/._-]|$)", re.I)
+_SKIP_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__", ".tox", "dist", "build"}
+
+
+def sensitive_signals(root, cap=20000):
+    """T-0960: paths under root that suggest it's sensitive: .env* (not .example/.sample/.template), *.pem, or a
+    secret(s)/prod(uction) path part. Read-only; ignored files count (a .env is usually ignored)."""
+    hits, seen = [], 0
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if x not in _SKIP_DIRS)
+        for f in sorted(files):
+            seen += 1
+            rel = os.path.relpath(os.path.join(d, f), root)
+            if _SENSITIVE_PATH.search(rel):
+                hits.append(rel)
+        if seen > cap:  # ponytail: a capped walk, a git ls-files pass if huge repos miss signals
+            break
+    return hits
+
+
 def cmd_sensitive(args):
+    if args.state == "suggest":  # T-0960: the signals, never a setting
+        root = c.git_root(args.path or os.getcwd()) or os.path.abspath(args.path or ".")
+        hits = sensitive_signals(root)
+        return out(args, {"root": root, "signals": hits},
+                   "\n".join([f"Signals that {root} is sensitive:"] + [f"  {h}" for h in hits[:40]]
+                             + ["fm sensitive on would mark it; nothing was changed."]) if hits else
+                   f"No signals in {root} (.env*, *.pem, secret or prod in a path); nothing was changed.")
     if args.path:
         root = c.git_root(args.path) or os.path.abspath(args.path)
         p = c.find_project(root) or c.init_project(root)
@@ -3122,7 +3150,17 @@ def first_bad(p, cmd, good, bad, timeout):
 def cmd_snapshots(args):
     """T-0884: the working files Foreman saved before a command discarded uncommitted work, newest first, each with
     the command that brings it back (it restores the saved files and leaves newer ones alone)."""
-    p = resolve(args)
+    rows = _snapshot_rows(resolve(args))
+    text = "\n".join(f"{r['at']}  {r['sha']}  {'stash: ' if r['kind'] == 'stash' else 'before: '}{r['before']}\n"
+                     f"  restore: {r['restore']}" for r in rows)
+    return out(args, {"snapshots": rows}, text or _NO_SNAPSHOTS)
+
+
+_NO_SNAPSHOTS = ("No snapshots: Foreman saves one before a command discards uncommitted work (git reset --hard, "
+                 "checkout --, clean -f…).")
+
+
+def _snapshot_rows(p):
     top = c.git_root(p.root)
     rows = []
     for ln in (c._git(top, "for-each-ref", "--sort=-refname", "--format=%(refname)%09%(objectname)%09%(subject)",
@@ -3131,12 +3169,67 @@ def cmd_snapshots(args):
         stash = ref.endswith("-stash")
         rows.append({"ref": ref, "sha": sha[:12], "at": ref[len(c.SNAPSHOTS):].split("-", 1)[0],
                      "before": c.plain(subject.removeprefix("Foreman snapshot before: ")),
-                     "kind": "stash" if stash else "tree",
+                     "kind": "stash" if stash else "tree", "top": top,
                      "restore": c.restore_line(top, sha[:12], "stash" if stash else "tree")})
-    text = "\n".join(f"{r['at']}  {r['sha']}  {'stash: ' if r['kind'] == 'stash' else 'before: '}{r['before']}\n"
-                     f"  restore: {r['restore']}" for r in rows)
-    return out(args, {"snapshots": rows}, text or "No snapshots: Foreman saves one before a command discards "
-                                                   "uncommitted work (git reset --hard, checkout --, clean -f…).")
+    return rows
+
+
+def cmd_oops(args):
+    """T-0960: the newest work snapshot and the command that brings it back; --apply runs it, after saving the files
+    as they are now (that save is a snapshot too, so the restore can itself be undone)."""
+    import shlex
+    import subprocess
+    rows =_snapshot_rows(resolve(args))
+    if not rows:
+        return out(args, {"snapshot": None}, _NO_SNAPSHOTS)
+    r = rows[0]
+    head = f"Newest snapshot {r['sha']} ({r['at']}), {'a stash' if r['kind'] == 'stash' else 'before: ' + r['before']}"
+    if not args.apply:
+        return out(args, {"snapshot": r, "applied": False},
+                   f"{head}\n  restore: {r['restore']}\nfm oops --apply runs it (newer files are left alone).")
+    saved = c.snapshot(r["top"], f"fm oops --apply {r['sha']}", timeout=30)
+    run = subprocess.run(shlex.split(r["restore"]), capture_output=True, text=True, timeout=120)
+    if run.returncode:
+        raise UsageError(f"{r['restore']} failed: {(run.stderr or run.stdout).strip()[-300:]}")
+    return out(args, {"snapshot": r, "applied": True, "saved_first": saved},
+               f"{head}: restored." + (f" The files as they were are snapshot {saved[0]} (fm snapshots)." if saved else ""))
+
+
+def cmd_round(args):
+    """T-0960: fm round close tags HEAD round-N and lists the finished tasks its commits name (a subject or a
+    Foreman-Task trailer) since the previous round tag."""
+    p = resolve(args)
+    top = c.git_root(p.root)
+    if not top or not c.git_head(top):
+        raise UsageError("fm round close needs a git repo with a commit")
+    nums = [int(t[6:]) for t in c._git(top, "tag", "--list", "round-*", timeout=10).split() if t[6:].isdigit()]
+    prev = f"round-{max(nums)}" if nums else None
+    tag = f"round-{max(nums, default=0) + 1}"
+    log = c._git(top, "log", "--format=%s%x1f%b%x1e", f"{prev}..HEAD" if prev else "HEAD", timeout=60)
+    named = set()
+    for rec in log.split("\x1e"):
+        subj, _, body = rec.strip().partition("\x1f")
+        if subj and not subj.startswith("Revert "):
+            named |= set(re.findall(r"\bT-\d{4,}\b", subj)) | set(re.findall(r"Foreman-Task: (T-\d{4,})", body))
+    done = [b for b in c.load_briefs(p) if b.id in named and b.status == "done"]
+    if c._git(top, "tag", tag, "HEAD", timeout=10, fail=None) is None:
+        raise UsageError(f"git couldn't tag HEAD {tag}")
+    lines = [f"Tagged HEAD {tag}: {len(done)} task(s) closed since {prev or 'the first commit'}."]
+    lines += [f"  {b.id} {c.fit(b.title, 90)}" for b in done]
+    return out(args, {"tag": tag, "since": prev, "tasks": [b.id for b in done]}, "\n".join(lines))
+
+
+def cmd_show(args):
+    """T-0960: one verb for "show me X": a task id → fm task show, an existing FILE[:LINE] → fm why, other words →
+    fm recall."""
+    first = args.words[0]
+    if re.fullmatch(r"T-\d+(\.\d+)?", first, re.I):
+        argv = ["task", "show", first.upper()]
+    elif os.path.exists(re.sub(r":\d+$", "", first)):
+        argv = ["why", first]
+    else:
+        argv = ["recall", *args.words]
+    return main(argv + (["--json"] if args.json else []) + (["-p", args.project] if getattr(args, "project", None) else []))
 
 
 def cmd_bisect(args):
@@ -3706,11 +3799,11 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map lib tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo show recall explain surprise vetoes why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
-                             "plugins docs doctor canary tidy"),
+                             "plugins docs doctor release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
@@ -4091,6 +4184,8 @@ def build_parser():
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
+    s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
+                                                         "counts (T-0960)")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
                                                         "what could become one (T-0734)")
     s.add_argument("action", choices=["add", "inbox"])
@@ -4268,6 +4363,14 @@ def build_parser():
     s.add_argument("target")
     add("snapshots", cmd_snapshots, help="uncommitted work Foreman saved before a command discarded it, and how to "
                                          "bring it back")
+    s = add("oops", cmd_oops, help="the newest work snapshot and its restore command; --apply restores it (T-0960)")
+    s.add_argument("--apply", action="store_true", help="restore it (the files as they are now are saved first)")
+    s = add("show", cmd_show, help="a task id → task show, FILE[:LINE] → why, other words → recall (T-0960)")
+    s.add_argument("words", nargs="+")
+    s = add("round", cmd_round, help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
+    s.add_argument("action", choices=["close"])
+    add("release-check", lazy("fmdemo", "cmd_release_check"),
+        help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
@@ -4340,8 +4443,9 @@ def build_parser():
     s.add_argument("data", nargs="?")
     s.add_argument("--task")
 
-    s = add("sensitive", cmd_sensitive, help="mark a repo sensitive (manual permission mode there)")
-    s.add_argument("state", choices=["on", "off"])
+    s = add("sensitive", cmd_sensitive, help="mark a repo sensitive (manual permission mode there); suggest: the "
+                                             "signals that it is, nothing set")
+    s.add_argument("state", choices=["on", "off", "suggest"])
     s.add_argument("path", nargs="?")
 
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
