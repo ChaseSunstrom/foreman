@@ -209,7 +209,8 @@ def _backup_state(p, apply, actions):
     d = os.path.join(p.dir, "backups")
     os.makedirs(d, exist_ok=True)
     path = os.path.join(d, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + ".tar.gz")
-    with c.lock(p.dir), tarfile.open(path + ".part", "w:gz") as t:
+    with tarfile.open(path + ".part", "w:gz") as t:  # no lock: seconds of gzip would starve the hooks' quick locks
+        # (state files are replaced whole; a ledger line caught mid-append only costs the copy its last line)
         for part in BACKUP_PARTS:
             if os.path.exists(os.path.join(p.dir, part)):
                 t.add(os.path.join(p.dir, part), arcname=part)

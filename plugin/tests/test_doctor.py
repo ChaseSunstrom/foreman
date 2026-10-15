@@ -392,6 +392,10 @@ class DoctorStateSize(ForemanTestCase):
         with open(os.path.join(p.dir, "research", "big.md"), "w") as f:
             f.write("x" * 50_000)
         self.assertEqual(d.check_state_size([p], budget=1_000_000).status, "PASS")
+        os.makedirs(os.path.join(p.dir, "backups"), exist_ok=True)  # round-7 review: tidy's own backups don't count
+        with open(os.path.join(p.dir, "backups", "20260101T000000Z.tar.gz"), "w") as f:
+            f.write("x" * 2_000_000)
+        self.assertEqual(d.check_state_size([p], budget=1_000_000).status, "PASS")
         r = d.check_state_size([p], budget=20_000)
         self.assertEqual(r.status, "WARN")
         self.assertIn(p.slug, r.detail)

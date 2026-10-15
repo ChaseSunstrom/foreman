@@ -591,8 +591,8 @@ def cmd_task(args):
                               check_by_hand=by_hand),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
-            if by_hand else "\nNothing needed from you: each criterion was proved by its own check." if not guessed
-            else "") + (
+            if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
+            if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
@@ -4620,7 +4620,8 @@ def main(argv=None):
         print("fm help: every command")
         return main(["next"])
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
-    _sync_in(args)
+    if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
+        _sync_in(args)
     try:
         rc = args.fn(args)
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code

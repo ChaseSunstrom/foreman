@@ -1283,7 +1283,7 @@ class Stop(HookCase):
                     "make -j8 test"):
             ok = ("Bash", {"command": cmd}, "BUILD SUCCESS", False)
             self.assertIsNone(self.decision(stop(self.turn(edit, ok, doc), f"Tests pass ({cmd}).")), cmd)
-        for cmd in ("fm checkpoint", "toxic --help"):
+        for cmd in ("fm checkpoint", "toxic --help", "cat pytest.ini", "pip install pytest", "cat plugin/tests/run.py"):
             p = stop(self.turn(edit, ("Bash", {"command": cmd}, "ok", False)), f"All tests pass ({cmd}).")
             self.assertIn("no test ran after the last edit", (parse(p) or {}).get("reason", ""), cmd)
         path = self.turn(red, edit)  # a background job's notice in list form is part of the same turn
@@ -1291,6 +1291,10 @@ class Stop(HookCase):
             f.write(json.dumps({"type": "user", "message": {"content": [
                 {"type": "text", "text": "<task-notification>\n<status>completed</status>"}]}}) + "\n")
         self.assertEqual(self.decision(stop(path, "So the tests pass.")), "block")
+        path = self.turn(red, edit)  # round-7 review: an injected reminder isn't the user's next prompt either
+        with open(path, "a") as f:
+            f.write(json.dumps({"type": "user", "isMeta": True, "message": {"content": "<system-reminder>x</system-reminder>"}}) + "\n")
+        self.assertEqual(self.decision(stop(path, "Now the tests pass.")), "block")
 
     def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
         # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked

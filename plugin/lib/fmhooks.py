@@ -1908,10 +1908,14 @@ def _headless_wait(pl):
 
 _TEST_CLAIM = re.compile(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:now\s+|all\s+)?(?:pass(?:es|ing)?|"
                          r"(?:are |is )?green)\b")
-_TEST_CMD = re.compile(r"\b(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|"
+# a test runner in command position (T-0907: fm checkpoint, toxic aren't runs; round-7 review: nor cat pytest.ini,
+# pip install pytest or cat run.py): after the start, a separator or a quote, behind env assignments and launchers
+_TEST_CMD = re.compile(r"(?:^|[;&|(\n\"'])\s*(?:(?:\w+=\S*|python\d*(?:\.\d+)?(?: -m)?|uv run|poetry run|npx|bunx|"
+                       r"timeout \d+|time|nice|env|sudo|fm quiet --)\s+)*(?:\S*/)?"
+                       r"(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|"
                        r"make( -\S+)* (test|check)|mvn( -\S+)* (test|verify)|(gradle|gradlew) test|dotnet test|deno test|"
                        r"node --test|bats|tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|"
-                       r"fm task (evidence|finish|prove)\b.*--run)(?![\w-])")  # T-0907: fm checkpoint, toxic aren't runs
+                       r"fm task (evidence|finish|prove)\b.*--run)(?![\w-])")
 _RUN_FAILED = re.compile(r"\bFAILED\b|\b[1-9]\d* (failed|errors?)\b|✗|\bexit [1-9]\d*\b|Traceback \(most recent")
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
@@ -1936,7 +1940,7 @@ def _turn_calls(path, cap=4_000_000):
                 isinstance(x, dict) and x.get("type") == "text" for x in content or [])):
             said = content if isinstance(content, str) else " ".join(
                 str(x.get("text") or "") for x in content if isinstance(x, dict))  # T-0907: the list form too
-            if not said.lstrip().startswith("<task-notification>"):
+            if not e.get("isMeta") and not said.lstrip().startswith(("<task-notification>", "<system-reminder>")):
                 calls, by_id = [], {}  # a new prompt from the user starts the turn again
             continue
         for x in content if isinstance(content, list) else []:
