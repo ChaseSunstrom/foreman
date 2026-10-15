@@ -101,9 +101,9 @@ class Filters(ForemanTestCase):
         os.environ["HOME"] = home
         with open(os.path.join(repo, "a.txt"), "w") as f:
             f.write("changed\n")
-        fmbench._git(repo, "add", "-A")
-        fmbench._git(repo, "diff", "--cached", "HEAD")
-        fmbench._git(repo, "checkout", "HEAD", "--", "a.txt")
+        fmbench._safe_git(repo, "add", "-A")
+        fmbench._safe_git(repo, "diff", "--cached", "HEAD")
+        fmbench._safe_git(repo, "checkout", "HEAD", "--", "a.txt")
         with fmbench._worktree(repo, "HEAD"):
             pass
         self.assertFalse(os.path.exists(marker))

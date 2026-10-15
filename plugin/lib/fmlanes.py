@@ -2,16 +2,13 @@
 work two tasks without touching each other's files. `new` makes one for a task (beside the repo, in <repo>.lanes/, on
 branch foreman/<id>) and gives the task to it; `list` shows them; `rm` removes one with nothing uncommitted, keeps its
 branch unless it is merged, and puts the task back in the queue."""
+import functools
 import os
 import re
-import subprocess
 
 import fmcore as c
 
-
-def _git(root, *args):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # nothing points it at another repo
-    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, timeout=120, env=env)
+_git = functools.partial(c._git, timeout=120, proc=True)  # T-0961: fmcore's runner; callers read returncode/stderr
 
 
 def cmd_lane(args):
@@ -279,22 +276,31 @@ def merge(p, b, main, unverified=None):
             raise
     pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
     pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
+    keys = ("base", "base_tree", "paused_tree")
+
+    def based(x):  # T-0961: on disk before git merge runs, so a merge that dies midway still measures from here
+        old = {k: x.meta[k] for k in keys if k in x.meta}
+        if pre_merge:
+            for k in keys:
+                x.meta.pop(k, None)
+            x.meta.update({"base": pre_merge}, **({"base_tree": pre_tree} if pre_tree else {}))
+        return old
+    _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
         brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
         _git(main, "merge", "--abort")
+
+        def restore(x):  # the aborted merge takes its base back: the task still starts where it did
+            for k in keys:
+                x.meta.pop(k, None)
+            x.meta.update(old)
+        fmcli.mutate(p, b.id, restore, "lane_merge_base", {"branch": branch, "restored": True})
         raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}"
                                + (f"\nConflict brief: {brief}" if brief else ""))
     merge.last = branch
-    def merged(x):
-        if pre_merge:
-            x.meta["base"] = pre_merge
-            x.meta.pop("base_tree", None)
-            x.meta.pop("paused_tree", None)
-            if pre_tree:
-                x.meta["base_tree"] = pre_tree
-        x.append_log(f"merged {branch} ({len(files)} file(s))")
-    fmcli.mutate(p, b.id, merged, "lane_merge", {"branch": branch, "files": files[:50]})
+    fmcli.mutate(p, b.id, lambda x: x.append_log(f"merged {branch} ({len(files)} file(s))"), "lane_merge",
+                 {"branch": branch, "files": files[:50]})
     return files
 
 
