@@ -151,7 +151,9 @@ def _note_key(text):
 def _log_inject(event, text):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
-        _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text))})
+        import hashlib  # T-0860: h tells the same note from another of its kind
+        _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
+                "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
 
 
 def _event(rec):
