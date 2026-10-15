@@ -2,7 +2,7 @@
 
 ## Unreleased
 - Claude Code integration, round 1 of a recursive improvement loop (T-0760 brainstorm: 609 ideas in 30 clusters).
-  - Never idle without tmux: a plugin monitor (`foreman-mail`) runs `fm bus watch` for the whole session and prints one line per new bus message for it; `fm bus send --wake` skips tmux when that watcher's heartbeat is fresh. The watcher finds its session through the SessionStart hook's process tree, and drops its heartbeat when ended by a signal (T-0777, T-0819, T-0820).
+  - Never idle without tmux: a plugin monitor (`foreman-mail`) runs `fm bus watch` for the whole session and prints one line per new bus message for it; `fm bus send --wake` skips tmux when that watcher's heartbeat is fresh. The watcher finds its session through the SessionStart hook's process tree, follows it when Claude Code resumes another conversation in the same process, and drops its heartbeat when ended by a signal (T-0777, T-0819, T-0820, T-0841). A resume in the same process is no longer reported as "another session" (T-0841).
   - Phone push: the Stop hook asks once for PushNotification when an ask is open or the queue drains in full autonomy (T-0778). Sessions are named after their task (sessionTitle, T-0781).
   - Agents carry effort, maxTurns and omitClaudeMd, validated by `fm doctor` (T-0768); lane briefs pass a per-tier effort (S medium, M high, T-0779); Foreman's `claude -p` children carry `--max-budget-usd` (T-0776); wiring sets `worktree.baseRef=head` (T-0803); `fm doctor` names the Claude Code features the installed version is too old for (T-0785).
   - Sensitive repos keep content home: PushNotification, Artifact, SendMessage, RemoteTrigger and other outward tools are refused there, and the gate fails closed (T-0784, T-0821).
