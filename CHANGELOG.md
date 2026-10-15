@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- fm finds Claude Code's native install (`~/.local/bin/claude`) when the shell's PATH predates it, so the gates, `fm run` and doctor's script checks work once the npm copy is gone (T-0990).
+- fm finds Claude Code's native install (`~/.local/bin/claude`) when the shell's PATH predates it, so the gates, `fm run` and doctor's script checks work once the npm copy is gone (T-0990); `FOREMAN_NATIVE_BIN` overrides that folder, and the tests point it at nothing so no test reaches the paid binary (T-0992).
 - `fm run --sandbox` (T-0975): each headless session runs under Claude Code's sandbox (`--settings` with `sandbox.enabled`, `failIfUnavailable`, no unsandboxed fallback); Bash may write only the checkout, Foreman's state and the git dir, where a lane's commits land. Ambient tests (T-0705) are on in this repo.
 - SessionStart writes Foreman's two exports to Claude Code's env file once per session, not again on every compaction; a long session's Bash prelude had them eight times (T-0988).
 - Small-model gaps (T-0987, measured in T-0978 with a headless Haiku session): `fm check`'s first-run hint offers the repo's own test runner (`tests/run.py`, `run_tests.py`) before `unittest discover`; a foreground `for` loop that sleeps between checks is refused like `until`/`while`; an unknown task id names the active and newest open ids here.

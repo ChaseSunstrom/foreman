@@ -23,8 +23,9 @@ PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 def claude_path(env):
     """T-0990: env with ~/.local/bin (Claude Code's native install) on PATH when claude isn't on it already, so fm's
-    gates, fm run and doctor find it from a shell that predates the install."""
-    local = os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "bin")
+    gates, fm run and doctor find it from a shell that predates the install. FOREMAN_NATIVE_BIN overrides the folder
+    (T-0992: the tests point it at nothing, so a test that replaces PATH can't reach the paid binary)."""
+    local = env.get("FOREMAN_NATIVE_BIN") or os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "bin")
     if not shutil.which("claude", path=env.get("PATH")) and os.access(os.path.join(local, "claude"), os.X_OK):
         env["PATH"] = local + os.pathsep + env.get("PATH", "")
     return env
