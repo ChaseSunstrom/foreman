@@ -18,7 +18,7 @@
       "name": "foreman-ui",
       "source": "./mods/foreman-ui",
       "description": "Foreman inside Claude Code (mods): a docked dashboard pane that reads top-down by urgency (what needs you, the task with its stage rail and progress, what runs now, live charts of the session), a band above the prompt, toasts and one-press approve/next/drive/inbox actions. Needs a Claude Code build with function-hook plugins.",
-      "version": "0.7.0"
+      "version": "0.8.0"
     }
   ]
 }
