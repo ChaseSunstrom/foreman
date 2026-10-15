@@ -2158,8 +2158,14 @@ def hints_reset(p):
 
 
 def file_digest(path):
+    """A regular file's short content hash (OSError for anything else: a FIFO would block, a folder isn't a file).
+    Runs on every prompt for each watched file, so only the first 16 MB are read; the size covers the rest."""
+    if not os.path.isfile(path):
+        raise OSError(f"{path} isn't a regular file")
+    size = os.path.getsize(path)
     with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()[:12]
+        head = f.read(16 << 20)
+    return hashlib.sha256(head + (b"" if size <= len(head) else str(size).encode())).hexdigest()[:12]
 
 
 def revisit_tag(root, trigger):
