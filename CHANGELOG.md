@@ -37,6 +37,7 @@
   - A reply saying the tests pass is held once when the turn's own runs don't back it: a file edited after the last test run, or that run failed (T-0886).
   - Security: commands fm stores and runs later — verify commands (`--ac "x :: CMD"`, `--verify`, intake `DONE-WHEN`), `fm check affected`'s template, `fm notify` — are checked by the guard when stored and again before fm runs them; before, `fm task finish` ran a stored `rm -rf ~` unread (T-0901).
   - Security: the guard now reads the command inside `fm quiet -- <cmd>` (it passed unread, so `fm quiet -- rm -rf ~` got through) and inside the new `fm at TARGET -- <cmd>`, which runs a command as of a task's start or any commit in a throwaway worktree (T-0898).
+  - Showcase: the README opens with a recording of `fm demo` (animated SVG; `demo/record.py` re-records it, `--mp4` for a shareable video), a scannable why/quick start, and the long detail folded; `fm demo --pace 1` plays the demo at a watchable speed with colour (T-0902).
   - CI: the suite runs on push and pull requests on Linux (Python 3.12 and 3.14), macOS reported (T-0882).
 
 ## 1.2.27 — 2026-10-09

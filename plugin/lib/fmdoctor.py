@@ -651,7 +651,14 @@ def check_self_docs(home=None, plugin=PLUGIN):
     readme, install = _read(os.path.join(home, "README.md")) or "", _read(os.path.join(home, "install.sh")) or ""
     header = "\n".join(l for l in install.splitlines()[:20] if l.startswith("#"))  # the --help text
     help_flags = set(re.findall(r"(--[\w-]+)", header))
-    readme_flags = {f for line in readme.splitlines() if line.startswith("Flags:") for f in re.findall(r"`(--[\w-]+)`", line)}
+    readme_flags, in_flags = set(), False  # T-0902: a "Flags:" line, or a **Flags:** heading and the bullets under it
+    for line in readme.splitlines():
+        if re.match(r"\**Flags:", line.strip()):
+            in_flags = True
+        elif line.strip() and not line.lstrip().startswith("- "):
+            in_flags = False
+        if in_flags:
+            readme_flags |= set(re.findall(r"`(--[\w-]+)`", line))
     bad += [f"README.md doesn't document install.sh {f}" for f in sorted(help_flags - readme_flags)]
     bad += [f"README.md lists {f}, which install.sh doesn't have" for f in sorted(readme_flags - help_flags)]
     bad = list(dict.fromkeys(bad))

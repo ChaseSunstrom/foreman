@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FM = os.path.join(PLUGIN, "bin", "fm")
@@ -18,6 +19,28 @@ BUG = "def add(a, b):\n    return a - b\n"
 FIXED = "def add(a, b):\n    return a + b\n"
 UNIT = ("import unittest\n\nfrom calc import add\n\n\nclass Add(unittest.TestCase):\n    def test_add(self):\n"
         "        self.assertEqual(add(2, 3), 5)\n")
+
+
+PACE, COLOR = 0.0, False  # T-0902: --pace seconds per stage (a recording), colour on a terminal or FORCE_COLOR
+
+
+def _c(code, text):
+    return f"\x1b[{code}m{text}\x1b[0m" if COLOR else text
+
+
+def _out(text="", pause=0.0, typed=False):
+    """A line of the demo; with --pace, a pause after it, and a command typed out (at most ~1.2 paces long)."""
+    if typed and PACE:
+        lead, cmd = text.split("$ ", 1)
+        print(lead + _c("2", "$ "), end="", flush=True)
+        for ch in cmd:
+            print(_c("36", ch), end="", flush=True)
+            time.sleep(min(0.02 * PACE, 1.2 * PACE / max(len(cmd), 1)))
+        print(flush=True)
+    else:
+        print(text, flush=True)
+    if PACE and pause:
+        time.sleep(PACE * pause)
 
 
 class Off(Exception):
@@ -47,7 +70,8 @@ def _run(cmd, env, cwd, stdin=None):
 
 
 def _fm(env, repo, *args, ok=True):
-    print("  $ fm " + " ".join(f'"{a}"' if " " in a else a for a in args))
+    line = "fm " + " ".join(f'"{a}"' if " " in a else a for a in args)
+    _out("  $ " + line if PACE else "  " + _c("2", "$ ") + _c("36", line), 0.4, typed=True)
     p = _run([sys.executable, FM, *args], env, repo)
     if (p.returncode == 0) != ok:
         raise Off(f"fm {args[0]} {args[1] if len(args) > 1 else ''} exited {p.returncode}: "
@@ -75,12 +99,12 @@ def _write(repo, name, text):
 
 
 def _say(n, text):
-    print(f"\n{n}. {text}")
+    _out("\n" + _c("1", f"{n}. {text}"), 1.0)
 
 
 def demo(work):
-    def show(text):  # the temp folder's long path reads as <demo>
-        print(text.replace(work, "<demo>"))
+    def show(text, pause=1.2):  # the temp folder's long path reads as <demo>
+        _out(text.replace(work, "<demo>"), pause)
     env, repo = _env(work), os.path.join(work, "repo")
     os.makedirs(repo)
     _write(repo, "calc.py", BUG)
@@ -89,9 +113,10 @@ def demo(work):
         if _run(cmd, env, repo).returncode:
             raise Off(f"{' '.join(cmd)} failed: is git installed?")
     _run([sys.executable, FM, "init"], env, repo)
-    print("Foreman demo: no model is called; the real fm and guard hook run in a throwaway repo and Foreman home.")
+    _out(_c("1", "Foreman demo") + ": no model is called; the real fm and guard hook run in a throwaway repo and Foreman "
+         "home.", 0.5)
     _say(1, "The repo has a bug: calc.add(2, 3) returns -1. Claude tries to edit calc.py before any task exists.")
-    show("  Refused: " + _hook(env, repo, "Edit", {"file_path": os.path.join(repo, "calc.py"),
+    show("  " + _c("1;31", "Refused") + ": " + _hook(env, repo, "Edit", {"file_path": os.path.join(repo, "calc.py"),
                                                     "old_string": "a - b", "new_string": "a + b"}))
     _say(2, "So it plans the work first: a brief with a done-when and the command that proves it.")
     p = _fm(env, repo, "task", "new", "add() subtracts", "--type", "FIX", "--tier", "S",
@@ -99,30 +124,33 @@ def demo(work):
             "--focus")
     show("  " + p.stdout.splitlines()[0])
     _say(3, "Mid-task, a careless command: rm -rf ~ (here ~ is the demo's own fake home).")
-    show("  Refused: " + _hook(env, repo, "Bash", {"command": "rm -rf ~"}))
+    show("  " + _c("1;31", "Refused") + ": " + _hook(env, repo, "Bash", {"command": "rm -rf ~"}))
     _say(4, "Test first: Claude writes test_calc.py and records it as the step's evidence.")
     _write(repo, "test_calc.py", UNIT)
     _fm(env, repo, "task", "evidence", "T-0001", "--step", "1", "--run", TEST, ok=False)
-    print("  red: the test fails (AssertionError: -1 != 5), which proves it catches the bug.")
+    show("  " + _c("31", "red") + ": the test fails (AssertionError: -1 != 5), which proves it catches the bug.")
     _say(5, "The fix: return a + b. The same test, recorded again.")
     _write(repo, "calc.py", FIXED)
     _fm(env, repo, "task", "evidence", "T-0001", "--step", "2", "--run", TEST)
-    print("  green: the test passes now.")
+    show("  " + _c("32", "green") + ": the test passes now.")
     _say(6, "Claude tries to close the task without saying how it checked its work.")
     p = _fm(env, repo, "task", "finish", "T-0001", ok=False)
-    print("  not finished: " + (p.stderr or p.stdout).strip().splitlines()[0].removeprefix("fm: "))
+    show("  " + _c("33", "not finished") + ": " + (p.stderr or p.stdout).strip().splitlines()[0].removeprefix("fm: "))
     _say(7, "With the audit, a lesson and a commit message, the close goes through.")
     p = _fm(env, repo, "task", "finish", "T-0001", "--audit", "self checklist: diff read, test red then green",
             "--result", "pass", "--docs", "none: a demo", "--lesson", "a test that failed first is the proof",
             "--why-not-caught", "none: the bug was seeded", "--commit", "Fix add() subtracting (T-0001)")
     if "T-0001 done" not in p.stdout:
         raise Off("fm task finish exited 0 without closing T-0001: " + p.stdout.strip()[-400:])
-    print("  closed: " + "\n  ".join(p.stdout.strip().splitlines()))
+    show("  " + _c("1;32", "closed") + ": " + "\n  ".join(p.stdout.strip().splitlines()))
     if os.path.exists(os.path.join(work, "claude-called")):
         raise Off("claude was called")
 
 
 def cmd_demo(args):
+    global PACE, COLOR
+    PACE = max(0.0, float(getattr(args, "pace", 0) or 0))
+    COLOR = bool(os.environ.get("FORCE_COLOR")) or (sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
     work = tempfile.mkdtemp(prefix="fm-demo-")
     try:
         demo(work)
