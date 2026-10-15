@@ -12,6 +12,15 @@ Public repo:
 curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
 ```
 
+Prefer Claude Code's plugin system? Inside Claude Code:
+
+```
+/plugin marketplace add ChaseSunstrom/foreman
+/plugin install foreman@foreman
+```
+
+That changes nothing outside the plugin: the hooks and the guard run, and the first session reads Foreman's rules from the plugin. Say "finish setting up Foreman" later to add the rest (status line, deny rules, the bypass question, `fm` in your shell); `fm uninstall-user` undoes it.
+
 Having Claude install it for you? Tell it: "install Foreman following https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
 
 Private repo (uses your `gh` login):

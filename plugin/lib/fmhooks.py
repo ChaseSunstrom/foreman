@@ -423,6 +423,12 @@ def session_context(p, sd, other_note=None):
         tail.append("Dependency cycles: " + "; ".join("↔".join(x) for x in sd["cycles"])[:150] + ".")
     if sd["sensitive"]:
         tail.append("Sensitive repo: new sessions here start in manual permission mode.")
+    if not os.path.lexists(os.path.join(os.path.expanduser("~"), ".claude", "rules", "foreman.md")):  # T-0874: a
+        # bare /plugin install runs the hooks but never wires the rules; reading them costs no write to ~/.claude
+        rules = os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md")
+        tail.append(f"Foreman's rules aren't wired into ~/.claude: read {rules} once now. To load them every session "
+                    "(plus the status line and deny rules), the user can say \"finish setting up Foreman\" "
+                    "(fm install-user; undo: fm uninstall-user).")
     if other_note:
         tail.append(other_note)
     try:
