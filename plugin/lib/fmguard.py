@@ -2295,6 +2295,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                     found += check_bash(val if eq else b, ctx, depth + 1)
             if sub == "check" and rest[:1] == ["add"]:
                 found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
+            if sub in ("quiet", "at"):  # T-0898: their trailing command runs (fm quiet -- rm -rf ~ used to pass)
+                words = _fm_trailing(rest, 1 if sub == "at" else 0)
+                if words:
+                    found += check_bash(words[0] if len(words) == 1 else " ".join(map(shlex.quote, words)), ctx,
+                                        depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
@@ -2804,6 +2809,24 @@ _SYSTEMCTL_MUTATE = {"start", "stop", "restart", "reload", "try-restart", "reloa
                      "reenable", "mask", "unmask", "kill", "isolate", "daemon-reload", "daemon-reexec", "set-default",
                      "poweroff", "reboot", "halt", "suspend", "hibernate", "edit", "set-property", "link", "revert",
                      "preset", "reset-failed"}
+
+
+def _fm_trailing(rest, positionals):
+    """T-0898: the command words after `fm quiet` / `fm at TARGET` options (argparse's REMAINDER, or after --)."""
+    i, seen = 0, 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return rest[i + 1:]
+        if a in ("--tail", "--timeout", "-p", "--project"):
+            i += 2
+        elif a.startswith("-"):
+            i += 1
+        elif seen < positionals:
+            seen, i = seen + 1, i + 1
+        else:
+            return rest[i:]
+    return []
 
 
 def _fm_subcommand(args, takes_value=("-p", "--project")):

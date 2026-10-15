@@ -1428,6 +1428,14 @@ class PluginChanges(GuardCase):
             ("fm check add 'npm publish'", "publish"),
             ("fm task evidence T-0001 --step 1 --run 'python3 -m unittest'", None),
             ("fm check add 'python3 -m unittest discover -s tests'", None),
+            # T-0898: fm quiet and fm at run their trailing command too (fm quiet -- rm -rf ~ used to pass)
+            ("fm quiet -- rm -rf ~", "rm-outside"),
+            ("fm quiet --tail 5 rm -rf ~", "rm-outside"),
+            ("fm quiet 'npm publish'", "publish"),
+            ("fm at HEAD -- rm -rf ~", "rm-outside"),
+            ("fm at T-0001 --timeout 60 -- npm publish", "publish"),
+            ("fm quiet -- python3 -m unittest", None),
+            ("fm at HEAD -- python3 -m unittest", None),
         ], self.bash)
 
     def test_installed_plugin_files_are_the_users(self):
