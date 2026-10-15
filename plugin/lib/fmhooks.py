@@ -1132,8 +1132,9 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        note = " ".join(filter(None, [saved, warn, _veto_note(pl, p),_scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act)]))
+        note = " ".join(filter(None, [saved, warn, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
+                                      _test_first_note(pl, p, act)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
@@ -1166,6 +1167,31 @@ def _card_note(pl, p, act):
                                                          "file": os.path.relpath(path, p.root)},
                         session=pl.get("session_id"))
         return note
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
+def _test_first_note(pl, p, act):
+    """T-0969: the first edit of a non-test source file in a FIX/FEATURE task that has changed no test file (fm check
+    --affected's TESTISH/CODE test) and recorded no failing run: one note to write and run the failing test first.
+    Decided once per task (cards.json's marker, set whatever the answer), so git runs on that one edit only."""
+    if not p or not act or act.type not in ("FIX", "FEATURE") or pl.get("tool_name") not in FILE_TOOLS:
+        return None
+    try:
+        path = _edit_path(pl)
+        rel = os.path.relpath(path, p.root) if _in_project(path, p) else None
+        if not rel or not c.CODE.search(rel) or c.TESTISH.search(rel) or _card_injected(p, act.id, ":test-first"):
+            return None
+        _card_mark(p, act.id, ":test-first")  # before the git call: a slow or failing check never repeats
+        if any("` → ✗ exit" in l for l in act.evidence()):
+            return None
+        import fmmap
+        base = c.task_base(p.root, act)
+        if not base or any(c.TESTISH.search(f) and c.CODE.search(f) for f in fmmap.changed(p.root, base)):
+            return None
+        return (f"Foreman: test first: {act.id} has no failing run and no changed test yet; write the failing test "
+                f"and record it (fm task evidence {act.id} --step N --run \"<test cmd>\") before this edit.")
     except Exception:
         log_error("PreToolUse", _tb())
         return None
@@ -1858,7 +1884,7 @@ def _auto_evidence(pl, p, ok):
         err = str(pl.get("error") or "")
         m = re.match(r"Exit code (\d+)", err)
         code, output = (int(m.group(1)) if m else 1), err.split("\n", 1)[-1]
-    result, tree = c.run_result(code, c.redact(output)), c.worktree_id(p.root)
+    result, tree = c.run_result(code, c.redact(output), cmd), c.worktree_id(p.root)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         b = c.find_brief(p, act.id)
         for n in hits:
