@@ -3528,6 +3528,7 @@ def _audit_scan(p, args):
 
 # T-0216: --split's reviewers, from skills/routing.json (T-0252); lenses in no group share one more reviewer
 SPLIT_GROUPS = tuple(tuple(g) for g in c.routing().get("review_groups") or ())
+READ_PARTS = 1500  # T-0983: diff lines past which the reviewer is told to read the diff in parts
 SPLIT_SUGGEST = 800  # diff lines past which an L review suggests --split
 
 
@@ -3613,7 +3614,9 @@ def cmd_audit(args):
         raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
     path = os.path.join(p.dir, "audits", f"{b.id}.diff")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    c.write_atomic(path, _compact_diff(_without_secrets(p.root, r.stdout)))  # the pre-audit reads the raw diff (T-0723)
+    shown = _compact_diff(_without_secrets(p.root, r.stdout))  # the pre-audit reads the raw diff (T-0723)
+    c.write_atomic(path, shown)
+    shown_lines = shown.count("\n")  # T-0983: what the reviewer reads, not the raw diff
     with open(os.path.join(c.PLUGIN_ROOT, "skills", "intake", "references", "audit.md"), encoding="utf-8") as f:
         ref = f.read()
     templates = {m.group(1): (m.group(2), m.group(3)) for m in _LENS_TPL.finditer(ref)}
@@ -3631,7 +3634,10 @@ def cmd_audit(args):
         raise UsageError(f"references/audit.md has no template for {', '.join(missing)} (its lens format changed?)")
     head = (f"Read-only audit of task {b.id} \"{b.title}\" ({b.type} {b.tier}) in {p.root}.\n"
             f"Diff to review: {path} (git diff {base[:12]} → {upto}; "
-            f"{r.stdout.count(chr(10))} lines).")
+            f"{shown_lines} lines).")
+    if shown_lines > READ_PARTS:  # T-0983: one Read returns ~2000 lines; leave room for the line prefixes
+        head += (f"\nThe diff is over {READ_PARTS} lines, too long for one Read: read it in parts "
+                 f"(Read with offset and limit, ~{READ_PARTS} lines each) until the end.")
     if found:  # T-0068: mechanical findings first, so the reviewer confirms them instead of hunting for them
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
             f"- {x}" for x in found)
