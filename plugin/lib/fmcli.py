@@ -89,11 +89,18 @@ def cmd_init(args):
         c.log_event(p, "init", data={"root": root}, session=session())
         c.regen_views(p)
     out(args, {"project": p.slug, "root": root}, p.slug)
+    if not args.json:  # T-0847: stdout stays the bare slug (scripts read it); the newcomer reads this
+        print(f"Registered {root} as {p.slug}; its state lives in {p.dir}.\n"
+              f"Next: fm capture \"<request>\" (or just give Claude a request); fm --help for the everyday commands.",
+              file=sys.stderr)
 
 
 def cmd_state(args):
     p = resolve(args)
     sd = c.state_dict(p)
+    if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
+        return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
+                     f"--tier S --focus (or just give Claude a request).")
     if args.line:
         print(c.state_line(sd))
     elif args.json:
@@ -538,7 +545,10 @@ def cmd_task(args):
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
             if reasons:
-                raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
+                lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
+                    f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
+                    + (" --lens \"<lens>: <result>\" … --docs \"<…>\" --lesson \"<…>\"" if b.tier in ("M", "L") else ""))
+                raise c.PolicyError(f"{b.id} can't be marked done{lead}:\n  - " + "\n  - ".join(reasons))
             if lesson:
                 old = b.section("Lessons").rstrip()
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
@@ -1752,9 +1762,16 @@ def _settle_batch(p, h, done):
 def task_new(p, args):
     type_ = c.WORK_TAGS.get(args.type.upper(), args.type.upper())
     if type_ not in c.TYPES:
-        raise UsageError(f"unknown type {args.type!r}")
+        raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
     if args.tier not in ("S", "M", "L"):
         raise UsageError("tier must be S, M or L")
+    reused = ""
+    if not args.from_id and not getattr(args, "redo", None):  # T-0848: the capture this request already is
+        key = " ".join(c.plain(args.title).lower().split())
+        same = next((x for x in c.load_briefs(p) if x.status == "captured" and " ".join(x.title.lower().split()) == key),
+                    None)
+        if same:
+            args.from_id, reused = same.id, f" (from inbox capture {same.id}: same title)"
     _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
     redo = need_brief(p, args.redo) if getattr(args, "redo", None) else None
     if redo and redo.status != "dropped":
@@ -1799,7 +1816,7 @@ def task_new(p, args):
         _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
     if not args.from_id:
         _note_escapes(p, b, " ".join(filter(None, [args.title, args.raw])))
-    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})"
+    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path}){reused}"
         + ("" if args.from_id else _covered_note(p, b.id, " ".join(filter(None, [args.title, args.raw])))))
     if args.focus:
         cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
@@ -3466,10 +3483,34 @@ def cmd_help(args):
         "\n".join(lines) + "fm <command> -h for its options.")
 
 
+# T-0845: fm --help is where a newcomer starts: the everyday commands, not argparse's 100-verb blob
+START_HERE = """usage: fm [-p PROJECT] <command> [options]
+
+Foreman state CLI (the only writer of Foreman state). Start here:
+  fm init                  register this repo (once; most commands do it for you)
+  fm capture "<request>"   put a request in the inbox
+  fm task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
+                           plan a task (or a capture of the same title) and work on it
+  fm next                  the one next required action
+  fm status                where things stand
+  fm focus ID              work on a planned task
+  fm check                 run the gates (tests, lint)
+  fm task finish ID --run "<cmd>" --audit "<how>"
+                           close a task in one call
+  fm queue                 what's planned, in order
+  fm inbox                 captured requests waiting
+  fm doctor                is Foreman healthy here?
+
+fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
+"""
+
+
 def build_parser():
-    ap = _Parser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
+    ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
+                 description="Foreman state CLI (the only writer of Foreman state).")
+    ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
-    sp = ap.add_subparsers(dest="cmd", required=True)
+    sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
     def add(name, fn, **kw):
         s = sp.add_parser(name, **kw)
@@ -3478,7 +3519,8 @@ def build_parser():
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
-    add("help", cmd_help, help="every command, in tiers: the everyday ones first")
+    s = add("help", cmd_help, help="every command, in tiers: the everyday ones first")
+    s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
     s = add("init", cmd_init, help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
@@ -3606,10 +3648,15 @@ def build_parser():
     t.add_argument("--check", action="store_true",
                    help="rerun the failing command the packet hands over: accepted while it still fails (T-0704)")
     t.add_argument("--timeout", type=int, default=300)
-    t = tadd("new")
+    t = tadd("new")  # T-0846: its values and one worked example in -h
+    t.epilog = ('example:\n  fm task new "Add login timeout" --type FIX --tier S --ac "times out after 30s :: pytest -k '
+                'timeout" --step "failing test" --focus')
+    t.formatter_class = argparse.RawDescriptionHelpFormatter
     t.add_argument("title")
-    t.add_argument("--type", required=True)
-    t.add_argument("--tier", required=True)
+    t.add_argument("--type", required=True, metavar="{" + ",".join(c.TYPES) + "}",
+                   help="what kind of work (aliases such as BUG, PERF, FEAT and lowercase work too)")
+    t.add_argument("--tier", required=True, choices=["S", "M", "L"],
+                   help="S: ≤~30 lines, 1–2 files · M: several files or a design choice · L: cross-cutting or uncertain")
     t.add_argument("--scope", action="append")
     t.add_argument("--depends", action="append")
     t.add_argument("--raw")
