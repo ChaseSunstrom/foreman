@@ -133,6 +133,17 @@ class Friction(ForemanTestCase):
         self.fm("friction", "--mark")
         self.assertNotIn("self-improvement pass", nxt())
 
+    def test_a_bare_keep_going_prompt_is_a_stall(self):
+        # T-0887: "continue" after Claude stopped says it stopped too early; what the Stop hook did just before says why
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": c.now(), "kind": "drive_drained", "session_id": "sess-1"}) + "\n")
+        for prompt in ("continue", "Keep going!", "go on please", "continue the refactor but skip the tests"):
+            self.hook("UserPromptSubmit", {"prompt": prompt})
+        out = self.fm("friction").stdout
+        self.assertIn("3 keep-going prompt(s)", out)
+        self.assertIn("after drive_drained", out)
+
     def test_distinct_notes_of_one_kind_are_not_repeats(self):
         # T-0860: eight tripwire notes, each a different task's lesson on a different file, read as one note "8x"
         import fmcore as c

@@ -505,6 +505,16 @@ def _resolve_approvals(p, meta, sid, text, hashes=None):
 STATUS_WORDS = {"status", "where are we", "fm status", "what's the status", "whats the status"}
 _CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don['’]?t\b|do not\b|stop\b|that['’]?s (wrong|not)|not what i|"
                          r"wrong\b|i said\b|i meant\b|why did you\b|you (should|shouldn['’]?t)\b|never\b|please don['’]?t\b)")
+_KEEP_GOING = re.compile(r"(?i)^\W*(please\s+)?(continue|keep going|go on|carry on|proceed|go ahead|resume|keep at it|"
+                         r"don['’]?t stop)(\s+please)?\W*$")
+
+
+def _last_stop(sid):
+    """T-0887: what the Stop hook last did in this session (drive, drive_wait, drive_drained…), or 'no drive note'."""
+    for e in reversed(c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 400)):
+        if e.get("session_id") == sid and str(e.get("kind") or "").startswith("drive"):
+            return e["kind"]
+    return "no drive note"
 
 
 def user_prompt_submit(pl):
@@ -533,6 +543,13 @@ def user_prompt_submit(pl):
             c.log_event(p, "correction", task=act.id if act else None, data={"text": c.fit(c.plain(text), 300)},
                         session=sid)
             c.add_veto(p, text)  # T-0251: "never X" is checked before the next X
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
+    elif _KEEP_GOING.match(text):  # T-0887: Claude stopped before the user wanted; what the Stop hook did says why
+        try:
+            act = c.active_brief(c.load_briefs(p), p.lane)
+            c.log_event(p, "stall", task=act.id if act else None, data={"text": c.fit(text, 60), "after": _last_stop(sid)},
+                        session=sid)
         except Exception:
             log_error("UserPromptSubmit", _tb())
     try:
@@ -958,10 +975,15 @@ def _pre_tool_use(raw):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
                                                  "permissionDecisionReason": decision[1]}}))
         return 2 if decision[0] == "deny" else 0
+    try:
+        saved = _snapshot_note(pl, guard) if tool == "Bash" else None  # T-0884: in every session, quiet ones too
+    except Exception:
+        log_error("PreToolUse", _tb())
+        saved = None
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
-        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        note = " ".join(filter(None, [saved, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
@@ -969,6 +991,19 @@ def _pre_tool_use(raw):
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _snapshot_note(pl, guard):
+    """T-0884: a command about to discard uncommitted work (git reset --hard, checkout --, clean -f…) gets the work saved
+    under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash."""
+    cmd = str((pl.get("tool_input") or {}).get("command") or "")
+    if "git" not in cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
+        return None
+    cwd = _cwd(pl)
+    roots = {c.git_root(os.path.join(cwd, w)) for w in guard.discards_work(cmd, cwd)} - {None}
+    saved = [s for r in sorted(roots) if (s := c.snapshot(r, c.fit(c.redact(cmd), 200)))]
+    return (f"Foreman saved the uncommitted work this command may discard (snapshot {', '.join(saved)}): fm snapshots "
+            f"lists it with the command that brings it back.") if saved else None
 
 
 def _bus_note(pl):

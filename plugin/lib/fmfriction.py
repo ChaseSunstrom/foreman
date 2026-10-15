@@ -183,6 +183,11 @@ def digest(p, recheck=True):
     said = [label(lp) + c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for lp, e in ledger
             if e.get("event") == "correction" or steer(e)]
     out["what the user corrected or steered (their words)"] = said[-MAX_LINES:]
+    stalls = collections.Counter(str((e.get("data") or {}).get("after")) for lp, e in ledger
+                                 if lp.slug == p.slug and e.get("event") == "stall")
+    out["stalls: the user had to say 'continue' (T-0887)"] = [  # Claude stopped early; the Stop hook's last act says why
+        f"{sum(stalls.values())} keep-going prompt(s): " + ", ".join(f"{n}× after {k}" for k, n in stalls.most_common())
+    ] if stalls else []
 
     out["escapes: defects found after a task closed (the lenses that passed it)"] = [  # T-0285: review recall over time
         f"{label(lp)}{e.get('task')} ({', '.join((e.get('data') or {}).get('lenses') or []) or 'no lens'}) → "
