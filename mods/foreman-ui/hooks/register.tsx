@@ -589,6 +589,9 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    // Claude Code 2.1.299: turn.start fires for subagents too (with agentId); their progress is the Subagents card's,
+    // and resetting here would wipe the main turn's counts mid-turn (T-0944)
+    if (e.agentId) return next(e)
     if (!turns.size) turnStartedAt = await $.clock.now()
     turns.add(e.turnId)
     const a = (await read($, view))?.active
@@ -763,7 +766,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="row" gap={1} key="fm-tool"
         {...(boxed ? { borderStyle: 'round', borderColor: hex(pulse(face.color, f)), paddingX: 1, width: '100%' } : {})}>
         <Text color={hex(face.color)}>{spin(f)}</Text>
-        <Text bold color={hex(face.color)}>
+        <Text weight="bold" color={hex(face.color)}>
           {face.icon} {face.verb}
         </Text>
         <Text wrap="truncate-end">{face.target.slice(0, Math.max(10, width - 48))}</Text>
@@ -810,7 +813,7 @@ export const register: Register = (on, options) => {
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="row" borderStyle="round" borderColor={hex(C.accent2)} paddingX={1} width="100%" key="fm-user">
-          <Text bold color={hex(C.accent2)}>
+          <Text weight="bold" color={hex(C.accent2)}>
             {'❯ '}
           </Text>
           <Box flexDirection="column" flexShrink={1}>
@@ -847,7 +850,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="row" gap={1} key="fm-working">
         <Text color={hex(C.accent)}>{spin(f)}</Text>
-        <Text bold color={hex(C.accent)}>
+        <Text weight="bold" color={hex(C.accent)}>
           {a ? a.id : 'Foreman'}
         </Text>
         {a && cur && (
@@ -899,7 +902,7 @@ export const register: Register = (on, options) => {
             ) : (
               <Text key={`ln-${i}`} wrap="wrap">
                 {b.parts.map((p, j) => (
-                  <Text key={j} bold={p.bold ?? false} {...(p.color !== undefined ? { color: hex(p.color) } : {})}>
+                  <Text key={j} weight={p.weight="bold" ? 'bold' : 'regular'} {...(p.color !== undefined ? { color: hex(p.color) } : {})}>
                     {p.text}
                   </Text>
                 ))}
@@ -969,17 +972,17 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" key="fm-band-head">
         {a ? (
           <Text wrap={cut}>
-            <Text bold color={typeColor(a.type)}>
+            <Text weight="bold" color={typeColor(a.type)}>
               {a.type}
             </Text>{' '}
             <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>{' '}
-            <Text bold color={hex(C.accent)}>
+            <Text weight="bold" color={hex(C.accent)}>
               {a.id}
             </Text>{' '}
-            <Text bold>{a.title}</Text>
+            <Text weight="bold">{a.title}</Text>
           </Text>
         ) : (
-          <Text bold color={hex(C.accent)} wrap={cut}>
+          <Text weight="bold" color={hex(C.accent)} wrap={cut}>
             Foreman · nothing active
           </Text>
         )}
@@ -988,7 +991,7 @@ export const register: Register = (on, options) => {
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
             {meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             <Text wrap={cut}>
-              <Text bold>
+              <Text weight="bold">
                 {done}/{a.steps.length}
               </Text>{' '}
               {cur?.text ?? ''}
@@ -1004,20 +1007,20 @@ export const register: Register = (on, options) => {
               <Box flexDirection="row" gap={1} flexShrink={1}>
                 {/* the title gives way first: the id never wraps (seen live: 'T-014' then '1' on the next row) */}
                 <Box flexDirection="row" gap={1} flexShrink={0} key="fm-band-id">
-                  <Text bold color={typeColor(a.type)}>
+                  <Text weight="bold" color={typeColor(a.type)}>
                     {a.type}
                   </Text>
                   <Text color={hex(C.dim)}>{sizeWord(a.tier)}</Text>
-                  <Text bold color={hex(C.accent)}>
+                  <Text weight="bold" color={hex(C.accent)}>
                     {a.id}
                   </Text>
                 </Box>
-                <Text bold wrap={cut}>
+                <Text weight="bold" wrap={cut}>
                   {a.title}
                 </Text>
               </Box>
             ) : (
-              <Text bold color={hex(C.accent)} wrap={cut}>
+              <Text weight="bold" color={hex(C.accent)} wrap={cut}>
                 Foreman · nothing active
               </Text>
             )}
@@ -1040,7 +1043,7 @@ export const register: Register = (on, options) => {
             <Text color={hex(C.dim)}>{a.stage}</Text>
             {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             {a.steps.length > 0 && (
-              <Text bold>
+              <Text weight="bold">
                 {done}/{a.steps.length}
               </Text>
             )}
@@ -1192,7 +1195,7 @@ export const register: Register = (on, options) => {
         {fold && (
           <Button key={`fold-${fold}`} label={isFolded(fold) ? '▸' : '▾'} plain dimColor onPress={() => toggleFold($, fold)} />
         )}
-        <Text bold color={hex(color)}>
+        <Text weight="bold" color={hex(color)}>
           ▍{title}
         </Text>
         {count !== undefined && <Text color={hex(C.dim)} wrap="truncate-end">{count}</Text>}
@@ -1200,7 +1203,7 @@ export const register: Register = (on, options) => {
     )
     const chip = (it: FmItem) => (
       <Box flexDirection="row" gap={1} flexShrink={0}>
-        <Text bold color={typeColor(it.type)}>
+        <Text weight="bold" color={typeColor(it.type)}>
           {it.type}
         </Text>
         <Text color={hex(C.dim)}>{sizeWord(it.tier)}</Text>
@@ -1285,7 +1288,7 @@ export const register: Register = (on, options) => {
           return (
             <Box key="card-closed" {...card(C.ok)}>
               {meter(ui, e, 'closed-sweep', inner, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}
-              <Text bold color={hex(C.ok)} wrap="truncate-end">
+              <Text weight="bold" color={hex(C.ok)} wrap="truncate-end">
                 ✔ {c.id} done{closeCard(c)}
               </Text>
               {c.title && <Text wrap="truncate-end">{c.title}</Text>}
@@ -1314,7 +1317,7 @@ export const register: Register = (on, options) => {
         {plans.map(q => (
           <Box key={`plan-${q.id}`} {...card(C.warn)}>
             {head(`${q.id} plan awaits your approval`, C.warn)}
-            <Text bold wrap="wrap">
+            <Text weight="bold" wrap="wrap">
               {q.title}
             </Text>
             {q.plan.interpretation && <Text wrap="wrap">Means: {q.plan.interpretation}</Text>}
@@ -1344,7 +1347,7 @@ export const register: Register = (on, options) => {
           borderColor={hex(a ? pulse(C.accent, f) : C.dim)} paddingX={1} key="fm-pane-head">
           <Box flexDirection="column" flexGrow={1} flexShrink={1}>
             <Box flexDirection="row" gap={1}>
-              <Text bold color={hex(C.accent)}>
+              <Text weight="bold" color={hex(C.accent)}>
                 {moving ? spin(f ?? 0) : '▍'} Foreman
               </Text>
               <Text color={hex(C.dim)} wrap="truncate-end">
@@ -1365,11 +1368,11 @@ export const register: Register = (on, options) => {
                 <Box flexDirection="row" gap={1} key="hero-title">
                   <Box flexDirection="row" gap={1} flexShrink={0}>
                     {chip(a)}
-                    <Text bold color={hex(C.accent)}>
+                    <Text weight="bold" color={hex(C.accent)}>
                       {a.id}
                     </Text>
                   </Box>
-                  <Text bold wrap="wrap">
+                  <Text weight="bold" wrap="wrap">
                     {a.title}
                   </Text>
                 </Box>
@@ -1377,7 +1380,7 @@ export const register: Register = (on, options) => {
                 {a.steps.length > 0 && (
                   <Box flexDirection="row" gap={1} key="hero-progress">
                     {meter(ui, e, 'fm-pane-bar', Math.max(8, heroW - 14), done / a.steps.length, C.ok, f)}
-                    <Text bold>
+                    <Text weight="bold">
                       {done}/{a.steps.length}
                     </Text>
                     <Text color={hex(C.dim)}>{Math.round((100 * done) / a.steps.length)}%</Text>
@@ -1473,7 +1476,7 @@ export const register: Register = (on, options) => {
             {subs.map(s => (
               <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
                 <Text color={hex(s.done ? C.dim : agentColor(s.id))}>{s.done ? '✓' : spin((f ?? 0) + s.tools)}</Text>
-                <Text bold color={hex(s.done ? C.dim : C.agent)}>
+                <Text weight="bold" color={hex(s.done ? C.dim : C.agent)}>
                   {s.type}
                 </Text>
                 <Text wrap="truncate-end" color={s.done ? hex(C.dim) : undefined}>
@@ -1602,7 +1605,7 @@ export const register: Register = (on, options) => {
                 <Box flexDirection="row" gap={1} flexShrink={0} key="fm-pane-audits-head">
                   <Text color={hex(C.dim)}>audits</Text>
                   {meter(ui, e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
-                  <Text bold>
+                  <Text weight="bold">
                     {a.audits.done}/{a.audits.need}
                   </Text>
                 </Box>
@@ -1794,7 +1797,7 @@ export const register: Register = (on, options) => {
                   <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
                     <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
                     <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
-                      <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
+                      <Text weight="bold" color={hex(s.remote ? C.accent2 : C.agent)}>
                         {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
                       </Text>
                     </Box>
