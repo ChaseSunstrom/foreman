@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `FOREMAN_ONEOFF=1` makes any session a one-off (no queue in its context, no drive, no claim on the project); the UI harness (`shot.py`) sets it, after its session was driven into the queue, planned three tasks and took the working session's focus (T-0995).
 - fm finds Claude Code's native install (`~/.local/bin/claude`) when the shell's PATH predates it, so the gates, `fm run` and doctor's script checks work once the npm copy is gone (T-0990); `FOREMAN_NATIVE_BIN` overrides that folder, and the tests point it at nothing so no test reaches the paid binary (T-0992).
 - `fm run --sandbox` (T-0975): each headless session runs under Claude Code's sandbox (`--settings` with `sandbox.enabled`, `failIfUnavailable`, no unsandboxed fallback); Bash may write only the checkout, Foreman's state and the git dir, where a lane's commits land. Ambient tests (T-0705) are on in this repo.
 - SessionStart writes Foreman's two exports to Claude Code's env file once per session, not again on every compaction; a long session's Bash prelude had them eight times (T-0988).

@@ -1528,6 +1528,12 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
                                "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
         self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+        # T-0995: an interactive session marked one-off (the UI harness) is the same: it planned three tasks and took
+        # the working session's focus when the drive pushed it after its one prompt
+        harness = {"FOREMAN_ONEOFF": "1", "CLAUDE_ENV_FILE": self.env_file}
+        self.assertIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=harness)))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "ok", "session_id": "sess-9"}, env=harness)
+        self.assertIsNone(self.decision(p))
         # T-0820: a bench replay's claude -p measures Foreman at work, not a one-off answer
         import fmbench
         bench = dict(fmbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",
