@@ -192,7 +192,7 @@ Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, 
 <details>
 <summary><b>Other agents and the desktop app</b></summary>
 
-**Other agents:** `fm agents install codex|gemini|opencode` puts Foreman into Codex, Gemini CLI or opencode: its guard, per-turn context, `fm mcp` server and a short rules block. They run through the same hook Claude Code runs (`hook --agent X EVENT`).
+**Other agents:** `fm agents install codex|gemini|opencode` puts Foreman into Codex, Gemini CLI or opencode: its guard, per-turn context, `fm mcp` server and a short rules block. They run through the same hook Claude Code runs (`hook --agent X EVENT`). The adapters are built to each tool's documented hook format and tested against recorded payloads, but not yet verified against live CLIs: check that a refused command is refused there before relying on the guard.
 - `fm agents list` shows what's wired, and `fm agents uninstall X` takes out exactly what install added.
 - Codex also gets the drive and done-gate (its Stop hook).
 - Two things stay Claude Code only: Gemini's AfterAgent would discard the answer it blocks, and the `fm ask` permission prompt needs Claude Code to show it.

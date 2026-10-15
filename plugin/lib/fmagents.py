@@ -403,6 +403,9 @@ def cmd_agents(args):
             raise ValueError(f"fm agents {args.action} needs an agent: {', '.join(NAMES)}")
         on = args.action == "install"
         changed, notes = apply(args.agent, on)
+        if on:  # say what isn't proven yet (T-0335–T-0337 wait on live CLIs)
+            notes = notes + [f"built to {args.agent}'s documented hook format, not yet verified against a live "
+                             f"{args.agent}: check a refused command there before relying on the guard"]
         verb = "wired into" if on else "taken out of"
         text = "\n".join([f"Foreman {verb} {args.agent}" + (f": {', '.join(changed)}" if changed else
                                                             " (nothing to change)")] + [f"note: {n}" for n in notes])
