@@ -91,7 +91,7 @@ def _breaker_set(event, entry):
 
 def run(event, raw):
     t0 = time.monotonic()
-    if event != "PreToolUse" and (_quiet() or _lite(raw)):
+    if event != "PreToolUse" and (_quiet() or (_lite(raw) and event not in UNBREAKABLE)):  # lite keeps the gates
         return 0
     if event == "PreToolUse":
         code = _pre_tool_use(raw)
@@ -672,6 +672,15 @@ def user_prompt_submit(pl):
     if not r.items and not r.overrides and c.is_work_request(text):  # T-0364: a one-liner brief skipped the thinking
         parts.append("Work request: classify it (type and tier) on your first line; S → fm task new … --focus; "
                      "M/L → plan before any edit (/foreman:intake §2: every capability and approach, then choose)")
+    try:  # T-0977: the stack cards the request names, once per session each; nothing loads until one is read
+        import fmlib
+        named = [x for x in fmlib.cards_named(text) if _first_time(sid, "card-" + x)]
+        if named:
+            parts.append(f"Stack cards for this request: fm lib show {' '.join(named)} --section avoid --section verify "
+                         f"(read before editing; nothing loads until read)")
+            c.log_event(p, "lib_named", data={"cards": named}, session=sid)
+    except Exception:
+        log_error("UserPromptSubmit", _tb())
     a, state = sd["active"], []
     if a:
         state.append(f"Active: {a['id']} {a['type']} " + (f"step {a['step']['n']}/{a['step']['of']}" if a["step"]

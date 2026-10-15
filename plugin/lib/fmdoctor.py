@@ -1043,9 +1043,10 @@ def check_enforce(p, days=7):
     since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
     try:
         with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
-            lines = [l for l in f if b'"enforce"' in l or b'"lane_unverified"' in l]
+            lines = [l for l in f if b'"enforce"' in l or b'"lane_unverified"' in l or b'"lib' in l]
     except OSError:
         lines = []
+    read = named = 0  # T-0977: stack cards read (fm lib show) and named at prompt time
     for line in lines:
         try:
             e = json.loads(line)
@@ -1053,11 +1054,16 @@ def check_enforce(p, days=7):
             continue
         if not isinstance(e, dict) or str(e.get("ts", ""))[:19] < since or not isinstance(e.get("data") or {}, dict):
             continue  # a hand-edited line with odd data is skipped, never a crash
+        if e.get("event") in ("lib", "lib_named"):
+            n = len((e.get("data") or {}).get("cards") or [])
+            read, named = (read + n, named) if e["event"] == "lib" else (read, named + n)
+            continue
         kind = "lane_unverified" if e.get("event") == "lane_unverified" else \
             (e.get("data") or {}).get("kind", "validator_block") if e.get("event") == "enforce" else None
         if kind in counts:
             counts[kind] += 1
-    return Result("enforcement", "PASS", f"last {days} days: " + ", ".join(f"{k} {n}" for k, n in counts.items()))
+    return Result("enforcement", "PASS", f"last {days} days: " + ", ".join(f"{k} {n}" for k, n in counts.items())
+                  + f", cards named {named}, cards read {read}")
 
 
 def check_idle_stops(p, days=7):

@@ -79,6 +79,55 @@ def cards(root=CARDS):
     return out
 
 
+# T-0977: card names that are everyday words too ("make it work", "go ahead"): never matched in a prompt
+_COMMON = {"act", "ada", "apex", "bloc", "boost", "bun", "c", "chi", "chroma", "cobra", "commander", "crystal", "d",
+           "dart", "echo", "ent", "envoy", "expo", "express", "flux", "gin", "go", "ink", "just", "lightning", "lit",
+           "make", "nom", "perf", "polly", "prefect", "r", "railway", "ray", "render", "room", "rr", "sharp", "solid",
+           "spark", "swift", "tilt", "vault", "viper", "whisper", "yolo", "wat", "neon", "mise", "search", "forms",
+           "sessions", "money", "inventory", "bookings", "dialogs", "toasts", "animation", "configuration", "spikes"}
+
+
+def _names_path():
+    return os.path.join(c.state_dir(), "lib-names.json")
+
+
+def _name_index():
+    """{phrase: card} for whole-word matching in a prompt, cached by the card count so a prompt never parses the
+    1,078 cards (hyphenated names also match with spaces: react-hook-form, "react hook form")."""
+    stamp = sum(len(os.listdir(os.path.join(CARDS, d))) for d in os.listdir(CARDS)) if os.path.isdir(CARDS) else 0
+    try:
+        with open(_names_path(), encoding="utf-8") as f:
+            got = json.load(f)
+        if got.get("stamp") == stamp:
+            return got["names"]
+    except (OSError, ValueError, AttributeError, KeyError):
+        pass
+    names = {}
+    for x in cards():
+        if x["name"] not in _COMMON and len(x["name"]) > 2:
+            names[x["name"]] = x["name"]
+            names[x["name"].replace("-", " ")] = x["name"]
+    try:
+        c.write_atomic(_names_path(), json.dumps({"stamp": stamp, "names": names}))
+    except OSError:
+        pass
+    return names
+
+
+def cards_named(text, n=3):
+    """T-0977: the cards a request names outright, in the order it names them, at most n. One alternation, longest
+    phrase first, so react-hook-form wins over react at the same place."""
+    names = _name_index()
+    if not names:
+        return []
+    pat = re.compile(r"(?<![\w.-])(" + "|".join(map(re.escape, sorted(names, key=len, reverse=True))) + r")(?![\w-])")
+    out = []
+    for m in pat.finditer((text or "").lower()):
+        if names[m.group(1)] not in out:
+            out.append(names[m.group(1)])
+    return out[:n]
+
+
 def lint(root=CARDS):
     """(problems, notes): problems fail fm lib check; notes (related names with no card yet) don't."""
     problems, notes, seen = [], [], {}
