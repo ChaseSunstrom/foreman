@@ -2043,6 +2043,87 @@ def drop_veto(p, n):
     return True
 
 
+RULE_MAX = 300      # T-0971: a user rule's pattern, in characters
+RULE_SCAN = 4000    # what a rule reads of a command or path: a long command can't make a pattern backtrack for long
+RULE_BUDGET = 0.25  # seconds all of a call's rules get (of PreToolUse's 5 s)
+
+
+def _rules_path(p):
+    return os.path.join(p.dir, "rules.json")
+
+
+def rules(p):
+    """T-0971: the user's fm rule list: {pattern, on (bash|path), action (block|warn), why, at}, oldest first."""
+    try:
+        with open(_rules_path(p), encoding="utf-8") as f:
+            v = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [x for x in v if isinstance(x, dict) and isinstance(x.get("pattern"), str) and x.get("on") in ("bash", "path")
+            and x.get("action") in ("block", "warn")] if isinstance(v, list) else []
+
+
+def add_rule(p, pattern, on, action, why):
+    """Store a rule; ValueError for a pattern that is empty, too long or not a regex (it's compiled here, not later)."""
+    if not pattern or len(pattern) > RULE_MAX:
+        raise ValueError(f"a rule's pattern is 1 to {RULE_MAX} characters")
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        raise ValueError(f"not a regular expression: {e}")
+    rec = {"pattern": pattern, "on": on, "action": action, "why": fit(plain(str(why or "").strip()), 200), "at": now()}
+    with lock(p.dir, timeout=2):
+        write_atomic(_rules_path(p), json.dumps(rules(p) + [rec]))
+    return rec
+
+
+def drop_rule(p, n):
+    """Remove the n-th rule (1 = the oldest, as fm rule list numbers them); False when there is none."""
+    with lock(p.dir, timeout=2):
+        v = rules(p)
+        if not 1 <= n <= len(v):
+            return False
+        write_atomic(_rules_path(p), json.dumps(v[:n - 1] + v[n:]))
+    return True
+
+
+def rule_hits(p, on, text):
+    """The rules on `on` whose pattern is found in the first RULE_SCAN characters of text: [(n, rule, timed_out)].
+    Matching is time-boxed (RULE_BUDGET for all of them, SIGALRM: CPython's regex engine checks signals); a rule it
+    couldn't finish is returned with timed_out=True and every rule after it is not tried."""
+    import signal
+    todo = [(n, r) for n, r in enumerate(rules(p), 1) if r["on"] == on]
+    if not todo or not text:
+        return []
+    text, hits = text[:RULE_SCAN], []
+
+    def expire(*_):
+        raise TimeoutError
+
+    try:
+        old = signal.signal(signal.SIGALRM, expire)
+    except ValueError:  # not the main thread: no alarm, the RULE_SCAN cap alone bounds it
+        old = None
+    try:
+        if old is not None:
+            signal.setitimer(signal.ITIMER_REAL, RULE_BUDGET)
+        cur = todo[0]
+        try:
+            for cur in todo:
+                try:
+                    if re.search(cur[1]["pattern"], text):
+                        hits.append((*cur, False))
+                except re.error:  # edited by hand past add_rule's compile check
+                    continue
+        except TimeoutError:
+            hits.append((*cur, True))
+    finally:
+        if old is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+    return hits
+
+
 def veto_hits(p, text):
     """The recorded vetoes whose every key word starts a word of text (a command, or an edit's tool and path)."""
     have = re.findall(r"[a-z0-9]+", (text or "").lower())
