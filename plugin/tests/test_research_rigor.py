@@ -69,7 +69,7 @@ class Cache(_Stubbed):
         res = json.loads(self.fm("research", "ask", "--file", qs, "--no-verify", "--json", env=self.env).stdout)
         paths = [n["path"] for n in res["notes"]]
         self.assertEqual(len(set(paths)), 2)  # the repeat in the same minute didn't overwrite the first
-        p = self.fm("research", "ask", "--file", qs, "--no-verify", "--json", env=dict(self.env, PATH="/nonexistent"),
+        p = self.fm("research", "ask", "--file", qs, "--no-verify", "--json", env=dict(self.env, PATH="/nonexistent", HOME=self.tmp),
                     check=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertEqual(len(json.loads(p.stdout)["failed"]), 2)
