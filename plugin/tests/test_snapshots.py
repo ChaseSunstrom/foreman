@@ -107,6 +107,16 @@ class Snapshots(ForemanTestCase):
         with mock.patch.object(c, "worktree_tree", return_value=None), self.assertRaises(RuntimeError):
             c.snapshot(self.repo, "test", timeout=3)  # review: a snapshot that can't finish in its time says so
 
+    def test_dropping_a_task_in_progress_keeps_its_work(self):
+        # T-0895: a dropped task's half-done work survives a later checkout, and its brief says where
+        with open(os.path.join(self.repo, "README.md"), "a") as f:
+            f.write("half-done work\n")
+        self.fm("task", "drop", "T-0001", "wrong approach")
+        self.assertEqual(len(self.refs()), 1)
+        log = self.fm("task", "show", "T-0001").stdout
+        self.assertIn("work at drop saved", log)
+        self.assertIn("restore --source=", log)
+
     def test_tidy_prunes_old_snapshots(self):
         with open(os.path.join(self.repo, "README.md"), "a") as f:
             f.write("x\n")

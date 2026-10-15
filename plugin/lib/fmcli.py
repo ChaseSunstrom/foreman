@@ -610,6 +610,17 @@ def cmd_task(args):
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
+        saved = []
+        if status == "dropped" and cur.status in ("active", "verifying"):  # T-0895: its half-done work outlives a checkout
+            try:
+                saved = c.snapshot(p.root, f"fm task drop {cur.id}", timeout=30)
+            except RuntimeError as e:
+                print(f"fm: warning: {cur.id}'s work wasn't saved before the drop ({e})", file=sys.stderr)
+        if saved:
+            line = f"work at drop saved: {saved[0]} (restore: {c.restore_line(c.git_root(p.root), saved[0])})"
+            prev = change
+            change = lambda b: (prev(b), b.append_log(line))  # noqa: E731
+            print(f"{cur.id}: {line}")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         if status == "blocked":  # T-0734: a block is a real failure worth an eval case, kept locally
             try:
