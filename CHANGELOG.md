@@ -1,6 +1,31 @@
 # Changelog
 
 ## Unreleased
+- Stack library (T-0933, T-0941): 1,078 on-demand cards in 27 areas.
+  - The areas are languages, Python, Node, web, JVM, .NET, mobile, Rust, Go, C/C++ and embedded, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, tools, games, hardware, docs, idioms, building Claude Code extensions, and practice.
+  - Each card has a summary, Verify commands, Test first, Do, Avoid and Review. None is loaded until read.
+  - `fm lib` suggests the repo's cards from its manifests, files and extensions. Ecosystem markers such as a Makefile, package.json or *.tf only suggest the cards that own them.
+  - `fm lib search` ranks cards alongside installed plugins' skills, disabled ones included.
+  - `fm lib show A B --section verify` reads only what's needed. `fm lib list` and `fm lib check` (the lint) round it out.
+  - The session map line names the repo's cards. The map rebuilds when the card count changes.
+  - Manifests are parsed without backtracking regexes: a hostile 400 KB go.mod is handled in under 2 s.
+- Guard (T-0940): a `cd DIR; python3 - <<EOF` refusal names the `&&` fix. `git reset --soft/--mixed` no longer counts as a tree write. A pinned plugin yes now says an update needs its own ask. `git fetch` isn't read as a download.
+- Pane:
+  - Live cards hold their place. One that empties stays dimmed ("idle · last: …") for 8 s and gives rows back one a second (T-0938).
+  - A Skills card shows this week's skills invoked and stack cards read, the most used, and unread suggestions. `fm ui --json` carries a skills block (T-0939).
+- Claude Code 2.1.299–2.1.301 (T-0944):
+  - A subagent's `turn.start` no longer resets the pane's main-turn counts.
+  - Text uses `weight` instead of the deprecated `bold`.
+  - A bare slash command reaching UserPromptSubmit before expansion isn't read as a work request.
+- `fm check affected` is configured for this repo, so builder lanes can run only the affected tests.
+- `fm lib source` (T-0945) indexes third-party skill repos read-only.
+  - Each is a shallow, markdown-only checkout in Foreman's state, with hooks, LFS, filters, submodules and symlinks off. Nothing from it runs.
+  - `fm lib source defaults` adds six vetted repos: wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills and morluto/rea. That is about 870 skills and agents, searchable as `source:name` at no context cost.
+  - `update` swaps atomically and prints added and removed names.
+- Enforcement, so agents don't have to remember (T-0947, T-0948).
+  - Every write is validated before Claude moves on: stack cards against the lint, JSON, Python, SKILL.md and agent frontmatter, and project checks set with `fm check onwrite GLOB 'CMD {file}'`. A failure blocks with the problem, in subagents too, from a validate-only sync hook beside the async catch-all.
+  - `fm lane merge` re-runs the lane task's criteria in the worktree and refuses red. `--unverified REASON` waives it, but only from the main thread and only after logging the reason.
+- foreman-ui 0.8.0: the stable pane, the Skills card, and the Claude Code 2.1.299 turn and weight changes.
 
 ## 1.2.29 — 2026-10-15
 - Security (T-0906): the guard reads `T=$(mktemp -d)` as a temp path only when nothing in the command moves mktemp or TMPDIR (`PATH=`, `hash -p`, `enable`, `TMPDIR=`, its own `mktemp`); a command that set PATH could make `$(mktemp -d)` return `/` while the guard read it as /tmp.
