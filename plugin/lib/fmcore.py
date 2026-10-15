@@ -2560,6 +2560,7 @@ def status_dict(sd):
     a = sd["active"]
     return {"active": a and {"id": a["id"], "type": a["type"], "tier": a["tier"], "stage": a["stage"],
                              "done": a["steps_done"], "total": a["steps_total"],
+                             "n": a["step"]["n"] if a.get("step") else a["steps_done"],  # T-0962: the current step
                              "step": plain(a["step"]["text"]) if a.get("step") else "",
                              "audits": [a["audits"]["done"], a["audits"]["required"]]},
             "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "autonomy": sd["autonomy"],

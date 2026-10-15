@@ -96,7 +96,7 @@ def cmd_init(args):
 
 
 def cmd_state(args):
-    p = resolve(args)
+    p = resolve(args, create=not args.line)  # T-0962: a status bar polling --line never creates a project
     sd = c.state_dict(p)
     if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
         return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
