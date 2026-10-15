@@ -243,11 +243,14 @@ def _seed(plugin, wt, env):
         subprocess.run([fm, *args], cwd=wt, env=env, capture_output=True, timeout=60)
 
 
-def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False):
+def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False, settings=None):
     """(claude's JSON result, error) for one headless turn with the plugin dirs given; `keep` keeps the session so a
-    later turn can --resume it (T-0243)."""
+    later turn can --resume it (T-0243); `settings`: a --settings JSON (T-0963's bare arm)."""
     c.refuse_if_paused()  # T-0591
-    cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)], "--setting-sources",
+    if not plugins and not settings:
+        raise ValueError("a bypass-mode session needs the guard: a plugin with it, or its hook as --settings")
+    cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)],
+           *(["--settings", settings] if settings else []), "--setting-sources",
            "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions",
            "--max-budget-usd", f"{budget:g}"] + ([] if keep else ["--no-session-persistence"]) \
         + (["--resume", resume] if resume else []) + (["--model", model] if model else [])
@@ -301,15 +304,30 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
     return (int(m.group(1)), reasons, None) if m else (None, reasons, "the judge gave no score")
 
 
-def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=()):
+def _bare_guard(plugin):
+    """T-0963: the plugin's guard alone, as --settings hooks for a session that loads no plugin: bypass mode stays
+    guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Foreman's but the guard."""
+    hook = {"type": "command", "command": shlex.quote(os.path.join(plugin, "hooks", "hook")) + " PreToolUse",
+            "timeout": 5}
+    return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash|Write|Edit|MultiEdit|NotebookEdit",
+                                                 "hooks": [hook]}]}})
+
+
+def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False):
     t0 = time.monotonic()
     with _worktree(p.root, case["base"]) as (tmp, wt):
         state = os.path.join(tmp, "state")
         env = _env(plugin, state)
-        _seed(plugin, wt, env)
-        prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full autonomy; "
-                  f"finish the work with Foreman, deciding with your defaults.)")
-        res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout)
+        if bare:  # no fm on PATH, no Foreman project, only the guard
+            env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
+            prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away; finish the work, "
+                      f"deciding with your defaults.)")
+            res, error = _session(wt, env, [], prompt, model, budget, timeout, settings=_bare_guard(plugin))
+        else:
+            _seed(plugin, wt, env)
+            prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full "
+                      f"autonomy; finish the work with Foreman, deciding with your defaults.)")
+            res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout)
         score, reasons = None, []
         if case.get("judge"):  # T-0231: no hidden tests; a judge grades the change against the rubric
             graded = []
@@ -327,9 +345,9 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=()):
             **({"score": score, "judge": reasons} if case.get("judge") else {})}
 
 
-def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=()):
+def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=(), bare=False):
     """T-0221: a case run `runs` times: pass rate, mean cost, turns and time; the first attempt's details kept."""
-    tries = [run_case(p, case, plugin, model, budget, timeout, extra) for _ in range(max(1, runs))]
+    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare) for _ in range(max(1, runs))]
     rate = sum(t["pass"] for t in tries) / len(tries)
 
     def mean(k):
@@ -470,10 +488,11 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
             "cost_usd": round(cost, 4), "seconds": round(time.monotonic() - t0), "error": error, "transcript": talk}
 
 
-def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=()):
+def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
+            bare=False):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
     Ctrl-C keeps what was paid for). Refuses a plugin without the guard here, so no caller can skip it (replays run in
-    bypass mode)."""
+    bypass mode). `bare` (T-0963): no plugin loaded, only the plugin's guard as a settings hook."""
     fmbudget.check("bench", fmbudget.estimate("bench", len(cases) * max(1, runs), min(budget, 0.5)),
                    "fewer cases (--max) or --runs")
     if not has_guard(plugin):
@@ -481,13 +500,13 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
                          f"replays run in bypass mode, so they never run without it")
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results,
-           **({"extra": list(extra)} if extra else {})}
+           **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
     _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
     for case in cases:
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
-            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs, extra))
+            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare))
         except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
             results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
                             "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
@@ -703,7 +722,21 @@ def _contest(p, args):
                 f"  {'✓' if x['pass'] else '✗'} {x['id']} · score {x.get('score')}/5 · "
                 + next(y["title"] for y in cases if y["id"] == x["id"]) for x in res["cases"]))
             return 0 if all(x["pass"] for x in res["cases"]) else 1
-        if args.bench_cmd == "duel":
+        if args.bench_cmd == "duel" and args.vs == "none":  # T-0963: Foreman against Claude with no plugins
+            if args.plugin:
+                raise fmcli.UsageError("a rival plugin or --vs none, not both")
+            a = run_arm(p, cases, plugin, f"duel-none-foreman-{stamp}", **arm)
+            b = run_arm(p, cases, plugin, f"duel-none-bare-{stamp}", bare=True, **arm)
+            ok, lines = gate(b, a, args.cost_tolerance)  # bare Claude is the reference Foreman has to beat
+            sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
+            why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
+            verdict = ("Foreman helps: more passes than Claude with no plugins" if ok and sa > sb else
+                       "no difference on these cases: Claude with no plugins does as well" if ok else
+                       f"Foreman hurts here against Claude with no plugins: {why}")
+            data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
+        elif args.bench_cmd == "duel":
+            if not args.plugin:
+                raise fmcli.UsageError("name a rival plugin, or --vs none for Claude with no plugins")
             rival, name = _contender(args.plugin)
             if not rival:
                 raise fmcli.UsageError(f"{args.plugin}: not an installed plugin (its id, or its folder) — a duel runs "
