@@ -141,6 +141,8 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 **Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
+**Stays light.** Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's Pulse card shows it live (about 20 ms here).
+
 **Improves itself.** `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), `fm burden --by-verb` lists the verbs nobody calls, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
 ## Seeing what's going on
