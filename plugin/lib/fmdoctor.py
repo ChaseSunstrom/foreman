@@ -210,6 +210,8 @@ def check_state_size(projects, budget=STATE_BUDGET):
                     size = os.path.getsize(os.path.join(root, n))
                 except OSError:
                     continue
+                if top == "backups":  # tidy's own copies: counting them would warn about the fix
+                    continue
                 key = n if top == "." else top
                 parts[key] = parts.get(key, 0) + size
         total = sum(parts.values())
