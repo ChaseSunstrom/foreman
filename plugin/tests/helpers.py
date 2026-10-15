@@ -23,6 +23,7 @@ with open(os.path.join(_LOCKOUT, "claude"), "w") as _f:
              "\nexit 97\n")
 os.chmod(os.path.join(_LOCKOUT, "claude"), 0o755)
 os.environ["PATH"] = _LOCKOUT + os.pathsep + os.environ.get("PATH", "")
+os.environ["FOREMAN_NATIVE_BIN"] = os.path.join(_LOCKOUT, "none")  # T-0992: nor fmcore's ~/.local/bin fallback
 atexit.register(shutil.rmtree, _LOCKOUT, True)
 # T-0744: every test sees a calm host unless it says otherwise; the machine's real load (a full run beside other work)
 # turned lanes and ambient runs off and failed tests only then
