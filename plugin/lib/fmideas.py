@@ -140,7 +140,7 @@ def run_children(jobs, timeout, feature):
                 why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
                 # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged by the error
                 out.append((text, None) if pr.returncode == 0 and text.strip() else
-                           (text, f"partial: {why}") if text.strip() else (None, why))
+                           (text, why) if text.strip() else (None, why))  # both set: partial
             except subprocess.TimeoutExpired:
                 pr.kill()
                 pr.communicate()
@@ -406,7 +406,7 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
         path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
         text = c.redact(out.strip()) if ok else ""
         if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
-            ok, partial, why = False, False, f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
+            ok, partial, why = False, False, (f"{why}; " if why else "") + f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
         with open(path, "w", encoding="utf-8") as f:
             f.write(f"# Brainstorm — lens: {lens}\n\n" + (f"PARTIAL ({why})\n\n" if partial else "")
                     + (text if ok else f"FAILED: {why}") + "\n")
@@ -529,7 +529,7 @@ def cmd_ideas(args):
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:  # T-0959: what made this run
         json.dump({"pack_sha256": pack_sha, "model": args.model, "lenses": lenses, "seen": args.seen or [],
                    "rounds": rounds, "created": c.now()}, f)
-    failed =[f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
+    failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,
                                       "failed": failed}, session=fmcli.session())

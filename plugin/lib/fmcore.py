@@ -744,6 +744,20 @@ def ledger_tail(p, n=200):
     return tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), n)
 
 
+def global_events(since):
+    """T-0959 review: the global events since an ISO time, from the files fm tidy rotated into state/logs (it keeps 3)
+    as well as the live events.jsonl, so a report over a week isn't a report over the day since the last rotation."""
+    logs = os.path.join(state_dir(), "logs")
+    try:
+        rotated = sorted(os.path.join(logs, f) for f in os.listdir(logs) if f.startswith("events-") and f.endswith(".jsonl"))
+    except OSError:
+        rotated = []
+    for path in rotated + [os.path.join(state_dir(), "events.jsonl")]:
+        for e in tail_jsonl(path, 200000):
+            if isinstance(e, dict) and str(e.get("ts") or "") >= since:
+                yield e
+
+
 def tail_jsonl(path, n=200):
     """The last n records of a JSONL file; reads backwards in growing chunks, so n is honoured however long the
     lines are."""

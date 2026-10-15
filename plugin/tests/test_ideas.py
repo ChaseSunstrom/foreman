@@ -268,3 +268,13 @@ class BoardIdeas(Stubbed):
         d = json.loads(self.fm("burden", "--by-verb", "--json").stdout)
         self.assertIn("orders", d["unused"])
         self.assertNotIn("queue", d["unused"])
+
+    def test_rotated_event_logs_count_too(self):
+        logs = os.path.join(c.state_dir(), "logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, "events-20990101-000000.jsonl"), "w") as f:  # fm tidy rotated it today
+            f.write(json.dumps({"ts": c.now(), "kind": "tool", "tool": "Bash", "target": "fm orders"}) + "\n")
+            f.write(json.dumps({"ts": c.now(), "kind": "guard_block"}) + "\n")
+        self.events({"ts": c.now(), "kind": "guard_block"})
+        self.assertNotIn("orders", json.loads(self.fm("burden", "--by-verb", "--json").stdout)["unused"])
+        self.assertEqual(json.loads(self.fm("friction", "--minutes", "--json").stdout)["by_kind"]["guard blocks"], 1.0)
