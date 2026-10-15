@@ -53,7 +53,9 @@ def rule_id(category, detail):
     """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
     paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
     words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
-    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or ('path' if '/' in detail else 'other')}"
+    ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
+    path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
+    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or path}"
 
 
 def findings(tool_name, tool_input, ctx):
