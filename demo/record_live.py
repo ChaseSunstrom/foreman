@@ -9,7 +9,8 @@ demo/live.cast (each capture a full redraw, waits squeezed to MAX_GAP s), demo/l
 plays it inline) and demo/live.mp4 (shot.py's renderer + ffmpeg). Your home folder, user name and account e-mail are
 replaced before anything is written. A real model turn: it costs a little usage (default --model sonnet).
 
-    python3 demo/record_live.py [--model sonnet] [--max 600] [--no-svg]"""
+    python3 demo/record_live.py [--model sonnet] [--max 600] [--no-svg]
+    python3 demo/record_live.py --repo . --request "FIX: …" [--dry]   (T-0979: a real task in a clone of a repo)"""
 import argparse
 import getpass
 import importlib.util
@@ -47,6 +48,9 @@ def scrubber():
                 names += re.split(r"[ ,']+", v)
     except (OSError, ValueError):
         pass
+    for key in ("user.email", "user.name"):  # T-0979: a session that commits may show git's author line
+        got = subprocess.run(["git", "config", "--global", key], capture_output=True, text=True).stdout.strip()
+        names += [got] if "@" in got else re.split(r"[ ,']+", got)
     names = sorted({n for n in names if len(n) > 2}, key=len, reverse=True)
     # whole words only: a name inside another word ("purchase") is left alone
     pat = re.compile(r"(?<![\w.@-])(?:" + "|".join(map(re.escape, names)) + r")(?![\w@-])", re.I) if names else None
@@ -70,18 +74,44 @@ def seed(work):
     return repo
 
 
+def clone(work, src):
+    """T-0979: a real repo instead of the seeded one: a local clone of its HEAD (no hooks, no remotes, no history
+    beyond what the session needs), so the session works a real task and nothing of the original is touched."""
+    repo = os.path.join(work, os.path.basename(os.path.abspath(src)) or "repo")
+    subprocess.run(["git", "clone", "-q", "--no-local", "--depth", "50", "file://" + os.path.abspath(src), repo],
+                   check=True)
+    subprocess.run(["git", "-C", repo, "remote", "remove", "origin"], check=True)
+    return repo
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--repo", help="record a session in a clone of this repo instead of the seeded calc one")
+    ap.add_argument("--request", default=REQUEST, help="what is typed into the session")
+    ap.add_argument("--dry", action="store_true", help="say what would be recorded; start nothing")
     ap.add_argument("--model", default="sonnet")
     ap.add_argument("--max", type=int, default=600, help="seconds to wait for the task to close")
     ap.add_argument("--no-svg", action="store_true")
     ap.add_argument("--from-cast", action="store_true", help="no new session: render demo/live.cast again")
+    ap.add_argument("--max-frames", type=int, default=240, help="thin the recording to about this many screens "
+                    "(evenly in time, the last kept), so the SVG stays small enough for a README")
     a = ap.parse_args()
     if a.from_cast:
         with open(os.path.join(HERE, "live.cast"), encoding="utf-8") as f:
-            return render([json.loads(ln) for ln in f][1:], a)
+            head, *events = [json.loads(ln) for ln in f]
+        events = thin(events, a.max_frames)
+        with open(os.path.join(HERE, "live.cast"), "w", encoding="utf-8") as f:
+            f.write(json.dumps(head) + "\n" + "".join(json.dumps(e) + "\n" for e in events))
+        return render(events, a)
+    if a.dry:
+        try:
+            claude = subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip()
+        except OSError:
+            claude = ""
+        return print(f"would record: {'a clone of ' + os.path.abspath(a.repo) if a.repo else 'the seeded calc repo'}"
+                     f"\nrequest: {a.request}\nclaude: {claude or 'not on PATH'} · model {a.model} · up to {a.max} s")
     work = tempfile.mkdtemp(prefix=f"fm-live-{int(time.time())}-", dir="/tmp")
-    repo, scrub = seed(work), scrubber()
+    repo, scrub = (clone(work, a.repo) if a.repo else seed(work)), scrubber()
     os.environ["FOREMAN_STATE"] = os.path.join(work, "state")  # shot.start hands it to the session alone
     shot.CLEAN["DISABLE_AUTOUPDATER"] = "1"  # its banner ("Auto-update failed…") is this machine's, not the product's
     shot.start(argparse.Namespace(dir=repo, cols=COLS, rows=ROWS, model=a.model))
@@ -93,9 +123,9 @@ def main():
             frames.append((time.time() - t0, raw))
         return shot._SGR.sub("", raw)
 
-    def done():
+    def done():  # T-0979: any task, not just T-0001: a session may drop its first brief and redo it as T-0002
         return any("status: done" in open(os.path.join(d, f)).read() for d, _, fs in os.walk(os.environ["FOREMAN_STATE"])
-                   for f in fs if f.startswith("T-0001") and f.endswith(".md"))
+                   for f in fs if re.match(r"T-\d+-.*\.md$", f))
     try:
         for _ in range(60):  # the folder-trust question, then an idle prompt
             text = grab()
@@ -107,7 +137,7 @@ def main():
                 break
             time.sleep(0.5)
         time.sleep(1)
-        for ch in REQUEST:  # typed, so the recording shows it being asked
+        for ch in a.request:  # typed, so the recording shows it being asked
             shot.tmux("send-keys", "-t", shot.SESSION, "-l", ch)
             grab()
             time.sleep(0.05)
@@ -121,10 +151,26 @@ def main():
             if closed and time.time() - closed > 12:  # the closing turn's summary
                 break
         if not closed:
-            sys.exit(f"T-0001 didn't close in {a.max} s; screens kept: {len(frames)} (nothing written)")
+            sys.exit(f"no task closed in {a.max} s; screens kept: {len(frames)} (nothing written)")
     finally:
         shot.tmux("kill-session", "-t", shot.SESSION, check=False)
     write(frames, a)
+
+
+def thin(events, n):
+    """T-0979: at most about n screens, one per equal slice of the recording's time (the newest in each), the last
+    kept; each screen is a full redraw, so dropping one loses nothing but a moment."""
+    if not n or len(events) <= n:
+        return events
+    end, out, slot = events[-1][0] or 1, [], None
+    for e in events:
+        s = int(e[0] / end * n)
+        if out and slot == s:
+            out[-1] = e
+        else:
+            out.append(e)
+        slot = s
+    return out
 
 
 def write(frames, a):
@@ -135,6 +181,7 @@ def write(frames, a):
         last = ts
         events.append([round(t, 3), "o", "\x1b[H\x1b[2J" + raw.rstrip("\n").replace("\n", "\r\n")])
     events.append([round(t + 4, 3), "o", ""])  # hold the last screen
+    events = thin(events, a.max_frames)
     with open(cast, "w", encoding="utf-8") as f:
         f.write(json.dumps({"version": 2, "width": COLS, "height": ROWS, "title": "Foreman in Claude Code",
                             "env": {"TERM": "xterm-256color"}}) + "\n" + "".join(json.dumps(e) + "\n" for e in events))
