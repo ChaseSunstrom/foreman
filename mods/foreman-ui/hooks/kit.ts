@@ -93,6 +93,156 @@ export function textComet(width: number, frame: number): [string, string, string
   return ['─'.repeat(head), '━'.repeat(len), '─'.repeat(width - head - len)]
 }
 
+// T-0909: the pane's charts. Each builds Raster cells (row-major) from plain numbers; a text twin draws the same for
+// surfaces without Raster. `frame` may be fractional: the pane's 30 fps blit passes time in 120 ms frames.
+
+/** Short stage names, so seven of them fit under a 50-column rail. */
+const STAGE_SHORT: Record<string, string> = {
+  planning: 'plan', ready: 'ready', executing: 'build', verifying: 'verify', documenting: 'docs', auditing: 'audit', closing: 'close',
+}
+export const stageShort = (s: string) => STAGE_SHORT[s] ?? s.slice(0, 6)
+
+/** The column of each of `n` nodes on a rail `width` wide: spread evenly, the first at 0 and the last at the end. */
+export function nodeAt(n: number, width: number): number[] {
+  if (n <= 1) return [0]
+  return Array.from({ length: n }, (_, i) => Math.round((i * (width - 1)) / (n - 1)))
+}
+
+/** The stage rail: ● stages behind joined by a green→accent gradient, ◉ the current one (breathing while `frame`),
+ * ○ the ones ahead on a thin track; while work is live a comet runs from the current node toward the next. */
+export function stageCells(n: number, current: number, width: number, frame: number | null): string {
+  const at = nodeAt(n, width)
+  const cur = at[Math.max(0, Math.min(n - 1, current))] ?? 0
+  const next = at[current + 1] ?? cur
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) {
+    const node = at.indexOf(i)
+    const grad = mix(C.ok, C.accent, width > 1 ? i / (width - 1) : 1)
+    if (node >= 0 && node < current) out.push(['●', grad])
+    else if (node >= 0 && node === current)
+      out.push(['◉', frame === null ? C.accent : mix(C.accent, C.white, 0.15 + 0.35 * ((Math.sin(frame / 2.5) + 1) / 2))])
+    else if (node >= 0) out.push(['○', C.dim])
+    else if (i < cur) out.push(['━', grad])
+    else if (i < next) {
+      // the link being worked on: a comet sweeps it toward the next stage
+      const span = next - cur - 1
+      const d = frame === null ? -1 : ((frame * 0.8) % (span + 5)) - (i - cur - 1)
+      out.push(['━', mix(C.track, C.accent, d >= 0 && d < 4 ? 1 - d / 4 : 0.12)])
+    } else out.push(['─', C.track])
+  }
+  return cells(out)
+}
+
+export type LabelRun = { text: string; kind: 'gap' | 'done' | 'current' | 'todo' }
+
+/** The rail's labels as runs of one kind each: every stage's short name centred under its node, a name that would
+ * touch its neighbour left out (the current one always shown). */
+export function stageLabels(stages: readonly string[], current: number, width: number): LabelRun[] {
+  const at = nodeAt(stages.length, width)
+  const row: LabelRun['kind'][] = Array(width).fill('gap')
+  const chars: string[] = Array(width).fill(' ')
+  const order = [current, ...stages.map((_, i) => i).filter(i => i !== current)]
+  for (const i of order) {
+    if (i < 0 || i >= stages.length) continue
+    const name = stageShort(stages[i]!)
+    const start = Math.max(0, Math.min(width - name.length, at[i]! - Math.floor(name.length / 2)))
+    if (row.slice(Math.max(0, start - 1), start + name.length + 1).some(k => k !== 'gap')) continue
+    for (let j = 0; j < name.length && start + j < width; j++) {
+      chars[start + j] = name[j]!
+      row[start + j] = i < current ? 'done' : i === current ? 'current' : 'todo'
+    }
+  }
+  const runs: LabelRun[] = []
+  row.forEach((kind, i) => {
+    const last = runs.at(-1)
+    if (last && last.kind === kind) last.text += chars[i]
+    else runs.push({ text: chars[i]!, kind })
+  })
+  return runs
+}
+
+/** The rail's text twin: ● ━ ◉ ─ ○. */
+export function stageText(n: number, current: number): string {
+  return Array.from({ length: n }, (_, i) => (i < current ? '●' : i === current ? '◉' : '○')).join(' ─ ')
+}
+
+/** How many of `times` fall in each of `slots` equal slots of `spanMs` ending at `now`, oldest first. */
+export function bucketize(times: readonly number[], now: number, spanMs: number, slots: number): number[] {
+  const out = Array(slots).fill(0) as number[]
+  const size = spanMs / slots
+  for (const t of times) {
+    const k = Math.floor((t - (now - spanMs)) / size)
+    if (k >= 0 && k < slots) out[k]! += 1
+    else if (k === slots) out[slots - 1]! += 1 // now itself
+  }
+  return out
+}
+
+// Braille dots from the bottom up, left column then right: each slot rises 1–4 dots with how busy it was
+const DOTS_L = [0x40, 0x04, 0x02, 0x01]
+const DOTS_R = [0x80, 0x20, 0x10, 0x08]
+
+/** The swim lanes: one braille row per lane, two time slots per cell (so 2 × width slots), each rising 1–4 dots with its
+ * count against the busiest slot, in the lane's colour (brighter the busier); a faint baseline where nothing ran. While
+ * `frame`, the newest cell glows. */
+export function laneCells(lanes: readonly { color: number; slots: readonly number[] }[], width: number, frame: number | null): string {
+  const max = Math.max(1, ...lanes.flatMap(l => l.slots))
+  const rise = (n: number) => (n > 0 ? Math.max(1, Math.min(4, Math.ceil((4 * n) / max))) : 0)
+  const out: [string, number][] = []
+  for (const lane of lanes) {
+    for (let i = 0; i < width; i++) {
+      const l = rise(lane.slots[2 * i] ?? 0)
+      const r = rise(lane.slots[2 * i + 1] ?? 0)
+      if (!l && !r) {
+        out.push(['⣀', mix(C.track, C.dim, 0.6)]) // a floor you can see: the lane runs the whole width
+        continue
+      }
+      const bits = DOTS_L.slice(0, l).reduce((b, x) => b | x, 0) | DOTS_R.slice(0, r).reduce((b, x) => b | x, 0)
+      let color = mix(C.track, lane.color, 0.45 + (0.55 * Math.max(l, r)) / 4)
+      if (frame !== null && i === width - 1) color = mix(color, C.white, 0.2 + 0.25 * ((Math.sin(frame / 2) + 1) / 2))
+      out.push([String.fromCharCode(0x2800 + bits), color])
+    }
+  }
+  return cells(out)
+}
+
+/** Column bars `rows` tall in eighth blocks, one column per value with a gap between, coloured from→to by height; a
+ * zero shows as a dim floor. The newest (last) value is the brightest. */
+export function barCells(values: readonly number[], rows: number, from: number, to: number): string {
+  const max = Math.max(1, ...values)
+  const width = values.length * 2 - 1
+  const out: [string, number][] = []
+  for (let r = 0; r < rows; r++) {
+    for (let x = 0; x < width; x++) {
+      const v = x % 2 ? -1 : values[x / 2]!
+      const eighths = v > 0 ? Math.max(1, Math.round((v / max) * rows * 8)) : 0
+      const level = Math.max(0, Math.min(8, eighths - (rows - 1 - r) * 8))
+      if (v < 0) out.push([' ', C.track])
+      else if (!level) out.push(r === rows - 1 && v === 0 ? ['▁', C.track] : [' ', C.track])
+      else {
+        const newest = x === width - 1
+        out.push([SPARK[level - 1]!, newest ? mix(to, C.white, 0.25) : mix(from, to, v / max)])
+      }
+    }
+  }
+  return cells(out)
+}
+
+/** Time on a task against its usual: filled to `elapsed`, a ┃ ghost where the usual time falls; past it the fill turns
+ * amber. Both in minutes. */
+export function etaCells(width: number, elapsed: number, usual: number): string {
+  const scale = Math.max(elapsed, usual) * 1.15 || 1
+  const mark = Math.max(0, Math.min(width - 1, Math.round((usual / scale) * (width - 1))))
+  const fill = Math.round((Math.max(0, elapsed) / scale) * width)
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) {
+    const lit = i < fill
+    if (i === mark) out.push(['┃', lit ? C.white : mix(C.dim, C.white, 0.35)])
+    else out.push(['━', !lit ? C.track : i > mark ? C.warn : mix(C.accent2, C.ok, width > 1 ? i / (width - 1) : 1)])
+  }
+  return cells(out)
+}
+
 // Claude Code's own spinner glyphs, breathing out and back: the band and rows match the working line.
 const SPIN = ['·', '✢', '✳', '✶', '✻', '✽', '✻', '✶', '✳', '✢']
 export const spin = (frame: number) => SPIN[frame % SPIN.length]!
@@ -165,6 +315,8 @@ export function toolFace(tool: string, input: unknown, cwd = ''): Face {
       const who = str(o, 'subagent_type')
       return { icon: '◆', verb: 'Subagent', target: [who, str(o, 'description')].filter(Boolean).join(': '), color: C.agent }
     }
+    case 'AskUserQuestion': // T-0909: it waits on the person; it isn't work running
+      return { icon: '⚠', verb: 'Waiting for your answer', target: '', color: C.warn }
     case 'Skill':
       return { icon: '✦', verb: 'Skill', target: str(o, 'skill'), color: C.agent }
     default: {
@@ -238,7 +390,6 @@ export function ago(days: number | undefined): string {
 /** What a tier letter means, in words people read (S/M/L meant nothing on screen). */
 export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
-export const SIZE_LEGEND = 'small ≤30 lines, 1–2 files · medium several files or a design choice · large cross-cutting or uncertain'
 
 // The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
 const POSES: Record<string, [string, string, string]> = {

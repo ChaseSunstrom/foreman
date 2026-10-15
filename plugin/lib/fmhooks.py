@@ -1806,7 +1806,7 @@ def stop(pl):
         reason = _push_nudge(sid, sd, drained)
     out = {"terminalSequence": seq}
     promised = []
-    if not reason and not oneoff:  # T-0899: the turn ends here, so a promise in it is only kept if it's captured
+    if not reason and not oneoff and re.search(r"(?i)\bI(?:['’]ll| will)\b", msg):  # T-0899: kept only if captured
         try:
             import fmcli
             promised = fmcli.capture_promises(p, msg, sid)
@@ -1908,8 +1908,14 @@ def _headless_wait(pl):
 
 _TEST_CLAIM = re.compile(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:now\s+|all\s+)?(?:pass(?:es|ing)?|"
                          r"(?:are |is )?green)\b")
-_TEST_CMD = re.compile(r"\b(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|make (test|check)|"
-                       r"tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|fm task (evidence|finish|prove)\b.*--run)")
+# a test runner in command position (T-0907: fm checkpoint, toxic aren't runs; round-7 review: nor cat pytest.ini,
+# pip install pytest or cat run.py): after the start, a separator or a quote, behind env assignments and launchers
+_TEST_CMD = re.compile(r"(?:^|[;&|(\n\"'])\s*(?:(?:\w+=\S*|python\d*(?:\.\d+)?(?: -m)?|uv run|poetry run|npx|bunx|"
+                       r"timeout \d+|time|nice|env|sudo|fm quiet --)\s+)*(?:\S*/)?"
+                       r"(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|"
+                       r"make( -\S+)* (test|check)|mvn( -\S+)* (test|verify)|(gradle|gradlew) test|dotnet test|deno test|"
+                       r"node --test|bats|tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|"
+                       r"fm task (evidence|finish|prove)\b.*--run)(?![\w-])")
 _RUN_FAILED = re.compile(r"\bFAILED\b|\b[1-9]\d* (failed|errors?)\b|✗|\bexit [1-9]\d*\b|Traceback \(most recent")
 _EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
 
@@ -1932,7 +1938,9 @@ def _turn_calls(path, cap=4_000_000):
         content = (e.get("message") or {}).get("content") if isinstance(e, dict) else None
         if e.get("type") == "user" and (isinstance(content, str) or any(
                 isinstance(x, dict) and x.get("type") == "text" for x in content or [])):
-            if not str(content).lstrip().startswith("<task-notification>"):
+            said = content if isinstance(content, str) else " ".join(
+                str(x.get("text") or "") for x in content if isinstance(x, dict))  # T-0907: the list form too
+            if not e.get("isMeta") and not said.lstrip().startswith(("<task-notification>", "<system-reminder>")):
                 calls, by_id = [], {}  # a new prompt from the user starts the turn again
             continue
         for x in content if isinstance(content, list) else []:
@@ -1960,14 +1968,15 @@ def _claims_gate(pl, g):
     if key in g.setdefault("claims", []):
         return None
     calls = _turn_calls(pl["transcript_path"])
-    edits = [i for i, x in enumerate(calls) if x[0] in _EDIT_TOOLS]
+    edits = [i for i, x in enumerate(calls) if x[0] in _EDIT_TOOLS  # a doc edit leaves a green run standing (T-0907)
+             and not c.DOC.search(str(x[1].get("file_path") or x[1].get("notebook_path") or ""))]
     runs = [i for i, x in enumerate(calls) if x[0] == "Bash" and _TEST_CMD.search(str(x[1].get("command") or ""))]
     if edits and (not runs or runs[-1] < edits[-1]):  # an edit after the last run: whatever it said is stale
         last = os.path.basename(str(calls[edits[-1]][1].get("file_path") or calls[edits[-1]][1].get("notebook_path")))
         why = f"no test ran after the last edit ({last})"
     elif runs and (calls[runs[-1]][3] or _RUN_FAILED.search(  # its verdict is at the end; prove's red is meant to fail
             re.sub(r"(?m)^.*start tree.*$", "", calls[runs[-1]][2])[-300:])):
-        why = f"the last test run failed (`{c.fit(str(calls[runs[-1]][1].get('command')), 80)}`)"
+        why = f"the last test run failed (`{c.fit(c.redact(str(calls[runs[-1]][1].get('command'))), 80)}`)"
     else:
         return None
     g["claims"] = (g["claims"] + [key])[-50:]

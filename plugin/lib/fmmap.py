@@ -309,7 +309,6 @@ def tour(p, b, since=None):
     return rows
 
 
-_DOC = re.compile(r"(?i)\.(md|markdown|rst|txt|adoc)$")
 _RUNS_ELSEWHERE = re.compile(r"(^|/)(\.github/workflows/|\.gitlab-ci\.yml$|install[^/]*\.sh$|Dockerfile|Makefile$|"
                              r"setup\.py$)")
 
@@ -318,7 +317,7 @@ def _risk(p, m, f, add, rm, gone, changed, diff):
     """T-0885: (review | glance | skim, [reasons]) for one changed file, from signals Foreman already keeps."""
     if c.TESTISH.search(f):
         return ("review", [f"tests removed (−{rm})"], 3) if rm > 20 and add < rm / 2 else ("skim", ["test"], 0)
-    if _DOC.search(f):
+    if c.DOC.search(f):
         return "skim", ["docs"], 0
     if is_generated(os.path.join(p.root, f)):
         return "skim", ["generated"], 0

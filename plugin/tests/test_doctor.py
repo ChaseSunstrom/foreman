@@ -381,3 +381,56 @@ class CoreIntegrity(unittest.TestCase):
             self.assertIn("chars", r.detail)
         self.assertEqual(d.check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"),
                                            os.path.join(PLUGIN, "none.md")).status, "PASS")
+
+
+class DoctorStateSize(ForemanTestCase):
+    # T-0920: state grows quietly (ledger, research, outputs); past a budget doctor says so and names the fix
+    def test_a_project_past_the_budget_warns_with_its_biggest_part_and_fm_tidy(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        os.makedirs(os.path.join(p.dir, "research"), exist_ok=True)
+        with open(os.path.join(p.dir, "research", "big.md"), "w") as f:
+            f.write("x" * 50_000)
+        self.assertEqual(d.check_state_size([p], budget=1_000_000).status, "PASS")
+        os.makedirs(os.path.join(p.dir, "backups"), exist_ok=True)  # round-7 review: tidy's own backups don't count
+        with open(os.path.join(p.dir, "backups", "20260101T000000Z.tar.gz"), "w") as f:
+            f.write("x" * 2_000_000)
+        self.assertEqual(d.check_state_size([p], budget=1_000_000).status, "PASS")
+        r = d.check_state_size([p], budget=20_000)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn(p.slug, r.detail)
+        self.assertIn("research", r.detail)
+        self.assertIn("fm tidy", r.detail)
+
+
+class DoctorDualInstall(ForemanTestCase):
+    # T-0923: Foreman from a GitHub marketplace beside install.sh's copy in its home: sessions run either, and drift
+    def setUp(self):
+        super().setUp()
+        self.t = tempfile.mkdtemp(dir=self.tmp)
+        self.fmhome = os.path.join(self.t, "foreman")
+        for root, v in ((os.path.join(self.fmhome, "plugin"), "1.2.28"), (os.path.join(self.t, "cache", "1.2.20"), "1.2.20")):
+            os.makedirs(os.path.join(root, ".claude-plugin"))
+            with open(os.path.join(root, ".claude-plugin", "plugin.json"), "w") as f:
+                json.dump({"name": "foreman", "version": v}, f)
+        self.installed = os.path.join(self.t, "installed.json")
+        with open(self.installed, "w") as f:
+            json.dump({"plugins": {"foreman@foreman": [{"version": "1.2.20", "installPath": os.path.join(self.t, "cache", "1.2.20")}]}}, f)
+        self.known = os.path.join(self.t, "known.json")
+
+    def known_as(self, source):
+        with open(self.known, "w") as f:
+            json.dump({"foreman": {"source": source}}, f)
+
+    def test_a_github_install_beside_this_home_at_another_version_warns(self):
+        self.known_as({"source": "github", "repo": "ChaseSunstrom/foreman"})
+        r = d.check_dual_install(self.fmhome, self.known, self.installed)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("1.2.20", r.detail)
+        self.assertIn("1.2.28", r.detail)
+
+    def test_the_marketplace_being_this_home_is_one_install(self):
+        self.known_as({"source": "directory", "path": self.fmhome})
+        self.assertEqual(d.check_dual_install(self.fmhome, self.known, self.installed).status, "PASS")
+        os.remove(self.installed)
+        self.assertEqual(d.check_dual_install(self.fmhome, self.known, self.installed).status, "PASS")

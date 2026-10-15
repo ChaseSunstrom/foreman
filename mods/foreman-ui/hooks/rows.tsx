@@ -1,6 +1,7 @@
 import type { EngineInterface, ResolveInput } from 'claude-code'
 import type { FileChurn, LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, changedLines, churnCells, clawd, clean, elapsed, hex, miniClawd, mix, outputSummary, tint, progressCells, shortPath, sparkCells, sparkText, textBar, textComet, toolFace } from './kit'
+import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, churnCells, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, mix, outputSummary, tint, progressCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
+import type { LabelRun } from './kit'
 import { DIFF_LINES, OUT_LINES, cfg, took } from './state'
 import type { ToolUseRender } from './state'
 
@@ -64,6 +65,95 @@ export function churn(ui: UI, e: ResolveInput, key: string, f: FileChurn, max: n
   return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
 }
 
+// T-0909: the pane's charts. On the terminal a Raster (and, while `motion` is given, a closure that redraws it for the
+// 30 fps blit); elsewhere their text twins.
+export type Motion = Map<string, { columns: number; rows: number; draw: (f: number) => string }>
+
+/** The stage rail with each stage's short name under its node. */
+export function rail(ui: UI, e: ResolveInput, stages: readonly string[], current: number, width: number, f: number | null, motion?: Motion) {
+  const { Box, Text } = ui
+  if (e.surface !== 'terminal')
+    return (
+      <Text key="stage-text" wrap="wrap">
+        {stages.map((s, i) => `${i < current ? '●' : i === current ? '◉' : '○'} ${s}`).join('  ')}
+      </Text>
+    )
+  const { Raster } = ui
+  if (f !== null) motion?.set('stage-rail', { columns: width, rows: 1, draw: t => stageCells(stages.length, current, width, t) })
+  const color: Record<LabelRun['kind'], number> = { gap: C.dim, done: mix(C.ok, C.dim, 0.35), current: C.accent, todo: C.dim }
+  return (
+    <Box key="stage" flexDirection="column">
+      <Raster key="stage-rail" columns={width} rows={1} cells={stageCells(stages.length, current, width, f)} />
+      <Text key="stage-labels" wrap="truncate-end">
+        {stageLabels(stages, current, width).map((r, i) => (
+          <Text key={`sl-${i}`} color={hex(color[r.kind])} bold={r.kind === 'current'}>
+            {r.text}
+          </Text>
+        ))}
+      </Text>
+    </Box>
+  )
+}
+
+/** The band's rail in small: a node every other column, no labels; nothing off the terminal (the band names the stage). */
+export function miniRail(ui: UI, e: ResolveInput, n: number, current: number, f: number | null) {
+  if (e.surface !== 'terminal' || current < 0) return null
+  const { Raster } = ui
+  return <Raster key="fm-band-rail" columns={n * 2 - 1} rows={1} cells={stageCells(n, current, n * 2 - 1, f)} />
+}
+
+/** The swim lanes of the session's tool calls: a label column, then one braille row per lane. */
+export function lanes(ui: UI, e: ResolveInput, rows: { label: string; color: number; slots: number[] }[], width: number, f: number | null, motion?: Motion) {
+  const { Box, Text } = ui
+  if (e.surface !== 'terminal')
+    return (
+      <Box key="lanes" flexDirection="column">
+        {rows.map(r => (
+          <Text key={`lane-${r.label}`} color={hex(r.color)}>
+            {r.label.padEnd(6)}
+            {sparkText(r.slots.filter((_, i) => i % 2 === 0).map((x, i) => x + (r.slots[2 * i + 1] ?? 0)), width)}
+          </Text>
+        ))}
+      </Box>
+    )
+  const { Raster } = ui
+  const lanesData = rows.map(r => ({ color: r.color, slots: r.slots }))
+  if (f !== null) motion?.set('lanes', { columns: width, rows: rows.length, draw: t => laneCells(lanesData, width, t) })
+  return (
+    <Box key="lanes" flexDirection="row" gap={1}>
+      <Box key="lane-labels" flexDirection="column" flexShrink={0}>
+        {rows.map(r => (
+          <Text key={`lane-${r.label}`} color={hex(r.color)}>
+            {r.label.padEnd(5)}
+          </Text>
+        ))}
+      </Box>
+      <Raster key="lanes" columns={width} rows={rows.length} cells={laneCells(lanesData, width, f)} />
+    </Box>
+  )
+}
+
+/** Column bars, `rows` tall (Raster), or a sparkline elsewhere. */
+export function bars(ui: UI, e: ResolveInput, key: string, values: readonly number[], rows: number, from: number, to: number) {
+  if (e.surface !== 'terminal') {
+    const { Text } = ui
+    return <Text key={key} color={hex(to)}>{sparkText(values, values.length)}</Text>
+  }
+  const { Raster } = ui
+  return <Raster key={key} columns={values.length * 2 - 1} rows={rows} cells={barCells(values, rows, from, to)} />
+}
+
+/** Time on the task against its usual, with the usual marked. */
+export function eta(ui: UI, e: ResolveInput, width: number, elapsedMin: number, usualMin: number) {
+  if (e.surface !== 'terminal') {
+    const { Text } = ui
+    const [a, b] = textBar(width, Math.min(1, elapsedMin / Math.max(1, usualMin)))
+    return <Text key="eta-bar" color={hex(elapsedMin > usualMin ? C.warn : C.accent2)}>{a + b}</Text>
+  }
+  const { Raster } = ui
+  return <Raster key="eta-bar" columns={width} rows={1} cells={etaCells(width, elapsedMin, usualMin)} />
+}
+
 /** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */
 export function mascotTree(ui: UI, e: ResolveInput, state: 'work' | 'idle' | 'happy', n: number, subs: LiveAgent[]) {
   if (cfg.mascot === 'off') return null
@@ -73,7 +163,7 @@ export function mascotTree(ui: UI, e: ResolveInput, state: 'work' | 'idle' | 'ha
     return <Text color={hex(color)}>{state === 'work' ? (n % 2 ? '(•̀ᴗ•́)و' : '(•̀ᴗ•́)ง') : state === 'happy' ? '\\(^ᴗ^)/' : '(•ᴗ•)'}</Text>
   const running = subs.filter(s => !s.done)
   return (
-    <Box key="fm-mascot" flexDirection="row" alignItems="flex-end" gap={1}>
+    <Box key="fm-mascot" flexDirection="row" alignItems="flex-end" gap={1} flexShrink={0}>
       {running.length > 4 && <Text color={hex(C.dim)}>+{running.length - 4}</Text>}
       {running.slice(0, 4).map((s, i) => (
         <Box key={`mini-${s.id}`} flexDirection="column">

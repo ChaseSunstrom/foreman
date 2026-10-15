@@ -110,6 +110,23 @@ class CommitOwnFiles(HookCase):
         self.assertIn("nothing to commit", r.stdout + r.stderr)
 
 
+class CloseUndo(HookCase):
+    # T-0918: the commit line says how to take it back; every criterion proved by its own check says so
+    def test_a_close_names_its_undo_and_when_nothing_is_needed_from_you(self):
+        self.fm("init")
+        self.fm("task", "new", "First", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        path = os.path.join(self.repo, "a.py")
+        with open(path, "w") as f:
+            f.write("A = 1\n")
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {}})
+        self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "true")
+        out = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "First").stdout
+        sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
+        self.assertIn(f"Undo: git revert --no-edit {sha}", out)
+        self.assertIn("Nothing needed from you", out)
+        self.assertNotIn("Check by hand", out)
+
+
 class CommitAfterFocus(HookCase):
     def test_a_file_another_task_edited_before_this_one_started_is_still_committed(self):
         # T-0739: T-0684's own shell edits of CHANGELOG.md were left out because T-0683 had edited it after T-0684 was

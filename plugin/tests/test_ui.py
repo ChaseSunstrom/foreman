@@ -125,6 +125,29 @@ class UiView(ForemanTestCase):
         self.fm("task", "finish", "T-0001", "--audit", "self checklist")
         self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["today_done"], 1)
 
+    def test_done_days_counts_closes_per_day_for_two_weeks(self):
+        # T-0909: the pane's day bars; oldest first, today last, a day counts a task once
+        import datetime
+        import fmcore as c
+        p = c.find_project(self.repo)
+        day = lambda n: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=n)).strftime("%Y-%m-%dT12:00:00Z")  # noqa
+        for t in ("T-0001", "T-0002"):  # done briefs; T-0003 and T-0004 aren't (gone or reopened): they don't count
+            b = c.find_brief(p, t)
+            with open(b.path) as f:
+                text = f.read()
+            with open(b.path, "w") as f:
+                f.write(text.replace("status: planned", "status: done", 1).replace("status: active", "status: done", 1))
+        rows = [(day(0), "T-0001"), (day(0), "T-0001"), (day(2), "T-0002"), (day(2), "T-0003"), (day(20), "T-0004")]
+        noise = [{"ts": day(0), "event": "note", "task": "T-0009", "data": {}}] * 6000  # past a 5000-event tail (review)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.writelines(json.dumps({"ts": ts, "event": "task_done", "task": t, "data": {}}) + "\n" for ts, t in rows)
+            f.writelines(json.dumps(e) + "\n" for e in noise)
+        v = json.loads(self.fm("ui", "--json").stdout)
+        days = v["done_days"]
+        self.assertEqual(len(days), 14)
+        self.assertEqual((days[-1], days[-3], sum(days)), (1, 1, 2))
+        self.assertEqual(v["today_done"], days[-1])
+
     def test_today_done_ignores_tasks_closed_earlier_and_edited_today(self):
         import fmcore as c
         p = c.find_project(self.repo)

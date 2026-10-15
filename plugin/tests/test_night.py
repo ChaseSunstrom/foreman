@@ -223,3 +223,16 @@ class StrangerGuards(ForemanTestCase):
         with open(os.path.join(sessions, "s.json"), "w") as f:
             json.dump({"rate_limits": {"five_hour": {"used_percentage": 95}}}, f)
         self.assertNotEqual(self.fm("bench", "stranger", env=env, check=False).returncode, 0)
+
+
+class NightLease(ForemanTestCase):
+    # T-0921: two nights at once (a cron firing while a manual one runs) would run every job twice
+    def test_a_second_night_while_one_runs_stops_at_once(self):
+        import fcntl
+        self.fm("init")
+        p = c.find_project(self.repo)
+        with open(os.path.join(p.dir, "night.lock"), "w") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            r = self.fm("night", "--max-usd", "0.1", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("already running", r.stderr)

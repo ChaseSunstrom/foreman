@@ -36,6 +36,7 @@ def record(path):
     if pid == 0:  # the child: a terminal of COLS x ROWS running the real demo
         fcntl.ioctl(sys.stdout.fileno(), termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
         os.environ.update(COLUMNS=str(COLS), LINES=str(ROWS), TERM="xterm-256color")
+        os.chdir(tempfile.gettempdir())  # T-0919: outside any project, so it ends with the generic first step
         os.execv(sys.executable, [sys.executable, FM, "demo", "--pace", "1"])
     t0 = time.time() - t
     while True:

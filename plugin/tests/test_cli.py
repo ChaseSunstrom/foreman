@@ -1127,3 +1127,56 @@ class SetLists(ForemanTestCase):
         for value in ("[plugin/a.py, plugin/b.py]", '["plugin/a.py","plugin/b.py"]', "plugin/a.py,plugin/b.py"):
             self.fm("task", "set", tid, f"scope={value}")
             self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])
+
+
+class BareFm(ForemanTestCase):
+    # T-0917: bare fm inside a project answers "what now?"; outside one it is the help it always was
+    def test_bare_fm_in_a_project_says_where_things_stand_and_what_is_next(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        out = self.fm().stdout
+        self.assertIn("Next:", out)
+        self.assertRegex(out, r"in1\b")  # the status line
+        self.assertIn("fm help", out)
+
+    def test_bare_fm_outside_a_project_is_the_help(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=self.home) as d:
+            out = self.fm(cwd=d).stdout
+        self.assertIn("fm <command> -h for its options.", out)
+        self.assertNotIn("Next:", out)
+
+
+class Completion(ForemanTestCase):
+    # T-0924: tab completion from the real parser and the live briefs
+    def test_completes_verbs_subcommands_options_and_live_task_ids(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        words = lambda *w: self.fm("complete", "--", *w).stdout.split()  # noqa: E731
+        self.assertIn("capture", words("cap"))
+        self.assertNotIn("init", words("cap"))
+        self.assertIn("finish", words("task", ""))
+        self.assertIn("evidence", words("task", "ev"))
+        self.assertEqual(words("focus", "T-"), ["T-0001"])
+        self.assertIn("T-0001", words("task", "show", ""))
+        self.assertIn("--type", words("task", "new", "x", "--ty"))
+
+    def test_prints_a_hook_for_bash_and_zsh(self):
+        bash = self.fm("complete", "--shell", "bash").stdout
+        self.assertIn("complete -F _fm fm", bash)
+        self.assertIn("fm complete --", bash)
+        self.assertIn("bashcompinit", self.fm("complete", "--shell", "zsh").stdout)
+        r = subprocess.run(["bash", "-n"], input=bash, capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class InboxList(ForemanTestCase):
+    # product check: fm --help lists "fm inbox — captured requests waiting", but bare fm inbox demanded a gh source
+    def test_bare_fm_inbox_lists_the_captured_requests(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        r = self.fm("inbox")
+        self.assertIn("T-0001", r.stdout)
+        self.assertIn("Add a dark theme", r.stdout)
+        self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
+        self.assertIn("{gh}", self.fm("inbox", "--help").stdout)  # the tracker source is still there

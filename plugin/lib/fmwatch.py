@@ -370,8 +370,11 @@ def view(p):
                     reverse=True)[:5]
     today = time.strftime("%Y-%m-%d", time.gmtime())  # closed today by the ledger, not "saved today" (any later edit)
     done_ids = {b.id for b in briefs if b.status == "done"}
-    today_done = len({e.get("task") for e in events
-                      if e.get("event") == "task_done" and str(e.get("ts") or "").startswith(today)} & done_ids)
+    days = [time.strftime("%Y-%m-%d", time.gmtime(time.time() - 86400 * n)) for n in range(13, -1, -1)]
+    closes = _closes_since(p, days[0])
+    # T-0909: the pane's day bars, today last; a task counts once a day, and only while it is still done
+    done_days = [len({t for dt, t in closes if dt == x} & done_ids) for x in days]
+    today_done = done_days[-1] if days[-1] == today else len({t for dt, t in closes if dt == today} & done_ids)
     lat = [ms for vals in d["latency"].values() for ms in vals]
     bs = brainstorm(p)
     resume = meta.get("resume_after_reload") or None
@@ -393,6 +396,7 @@ def view(p):
         "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
+        "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
@@ -414,6 +418,29 @@ def view(p):
             {"cmd": c.plain(str(r.get("cmd")))[:200], "exit": r.get("exit"), "s": r.get("s"), "note": r.get("note")}
             for r in (d["checks"].get("data") or {}).get("results") or []]},
     }
+
+
+def _closes_since(p, first):
+    """T-0909: {(day, task)} for every task_done from `first` (YYYY-MM-DD) on: the whole ledger, not a tail (a busy
+    project's 5000 events spanned six days), and the month `first` falls in from the archive fm tidy rolls past months
+    into. Only task_done lines are parsed."""
+    out = set()
+    for path in dict.fromkeys([os.path.join(p.dir, "archive", f"ledger-{first[:7]}.jsonl"), os.path.join(p.dir, "ledger.jsonl")]):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for ln in f:
+                    if '"task_done"' not in ln:
+                        continue
+                    try:
+                        e = json.loads(ln)
+                    except ValueError:
+                        continue
+                    dt = str(e.get("ts") or "")[:10]
+                    if e.get("event") == "task_done" and dt >= first:
+                        out.add((dt, e.get("task")))
+        except OSError:
+            pass
+    return out
 
 
 def _fleet():

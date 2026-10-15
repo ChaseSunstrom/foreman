@@ -591,7 +591,8 @@ def cmd_task(args):
                               check_by_hand=by_hand),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
-            if by_hand else "") + (
+            if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
+            if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
@@ -982,7 +983,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
     n = len([x for x in c._git(p.root, "show", "--name-only", "--format=", "HEAD").split("\n") if x.strip()])
     held = f"{n} file{'' if n == 1 else 's'}"  # T-0380: what the commit holds, not the paths it was given
     mutate(p, b.id, lambda x: x.append_log(f"committed {sha} ({held})"), "commit", {"sha": sha})
-    print(f"{b.id}: committed {sha} ({held}).")
+    print(f"{b.id}: committed {sha} ({held}). Undo: git revert --no-edit {sha}")  # T-0918: the way back, named
 
 
 def _hunks(diff):
@@ -2672,19 +2673,22 @@ def cmd_research(args):
                                                                   f"{', '.join(made)}" if made else ""))
 
 
-_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to|get to)"
-                      r"\s+[^.\n!?]{4,140}")
+_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to)"
+                      r"\s+(?!(?:note|mention|say|point out|add that)\b)[^.\n!?]{4,140}")
+_OFFER = re.compile(r"(?i)\b(?:if|want|would|could|happy|can|shall|like)\b")  # T-0908: "If you want, I'll also…" offers
 
 
 def capture_promises(p, text, sid=None):
     """T-0899: what a reply that ends the turn promises for later ("I'll also…", "I'll follow up on…") becomes an inbox
     item, once (an open one of the same title is enough); code blocks don't count. Returns the new ids."""
     said = re.sub(r"```.*?(?:```|$)", " ", text or "", flags=re.S)
-    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)))[:5]
+    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)
+                               if not _OFFER.search(re.split(r"[.!?\n]", said[:m.start()])[-1])
+                               and not re.search(r"(?i)\bif you\b", m.group(0))))[:3]
     if not found:
         return []
     made = []
-    with c.lock(p.dir):
+    with c.lock(p.dir, timeout=1):  # the Stop hook: a promise lost to a busy lock beats a stalled stop
         have = {b.title.lower() for b in c.load_briefs(p) if b.status not in c.CLOSED}
         for x in found:
             title = _title(f"Promised: {x}")
@@ -3609,7 +3613,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
@@ -3649,6 +3653,36 @@ Foreman state CLI (the only writer of Foreman state). Start here:
 
 fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
 """
+
+
+_BASH_HOOK = """_fm() {
+  local IFS=$'\\n'
+  COMPREPLY=($(fm complete -- "${COMP_WORDS[@]:1:COMP_CWORD}" 2>/dev/null))
+}
+complete -F _fm fm
+"""
+
+
+def cmd_complete(args):
+    """T-0924: what can come next, from the real parser (verbs, a verb's subcommands, its options) and the live
+    briefs (open task ids where an id goes); --shell prints the hook: eval "$(fm complete --shell bash)"."""
+    if args.shell:
+        return print(("autoload -U +X bashcompinit && bashcompinit\n" if args.shell == "zsh" else "") + _BASH_HOOK, end="")
+    words = list(args.words) or [""]
+    cur, node = words[-1], build_parser()
+    for w in words[:-1]:  # walk down the subcommands typed so far
+        sub = next((a for a in node._actions if isinstance(a, argparse._SubParsersAction)), None)
+        if sub and w in sub.choices:
+            node = sub.choices[w]
+    sub = next((a for a in node._actions if isinstance(a, argparse._SubParsersAction)), None)
+    if cur.startswith("-"):
+        found = sorted({o for a in node._actions for o in a.option_strings if o.startswith(cur)})
+    elif sub:
+        found = sorted(n for n in sub.choices if n.startswith(cur))
+    else:
+        p = c.find_project(os.getcwd())
+        found = sorted(b.id for b in c.load_briefs(p) if b.status not in c.CLOSED and b.id.startswith(cur)) if p else []
+    print("\n".join(found))
 
 
 def build_parser():
@@ -4026,6 +4060,10 @@ def build_parser():
     s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
     s.add_argument("--timeout", type=float, default=600)
     s.add_argument("words", nargs=argparse.REMAINDER)
+    s = add("complete", cmd_complete, help="tab completion: candidates for the words typed so far; --shell bash|zsh "
+                                           "prints the hook to source")
+    s.add_argument("--shell", choices=["bash", "zsh"])
+    s.add_argument("words", nargs="*")
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
@@ -4271,9 +4309,9 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
     s = add("adopt", lazy("fmeco", "cmd_adopt"), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
-    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="capture work from a tracker: gh reads the repo's open issues "
-                                                       "(read-only) into briefs, their text kept as untrusted data")
-    s.add_argument("source", choices=["gh"])
+    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="captured requests waiting; fm inbox gh reads the repo's open "
+                                                       "issues (read-only) into briefs, their text kept as untrusted data")
+    s.add_argument("source", nargs="?", choices=["gh"], help="a tracker to capture from; none lists the inbox")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
     s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
@@ -4577,8 +4615,13 @@ def main(argv=None):
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     parser = build_parser()
-    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm: the tiers, not a usage error
-    _sync_in(args)
+    if not argv and c.find_project(os.getcwd()):  # T-0917: bare fm in a project answers "what now?"
+        main(["state", "--line"])
+        print("fm help: every command")
+        return main(["next"])
+    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
+    if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
+        _sync_in(args)
     try:
         rc = args.fn(args)
         return rc if isinstance(rc, int) else 0  # evidence --run / check pass on the command's exit code
