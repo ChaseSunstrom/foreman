@@ -385,6 +385,36 @@ def cmd_vetoes(args):
                            for i, x in enumerate(v, 1)) or "No vetoes recorded.")
 
 
+def cmd_rule(args):
+    """T-0971: the user's regex rules on Bash commands or edited paths: a block denies with the why, a warn is a note.
+    rm is the user's (the guard refuses it from Claude as self-authorize)."""
+    p = resolve(args)
+    if args.action == "rm":
+        n = int(args.arg) if str(args.arg or "").isdigit() else None
+        if n is None or not c.drop_rule(p, n):
+            raise UsageError("fm rule rm N (N from fm rule list)")
+        return out(args, {"removed": n}, f"Rule {n} removed.")
+    if args.action == "add":
+        pattern, why = args.arg, args.why
+        if args.from_veto is not None:
+            v = c.vetoes(p)
+            if not 1 <= args.from_veto <= len(v):
+                raise UsageError("fm rule add --from-veto N (N from fm vetoes)")
+            veto = v[args.from_veto - 1]  # its key words, each starting a word, in any order (as veto_hits reads)
+            pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(str(w))})" for w in veto["words"])
+            why = why or veto.get("said")
+        try:
+            rec = c.add_rule(p, pattern, args.on, "warn" if args.warn else "block", why)
+        except ValueError as e:
+            raise UsageError(f"fm rule add: {e}")
+        n = len(c.rules(p))
+        return out(args, dict(rec, n=n), f"Rule {n}: {rec['action']} {rec['on']} matching {rec['pattern']}"
+                                         f"{' — ' + rec['why'] if rec['why'] else ''}.")
+    v = c.rules(p)
+    out(args, v, "\n".join(f"{i}. {x['action']} {x['on']} /{x['pattern']}/ — {x.get('why') or 'no reason given'} "
+                           f"({str(x.get('at', ''))[:10]})" for i, x in enumerate(v, 1)) or "No rules.")
+
+
 def cmd_surprise(args):
     """T-0253: fm surprise "<expected> → <observed>": where the model of the code was wrong; friction and recall bring it back."""
     p = resolve(args)
@@ -3835,7 +3865,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo show recall explain surprise vetoes why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo show recall explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing budget sync share notify compact-output complete wiring "
@@ -4431,6 +4461,15 @@ def build_parser():
     s = add("vetoes", cmd_vetoes, help="what the user said never to do, checked before matching commands and edits")
     s.add_argument("action", nargs="?", choices=["list", "rm"], default="list")
     s.add_argument("n", nargs="?", type=int)
+    s = add("rule", cmd_rule, help="the user's regex rules on Bash commands or edited paths that warn or block")
+    s.add_argument("action", nargs="?", choices=["list", "add", "rm"], default="list")
+    s.add_argument("arg", nargs="?", help="add: the pattern (a Python regex, searched for); rm: N from fm rule list")
+    s.add_argument("--on", choices=["bash", "path"], default="bash", help="a Bash command, or an edited file's path")
+    g = s.add_mutually_exclusive_group()
+    g.add_argument("--block", action="store_true", help="deny a matching call with the why (the default)")
+    g.add_argument("--warn", action="store_true", help="a note on a matching call, which still runs")
+    s.add_argument("--why", help="what the refusal or note says")
+    s.add_argument("--from-veto", type=int, metavar="N", help="the rule from veto N (fm vetoes): its key words")
     s = add("surprise", cmd_surprise, help="log where the model of the code was wrong: \"<expected> → <observed>\"")
     s.add_argument("text", nargs="+")
     s.add_argument("--task", help="the task it came up in (default: the active one)")
