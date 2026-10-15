@@ -300,8 +300,15 @@ def session_start(pl):
         return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ONEOFF_NOTE}}
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file and sid:
-        with open(env_file, "a") as f:
-            f.write(f"export FOREMAN_SESSION_ID={sid}\nexport FOREMAN_PROJECT={p.slug}\n")
+        lines = f"export FOREMAN_SESSION_ID={sid}\nexport FOREMAN_PROJECT={p.slug}\n"
+        try:
+            with open(env_file) as f:
+                have = f.read()
+        except OSError:
+            have = ""
+        if lines not in have:  # T-0988: once, not again on every compaction (other hooks share the file)
+            with open(env_file, "a") as f:
+                f.write(lines)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         meta = c.read_meta(p)
         other_note = _other_session(meta.get("session") or {}, sid, _claude_pid())
