@@ -1245,6 +1245,13 @@ export const register: Register = (on, options) => {
       slots: bucketize(recentTicks.filter(t => t.lane === l).map(t => t.at), clockNow, span, laneW * 2),
     })).filter(r => r.slots.some(Boolean))
     const days = v.done_days ?? []
+    const sk = v.skills // T-0939
+    const skillUses = Object.values(sk?.counts ?? {}).reduce((x, y) => x + y, 0)
+    const topSkills = Object.entries(sk?.counts ?? {}).sort((x, y) => y[1] - x[1]).slice(0, 4)
+    const sinceText = (at: string) => {
+      const ms = Math.max(0, clockNow - Date.parse(at))
+      return !Number.isFinite(ms) ? '' : ms < 3600000 ? `${Math.max(1, Math.round(ms / 60000))}m ago` : hoursAgo(ms / 3600000)
+    }
     const gaugeW = Math.max(6, Math.min(16, inner - (days.length ? days.length * 2 + 1 : 0) - 24))
 
     const gate = checks && checks.results.length > 0 && (
@@ -1609,6 +1616,37 @@ export const register: Register = (on, options) => {
                 {a.blockers.length > 0 && (
                   <Text color={hex(C.dim)} wrap="truncate-end">
                     · {a.blockers.length} left before done: {a.blockers[0]}
+                  </Text>
+                )}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {/* T-0939: skills invoked and stack cards read this week; the repo's suggested cards not read yet, dimmed */}
+        {sk && (sk.recent.length > 0 || sk.unread.length > 0) && (
+          <Box key="card-skills" {...card()}>
+            {head('Skills', C.agent, `${skillUses} use${skillUses === 1 ? '' : 's'} · 7d${sk.unread.length ? ` · ${sk.unread.length} unread` : ''}`, 'skills')}
+            {!isFolded('skills') && (
+              <Box key="skills-body" flexDirection="column">
+                {sk.recent.length > 0 && (
+                  <Text>
+                    {sk.recent.map((r, i) => (
+                      <Text key={`skill-${i}`}>
+                        <Text color={hex(r.kind === 'card' ? C.accent2 : C.agent)}>{`${r.kind === 'card' ? '▤' : '✦'} ${r.name}`}</Text>
+                        <Text color={hex(C.dim)}>{` ${sinceText(r.at)}${i < sk.recent.length - 1 ? '  ' : ''}`}</Text>
+                      </Text>
+                    ))}
+                  </Text>
+                )}
+                {topSkills.length > 0 && (
+                  <Text color={hex(C.dim)} wrap="truncate-end">
+                    top: {topSkills.map(([n, k]) => `${n} ×${k}`).join(' · ')}
+                  </Text>
+                )}
+                {sk.unread.length > 0 && (
+                  <Text color={hex(mix(C.dim, C.track, 0.3))} wrap="truncate-end">
+                    unread: {sk.unread.map(n => `fm lib show ${n}`).join(' · ')}
                   </Text>
                 )}
               </Box>

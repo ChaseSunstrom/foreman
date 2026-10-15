@@ -313,6 +313,56 @@ def _research_asks(events):
             for e in reversed(events) if e.get("event") == "research" and "claims" in (d := e.get("data") or {})][:3]
 
 
+def _grep_jsonl(paths, needle):
+    """The JSON objects on the lines of `paths` that contain `needle`: a whole-file scan cheap enough for a week (a tail
+    of events.jsonl holds an hour or two on a busy day). Missing files and malformed lines are skipped."""
+    for path in dict.fromkeys(paths):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for ln in f:
+                    if needle in ln:
+                        try:
+                            e = json.loads(ln)
+                        except ValueError:
+                            continue
+                        if isinstance(e, dict):
+                            yield e
+        except OSError:
+            continue
+
+
+def _skills(p):
+    """T-0939: this week's Skill tool calls and fm lib card reads (newest first, a name once), uses per name, the map's
+    suggested cards and those not read this week. Events without ts or a usable name are skipped; events.jsonl rotated
+    by fm tidy (state/logs/) isn't read, so a week straddling a rotation is partial."""
+    now = time.time()
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - 7 * 86400))
+    calls = [e for e in _grep_jsonl([os.path.join(c.state_dir(), "events.jsonl")], '"Skill"')
+             if e.get("kind") == "tool" and e.get("tool") == "Skill" and e.get("project") == p.slug]
+    ledgers = [os.path.join(p.dir, "archive", f"ledger-{m}.jsonl")
+               for m in sorted({since[:7], time.strftime("%Y-%m", time.gmtime(now))})]
+    reads = [e for e in _grep_jsonl(ledgers + [os.path.join(p.dir, "ledger.jsonl")], '"lib"') if e.get("event") == "lib"]
+    uses = [(e.get("ts"), i, e.get("target"), "skill") for i, e in enumerate(calls)]
+    for i, e in enumerate(reads):
+        cards = (e.get("data") or {}).get("cards")
+        uses += [(e.get("ts"), i, n, "card") for n in (cards if isinstance(cards, list) else [])]
+    # newest first by ts, then by file order within a second; stable, so one read's cards keep their order
+    uses = sorted(((str(at), i, str(n), k) for at, i, n, k in uses if at and n and str(at) >= since),
+                  key=lambda u: u[:2], reverse=True)
+    counts, recent = {}, []
+    for at, _, name, kind in uses:
+        counts[name] = counts.get(name, 0) + 1
+        if counts[name] == 1 and len(recent) < 8:
+            recent.append({"name": c.plain(name)[:80], "kind": kind, "at": at})
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as f:
+            suggested = [str(x) for x in json.load(f).get("lib") or []]
+    except (OSError, ValueError, AttributeError, TypeError):
+        suggested = []
+    return {"recent": recent, "counts": counts, "suggested": suggested,
+            "unread": [x for x in suggested if x not in counts]}
+
+
 def _ledger_lines(b):
     """T-0228: the active task's hypotheses, its oracle (example count, open questions) and batch members; T-0261: its
     inconclusive runs and the assumptions nobody checked."""
@@ -409,6 +459,8 @@ def view(p):
         "revisit": _guarded(lambda: [{"date": dt, "decision": c.plain(x)[:200], "why": c.plain(w)}  # T-0247
                                      for dt, x, w in c.fired_decisions(p)]) or [],
         "recent": d["recent"],
+        "skills": _guarded(lambda: _skills(p))
+        or {"recent": [], "counts": {}, "suggested": [], "unread": []},  # T-0939
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
                    "hook_errors": len(fmdoctor.recent_hook_errors()), "paused_hooks": fmdoctor.paused_hooks()},
         "watch": [p.dir, os.path.join(p.dir, "tasks"), os.path.join(p.dir, "ledger.jsonl")]
