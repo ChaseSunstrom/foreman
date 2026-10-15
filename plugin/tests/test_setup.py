@@ -294,6 +294,22 @@ class InstallScript(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return read_text(self.args_file).split()
 
+    def mode_after(self, *flags):
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--no-wiring", "--no-mod",
+                            *flags], capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL,
+                           timeout=60, start_new_session=True)  # no controlling terminal, as under curl | bash in CI
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        settings = os.path.join(self.env["HOME"], ".claude", "settings.json")
+        mode = (read_json(settings).get("permissions") or {}).get("defaultMode") if os.path.exists(settings) else None
+        return mode, p.stdout + p.stderr
+
+    def test_bypass_is_asked_for_not_assumed(self):
+        # T-0871 (newcomer walkthrough): the install set bypassPermissions silently
+        mode, out = self.mode_after()
+        self.assertIsNone(mode, "no terminal to ask on: the permission mode stays as it was")
+        self.assertIn("--bypass", out, "and the output says how to turn it on")
+        self.assertEqual(self.mode_after("--bypass")[0], "bypassPermissions")
+
     def test_plain_install_skips_build_tools(self):
         self.assertEqual(self.setup_args("--security"), ["--security"])
 
@@ -384,10 +400,10 @@ class InstallScript(unittest.TestCase):
         os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
         settings = os.path.join(self.env["HOME"], ".claude", "settings.json")
         self.assertFalse(os.path.exists(settings))
-        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins"], capture_output=True,
-                           text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--bypass"],
+                           capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual(read_json(settings)["permissions"]["defaultMode"], "bypassPermissions")
+        self.assertEqual(read_json(settings)["permissions"]["defaultMode"], "bypassPermissions")  # T-0871: opted in
         p = subprocess.run([sys.executable, FM, "uninstall-user"], capture_output=True, text=True, env=self.env,
                            timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)

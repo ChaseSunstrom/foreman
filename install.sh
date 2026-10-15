@@ -8,7 +8,8 @@
 #   --build          open Claude Code on the Foreman build (rebuild or resume from BUILD_PROMPT.md)
 #   --desktop        also install Foreman Desktop from its newest release (Linux x86_64 AppImage, macOS app)
 #   --no-plugins     skip setup-plugins.sh
-#   --no-bypass      don't set bypassPermissions as the default permission mode
+#   --bypass         make bypassPermissions the default permission mode without asking
+#   --no-bypass      don't set it, and don't ask (on a terminal the installer asks; with no terminal it doesn't set it)
 #   --no-mod         don't install the foreman-ui mod (band above the prompt, dashboard pane, toasts)
 #   --no-wiring      don't wire Foreman into ~/.claude (statusLine wrapper, deny rules, CLAUDE.md block, rules symlink)
 #   anything else    passed through to setup-plugins.sh (e.g. --security, --docs, --apply-conflicts)
@@ -22,16 +23,17 @@ FOREMAN_REPO="${FOREMAN_REPO:-https://github.com/ChaseSunstrom/foreman.git}"
 FOREMAN_HOME="${FOREMAN_HOME:-$HOME/.claude/foreman}"
 FOREMAN_DESKTOP_REPO="${FOREMAN_DESKTOP_REPO:-ChaseSunstrom/foreman-desktop}"
 
-BUILD=0 PLUGINS=1 BYPASS=1 WIRING=1 MOD=1 DESKTOP=0 PASS=()
+BUILD=0 PLUGINS=1 BYPASS=ask WIRING=1 MOD=1 DESKTOP=0 PASS=()
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
     --desktop) DESKTOP=1 ;;
     --no-plugins) PLUGINS=0 ;;
+    --bypass) BYPASS=1 ;;
     --no-bypass) BYPASS=0 ;;
     --no-mod) MOD=0 ;;
     --no-wiring) WIRING=0 ;;
-    -h|--help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,19p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) PASS+=("$arg") ;;
   esac
 done
@@ -108,7 +110,19 @@ if [ "$MOD" = 1 ]; then
   fi
 fi
 
-# 4. Permission mode: bypass by default (Foreman's guard hook + deny rules are the brakes; see BUILD_PROMPT.md §4.7)
+# 4. Permission mode: bypass is Foreman's recommended mode (its guard hook + deny rules are the brakes; BUILD_PROMPT.md
+# §4.7), but it's the person's choice (T-0871): asked on a terminal, set by --bypass, otherwise left as it was.
+if [ "$BYPASS" = ask ]; then
+  BYPASS=0
+  if (exec </dev/tty) 2>/dev/null; then
+    printf '\nForeman works best with Claude Code in bypassPermissions mode: Claude runs commands without asking each\n'
+    printf 'time, and Foreman'"'"'s guard blocks the dangerous ones (rm -rf ~, force-push to main, secrets...) instead.\n'
+    printf 'Make bypassPermissions your default mode in ~/.claude/settings.json? (undo: plugin/uninstall.sh) [y/N] '
+    read -r ans </dev/tty || ans=""
+    case "$ans" in y|Y|yes|YES) BYPASS=1 ;; esac
+  fi
+  [ "$BYPASS" = 1 ] || say "Permission mode left as it was (Foreman's guard still runs; rerun with --bypass to turn bypass on)"
+fi
 if [ "$BYPASS" = 1 ]; then
   settings="$HOME/.claude/settings.json"
   mkdir -p "$HOME/.claude"
