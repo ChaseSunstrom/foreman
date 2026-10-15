@@ -541,6 +541,9 @@ def cmd_task(args):
                 reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (fm check "
                                f"--evidence {b.id} --step 1), or fm task set {b.id} --section \"Behaviour lock\" --text "
                                f"\"none: <why>\"")
+            if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0896 (was a warning, T-0599)
+                reasons.append(f"no Decision: research ends in a choice: fm task set {b.id} --section Decision --text "
+                               f"\"Recommendation: …; would change if: …\" (or \"none: <why>\")")
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
@@ -567,6 +570,9 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, done, "task_done", logged)
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
+        chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
+        if chose and not chose.lower().startswith("none"):  # T-0896: the project keeps what the research decided
+            _write_decision(p, c.fit(chose, 400), f"research {b.id}: {c.fit(b.title, 120)}", task=b.id)
         try:
             import fmrecall
             fmrecall.write_tripwires(p)
@@ -1325,9 +1331,6 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
-    if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
-        honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
-                      f"\"Recommendation: …; would change if: …\"")
     steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
               and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
     standing = [x for x in steers if c.STANDING_STEER.search(x)]

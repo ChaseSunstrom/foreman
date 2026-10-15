@@ -968,6 +968,21 @@ class DecisionsResearchSelf(ForemanTestCase):
         saved = read_text(os.path.join(c.find_project(self.repo).dir, "research", "notes.md"))
         self.assertNotIn("abcd1234efgh", saved)
 
+    def test_research_closes_with_a_decision_that_reaches_decisions_md(self):
+        # T-0896: research ends in a choice the project keeps; a warning at close was easy to walk past
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "Which TOML parser", "--type", "RESEARCH", "--tier", "S", "--ac",
+                                 "compared :: true", "--step", "compare", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        p = self.fm("task", "finish", tid, "--run", "true", "--audit", "self check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("Decision", p.stderr)
+        self.fm("task", "set", tid, "--section", "Decision", "--text", "Use tomllib; would change if we need writes")
+        self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
+        text = read_text(os.path.join(c.find_project(self.repo).dir, "decisions.md"))
+        self.assertIn("Use tomllib; would change if we need writes", text)
+        self.assertIn(tid, text)
+
     def test_research_name_must_be_safe(self):
         self.fm("init")
         self.assertEqual(self.fm("research", "add", "../escape", input="x", check=False).returncode, 1)
