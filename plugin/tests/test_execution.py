@@ -105,3 +105,58 @@ class Scaffold(Base):
         import fmcli
         warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["NOTES.md"])
         self.assertFalse([w for w in warns if "debug scaffolding" in w], warns)
+
+
+class BoardClose(Base):
+    # T-0956: one verdict line before the close warnings, a Landed line last, conflict markers caught
+    def committed(self, rel, text):
+        self.write(rel, text)
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "base"], check=True)
+
+    def finish(self, *extra):
+        return self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", *extra)
+
+    def test_conflict_markers_and_debug_lines_in_changed_files_warn(self):
+        self.committed("x.py", "A = 1\n")
+        self.committed("app.js", "let a = 1;\n")
+        self.task()
+        self.write("x.py", "<" * 7 + " HEAD\nA = 1\n" + "=" * 7 + "\nA = 2\n" + ">" * 7 + " theirs\n")
+        self.write("app.js", "let a = 1;\ndebugger;\nconsole.log(a);\n")
+        import fmcli
+        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), ["x.py", "app.js"])
+        conflict = [w for w in warns if "conflict marker" in w]
+        self.assertTrue(conflict and all(f"x.py:{n}" in conflict[0] for n in (1, 3, 5)), warns)
+        debug = [w for w in warns if "debug scaffolding" in w]
+        self.assertTrue(debug and "app.js:2" in debug[0] and "app.js:3" in debug[0], warns)
+
+    def test_finish_prints_one_verdict_line_before_the_warnings(self):
+        self.committed("x.py", "A = 1\n")
+        self.task()
+        self.write("x.py", "A = 1\nbreakpoint()\n" + ">" * 7 + " theirs\n")
+        err = self.finish().stderr.splitlines()
+        warns = [i for i, ln in enumerate(err) if ln.startswith("fm: warning: ")]
+        verdict = [i for i, ln in enumerate(err) if ln.startswith(f"fm: {len(warns)} warnings: ")]
+        self.assertTrue(warns and verdict and verdict[0] < warns[0], err)
+        self.assertIn("debug scaffolding", err[verdict[0]])
+        self.assertIn("conflict marker", err[verdict[0]])
+
+    def test_finish_ends_with_a_landed_line(self):
+        self.committed("x.py", "A = 1\n")
+        self.task()
+        self.write("x.py", "A = 2\n")
+        self.assertEqual(self.finish().stdout.strip().splitlines()[-1], "Landed: not committed (1 file uncommitted)")
+        self.fm("task", "new", "Again", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        self.write("x.py", "A = 3\n")
+        last = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Again"
+                       ).stdout.strip().splitlines()[-1]
+        sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True,
+                             text=True).stdout.strip()
+        self.assertEqual(last, f"Landed: committed {sha} · not pushed")
+        remote = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", remote], check=True)
+        subprocess.run(["git", "-C", self.repo, "push", "-q", remote, "HEAD:refs/heads/main"], check=True)
+        subprocess.run(["git", "-C", self.repo, "fetch", "-q", remote, "main:refs/remotes/origin/main"], check=True)
+        import fmcli
+        self.assertEqual(fmcli._landed(self.p, c.find_brief(self.p, "T-0002")), f"Landed: committed {sha} · pushed")
