@@ -16,7 +16,8 @@ The contract — break none of it:
 2. Stay inside your worktree: edit only files under it, run commands there, never `cd` out. Never touch the main
    checkout, other worktrees, Foreman's state folder or anything under ~/.claude except through `fm`.
 3. Test-first: write the failing test, record it (`fm task evidence <ID> --step 1 --run "<test cmd>"`), make it pass,
-   record each step's evidence the same way, then run `fm check --evidence <ID>` (it must exit 0).
+   record each step's evidence the same way, then run `fm check --affected --evidence <ID>` (it must exit 0; the
+   full gates run after the merge, in the main thread, so lanes don't load the machine with them: T-0806).
 4. Commit on your branch: `git add <the task's files>` and `git commit -m "<what> (<ID>)"`. One commit is best.
 5. Never push, never merge, never rebase, never switch branches, never close the task (`fm task done/finish` need
    reviews you can't run) and never launch agents. Never run fm commands for another task.

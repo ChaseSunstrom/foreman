@@ -49,6 +49,24 @@ class Tour(_Task):
     def test_nothing_changed(self):
         self.assertIn("no changes", self.fm("tour", self.tid).stdout)
 
+    def test_a_range_is_ranked_by_review_risk(self):
+        # T-0885: a morning review of a long run starts with the few files that matter, and says what's safe to skim
+        self.write("auth.py", "import subprocess\n\ndef login(u):\n    return subprocess.run(u, shell=True)\n")
+        self.write("notes.md", "# notes\n")
+        self.write("test_auth.py", "def test_login():\n    assert True\n")
+        self.write("util.py", "def add(a, b):\n    return a + b\n")
+        rows = {r["path"]: r for r in json.loads(self.fm("tour", "--since", "HEAD", "--json").stdout)["files"]}
+        self.assertEqual(rows["auth.py"]["risk"], "review")
+        self.assertTrue(any("security" in w for w in rows["auth.py"]["why"]), rows["auth.py"]["why"])
+        self.assertEqual((rows["notes.md"]["risk"], rows["test_auth.py"]["risk"]), ("skim", "skim"))
+        self.assertEqual(rows["util.py"]["risk"], "glance")  # small, but no test changed with it
+        out = self.fm("tour", "--since", "HEAD").stdout
+        self.assertIn("Review first: auth.py", out)
+        self.assertIn("safe to skim", out)
+        bare = self.fm("tour", check=False)
+        self.assertNotEqual(bare.returncode, 0)
+        self.assertIn("--since", bare.stderr)  # an id or a range
+
 
 class Proof(_Task):
     def test_pr_carries_red_green_lenses_assumptions_and_bench(self):

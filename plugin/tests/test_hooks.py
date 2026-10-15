@@ -5,7 +5,7 @@ import os
 import time
 import unittest
 
-from helpers import ForemanTestCase, read_text
+from helpers import ForemanTestCase, read_json, read_text
 
 import fmcore as c
 
@@ -144,9 +144,26 @@ class SessionStart(HookCase):
         self.fm("init")
         self.fm("sensitive", "on")
         self.hook("UserPromptSubmit", {"prompt": "hi", "session_id": "other-session"})
+        # T-0841: run under Claude Code, both hooks share its process; the other session is another process
+        c.update_meta(self.project(), session=dict(c.read_meta(self.project())["session"], pid=1))
         ctx = self.ctx_of(self.run_ss())
         self.assertIn("Sensitive", ctx)
         self.assertIn("other-se", ctx)
+
+    def test_a_bare_plugin_install_is_told_where_the_rules_are(self):
+        # T-0874: /plugin install alone runs the hooks but never wires the rules into ~/.claude
+        self.fm("init")
+        home = os.path.join(self.tmp, "barehome")
+        os.makedirs(os.path.join(home, ".claude"))
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
+                                    env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
+        self.assertIn(os.path.join("rules", "foreman.md"), ctx)
+        self.assertIn("fm install-user", ctx)
+        os.makedirs(os.path.join(home, ".claude", "rules"))
+        open(os.path.join(home, ".claude", "rules", "foreman.md"), "w").close()  # wired: nothing to say
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
+                                    env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
+        self.assertNotIn("fm install-user", ctx)
 
     def test_non_git_unregistered_dir_gets_nothing(self):
         plain = os.path.join(self.tmp, "plain")
@@ -164,6 +181,19 @@ class SessionStart(HookCase):
 
 
 class UserPromptSubmit(HookCase):
+    def test_session_is_named_after_its_task(self):
+        # T-0781: the resume picker showed Claude Code's own session names, never the task being worked
+        self.fm("init")
+        title = lambda p: ((parse(p) or {}).get("hookSpecificOutput") or {}).get("sessionTitle")
+        start = lambda: self.hook("SessionStart", {"source": "startup"}, env={"CLAUDE_ENV_FILE": self.env_file})
+        self.assertIsNone(title(start()), "no active task: no name")
+        tid = self.task("Fix the login timeout on slow wifi")
+        self.assertTrue((title(start()) or "").startswith(f"{tid} Fix the login"))
+        self.assertIsNone(title(self.hook("UserPromptSubmit", {"prompt": "go on"})), "same task: no rename")
+        other = self.task("Second thing")
+        self.assertEqual(title(self.hook("UserPromptSubmit", {"prompt": "next"})), f"{other} Second thing")
+        self.assertIsNone(title(self.hook("UserPromptSubmit", {"prompt": "more"})))
+
     def test_intake_block_is_summarised(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nFEATURE!: b\nCLEAN?: c\nCONTEXT: d"}))
@@ -803,6 +833,17 @@ class AutoEvidence(HookCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "ls"}, "tool_response": ok})
         self.assertEqual(len(c.find_brief(self.project(), tid).evidence()), n, "other commands record nothing")
 
+    def test_a_piped_verify_that_hides_its_failure_is_recorded_as_failing(self):
+        # T-0820 (round-1 review): T-0773's exit-0 failure check ran only in fm's own runs, not in Bash's
+        self.fm("init")
+        tid = self.task()
+        self.fm("task", "ac", tid, "add", "suite passes", "--verify", "python3 -m unittest test_x 2>&1 | tail -3")
+        for out, code in (("FAILED (failures=2)", "✗ exit 1"), ("Ran 0 tests in 0.000s\n\nOK", "✗ exit 5")):
+            self.hook("PostToolUse", {"tool_name": "Bash", "tool_response": {"stdout": out, "stderr": "",
+                                                                            "interrupted": False},
+                                      "tool_input": {"command": "python3 -m unittest test_x 2>&1 | tail -3"}})
+            self.assertIn(code, c.find_brief(self.project(), tid).evidence()[-1], out)
+
     def test_a_passing_criterion_check_also_verifies_the_current_step(self):
         # T-0149 (self-improvement pass 1): it was tagged (ac N) only, so the Stop gate kept asking for step evidence
         self.fm("init")
@@ -822,6 +863,31 @@ class PreToolUse(HookCase):
     def pre(self, tool, tool_input):
         return self.hook("PreToolUse", {"tool_name": tool, "tool_input": tool_input})
 
+    def test_the_step_pointer_follows_edits_and_asks_once_after_eight(self):
+        # T-0759: work on a later step without moving the band
+        self.fm("init")
+        tid = self.task(steps=("reproduce in auth.py", "fix", "wire src/billing.py"))  # a path names it too
+        edit = lambda f: self.ctx_of(self.pre("Edit", {"file_path": os.path.join(self.repo, f),
+                                                       "old_string": "a", "new_string": "b"}))
+        cur = lambda: c.find_brief(self.project(), tid).current_step().n
+        self.assertEqual(cur(), 1)
+        self.assertIn("now the current step", edit("billing.py"))
+        self.assertEqual(cur(), 3)
+        notes = [edit("other.py") for _ in range(9)]
+        self.assertEqual([i for i, n in enumerate(notes) if n], [6])  # the 8th edit on step 3, once
+        self.assertIn(f"fm task step {tid} current N", notes[6])
+
+    def test_a_short_file_name_inside_a_longer_one_moves_nothing(self):
+        # T-0759 review: "a.py" is a substring of "data.py" in a later step's text
+        self.fm("init")
+        tid = self.task(steps=("start", "fix data.py"))
+        self.pre("Edit", {"file_path": os.path.join(self.repo, "a.py"), "old_string": "a", "new_string": "b"})
+        self.assertEqual(c.find_brief(self.project(), tid).current_step().n, 1)
+        # T-0839 (round-2 review): a name with no extension is an ordinary word ("run fm check")
+        self.fm("task", "step", tid, "add", "run fm check")
+        self.pre("Edit", {"file_path": os.path.join(self.repo, "bin", "fm"), "old_string": "a", "new_string": "b"})
+        self.assertEqual(c.find_brief(self.project(), tid).current_step().n, 1)
+
     def test_a_plugin_yes_covers_one_change(self):
         # T-0029: plugins are new code in every session; each one gets its own yes (core stays per task)
         self.fm("init")
@@ -832,6 +898,39 @@ class PreToolUse(HookCase):
         self.assertNotIn("plugin", c.find_brief(self.project(), tid).meta.get("allow") or [])
         self.assertIn("plugin grant used", c.find_brief(self.project(), tid).section("Log"))
         self.assertEqual(self.pre("Bash", {"command": "claude plugin marketplace add o/b"}).returncode, 2)
+
+    def test_sensitive_repo_keeps_content_home(self):
+        # T-0784: fm sensitive on kept reviews and AGENTS.md lessons home, but Claude Code's newer tools publish to
+        # claude.ai, phones, other sessions and cloud routines, and the guard's matcher never saw them
+        self.fm("init")
+        self.task()
+        outward = [("PushNotification", {"message": "done", "status": "proactive"}), ("Artifact", {"file_path": "x.html"}),
+                   ("ArtifactData", {"action": "set", "url": "u"}), ("SendMessage", {"to": "w", "message": "m"}),
+                   ("RemoteTrigger", {"action": "run"}), ("mcp__claude_ai_Claude_Docs__batch", {})]
+        denied = lambda p: "deny" in p.stdout
+        for tool, ti in outward:
+            self.assertFalse(denied(self.pre(tool, ti)), tool)
+        self.fm("sensitive", "on")
+        for tool, ti in outward:
+            p = self.pre(tool, ti)
+            self.assertTrue(denied(p), tool)
+            self.assertIn("fm sensitive off", p.stdout)
+        for tool, ti in (("ArtifactData", {"action": "list", "url": "u"}), ("Artifact", {"action": "read", "url": "u"}),
+                         ("mcp__claude_ai_Claude_Docs__query", {})):
+            self.assertFalse(denied(self.pre(tool, ti)), f"{tool} only reads")
+        matcher = next(m["matcher"] for m in read_json(os.path.join(c.PLUGIN_ROOT, "hooks", "hooks.json"))["hooks"]
+                       ["PreToolUse"] if "PushNotification" in m["matcher"])
+        for tool, _ in outward:
+            self.assertRegex(tool, f"^(?:{matcher})$")
+
+    def test_the_outward_gate_fails_closed(self):
+        # T-0821 (round-1 review): hooks.json says onFailure: block, but an error in the check let the tool through
+        self.fm("init")
+        with open(os.path.join(self.project().dir, "meta.json"), "w") as f:
+            f.write("{not json")
+        p = self.pre("PushNotification", {"message": "done", "status": "proactive"})
+        self.assertIn("deny", p.stdout)
+        self.assertNotIn("deny", self.pre("ArtifactData", {"action": "list", "url": "u"}).stdout, "reads still pass")
 
     def test_foreground_wait_loops_are_refused(self):
         # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
@@ -1075,6 +1174,32 @@ class PreToolUse(HookCase):
 
 
 class PostToolUse(HookCase):
+    def test_compact_output(self):
+        # T-0783 end to end: fm compact-output on registers the hook in the user's settings; that command, given a
+        # 20,000-char failing run, hands back under 8,000 chars with every failure line and the full text's path
+        import subprocess
+        import sys
+        home = os.path.join(self.tmp, "userhome")
+        os.makedirs(os.path.join(home, ".claude"))
+        env = {"HOME": home}
+        self.fm("compact-output", "on", env=env)
+        settings = read_json(os.path.join(home, ".claude", "settings.json"))
+        [cmd] = [h["command"] for g in settings["hooks"]["PostToolUse"] for h in g["hooks"]]
+        lines = [f"test_{i} ... ok" for i in range(700)]
+        lines[350], lines[420] = "FAIL: test_350 (m.T.test_350)", "AssertionError: 2 != 3"
+        text = "\n".join(lines + ["FAILED (failures=1)"])
+        self.assertGreater(len(text), 10000)
+        payload = {"session_id": "s1", "tool_name": "Bash", "hook_event_name": "PostToolUse",
+                   "tool_response": {"stdout": text * 2, "stderr": "", "interrupted": False, "isImage": False}}
+        p = subprocess.run([sys.executable, cmd], input=json.dumps(payload), capture_output=True, text=True,
+                           env=dict(os.environ, FOREMAN_HOME=self.home), timeout=30)
+        out = json.loads(p.stdout)["hookSpecificOutput"]["updatedToolOutput"]["stdout"]
+        self.assertLess(len(out), 8000)
+        for must in ("FAIL: test_350", "AssertionError: 2 != 3", "FAILED (failures=1)", "full output: "):
+            self.assertIn(must, out)
+        self.fm("compact-output", "off", env=env)
+        self.assertNotIn("hooks", read_json(os.path.join(home, ".claude", "settings.json")))
+
     def test_edit_records_touched_file_and_event(self):
         self.fm("init")
         tid = self.task()
@@ -1116,6 +1241,56 @@ class Stop(HookCase):
 
     def decision(self, p):
         return (parse(p) or {}).get("decision")
+
+    def turn(self, *calls):
+        """A transcript: the user's prompt, then (tool, input, result text, is_error) calls in order."""
+        self._turns = getattr(self, "_turns", 0) + 1
+        path = os.path.join(self.tmp, f"turn{self._turns}.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"content": "fix the parser"}}) + "\n")
+            for i, (tool, inp, text, err) in enumerate(calls):
+                f.write(json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": f"u{i}", "name": tool, "input": inp}]}}) + "\n")
+                f.write(json.dumps({"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": f"u{i}", "content": text, "is_error": err}]}}) + "\n")
+        return path
+
+    def test_a_tests_pass_claim_needs_a_passing_run_after_the_last_edit(self):
+        # T-0886: the Stop gate checked only "done"; "all tests pass" went unchecked against the turn's own runs
+        self.fm("init")
+        tid = self.task()
+        self.fm("drive", "off")
+        for n in ("1", "2"):  # the done gate is satisfied: only the test claim is judged
+            self.fm("task", "evidence", tid, "--step", n, "--run", "true")
+        red = ("Bash", {"command": "python3 -m pytest -q"}, "1 failed, 3 passed", True)
+        green = ("Bash", {"command": "python3 -m pytest -q"}, "4 passed in 0.2s", False)
+        edit = ("Edit", {"file_path": "a.py"}, "ok", False)
+        claim = "Fixed the parser; all tests pass now."
+        stop = lambda t, m=claim: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": m,  # noqa
+                                                     "session_id": "sess-1", "transcript_path": t})
+        p = stop(self.turn(red, edit))
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("after the last edit (a.py)", parse(p)["reason"])
+        self.assertIsNone(self.decision(stop(self.turn(red, edit))), "once per message")
+        p = stop(self.turn(edit, red), "Done: the tests pass.")
+        self.assertIn("the last test run failed", parse(p)["reason"])
+        self.assertIsNone(self.decision(stop(self.turn(red, edit, green), "Now the tests pass and it's fixed.")))
+        self.assertIsNone(self.decision(stop(self.turn(("Read", {"file_path": "a.py"}, "x", False)),
+                                             "The tests pass, as before.")), "no edit, no run: not judged")
+
+    def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
+        # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked
+        self.fm("init")
+        self.fm("drive", "off")
+        msg = "Fixed the parser. I'll also update the README examples later. I'll follow up on the flaky date test."
+        p = self.stop(msg)
+        self.assertIn("promise", (parse(p) or {}).get("systemMessage", ""))
+        self.stop(msg)
+        titles = [ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]
+        self.assertEqual(len(titles), 2, titles)  # two promises, each once
+        self.assertTrue(any("README examples" in t for t in titles), titles)
+        self.stop("Done: the parser handles empty input. I'll ask before touching the schema.")
+        self.assertEqual(len([ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]), 2)
 
     def test_premature_done_blocks_once_per_step(self):
         self.fm("init")
@@ -1258,6 +1433,50 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "The suite is still running.",
                                "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
+
+    def test_push_once_when_the_user_is_needed(self):
+        # T-0778: Foreman's only alert was a desktop terminal sequence; PushNotification also reaches the phone and
+        # skips itself when the user is at the terminal. One request per ask, never a loop
+        self.fm("init")
+        self.fm("autonomy", "full")
+        tid = self.task()
+        self.fm_ask(tid, "plugin")
+        p = self.stop("Waiting on your yes for the plugin install.")
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("PushNotification", parse(p)["reason"])
+        self.assertIn(tid, parse(p)["reason"])
+        self.assertIsNone(self.decision(self.stop("Sent.", active=True)), "the chain ends after the push")
+        self.assertNotIn("PushNotification", (parse(self.stop("Still waiting.")) or {}).get("reason", ""), "once per ask")
+        self.fm("autonomy", "standard")
+        self.assertNotIn("PushNotification", (parse(self.stop("Waiting.", session="sess-2")) or {}).get("reason", ""))
+
+    def test_a_oneoff_headless_session_never_drives(self):
+        # T-0775: an ad-hoc claude -p got the queue in its context and the drive's push, focused a queued task and
+        # edited the main checkout until it timed out; only fm run's sessions (FOREMAN_DRIVE_TASK) work the queue
+        self.fm("init")
+        self.fm("autonomy", "full")
+        tid = self.task()
+        self.task("Queued next", focus=False)
+        oneoff = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "CLAUDE_ENV_FILE": self.env_file}
+        for event, payload in (("SessionStart", {"source": "startup"}), ("UserPromptSubmit", {"prompt": "what is 2+2"})):
+            ctx = self.ctx_of(self.hook(event, payload, env=oneoff))
+            self.assertIn("one-off", ctx, event)
+            self.assertIn("one S brief first", ctx, "T-0821: an edit still needs a brief; the note says so")
+            self.assertNotIn(tid, ctx, event)
+            self.assertNotIn("Next:", ctx, event)
+        self.assertNotIn("sess-1", json.dumps(c.read_meta(self.project()).get("session") or {}),
+                         "a one-off doesn't claim the project's session")
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "4.", "session_id": "sess-1"},
+                      env=oneoff)
+        self.assertIsNone(self.decision(p))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
+                               "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
+        self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+        # T-0820: a bench replay's claude -p measures Foreman at work, not a one-off answer
+        import fmbench
+        bench = dict(fmbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",
+                     FOREMAN_HOME=self.home, CLAUDE_ENV_FILE=self.env_file)
+        self.assertNotIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=bench)))
 
     def test_drive_offers_queued_work_while_background_runs(self):
         # T-0401 (JARVIS 2026-10-09, the user: "make sure it doesnt sit idle"): two background jobs ran, 20+ tasks were
@@ -1543,6 +1762,9 @@ class Stop(HookCase):
         self.fm("autonomy", "full")
         t1 = self.task()
         self.fm_ask(t1, "core")
+        first = self.stop("T-0001 needs your approval for core.")  # T-0778: one push request, then the turn ends
+        self.assertIn("PushNotification", parse(first)["reason"])
+        self.assertIsNone(self.decision(self.stop("Sent.", active=True)))
         self.assertIsNone(self.decision(self.stop("T-0001 needs your approval for core.")))
         t2 = self.task("Other", focus=False)
         p = self.stop("Waiting on core for T-0001.")

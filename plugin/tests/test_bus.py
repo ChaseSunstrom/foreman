@@ -46,6 +46,171 @@ class Bus(Base):
         self.assertIn("bump the version", r["reason"])
 
 
+class Watch(Base):
+    """T-0777: a plugin monitor runs fm bus watch for the whole session; each line it prints wakes Claude."""
+
+    def test_it_prints_each_new_message_for_its_session_once(self):
+        import io
+        import threading
+        import time
+        import fmbus
+        fmbus.send("sess-w", "old news", sender="sess-1")
+        buf, done = io.StringIO(), threading.Event()
+        t = threading.Thread(target=fmbus.watch, kwargs={"sid": "sess-w", "interval": 0.05, "out": buf,
+                                                         "stop": done.is_set})
+        t.start()
+        try:
+            beat = os.path.join(fmbus._dir(), "watch-sess-w")
+            for _ in range(100):
+                if os.path.exists(beat):
+                    break
+                time.sleep(0.05)
+            self.assertTrue(os.path.exists(beat), "the watcher keeps a heartbeat")
+            fmbus.send("sess-w", "use the new parser", sender="sess-1")
+            fmbus.send("sess-z", "not yours", sender="sess-1")
+            fmbus.send("all", "freeze the API", kind="steer", sender="sess-1")
+            for _ in range(100):
+                if buf.getvalue().count("\n") >= 2:
+                    break
+                time.sleep(0.05)
+            time.sleep(0.3)  # more polls: nothing printed twice
+        finally:
+            done.set()
+            t.join(5)
+        lines = buf.getvalue().splitlines()
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn("use the new parser", lines[0])
+        self.assertIn("freeze the API", lines[1])
+        self.assertIn("fm bus read", lines[0])
+        self.assertNotIn("not yours", buf.getvalue())
+        self.assertNotIn("old news", buf.getvalue())
+        self.assertFalse(os.path.exists(beat), "a stopped watcher drops its heartbeat")
+        self.assertIn("use the new parser", self.note("sess-w")[1].get("additionalContext", ""), "never marks read")
+
+    def test_a_watcher_ended_by_a_signal_drops_its_heartbeat(self):
+        # T-0819: Claude Code ends a monitor with a signal, which skipped the finally: watch-<sid> outlived the session
+        import signal
+        import subprocess
+        import sys
+        import time
+        import fmbus
+        from helpers import FM
+        beat = os.path.join(fmbus._dir(), "watch-sess-sig")
+        for sig in (signal.SIGTERM, signal.SIGHUP):
+            w = subprocess.Popen([sys.executable, FM, "bus", "watch", "sess-sig"], cwd=self.repo,
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            try:
+                for _ in range(200):
+                    if os.path.exists(beat):
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(os.path.exists(beat))
+                w.send_signal(sig)
+                w.wait(10)
+            finally:
+                w.kill()
+            self.assertFalse(os.path.exists(beat), f"{sig.name} left the heartbeat")
+
+    def test_session_start_survives_a_racing_cleanup_and_keeps_to_its_own_claude(self):
+        # T-0820 (round-1 review): an overlapping SessionStart removing the same dead entry crashed record_pid, and a
+        # claude -p run from a session's Bash re-mapped that session's claude to itself
+        import fmbus
+        d = os.path.join(self.home, "state", "sessions", "by-pid")
+        os.makedirs(d, exist_ok=True)
+        real_remove, real_chain = os.remove, fmbus._chain
+        def racing_remove(path):
+            real_remove(path)
+            raise FileNotFoundError(path)  # the other SessionStart got there first
+        open(os.path.join(d, "999999"), "w").close()  # a dead pid's entry
+        names = {101: "sh", 102: "claude", 103: "bash", 104: "claude"}  # hook → sh → child claude -p → bash → parent
+        os.remove, fmbus._chain = racing_remove, lambda pid, depth: [(p, "t") for p in names][:depth]
+        real_comm = fmbus._comm if hasattr(fmbus, "_comm") else None
+        fmbus._comm = lambda pid: names.get(pid, "")
+        try:
+            fmbus.record_pid("sess-child")
+        finally:
+            os.remove, fmbus._chain = real_remove, real_chain
+            if real_comm:
+                fmbus._comm = real_comm
+        self.assertEqual(sorted(os.listdir(d)), ["101", "102"], "up to its own claude, not the parent session's")
+
+    def test_it_finds_its_session_from_the_session_start_hook(self):
+        import fmbus
+        saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
+        try:
+            self.assertIsNone(fmbus.own_session())
+            self.hook("SessionStart", {"session_id": "sess-pid", "source": "startup"})
+            self.assertEqual(fmbus.own_session(), "sess-pid", "this process is the hook's parent")
+        finally:
+            os.environ.update({k: v for k, v in saved.items() if v})
+
+    def test_a_resumed_session_keeps_its_watcher(self):
+        # T-0841 (live, 2026-10-15): Claude Code started as one session, then resumed this conversation under another
+        # id; the monitor kept the first id from its environment, so the resumed session's mail never printed
+        import io
+        import threading
+        import time
+        import fmbus
+        saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
+        buf, done = io.StringIO(), threading.Event()
+        try:
+            self.hook("SessionStart", {"session_id": "sess-first", "source": "startup"})
+            t = threading.Thread(target=fmbus.watch, kwargs={"interval": 0.05, "out": buf, "stop": done.is_set})
+            t.start()
+            time.sleep(0.3)
+            self.hook("SessionStart", {"session_id": "sess-resumed", "source": "resume"})
+            time.sleep(0.3)
+            fmbus.send("sess-resumed", "picked up after the resume", sender="sess-1")
+            for _ in range(100):
+                if "picked up" in buf.getvalue():
+                    break
+                time.sleep(0.05)
+        finally:
+            done.set()
+            t.join(5)
+            os.environ.update({k: v for k, v in saved.items() if v})
+        self.assertIn("picked up after the resume", buf.getvalue())
+
+    def test_a_resume_in_the_same_claude_process_is_not_another_session(self):
+        # T-0841: the same live resume told the session another one (its own first id) was active 0m ago
+        import fmhooks
+        now = c.now()
+        self.assertIsNone(fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 4242))
+        self.assertIn("Another Claude Code session",
+                      fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 999) or "")
+        self.assertIn("Another Claude Code session",
+                      fmhooks._other_session({"id": "sess-first", "seen": now}, "sess-b", None) or "", "unknown: as before")
+
+    def test_wake_prefers_a_fresh_watcher_over_tmux(self):
+        import time
+        import fmbus
+        bin_ = os.path.join(self.tmp, "bin")
+        os.makedirs(bin_)
+        log = os.path.join(self.tmp, "tmux.log")
+        with open(os.path.join(bin_, "tmux"), "w") as f:
+            f.write(f"#!/bin/sh\necho \"$@\" >> {log}\n")
+        os.chmod(os.path.join(bin_, "tmux"), 0o755)
+        env = {"PATH": bin_ + os.pathsep + os.environ["PATH"]}
+        self.snap("sess-w", tmux_pane="%7")
+        beat = os.path.join(fmbus._dir(), "watch-sess-w")
+        open(beat, "w").close()
+        self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi", "--wake", env=env).stdout)
+        self.assertFalse(os.path.exists(log), "the watcher delivers it: nothing typed into tmux")
+        os.utime(beat, (time.time() - 60, time.time() - 60))
+        self.assertIn("woke 1", self.fm("bus", "send", "sess-w", "hi again", "--wake", env=env).stdout)
+        self.assertTrue(os.path.exists(log), "a stale watcher: tmux stays the fallback")
+
+    def test_the_monitor_entry_uses_only_the_keys_claude_code_reads(self):
+        # strict keys, and `claude plugin validate --strict` doesn't check them
+        root = os.path.join(os.path.dirname(__file__), "..")
+        with open(os.path.join(root, "monitors", "monitors.json")) as f:
+            entries = json.load(f)
+        for e in entries:
+            self.assertLessEqual(set(e), {"name", "command", "description", "when"}, e)
+            self.assertIn("${CLAUDE_PLUGIN_ROOT}/bin/fm bus watch", e["command"])
+            self.assertTrue(os.access(os.path.join(root, "bin", "fm"), os.X_OK))
+
+
 class Lease(Base):
     def test_an_edit_leases_its_function_against_other_sessions(self):
         path = os.path.join(self.repo, "mod.py")

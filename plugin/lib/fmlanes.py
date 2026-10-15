@@ -103,7 +103,9 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   `git merge --ff-only {base}`; otherwise stop and report the two commits (T-0379).
 - Then, in your worktree: `fm focus {id}`. Refused → stop and report why.
 - Stay in your worktree; never touch the main checkout, other worktrees or Foreman's state except through fm.
-- Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then `fm check --evidence {id}`.
+- Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then
+  `fm check --affected --evidence {id}` (the tests linked to your files; the full gates run after the merge, T-0806).
+  Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
@@ -130,6 +132,9 @@ def builder_brief(p, b, args):
     if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
         where = f" in {b.meta['lane']}" if b.meta.get("lane") else ""
         raise c.PolicyError(f"{b.id} is {b.status}{where}: a builder takes a task nobody is working on")
+    gaps = c.plan_gaps(b, c.read_meta(p).get("autonomy", "standard"))
+    if gaps:  # T-0823: the builder's first act is fm focus, which refuses these
+        raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
         raise fmcli.UsageError(f"{b.id} has no criterion with a verify command: a builder needs checks it can run "
                                f"(fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
@@ -161,7 +166,8 @@ def builder_brief(p, b, args):
         x.append_log(f"builder brief: {path}")
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
     # T-0373: an S task's builder runs on Sonnet; an M task's keeps the main model (the main thread reviews either)
-    model = ', model: "sonnet"' if b.tier == "S" else ""
+    # T-0779: and its effort follows the tier too: medium for small well-specified diffs, high for M
+    model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
     return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
@@ -174,8 +180,24 @@ def builder_brief(p, b, args):
 # what a build or test run leaves and rebuilds, never anyone's work (T-0377: python's; T-0408: the test, lint, package
 # and bundler caches builders' runs leave, which JARVIS deleted by hand before each fm lane rm)
 _CACHE = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|\.hypothesis|\.tox|\.nox|node_modules|"
-                    r"\.vite|\.svelte-kit|\.next|\.turbo|\.parcel-cache|\.gradle|\.kotlin|htmlcov)(/|$)|\.py[co]$|"
+                    r"\.vite|\.svelte-kit|\.next|\.turbo|\.parcel-cache|\.gradle|\.kotlin|htmlcov|"
+                    # T-0833: build output; a lane starts with no ignored files, so these are its own builds
+                    r"target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)(/|$)|\.py[co]$|"
                     r"(^|/)\.coverage(\.[\w.-]+)?$")
+_BUILD = re.compile(r"(^|/)(target|build|dist|zig-out|\.zig-cache|zig-cache|cmake-build-[\w-]+)/?$")
+_SECRETISH = re.compile(r"(?i)\.(pem|key|p12|pfx|jks|keystore)$|^\.env($|\.)|\.env$|^id_(rsa|ed25519|ecdsa)|"
+                        r"^credentials?(\.\w+)?$")  # narrow: target/ holds env_logger-*.d and libsecret-*.rlib
+
+
+def _secretish(lane, rel):
+    """T-0839 (round-2 review): files under an ignored build dir whose names look like keys or config, which no build
+    makes and lane rm would otherwise delete with the folder."""
+    out = []
+    for root, _, names in os.walk(os.path.join(lane, rel)):
+        out += [os.path.relpath(os.path.join(root, n), lane) for n in names if _SECRETISH.search(n)]
+        if len(out) >= 5:
+            break
+    return out
 
 
 def merge(p, b, main):
@@ -221,6 +243,8 @@ def merge(p, b, main):
         if blk:
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
+    pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
+    pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
         brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
@@ -228,8 +252,15 @@ def merge(p, b, main):
         raise fmcli.UsageError(f"git merge {branch} failed and was aborted: {(r.stderr or r.stdout).strip()[:300]}"
                                + (f"\nConflict brief: {brief}" if brief else ""))
     merge.last = branch
-    fmcli.mutate(p, b.id, lambda x: x.append_log(f"merged {branch} ({len(files)} file(s))"), "lane_merge",
-                 {"branch": branch, "files": files[:50]})
+    def merged(x):
+        if pre_merge:
+            x.meta["base"] = pre_merge
+            x.meta.pop("base_tree", None)
+            x.meta.pop("paused_tree", None)
+            if pre_tree:
+                x.meta["base_tree"] = pre_tree
+        x.append_log(f"merged {branch} ({len(files)} file(s))")
+    fmcli.mutate(p, b.id, merged, "lane_merge", {"branch": branch, "files": files[:50]})
     return files
 
 
@@ -270,8 +301,10 @@ def remove(p, b, main):
     branches = [x for x in dict.fromkeys([f"foreman/{b.id}", b.meta.get("lane_branch")])
                 if x and x not in fmguard.DEFAULT_BRANCHES]
     if os.path.isdir(path):
-        st = _git(path, "status", "--porcelain", "--ignored")  # ignored files (.env, builds) go with the folder too
+        st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
+        left += [f"!! {x}" for ln in st.stdout.splitlines() if ln.startswith("!! ") and _BUILD.search(ln[3:])
+                 for x in _secretish(path, ln[3:])]  # T-0839: build output is rebuilt; a key kept in it isn't
         if st.returncode or left:  # T-0377/T-0408: caches are rebuilt on the next run, never anyone's work
             ignored = [ln[3:] for ln in left if ln.startswith("!! ")]
             raise c.PolicyError(f"lane {path} has " + (f"ignored files ({', '.join(ignored[:5])}) that removing it would "

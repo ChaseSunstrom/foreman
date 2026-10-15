@@ -134,6 +134,28 @@ class CommitAfterFocus(HookCase):
         self.assertTrue(shown.startswith("Later"), shown)  # its own commit, not the one before
         self.assertIn("notes.md", shown)
 
+    def test_a_file_it_untracked_and_deleted_is_committed_as_gone(self):
+        # T-0837: T-0836 ran git rm --cached on a stray cache and deleted it; git add -A -- <it> failed the pathspec
+        self.fm("init")
+        git = lambda *a: subprocess.run(["git", "-C", self.repo, *a], capture_output=True, text=True)
+        for name in ("cache.json", ".gitignore"):
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write("{}\n" if name == "cache.json" else "*.bak\n")
+        git("add", "cache.json", ".gitignore")
+        git("commit", "-qm", "stray cache")
+        self.fm("task", "new", "Untrack", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        with open(os.path.join(self.repo, ".gitignore"), "a") as f:
+            f.write("/cache.json\n")
+        git("rm", "-q", "--cached", "cache.json")
+        os.remove(os.path.join(self.repo, "cache.json"))
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Untrack", check=False)
+        self.assertIn("committed", r.stdout + r.stderr, r.stdout + r.stderr)
+        shown = git("show", "--name-status", "--format=%s", "HEAD").stdout
+        self.assertTrue(shown.startswith("Untrack"), shown)
+        self.assertIn("D\tcache.json", shown)
+        self.assertIn(".gitignore", shown)
+
 
 class FinalRun(ForemanTestCase):
     def test_run_is_the_final_check_even_when_every_step_has_evidence(self):

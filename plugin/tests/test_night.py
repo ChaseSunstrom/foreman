@@ -69,6 +69,13 @@ class Night(ForemanTestCase):
         tight = json.loads(self.fm("night", "--dry-run", "--max-usd", "0.001", "--json").stdout)
         self.assertEqual([j["name"] for j in tight["jobs"]], ["dream", "cold files"])  # T-0665, T-0660: only free jobs fit
         self.assertTrue(tight["skipped"])  # what didn't fit is named
+        tid = json.loads(self.fm("task", "new", "x", "--type", "CLEAN", "--tier", "S", "--ac", "ok :: true", "--step", "a",
+                                 "--json").stdout)["id"]
+        self.fm("focus", tid)
+        self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
+        tight = json.loads(self.fm("night", "--dry-run", "--max-usd", "0.001", "--json").stdout)
+        self.assertIn(("sentinel", ["sentinel", "--bisect"], 0.0),  # T-0888: closed tasks' checks against HEAD, free
+                      [(j["name"], j["argv"], j["usd"]) for j in tight["jobs"]])
 
     def test_high_usage_runs_nothing(self):
         sessions = os.path.join(c.state_dir(), "sessions")

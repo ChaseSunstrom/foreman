@@ -89,11 +89,18 @@ def cmd_init(args):
         c.log_event(p, "init", data={"root": root}, session=session())
         c.regen_views(p)
     out(args, {"project": p.slug, "root": root}, p.slug)
+    if not args.json:  # T-0847: stdout stays the bare slug (scripts read it); the newcomer reads this
+        print(f"Registered {root} as {p.slug}; its state lives in {p.dir}.\n"
+              f"Next: fm capture \"<request>\" (or just give Claude a request); fm --help for the everyday commands.",
+              file=sys.stderr)
 
 
 def cmd_state(args):
     p = resolve(args)
     sd = c.state_dict(p)
+    if args.cmd == "status" and not (args.line or args.json) and not c.load_briefs(p):  # T-0847: nothing yet
+        return print(f"{p.slug}: no tasks yet. Start with fm capture \"<request>\" or fm task new \"<title>\" --type FIX "
+                     f"--tier S --focus (or just give Claude a request).")
     if args.line:
         print(c.state_line(sd))
     elif args.json:
@@ -534,11 +541,17 @@ def cmd_task(args):
                 reasons.append(f"no behaviour lock: a CLEAN change needs the tests run before its first edit (fm check "
                                f"--evidence {b.id} --step 1), or fm task set {b.id} --section \"Behaviour lock\" --text "
                                f"\"none: <why>\"")
+            if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0896 (was a warning, T-0599)
+                reasons.append(f"no Decision: research ends in a choice: fm task set {b.id} --section Decision --text "
+                               f"\"Recommendation: …; would change if: …\" (or \"none: <why>\")")
             if b.tier in ("M", "L") and not lesson and not b.section("Lessons").strip():
                 reasons.append(f"lesson missing: fm task done {b.id} --lesson \"<what the next similar task should "
                                f"know>\" (or \"none: <why>\"); recall shows it on related work")
             if reasons:
-                raise c.PolicyError(f"{b.id} can't be marked done:\n  - " + "\n  - ".join(reasons))
+                lead = "" if hasattr(args, "audit") else (  # T-0849: fm task done, not finish's own close
+                    f" — one call settles most of it: fm task finish {b.id} --run \"<test cmd>\" --audit \"<how>\""
+                    + (" --lens \"<lens>: <result>\" … --docs \"<…>\" --lesson \"<…>\"" if b.tier in ("M", "L") else ""))
+                raise c.PolicyError(f"{b.id} can't be marked done{lead}:\n  - " + "\n  - ".join(reasons))
             if lesson:
                 old = b.section("Lessons").rstrip()
                 b.set_section("Lessons", (old + "\n" if old else "") + f"- {lesson}")
@@ -557,6 +570,9 @@ def cmd_task(args):
         b, _ = mutate(p, args.id, done, "task_done", logged)
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
+        chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
+        if chose and not chose.lower().startswith("none"):  # T-0896: the project keeps what the research decided
+            _write_decision(p, c.fit(chose, 400), f"research {b.id}: {c.fit(b.title, 120)}", task=b.id)
         try:
             import fmrecall
             fmrecall.write_tripwires(p)
@@ -568,8 +584,14 @@ def cmd_task(args):
             print(f"fm: warning: {w}", file=sys.stderr)
         grade, why = b.grade()
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
-        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed),
+        own = {a.n for a in b.acceptance() if c.verify_of(a.text) and any(  # T-0900: proven by its own command
+            ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
+        by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
+        return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
+                              check_by_hand=by_hand),
                    f"{b.id} done (verification: {grade} — {why})." + (
+            "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
+            if by_hand else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
@@ -600,6 +622,17 @@ def cmd_task(args):
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
+        saved = []
+        if status == "dropped" and cur.status in ("active", "verifying"):  # T-0895: its half-done work outlives a checkout
+            try:
+                saved = c.snapshot(p.root, f"fm task drop {cur.id}", timeout=30)
+            except RuntimeError as e:
+                print(f"fm: warning: {cur.id}'s work wasn't saved before the drop ({e})", file=sys.stderr)
+        if saved:
+            line = f"work at drop saved: {saved[0]} (restore: {c.restore_line(c.git_root(p.root), saved[0])})"
+            prev = change
+            change = lambda b: (prev(b), b.append_log(line))  # noqa: E731
+            print(f"{cur.id}: {line}")
         b, _ = mutate(p, args.id, change, f"task_{sub}", {"reason": reason})
         if status == "blocked":  # T-0734: a block is a real failure worth an eval case, kept locally
             try:
@@ -653,6 +686,7 @@ def task_packet(p, args):
     if args.check:  # T-0704: a handoff is trusted only while the failure it hands over still happens
         if not repro:
             raise UsageError(f"{b.id} has no failing run recorded to reproduce (fm task evidence {b.id} --run \"<cmd>\")")
+        guard_stored(p, b, repro)  # T-0901 review: a recorded command, rerun
         code, output = c.run_command(p.root, repro, args.timeout)
         if code:
             return out(args, {"task": b.id, "cmd": repro, "reproduces": True},
@@ -685,6 +719,16 @@ def task_packet(p, args):
     return out(args, {"path": path, "task": b.id}, f"{b.id}: handoff packet written to {path}")
 
 
+def _refuse_unrunnable(p, cmds):
+    """T-0765: a verify that can't run at all is refused before the brief changes: once it has evidence it can't be
+    edited (T-0342), and the only way out was dropping and recreating the task."""
+    for cmd in filter(None, cmds):
+        why = c.unrunnable(cmd, p.root)
+        if why:
+            raise UsageError(f"verify `{cmd}` can't run: {why}. Fix it before adding it: a criterion with evidence "
+                             f"can't be edited later")
+
+
 def _lint_verify(p, cmds):
     for cmd in filter(None, cmds):
         if cmd.lstrip().startswith("typed:"):  # T-0333: fm task finish runs a verify; a typed check is evidence
@@ -694,6 +738,23 @@ def _lint_verify(p, cmds):
         problems = c.lint_verify(cmd, p.root)
         if problems:
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
+
+
+def guard_stored(p, b, cmd):
+    """T-0901: a command fm stored and is about to run (a verify, the affected template, a sentinel recheck) gets the
+    guard's checks, with the task's grants, the standing yes and trust as the hook would apply them; PolicyError when
+    it's refused. What never passed the hook (a brief stored before the guard read these, one fm sync brought in) is
+    caught here."""
+    import fmguard
+    home, meta = os.path.expanduser("~"), c.read_meta(p)
+    ctx = fmguard.Ctx(cwd=p.root, project_root=fmguard.project_root_for(p.root, home), home=home,
+                      foreman_home=c.foreman_home(), state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(),
+                      scratch=[x for x in ("/tmp", "/var/tmp", os.environ.get("TMPDIR")) if x],
+                      allow=set(b.meta.get("allow") or []) if b else set(), task_id=b.id if b else None,
+                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
+    block = fmguard.check("Bash", {"command": cmd}, ctx)
+    if block:
+        raise c.PolicyError(f"fm won't run the stored command `{c.fit(cmd, 100)}`: {fmguard.message(block, ctx)}")
 
 
 def task_finish(p, args):
@@ -720,6 +781,7 @@ def task_finish(p, args):
 
     def run(cmd):
         if cmd not in runs:
+            guard_stored(p, b, cmd)  # T-0901
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
         return runs[cmd]
     # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
@@ -736,11 +798,13 @@ def task_finish(p, args):
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
     gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses)
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
         todo.append(("final", None, args.run))
+    for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
+        guard_stored(p, b, cmd)
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -814,6 +878,19 @@ def _finish_gaps(b, args, lenses):
     return gaps
 
 
+def _self_docs_gaps(p, b):
+    """CLEAN T-0764: a close that touches fmcli.py or plugin/skills must leave Foreman's own docs naming real commands
+    and skills (fm doctor's self docs check), so the close is refused, not caught later."""
+    import fmdoctor
+    import fmmap
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    if not base or not any(f == "plugin/lib/fmcli.py" or f.startswith("plugin/skills/")
+                           for f in fmmap.changed(p.root, base)):
+        return []
+    res = fmdoctor.check_self_docs()
+    return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
+
+
 def _commit_task(p, b, message, dry=False, stack=False, check=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
@@ -861,7 +938,13 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
             print(f"{b.id}: nothing to commit{' here' if elsewhere else ''}.")
         return
     git = ["git", "--literal-pathspecs", "-C", p.root]  # session audit: a file named '*' names only itself
-    add = subprocess.run([*git, "add", "-A", "--", *files], capture_output=True, text=True)
+    # T-0837: a file untracked (git rm --cached) and deleted is on neither side: git add fails its pathspec, while
+    # git commit -- <it> below takes the staged deletion as it is
+    known = set(subprocess.run([*git, "ls-files", "--", *files], capture_output=True, text=True).stdout.splitlines())
+    addable = [f for f in files if f in known or os.path.lexists(os.path.join(p.root, f))
+               or any(k.startswith(f.rstrip("/") + "/") for k in known)]
+    add = subprocess.run([*git, "add", "-A", "--", *addable], capture_output=True, text=True) if addable else \
+        subprocess.CompletedProcess([], 0, "", "")
     if add.returncode == 0:  # T-0132: nothing that looks like a credential goes into a commit Foreman makes
         import fmsecrets
         leaks = fmsecrets.staged_leaks(p.root, files)
@@ -1124,6 +1207,7 @@ def task_prove(p, args):
 def _run_at(p, rev, cmd, timeout):
     """(exit, output) of cmd in a throwaway worktree of rev (a commit, or a tree such as a task's start snapshot)."""
     import tempfile
+    guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901 review: --vacuous runs stored verifies
     if c._git(p.root, "cat-file", "-t", rev, timeout=10).strip() == "tree":
         rev = c._git(p.root, "commit-tree", "--no-gpg-sign", rev, "-m", "fm scratch", timeout=60).strip()
     if not rev:
@@ -1138,6 +1222,29 @@ def _run_at(p, rev, cmd, timeout):
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
+
+
+def cmd_at(args):
+    """T-0898: CMD run in a throwaway worktree of TARGET — a task id (its start snapshot, uncommitted work included) or
+    a git revision — with its exit code; the working tree isn't touched."""
+    import shlex
+    p = resolve(args)
+    words = args.words[1:] if args.words[:1] == ["--"] else args.words
+    if not words:
+        raise UsageError("fm at TARGET -- <command> (TARGET: a task id, or a commit, branch or tag)")
+    if re.fullmatch(r"T-\d+", args.target):
+        rev = c.task_base(p.root, need_brief(p, args.target))
+        if not rev:
+            raise UsageError(f"{args.target} has no start point on record (it was never focused)")
+    else:
+        rev = c._git(p.root, "rev-parse", "--verify", "-q", f"{args.target}^{{commit}}", timeout=10).strip()
+        if not rev:
+            raise UsageError(f"no commit named {args.target}")
+    cmd = words[0] if len(words) == 1 else shlex.join(words)
+    code, output = _run_at(p, rev, cmd, args.timeout)
+    out(args, {"target": args.target, "rev": rev, "exit": code, "output": output},
+        f"{'✗' if code else '✓'} at {args.target} ({rev[:12]}): {cmd} → {c.run_result(code, output)}")
+    return code
 
 
 def task_prove_vacuous(p, b, args):
@@ -1233,7 +1340,7 @@ def _close_warnings(p, b, files):
 
 
 _CACHES = re.compile(r"(?:^|/)(?:__pycache__|\.pytest_cache|\.mypy_cache|node_modules|\.venv|venv|\.tox|\.cache|"
-                     r"\.foreman|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
+                     r"\.foreman|\.claude|state|local|backups)(?:/|$)")  # rewritten by every run: never "left behind"
 
 
 def _close_warnings_of(p, b, files):
@@ -1275,9 +1382,6 @@ def _close_warnings_of(p, b, files):
     dissent = (f"open dissent ({len(still)}): " + "; ".join(c.fit(t, 100) for _, t in still[:3])
                + f" — answer or note each: fm task dissent {b.id} resolve N \"<how>\"") if still else None
     honest = _honest(p, b)  # T-0661
-    if b.type == "RESEARCH" and not b.section("Decision").strip():  # T-0599: research ends in a decision
-        honest.append(f"a RESEARCH task closing with no Decision section: fm task set {b.id} --section Decision --text "
-                      f"\"Recommendation: …; would change if: …\"")
     steers = [t[6:].strip() for e in c.ledger_tail(p, 3000) if e.get("event") == "note" and e.get("task") == b.id
               and (t := str((e.get("data") or {}).get("text") or "")).startswith("steer:")]
     standing = [x for x in steers if c.STANDING_STEER.search(x)]
@@ -1356,6 +1460,9 @@ def catch_rates(p):
             for cmd, code in d.get("ran") or []:
                 runs[cmd] += 1
                 seq[(cmd, e.get("task"))].append(not code)
+        elif e.get("event") == "prove" and d.get("cmd") and "red" in d:  # T-0880: its start-tree run failed first
+            runs[d["cmd"]] += 2
+            seq[(d["cmd"], e.get("task"))] += [not d["red"], not d.get("green")]
     caught = collections.Counter(cmd for (cmd, _), ok in seq.items() if False in ok and ok[-1])
     return {cmd: (n, caught[cmd]) for cmd, n in runs.items()}
 
@@ -1613,8 +1720,10 @@ def _tier_drift(p, b, files):
         add, rem, name = (row.split("\t") + ["", "", ""])[:3]
         seen.add(name)
         lines += (int(add) if add.isdigit() else 0) + (int(rem) if rem.isdigit() else 0)
-    for f in files[:500]:  # new, untracked files: every line is added
-        if f not in seen:
+    at_base = set((c._git(p.root, "ls-tree", "-r", "--name-only", base, "--", *files[:500], timeout=30)
+                   or "").splitlines())
+    for f in files[:500]:  # new files: every line is added (one at the start and not in the diff is unchanged: T-0812)
+        if f not in seen and f not in at_base:
             try:
                 with open(os.path.join(p.root, f), "rb") as fh:
                     lines += fh.read(2_000_000).count(b"\n")
@@ -1721,9 +1830,20 @@ def _settle_batch(p, h, done):
 def task_new(p, args):
     type_ = c.WORK_TAGS.get(args.type.upper(), args.type.upper())
     if type_ not in c.TYPES:
-        raise UsageError(f"unknown type {args.type!r}")
+        raise UsageError(f"unknown type {args.type!r}; one of {', '.join(c.TYPES)}")
     if args.tier not in ("S", "M", "L"):
         raise UsageError("tier must be S, M or L")
+    reused = ""
+    if not args.from_id and not getattr(args, "redo", None):  # T-0848: the capture this request already is
+        key = " ".join(c.plain(args.title).lower().split())
+        same = next((x for x in c.load_briefs(p) if x.status == "captured" and " ".join(x.title.lower().split()) == key),
+                    None)
+        if same:
+            args.from_id, reused = same.id, f" (from inbox capture {same.id}: same title)"
+    _refuse_unrunnable(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
+    redo = need_brief(p, args.redo) if getattr(args, "redo", None) else None
+    if redo and redo.status != "dropped":
+        raise UsageError(f"--redo takes a dropped task; {redo.id} is {redo.status}")
     with c.lock(p.dir):
         if args.from_id:
             b = need_brief(p, args.from_id)
@@ -1740,6 +1860,13 @@ def task_new(p, args):
         else:
             b = _create(p, args.title, type_, args.tier, "planned", raw=args.raw, scope=args.scope or (),
                         depends=args.depends or (), source=args.source)
+        if redo:  # T-0767: its diff starts where the dropped task's did, and the files it edited are this task's
+            b.meta.update({k: redo.meta[k] for k in ("base", "base_tree") if redo.meta.get(k)})
+            b.append_log(f"redo of {redo.id}: takes over its start point and edited files")
+            c.save_brief(p, b)
+            for rel, at in c.task_touches(p, redo.id).items():
+                c.log_event(p, "touched", task=b.id, data={"file": os.path.join(p.root, rel), "tool": "redo", "at": at},
+                            session=session())
         c.log_event(p, "task_new", task=b.id, data={"type": type_, "tier": args.tier, "from": args.from_id},
                     session=session())
         c.regen_views(p)
@@ -1757,7 +1884,7 @@ def task_new(p, args):
         _lint_verify(p, [t.rpartition(" :: ")[2] for t in args.ac or [] if " :: " in t])
     if not args.from_id:
         _note_escapes(p, b, " ".join(filter(None, [args.title, args.raw])))
-    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path})"
+    out(args, c.brief_summary(b), f"{b.id} [{b.type} {b.tier}] {b.title} — planned ({b.path}){reused}"
         + ("" if args.from_id else _covered_note(p, b.id, " ".join(filter(None, [args.title, args.raw])))))
     if args.focus:
         cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
@@ -1798,7 +1925,7 @@ def task_set(p, args):
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
-        changes[k] = [x.strip() for x in v.split(",") if x.strip()] if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
+        changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
     section_text = None
     if args.section:
         section_text = args.text if args.text is not None else (open(args.file).read() if args.file else None)
@@ -1834,6 +1961,13 @@ def task_set(p, args):
     out(args, c.brief_summary(b), f"{b.id} updated.")
 
 
+def _list_value(v):
+    """T-0810: a,b or [a, b] or ["a","b"]: the items, without one pair of brackets or the quotes around each."""
+    v = v.strip()
+    v = v[1:-1] if v.startswith("[") and v.endswith("]") else v
+    return [x.strip().strip("'\"").strip() for x in v.split(",") if x.strip().strip("'\"").strip()]
+
+
 def task_step(p, args):
     if args.action == "add":
         b, n = mutate(p, args.id, lambda b: b.add_step(args.arg), "step_add", {"text": args.arg})
@@ -1861,6 +1995,7 @@ def task_ac(p, args):
     if args.action == "add":
         text, sep, verify = args.arg.rpartition(" :: ")  # "criterion :: verify cmd", as with task new --ac
         text, verify = (text, verify.strip()) if sep and not args.verify else (args.arg, args.verify)
+        _refuse_unrunnable(p, [verify])
         b, _ = mutate(p, args.id, lambda b: b.add_ac(text, verify), "ac_add", {"text": text})
         _lint_verify(p, [verify])
         return out(args, c.brief_summary(b), f"{b.id}: criterion added.")
@@ -1871,6 +2006,7 @@ def task_ac(p, args):
     if args.action == "edit":
         if args.verify is None and not args.text:
             raise UsageError("fm task ac ID edit N needs --verify CMD and/or --text TEXT")
+        _refuse_unrunnable(p, [args.verify])
         try:
             b, _ = mutate(p, args.id, lambda b: b.edit_ac(n, args.text, args.verify), "ac_edit", {"ac": n})
         except KeyError as e:
@@ -1965,7 +2101,9 @@ def cmd_focus(args):
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
-        if other.get("id") and session() and other["id"] != session() and age is not None and age < 10 / 1440:
+        import fmbus
+        if other.get("id") and session() and other["id"] != session() and age is not None and age < 10 / 1440 \
+                and not (other.get("pid") and other["pid"] == fmbus.claude_pid()):  # T-0841: a resume is no other
             warn = f"note: another Claude Code session ({other['id'][:8]}) was active in this project within 10 minutes"
         c.log_event(p, "focus", task=target.id, session=session())
         c.regen_views(p)
@@ -2068,6 +2206,7 @@ def cmd_resume(args):
     extra = (f"\nTried on step {n}: " + "; ".join(f"{x} ×{k}" for x, k in tried)) if tried else ""
     green = None if getattr(args, "no_check", False) else _last_green(b)
     if green:  # T-0649: did anything drift since the last green check?
+        guard_stored(p, b, green)  # T-0901 review: a brief's [ran] line can come from another clone
         code, output = c.run_command(p.root, green, 120)
         extra += (f"\nLast green check `{green}` still passes." if code == 0 else
                   f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
@@ -2533,6 +2672,76 @@ def cmd_research(args):
                                                                   f"{', '.join(made)}" if made else ""))
 
 
+_PROMISE = re.compile(r"(?i)\bI(?:['’]ll| will)\s+(?:also|later|follow up (?:on|with)|come back to|circle back to|get to)"
+                      r"\s+[^.\n!?]{4,140}")
+
+
+def capture_promises(p, text, sid=None):
+    """T-0899: what a reply that ends the turn promises for later ("I'll also…", "I'll follow up on…") becomes an inbox
+    item, once (an open one of the same title is enough); code blocks don't count. Returns the new ids."""
+    said = re.sub(r"```.*?(?:```|$)", " ", text or "", flags=re.S)
+    found = list(dict.fromkeys(c.fit(c.plain(c.redact(m.group(0))).strip(), 160) for m in _PROMISE.finditer(said)))[:5]
+    if not found:
+        return []
+    made = []
+    with c.lock(p.dir):
+        have = {b.title.lower() for b in c.load_briefs(p) if b.status not in c.CLOSED}
+        for x in found:
+            title = _title(f"Promised: {x}")
+            if title.lower() in have:
+                continue
+            b = _create(p, title, "FEATURE", "S", "captured", raw=f"{x}\n(promised in Claude's reply; captured so it "
+                                                                  f"isn't lost)", source="followup")
+            c.log_event(p, "capture", task=b.id, data={"source": "promise"}, session=sid)
+            made.append(b.id)
+        if made:
+            c.regen_views(p)
+    return made
+
+
+def _research_items(p):
+    """(name, path of the file to read, mtime) for each note and brainstorm folder, newest first (T-0802)."""
+    folder = os.path.join(p.dir, "research")
+    items = []
+    for n in os.listdir(folder) if os.path.isdir(folder) else []:
+        path = os.path.join(folder, n)
+        if os.path.islink(path):
+            continue
+        if os.path.isdir(path):
+            path = os.path.join(path, "ideas.md")
+        elif n.endswith(".md"):
+            n = n[:-3]
+        else:
+            continue
+        if os.path.isfile(path) and not os.path.islink(path):
+            items.append((n, path, os.path.getmtime(path)))
+    return sorted(items, key=lambda i: i[2], reverse=True)
+
+
+def cmd_research_list(args):
+    p = resolve(args)
+    rows = []
+    for n, path, mt in _research_items(p):
+        with open(path, encoding="utf-8", errors="replace") as f:
+            first = next((ln.strip("# \t\r\n") for ln in f if ln.strip()), "")
+        rows.append({"name": n, "date": time.strftime("%Y-%m-%d", time.localtime(mt)), "title": c.fit(first, 80),
+                     "bytes": os.path.getsize(path)})
+    out(args, rows, "\n".join(f"{r['name']}  {r['date']}  {r['bytes']}B  {r['title']}" for r in rows)
+        or "(no research saved)")
+
+
+def cmd_research_show(args):
+    p = resolve(args)
+    name = args.name[:-3] if args.name.endswith(".md") else args.name
+    items = {n: path for n, path, _ in _research_items(p)}
+    if name not in items:
+        import difflib
+        near = difflib.get_close_matches(name, list(items), n=1)
+        raise UsageError(f"no research named {name!r}" + (f"; closest: {near[0]}" if near else ""))
+    with open(items[name], encoding="utf-8", errors="replace") as f:
+        print(f.read(), end="")
+
+
 def cmd_drive(args):
     p = resolve(args)
     c.update_meta(p, drive=args.state == "on")
@@ -2576,6 +2785,7 @@ def cmd_check(args):
     if getattr(args, "repeat", 0):  # T-0475: an intermittent failure's rate, gate by gate (nothing recorded or cached)
         n, rows = max(1, args.repeat), []
         for cmd in c.read_meta(p).get("checks") or []:
+            guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901 review
             passed = sum(1 for _ in range(n) if not c.run_command(p.root, cmd, args.timeout)[0])
             rows.append({"cmd": cmd, "passed": passed, "runs": n})
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
@@ -2628,8 +2838,9 @@ def cmd_check(args):
         try:  # R3 bootstrap: what the project itself says it runs
             import fmmap
             m = fmmap.load(p) if c.git_root(p.root) else {}
-            hint = "; found in the project: " + "; ".join((m.get("gates") or []) + (m.get("ci") or [])[:4]) \
-                if m.get("gates") or m.get("ci") else ""
+            found = (m.get("gates") or []) + (m.get("ci") or [])[:4]
+            hint = (f"; this project's tests look like: fm check add '{found[0]}'"  # T-0850: the line, ready to run
+                    + (f" (also found: {'; '.join(found[1:])})" if found[1:] else "")) if found else ""
         except Exception:
             pass
         raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
@@ -2655,6 +2866,7 @@ def cmd_check(args):
             results.append((cmd, 0, skip[0], 0.0))
             skipped[cmd] = {"since": skip[1], "tree": skip[2]}
             continue
+        guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
         if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
@@ -2750,6 +2962,17 @@ def cmd_sentinel(args):
             if m and not _SIDE_EFFECTS.search(m.group(2)):
                 checks.setdefault(m.group(2), (b.id, m.group(1)))
     results = []
+    refused = []
+    for cmd in list(cmds) + list(checks):  # T-0901: a stored check the guard refuses isn't rerun (all, before --max)
+        try:
+            guard_stored(p, None, cmd)
+        except c.PolicyError:
+            refused.append(cmd)
+            cmds.pop(cmd, None)
+            checks.pop(cmd, None)
+    if refused:
+        print(f"fm: warning: {len(refused)} stored check(s) the guard refuses weren't rerun: "
+              + "; ".join(c.fit(x, 60) for x in refused[:3]), file=sys.stderr)
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
         results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
@@ -2800,6 +3023,26 @@ def first_bad(p, cmd, good, bad, timeout):
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
     return m.group(1) if m else None
+
+
+def cmd_snapshots(args):
+    """T-0884: the working files Foreman saved before a command discarded uncommitted work, newest first, each with
+    the command that brings it back (it restores the saved files and leaves newer ones alone)."""
+    p = resolve(args)
+    top = c.git_root(p.root)
+    rows = []
+    for ln in (c._git(top, "for-each-ref", "--sort=-refname", "--format=%(refname)%09%(objectname)%09%(subject)",
+                      c.SNAPSHOTS, timeout=30) if top else "").splitlines():
+        ref, sha, subject = (ln.split("\t", 2) + ["", ""])[:3]
+        stash = ref.endswith("-stash")
+        rows.append({"ref": ref, "sha": sha[:12], "at": ref[len(c.SNAPSHOTS):].split("-", 1)[0],
+                     "before": c.plain(subject.removeprefix("Foreman snapshot before: ")),
+                     "kind": "stash" if stash else "tree",
+                     "restore": c.restore_line(top, sha[:12], "stash" if stash else "tree")})
+    text = "\n".join(f"{r['at']}  {r['sha']}  {'stash: ' if r['kind'] == 'stash' else 'before: '}{r['before']}\n"
+                     f"  restore: {r['restore']}" for r in rows)
+    return out(args, {"snapshots": rows}, text or "No snapshots: Foreman saves one before a command discards "
+                                                   "uncommitted work (git reset --hard, checkout --, clean -f…).")
 
 
 def cmd_bisect(args):
@@ -2969,7 +3212,10 @@ def affected(p):
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
-    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | {f for f in changed if f in m["tests"]})
+    # T-0875: a changed test file always runs, linked or not (a new one isn't in the map until it's committed); by its
+    # name, so a helper under tests/ isn't run alone (pytest exits 5 when it collects nothing)
+    own = {f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)}
+    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own)
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
@@ -2981,6 +3227,8 @@ def affected(p):
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     cmd, tests, changed = affected(p)
+    if cmd:
+        guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901: the template is a stored command
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
@@ -3002,7 +3250,10 @@ _LENS_TPL = re.compile(r"^\*\*(\w+)\*\* — context: (.+?)\n> (.+?)$", re.M)
 _REVIEW_OUT = ("Verify each finding by reading the code (cite file:line). Output one section per lens, \"## <lens>: ok | "
                "changes needed\", each with its findings ranked HIGH/MEDIUM/LOW with file:line, the concrete scenario, "
                "a reproducer (the command, input or test that shows it; without one it's a lead, not a finding: "
-               "T-0651) and a fix; then \"## Not checked\". Only verified findings.")
+               "T-0651) and a fix; then \"## Not checked\". Only verified findings. Keep each finding on one "
+               "HIGH/MEDIUM/LOW line, then give ReportFindings' fields under it: file (repo-relative), line, summary "
+               "(one sentence), short_summary (<=60 chars), failure_scenario (concrete inputs/state -> wrong output), "
+               "category (kebab-case), verdict (CONFIRMED|PLAUSIBLE, optional); most severe first.")
 
 
 _FINDING = re.compile(r"(?m)^[ \t]*(?:[-*]|\d+[.)]?)?[ \t]*(?:\*\*|#+[ \t]*)?\[?(?:CRIT(?:ICAL)?|HIGH|MED(?:IUM)?)\b[\s*:—–\]-]*(.+)$")
@@ -3216,6 +3467,8 @@ def cmd_audit(args):
            f"fm task audit {b.id} <lens> …" + (f" (a {r.stdout.count(chr(10))}-line L diff: fm audit prep {b.id} --split "
                                                f"gives each lens group a fresh reviewer, in parallel)" if big else "")
            if sections else f"Record it with fm task audit {b.id} self …")
+    if sections:  # T-0780: verified findings reach the host's review UI before they become lenses
+        how += "\nReport the verified findings with ReportFindings (empty list if none) before recording lenses."
     try:  # T-0276: installed review skills that fit a lens; their findings count as that lens
         import fmplugins
         fit = fmplugins.lens_skills(p, [x for x in lenses if x != "self"])
@@ -3308,12 +3561,23 @@ def lazy(module, func):
 _ARGV = []  # the arguments main() is parsing
 
 
+def _no_ids(text):
+    """T-0873: help without the ticket ids its source keeps for provenance ("(T-0594)", ", T-0375)", "T-0368: ")."""
+    text = re.sub(r"\s*\((?:T-\d{3,4}(?:,\s*|\s*\+\s*)?)+\)", "", text)
+    text = re.sub(r"[,;]\s*T-\d{3,4}(?=\))", "", text)
+    text = re.sub(r"\bT-\d{3,4}\b:?\s*", "", text)
+    return re.sub(r"\(\s*\)|\(\s+", lambda m: "" if m.group(0).strip() == "()" else "(", text)
+
+
 class _Parser(argparse.ArgumentParser):
     """No abbreviated long options (subparsers inherit the class): `--allo core` must not slip past the guard."""
 
     def __init__(self, *args, **kw):
         kw["allow_abbrev"] = False
         super().__init__(*args, **kw)
+
+    def format_help(self):
+        return _no_ids(super().format_help())
 
     def error(self, message):
         """T-0273: an unknown command or flag names the nearest real one (a wrong guess costs a retry otherwise)."""
@@ -3342,13 +3606,13 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify wiring "
+    ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane serve run session claude agents night orders mcp ui projects sweep machine watch "
+    ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -3356,7 +3620,7 @@ HELP_TIERS = [
 
 def cmd_help(args):
     sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-    helps = {a.dest: " ".join((a.help or "").split()) for a in sub._choices_actions}
+    helps = {a.dest: _no_ids(" ".join((a.help or "").split())) for a in sub._choices_actions}
     lines = []
     for title, names in HELP_TIERS:
         lines += [title] + [f"  {n:<15}{c.fit(helps.get(n, ''), 100)}" for n in names.split()] + [""]
@@ -3364,10 +3628,35 @@ def cmd_help(args):
         "\n".join(lines) + "fm <command> -h for its options.")
 
 
+# T-0845: fm --help is where a newcomer starts: the everyday commands, not argparse's 100-verb blob
+START_HERE = """usage: fm [-p PROJECT] <command> [options]
+
+Foreman state CLI (the only writer of Foreman state). Start here:
+  fm demo                  watch Foreman fix a seeded bug in a throwaway repo (no model calls)
+  fm init                  register this repo (once; most commands do it for you)
+  fm capture "<request>"   put a request in the inbox
+  fm task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
+                           plan a task (or a capture of the same title) and work on it
+  fm next                  the one next required action
+  fm status                where things stand
+  fm focus ID              work on a planned task
+  fm check                 run the gates (tests, lint)
+  fm task finish ID --run "<cmd>" --audit "<how>"
+                           close a task in one call
+  fm queue                 what's planned, in order
+  fm inbox                 captured requests waiting
+  fm doctor                is Foreman healthy here?
+
+fm help --all lists every command; fm <command> -h for its options; -p SLUG picks a project from elsewhere.
+"""
+
+
 def build_parser():
-    ap = _Parser(prog="fm", description="Foreman state CLI (the only writer of Foreman state).")
+    ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
+                 description="Foreman state CLI (the only writer of Foreman state).")
+    ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
-    sp = ap.add_subparsers(dest="cmd", required=True)
+    sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
     def add(name, fn, **kw):
         s = sp.add_parser(name, **kw)
@@ -3376,7 +3665,8 @@ def build_parser():
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
-    add("help", cmd_help, help="every command, in tiers: the everyday ones first")
+    s = add("help", cmd_help, help="every command, in tiers: the everyday ones first")
+    s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
     s = add("init", cmd_init, help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
@@ -3450,6 +3740,12 @@ def build_parser():
                                                            "transcript")
     r.add_argument("--task")
     r.add_argument("--json", action="store_true")
+    r = rsp.add_parser("list", help="saved research, newest first (T-0802)")
+    r.set_defaults(fn=cmd_research_list)
+    r.add_argument("--json", action="store_true")
+    r = rsp.add_parser("show", help="print one saved research note or brainstorm's ideas.md (T-0802)")
+    r.set_defaults(fn=cmd_research_show)
+    r.add_argument("name")
     r = rsp.add_parser("ask", help="recall first, then parallel web researchers per sub-question; every quoted claim "
                                    "is checked against the page it cites; one note saved (T-0206)")
     r.set_defaults(fn=lazy("fmresearch", "cmd_ask"))
@@ -3498,15 +3794,21 @@ def build_parser():
     t.add_argument("--check", action="store_true",
                    help="rerun the failing command the packet hands over: accepted while it still fails (T-0704)")
     t.add_argument("--timeout", type=int, default=300)
-    t = tadd("new")
+    t = tadd("new")  # T-0846: its values and one worked example in -h
+    t.epilog = ('example:\n  fm task new "Add login timeout" --type FIX --tier S --ac "times out after 30s :: pytest -k '
+                'timeout" --step "failing test" --focus')
+    t.formatter_class = argparse.RawDescriptionHelpFormatter
     t.add_argument("title")
-    t.add_argument("--type", required=True)
-    t.add_argument("--tier", required=True)
+    t.add_argument("--type", required=True, metavar="{" + ",".join(c.TYPES) + "}",
+                   help="what kind of work (aliases such as BUG, PERF, FEAT and lowercase work too)")
+    t.add_argument("--tier", required=True, choices=["S", "M", "L"],
+                   help="S: ≤~30 lines, 1–2 files · M: several files or a design choice · L: cross-cutting or uncertain")
     t.add_argument("--scope", action="append")
     t.add_argument("--depends", action="append")
     t.add_argument("--raw")
     t.add_argument("--source", default="user", choices=["user", "discovered", "followup", "self"])
     t.add_argument("--from", dest="from_id")
+    t.add_argument("--redo", metavar="ID", help="recreate a dropped task: keep its start point and edited files")
     t.add_argument("--ac", action="append", help="acceptance criterion (repeatable): name its observable, what the "
                                                  "user will see, and give its check as 'TEXT :: CMD'")
     t.add_argument("--step", action="append", help="step (repeatable)")
@@ -3649,10 +3951,12 @@ def build_parser():
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
     s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
                                                   "yours (T-0708)")
-    s.add_argument("action", choices=["send", "read"])
+    s.add_argument("action", choices=["send", "read", "watch"],
+                   help="watch: the plugin monitor's stream of this session's new mail (T-0777)")
     s.add_argument("words", nargs="*")
     s.add_argument("--type", default="note", choices=["note", "steer", "stop"])
-    s.add_argument("--wake", action="store_true", help="type one short line into a tmux-hosted session")
+    s.add_argument("--wake", action="store_true",
+                   help="wake an idle session: its watcher prints the mail, else one line typed into its tmux pane")
     s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
     s.add_argument("target", nargs="?", help="FILE[::SYMBOL]")
@@ -3718,6 +4022,10 @@ def build_parser():
                    help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
     s.add_argument("--lesions", action="store_true", help="what each fm evolve --drop ablation found (T-0664)")
+    s = add("at", cmd_at, help="run a command as of a task's start or a commit, in a throwaway worktree")
+    s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
+    s.add_argument("--timeout", type=float, default=600)
+    s.add_argument("words", nargs=argparse.REMAINDER)
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
@@ -3785,8 +4093,10 @@ def build_parser():
                                                         "the names used, read locally, no network (T-0594)")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=600)
-    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's changed files in reading order, used before users, with sizes")
-    s.add_argument("id")
+    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's (or, --since REF, a range's) changed files in reading "
+                                                   "order with sizes and a review-risk verdict: what to review first")
+    s.add_argument("id", nargs="?")
+    s.add_argument("--since", metavar="REF", help="everything since REF's merge base with HEAD, uncommitted included")
     s = add("export", lazy("fmcost", "cmd_export"),
             help="AGENTS.md for other harnesses: working rules, corrections, map, lessons, decisions, playbooks")
     s.add_argument("what", choices=["agents"])
@@ -3794,6 +4104,8 @@ def build_parser():
     s.add_argument("--force", action="store_true", help="replace an AGENTS.md fm export didn't write")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
+    add("snapshots", cmd_snapshots, help="uncommitted work Foreman saved before a command discarded it, and how to "
+                                         "bring it back")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
@@ -3945,6 +4257,7 @@ def build_parser():
 
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
+    s.add_argument("-v", "--verbose", action="store_true", help="list the passing checks too")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
     s.add_argument("--accept-supply", action="store_true",
@@ -4099,6 +4412,10 @@ def build_parser():
     s = add("mission", lazy("fmmission", "cmd_mission"), help="the mission and brainstorm seeds for an open-ended "
                                                                "request, composed from the project (T-0375)")
     s.add_argument("--request", help="the user's words, verbatim")
+    s = add("demo", lazy("fmdemo", "cmd_demo"), help="see Foreman work on a seeded bug in a throwaway repo, with no "
+                                                      "model calls and nothing left behind (T-0870)")
+    s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
+                   help="pause per stage and type the commands out, for watching or recording (try 1)")
     s = add("smoke", lazy("fmsmoke", "cmd_smoke"), help="check the product the way its user uses it: the web UI in a "
                                                          "headless browser at desktop and phone width (T-0417)")
     s.add_argument("action", nargs="?", choices=["run", "set"], default="run")
@@ -4119,6 +4436,12 @@ def build_parser():
     s.add_argument("--crossbreed", action="store_true", help="one more child: the top ideas combined (T-0628)")
     s.add_argument("--timeout", type=int, default=300)
 
+    s = add("page", lazy("fmpage", "cmd_page"),
+            help="now (active task, queue, counts) and optionally a research catalogue as one HTML page for a claude.ai "
+                 "Artifact; prints the publish line and how to read the Build/Veto picks back (T-0786)")
+    s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
+    s.add_argument("--url", help="record the Artifact link from a first publish, printed on later runs")
+    s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s = add("serve", lazy("fmserve", "cmd_serve"),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
@@ -4207,8 +4530,9 @@ def build_parser():
     s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
-                                                                "app's list): --json, --follow")
+                                                                "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
+    s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
@@ -4218,6 +4542,9 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--record-disabled", action="append", metavar="PLUGIN_ID",
                    help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
+    s = add("compact-output", lazy("fmsetup", "cmd_compact_output"),
+            help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
+    s.add_argument("state", nargs="?", choices=["on", "off", "status"])
     s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
     return ap

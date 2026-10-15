@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.12", "3.14"]
+        include:
+          - os: macos-latest  # not yet run green here: reported, not blocking
+            python: "3.14"
+            experimental: true
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental || false }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: git identity for the tests' commits
+        run: git config --global user.name CI && git config --global user.email ci@example.invalid
+      - name: suite (no claude needed; the e2e roundtrip and hook bench stay local)
+        run: python3 plugin/tests/run.py

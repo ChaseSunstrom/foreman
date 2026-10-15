@@ -33,7 +33,21 @@ class EvalInbox(Base):
         c.log_event(self.p, "approval_granted", task="T-0002", data={"allow": ["core"], "via": "prompt"})
         out = self.fm("evals", "inbox").stdout
         self.assertRegex(out, r"T-0001 blocked: the deploy key is missing")
-        self.assertRegex(out, r"T-0002 .*core.*granted after")
+        self.assertNotIn("T-0002", out)  # T-0754: blocked, then the user's yes: the guard worked as designed
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": c.now(), "kind": "guard_block", "session_id": "s1", "category": "destructive",
+                                "tool": "Bash", "project": self.p.slug, "cmd": "git status --short"}) + "\n")
+        import fmcost
+        import fmfriction
+        from unittest import mock
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:  # no active task then: state, not a rule
+            f.write(json.dumps({"ts": c.now(), "kind": "guard_block", "session_id": "s1", "category": "brief",
+                                "tool": "Bash", "project": self.p.slug, "cmd": "touch notes.md"}) + "\n")
+        with mock.patch.object(fmfriction, "_recheck", lambda events: {i: "today's guard allows it"
+                                                                         for i in range(len(events))}):
+            rows = fmcost.eval_inbox(self.p)
+        self.assertTrue(any("git status --short" in r["line"] and "allows now" in r["line"] for r in rows), rows)
+        self.assertFalse(any("touch notes.md" in r["line"] for r in rows), rows)
 
 
 class Holdout(Base):

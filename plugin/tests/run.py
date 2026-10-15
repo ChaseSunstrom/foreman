@@ -43,13 +43,22 @@ def run_one(cid, k):
     return cid, p.returncode, p.stderr, int(m.group(1)) if m else 0, time.time() - t0
 
 
-def main():
+def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("-j", type=int, default=os.cpu_count() or 4)
     ap.add_argument("-k", action="append", default=[], help="only tests whose id contains this (repeatable)")
     ap.add_argument("-p", action="append", help="module glob, as unittest discover's -p (repeatable; default "
                                                 "test*.py)")  # T-0389: a second -p replaced the first
-    a = ap.parse_args()
+    ap.add_argument("names", nargs="*", help="test module names, each like -k (T-0808: fm check affected's {names})")
+    a = ap.parse_intermixed_args(argv)  # names may sit on either side of -k
+    a.k += a.names
+    a.error = ap.error
+    return a
+
+
+def main():
+    a = parse()
+    ap = a
     if any(re.search(r"\s", k) for k in a.k):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()

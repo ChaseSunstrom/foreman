@@ -10,6 +10,7 @@ import unittest
 from helpers import ForemanTestCase, read_text, read_json
 
 import fmcore as c
+import fmcli
 
 
 class Init(ForemanTestCase):
@@ -298,6 +299,22 @@ class TaskLifecycle(ForemanTestCase):
         self.fm("task", "step", "T-0001", "done", "1")
         self.assertEqual(self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", check=False).returncode, 1,
                          "a typed result is still required without --run")
+
+    def test_evidence_run_never_reads_bytecode_older_than_its_source(self):
+        # T-0876: a fix that kept the file's size and second of mtime ran the old code from __pycache__
+        import py_compile
+        self.fm("task", "step", "T-0001", "add", "a")
+        mod = os.path.join(self.repo, "mod.py")
+        with open(mod, "w") as f:
+            f.write("X = 1\n")
+        t = int(time.time()) - 60
+        os.utime(mod, ns=(t * 10**9 + 100, t * 10**9 + 100))
+        pyc = py_compile.compile(mod, doraise=True)
+        os.utime(pyc, ns=(t * 10**9 + 300, t * 10**9 + 300))  # compiled between the two edits of that second
+        with open(mod, "w") as f:
+            f.write("X = 2\n")
+        os.utime(mod, ns=(t * 10**9 + 800, t * 10**9 + 800))
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "python3 -c 'import mod; assert mod.X == 2'")
 
     def test_focus_requires_a_plan(self):
         p = self.fm("focus", "T-0001", check=False)
@@ -595,6 +612,11 @@ class Checks(ForemanTestCase):
         self.assertIn("affected", out)
         self.assertIn("tests/test_parser.py", read_text(log))
         self.assertNotIn("tests/test_report.py", read_text(log))
+        for rel in ("src/demo.py", "tests/test_demo.py"):  # T-0875: new and untracked, so the map has no link for it
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("x = 1\n")
+        self.fm("check", "--affected")
+        self.assertIn("tests/test_demo.py", read_text(log))
 
     def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
         # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
@@ -713,6 +735,23 @@ class AuditPrep(ForemanTestCase):
         self.assertEqual(sorted(sum(lenses, [])), sorted(["intent", "adversary", "edge", "operator", "maintainer"]))
         self.assertTrue(all(lenses), "no empty group")
 
+    def test_brief_asks_for_report_findings_fields_and_prep_names_the_tool(self):
+        # T-0780: findings reach the host review UI; the ranked lines still parse (_FINDING)
+        self.fm("init")
+        self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("X = 1\n")
+        out = self.fm("audit", "prep", "T-0001").stdout
+        self.assertIn("ReportFindings", out)
+        for field in ("file", "line", "short_summary", "failure_scenario", "category"):
+            self.assertIn(field, fmcli._REVIEW_OUT)
+        self.assertIn("HIGH/MEDIUM/LOW", fmcli._REVIEW_OUT)
+        self.assertTrue(fmcli._FINDING.search("- HIGH a.py:3 boom"))
+
     def test_prep_freezes_the_diff_and_prints_lens_briefs(self):
         self.fm("init")
         self.fm("task", "new", "Add --verbose", "--type", "FEATURE", "--tier", "L", "--step", "add it")
@@ -799,7 +838,7 @@ class AuditPrep(ForemanTestCase):
         path = next(w for w in out.split() if w.endswith("T-0001.review.md"))
         self.assertIn("trying to break", read_text(path))
         self.assertNotIn("trying to break", out)
-        self.assertLess(len(out), 700)
+        self.assertLess(len(out), 800)
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens
@@ -929,6 +968,49 @@ class DecisionsResearchSelf(ForemanTestCase):
         saved = read_text(os.path.join(c.find_project(self.repo).dir, "research", "notes.md"))
         self.assertNotIn("abcd1234efgh", saved)
 
+    def test_research_closes_with_a_decision_that_reaches_decisions_md(self):
+        # T-0896: research ends in a choice the project keeps; a warning at close was easy to walk past
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "Which TOML parser", "--type", "RESEARCH", "--tier", "S", "--ac",
+                                 "compared :: true", "--step", "compare", "--json").stdout)["id"]
+        self.fm("focus", tid)
+        p = self.fm("task", "finish", tid, "--run", "true", "--audit", "self check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("Decision", p.stderr)
+        self.fm("task", "set", tid, "--section", "Decision", "--text", "Use tomllib; would change if we need writes")
+        self.fm("task", "finish", tid, "--run", "true", "--audit", "self check")
+        text = read_text(os.path.join(c.find_project(self.repo).dir, "decisions.md"))
+        self.assertIn("Use tomllib; would change if we need writes", text)
+        self.assertIn(tid, text)
+
+    def test_a_close_names_what_only_a_person_can_check(self):
+        # T-0900: "the CSV opens in Excel" had no command of its own; a generic --run closed it as if proven
+        self.fm("init")
+        self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "S", "--ac", "it writes rows :: true",
+                "--ac", "the CSV opens in Excel", "--step", "build it", "--focus")
+        out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check").stdout
+        card = out.split("Check by hand", 1)[1] if "Check by hand" in out else ""
+        self.assertIn("the CSV opens in Excel", card)
+        self.assertNotIn("it writes rows", card)
+
+    def test_a_stored_verify_the_guard_refuses_is_not_run(self):
+        # T-0901: a verify command that never passed the hook (stored before the guard read them, or a brief another
+        # clone synced in) gets the guard's checks before fm runs it; fm itself is run directly here, as such a brief is
+        self.fm("init")
+        gone = os.path.join(os.path.expanduser("~"), "fm-t0901-never-there")
+        self.fm("task", "new", "tidy the parser", "--type", "FEATURE", "--tier", "S", "--ac", f"it parses :: rm -rf {gone}",
+                "--step", "fix it", "--focus")
+        p = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("rm-outside", p.stderr)
+        self.assertIn("won't run", p.stderr)
+        self.assertFalse([e for e in c.ledger_tail(c.find_project(self.repo)) if e.get("event") == "evidence"],
+                         "refused before anything ran")
+        self.fm("check", "add", f"rm -rf {gone}")  # its review: a stored gate is run by fm check
+        p = self.fm("check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("won't run", p.stderr)
+
     def test_research_name_must_be_safe(self):
         self.fm("init")
         self.assertEqual(self.fm("research", "add", "../escape", input="x", check=False).returncode, 1)
@@ -942,6 +1024,32 @@ class DecisionsResearchSelf(ForemanTestCase):
         p = c.find_project(own)
         self.assertEqual(c.find_brief(p, "T-0001").meta["source"], "self")
         self.assertIsNone(c.find_project(self.repo))
+
+
+class ResearchListShow(ForemanTestCase):
+    def test_list_newest_first_and_show_prints(self):
+        self.fm("init")
+        self.fm("research", "add", "older", input="# Old notes\nbody one\n")
+        folder = os.path.join(c.find_project(self.repo).dir, "research")
+        os.utime(os.path.join(folder, "older.md"), (1, 1))
+        self.fm("research", "add", "newer", input="plain first line\n")
+        os.makedirs(os.path.join(folder, "brainstorm-0102"))
+        with open(os.path.join(folder, "brainstorm-0102", "ideas.md"), "w") as f:
+            f.write("# Ideas\nidea-zebra\n")
+        os.utime(os.path.join(folder, "brainstorm-0102", "ideas.md"), (2, 2))
+        out = self.fm("research", "list").stdout
+        self.assertLess(out.index("newer"), out.index("brainstorm-0102"))
+        self.assertLess(out.index("brainstorm-0102"), out.index("older"))
+        self.assertIn("Old notes", out)
+        self.assertIn("body one", self.fm("research", "show", "older.md").stdout)
+        self.assertIn("idea-zebra", self.fm("research", "show", "brainstorm-0102").stdout)
+
+    def test_show_unknown_names_closest(self):
+        self.fm("init")
+        self.fm("research", "add", "auth-recon", input="x\n")
+        r = self.fm("research", "show", "auth-recn", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("auth-recon", r.stderr + r.stdout)
 
 
 class AskClosed(ForemanTestCase):
@@ -967,3 +1075,55 @@ class AskClosed(ForemanTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerifyLint(ForemanTestCase):
+    def test_a_verify_that_cannot_run_is_refused_before_anything_is_written(self):
+        # T-0765: 'python3 -m pytest' (not installed) and 'fm research nosuch' (no such action; research list exists since T-0802) were accepted; once a
+        # criterion has evidence it can't be edited, so each task was dropped and recreated
+        self.fm("init")
+        for verify in ("python3 -m no_such_module_t0765 -q", "fm research nosuch", "cd plugin && fm tsk show T-0001"):
+            r = self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--ac", f"works :: {verify}", check=False)
+            self.assertNotEqual(r.returncode, 0, verify)
+            self.assertIn("can't run", r.stderr, verify)
+        self.assertEqual(json.loads(self.fm("state", "--json").stdout).get("inbox") or [], [], "nothing was written")
+        tid = json.loads(self.fm("task", "new", "Y", "--type", "FIX", "--tier", "S", "--json",
+                                 "--ac", "works :: python3 -m json.tool --help && fm task show T-0001").stdout)["id"]
+        r = self.fm("task", "ac", tid, "add", "more :: fm research nosuch", check=False)
+        self.assertIn("can't run", r.stderr)
+        self.assertEqual(len(c.find_brief(c.find_project(self.repo), tid).acceptance()), 1)
+        self.fm("task", "ac", tid, "add", "more :: fm state")
+
+
+class Redo(ForemanTestCase):
+    def test_a_recreated_task_keeps_the_dropped_tasks_diff(self):
+        # T-0767: T-0761 was dropped (a locked criterion named a check that couldn't run) and recreated as T-0766;
+        # the new task's snapshot was taken after the edits, so finish --commit said "nothing to commit"
+        import fmmap
+        self.fm("init")
+        new = lambda *a: json.JSONDecoder().raw_decode(self.fm(
+            "task", "new", *a, "--type", "FIX", "--tier", "S", "--json", "--ac", "works :: fm state",
+            "--step", "do it").stdout)[0]["id"]
+        old = new("First try", "--focus")
+        with open(os.path.join(self.repo, "fix.py"), "w") as f:
+            f.write("x = 1\n")
+        live = new("Not dropped")
+        r = self.fm("task", "new", "Again", "--type", "FIX", "--tier", "S", "--redo", live, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("dropped", r.stderr)
+        self.fm("task", "drop", old, "wrong check")
+        again = new("Second try", "--redo", old, "--focus")
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, again)
+        self.assertIn("fix.py", fmmap.changed(p.root, c.task_base(p.root, b)))
+        self.assertIn(old, read_text(b.path))
+
+
+class SetLists(ForemanTestCase):
+    def test_list_fields_accept_brackets(self):
+        # T-0810: scope=[a,b] stored "[a" and "b]" as globs
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        for value in ("[plugin/a.py, plugin/b.py]", '["plugin/a.py","plugin/b.py"]', "plugin/a.py,plugin/b.py"):
+            self.fm("task", "set", tid, f"scope={value}")
+            self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])

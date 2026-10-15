@@ -20,6 +20,7 @@ EVENTS_ROTATE_BYTES = 5_000_000
 HOOKS_LOG_ROTATE_BYTES = 1_000_000
 ROTATED_KEEP = 3
 SNAPSHOT_MAX_DAYS = 7
+WORK_SNAPSHOT_DAYS = 14  # T-0884: saved working files before a discarding command
 MEMORY_MAX_LINES, MEMORY_MAX_BYTES = 200, 25_000
 GLOBAL_MD_MAX, PROJECT_MD_MAX = 50, 150
 KNOWN_PLUGINS = {"ponytail", "claude-hud", "security-guidance", "code-review", "context7", "skill-creator",
@@ -180,6 +181,7 @@ def check_project(p, apply, actions):
     import fmlanes
     out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
+    out += _prune_snapshots(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
@@ -191,6 +193,22 @@ def check_project(p, apply, actions):
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
     return out
+
+
+def _prune_snapshots(p, apply, actions):
+    """T-0884: work snapshots (refs/foreman/snapshots/<UTC stamp>-<sha>) older than WORK_SNAPSHOT_DAYS go."""
+    top = c.git_root(p.root)
+    refs = c._git(top, "for-each-ref", "--format=%(refname)", c.SNAPSHOTS, timeout=30).split() if top else []
+    cut = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(time.time() - WORK_SNAPSHOT_DAYS * 86400))
+    old = [r for r in refs if r[len(c.SNAPSHOTS):].split("-", 1)[0] < cut]
+    if not old:
+        return []
+    if apply:
+        for r in old:
+            c._git(top, "update-ref", "-d", r, timeout=10)
+        actions.append(("snapshots", len(old)))
+    return [finding(p.slug, "work_snapshots", "action", f"{len(old)} work snapshot(s) older than {WORK_SNAPSHOT_DAYS}d",
+                    "deleted (git gc reclaims them)", auto=True)]
 
 
 def _roll_ledger(p, apply, actions):
@@ -321,17 +339,44 @@ def check_global(apply, actions, plugins=False):
             for old in rotated[:-ROTATED_KEEP]:
                 os.remove(os.path.join(logs, old))
             actions.append(("global", kind))
-    sessions = os.path.join(c.state_dir(), "sessions")
-    if os.path.isdir(sessions):
-        old = [f for f in os.listdir(sessions)
-               if time.time() - os.path.getmtime(os.path.join(sessions, f)) > SNAPSHOT_MAX_DAYS * 86400]
+    def stale(d):
+        out = []
+        for f in os.listdir(d) if os.path.isdir(d) else []:
+            try:  # T-0839: a heartbeat its watcher removes between listdir and here
+                if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400:
+                    out.append(os.path.join(d, f))
+            except OSError:
+                pass
+        return out
+    for kind, what, old in (
+            ("old_snapshots", "statusline snapshot(s)",  # by-pid/ is pruned by SessionStart (T-0777)
+             [f for f in stale(os.path.join(c.state_dir(), "sessions")) if not os.path.isdir(f)]),
+            ("old_outputs", "sessions' compact-output full texts (T-0811)",
+             stale(os.path.join(c.state_dir(), "outputs"))),
+            ("old_heartbeats", "mail watcher heartbeat(s) of ended sessions (T-0819)",  # a live one beats every 2 s;
+             [f for f in stale(os.path.join(c.state_dir(), "bus"))  # seen-<sid> stays: a resumed session's read mark
+              if os.path.basename(f).startswith("watch-")])):
         if old:
-            out.append(finding(None, "old_snapshots", "action", f"{len(old)} statusline snapshot(s) older than "
-                               f"{SNAPSHOT_MAX_DAYS}d", "delete (derived cache)", auto=True))
+            out.append(finding(None, kind, "action", f"{len(old)} {what} older than {SNAPSHOT_MAX_DAYS}d",
+                               "delete (derived cache)", auto=True))
             if apply:
                 for f in old:
-                    os.remove(os.path.join(sessions, f))
-                actions.append(("global", "old_snapshots"))
+                    try:
+                        shutil.rmtree(f) if os.path.isdir(f) else os.remove(f)
+                    except OSError:  # gone meanwhile
+                        pass
+                actions.append(("global", kind))
+    projects = os.path.join(home_claude, "projects")  # T-0856: shells Claude Code made for Foreman's child folders
+    shells = [os.path.join(projects, d) for d in (os.listdir(projects) if os.path.isdir(projects) else [])
+              if re.match(r"-(run-user-\d+|tmp)-fm-", d)
+              and not any(files for _, _, files in os.walk(os.path.join(projects, d)))]
+    if shells:
+        out.append(finding(None, "child_shells", "action", f"{len(shells)} empty ~/.claude/projects folder(s) left by "
+                           "Foreman's own claude -p runs", "delete (no files in them)", auto=True))
+        if apply:
+            for d in shells:
+                shutil.rmtree(d, ignore_errors=True)
+            actions.append(("global", "child_shells"))
     if plugins:
         out += _check_plugins()
     return out

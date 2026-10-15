@@ -183,6 +183,11 @@ def digest(p, recheck=True):
     said = [label(lp) + c.fit(c.plain(str((e.get("data") or {}).get("text") or "")), 200) for lp, e in ledger
             if e.get("event") == "correction" or steer(e)]
     out["what the user corrected or steered (their words)"] = said[-MAX_LINES:]
+    stalls = collections.Counter(str((e.get("data") or {}).get("after")) for lp, e in ledger
+                                 if lp.slug == p.slug and e.get("event") == "stall")
+    out["stalls: the user had to say 'continue' (T-0887)"] = [  # Claude stopped early; the Stop hook's last act says why
+        f"{sum(stalls.values())} keep-going prompt(s): " + ", ".join(f"{n}× after {k}" for k, n in stalls.most_common())
+    ] if stalls else []
 
     out["escapes: defects found after a task closed (the lenses that passed it)"] = [  # T-0285: review recall over time
         f"{label(lp)}{e.get('task')} ({', '.join((e.get('data') or {}).get('lenses') or []) or 'no lens'}) → "
@@ -217,16 +222,21 @@ def digest(p, recheck=True):
         [f"done since: {b.id} {c.fit(b.title, 90)}" for b in closed][:MAX_LINES] +
         [f"open: {b.id} {c.fit(b.title, 90)}" for b in open_][:MAX_LINES])
     budget = collections.defaultdict(lambda: [0, 0])  # T-0499: what the hooks put into the model's context
+    same = collections.Counter()  # T-0860: the same note, word for word (h), not one kind of note about many things
     for e in events:
         if e.get("kind") == "inject":
             b = budget[(e.get("event"), e.get("key"))]
             b[0], b[1] = b[0] + 1, b[1] + int(e.get("chars") or 0)
+            same[(e.get("event"), e.get("key"), e.get("h"))] += 1
+    most = collections.Counter()
+    for (ev, k, _), n in same.items():
+        most[(ev, k)] = max(most[(ev, k)], n)
     out["injected notes (event: kind — times, characters)"] = [
         f"{ev}: {k} — {n}×, {ch:,} chars" for (ev, k), (n, ch) in sorted(budget.items(), key=lambda x: -x[1][1])
     ][:MAX_LINES]
     out["notes repeated 3+ times (a candidate for a hard check instead of prose: T-0470)"] = [
-        f"{k} ({n}× from {ev})" for (ev, k), (n, _) in budget.items()
-        if n >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two speak every turn
+        f"{k} ({most[(ev, k)]}× from {ev})" for (ev, k), (n, _) in budget.items()
+        if most[(ev, k)] >= 3 and ev not in ("SessionStart", "UserPromptSubmit")][:MAX_LINES]  # those two: every turn
     out.update(_mine(ledger, label))  # T-0658
     try:  # T-0620: where this project's work hasn't held, for the pass to look at first
         import fmoutcomes
@@ -294,6 +304,9 @@ def due(p):
     every = int(meta.get("rsi_every") or 0)
     if every <= 0 or (meta.get("rsi_at") and (c.age_days(meta["rsi_at"]) or 0) * 24 < MIN_GAP_H):
         return False
+    brief = meta.get("rsi_brief_at")  # T-0858: its brief is out and its recon running: in progress, not due again
+    if brief and str(brief) > str(meta.get("rsi_at") or "") and (c.age_days(brief) or 0) * 24 < MIN_GAP_H:
+        return False
     start = meta.get("rsi_at") or meta.get("created") or ""
     done = sum(1 for e in c.tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), 6000)
                if e.get("event") == "task_done" and (e.get("ts") or "") >= start)  # second-resolution stamps
@@ -339,5 +352,6 @@ def cmd_friction(args):
         path = os.path.join(p.dir, "audits", f"rsi-{time.strftime('%Y%m%d-%H%M%S', time.gmtime())}.md")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, BRIEF.format(digest=text))
+        c.update_meta(p, rsi_brief_at=c.now())  # T-0858
         return print(f"Self-improvement brief ({len(text)} chars of digest): {path}")
     print(text)

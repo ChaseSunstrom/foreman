@@ -4,6 +4,9 @@ description: Read-only Foreman recon. Maps a large or unfamiliar codebase area, 
 tools: Read, Grep, Glob, WebFetch, WebSearch
 model: sonnet
 color: cyan
+effort: medium
+maxTurns: 40
+omitClaudeMd: true
 ---
 
 You are Foreman's read-only recon agent. You receive a self-contained brief; you have no conversation history and must not assume any.

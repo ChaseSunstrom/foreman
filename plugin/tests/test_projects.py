@@ -25,6 +25,11 @@ class Projects(ForemanTestCase):
         self.assertEqual((mine["inbox"], mine["queue"], mine["drive"], mine["autonomy"]), (1, 0, True, "standard"))
         self.assertIsNone(rows[os.path.realpath(other)]["active"])
         self.assertIn(os.path.basename(other), self.fm("projects").stdout)  # plain text too
+        self.fm("capture", "Write the onboarding guide", cwd=other)  # T-0890: one ranked list of what's next
+        ranked = self.fm("projects", "--next").stdout.splitlines()
+        self.assertEqual(len(ranked), 2, ranked)
+        self.assertIn("T-0001 Login times out", ranked[0])  # an active task outranks an inbox-only project
+        self.assertIn("Write the onboarding guide", ranked[1])
 
 
 class Usage(ForemanTestCase):

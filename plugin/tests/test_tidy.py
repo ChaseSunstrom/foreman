@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import time
 
 from helpers import ForemanTestCase, read_text
 
@@ -115,6 +116,45 @@ class Apply(TidyCase):
         self.assertLess(os.path.getsize(events), 1024)
         rotated = [f for f in os.listdir(os.path.join(self.home, "state", "logs")) if f.startswith("events-")]
         self.assertEqual(len(rotated), 1)
+
+    def test_prunes_old_full_outputs_and_snapshots_but_not_the_pid_map(self):
+        # T-0811: compact output's full texts (T-0783) piled up; sessions/by-pid/ (T-0777) is a folder, not a snapshot
+        state = os.path.join(self.home, "state")
+        old, new = os.path.join(state, "outputs", "old-sess"), os.path.join(state, "outputs", "new-sess")
+        by_pid, snap = os.path.join(state, "sessions", "by-pid"), os.path.join(state, "sessions", "old.json")
+        for d in (old, new, by_pid):
+            os.makedirs(d)
+            open(os.path.join(d, "x.txt"), "w").close()
+        open(snap, "w").close()
+        os.makedirs(os.path.join(state, "bus"), exist_ok=True)
+        beat, mail = os.path.join(state, "bus", "watch-dead"), os.path.join(state, "bus", "mail.jsonl")
+        seen = os.path.join(state, "bus", "seen-dead")
+        for x in (beat, mail, seen):  # T-0819: a crashed session's watcher heartbeat and read mark
+            open(x, "w").close()
+        week_ago = time.time() - 8 * 86400
+        for x in (old, by_pid, snap, beat, mail, seen):
+            os.utime(x, (week_ago, week_ago))
+        self.assertTrue({"old_outputs", "old_heartbeats"} <= self.kinds(self.tidy()))
+        self.tidy("--apply")
+        self.assertEqual(sorted(os.listdir(os.path.join(state, "outputs"))), ["new-sess"])
+        self.assertEqual(os.listdir(os.path.join(state, "sessions")), ["by-pid"])
+        self.assertEqual(sorted(os.listdir(os.path.join(state, "bus"))), ["mail.jsonl", "seen-dead"],
+                         "only heartbeats go: a read mark keeps a resumed session from re-reading old mail (T-0839)")
+
+    def test_sweeps_the_empty_project_shells_foremans_children_left(self):
+        # T-0856: 521 empty ~/.claude/projects folders, one per child run in a fresh temp dir
+        projects = os.path.join(self.fake_home, ".claude", "projects")
+        shell = os.path.join(projects, "-run-user-1000-fm-relate-ab12cd34", "memory")
+        kept = os.path.join(projects, "-run-user-1000-fm-second-session-x1y2z3w4")
+        mine = os.path.join(projects, "-home-me-app", "memory")
+        for d in (shell, kept, mine):
+            os.makedirs(d)
+        open(os.path.join(kept, "a.jsonl"), "w").close()  # a transcript: not swept
+        self.assertIn("child_shells", self.kinds(self.tidy()))
+        self.tidy("--apply")
+        self.assertFalse(os.path.exists(os.path.dirname(shell)))
+        self.assertTrue(os.path.exists(kept))
+        self.assertTrue(os.path.exists(mine), "the user's own project folders are never touched")
 
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")

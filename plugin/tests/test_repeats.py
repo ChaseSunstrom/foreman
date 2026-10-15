@@ -43,6 +43,15 @@ class Repeats(ForemanTestCase):
             self.fm("task", "evidence", f"T-000{i}", "--step", "2", "git log --oneline -1", "abc123 fix")
         self.assertFalse(any(x["shape"].startswith("git log") for x in self.report()["commands"]))
 
+    def test_a_narrowed_test_run_is_never_offered_as_a_gate(self):
+        # T-0857: this repo was told to make "unittest … -p test_diff_gates.py -k dirty" a gate for every task
+        import fmrepeats
+        for narrow in ("python3 -m unittest discover -s t -q -p test_diff_gates.py -k dirty",
+                       "python3 plugin/tests/run.py test_bus", "pytest tests/test_a.py::test_b", "pytest -k slow"):
+            self.assertNotIn("fm check add", fmrepeats.suggest("python3 -m unittest …", narrow), narrow)
+        cmds = {x["shape"]: x for x in self.report()["commands"]}  # the habit holds both kinds: the whole-suite one
+        self.assertIn('fm check add "python3 -m unittest discover -s tests"', cmds["python3 -m unittest …"]["suggest"])
+
     def test_gate_words_count_in_the_command_not_in_directory_names(self):
         import fmrepeats
         self.assertIn("fm check add", fmrepeats.suggest("python3 plugin/tests/bench_hooks.py --runs …", "x"))

@@ -6,7 +6,7 @@ import os
 import subprocess
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, read_text
 
 first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
@@ -56,6 +56,24 @@ class Lanes(ForemanTestCase):
         self.assertIn("Lane work", self.git("log", "--format=%s", "foreman/lane"))
         self.assertNotIn("Lane work", self.git("log", "--format=%s", "main"))
         self.assertFalse(os.path.exists(os.path.join(self.repo, "lane.py")))
+
+    def test_a_merged_lanes_task_is_measured_from_the_main_commit_before_the_merge(self):
+        # T-0804: main-thread commits made while the lane ran were counted as the lane task's out-of-scope edits
+        tid = self.new("Lane work", self.lane)
+        for root, name in ((self.lane, "lane.py"), (self.repo, "main_work.py")):
+            with open(os.path.join(root, name), "w") as f:
+                f.write("x = 1\n")
+            self.git("add", name, cwd=root)
+            self.git("commit", "-qm", name, cwd=root)
+        self.fm("lane", "merge", tid)
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        changed = self.git("diff", "--name-only", meta["base"], "HEAD").split()
+        self.assertEqual(changed, ["lane.py"])
+        # T-0812: closed from the main checkout, it re-snapshotted its start from the merged files: its diff was empty
+        self.fm("lane", "rm", tid)
+        self.fm("focus", tid)
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        self.assertEqual(self.git("diff", "--name-only", meta.get("base_tree") or meta["base"]).split(), ["lane.py"])
 
     def test_tidy_sweeps_stale_lanes(self):
         # T-0186: a closed task's lane and its branch stayed until someone ran fm lane rm
@@ -155,6 +173,28 @@ class Lanes(ForemanTestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("fm focus", p.stderr)
 
+    def test_the_brief_agent_line_names_effort_by_tier(self):
+        # T-0779: S builders run at medium effort, M at high, beside the model
+        for tier, effort in (("S", "medium"), ("M", "high")):
+            extra = ["--interpretation", "x", "--approach", "x"] if tier != "S" else []
+            tid = first(self.fm("task", "new", f"T{tier}", "--type", "FEATURE", "--tier", tier, "--ac", "ok :: true",
+                                "--step", "s", *extra, "--json").stdout)["id"]
+            agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
+            self.assertIn(f'effort: "{effort}"', agent)
+
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BuilderGates(unittest.TestCase):
+    def test_builders_run_affected_tests_and_leave_the_full_gates_to_the_merge(self):
+        # T-0806: two lanes and the main thread ran three full gate runs at once (load 74): tests timed out, lanes
+        # reported load as red gates, and the merge re-ran the full gates anyway
+        import fmlanes
+        agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
+        for text in (fmlanes.CONTRACT, agent):
+            self.assertIn("fm check --affected --evidence", text)
+            self.assertIn("full gates run after the merge", text)
+            self.assertNotRegex(text, r"`fm check --evidence")
+        self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808

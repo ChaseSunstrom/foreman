@@ -236,6 +236,7 @@ def verify(claims, fetch=None):
 def _child(model, tools, system):
     c.refuse_if_paused()  # T-0591
     return ["claude", "-p", "--model", model, "--no-session-persistence", "--output-format", "json",
+            "--max-budget-usd", f"{fmbudget.effective()[0]['run']:g}",  # T-0776
             "--setting-sources", "project,local",
             "--tools", tools, *(["--allowed-tools", tools] if tools else []), *NO_MCP, "--append-system-prompt", system]
 

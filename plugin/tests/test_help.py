@@ -21,9 +21,19 @@ class Help(ForemanTestCase):
         self.assertLess(out.index("  next "), out.index("  sentinel "))
         self.assertEqual(self.fm().stdout, out, "fm alone prints it")
 
+    def test_help_text_carries_no_ticket_ids(self):
+        # T-0873 (round 4): "(T-0594)" in help reads as noise to anyone who isn't Foreman's maintainer
+        import fmcli
+        sub = next(a for a in fmcli.build_parser()._actions if isinstance(a, argparse._SubParsersAction))
+        texts = {"fm help --all": self.fm("help", "--all").stdout, "fm --help": self.fm("--help").stdout}
+        texts.update({f"fm {name} -h": p.format_help() for name, p in sub.choices.items()})
+        leaks = {where: re.findall(r"\bT-\d{3,4}\b", t) for where, t in texts.items() if re.search(r"\bT-\d{3,4}\b", t)}
+        self.assertEqual(leaks, {})
+
     def test_status_is_state(self):
         # T-0393: "status" is the word the rules and /foreman:status use; `fm status` was an invalid choice
         self.fm("init")
+        self.fm("capture", "something")  # T-0847: an empty project's status is one line on how to start
         p = self.fm("status", check=False)
         self.assertEqual(p.returncode, 0, p.stderr[-300:])
         stamp = lambda t: re.sub(r"_Generated \S+", "", t)  # noqa: E731 — the two calls may straddle a second
