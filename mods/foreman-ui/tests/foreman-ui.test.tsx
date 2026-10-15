@@ -1351,6 +1351,8 @@ test('the pane reads top-down: what needs you, the hero with its rail, progress 
   expect(await ui.find({ type: 'Text', text: /6 closed · 14d/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /↳ pytest -q/ })).toBeDefined() // an unproved criterion names its check
   expect(await ui.find({ type: 'Text', text: /1 left before done: step 2 not done/ })).toBeDefined()
+  // live at 70 columns the label and count wrapped ('audit'/'s', '0/'/'1'): they never shrink, the blocker truncates
+  expect((await ui.find({ key: 'fm-pane-audits-head' }))?.props.flexShrink).toBe(0)
   expect(await ui.find({ key: 'card-fleet' })).toBeUndefined() // one session alone is this one
   await ui.unmount()
 })
