@@ -147,6 +147,8 @@ def _other_checks(p, smoke, args):
     out = []
     cmd = smoke.get("cmd")
     if isinstance(cmd, dict) and cmd.get("run"):
+        import fmcli
+        fmcli.guard_stored(p, None, cmd["run"])  # T-0901 review: fm smoke set cmd stores it
         code, output = c.run_command(p.root, cmd["run"], 300)
         ok = not code and (not cmd.get("expect") or bool(re.search(cmd["expect"], output)))
         out.append({"what": f"cmd {cmd['run'][:80]}", "ok": ok, "detail": c.run_result(code, output)

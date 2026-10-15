@@ -558,9 +558,12 @@ def _notify(p, message):
     cmd = c.read_meta(p).get("notify")
     if cmd:
         try:
+            import fmcli
+            import fmguard  # T-0901: a stored command; $1 read as code-shaped text, so one that runs it is refused
+            fmcli.guard_stored(p, None, re.sub(r"\$\{?1\}?", fmguard.NOTIFY_PROBE, cmd))
             subprocess.run(["bash", "-c", cmd, "fm-notify", c.plain(message)[:300]], cwd=p.root, timeout=30,
                            stdin=subprocess.DEVNULL, capture_output=True)
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError, c.PolicyError):
             pass
 
 
