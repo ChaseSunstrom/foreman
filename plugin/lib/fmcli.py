@@ -3234,7 +3234,13 @@ def affected(p):
     # T-0875: a changed test file always runs, linked or not (a new one isn't in the map until it's committed); by its
     # name, so a helper under tests/ isn't run alone (pytest exits 5 when it collects nothing)
     own = {f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)}
-    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own)
+    # T-0952: a test that historically changes with a changed file (the map's co-change pairs, either way round):
+    # hooks.json has no test named after it, but the wiring tests change with it
+    istest = lambda f: c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f)  # noqa: E731
+    pairs = m.get("pairs") or {}
+    paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
+        a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
+    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
