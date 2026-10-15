@@ -1,0 +1,128 @@
+"""The stack library (T-0933): on-demand cards per stack, found from a repo's manifests and searched together with
+installed plugins' skills."""
+import json
+import os
+import subprocess
+import time
+
+from helpers import ForemanTestCase
+
+import fmcore as c
+import fmlib
+
+FIXTURES = {
+    "fastapi": {"pyproject.toml": '[project]\nname = "svc"\ndependencies = ["fastapi>=0.110", "SQLAlchemy[asyncio]"]\n'
+                                  '[dependency-groups]\ndev = ["pytest>=8", "httpx"]\n',
+                "app/main.py": "from fastapi import FastAPI\napp = FastAPI()\n"},
+    "nextjs": {"package.json": json.dumps({"dependencies": {"next": "15.0.0", "react": "19.0.0"},
+                                           "devDependencies": {"vitest": "2.0.0", "typescript": "5.6.0"}}),
+               "app/page.tsx": "export default function Page() { return null }\n"},
+    "axum": {"Cargo.toml": '[package]\nname = "svc"\n[dependencies]\naxum = "0.7"\ntokio = { version = "1", features = ["full"] }\n',
+             "src/main.rs": "fn main() {}\n"},
+    "gin": {"go.mod": "module example.com/svc\n\ngo 1.22\n\nrequire (\n\tgithub.com/gin-gonic/gin v1.10.0\n)\n",
+            "main.go": "package main\n"},
+    "terraform": {"main.tf": 'provider "aws" {}\n', "variables.tf": ""},
+}
+EXPECT = {"fastapi": {"fastapi", "pytest", "python"}, "nextjs": {"nextjs", "react", "vitest"},
+          "axum": {"axum", "tokio", "rust"}, "gin": {"gin", "go"}, "terraform": {"terraform"}}
+
+
+class LibraryCards(ForemanTestCase):
+    def test_every_card_passes_the_lint_and_the_library_is_large(self):
+        problems, notes = fmlib.lint()
+        self.assertEqual(problems, [], "\n".join(problems[:20]))
+        self.assertGreaterEqual(len(fmlib.cards()), 400)
+        self.assertIn("cards", self.fm("lib", "check").stdout)
+
+    def test_the_lint_names_what_a_bad_card_gets_wrong(self):
+        d = os.path.join(self.tmp, "cards", "web")
+        os.makedirs(d)
+        with open(os.path.join(d, "Bad_Name.md"), "w") as f:
+            f.write("---\nname: other\ntitle: X\narea: python\ntags: [a]\ndetect: [pkg:x, file:*.{yml,yaml}]\n"
+                    "related: []\n---\nTODO\n\n## Do\n- x\n")
+        problems, _ = fmlib.lint(os.path.join(self.tmp, "cards"))
+        text = "\n".join(problems)
+        for bit in ("name", "area", "signal", "Verify", "placeholder", "size"):
+            self.assertIn(bit, text)
+
+
+class LibrarySuggest(ForemanTestCase):
+    def test_each_fixture_repo_gets_its_stack_cards(self):
+        for kind, files in FIXTURES.items():
+            root = os.path.join(self.tmp, kind)
+            for rel, body in files.items():
+                os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+                with open(os.path.join(root, rel), "w") as f:
+                    f.write(body)
+            got = {r["name"] for r in fmlib.suggest(root)[:10]}
+            self.assertTrue(EXPECT[kind] <= got, f"{kind}: {sorted(got)}")
+
+    def test_ecosystem_markers_alone_suggest_nothing_they_dont_own(self):
+        cases = {  # files → (cards that must appear, cards that must not)
+            "gcp-tf": ({"main.tf": 'provider "google" {}\n'}, {"terraform"}, {"aws-iam"}),
+            "go-make": ({"go.mod": "module x/y\n\ngo 1.22\n", "main.go": "package main\n", "Makefile": "all:\n"},
+                        {"go", "make"}, {"c", "cuda"}),
+            "pg-app": ({"requirements.txt": "psycopg[binary]\nfastapi\n", "app.py": "", "schema.sql": ""},
+                       {"postgres", "fastapi"}, {"timescaledb", "pgvector", "postgres-locking"}),
+            "gha": ({".github/workflows/ci.yml": "on: push\n", "package.json": json.dumps({"dependencies": {"hono": "4"}})},
+                    {"github-actions", "hono"}, {"github-cli", "test-sharding", "cron-jobs", "node-inspector",
+                                                 "cloudflare-workers"}),
+        }
+        for kind, (files, want, never) in cases.items():
+            root = os.path.join(self.tmp, kind)
+            for rel, body in files.items():
+                os.makedirs(os.path.dirname(os.path.join(root, rel)), exist_ok=True)
+                with open(os.path.join(root, rel), "w") as f:
+                    f.write(body)
+            got = [r["name"] for r in fmlib.suggest(root)]
+            self.assertTrue(want <= set(got), f"{kind}: {got}")
+            self.assertFalse(never & set(got), f"{kind}: {sorted(never & set(got))} in {got}")
+        self.assertLess(got.index("github-actions"), len(got))
+
+    def test_a_hostile_go_mod_cannot_hang_detection(self):
+        root = os.path.join(self.tmp, "hostile")
+        os.makedirs(root)
+        with open(os.path.join(root, "go.mod"), "w") as f:
+            f.write("a." * 200_000)  # one 400 KB line; the old pattern backtracked for minutes
+        t = time.monotonic()
+        fmlib.suggest(root)
+        self.assertLess(time.monotonic() - t, 2)
+
+    def test_the_session_map_line_names_the_cards(self):
+        with open(os.path.join(self.repo, "pyproject.toml"), "w") as f:
+            f.write(FIXTURES["fastapi"]["pyproject.toml"])
+        for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "deps"]):
+            subprocess.run(["git", "-C", self.repo, *args], check=True)
+        self.fm("init")
+        self.fm("map", "--json")
+        out = self.hook("SessionStart", {"source": "startup"}).stdout
+        self.assertIn("cards: fastapi", out)
+
+
+class LibrarySearch(ForemanTestCase):
+    def test_search_ranks_cards_and_installed_plugins_skills_together(self):
+        cfg = os.path.join(self.tmp, "claude")
+        plug = os.path.join(self.tmp, "plug")
+        os.makedirs(os.path.join(plug, "skills", "fastapi-patterns"))
+        with open(os.path.join(plug, "skills", "fastapi-patterns", "SKILL.md"), "w") as f:
+            f.write("---\nname: fastapi-patterns\ndescription: FastAPI project structure and testing\n---\nbody\n")
+        os.makedirs(os.path.join(cfg, "plugins"))
+        with open(os.path.join(cfg, "plugins", "installed_plugins.json"), "w") as f:
+            json.dump({"plugins": {"kit@market": [{"installPath": plug}]}}, f)
+        with open(os.path.join(cfg, "settings.json"), "w") as f:
+            json.dump({"enabledPlugins": {"kit@market": True}}, f)
+        out = self.fm("lib", "search", "fastapi", env={"CLAUDE_CONFIG_DIR": cfg}).stdout
+        self.assertIn("fastapi", out.splitlines()[1])  # the card first
+        self.assertIn("kit:fastapi-patterns", out)
+        shown = self.fm("lib", "show", "kit:fastapi-patterns", env={"CLAUDE_CONFIG_DIR": cfg}).stdout
+        self.assertIn(os.path.join(plug, "skills", "fastapi-patterns", "SKILL.md"), shown)
+        self.assertIn("## Verify", self.fm("lib", "show", "fastapi").stdout)
+
+    def test_show_reads_only_the_sections_asked_for_from_several_cards(self):
+        self.fm("init")
+        out = self.fm("lib", "show", "fastapi", "pytest", "--section", "verify").stdout
+        self.assertEqual(out.count("## Verify"), 2)
+        self.assertNotIn("## Avoid", out)
+        self.assertNotIn("detect:", out)  # frontmatter is for the index, not the reader
+        rows = [r for r in c.ledger_tail(c.find_project(self.repo, create=False)) if r["event"] == "lib"]
+        self.assertEqual(rows[-1]["data"]["cards"], ["fastapi", "pytest"])  # the pane shows what was read

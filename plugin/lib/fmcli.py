@@ -3610,7 +3610,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
@@ -3967,6 +3967,14 @@ def build_parser():
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
     s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
+    s = add("lib", lazy("fmlib", "cmd_lib"), help="stack library: cards per language, framework, service and tool, "
+            "plus installed plugins' skills (suggest, search, show, list, check)")
+    s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check"])
+    s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
+    s.add_argument("--area", help="list: one area's cards")
+    s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")
+    s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
+                                                     "repeatable")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
