@@ -580,7 +580,11 @@ def cmd_task(args):
                                                         b.section("Lessons").splitlines() if x.strip()), ""))
         except Exception as e:  # the task is done already; a derived index must not make that look failed
             print(f"fm: warning: tripwires not updated: {e}", file=sys.stderr)
-        for w in _close_warnings(p, b, files):  # T-0672: seen, never a refusal
+        warns = _close_warnings(p, b, files)  # T-0672: seen, never a refusal
+        if warns:  # T-0956: the verdict first, then the details
+            kinds = dict.fromkeys(re.split(r"[:(\[]| in ", w, maxsplit=1)[0].strip() for w in warns)
+            print(f"fm: {len(warns)} warning{'' if len(warns) == 1 else 's'}: {', '.join(kinds)}", file=sys.stderr)
+        for w in warns:
             print(f"fm: warning: {w}", file=sys.stderr)
         grade, why = b.grade()
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
@@ -856,7 +860,24 @@ def task_finish(p, args):
         print(f"{b.id}: what would have caught this earlier? (--why-not-caught next time; M/L fixes need it)")
     if args.commit and not rc:
         _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
+    if not rc and not getattr(args, "json", False):
+        print(_landed(p, b))
     return rc
+
+
+def _landed(p, b):
+    """T-0956: the close's last line: where the task's files ended up — committed (sha, pushed or not) or not."""
+    import fmmap
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    files = [f for f in fmmap.changed(p.root, base) if not f.startswith(".foreman/")] if base else []
+    if not files:
+        return "Landed: no file changes in git"
+    dirty = c._git(p.root, "--literal-pathspecs", "status", "--porcelain", "--", *files, timeout=30).splitlines()
+    if dirty:
+        return f"Landed: not committed ({len(dirty)} file{'' if len(dirty) == 1 else 's'} uncommitted)"
+    sha = c._git(p.root, "log", "-1", "--format=%h", "--", *files, timeout=30).strip()
+    pushed = c._git(p.root, "branch", "-r", "--contains", sha, timeout=30).strip() if sha else ""
+    return f"Landed: committed {sha} · {'pushed' if pushed else 'not pushed'}"
 
 
 def _finish_gaps(b, args, lenses):
@@ -1401,9 +1422,11 @@ def _close_warnings_of(p, b, files):
             said.append(f"`{c.fit(cmd, 50)}` never failed in {n} run(s) here (does it test the change?)")
     if said:
         honest.append("Check track record: " + "; ".join(said[:4]))
-    debug = _scaffolding(p, b, files)
+    debug, conflict = _scaffolding(p, b, files)
     if debug:
         honest.append(f"debug scaffolding in added lines: {', '.join(debug[:6])} — remove it, or say why it stays")
+    if conflict:  # T-0956
+        honest.append(f"conflict marker in added lines: {', '.join(conflict[:6])} — finish the merge")
     gone = _deleted(p, b)
     why = b.section("Origins")
     unexplained = [f for f in gone if f not in why]
@@ -1518,21 +1541,23 @@ _DEBUG_PRINT = re.compile(r"^\s*(print|console\.\w+|logger?\.\w+)\(\s*f?[\"']DEB
 _JS_LOG = re.compile(r"\bconsole\.(log|debug)\(")
 _PROSE = (".md", ".markdown", ".rst", ".txt", ".adoc")
 _QUOTED = re.compile(r"""(["'])(?:\\.|(?!\1).)*\1""")
+_CONFLICT = re.compile(r"^(?:<{7}|>{7})(?: |$)|^={7}$")  # T-0956
 
 
 def _scaffolding(p, b, files):
-    """T-0650: added lines in the task's files that look like debug scaffolding: [file:line]."""
+    """T-0650: added lines in the task's files that look like debug scaffolding, and (T-0956) merge conflict markers:
+    ([file:line], [file:line])."""
     import subprocess
     base = b.meta.get("base")
     files = [f for f in files if not f.lower().endswith(_PROSE)]  # docs may name debug calls; only code runs them
     if not base or not files or not c.git_root(p.root):
-        return []
+        return [], []
     try:
         diff = subprocess.run(["git", "-C", p.root, "diff", "-U0", base, "--", *files[:200]], capture_output=True,
                               text=True, errors="replace", timeout=30).stdout
     except (OSError, subprocess.SubprocessError):
-        return []
-    hits, path, n = [], None, 0
+        return [], []
+    hits, conflicts, path, n = [], [], None, 0
     for line in diff.splitlines():
         if line.startswith("+++ "):
             path = line[6:] if line.startswith("+++ b/") else None
@@ -1544,8 +1569,10 @@ def _scaffolding(p, b, files):
             if _DEBUG.search(text) or _DEBUG_PRINT.search(line[1:]) or (path.endswith((".js", ".jsx", ".ts", ".tsx", ".mjs")) and _JS_LOG.search(text)
                                        and "/test" not in path):
                 hits.append(f"{path}:{n}")
+            if _CONFLICT.match(line[1:]):
+                conflicts.append(f"{path}:{n}")
             n += 1
-    return hits
+    return hits, conflicts
 
 
 def _preflight(p, b):
