@@ -99,6 +99,31 @@ class LibrarySuggest(ForemanTestCase):
         self.assertIn("cards: fastapi", out)
 
 
+class LibraryAreas(ForemanTestCase):
+    """T-0941: cards for building Claude Code extensions, and for ideation and improvement practice."""
+
+    def test_the_extension_and_practice_areas_are_there_and_found_by_search(self):
+        areas = {}
+        for x in fmlib.cards():
+            areas[x["area"]] = areas.get(x["area"], 0) + 1
+        self.assertGreaterEqual(areas.get("claude-code", 0), 20)
+        self.assertGreaterEqual(areas.get("practice", 0), 15)
+        self.assertTrue(fmlib.search("hook PreToolUse")[0]["name"].startswith("cc-hook"))
+        top = {r["name"] for r in fmlib.search("brainstorm ideas")[:3]}
+        self.assertIn("practice", {x["area"] for x in fmlib.cards() if x["name"] in top})
+
+    def test_a_plugin_repo_is_offered_the_plugin_cards(self):
+        root = os.path.join(self.tmp, "plug")
+        os.makedirs(os.path.join(root, ".claude-plugin"))
+        os.makedirs(os.path.join(root, "hooks"))
+        with open(os.path.join(root, ".claude-plugin", "plugin.json"), "w") as f:
+            f.write('{"name": "x"}')
+        with open(os.path.join(root, "hooks", "hooks.json"), "w") as f:
+            f.write("{}")
+        got = [r["name"] for r in fmlib.suggest(root)[:8]]
+        self.assertTrue({"cc-plugins", "cc-hooks"} <= set(got), got)
+
+
 class LibrarySearch(ForemanTestCase):
     def test_search_ranks_cards_and_installed_plugins_skills_together(self):
         cfg = os.path.join(self.tmp, "claude")
