@@ -183,6 +183,9 @@ class KnownVars(GuardCase):
             ("f=$(ls " + st + "/T-1.md); S=/tmp/x; echo hi > $f", "state-direct"),
             ("S=/tmp/x; echo $(true) > /dev/null; S={fhome}/state; echo hi > $S/a", "state-direct"),
             ("X=$(mktemp -d); rm -rf $X/../..", "rm-outside"),
+            ("T=$(mktemp -d) && echo x > $T/a && rm -r $T", None),  # T-0892: a fresh temp folder is scratch
+            ('T="$(mktemp -d)"; rm -rf "$T"', None),
+            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it elsewhere: still unknown
             ("D=/tmp/ok; D=$(echo /); rm -rf $D", "rm-outside"),  # reassigned from a substitution: unknown again
             ("S=/tmp/x; $(echo cd) {fhome}/state; echo hi > $S/a", "state-direct"),  # a computed command name
         ], self.bash)
