@@ -1500,3 +1500,22 @@ test('a close takes the top of the pane for a moment: the done card with grade, 
   expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
   await ui.unmount()
 })
+
+test('a quiet card folds to its head line with ▾/▸, and stays folded after a reload (T-0914)', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeDefined() // the activity line
+  await ui.press({ key: 'fold-activity' })
+  expect(await ui.find({ key: 'card-activity' })).toBeDefined() // the head stays
+  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
+  for (const key of ['fold-pulse', 'fold-gates']) expect(await ui.find({ key })).toBeDefined()
+  expect(await ui.find({ key: 'fold-task' })).toBeUndefined() // the task, what needs you and the queue never fold
+  await ui.unmount()
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a reload reads the store
+  const again = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
+  await again.press({ key: 'fold-activity' })
+  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeDefined()
+  await again.unmount()
+})
