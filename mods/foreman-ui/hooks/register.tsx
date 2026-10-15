@@ -53,6 +53,7 @@ const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
+const folded = atom({ plugin: 'foreman-ui', key: 'folded' } as const, [] as string[]) // T-0914: cards folded to their head
 import { agentOut, agentRow, bars, churn, editChanges, editRow, eta, lanes, mascotTree, meter, miniRail, more, rail, shellRow, spark } from './rows'
 import type { Motion } from './rows'
 
@@ -360,6 +361,12 @@ async function steer($: EngineInterface, text: string) {
   await refresh($)
 }
 
+// T-0914: fold or unfold one of the quieter cards; the choice is kept across sessions
+async function toggleFold($: EngineInterface, key: string) {
+  await update($, folded, list => (list.includes(key) ? list.filter(x => x !== key) : [...list, key]))
+  await $.store.set('folded', await read($, folded))
+}
+
 async function openPane($: EngineInterface, focus: boolean) {
   // ~76 columns docked: the cards fit, and the transcript and band keep the rest (T-0122: the share left them ~37)
   return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true, columns: 76 } : { id: PANE, title: 'Foreman', columns: 76 })
@@ -514,6 +521,8 @@ export const register: Register = (on, options) => {
     })
     const stored = await $.store.get('sound').catch(() => undefined)
     if (stored === false) await update($, sound, () => false)
+    const kept = await $.store.get('folded').catch(() => undefined)
+    if (Array.isArray(kept)) await update($, folded, () => kept.filter((x): x is string => typeof x === 'string'))
     await refresh($)
     await resumeAfterReload($)
     poll?.cancel() // one poller per environment, however often the session starts
@@ -1147,8 +1156,14 @@ export const register: Register = (on, options) => {
     // task, something waiting on the person, failing gates); each card's heading keeps its colour
     const card = (color: number | null = null) =>
       ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(color === null ? C.dim : pulse(color, f)), paddingX: 1 }) as const
-    const head = (title: string, color: number, count?: string) => (
+    const foldedSet = new Set(await read($, folded))
+    const isFolded = (key: string) => foldedSet.has(key)
+    // a card's head; a quieter card's carries a ▾/▸ that folds it to this one line (T-0914)
+    const head = (title: string, color: number, count?: string, fold?: string) => (
       <Box flexDirection="row" gap={1}>
+        {fold && (
+          <Button key={`fold-${fold}`} label={isFolded(fold) ? '▸' : '▾'} plain dimColor onPress={() => toggleFold($, fold)} />
+        )}
         <Text bold color={hex(color)}>
           ▍{title}
         </Text>
@@ -1197,19 +1212,24 @@ export const register: Register = (on, options) => {
           'Gates',
           failing ? C.err : C.ok,
           `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`,
+          'gates',
         )}
-        {checks.results.map((r, i) => (
-          <Box flexDirection="row" gap={1} key={`gate-${i}`}>
-            <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>
-            <Text wrap="truncate-end">{r.cmd.slice(0, 60)}</Text>
-            <Text color={hex(C.dim)}>{r.s.toFixed(1)}s</Text>
-            {r.note ? (
-              <Text color={hex(C.warn)} wrap="truncate-end">
-                {r.note.slice(0, 40)}
-              </Text>
-            ) : null}
+        {!isFolded('gates') && (
+          <Box key="gates-body" flexDirection="column">
+            {checks.results.map((r, i) => (
+              <Box flexDirection="row" gap={1} key={`gate-${i}`}>
+                <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>
+                <Text wrap="truncate-end">{r.cmd.slice(0, 60)}</Text>
+                <Text color={hex(C.dim)}>{r.s.toFixed(1)}s</Text>
+                {r.note ? (
+                  <Text color={hex(C.warn)} wrap="truncate-end">
+                    {r.note.slice(0, 40)}
+                  </Text>
+                ) : null}
           </Box>
         ))}
+          </Box>
+        )}
       </Box>
     )
 
@@ -1537,55 +1557,59 @@ export const register: Register = (on, options) => {
 
         {(laneRows.length > 0 || days.some(Boolean) || cx || v.health) && (
           <Box key="card-pulse" {...card()}>
-            {head('Pulse', C.accent2, laneRows.length ? `${recentTicks.length} tool call${recentTicks.length === 1 ? '' : 's'} · last ${span / 60000} min` : 'no tool calls lately')}
-            {laneRows.length > 0 && lanes(ui, e, laneRows, laneW, ft, blit)}
-            {laneRows.length > 0 && term && (
-              <Text color={hex(mix(C.dim, C.track, 0.3))} key="lanes-axis">
-                {`${' '.repeat(6)}${span / 60000}m ago`.padEnd(laneW + 3)}now
-              </Text>
-            )}
-            <Box flexDirection="row" gap={2} key="pulse-row">
-              {days.length > 0 && (
-                <Box flexDirection="column" flexShrink={0} key="pulse-days">
-                  {bars(ui, e, 'done-days', days, 3, C.accent2, C.ok)}
-                  <Text color={hex(C.dim)}>
-                    {days.reduce((x, y) => x + y, 0)} closed · 14d
-                  </Text>
-                </Box>
-              )}
-              <Box flexDirection="column" flexGrow={1} key="pulse-gauges">
-                {cx && (
-                  <Box flexDirection="row" gap={1} key="g-ctx">
-                    <Text color={hex(C.dim)}>{'context'.padEnd(7)}</Text>
-                    {meter(ui, e, 'fm-pane-ctx', gaugeW, cx.percent / 100, cx.percent >= CHECKPOINT_AT ? C.err : cx.percent >= 60 ? C.warn : C.ok, null)}
-                    <Text>{Math.round(cx.percent)}%</Text>
-                  </Box>
-                )}
-                {v.budget && (
-                  <Box flexDirection="row" gap={1} key="g-spend">
-                    <Text color={hex(C.dim)}>{'spend'.padEnd(7)}</Text>
-                    {meter(ui, e, 'fm-pane-spend', gaugeW, Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
-                    <Text>${v.budget.today_usd.toFixed(2)}</Text>
-                  </Box>
-                )}
-                {v.health && (
-                  <Box flexDirection="row" gap={1} key="g-hooks">
-                    <Text color={hex(C.dim)}>{'hooks'.padEnd(7)}</Text>
-                    {(v.latency ?? []).length > 1 && spark(ui, e, 'fm-latency', v.latency ?? [], gaugeW)}
-                    <Text color={hex(v.health.hook_errors ? C.err : C.dim)} wrap="truncate-end">
-                      p95 {v.health.hook_p95_ms ?? '–'} ms
-                    </Text>
-                  </Box>
-                )}
-                {v.health && (
-                  <Text color={hex(v.health.hook_errors || (v.health.paused_hooks ?? []).length ? C.err : C.dim)} wrap="truncate-end" key="g-guard">
-                    {'guard'.padEnd(7)} {v.health.guard_blocks} block{v.health.guard_blocks === 1 ? '' : 's'}
-                    {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
-                    {(v.health.paused_hooks ?? []).length ? ` · paused: ${(v.health.paused_hooks ?? []).join(', ')}` : ''}
+            {head('Pulse', C.accent2, laneRows.length ? `${recentTicks.length} tool call${recentTicks.length === 1 ? '' : 's'} · last ${span / 60000} min` : 'no tool calls lately', 'pulse')}
+            {!isFolded('pulse') && (
+              <Box key="pulse-body" flexDirection="column">
+                {laneRows.length > 0 && lanes(ui, e, laneRows, laneW, ft, blit)}
+                {laneRows.length > 0 && term && (
+                  <Text color={hex(mix(C.dim, C.track, 0.3))} key="lanes-axis">
+                    {`${' '.repeat(6)}${span / 60000}m ago`.padEnd(laneW + 3)}now
                   </Text>
                 )}
+                <Box flexDirection="row" gap={2} key="pulse-row">
+                  {days.length > 0 && (
+                    <Box flexDirection="column" flexShrink={0} key="pulse-days">
+                      {bars(ui, e, 'done-days', days, 3, C.accent2, C.ok)}
+                      <Text color={hex(C.dim)}>
+                        {days.reduce((x, y) => x + y, 0)} closed · 14d
+                      </Text>
+                    </Box>
+                  )}
+                  <Box flexDirection="column" flexGrow={1} key="pulse-gauges">
+                    {cx && (
+                      <Box flexDirection="row" gap={1} key="g-ctx">
+                        <Text color={hex(C.dim)}>{'context'.padEnd(7)}</Text>
+                        {meter(ui, e, 'fm-pane-ctx', gaugeW, cx.percent / 100, cx.percent >= CHECKPOINT_AT ? C.err : cx.percent >= 60 ? C.warn : C.ok, null)}
+                        <Text>{Math.round(cx.percent)}%</Text>
+                      </Box>
+                    )}
+                    {v.budget && (
+                      <Box flexDirection="row" gap={1} key="g-spend">
+                        <Text color={hex(C.dim)}>{'spend'.padEnd(7)}</Text>
+                        {meter(ui, e, 'fm-pane-spend', gaugeW, Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
+                        <Text>${v.budget.today_usd.toFixed(2)}</Text>
+                      </Box>
+                    )}
+                    {v.health && (
+                      <Box flexDirection="row" gap={1} key="g-hooks">
+                        <Text color={hex(C.dim)}>{'hooks'.padEnd(7)}</Text>
+                        {(v.latency ?? []).length > 1 && spark(ui, e, 'fm-latency', v.latency ?? [], gaugeW)}
+                        <Text color={hex(v.health.hook_errors ? C.err : C.dim)} wrap="truncate-end">
+                          p95 {v.health.hook_p95_ms ?? '–'} ms
+                        </Text>
+                      </Box>
+                    )}
+                    {v.health && (
+                      <Text color={hex(v.health.hook_errors || (v.health.paused_hooks ?? []).length ? C.err : C.dim)} wrap="truncate-end" key="g-guard">
+                        {'guard'.padEnd(7)} {v.health.guard_blocks} block{v.health.guard_blocks === 1 ? '' : 's'}
+                        {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
+                        {(v.health.paused_hooks ?? []).length ? ` · paused: ${(v.health.paused_hooks ?? []).join(', ')}` : ''}
+                      </Text>
+                    )}
               </Box>
             </Box>
+              </Box>
+            )}
           </Box>
         )}
 
@@ -1662,30 +1686,39 @@ export const register: Register = (on, options) => {
                   : (v.brainstorm.age_h ?? 0) < 2
                     ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
                     : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
+              'brainstorm',
             )}
-            {(v.brainstorm.running || (!v.brainstorm.grounded && (v.brainstorm.age_h ?? 0) < 2) ? v.brainstorm.ideas : []).map((idea, i) => (
-              <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
-                {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
-              </Text>
-            ))}
+            {!isFolded('brainstorm') && (
+              <Box key="brainstorm-body" flexDirection="column">
+                {(v.brainstorm.running || (!v.brainstorm.grounded && (v.brainstorm.age_h ?? 0) < 2) ? v.brainstorm.ideas : []).map((idea, i) => (
+                  <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
+                    {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
+                  </Text>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
         {mine.length > 0 && (
           <Box key="card-files" {...card()}>
-            {head('Files this session', C.edit, `${mine.length} · +${mine.reduce((n, t) => n + t.add, 0)} −${mine.reduce((n, t) => n + t.del, 0)}`)}
-            {mine
-              .slice(-LIST)
-              .reverse()
-              .map((t, i) => (
-                <Box flexDirection="row" gap={1} key={`file-${i}`}>
-                  {churn(ui, e, `file-bar-${i}`, t, maxChurn)}
-                  <Text color={hex(C.ok)}>+{t.add}</Text>
-                  <Text color={hex(C.err)}>−{t.del}</Text>
-                  <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
-                </Box>
-              ))}
-            {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
+            {head('Files this session', C.edit, `${mine.length} · +${mine.reduce((n, t) => n + t.add, 0)} −${mine.reduce((n, t) => n + t.del, 0)}`, 'files')}
+            {!isFolded('files') && (
+              <Box key="files-body" flexDirection="column">
+                {mine
+                  .slice(-LIST)
+                  .reverse()
+                  .map((t, i) => (
+                    <Box flexDirection="row" gap={1} key={`file-${i}`}>
+                      {churn(ui, e, `file-bar-${i}`, t, maxChurn)}
+                      <Text color={hex(C.ok)}>+{t.add}</Text>
+                      <Text color={hex(C.err)}>−{t.del}</Text>
+                      <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
+                    </Box>
+                  ))}
+                {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
+              </Box>
+            )}
           </Box>
         )}
 
@@ -1693,29 +1726,33 @@ export const register: Register = (on, options) => {
           // T-0711: the fleet deck — every live session here, a tile per remote session, one steer for all; one session
           // alone is this one, already above (T-0909)
           <Box key="card-fleet" {...card()}>
-            {head('Fleet', C.agent, `${(v.fleet ?? []).filter(s => !s.error).length}`)}
-            {(v.fleet ?? []).slice(0, LIST).map(s => (
-              <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
-                <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
-                <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
-                  <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
-                    {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
-                  </Text>
-                </Box>
-                <Text wrap="truncate-end" color={s.error ? hex(C.warn) : undefined}>
-                  {s.error ?? `${s.project ?? '-'} · ${s.task ?? 'no task'}${s.title ? ` ${s.title}` : ''}`}
-                </Text>
-                {!s.error && (
-                  <Box flexShrink={0} key={`fleet-ctx-${s.remote ?? 'here'}-${s.session}`}>
-                    <Text color={hex(C.dim)}>
-                      {`ctx ${s.context_pct ?? '?'}%${s.mail ? ` · mail ${s.mail}` : ''}${s.remote && s.age_s != null ? ` · ${elapsed(s.age_s * 1000)} ago` : ''}`}
+            {head('Fleet', C.agent, `${(v.fleet ?? []).filter(s => !s.error).length}`, 'fleet')}
+            {!isFolded('fleet') && (
+              <Box key="fleet-body" flexDirection="column">
+                {(v.fleet ?? []).slice(0, LIST).map(s => (
+                  <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
+                    <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
+                    <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
+                      <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
+                        {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
+                      </Text>
+                    </Box>
+                    <Text wrap="truncate-end" color={s.error ? hex(C.warn) : undefined}>
+                      {s.error ?? `${s.project ?? '-'} · ${s.task ?? 'no task'}${s.title ? ` ${s.title}` : ''}`}
                     </Text>
-                  </Box>
-                )}
+                    {!s.error && (
+                      <Box flexShrink={0} key={`fleet-ctx-${s.remote ?? 'here'}-${s.session}`}>
+                        <Text color={hex(C.dim)}>
+                          {`ctx ${s.context_pct ?? '?'}%${s.mail ? ` · mail ${s.mail}` : ''}${s.remote && s.age_s != null ? ` · ${elapsed(s.age_s * 1000)} ago` : ''}`}
+                        </Text>
+                      </Box>
+                    )}
               </Box>
             ))}
             {e.surface !== 'mobile' && (
               <Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />
+            )}
+              </Box>
             )}
           </Box>
         ) : null}
@@ -1727,74 +1764,91 @@ export const register: Register = (on, options) => {
               'Spend today',
               C.accent2,
               `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)}${v.budget.subagents_paused ? ` · waiting: ${v.budget.subagents_paused}` : ''}`,
+              'spend',
             )}
-            <Box flexDirection="row" gap={1}>
-              {meter(ui, e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
-              {v.budget.halved && <Text color={hex(C.warn)}>caps halved: {v.budget.halved}</Text>}
-            </Box>
-            {v.budget.top.map(t => (
-              <Text key={`spend-${t.feature}`} color={hex(C.dim)} wrap="truncate-end">
-                {'  '}
-                {t.feature} · {t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`} · {t.runs} run{t.runs === 1 ? '' : 's'}
-              </Text>
-            ))}
+            {!isFolded('spend') && (
+              <Box key="spend-body" flexDirection="column">
+                <Box flexDirection="row" gap={1}>
+                  {meter(ui, e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
+                  {v.budget.halved && <Text color={hex(C.warn)}>caps halved: {v.budget.halved}</Text>}
+                </Box>
+                {v.budget.top.map(t => (
+                  <Text key={`spend-${t.feature}`} color={hex(C.dim)} wrap="truncate-end">
+                    {'  '}
+                    {t.feature} · {t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`} · {t.runs} run{t.runs === 1 ? '' : 's'}
+                  </Text>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
         {v.bench && (
           <Box key="card-bench" {...card()}>
-            {head('Bench', C.agent, `${v.bench.cases} case${v.bench.cases === 1 ? '' : 's'}`)}
-            {v.bench.last && (
-              <Text wrap="truncate-end">
-                <Text color={hex(v.bench.last.passed === v.bench.last.total ? C.ok : C.warn)}>
-                  {v.bench.last.passed}/{v.bench.last.total} passed
-                </Text>
-                <Text color={hex(C.dim)}>
-                  {' '}
-                  · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
-                  {v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}
-                  {v.bench.last.repeats != null ? ` · ${v.bench.last.repeats} repeat${v.bench.last.repeats === 1 ? '' : 's'}` : ''}
-                </Text>
-              </Text>
+            {head('Bench', C.agent, `${v.bench.cases} case${v.bench.cases === 1 ? '' : 's'}`, 'bench')}
+            {!isFolded('bench') && (
+              <Box key="bench-body" flexDirection="column">
+                {v.bench.last && (
+                  <Text wrap="truncate-end">
+                    <Text color={hex(v.bench.last.passed === v.bench.last.total ? C.ok : C.warn)}>
+                      {v.bench.last.passed}/{v.bench.last.total} passed
+                    </Text>
+                    <Text color={hex(C.dim)}>
+                      {' '}
+                      · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
+                      {v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}
+                      {v.bench.last.repeats != null ? ` · ${v.bench.last.repeats} repeat${v.bench.last.repeats === 1 ? '' : 's'}` : ''}
+                    </Text>
+                  </Text>
+                )}
+                {(v.bench.verdicts ?? []).map((x, i) => (
+                  <Text key={`verdict-${i}`} color={hex(x.ok ? C.ok : C.warn)} wrap="truncate-end">
+                    {x.ok ? '✓' : '✗'} {x.kind}: {x.verdict ?? ''}
+                  </Text>
+                ))}
+                {v.bench.evolve.map((x, i) => (
+                  <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
+                    {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}
+                  </Text>
+                ))}
+              </Box>
             )}
-            {(v.bench.verdicts ?? []).map((x, i) => (
-              <Text key={`verdict-${i}`} color={hex(x.ok ? C.ok : C.warn)} wrap="truncate-end">
-                {x.ok ? '✓' : '✗'} {x.kind}: {x.verdict ?? ''}
-              </Text>
-            ))}
-            {v.bench.evolve.map((x, i) => (
-              <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
-                {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}
-              </Text>
-            ))}
           </Box>
         )}
 
         {(v.research ?? []).length > 0 && (
           <Box key="card-research" {...card()}>
-            {head('Research', C.accent2, 'quotes checked against their pages')}
-            {(v.research ?? []).map(r => (
-              <Text key={`research-${r.name}`} wrap="truncate-end">
-                <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
-                <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
-                {(r.conflicts ?? 0) > 0 && <Text color={hex(C.warn)}> · ⟷{r.conflicts} conflict{r.conflicts === 1 ? '' : 's'}</Text>}
-                {(r.single ?? 0) > 0 && <Text color={hex(C.dim)}> · {r.single} single-source</Text>}
-              </Text>
-            ))}
+            {head('Research', C.accent2, 'quotes checked against their pages', 'research')}
+            {!isFolded('research') && (
+              <Box key="research-body" flexDirection="column">
+                {(v.research ?? []).map(r => (
+                  <Text key={`research-${r.name}`} wrap="truncate-end">
+                    <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
+                    <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
+                    {(r.conflicts ?? 0) > 0 && <Text color={hex(C.warn)}> · ⟷{r.conflicts} conflict{r.conflicts === 1 ? '' : 's'}</Text>}
+                    {(r.single ?? 0) > 0 && <Text color={hex(C.dim)}> · {r.single} single-source</Text>}
+                  </Text>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
         <Box key="card-activity" {...card()}>
-          {head('Activity', C.dim, recent.length ? 'newest first' : 'nothing yet')}
-          {[...recent].reverse().map((line, i) => {
-            const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
-            return (
-              <Text color={hex(fade(recent.length - 1 - i, recent.length, 0xc8ccd4))} wrap="truncate-end" key={`r-${i}`}>
-                {time ? <Text color={hex(C.dim)}>{`${time} `}</Text> : null}
-                {rest}
-              </Text>
-            )
-          })}
+          {head('Activity', C.dim, recent.length ? 'newest first' : 'nothing yet', 'activity')}
+          {!isFolded('activity') && (
+            <Box key="activity-body" flexDirection="column">
+              {[...recent].reverse().map((line, i) => {
+                const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
+                return (
+                  <Text color={hex(fade(recent.length - 1 - i, recent.length, 0xc8ccd4))} wrap="truncate-end" key={`r-${i}`}>
+                    {time ? <Text color={hex(C.dim)}>{`${time} `}</Text> : null}
+                    {rest}
+                  </Text>
+                )
+              })}
+            </Box>
+          )}
         </Box>
 
         <Box flexDirection="row" gap={2} borderStyle="round" borderColor={hex(C.dim)} paddingX={1} key="fm-pane-controls">
