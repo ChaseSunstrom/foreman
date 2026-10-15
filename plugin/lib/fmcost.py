@@ -6,6 +6,7 @@ import json
 import os
 import re
 import statistics
+import time
 
 import fmcore as c
 
@@ -149,11 +150,27 @@ def _task_at(timeline, ts):
     return task
 
 
+def _forecast(args, fmcli):
+    """T-0973: when each usage window fills at the pace so far (fmbudget.forecast)."""
+    import fmbudget
+    w = fmbudget.forecast()
+    names = {"five_hour": "5-hour", "seven_day": "weekly"}
+    clock = lambda t: time.strftime("%a %H:%M", time.localtime(t))  # noqa: E731
+    rows = [f"{names[k]}: {v['used']:g}% used, on pace for {v['projected']:g}% at its reset ({clock(v['resets_at'])})"
+            + (f"; fills about {clock(v['full_at'])}, before the reset" if v["full_at"] else "")
+            for k, v in w.items()]
+    return fmcli.out(args, {"windows": w}, "\n".join(rows) + "\n(a straight line from the window's start: early on it "
+                     "swings)" if rows else "fm cost --forecast: no usage snapshot yet (the status line writes one "
+                     "each turn once Claude Code reports rate limits)")
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
     if getattr(args, "by_model", False):
         return _by_model(p, args, fmcli)
+    if getattr(args, "forecast", False):
+        return _forecast(args, fmcli)
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")

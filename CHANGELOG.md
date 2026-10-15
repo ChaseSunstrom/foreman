@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm cost --forecast` says when the 5-hour and weekly usage windows fill at the current pace (T-0973).
 - Lanes and internals (T-0961): a lane merge saves its base before `git merge` runs and restores it if the merge fails; one git runner (fmcore) behind lanes, secrets, the map and the bench, which tells a timeout from git's own "no match", so the bench's filter-driver guard and the secrets audit fail closed.
 - Outside text (T-0972): a fetched page, search result or MCP answer that holds instruction-like text ("ignore previous instructions", `<system>` tags, curl piped to a shell, …) gets a note that it is data, not your request; no tokens spent.
 - Knowledge out (T-0958): `fm recall --export-rules` writes each finished task's lessons to `.claude/rules/foreman-lessons/T-NNNN.md`, scoped by `paths:` to that task's files, so Claude Code loads a lesson only with its files; `fm decide --export-adr DIR` writes one ADR per decision; `fm task defer ID --until "when PATH changes"` brings a task back once the file changes.
