@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Lanes and internals (T-0961): a lane merge saves its base before `git merge` runs and restores it if the merge fails; one git runner (fmcore) behind lanes, secrets, the map and the bench, which tells a timeout from git's own "no match", so the bench's filter-driver guard and the secrets audit fail closed.
 - Outside text (T-0972): a fetched page, search result or MCP answer that holds instruction-like text ("ignore previous instructions", `<system>` tags, curl piped to a shell, …) gets a note that it is data, not your request; no tokens spent.
 - Knowledge out (T-0958): `fm recall --export-rules` writes each finished task's lessons to `.claude/rules/foreman-lessons/T-NNNN.md`, scoped by `paths:` to that task's files, so Claude Code loads a lesson only with its files; `fm decide --export-adr DIR` writes one ADR per decision; `fm task defer ID --until "when PATH changes"` brings a task back once the file changes.
 - Brainstorm and cost (T-0959): a brainstorm child that fails after printing keeps its answer, flagged partial; `fm ideas` writes a manifest.json; `fm cost --sessions` labels each cache bust ttl or context edit; `fm friction --minutes` estimates the minutes friction cost this week; `fm burden --by-verb` lists the fm verbs nobody calls. Reports over days now read the rotated event logs too.

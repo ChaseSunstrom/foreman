@@ -8,6 +8,8 @@ import unittest
 
 from helpers import ForemanTestCase, read_text
 
+import fmcore as c
+
 first = lambda text: json.JSONDecoder().raw_decode(text)[0]  # --focus prints its own lines after the JSON
 
 
@@ -271,3 +273,40 @@ class BoardLanes(ForemanTestCase):
         self.assertNotEqual(r.returncode, 0, "git that can't run is a failed process, not an exception")
         r = c._git(self.repo, "rev-parse", "HEAD", proc=True)
         self.assertEqual((r.returncode, len(r.stdout.strip())), (0, 40))
+
+
+class SafeGitFailsClosed(unittest.TestCase):
+    """T-0961 security review: when the filter-driver lookup fails, fmbench's git refuses instead of running unguarded."""
+
+    def test_a_timed_out_config_lookup_refuses_the_command(self):
+        import unittest.mock
+        import fmbench
+        real, calls = subprocess.run, []
+
+        def run(cmd, *a, **k):  # the real runner, with git config timing out
+            calls.append(cmd)
+            if "config" in cmd:
+                raise subprocess.TimeoutExpired(cmd, 1)
+            return real(cmd, *a, **k)
+        with unittest.mock.patch.object(subprocess, "run", side_effect=run):
+            r = fmbench._safe_git("/nowhere", "checkout", "x")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertFalse(any("checkout" in x for x in calls), calls)  # the guarded command never ran
+
+    def test_the_runner_tells_a_timeout_from_a_no_match(self):
+        import unittest.mock
+        with unittest.mock.patch.object(subprocess, "run", side_effect=subprocess.TimeoutExpired("git", 1)):
+            self.assertEqual(c._git("/x", "status", proc=True).returncode, 124)
+        with unittest.mock.patch.object(subprocess, "run", side_effect=OSError("no git")):
+            self.assertEqual(c._git("/x", "status", proc=True).returncode, 127)
+
+    def test_a_secrets_audit_that_cant_list_files_says_so(self):
+        import tempfile
+        import unittest.mock
+        import fmsecrets
+        with tempfile.TemporaryDirectory() as t:
+            subprocess.run(["git", "init", "-q", t], check=True)
+            with unittest.mock.patch.object(fmsecrets.c, "_git", return_value=subprocess.CompletedProcess(
+                    [], 124, "", "timed out")):
+                found = fmsecrets._tree(t)
+        self.assertTrue(found and "couldn't list" in found[0]["kind"], found)  # never a false "no credentials"
