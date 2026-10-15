@@ -288,4 +288,5 @@ def cmd_sync(args):
     st = status(p)
     fmcli.out(args, st, f"Sync {'on' if st['on'] else 'off'} · {st['dir']} · {st['briefs']} brief(s) mirrored, "
                         f"{st['local']} here" + "".join(f"\n  {k.replace('_', ' ')}: {', '.join(st[k])}" for k in
-                                                         ("incoming", "repo_only", "local_only") if st[k]))
+                                                         ("incoming", "repo_only", "local_only") if st[k])
+              + ("\n  A teammate joins from their clone, once .foreman/ is pushed: fm sync on" if st["on"] else ""))

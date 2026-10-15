@@ -193,7 +193,7 @@ Every card shares the animated look: borders that breathe while Claude works, tr
 - a session line: model, folder, branch, context and rate-limit bars, cost, lines changed;
 - a Foreman line: task, stage, step bar, audits, queue, autonomy, guard.
 
-When the mod's card is above the prompt, the Foreman line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Foreman lines.
+When the mod's card is above the prompt, the Foreman line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Foreman lines. `NO_COLOR` set drops the colour. In tmux, `set -g status-right '#(fm state --line)'` puts the same task, step and queue in the status bar.
 
 Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
 

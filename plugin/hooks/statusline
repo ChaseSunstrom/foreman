@@ -169,8 +169,9 @@ def bar(frac, width, color=None):
 
 def render(segs, width):
     """Join (text, style) segments, cut to `width` visible cells with an ellipsis; styles never count."""
-    out, used = [], 0
+    out, used, plain = [], 0, bool(os.environ.get("NO_COLOR"))  # T-0962: no-color.org
     for text, style in segs:
+        style = "" if plain else style
         room = width - used
         if room <= 0:
             break
@@ -252,7 +253,7 @@ def foreman_segs(st, mode):
                 ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
         if a["total"]:
             segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
-                [(f" {a['done']}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
+                [(f" step {a['done']}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
         need = a["audits"][1]
         if need:
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]
