@@ -591,7 +591,8 @@ def cmd_task(args):
                               check_by_hand=by_hand),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
-            if by_hand else "") + (
+            if by_hand else "\nNothing needed from you: each criterion was proved by its own check." if not guessed
+            else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
@@ -982,7 +983,7 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
     n = len([x for x in c._git(p.root, "show", "--name-only", "--format=", "HEAD").split("\n") if x.strip()])
     held = f"{n} file{'' if n == 1 else 's'}"  # T-0380: what the commit holds, not the paths it was given
     mutate(p, b.id, lambda x: x.append_log(f"committed {sha} ({held})"), "commit", {"sha": sha})
-    print(f"{b.id}: committed {sha} ({held}).")
+    print(f"{b.id}: committed {sha} ({held}). Undo: git revert --no-edit {sha}")  # T-0918: the way back, named
 
 
 def _hunks(diff):
