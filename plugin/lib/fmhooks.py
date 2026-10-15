@@ -769,7 +769,8 @@ def _pin_problem(b, target, current):
     if pin is not None and not (isinstance(pin, list) and len(pin) == 3):
         return f"{b.id}'s plugin_pin is malformed; ask again: fm ask {b.id} plugin --pin <plugin id> --why \"…\""
     if target is None:
-        return (f"the user's plugin yes is pinned to installing or enabling {pin[0]}; ask separately for this change"
+        return (f"the user's plugin yes is pinned to installing or enabling {pin[0]} only; any other plugin change "
+                f"(an update, say) is never covered by a pin and needs its own fm ask {b.id} plugin"
                 if pin else None)
     ask = f"ask again: fm ask {b.id} plugin --pin {target} --why \"<what it adds>\""
     if not pin or pin[0] != target:
