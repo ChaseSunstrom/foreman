@@ -317,9 +317,30 @@ ACTION = ("self-improvement pass due: fm friction --brief, then one foreman:fm-r
           "its grounded findings with fm capture --source self, then fm friction --mark")
 
 
+RETRY_S = 30  # ponytail: a flat guess at the turn a guard block or failed call costs; measure from transcripts if it matters
+
+
+def minutes(days=7):
+    """T-0959: {kind: minutes} lost to friction in the last `days`, from the global events: each guard block and failed
+    tool call costs a retry, a failed call also the time it ran, and every hook its run time."""
+    since = c.iso(time.time() - days * 86400)
+    ev = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 200000) if (e.get("ts") or "") >= since]
+    ms = lambda kind: sum(e["ms"] for e in ev if e.get("kind") == kind and isinstance(e.get("ms"), (int, float)))
+    n = lambda kind: sum(e.get("kind") == kind for e in ev)
+    return {"guard blocks": round(n("guard_block") * RETRY_S / 60, 1),
+            "failed tool calls": round((ms("tool_fail") / 1000 + n("tool_fail") * RETRY_S) / 60, 1),
+            "hook time": round(ms("hook_ms") / 60000, 1)}
+
+
 def cmd_friction(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "minutes", False):
+        by = minutes()
+        total = round(sum(by.values()), 1)
+        return fmcli.out(args, {"minutes": total, "by_kind": by, "days": 7},
+                         f"Friction: ≈ {total:g} min lost per week (last 7 days): "
+                         + " · ".join(f"{k} {v:g} min" for k, v in by.items()))
     if args.every is not None:
         if args.every < 0:
             raise fmcli.UsageError("--every takes 0 (off) or a number of closed tasks")
