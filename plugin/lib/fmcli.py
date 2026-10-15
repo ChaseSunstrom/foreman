@@ -3427,12 +3427,23 @@ def lazy(module, func):
 _ARGV = []  # the arguments main() is parsing
 
 
+def _no_ids(text):
+    """T-0873: help without the ticket ids its source keeps for provenance ("(T-0594)", ", T-0375)", "T-0368: ")."""
+    text = re.sub(r"\s*\((?:T-\d{3,4}(?:,\s*|\s*\+\s*)?)+\)", "", text)
+    text = re.sub(r"[,;]\s*T-\d{3,4}(?=\))", "", text)
+    text = re.sub(r"\bT-\d{3,4}\b:?\s*", "", text)
+    return re.sub(r"\(\s*\)|\(\s+", lambda m: "" if m.group(0).strip() == "()" else "(", text)
+
+
 class _Parser(argparse.ArgumentParser):
     """No abbreviated long options (subparsers inherit the class): `--allo core` must not slip past the guard."""
 
     def __init__(self, *args, **kw):
         kw["allow_abbrev"] = False
         super().__init__(*args, **kw)
+
+    def format_help(self):
+        return _no_ids(super().format_help())
 
     def error(self, message):
         """T-0273: an unknown command or flag names the nearest real one (a wrong guess costs a retry otherwise)."""
@@ -3475,7 +3486,7 @@ HELP_TIERS = [
 
 def cmd_help(args):
     sub = next(a for a in build_parser()._actions if isinstance(a, argparse._SubParsersAction))
-    helps = {a.dest: " ".join((a.help or "").split()) for a in sub._choices_actions}
+    helps = {a.dest: _no_ids(" ".join((a.help or "").split())) for a in sub._choices_actions}
     lines = []
     for title, names in HELP_TIERS:
         lines += [title] + [f"  {n:<15}{c.fit(helps.get(n, ''), 100)}" for n in names.split()] + [""]
