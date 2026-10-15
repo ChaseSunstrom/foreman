@@ -195,6 +195,32 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
                                     f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
 
 
+STATE_BUDGET = 200 * 1024 * 1024  # T-0920: bytes of state per project before doctor speaks up (the largest here: ~55 MB)
+
+
+def check_state_size(projects, budget=STATE_BUDGET):
+    """T-0920: a project's state past the budget, with its largest top-level part; fm tidy prunes and rolls."""
+    over = []
+    for p in projects:
+        parts = {}
+        for root, _, names in os.walk(p.dir):
+            top = os.path.relpath(root, p.dir).split(os.sep)[0]
+            for n in names:
+                try:
+                    size = os.path.getsize(os.path.join(root, n))
+                except OSError:
+                    continue
+                key = n if top == "." else top
+                parts[key] = parts.get(key, 0) + size
+        total = sum(parts.values())
+        if total > budget:
+            big = max(parts, key=parts.get)
+            over.append(f"{p.slug} {total // 2**20} MB (most in {big}: {parts[big] // 2**20} MB)")
+    return Result("state size", "WARN" if over else "PASS",
+                  f"{'; '.join(over)} > {budget // 2**20} MB: fm tidy --apply prunes and rolls it" if over
+                  else f"{len(projects)} project(s) under {budget // 2**20} MB each")
+
+
 def _frontmatter(path):
     m = re.match(r"^---\n(.*?)\n---\n", _read(path) or "", re.S)
     if not m:
@@ -967,6 +993,7 @@ def run_all(full=False, accept_supply=False):
                 check_frontmatter()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
+    results.append(check_state_size(projects))
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")

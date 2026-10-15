@@ -381,3 +381,19 @@ class CoreIntegrity(unittest.TestCase):
             self.assertIn("chars", r.detail)
         self.assertEqual(d.check_footprint(os.path.join(PLUGIN, "rules", "foreman.md"),
                                            os.path.join(PLUGIN, "none.md")).status, "PASS")
+
+
+class DoctorStateSize(ForemanTestCase):
+    # T-0920: state grows quietly (ledger, research, outputs); past a budget doctor says so and names the fix
+    def test_a_project_past_the_budget_warns_with_its_biggest_part_and_fm_tidy(self):
+        self.fm("init")
+        p = c.find_project(self.repo)
+        os.makedirs(os.path.join(p.dir, "research"), exist_ok=True)
+        with open(os.path.join(p.dir, "research", "big.md"), "w") as f:
+            f.write("x" * 50_000)
+        self.assertEqual(d.check_state_size([p], budget=1_000_000).status, "PASS")
+        r = d.check_state_size([p], budget=20_000)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn(p.slug, r.detail)
+        self.assertIn("research", r.detail)
+        self.assertIn("fm tidy", r.detail)
