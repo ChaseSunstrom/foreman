@@ -1,7 +1,7 @@
 """fm lib (T-0933): the stack library. Short, checkable cards per language, framework, service, tool and practice
 (skills/library/cards/<area>/<name>.md) that cost no context until read. They are found from a repo's own manifests,
 files and extensions, and searched together with installed plugins' skills. Stdlib only; run by fm commands and
-fm map, never by a hook."""
+fm map; the write hook imports it only for lint_card on a card it just wrote (T-0947)."""
 import collections
 import fnmatch
 import glob
@@ -89,44 +89,69 @@ def lint(root=CARDS):
         if not x:
             problems.append(f"{rel}: no frontmatter")
             continue
-        bad = lambda why: problems.append(f"{rel}: {why}")  # noqa: E731
-        for k in KEYS:
-            if k not in x:
-                bad(f"missing {k}")
         name = x.get("name", "")
-        if name != x["stem"] or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", x["stem"]):
-            bad(f"name {name!r} must be kebab-case and equal the file name")
         if name in seen:
-            bad(f"name {name!r} also used by {seen[name]}")
+            problems.append(f"{rel}: name {name!r} also used by {seen[name]}")
         seen[name] = rel
-        if x.get("area") != x["dir"]:
-            bad(f"area {x.get('area')!r} must equal its directory {x['dir']!r}")
-        for s in x.get("detect") or []:
-            m = _SIGNAL.match(s)
-            if not m or (m.group(1) == "ext" and not m.group(2).startswith(".")):
-                bad(f"bad signal {s!r} (dep:NAME, file:GLOB, ext:.EXT; no braces or commas)")
-            elif m.group(1) == "file" and m.group(2).lower() in GENERIC:
-                bad(f"signal {s!r} is too generic: it matches most repos")
-        order = [s for s in x["sections"] if s in SECTIONS]
-        if order != list(SECTIONS):
-            bad(f"sections must be {', '.join(SECTIONS)} in that order (has {', '.join(x['sections']) or 'none'})")
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-        if len(x["summary"]) > 200:
-            bad(f"summary {len(x['summary'])} chars: one sentence of at most 160")
-        verify = re.search(r"(?ms)^## Verify\n(.*?)(?=^## |\Z)", text)
-        if not verify or "`" not in verify.group(1):
-            bad("Verify needs at least one backticked command")
-        if len(re.findall(r"(?m)^- \[ \] ", text)) < 2:
-            bad("Review needs at least two '- [ ]' checks")
-        if not (SIZE[0] <= x["size"] <= SIZE[1]):
-            bad(f"size {x['size']} chars outside {SIZE[0]}-{SIZE[1]}")
-        if _PLACEHOLDER.search(re.sub(r"```.*?```|`[^`\n]*`", "", text, flags=re.S)):  # commands may grep TODO
-            bad("placeholder text (TODO, TBD, FIXME, lorem ipsum)")
+        problems += [f"{rel}: {why}" for why in _card_problems(path, x)]
     names = set(seen)
     for x in parsed.values():
         notes += [f"{x['name']}: related {r!r} has no card" for r in x.get("related") or [] if r not in names]
     return problems, notes
+
+
+def lint_card(path):
+    """T-0947: one card's problems, for the write hook (the whole-library lint reads 1,000+ files). A name used by
+    another card shows as a second file with that name; the rest is lint's own per-card checks."""
+    root, rel = os.path.dirname(os.path.dirname(path)), os.path.relpath(path, os.path.dirname(os.path.dirname(path)))
+    try:
+        with open(path, encoding="utf-8") as f:
+            x = parse(f.read())
+    except (OSError, ValueError):
+        return [f"{rel}: unreadable"]
+    if not x:
+        return [f"{rel}: no frontmatter"]
+    x.update(path=path, dir=os.path.basename(os.path.dirname(path)), stem=os.path.splitext(os.path.basename(path))[0])
+    twins = [os.path.relpath(t, root) for t in glob.glob(os.path.join(root, "*", os.path.basename(path))) if t != path]
+    return [f"{rel}: name {x['stem']!r} also used by {t}" for t in twins] + \
+        [f"{rel}: {why}" for why in _card_problems(path, x)]
+
+
+def _card_problems(path, x):
+    """A parsed card's own problems (all but a name shared with another card)."""
+    problems = []
+    bad = problems.append
+    for k in KEYS:
+        if k not in x:
+            bad(f"missing {k}")
+    name = x.get("name", "")
+    if name != x["stem"] or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", x["stem"]):
+        bad(f"name {name!r} must be kebab-case and equal the file name")
+    if x.get("area") != x["dir"]:
+        bad(f"area {x.get('area')!r} must equal its directory {x['dir']!r}")
+    for s in x.get("detect") or []:
+        m = _SIGNAL.match(s)
+        if not m or (m.group(1) == "ext" and not m.group(2).startswith(".")):
+            bad(f"bad signal {s!r} (dep:NAME, file:GLOB, ext:.EXT; no braces or commas)")
+        elif m.group(1) == "file" and m.group(2).lower() in GENERIC:
+            bad(f"signal {s!r} is too generic: it matches most repos")
+    order = [s for s in x["sections"] if s in SECTIONS]
+    if order != list(SECTIONS):
+        bad(f"sections must be {', '.join(SECTIONS)} in that order (has {', '.join(x['sections']) or 'none'})")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    if len(x["summary"]) > 200:
+        bad(f"summary {len(x['summary'])} chars: one sentence of at most 160")
+    verify = re.search(r"(?ms)^## Verify\n(.*?)(?=^## |\Z)", text)
+    if not verify or "`" not in verify.group(1):
+        bad("Verify needs at least one backticked command")
+    if len(re.findall(r"(?m)^- \[ \] ", text)) < 2:
+        bad("Review needs at least two '- [ ]' checks")
+    if not (SIZE[0] <= x["size"] <= SIZE[1]):
+        bad(f"size {x['size']} chars outside {SIZE[0]}-{SIZE[1]}")
+    if _PLACEHOLDER.search(re.sub(r"```.*?```|`[^`\n]*`", "", text, flags=re.S)):  # commands may grep TODO
+        bad("placeholder text (TODO, TBD, FIXME, lorem ipsum)")
+    return problems
 
 
 # ---------------------------------------------------------------- stack detection
