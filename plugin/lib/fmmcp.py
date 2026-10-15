@@ -81,7 +81,8 @@ TOOLS = [
      lambda a, p: ["logs", _inside(p, a, "file")] + (["--since-good", _inside(p, a, "since_good")]
                                                      if "since_good" in a else [])),
     ("data", _say("data"), _instr("data"), lambda a, p: ["data", _inside(p, a, "file")]),
-    ("trace", _say("trace"), _instr("trace"), lambda a, p: ["trace", _inside(p, a, "file")]),
+    ("trace", _say("trace"), dict(_instr("trace"), required=["file"]),  # no stdin here: the file is required
+     lambda a, p: ["trace", _inside(p, a, "file")]),
 ]
 MAX_LINE = 1_000_000
 
@@ -108,11 +109,19 @@ def _inside(p, args, key, shape=r"(.*)"):
     """A path argument (group 1 of shape) that resolves, links followed, inside the project's root."""
     v = _val(args, key, PATH_CAP)
     m = re.fullmatch(shape, v, re.S)
+    if not m:
+        raise _Bad(f"{key}: expected PATH:NAME, got {c.fit(c.plain(v), 80)}")
     root = os.path.realpath(p.root)
     real = os.path.realpath(os.path.join(root, m.group(1))) if m and m.group(1) else ""
     if not real or os.path.commonpath([root, real]) != root:
         raise _Bad(f"{key}: {c.fit(c.plain(v), 80)} is outside the project; only paths under its root are served")
+    if _SECRET.search(os.path.relpath(real, root)):
+        raise _Bad(f"{key}: {c.fit(c.plain(v), 80)} looks like a secret (.env, keys, .git): never served")
     return v
+
+
+_SECRET = re.compile(r"(^|/)(\.git(/|$)|\.env(\.[^/]*)?$|id_(rsa|dsa|ecdsa|ed25519)[^/]*$|[^/]*\.(pem|key|p12|pfx|jks)$"
+                     r"|\.npmrc$|\.pypirc$|\.netrc$|credentials[^/]*$)")
 
 
 def _need(args, key, pattern):
@@ -132,7 +141,7 @@ def _timeout():
 def _fm(p, argv, stdin=""):
     # T-0946: stdin is given (empty by default), so a tool never reads the server's own message stream
     r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *argv], cwd=p.root, input=stdin,
-                       capture_output=True, text=True, timeout=_timeout(),
+                       capture_output=True, text=True, errors="replace", timeout=_timeout(),
                        env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"))
     return (r.stdout if r.returncode == 0 else (r.stderr or r.stdout)), r.returncode != 0
 
@@ -250,6 +259,13 @@ _SHELL = re.compile(r"[|;&<>$`\\\n\x00]")
 _NEVER = {"rm", "rmdir", "unlink", "shred", "dd", "truncate", "sudo", "su", "doas", "sh", "bash", "zsh", "dash", "ksh",
           "fish", "csh", "tcsh", "eval", "exec", "xargs", "env", "nohup", "kill", "killall", "pkill", "chmod", "chown",
           "reboot", "shutdown", "halt"}
+# Interpreters and runners whose first free argument is code (a program, an expression, a host to run on): wrapped
+# only with that argument fixed in --wrap (python3 tools/report.py, awk -f prog.awk), never bare or ending in an option
+_CODE = {"python", "python2", "python3", "node", "nodejs", "deno", "bun", "perl", "ruby", "php", "lua", "luajit", "tclsh",
+         "wish", "Rscript", "julia", "osascript", "pwsh", "powershell", "awk", "gawk", "mawk", "nawk", "sed", "gsed",
+         "make", "gmake", "ssh", "busybox", "toybox", "nc", "ncat", "socat", "expect", "jq", "yq", "gdb", "vim", "vi",
+         "nvim", "emacs", "ed", "ex", "watch", "timeout", "nice", "ionice", "time", "strace", "ltrace", "chroot",
+         "unshare", "nsenter", "flock", "setsid", "stdbuf"}
 # Dispatchers whose free arguments could pick a destructive subcommand: they need --sub
 _DISPATCH = {"git", "npm", "pnpm", "yarn", "pip", "pip3", "uv", "cargo", "docker", "podman", "kubectl", "gh", "brew",
              "apt", "apt-get", "dnf", "pacman", "systemctl"}
@@ -264,6 +280,9 @@ def _refusal(argv, ctx):
     exe = os.path.basename(argv[0])
     if exe in _NEVER or exe.startswith("mkfs"):
         return f"{exe} deletes, escalates or runs arbitrary code"
+    if exe in _CODE and (len(argv) < 2 or argv[-1].startswith("-")):
+        return (f"{exe}'s next argument is code it runs: fix the script in --wrap (e.g. --wrap '{exe} tools/x') so a "
+                "caller only adds plain values")
     if exe == "git" and len(argv) > 1 and argv[1] not in _GIT_READ:
         return f"git {argv[1]} isn't one of git's read-only subcommands ({', '.join(sorted(_GIT_READ))})"
     found = fmguard.check_bash(shlex.join(argv), ctx)
@@ -340,7 +359,7 @@ def cmd_register(args):
             m = re.search(r'^NAME = "([a-z][a-z0-9_-]{0,39})"$', f.read(), re.M)
         name, cmd = (m.group(1) if m else os.path.basename(os.path.dirname(server))), ["python3", server]
     if harness == "claude":  # the form in Claude Code's MCP docs: claude mcp add NAME -- COMMAND [ARGS…]
-        return print(f"claude mcp add {name} -- {shlex.join(cmd)}")
+        return print(f"claude mcp add {shlex.quote(name)} -- {shlex.join(cmd)}")
     # T-0946: only formats confirmed in the harness's current docs are printed; none is confirmed here yet
     print(f"No {harness} registration format is confirmed against {harness}'s current docs, so none is printed: check "
           f"its MCP docs and register this stdio server as {name!r}, command: {shlex.join(cmd)}"
