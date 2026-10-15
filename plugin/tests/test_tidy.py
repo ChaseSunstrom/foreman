@@ -141,6 +141,21 @@ class Apply(TidyCase):
         self.assertEqual(sorted(os.listdir(os.path.join(state, "bus"))), ["mail.jsonl", "seen-dead"],
                          "only heartbeats go: a read mark keeps a resumed session from re-reading old mail (T-0839)")
 
+    def test_sweeps_the_empty_project_shells_foremans_children_left(self):
+        # T-0856: 521 empty ~/.claude/projects folders, one per child run in a fresh temp dir
+        projects = os.path.join(self.fake_home, ".claude", "projects")
+        shell = os.path.join(projects, "-run-user-1000-fm-relate-ab12cd34", "memory")
+        kept = os.path.join(projects, "-run-user-1000-fm-second-session-x1y2z3w4")
+        mine = os.path.join(projects, "-home-me-app", "memory")
+        for d in (shell, kept, mine):
+            os.makedirs(d)
+        open(os.path.join(kept, "a.jsonl"), "w").close()  # a transcript: not swept
+        self.assertIn("child_shells", self.kinds(self.tidy()))
+        self.tidy("--apply")
+        self.assertFalse(os.path.exists(os.path.dirname(shell)))
+        self.assertTrue(os.path.exists(kept))
+        self.assertTrue(os.path.exists(mine), "the user's own project folders are never touched")
+
     def test_rolls_large_ledger_by_month(self):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")
         old = {"ts": "2026-01-15T00:00:00Z", "session_id": None, "project": self.p.slug, "task": None,
