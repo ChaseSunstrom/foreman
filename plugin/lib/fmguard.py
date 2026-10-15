@@ -2262,7 +2262,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
         # ponytail: a bare `$` name inside a substitution reading is the read-to-the-end tail of "$(a) | $(b)" in
         # quotes, not a pipe; a real `| $(echo bash)` nested inside another $( ) slips by (top level is refused)
-        if c.piped and not (name == "$" and depth) and _reads_stdin_code("bash" if computed else name, args, via_xargs, any_word=computed) and not (
+        # T-0982: inside a substitution reading (depth > 0: a "$( )" tail read to the end, odd quotes and all), a
+        # "name" holding a quote or a redirect is debris of the quote-blind fallback split, e.g. awk's program
+        # $1<1200'. The top-level command is still read whole, so a real | python3 there is still refused
+        debris = bool(depth and re.search(r"['\"<>]", name))
+        if c.piped and not debris and not (name == "$" and depth) and _reads_stdin_code("bash" if computed else name, args, via_xargs, any_word=computed) and not (
                 # T-0715: echo 'rm -rf ~' | bash; T-0716: | (sh), | $SH (a computed name may be a shell); a
                 any(_name(x.argv) in _FETCHERS for x in chain) or _FETCH_WORD.search(_mask_quotes(cmd))):  # download
             # piped in is pipe-shell's (below), which the user can grant for an installer
