@@ -552,9 +552,12 @@ def search(query, n=15):
 
 def for_map(root, files):
     """The top cards for fm map: the session line's names, and for the edit-time card (T-0949) each one's area, score
-    and file/ext signals, so the hook matches a path from map.json alone."""
+    and file/ext signals, so the hook matches a path from map.json alone. A non-language card's ext signal that a
+    language card also has is kept as lext:, so the edit hook ranks it after that language's card."""
+    lang_ext = {s for x in cards() if x["area"] == "lang" for s in x.get("detect") or [] if s.startswith("ext:")}
     return [{"name": r["name"], "area": r["area"], "score": r["score"],
-             "detect": [s for s in r["detect"] if s.startswith(("file:", "ext:"))]}
+             "detect": ["l" + s if s in lang_ext and r["area"] != "lang" else s for s in r["detect"]
+                        if s.startswith(("file:", "ext:"))]}
             for r in suggest(root, files, n=8)]
 
 
@@ -563,9 +566,10 @@ AVOID_MAX = 700
 
 
 def card_for(p, path):
-    """T-0949: the map's best card for a file being edited, or None: a card whose file or ext signal matches it, a
-    framework card before a language card, then the higher score, then the name. Reads map.json only; anything
-    malformed in it matches nothing."""
+    """T-0949: the map's best card for a file being edited, or None: a card whose file or ext signal matches it; a
+    framework card matched by its own signal first, then the language card, then a card that only shares the
+    language's ext (lext:); within each, the higher score, then the name. Reads map.json only; anything malformed in
+    it matches nothing."""
     rel = os.path.relpath(path, p.root).replace(os.sep, "/")
     if rel.startswith("../"):
         return None
@@ -579,12 +583,13 @@ def card_for(p, path):
 
     def hit(s):
         kind, _, val = s.partition(":") if isinstance(s, str) else ("", "", "")
-        return (kind == "ext" and ext and ext == val.lower()) or \
+        return (kind in ("ext", "lext") and ext and ext == val.lower()) or \
             (kind == "file" and fnmatch.fnmatchcase(rel if "/" in val else base, val))
     found = [x for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str) and _NAME.fullmatch(x["name"])
              and isinstance(x.get("detect"), list) and any(hit(s) for s in x["detect"])] if isinstance(rows, list) else []
     score = lambda x: x["score"] if isinstance(x.get("score"), (int, float)) else 0
-    found.sort(key=lambda x: (x.get("area") == "lang", -score(x), x["name"]))
+    own = lambda x: any(hit(s) for s in x["detect"] if not str(s).startswith("lext:"))
+    found.sort(key=lambda x: (1 if x.get("area") == "lang" else 0 if own(x) else 2, -score(x), x["name"]))
     return found[0]["name"] if found else None
 
 
@@ -649,11 +654,11 @@ def cmd_lib(args):
     if args.action == "source":
         return cmd_source(args)
     if args.action == "inject":  # T-0949: the edit-time card, on unless turned off here
-        p = fmcli.resolve(args)
         if words not in ("", "on", "off"):
             raise fmcli.UsageError("fm lib inject takes on or off")
+        p = fmcli.resolve(args) if words else c.find_project(os.getcwd(), create=False)  # a status never creates one
         on = c.update_meta(p, lib_inject=words == "on").get("lib_inject") if words else \
-            c.read_meta(p).get("lib_inject") is not False
+            not p or c.read_meta(p).get("lib_inject") is not False
         return print(f"Edit-time stack cards: {'on' if on else 'off'} (the first edit of a file a card covers gets its "
                      f"Avoid section, once per card per task; FOREMAN_NO_CARDS=1 turns it off for one session).")
     if args.action == "check":

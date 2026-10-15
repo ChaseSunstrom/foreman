@@ -1051,8 +1051,8 @@ def check_enforce(p, days=7):
             e = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(e, dict) or str(e.get("ts", ""))[:19] < since:
-            continue
+        if not isinstance(e, dict) or str(e.get("ts", ""))[:19] < since or not isinstance(e.get("data") or {}, dict):
+            continue  # a hand-edited line with odd data is skipped, never a crash
         kind = "lane_unverified" if e.get("event") == "lane_unverified" else \
             (e.get("data") or {}).get("kind", "validator_block") if e.get("event") == "enforce" else None
         if kind in counts:
