@@ -10,6 +10,7 @@ import heapq
 import json
 import os
 import re
+import shlex
 import shutil
 import string
 import subprocess
@@ -208,26 +209,29 @@ def mirror_ignored(root):
         return False
 
 
-def worktree_tree(root):
+def worktree_tree(root, timeout=None):
     """The full git tree object of the working files (see worktree_id); `git diff <rev> <tree>` shows every change
     since <rev>, untracked files included. The throwaway index starts as a copy of the real one (mtimes kept, so git's
-    racy-entry checks still hold): git then re-hashes only files whose stat data changed instead of the whole tree."""
+    racy-entry checks still hold): git then re-hashes only files whose stat data changed instead of the whole tree.
+    `timeout`: seconds for the whole (T-0884: the PreToolUse hook has 5), None when it runs out."""
     if not root or not git_root(root):
         return None
+    end = time.monotonic() + timeout if timeout else None
+    left = lambda usual: max(0.001, end - time.monotonic()) if end else usual  # noqa: E731
     with tempfile.TemporaryDirectory() as t:
         env = dict(os.environ, GIT_INDEX_FILE=os.path.join(t, "index"))
         try:
             real = subprocess.run(["git", "-C", root, "rev-parse", "--path-format=absolute", "--git-path", "index"],
-                                  capture_output=True, text=True, timeout=10).stdout.strip()
+                                  capture_output=True, text=True, timeout=left(10)).stdout.strip()
             if real and os.path.isfile(real):
                 shutil.copy2(real, env["GIT_INDEX_FILE"])
             # fm sync's mirror (.foreman/**.md) changes with every fm call: not the work being audited. Anything else
             # put in that folder still counts. An ignored mirror needs no exclude, and git add refuses one naming it.
             spec = [] if mirror_ignored(root) else [":(exclude,glob).foreman/**/*.md"]
             subprocess.run(["git", "-C", root, "add", "-A", "--", ".", *spec], env=env,
-                           capture_output=True, timeout=120, check=True)
+                           capture_output=True, timeout=left(120), check=True)
             tree = subprocess.run(["git", "-C", root, "write-tree"], env=env, capture_output=True, text=True,
-                                  timeout=60, check=True).stdout.strip()
+                                  timeout=left(60), check=True).stdout.strip()
         except (OSError, subprocess.SubprocessError):
             return None
     return tree or None
@@ -254,6 +258,46 @@ def rebase_snapshot(root, base, paused, now):
                                   check=True).stdout.strip() or None
         except (OSError, subprocess.SubprocessError):
             return None
+
+
+SNAPSHOTS = "refs/foreman/snapshots/"
+
+
+def snapshot(root, why, timeout=None, what="tree"):
+    """T-0884: what a command is about to discard, kept under refs/foreman/snapshots/<UTC stamp>-<sha7>[-stash]: the
+    working files (untracked included, ignored not) as a commit when they differ from HEAD, or (what "stash drop
+    <ref>" / "stash clear") the stash commits themselves. [short sha] saved, [] when there's nothing to lose;
+    RuntimeError when the files couldn't be read in `timeout` seconds."""
+    top = git_root(root)
+    if not top:
+        return []
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    if what.startswith("stash"):
+        ref = (what.split() + ["stash@{0}"])[2] if what.startswith("stash drop") else None
+        shas = ([_git(top, "rev-parse", "--verify", "-q", ref, timeout=5).strip()] if ref
+                else _git(top, "stash", "list", "--format=%H", timeout=5).split())
+        for sha in filter(None, shas):
+            _git(top, "update-ref", f"{SNAPSHOTS}{stamp}-{sha[:7]}-stash", sha, timeout=5)
+        return [x[:12] for x in shas if x]
+    tree = worktree_tree(top, timeout)
+    if not tree:
+        raise RuntimeError(f"the working files couldn't be read{f' in {timeout:g} s' if timeout else ''}")
+    if tree == _git(top, "rev-parse", "-q", "--verify", "HEAD^{tree}", timeout=5).strip():
+        return []
+    head = git_head(top)
+    sha = _git(top, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "-c", "commit.gpgSign=false",
+               "commit-tree", tree, *(["-p", head] if head else []), "-m", f"Foreman snapshot before: {why}",
+               timeout=5).strip()
+    if not sha or _git(top, "update-ref", f"{SNAPSHOTS}{stamp}-{sha[:7]}", sha, timeout=5, fail=None) is None:
+        raise RuntimeError("git couldn't record the snapshot")
+    return [sha[:12]]
+
+
+def restore_line(top, sha, what="tree"):
+    """T-0884: the command that brings a snapshot back from anywhere in the repo (newer files are left alone)."""
+    if what.startswith("stash"):
+        return f"git -C {shlex.quote(top)} stash apply {sha}"
+    return f"git -C {shlex.quote(top)} restore --source={sha} --worktree -- :/"
 
 
 def pause_snapshot(root, b):
@@ -351,8 +395,28 @@ def task_diff(root, base, *opts):
     return _git(root, "diff", *opts, base, tree, timeout=300, fail=None) if tree else None
 
 
+def _drop_racy_pyc(root):
+    """T-0876: Python trusts a .pyc whose recorded source mtime (whole seconds) and size match, so a same-size edit in
+    the second it was compiled runs the old code. Bytecode not newer than its source goes; Python rebuilds it. A walk,
+    not git: git here would run the fsmonitor or filter a bench session configured (test_bench_family)."""
+    # ponytail: walks the whole root each run (~0.1 s per 10k files); narrow it if a huge repo makes evidence slow
+    for top, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "site-packages")]
+        if os.path.basename(top) != "__pycache__":
+            continue
+        for name in files:
+            pyc, src = os.path.join(top, name), os.path.join(os.path.dirname(top), name.split(".", 1)[0] + ".py")
+            try:
+                if name.endswith(".pyc") and os.stat(pyc).st_mtime_ns <= os.stat(src).st_mtime_ns:
+                    os.unlink(pyc)
+            except OSError:  # no source (a module that moved), or the file went
+                continue
+
+
 def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
+    if root and os.path.isdir(root):
+        _drop_racy_pyc(root)
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)
@@ -360,10 +424,7 @@ def run_command(root, cmd, timeout=600, env=None):
         return 127, f"could not run bash: {e}"
     try:
         out, _ = pr.communicate(timeout=timeout)
-        if pr.returncode == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
-            # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
-            return 5, redact(out) + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
-        return pr.returncode, redact(out)
+        return judged(pr.returncode, redact(out))
     except subprocess.TimeoutExpired:
         try:
             os.killpg(pr.pid, 9)
@@ -376,8 +437,23 @@ def run_command(root, cmd, timeout=600, env=None):
         return 124, redact((out or "") + f"\ntimed out after {timeout:g}s")
 
 
+def judged(code, out):
+    """(exit code, output) of a finished run, with an exit 0 that proves nothing or hides a failure counted as one;
+    fm's own runs and verify commands run in Bash (T-0820) both go through it."""
+    if code == 0 and _NO_TESTS.search(out or "") and not _SOME_TESTS.search(out or ""):
+        # R3: a green run of zero tests proves nothing (a multi-suite run where others ran is fine)
+        return 5, out + "\nfm: no tests ran, so this run proves nothing (exit 0 counted as a failure)"
+    if code == 0 and _FAILED_SUMMARY.search(out or ""):  # T-0773: `… | tail` exits with tail's 0
+        return 1, out + ("\nfm: the output reports failing tests but the command exited 0 (a pipe such as | tail "
+                         "hides the exit), so it counts as a failure")
+    return code, out
+
+
 _NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests ran\b|No tests found\b|"
                        r"0 examples, 0 failures)")
+# test runners' failure summaries: unittest, pytest, jest, cargo, go
+_FAILED_SUMMARY = re.compile(r"(?m)^(FAILED \((failures|errors)=\d|=+ .*\b\d+ (failed|errors?)\b.* =+$|Tests: .*\b\d+ failed\b|"
+                             r"test result: FAILED\b|--- FAIL: )")
 _SOME_TESTS = re.compile(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
 
 
@@ -1119,7 +1195,8 @@ class Brief:
         if self.has_evidence(ac=n):
             raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
                               f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
-                              f"with a reason and recreate it with the right check")
+                              f"with a reason and recreate it with the right check (fm task new … --redo {self.id} keeps its "
+                              f"diff)")
         lines, k, changes = [], 0, []
         for line in self.section("Acceptance criteria").splitlines():
             m = _AC_RE.match(line)
@@ -2547,8 +2624,12 @@ def task_touches(p, tid, window=None):
     for e in ledger_tail(p, window or TASK_WINDOW):
         f = (e.get("data") or {}).get("file") if e.get("event") == "touched" and e.get("task") == tid else None
         if f and f.startswith(p.root.rstrip("/") + "/"):
-            files[os.path.relpath(f, p.root)] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
+            rel = _WORKTREE_PREFIX.sub("", os.path.relpath(f, p.root))  # T-0807: a lane's edit is the repo file
+            files[rel] = (e.get("data") or {}).get("at") or e.get("ts", "")  # "at": a Bash edit
     return files
+
+
+_WORKTREE_PREFIX = re.compile(r"^\.claude/worktrees/[^/]+/")  # Claude Code's lane worktrees inside the checkout
 
 
 _INSTRUCTION = re.compile(r"(?i)(ignore|disregard|forget) (all |any |the )?(previous|prior|above|earlier|your) "
@@ -2658,6 +2739,44 @@ def lint_verify(cmd, root):
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
     return problems
+
+
+def unrunnable(cmd, root):
+    """T-0765: why a verify command can't run at all, or None: `python -m MOD` whose module that python can't import
+    there, or `fm …` words fm's own parser rejects. Literal `cd DIR` links move where later parts run; anything this
+    can't read for sure (variables, substitutions, an unreadable quote) is left alone."""
+    import io
+    import shlex
+    cwd = root
+    for part in re.split(r"&&|\|\||;|\|", cmd or ""):
+        if re.search(r"[$`]", part):
+            return None  # what runs depends on the shell: past here nothing is known for sure
+        try:
+            words = [w for w in shlex.split(part) if not re.match(r"^\w+=", w)]
+        except ValueError:
+            return None
+        words = words[:next((i for i, w in enumerate(words) if re.match(r"^\d*[<>]", w)), len(words))]
+        if not words:
+            continue
+        if words[0] == "cd" and len(words) == 2:
+            cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1])))
+        elif re.fullmatch(r"python[0-9.]*", words[0]) and "-m" in words[:-1] and shutil.which(words[0]):
+            mod = words[words.index("-m") + 1].split(".")[0]
+            r = subprocess.run([words[0], "-c", "import importlib.util,sys; sys.exit(not importlib.util.find_spec("
+                                "sys.argv[1]))", mod], cwd=cwd if os.path.isdir(cwd) else root, capture_output=True,
+                               timeout=20)
+            if r.returncode:
+                return f"{words[0]} can't import {mod} (No module named {mod})"
+        elif words[0] == "fm":
+            import fmcli
+            err = io.StringIO()
+            try:
+                with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                    fmcli.build_parser().parse_args(words[1:])
+            except SystemExit as e:
+                if e.code:
+                    return f"fm doesn't take `{' '.join(words)}` ({fit(' '.join(err.getvalue().split()), 160)})"
+    return None
 
 
 _RULED = re.compile(r"(?i)\b(ruled out|tried|dead end|didn't work|rejected):\s*(.+)")

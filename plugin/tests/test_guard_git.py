@@ -1,5 +1,8 @@
 """Guard: git's own write and exec channels (T-0270, from the T-0269 adversary pass). A command git runs is checked as
 if typed, a file git writes is a write target, and config git loads from a file is refused; everyday git still passes."""
+import os
+import shutil
+
 from helpers import ForemanTestCase  # noqa: F401  (puts plugin/lib on the path)
 from test_guard import GuardCase
 
@@ -78,6 +81,26 @@ class GitChannels(GuardCase):
         ):
             with self.subTest(cmd=cmd):
                 self.assertIsNotNone(self.bash(cmd), cmd)
+
+    def test_bare_git_init_in_a_repo_rewrites_nothing(self):  # T-0859
+        lib = os.path.join(self.fhome, "plugin", "lib")
+        os.makedirs(lib, exist_ok=True)
+        self.assertIsNotNone(self.bash("git init", cwd=lib))  # no .git here: still a tree write over core
+        self.assertIsNotNone(self.bash("git init -q .", cwd=lib))
+        os.makedirs(os.path.join(lib, ".git"), exist_ok=True)
+        try:
+            self.assertIsNone(self.bash("git init -q", cwd=lib))
+            self.assertIsNone(self.bash("cd {fhome}/plugin/lib && git init", cwd=self.repo))
+            for cmd in ("git init .", "git init --separate-git-dir /tmp/g", "git init --template=/tmp/t",
+                        "git init sub", "git init --bare", "git init -q --bare",  # --bare writes HEAD, objects/ here
+                        # security review: git takes unique prefixes of long options, and env can plant templates
+                        "git init --templ=/tmp/t", "git init --sep=/tmp/g", "git init --obj=sha256", "git init --sha",
+                        "git init --ba", "GIT_TEMPLATE_DIR=/tmp/t git init",
+                        "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=init.templateDir GIT_CONFIG_VALUE_0=/tmp/t git init",
+                        "export GIT_TEMPLATE_DIR=/tmp/t; git init"):
+                self.assertIsNotNone(self.bash(cmd, cwd=lib), cmd)
+        finally:
+            shutil.rmtree(os.path.join(lib, ".git"))
 
     def test_everyday_git_still_passes(self):
         for cmd in (

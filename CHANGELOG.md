@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+## 1.2.28 — 2026-10-15
+- Claude Code integration, round 1 of a recursive improvement loop (T-0760 brainstorm: 609 ideas in 30 clusters).
+  - Never idle without tmux: a plugin monitor (`foreman-mail`) runs `fm bus watch` for the whole session and prints one line per new bus message for it; `fm bus send --wake` skips tmux when that watcher's heartbeat is fresh. The watcher finds its session through the SessionStart hook's process tree, follows it when Claude Code resumes another conversation in the same process, and drops its heartbeat when ended by a signal (T-0777, T-0819, T-0820, T-0841). A resume in the same process is no longer reported as "another session" (T-0841).
+  - Phone push: the Stop hook asks once for PushNotification when an ask is open or the queue drains in full autonomy (T-0778). Sessions are named after their task (sessionTitle, T-0781).
+  - Agents carry effort, maxTurns and omitClaudeMd, validated by `fm doctor` (T-0768); lane briefs pass a per-tier effort (S medium, M high, T-0779); Foreman's `claude -p` children carry `--max-budget-usd` (T-0776); wiring sets `worktree.baseRef=head` (T-0803); `fm doctor` names the Claude Code features the installed version is too old for (T-0785).
+  - Sensitive repos keep content home: PushNotification, Artifact, SendMessage, RemoteTrigger and other outward tools are refused there, and the gate fails closed (T-0784, T-0821).
+  - `fm page` renders the queue and a brainstorm catalogue as one self-contained HTML page for a claude.ai Artifact, with home paths refused and the bare username replaced (T-0786, T-0821). `fm research list` and `fm research show NAME` (T-0802).
+- Opt-in compact output: `fm compact-output on` adds a PostToolUse hook that sends Bash outputs over 6,000 characters to the model as head, every failure line and tail, with the full text (capped at 2M characters) in a file; measured on 30 days of real outputs at about 1M tokens saved. Off until turned on; `fm tidy` prunes the saved texts after 7 days (T-0783, T-0811, T-0821, T-0824).
+- Correctness.
+  - One-off headless `claude -p` sessions answer and stop; only `fm run`'s sessions drive the queue (T-0775). Bench replays aren't one-off (T-0820).
+  - A run whose output reports failing tests counts as a failure even when a pipe hides the exit, in `fm check` and in verify commands run from Bash (T-0773, T-0820). A verify that can't run at all is refused when the criterion is added (T-0765).
+  - A lane-merged task is measured from the main checkout's files before the merge, so its close checks see its whole diff (T-0804, T-0812); tier drift counts only real diff lines; `fm lane brief` refuses a task its builder couldn't focus (T-0823); a lane's edits under `.claude/worktrees/` count as the repo files they are (T-0807).
+  - `fm task finish` refuses a close that leaves Foreman's self docs failing (T-0764); `fm task new --redo ID` keeps a dropped task's start point (T-0767); `fm task set` takes list fields as `a,b` or `[a, b]` (T-0810).
+  - `fm` ends quietly when its reader quits (`fm … | head`), exiting 141 like a shell's SIGPIPE (T-0825, T-0839).
+  - The step pointer follows the work: an edit to a file named only in a later step moves the current step there, and the 8th edit on a step with no evidence says once how to move it (T-0759, T-0839).
+  - `fm lane rm` removes a lane whose only leftovers are build output (target/, build/, dist/, zig, cmake), but refuses when a key, `.env` or credentials file sits inside one (T-0833, T-0839). `fm task finish --commit` handles a file the task untracked and deleted (T-0837).
+  - The stray repo-root `skill-index.json` cache (local paths) is no longer tracked (T-0836).
+- Guard: a data heredoc writing an unrun source file isn't interpreter code driving Foreman (T-0766); a literal `cd DIR && python3 -` resolves relative writes in DIR only (T-0774); a data-only `python -c` may send output to /dev/null; state-direct refusals point to `fm research add`; path-only rule ids read `:path` (T-0817).
+- Builders run only the affected tests (T-0806); the hook benchmark judges by CPU time on a busy machine (T-0805); `fm audit prep` asks for ReportFindings fields (T-0780).
+- Round 4: a newcomer's first hour (T-0843 brainstorm: 437 ideas in 31 clusters, grounded against a clean-HOME walkthrough and a survey of rival plugins).
+  - `fm --help` opens with the few commands a newcomer needs, `fm help --all` lists the rest; `fm task new -h` shows types, tiers and an example; `fm task new` reuses a same-titled capture; `fm task done`'s refusal leads with `fm task finish` (T-0854).
+  - `fm doctor` prints only problems (`-v` for every check) and warns when there are no backups; gate detection picks pytest or `python3 -m unittest discover` only when nothing else runs the tests; `fm check` with no gates prints a ready `fm check add` line; the digest says "folded into another" for merged tasks (T-0855).
+  - `install.sh` links `~/.local/bin/fm` (never over someone else's `fm`) and asks before setting bypassPermissions on a terminal (default no; `--bypass` opts in, no terminal leaves the mode alone); uninstall removes only what it added (T-0855, T-0871).
+  - `fm demo` walks a throwaway project through a whole task in under a second, with no model calls (T-0870). INSTALL.md is written for agents, and the README says when not to use Foreman (T-0872). Help text carries no ticket ids (T-0873).
+  - A bare marketplace install (`/plugin marketplace add ChaseSunstrom/foreman`, `/plugin install foreman@foreman`) works; its first session reads Foreman's rules from the plugin and offers to finish setup (T-0874).
+  - Foreman's own `claude -p` children run in one private folder, and `fm tidy` sweeps the empty project folders they left behind (T-0856).
+- Correctness, round 4.
+  - `fm repeats` never suggests a narrowed test run as a gate (T-0857). `fm friction --brief` marks the pass in progress so it isn't called for again while its recon runs; distinct notes of one kind no longer count as repeats (T-0858, T-0860).
+  - Guard: a bare `git init` (or `-q`) in a folder that already holds `.git` isn't a tree write over core; any other form, or any `GIT_*` variable in the command, still is, and the refusal says to chain the cd with `&&` or pass the path (T-0859).
+  - `fm check --affected` runs a test file the task added or changed even before the map links it (T-0875). Evidence runs drop bytecode older than its source, so a same-second, same-size edit never runs stale code (T-0876). A check's track record counts `fm task prove`'s failing start-tree run (T-0880).
+- Round 5 (54 ideas, every one grounded against the code; 7 built).
+  - Work snapshots: before a Bash command discards uncommitted work (`git reset --hard`, `checkout -- .`, `restore`, `clean -f`, `switch -f`, an `--abort`, `worktree remove --force`, `stash drop`/`clear`…), Foreman saves it under `refs/foreman/snapshots` within 3 s and says so (or that it couldn't); `fm snapshots` lists them with the command that brings one back; `fm tidy` prunes them after 14 days (T-0884).
+  - `fm night` runs the sentinel: closed tasks' checks against HEAD, a new failure bisected and captured (T-0888). `fm why` quotes the user's own request behind a line (T-0889). `fm projects --next` ranks every project's next action in one list (T-0890).
+  - `fm tour` gives each changed file a review-risk verdict (review, glance, safe to skim) with its reasons and names what to review first; `fm tour --since main` does it for a whole branch or night's run, uncommitted work included (T-0885). A bare "continue" is logged as a stall with what the Stop hook did before it, and `fm friction` counts them (T-0887).
+  - A reply saying the tests pass is held once when the turn's own runs don't back it: a file edited after the last test run, or that run failed (T-0886).
+  - Security: commands fm stores and runs later — verify commands (`--ac "x :: CMD"`, `--verify`, intake `DONE-WHEN`), `fm check affected`'s template, `fm notify` — are checked by the guard when stored and again before fm runs them; before, `fm task finish` ran a stored `rm -rf ~` unread (T-0901).
+  - Security: the guard now reads the command inside `fm quiet -- <cmd>` (it passed unread, so `fm quiet -- rm -rf ~` got through) and inside the new `fm at TARGET -- <cmd>`, which runs a command as of a task's start or any commit in a throwaway worktree (T-0898).
+  - The README opens with a recording of Claude Code itself with the foreman-ui mod fixing a seeded bug (`demo/record_live.py` re-records it; `demo/live.mp4` to share); `shot.py` gains `render()` and no longer passes this session's `CLAUDE_*` variables to the Claude Code it harnesses (T-0903).
+  - Showcase: the README opens with a recording of `fm demo` (animated SVG; `demo/record.py` re-records it, `--mp4` for a shareable video), a scannable why/quick start, and the long detail folded; `fm demo --pace 1` plays the demo at a watchable speed with colour (T-0902).
+  - CI: the suite runs on push and pull requests on Linux (Python 3.12 and 3.14), macOS reported (T-0882).
+- Round 6 (49 ideas grounded; 6 built).
+  - `fm task drop` keeps an in-progress task's work as a snapshot named in its brief (T-0895). A RESEARCH task closes with a Decision, which lands in decisions.md (T-0896). `fm spec` starts from the examples the user wrote and keeps them when the model child fails (T-0897).
+  - `fm at TARGET -- CMD` runs a command as of a task's start or any commit, in a throwaway worktree (T-0898).
+  - A reply's own promises ("I'll also…", "I'll follow up on…") become inbox items when the turn ends (T-0899). A close lists the criteria no command of their own proved, to check by hand (T-0900).
+  - Guard: `T=$(mktemp -d)` is a known temp folder, so `rm -r $T` later isn't refused (T-0892); a path-only refusal's rule id names the file kind (T-0894). The guard tests keep their temp folder outside /tmp on a fresh HOME, as on a CI runner (T-0883).
+
 ## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).
   - Blocking a task writes its eval case at once (local). `fm evals inbox` lists blocks, plus guard blocks later granted for the same task as false-positive candidates.

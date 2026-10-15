@@ -43,6 +43,8 @@ def paths():
     return {"settings": os.path.join(claude, "settings.json"), "claude_md": os.path.join(claude, "CLAUDE.md"),
             "rules_link": os.path.join(claude, "rules", "foreman.md"),
             "rules_target": os.path.join(fh, "plugin", "rules", "foreman.md"),
+            "fm_link": os.path.join(os.path.expanduser("~"), ".local", "bin", "fm"),  # T-0853: fm in any shell
+            "fm_target": os.path.join(fh, "plugin", "bin", "fm"),
             "wrapper": os.path.join(fh, "plugin", "hooks", "statusline"),
             "manifest": os.path.join(c.state_dir(), "install-manifest.json"), "backups": os.path.join(fh, "backups")}
 
@@ -118,6 +120,12 @@ def plan_install(P):
             actions.append(f"env.{k}={v} ({WHY[k]})")
     if not env and not env_existed:
         new_s.pop("env")
+    wt = new_s.get("worktree") if isinstance(new_s.get("worktree"), dict) else None
+    if not (wt or {}).get("baseRef"):  # T-0803: builder lanes start from the branch being worked, not origin's default
+        new_m.setdefault("worktree_created", wt is None)
+        new_s["worktree"] = dict(wt or {}, baseRef="head")
+        new_m["worktree_baseRef_set"] = True
+        actions.append("worktree.baseRef = head (builder lanes start from your current branch, not the remote's)")
     if "outputStyle" not in new_s:  # the user's own style always wins
         new_s["outputStyle"] = OUTPUT_STYLE
         new_m["outputStyle_set"] = True
@@ -139,6 +147,10 @@ def plan_install(P):
     if link == "absent":
         new_m["rules_symlink"] = P["rules_link"]
         actions.append(f"{P['rules_link']} → {P['rules_target']} (symlink)")
+    if not os.path.lexists(P["fm_link"]):  # T-0853: someone else's fm stays where it is
+        on_path = os.path.dirname(P["fm_link"]) in os.environ.get("PATH", "").split(os.pathsep)
+        actions.append(f"{P['fm_link']} → {P['fm_target']} (fm in any shell"
+                       + ("" if on_path else "; add ~/.local/bin to your PATH to use it outside Claude Code") + ")")
     return s, new_s, m, new_m, md, new_md, link, actions
 
 
@@ -169,6 +181,9 @@ def cmd_install(args):
     if link == "absent":
         os.makedirs(os.path.dirname(P["rules_link"]), exist_ok=True)
         os.symlink(P["rules_target"], P["rules_link"])
+    if not os.path.lexists(P["fm_link"]):
+        os.makedirs(os.path.dirname(P["fm_link"]), exist_ok=True)
+        os.symlink(P["fm_target"], P["fm_link"])
     new_m.setdefault("installed", c.now())
     c.write_atomic(P["manifest"], json.dumps(new_m, indent=2, sort_keys=True) + "\n")
     print("Wired Foreman into ~/.claude:\n  - " + "\n  - ".join(actions) +
@@ -176,6 +191,52 @@ def cmd_install(args):
 
 
 # ---------------------------------------------------------------- uninstall
+
+def _compact_cmd():
+    return os.path.join(c.PLUGIN_ROOT, "hooks", "compact")  # the running plugin's copy, wherever it lives
+
+
+def _without_compact(settings):
+    """settings without Foreman's compact-output hook (and any hooks objects it leaves empty); True when it was there."""
+    hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
+    groups = hooks.get("PostToolUse") or []
+    keep = [g for g in groups if not any(isinstance(h, dict) and h.get("command") == _compact_cmd()
+                                         for h in (g.get("hooks") or []))]
+    if len(keep) == len(groups):
+        return False
+    if keep:
+        hooks["PostToolUse"] = keep
+    else:
+        hooks.pop("PostToolUse", None)
+    if not hooks:
+        settings.pop("hooks", None)
+    return True
+
+
+def cmd_compact_output(args):
+    """fm compact-output [on|off] (T-0783): a PostToolUse Bash hook in ~/.claude/settings.json that hands big outputs
+    to the model as head, failure lines and tail with the full text in a file. Off is no hook at all (no cost)."""
+    P = paths()
+    s = _load(P["settings"], {})
+    on = any(isinstance(h, dict) and h.get("command") == _compact_cmd()
+             for g in ((s.get("hooks") or {}).get("PostToolUse") or []) for h in (g.get("hooks") or []))
+    if args.state in (None, "status"):
+        print(f"compact output: {'on' if on else 'off'}" + (" (new sessions shorten Bash outputs over 6,000 characters)"
+                                                            if on else " (fm compact-output on to shorten big outputs)"))
+        return 0
+    if (args.state == "on") == on:
+        print(f"compact output: already {args.state}")
+        return 0
+    _backup(P)
+    if args.state == "on":
+        s.setdefault("hooks", {}).setdefault("PostToolUse", []).append(
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": _compact_cmd(), "timeout": 10}]})
+    else:
+        _without_compact(s)
+    c.write_atomic(P["settings"], json.dumps(s, indent=2) + "\n")
+    print(f"compact output: {args.state} in {P['settings']} (backup in {P['backups']}); new sessions pick it up")
+    return 0
+
 
 def cmd_uninstall(args):
     import fmserve
@@ -230,7 +291,9 @@ def cmd_uninstall(args):
                 perms.pop("defaultMode", None)
             else:
                 perms["defaultMode"] = m["defaultMode_original"]
-            actions.append(f"permissions.defaultMode = {m['defaultMode_original']}")
+            was = m["defaultMode_original"]
+            actions.append(f"permissions.defaultMode = {was}" if was is not None
+                           else "permissions.defaultMode unset (as before)")  # T-0851: not "= None"
         if not perms and m.get("permissions_created"):
             new_s.pop("permissions")
     env = new_s.get("env")
@@ -240,9 +303,17 @@ def cmd_uninstall(args):
                 env.pop(k)
         if not env and m.get("env_created"):
             new_s.pop("env")
+    wt = new_s.get("worktree")
+    if m.get("worktree_baseRef_set") and isinstance(wt, dict) and wt.get("baseRef") == "head":
+        wt.pop("baseRef")
+        if not wt and m.get("worktree_created"):
+            new_s.pop("worktree")
+        actions.append("worktree.baseRef removed")
     if m.get("outputStyle_set") and new_s.get("outputStyle") == OUTPUT_STYLE:
         new_s.pop("outputStyle")
         actions.append("outputStyle removed")
+    if _without_compact(new_s):  # T-0783: fm compact-output on's hook goes with the rest
+        actions.append("compact-output hook removed")
     for k in ("enabledPlugins", "extraKnownMarketplaces"):  # emptied by `claude plugin uninstall`/`marketplace remove`
         if new_s.get(k) == {}:
             new_s.pop(k)
@@ -256,8 +327,9 @@ def cmd_uninstall(args):
         print("Would change:\n  - " + "\n  - ".join(actions + ["rules symlink removed", "manifest removed"]))
         return
     _backup(P)
-    if m.get("settings_created") and not new_s:
-        os.remove(P["settings"])
+    if not new_s:  # T-0851: nothing left; `claude plugin install` may have made it as {} before the wiring ran
+        if os.path.exists(P["settings"]):
+            os.remove(P["settings"])
     elif new_s != s:
         c.write_atomic(P["settings"], json.dumps(new_s, indent=2) + "\n")
     if new_md != md:
@@ -268,6 +340,13 @@ def cmd_uninstall(args):
     if _link_state(P) == "ours":
         os.unlink(P["rules_link"])
         actions.append("rules symlink removed")
+        try:
+            os.rmdir(os.path.dirname(P["rules_link"]))  # T-0851: only when empty
+        except OSError:
+            pass
+    if os.path.islink(P["fm_link"]) and os.path.realpath(P["fm_link"]) == os.path.realpath(P["fm_target"]):
+        os.unlink(P["fm_link"])  # T-0853: ours only
+        actions.append(f"{P['fm_link']} removed")
     if kept:
         c.write_atomic(P["manifest"], json.dumps(kept, indent=2) + "\n")
         actions.append("manifest kept for what couldn't be removed: fm uninstall-user retries it, "

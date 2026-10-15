@@ -27,6 +27,20 @@ class Checks(unittest.TestCase):
             f.write(text)
         return path
 
+    def test_claude_code_features(self):
+        # T-0785: a feature the installed Claude Code is too old for silently does nothing; only used features count
+        self.write("pl/agents/a.md", "---\nname: a\nomitClaudeMd: true\n---\n")
+        self.write("pl/hooks/hooks.json", '{"hooks": {"Stop": [{"hooks": [{"onFailure": "block"}]}]}}')
+        pl = os.path.join(self.t, "pl")
+        r = d.check_cc_features((2, 1, 100), pl)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("omitClaudeMd", r.detail)
+        self.assertIn("onFailure", r.detail)
+        self.assertNotIn("monitors", r.detail)
+        self.assertNotIn("sessionTitle", r.detail)
+        self.assertEqual(d.check_cc_features((2, 1, 299), pl).status, "PASS")
+        self.assertEqual(d.check_cc_features((), pl).status, "PASS")  # unknown version: nothing to compare
+
     def test_mod_release(self):
         # T-0191: every other session draws the installed foreman-ui; it lagged this repo (0.4.0 vs 0.5.0) unnoticed
         repo = os.path.join(self.t, "fhome")
@@ -88,6 +102,21 @@ class Checks(unittest.TestCase):
         self.assertIn("Write", r.detail)
         self.write("plug/skills/y/SKILL.md", "no frontmatter here\n")
         self.assertIn("y", d.check_frontmatter(root).detail)
+        # T-0768: Claude Code ignores a mistyped effort, maxTurns or omitClaudeMd, so the saving silently never happens
+        for field in ("effort: lo", "maxTurns: 0", "omitClaudeMd: yes"):
+            self.write("plug/agents/a.md", f"---\nname: a\ndescription: agent\ntools: Read\n{field}\n---\nbody\n")
+            self.assertIn(field.split(":")[0], d.check_frontmatter(root).detail, field)
+        self.write("plug/agents/a.md", "---\nname: a\ndescription: agent\ntools: Read\neffort: low\nmaxTurns: 20\n"
+                                       "omitClaudeMd: true\n---\nbody\n")
+        self.assertNotIn("a.md", d.check_frontmatter(root).detail)
+
+    def test_worktree_base(self):
+        # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
+        self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")
+        for s in ({}, {"worktree": {"baseRef": "fresh"}}):
+            r = d.check_worktree_base(s)
+            self.assertEqual(r.status, "WARN")
+            self.assertIn("baseRef", r.detail)
 
     def test_self_docs_match_the_code(self):
         self.assertEqual(d.check_self_docs().status, "PASS", d.check_self_docs().detail)
@@ -214,7 +243,7 @@ class Checks(unittest.TestCase):
 
     def test_backup(self):
         home = os.path.join(self.t, "fh")
-        self.assertEqual(d.check_backup(home).status, "FAIL")
+        self.assertEqual(d.check_backup(home).status, "WARN", "T-0844: a fresh install has none yet; not a failure")
         self.write("fh/backups/claude-20260101-000000.tgz", "x")
         self.assertEqual(d.check_backup(home).status, "FAIL")  # T-0574: an archive that doesn't open isn't a backup
         import tarfile
@@ -276,6 +305,16 @@ class Command(ForemanTestCase):
                   "frontmatter", "briefs", "file map", "backup", "plugin validate", "git hygiene", "statusline",
                   "deny rules", "rules symlink", "scripts", "name collisions", "hook state writers"):
             self.assertIn(n, names)
+
+    def test_plain_output_lists_only_problems_unless_verbose(self):
+        # T-0844: a newcomer's first doctor run printed 40 lines of passes around the one line that mattered
+        self.fm("init")
+        quiet = self.fm("doctor", check=False, env={"HOME": self.tmp}).stdout
+        loud = self.fm("doctor", "-v", check=False, env={"HOME": self.tmp}).stdout
+        self.assertNotIn("PASS ", quiet)
+        self.assertIn("PASS ", loud)
+        self.assertIn("fm doctor:", quiet)
+        self.assertIn("pass", quiet.splitlines()[-1], "the summary still counts them")
 
 
 if __name__ == "__main__":

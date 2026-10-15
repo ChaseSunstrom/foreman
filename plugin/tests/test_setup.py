@@ -85,6 +85,63 @@ class Install(SetupCase):
         self.run_fm("uninstall-user")
         self.assertEqual(self.load()["outputStyle"], "Concise")
 
+    def test_uninstall_on_a_bare_home_leaves_no_shell_behind(self):
+        # T-0851 (newcomer walkthrough): settings.json was left as {}, an empty rules/ dir stayed, and the report read
+        # "permissions.defaultMode = None"
+        os.remove(self.settings)
+        os.remove(self.claude_md)
+        with open(self.settings, "w") as f:
+            f.write("{}\n")  # what `claude plugin install` leaves before Foreman's wiring runs
+        self.run_fm("install-user")
+        out = self.run_fm("uninstall-user").stdout
+        self.assertNotIn("None", out)
+        self.assertFalse(os.path.exists(self.settings), "an empty settings.json goes")
+        self.assertFalse(os.path.isdir(os.path.join(self.home, ".claude", "rules")), "an empty rules/ goes")
+
+    def test_fm_works_from_a_plain_shell(self):
+        # T-0853 (newcomer walkthrough): every doc says "run fm …", but fm was on PATH only inside Claude Code
+        link = os.path.join(self.home, ".local", "bin", "fm")
+        self.run_fm("install-user")
+        self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
+        self.run_fm("uninstall-user")
+        self.assertFalse(os.path.lexists(link))
+        with open(link, "w") as f:
+            f.write("#!/bin/sh\necho mine\n")  # someone else's fm
+        self.run_fm("install-user")
+        with open(link) as f:
+            self.assertIn("mine", f.read(), "a command of the same name that isn't Foreman's stays")
+
+    def test_builder_worktrees_start_from_head(self):
+        # T-0803: worktree.baseRef 'fresh' (the default) made both builder lanes start from origin/main, days behind
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["worktree"], {"baseRef": "head"})
+        self.run_fm("uninstall-user")
+        self.assertNotIn("worktree", self.load())
+        with open(self.settings, "w") as f:
+            json.dump(dict(ORIGINAL, worktree={"baseRef": "fresh", "symlinkDirectories": ["node_modules"]}), f)
+        self.run_fm("install-user")
+        self.assertEqual(self.load()["worktree"]["baseRef"], "fresh", "the user's own choice stays")
+        self.run_fm("uninstall-user")
+        self.assertEqual(self.load()["worktree"], {"baseRef": "fresh", "symlinkDirectories": ["node_modules"]})
+
+    def test_compact_output_is_a_user_hook_only_while_on(self):
+        # T-0783: off costs nothing (no hook at all); on adds one PostToolUse Bash hook; uninstall takes it away
+        hooks = lambda: [h for g in (self.load().get("hooks") or {}).get("PostToolUse", []) for h in g["hooks"]
+                         if h.get("command", "").endswith("/hooks/compact")]
+        self.run_fm("install-user")
+        self.assertEqual(hooks(), [])
+        self.assertEqual(self.run_fm("compact-output", "on").returncode, 0)
+        self.assertEqual(len(hooks()), 1)
+        self.run_fm("compact-output", "on")
+        self.assertEqual(len(hooks()), 1, "on twice adds it once")
+        self.assertIn("on", self.run_fm("compact-output").stdout)
+        self.run_fm("compact-output", "off")
+        self.assertEqual(hooks(), [])
+        self.assertNotIn("hooks", self.load(), "an emptied hooks object goes too")
+        self.run_fm("compact-output", "on")
+        self.run_fm("uninstall-user")
+        self.assertEqual(hooks(), [])
+
     def test_second_install_is_a_noop(self):
         self.run_fm("install-user")
         s1, md1, m1 = self.load(), read_text(self.claude_md), read_text(self.manifest_path())
@@ -237,6 +294,22 @@ class InstallScript(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return read_text(self.args_file).split()
 
+    def mode_after(self, *flags):
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--no-wiring", "--no-mod",
+                            *flags], capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL,
+                           timeout=60, start_new_session=True)  # no controlling terminal, as under curl | bash in CI
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        settings = os.path.join(self.env["HOME"], ".claude", "settings.json")
+        mode = (read_json(settings).get("permissions") or {}).get("defaultMode") if os.path.exists(settings) else None
+        return mode, p.stdout + p.stderr
+
+    def test_bypass_is_asked_for_not_assumed(self):
+        # T-0871 (newcomer walkthrough): the install set bypassPermissions silently
+        mode, out = self.mode_after()
+        self.assertIsNone(mode, "no terminal to ask on: the permission mode stays as it was")
+        self.assertIn("--bypass", out, "and the output says how to turn it on")
+        self.assertEqual(self.mode_after("--bypass")[0], "bypassPermissions")
+
     def test_plain_install_skips_build_tools(self):
         self.assertEqual(self.setup_args("--security"), ["--security"])
 
@@ -327,10 +400,10 @@ class InstallScript(unittest.TestCase):
         os.symlink(os.path.join(repo, "plugin"), os.path.join(self.fhome, "plugin"))
         settings = os.path.join(self.env["HOME"], ".claude", "settings.json")
         self.assertFalse(os.path.exists(settings))
-        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins"], capture_output=True,
-                           text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
+        p = subprocess.run(["bash", os.path.join(self.fhome, "install.sh"), "--no-plugins", "--bypass"],
+                           capture_output=True, text=True, env=self.env, stdin=subprocess.DEVNULL, timeout=60)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        self.assertEqual(read_json(settings)["permissions"]["defaultMode"], "bypassPermissions")
+        self.assertEqual(read_json(settings)["permissions"]["defaultMode"], "bypassPermissions")  # T-0871: opted in
         p = subprocess.run([sys.executable, FM, "uninstall-user"], capture_output=True, text=True, env=self.env,
                            timeout=60)
         self.assertEqual(p.returncode, 0, p.stderr)

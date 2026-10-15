@@ -56,6 +56,20 @@
             "timeout": 5
           }
         ]
+      },
+      {
+        "matcher": "PushNotification|Artifact|ArtifactData|ArtifactComments|SendMessage|RemoteTrigger|mcp__claude_ai_Claude_Docs__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/hook",
+            "args": [
+              "PreToolUse"
+            ],
+            "timeout": 5,
+            "onFailure": "block"
+          }
+        ]
       }
     ],
     "PostToolUse": [

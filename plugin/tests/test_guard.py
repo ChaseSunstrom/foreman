@@ -15,6 +15,7 @@ class GuardCase(unittest.TestCase):
     def setUpClass(cls):
         # outside /tmp so that "outside the project" really is outside every scratch root
         base = os.environ.get("XDG_RUNTIME_DIR") or os.path.expanduser("~/.cache")
+        os.makedirs(base, exist_ok=True)  # T-0883: a fresh CI HOME has no ~/.cache; /tmp is scratch to the guard
         cls._tmp = tempfile.TemporaryDirectory(dir=base if os.access(base, os.W_OK) else None)
         t = os.path.realpath(cls._tmp.name)
         cls.home = os.path.join(t, "home")
@@ -182,6 +183,9 @@ class KnownVars(GuardCase):
             ("f=$(ls " + st + "/T-1.md); S=/tmp/x; echo hi > $f", "state-direct"),
             ("S=/tmp/x; echo $(true) > /dev/null; S={fhome}/state; echo hi > $S/a", "state-direct"),
             ("X=$(mktemp -d); rm -rf $X/../..", "rm-outside"),
+            ("T=$(mktemp -d) && echo x > $T/a && rm -r $T", None),  # T-0892: a fresh temp folder is scratch
+            ('T="$(mktemp -d)"; rm -rf "$T"', None),
+            ("T=$(mktemp -d -p {fhome}); rm -rf $T", "rm-outside"),  # -p puts it elsewhere: still unknown
             ("D=/tmp/ok; D=$(echo /); rm -rf $D", "rm-outside"),  # reassigned from a substitution: unknown again
             ("S=/tmp/x; $(echo cd) {fhome}/state; echo hi > $S/a", "state-direct"),  # a computed command name
         ], self.bash)
@@ -709,8 +713,9 @@ class Core(GuardCase):
             ("a=CD; export ${{a}}PATH={fhome}/plugin; cd lib; echo hi > fmguard.py", "core"),
             ("echo hi > ~+/plugin/lib/fmguard.py", "core"),
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
-        user = os.path.basename(os.path.expanduser("~"))
-        self.assertEqual(g._expand(f"~{user}/x", self.ctx()), os.path.join(os.path.expanduser("~"), "x"))  # ~user
+        import pwd  # T-0883: ~user is the passwd entry's home, which $HOME may not be
+        me = pwd.getpwuid(os.getuid())
+        self.assertEqual(g._expand(f"~{me.pw_name}/x", self.ctx()), os.path.join(me.pw_dir, "x"))  # ~user
 
     def test_symlinked_rules_resolve_to_core(self):
         target = os.path.join(self.fhome, "plugin", "rules", "foreman.md")
@@ -1001,6 +1006,38 @@ class InterpreterWrites(GuardCase):
                     "().__class__.__base__.__subclasses__()\n"):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
+
+    def test_a_literal_cd_chain_picks_the_folder_python_writes_in(self):
+        # T-0774: 'cd <scratchpad> && python3 - <<EOF open("clusters.py","w")' was refused as a write in the Foreman
+        # home: every folder the command names counted, though python only runs after the cd succeeded
+        with tempfile.TemporaryDirectory(dir="/tmp") as s:
+            body = " - <<'EOF'\nopen('state/x.json', 'w').write('a')\nEOF"  # relative: Foreman state from its home
+            paths = lambda cmd: " ".join(str(d) for _, d in g.check_bash(self.sub(cmd), self.ctx(cwd=self.fhome)))
+            home_x = os.path.join(self.fhome, "state", "x.json")
+            self.assertNotIn(home_x, paths(f"cd {s} && python3" + body))
+            self.assertNotIn(home_x, paths(f"cd {os.path.dirname(s)} && cd ./{os.path.basename(s)} && python3" + body))
+            self.assertIn(home_x, paths(f"cd {os.path.dirname(s)} && cd - && python3" + body), "cd - is OLDPWD")
+            for cmd in (f"cd {s}; python3" + body, f"cd /nope; cd {s} && python3" + body,
+                        f"D={s}; cd $D && python3" + body, f"pushd {s} >/dev/null\ncd {s} && python3" + body,
+                        # review (adversary): a cd the folder-change regex can't see, on a line of its own
+                        f"cd {s}\n\"cd\" {self.fhome}\ncd . && python3" + body, f"\\cd {self.fhome}\ncd . && python3" + body,
+                        f"source x.sh\ncd {s} && python3" + body):
+                self.assertIn(home_x, paths(cmd), cmd)
+
+    def test_writing_a_foreman_source_file_is_not_driving_it(self):
+        # T-0761: a source edit (cat >> plugin/lib/fmx.py <<'EOF') naming fmcore's writers, beside a test run, was this
+        # core block, which a standing yes can't cover (6x in a week); running or importing what it wrote still is
+        driving = lambda cmd: any("driving Foreman's modules" in str(d)
+                                  for _, d in g.check_bash(self.sub(cmd), self.ctx()))
+        body = "import fmcore\nfmcore.write_meta(p, {{}})\nEOF\n"
+        for cmd in ("cat >> {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q {fhome}/plugin/tests",
+                    "tee -a {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q"):
+            self.assertFalse(driving(cmd), cmd)
+        for cmd in ("cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 {fhome}/plugin/lib/fmx.py",
+                    "cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 -c 'import fmx'",
+                    "cat > /tmp/x.py <<'EOF'\n" + body + "python3 -m pytest -q",
+                    "cat > {fhome}/plugin/lib/fmx.py <<EOF\n" + body + "python3 -m pytest -q"):  # unquoted: expands
+            self.assertTrue(driving(cmd), cmd)
 
     def test_a_quoted_heredoc_marker_hides_nothing(self):
         # T-0178: a quoted heredoc marker was taken for a heredoc, so every later line was a body the guard never read
@@ -1391,6 +1428,44 @@ class PluginChanges(GuardCase):
             ("fm check add 'npm publish'", "publish"),
             ("fm task evidence T-0001 --step 1 --run 'python3 -m unittest'", None),
             ("fm check add 'python3 -m unittest discover -s tests'", None),
+            # T-0898: fm quiet and fm at run their trailing command too (fm quiet -- rm -rf ~ used to pass)
+            ("fm quiet -- rm -rf ~", "rm-outside"),
+            ("fm quiet --tail 5 rm -rf ~", "rm-outside"),
+            ("fm quiet 'npm publish'", "publish"),
+            ("fm at HEAD -- rm -rf ~", "rm-outside"),
+            ("fm at T-0001 --timeout 60 -- npm publish", "publish"),
+            ("fm quiet -- python3 -m unittest", None),
+            ("fm at HEAD -- python3 -m unittest", None),
+            # T-0901: commands fm stores and runs later (verify commands, the affected template, notify)
+            ("fm task new t --type FIX --tier S --ac 'ok :: rm -rf ~'", "rm-outside"),
+            ("fm task new t --type FIX --tier S --ac='ok :: npm publish'", "publish"),
+            ("fm task ac T-0001 add works --verify 'npm publish'", "publish"),
+            ("fm task ac T-0001 add 'works :: rm -rf ~'", "rm-outside"),
+            ("fm task ac T-0001 edit 1 --verify='rm -rf ~'", "rm-outside"),
+            ("fm check affected 'rm -rf ~ {{tests}}'", "rm-outside"),
+            ("fm notify 'npm publish'", "publish"),
+            ("fm intake 'FIX: x\nDONE-WHEN: ok :: rm -rf ~'", "rm-outside"),
+            ("fm task new t --type FIX --tier S --ac 'ok :: python3 -m pytest -q'", None),
+            ("fm check affected 'python3 -m pytest -q {{tests}}'", None),
+            ("fm notify 'notify-send Foreman \"$1\"'", None),
+            ("fm capture 'the docs say ok :: rm -rf ~ is how you break it'", None),  # a capture runs nothing
+            # its review: options before or between the words, other storing verbs, a notify that runs its message
+            ("fm check --fresh add 'rm -rf ~'", "rm-outside"),
+            ("fm check add --fresh 'rm -rf ~'", "rm-outside"),
+            ("fm check --timeout 5 affected 'npm publish {{tests}}'", "publish"),
+            ("fm notify --test 'rm -rf ~'", "rm-outside"),
+            ("fm notify 'bash -c \"$1\"'", "rm-outside"),
+            ("fm notify 'eval \"${{1}}\"'", "rm-outside"),
+            ("fm smoke set cmd 'rm -rf ~'", "rm-outside"),
+            ("fm task --json ac T-0001 add 'x :: rm -rf ~'", "rm-outside"),
+            ("fm task set T-0001 --section 'Acceptance criteria' --text '- [ ] x — verify with `rm -rf ~`'", "rm-outside"),
+            ("fm task assume T-0001 add 'the db is up' --check 'rm -rf ~'", "rm-outside"),
+            ("fm task finish T-0001 --same 'npm publish'", "publish"),
+            ("fm task finish T-0001 --stack-check 'rm -rf ~'", "rm-outside"),
+            ("fm whyred 'rm -rf ~'", "rm-outside"),
+            ("fm record 'npm publish'", "publish"),
+            ("fm check --fresh", None),
+            ("fm smoke set cmd 'curl -fsS localhost:8000/health'", None),
         ], self.bash)
 
     def test_installed_plugin_files_are_the_users(self):

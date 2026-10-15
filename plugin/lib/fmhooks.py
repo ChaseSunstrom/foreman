@@ -151,7 +151,9 @@ def _note_key(text):
 def _log_inject(event, text):
     """T-0499: what a hook put into the model's context, for the friction digest's note budget."""
     if text:
-        _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text))})
+        import hashlib  # T-0860: h tells the same note from another of its kind
+        _event({"kind": "inject", "event": event, "key": _note_key(text), "chars": len(str(text)),
+                "h": hashlib.sha1(str(text).encode("utf-8", "replace")).hexdigest()[:10]})
 
 
 def _event(rec):
@@ -175,6 +177,27 @@ def _clean(s, limit=120):
 def _title_seq(sd):
     label = c.state_line(sd) if sd else "idle"
     return f"\x1b]0;foreman · {_clean(label, 80)}\x07"
+
+
+def _session_title(sid, sd):
+    """T-0781: Claude Code's own session name (resume picker, /resume) after the active task, once per task change:
+    'T-NNNN <title>'; None when no task is active or this session already carries that name."""
+    a = sd.get("active") if sd else None
+    if not a or not sid or not re.fullmatch(r"[\w-]{1,100}", sid):
+        return None
+    path = os.path.join(c.state_dir(), "sessions", f"{sid}.title")
+    try:
+        with open(path, encoding="utf-8") as f:
+            if f.read() == a["id"]:
+                return None
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, a["id"])
+    except OSError:
+        return None
+    return f"{a['id']} {_clean(a.get('title') or '', 50)}".strip()
 
 
 def _progress_seq(sd):
@@ -210,6 +233,26 @@ def _write_gate(p, g):
 
 # ---------------------------------------------------------------- SessionStart
 
+def _claude_pid():
+    """The Claude Code process this hook runs under, or None."""
+    try:
+        import fmbus
+        return fmbus.claude_pid()
+    except Exception:
+        return None
+
+
+def _other_session(other, sid, mine):
+    """The note when another session claimed this project in the last 15 minutes. T-0841: a resume (or /clear) in the
+    same claude process changes the id but is the same session, so a claim from this process is no other."""
+    age = c.age_days(other.get("seen"))
+    if not other.get("id") or other["id"] == sid or age is None or age >= 15 / 1440:
+        return None
+    if mine and other.get("pid") == mine:
+        return None
+    return f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+
+
 def session_start(pl):
     sid = pl.get("session_id")
     if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
@@ -223,19 +266,23 @@ def session_start(pl):
                 os.remove(os.path.join(folder, name))
             except OSError:  # another SessionStart got it first
                 pass
+        try:  # T-0777: the session's plugin monitor (fm bus watch) finds its id through its parent processes
+            import fmbus
+            fmbus.record_pid(sid)
+        except Exception:
+            log_error("SessionStart", _tb())
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
+    if _oneoff():
+        return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ONEOFF_NOTE}}
     env_file = os.environ.get("CLAUDE_ENV_FILE")
     if env_file and sid:
         with open(env_file, "a") as f:
             f.write(f"export FOREMAN_SESSION_ID={sid}\nexport FOREMAN_PROJECT={p.slug}\n")
     with c.lock(p.dir, timeout=LOCK_QUICK):
         meta = c.read_meta(p)
-        other, other_note = meta.get("session") or {}, None
-        age = c.age_days(other.get("seen"))
-        if other.get("id") and other["id"] != sid and age is not None and age < 15 / 1440:
-            other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+        other_note = _other_session(meta.get("session") or {}, sid, _claude_pid())
         busy = other_note is not None
         offered = c.age_days(meta.get("digest_offered"))
         if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
@@ -281,6 +328,8 @@ def session_start(pl):
     except Exception:
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
+        out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:
         out["initialUserMessage"] = first
@@ -376,6 +425,12 @@ def session_context(p, sd, other_note=None):
         tail.append("Dependency cycles: " + "; ".join("↔".join(x) for x in sd["cycles"])[:150] + ".")
     if sd["sensitive"]:
         tail.append("Sensitive repo: new sessions here start in manual permission mode.")
+    if not os.path.lexists(os.path.join(os.path.expanduser("~"), ".claude", "rules", "foreman.md")):  # T-0874: a
+        # bare /plugin install runs the hooks but never wires the rules; reading them costs no write to ~/.claude
+        rules = os.path.join(c.PLUGIN_ROOT, "rules", "foreman.md")
+        tail.append(f"Foreman's rules aren't wired into ~/.claude: read {rules} once now. To load them every session "
+                    "(plus the status line and deny rules), the user can say \"finish setting up Foreman\" "
+                    "(fm install-user; undo: fm uninstall-user).")
     if other_note:
         tail.append(other_note)
     try:
@@ -450,6 +505,16 @@ def _resolve_approvals(p, meta, sid, text, hashes=None):
 STATUS_WORDS = {"status", "where are we", "fm status", "what's the status", "whats the status"}
 _CORRECTION = re.compile(r"(?i)^\W*(no\b[,.!\s]|nope\b|don['’]?t\b|do not\b|stop\b|that['’]?s (wrong|not)|not what i|"
                          r"wrong\b|i said\b|i meant\b|why did you\b|you (should|shouldn['’]?t)\b|never\b|please don['’]?t\b)")
+_KEEP_GOING = re.compile(r"(?i)^\W*(please\s+)?(continue|keep going|go on|carry on|proceed|go ahead|resume|keep at it|"
+                         r"don['’]?t stop)(\s+please)?\W*$")
+
+
+def _last_stop(sid):
+    """T-0887: what the Stop hook last did in this session (drive, drive_wait, drive_drained…), or 'no drive note'."""
+    for e in reversed(c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 400)):
+        if e.get("session_id") == sid and str(e.get("kind") or "").startswith("drive"):
+            return e["kind"]
+    return "no drive note"
 
 
 def user_prompt_submit(pl):
@@ -457,6 +522,8 @@ def user_prompt_submit(pl):
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
+    if _oneoff():  # T-0775: the prompt is a question, not intake
+        return {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": ONEOFF_NOTE}}
     text = _PASTED.sub("", pl.get("prompt") or "").strip()
     if text.startswith("<task-notification>"):  # a background agent's result, not the user: no approvals, words, holds
         for tid in re.findall(r"<task-id>([\w-]+)</task-id>", text):
@@ -478,6 +545,13 @@ def user_prompt_submit(pl):
             c.add_veto(p, text)  # T-0251: "never X" is checked before the next X
         except Exception:
             log_error("UserPromptSubmit", _tb())
+    elif _KEEP_GOING.match(text):  # T-0887: Claude stopped before the user wanted; what the Stop hook did says why
+        try:
+            act = c.active_brief(c.load_briefs(p), p.lane)
+            c.log_event(p, "stall", task=act.id if act else None, data={"text": c.fit(text, 60), "after": _last_stop(sid)},
+                        session=sid)
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
@@ -486,7 +560,7 @@ def user_prompt_submit(pl):
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
-            meta["session"] = {"id": sid, "seen": c.now()}
+            meta["session"] = {"id": sid, "seen": c.now(), "pid": _claude_pid()}  # T-0841: whose process it is
             if (meta.get("resume_after_reload") or {}).get("session") == sid:
                 meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it
             if "PAUSE" in r.overrides:
@@ -567,6 +641,9 @@ def user_prompt_submit(pl):
     if parts:
         out["hookSpecificOutput"] = {"hookEventName": "UserPromptSubmit",
                                      "additionalContext": ("Foreman: " + ". ".join(parts) + ".")[:PROMPT_BUDGET]}
+    name = _session_title(pl.get("session_id"), sd)
+    if name:  # T-0781: the focus moved since this session was last named
+        out.setdefault("hookSpecificOutput", {"hookEventName": "UserPromptSubmit"})["sessionTitle"] = name
     return out
 
 
@@ -757,6 +834,25 @@ def _committed(name):
     return mod
 
 
+OUTWARD = {"PushNotification", "Artifact", "ArtifactData", "ArtifactComments", "SendMessage", "RemoteTrigger"}
+OUTWARD_MCP = "mcp__claude_ai_Claude_Docs__"
+_READS = {"get", "list", "query", "profiles", "read", "open", "quickstart", "guide", "export"}
+
+
+def _outward_denial(pl):
+    """T-0784: in a sensitive project (fm sensitive on) Claude Code's tools that send content off the machine are
+    refused; reads (an artifact's rows, a doc) and everything in other projects pass."""
+    tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
+    action = str(ti.get("action") or "") if isinstance(ti, dict) else ""
+    if action in _READS or tool.startswith(OUTWARD_MCP) and tool[len(OUTWARD_MCP):] in _READS:
+        return None
+    p = c.find_project(_cwd(pl))
+    if not p or not c.read_meta(p).get("sensitive"):
+        return None
+    return (f"Foreman: this repo is marked sensitive (fm sensitive on), so {tool} can't send its content off the machine "
+            f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
+
+
 def _guard_decision(pl, guard):
     ctx, p, act = _guard_ctx(pl, guard)
     found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
@@ -786,6 +882,17 @@ def _pre_tool_use(raw):
             if d:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                          "permissionDecisionReason": d}}))
+            return 0
+        if tool in OUTWARD or tool.startswith(OUTWARD_MCP):  # T-0784: content leaving the machine
+            try:
+                why = _outward_denial(pl)
+            except Exception:  # T-0821: fails closed, as hooks.json's onFailure: block promises
+                log_error("PreToolUse", _tb())
+                why = (f"Foreman: the sensitive-repo check for {tool} failed (fm doctor shows the error), so it's "
+                       "refused until that check works again.")
+            if why:
+                print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                         "permissionDecisionReason": why}}))
             return 0
         if tool not in GUARDED:
             return 0
@@ -868,17 +975,49 @@ def _pre_tool_use(raw):
         print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": decision[0],
                                                  "permissionDecisionReason": decision[1]}}))
         return 2 if decision[0] == "deny" else 0
+    try:
+        saved = _snapshot_note(pl, guard) if tool == "Bash" else None  # T-0884: in every session, quiet ones too
+    except Exception:
+        log_error("PreToolUse", _tb())
+        saved = None
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
-        note = " ".join(filter(None, [_veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _ambient_note(p), _bus_note(pl)]))
+        note = " ".join(filter(None, [saved, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _snapshot_note(pl, guard):
+    """T-0884: a command about to discard uncommitted work (git reset --hard, checkout --, clean -f, stash drop…) gets
+    it saved under refs/foreman/snapshots first; Claude Code's rewind covers its file tools, not Bash. The hook has 5 s
+    and blocks on a timeout, so the save gets SNAPSHOT_S and says when it couldn't."""
+    cmd = str((pl.get("tool_input") or {}).get("command") or "")
+    if "git" not in cmd or not hasattr(guard, "discards_work"):  # the committed fallback guard may predate it
+        return None
+    saved, failed, why = [], [], c.fit(c.plain(c.redact(cmd)), 200)
+    for where, what in dict.fromkeys(guard.discards_work(cmd, _cwd(pl))):
+        top = c.git_root(where)
+        if not top:
+            continue
+        try:
+            saved += [f"{sha} (restore: {c.restore_line(top, sha, what)})"
+                      for sha in c.snapshot(top, why, SNAPSHOT_S, what)]
+        except RuntimeError as e:
+            failed.append(f"{top}: {e}")
+    notes = [f"Foreman saved what this command may discard: {'; '.join(saved)}. fm snapshots lists every save."
+             ] if saved else []
+    notes += [f"Foreman couldn't save the uncommitted work before this command ({'; '.join(failed)}): if it matters, "
+              "commit or stash it first."] if failed else []
+    return " ".join(notes) or None
+
+
+SNAPSHOT_S = 3.0  # of the PreToolUse hook's 5 s
 
 
 def _bus_note(pl):
@@ -1237,6 +1376,55 @@ def _tripwire_note(pl, p, act):
     return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
 
 
+def _step_note(pl, p, act):
+    """T-0759: the step pointer follows the work. An edited file named in exactly one later step and not the current
+    one moves the pointer there; the 8th edit on a step with no evidence says once how to move it."""
+    try:  # T-0839: a surprise here costs this note, not the guard's other notes
+        return _step_note_of(pl, p, act)
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
+def _step_note_of(pl, p, act):
+    if not (p and act and pl.get("tool_name") in FILE_TOOLS):
+        return None
+    path = _edit_path(pl)
+    cur = act.current_step()
+    if not (cur and _in_project(path, p)):
+        return None
+    name = os.path.basename(path)  # T-0839: a bare word (bin/fm, "run fm check") names a step only by its path
+    name = name if "." in name.lstrip(".") else os.path.relpath(path, p.root)
+    word, note = re.compile(rf"(?<![\w.-]){re.escape(name)}(?![\w-])", re.I), None  # a.py ≠ data.py
+    named = [s for s in act.steps() if not s.done and word.search(s.text)]
+    if len(named) == 1 and named[0].n > cur.n:
+        try:
+            with c.lock(p.dir, timeout=LOCK_QUICK):
+                b = c.find_brief(p, act.id)
+                b.set_current(named[0].n)
+                c.save_brief(p, b)
+                c.log_event(p, "step_current", task=act.id, data={"step": named[0].n, "auto": True},
+                            session=pl.get("session_id"))
+                c.regen_views(p)
+            cur = named[0]
+            note = c.fit(f"Foreman: {os.path.basename(path)} is in step {cur.n} ({cur.text}); it is now the current "
+                         f"step.", 240) + " "  # review: step text is the brief's, bounded like the other notes
+        except c.LockTimeout:  # busy: the next edit moves it; the other notes still go out
+            pass
+    c.log_event(p, "step_edit", task=act.id, data={"step": cur.n}, session=pl.get("session_id"))
+    seen = [e for e in c.ledger_tail(p, 400)
+            if e.get("task") == act.id and e.get("event") in ("step_edit", "step_current", "step_done")]
+    n = 0
+    for e in reversed(seen):  # edits since the step last moved
+        if e["event"] != "step_edit" or (e.get("data") or {}).get("step") != cur.n:
+            break
+        n += 1
+    if n == 8 and not act.has_evidence(step=cur.n):
+        note = (note or "") + (f"Foreman: 8 edits on step {cur.n} with no evidence; if the work is on another step: "
+                               f"fm task step {act.id} current N.")
+    return note.strip() if note else None
+
+
 def _scope_note(pl, p, act):
     if not (p and act and pl.get("tool_name") in FILE_TOOLS):
         return None
@@ -1403,7 +1591,8 @@ def _auto_evidence(pl, p, ok):
         return
     if ok:
         r = pl.get("tool_response")
-        code, output = 0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+        code, output = c.judged(0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict)
+                                else str(r or ""))  # T-0820: what fm's own runs count as failing, Bash's runs too
     else:
         err = str(pl.get("error") or "")
         m = re.match(r"Exit code (\d+)", err)
@@ -1600,16 +1789,31 @@ def stop(pl):
         d0 = g["drive"].get(sid) or {}
         # T-0147: a turn ending on purpose for a mod reload isn't held by the nudges; the resumed turn records evidence
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
-        nudge = None if reload_due else (_evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED})
-                                         or _question_nudge(pl) or _headless_wait(pl))
-        reason = nudge or _drive(p, sd, briefs, pl, g)
+        oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
+        nudge = None if reload_due else _headless_wait(pl) if oneoff else (
+            _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _claims_gate(pl, g)
+            or _question_nudge(pl)
+            or _headless_wait(pl))
+        reason = nudge or (None if oneoff else _drive(p, sd, briefs, pl, g))
         d = g["drive"].setdefault(sid, {"count": 0})
         had_work, d["had_work"] = d.get("had_work"), bool(sd["active"] or sd["queue"])
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
-    if not reason and ((act and needs_user(msg)) or (had_work and not d["had_work"])):
+    drained = bool(had_work and not d["had_work"])
+    if not reason and ((act and needs_user(msg)) or drained):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
+    if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
+        reason = _push_nudge(sid, sd, drained)
     out = {"terminalSequence": seq}
+    promised = []
+    if not reason and not oneoff:  # T-0899: the turn ends here, so a promise in it is only kept if it's captured
+        try:
+            import fmcli
+            promised = fmcli.capture_promises(p, msg, sid)
+        except Exception:
+            log_error("Stop", _tb())
+    if promised:
+        out["systemMessage"] = f"Foreman captured the reply's promise(s) for later: {', '.join(promised)}"
     if reason:
         out.update(decision="block", reason=reason)
     elif reloading:
@@ -1619,6 +1823,20 @@ def stop(pl):
         out["systemMessage"] = (f"Foreman: the drive waits for background work ({', '.join(waiting_on)}) and continues "
                                 f"when it finishes (type continue to go on now)")
     return out
+
+
+def _push_nudge(sid, sd, drained):
+    """T-0778: a full-autonomy turn ending on an open ask (fm ask) or a drained queue asks for one PushNotification
+    (phone over Remote Control, desktop otherwise; the tool skips itself when the user is at the terminal). Once per
+    ask set or drain hour, so never a loop."""
+    waiting = sorted(t for t in sd.get("pending") or [] if t)
+    key = ("ask-" + "-".join(waiting)) if waiting else f"drain-{c.now()[:13]}" if drained else None
+    if not key or not _first_time(sid, "push-" + re.sub(r"[^\w-]", "", key)):
+        return None
+    lead = f"Foreman needs your yes on {', '.join(waiting[:3])}" if waiting else "Foreman: the queue is done"
+    return (f"Foreman: the user may be away from the terminal. Send one PushNotification (status proactive, one line "
+            f"under 200 characters) that leads with what they'd act on, like \"{lead}: <the one thing>\", then end "
+            f"the turn.")
 
 
 def _question_nudge(pl):
@@ -1636,6 +1854,20 @@ def _question_nudge(pl):
 
 def _headless():
     return os.environ.get("FOREMAN_DRIVE_TASK") or os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli"
+
+
+def _oneoff():
+    """T-0775: a claude -p session Foreman didn't start (fm run sets FOREMAN_DRIVE_TASK) answers its prompt: no queue
+    in its context, no drive, no claim on the project's session. The guard still applies."""
+    return (os.environ.get("CLAUDE_CODE_ENTRYPOINT") == "sdk-cli" and not os.environ.get("FOREMAN_DRIVE_TASK")
+            and not os.environ.get("FOREMAN_BENCH"))  # T-0820: a bench replay measures Foreman at work
+
+
+ONEOFF_NOTE = ("Foreman: this is a one-off headless session (claude -p, not fm run). Answer the prompt and stop: don't "
+               "focus, plan, capture or work queued Foreman tasks unless the prompt asks for that; the drive and "
+               "never-stop rules apply to interactive sessions and fm run, not here. The guard still applies: if the "
+               "prompt asks for an edit, create one S brief first (fm task new … --focus), since unbriefed edits are "
+               "refused.")
 
 
 def _cc_version():
@@ -1672,6 +1904,75 @@ def _headless_wait(pl):
     return (f"Foreman: this is a headless run (claude -p): it ends with this turn, so the background work still running "
             f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "
             f"rerun it in the foreground), then finish with its result.")
+
+
+_TEST_CLAIM = re.compile(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:now\s+|all\s+)?(?:pass(?:es|ing)?|"
+                         r"(?:are |is )?green)\b")
+_TEST_CMD = re.compile(r"\b(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|make (test|check)|"
+                       r"tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|fm task (evidence|finish|prove)\b.*--run)")
+_RUN_FAILED = re.compile(r"\bFAILED\b|\b[1-9]\d* (failed|errors?)\b|✗|\bexit [1-9]\d*\b|Traceback \(most recent")
+_EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+def _turn_calls(path, cap=4_000_000):
+    """T-0886: [(tool, input, result text, is_error)] of the transcript's last turn (since the user's last prompt), in
+    order; [] when it can't be read. Reads at most the last `cap` bytes."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - cap))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except (OSError, TypeError):
+        return []
+    calls, by_id = [], {}
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except ValueError:
+            continue
+        content = (e.get("message") or {}).get("content") if isinstance(e, dict) else None
+        if e.get("type") == "user" and (isinstance(content, str) or any(
+                isinstance(x, dict) and x.get("type") == "text" for x in content or [])):
+            if not str(content).lstrip().startswith("<task-notification>"):
+                calls, by_id = [], {}  # a new prompt from the user starts the turn again
+            continue
+        for x in content if isinstance(content, list) else []:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "tool_use":
+                by_id[x.get("id")] = len(calls)
+                calls.append([x.get("name"), x.get("input") or {}, "", False])
+            elif x.get("type") == "tool_result" and x.get("tool_use_id") in by_id:
+                body = x.get("content")
+                text = body if isinstance(body, str) else " ".join(
+                    str(y.get("text") or "") for y in body or [] if isinstance(y, dict))
+                calls[by_id[x["tool_use_id"]]][2:] = [text, bool(x.get("is_error"))]
+    return [tuple(x) for x in calls]
+
+
+def _claims_gate(pl, g):
+    """T-0886: a reply saying the tests pass, held once when the turn's own runs don't back it: a file edited after the
+    last test run, or that run failed. A turn with no edits and no runs isn't judged."""
+    msg = pl.get("last_assistant_message") or ""
+    m = next((x for x in _TEST_CLAIM.finditer(msg) if not _NEG.search(msg[max(0, x.start() - 40):x.start()])), None)
+    if not m or pl.get("stop_hook_active") or not pl.get("transcript_path"):
+        return None
+    key = f"{pl.get('session_id')}:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
+    if key in g.setdefault("claims", []):
+        return None
+    calls = _turn_calls(pl["transcript_path"])
+    edits = [i for i, x in enumerate(calls) if x[0] in _EDIT_TOOLS]
+    runs = [i for i, x in enumerate(calls) if x[0] == "Bash" and _TEST_CMD.search(str(x[1].get("command") or ""))]
+    if edits and (not runs or runs[-1] < edits[-1]):  # an edit after the last run: whatever it said is stale
+        last = os.path.basename(str(calls[edits[-1]][1].get("file_path") or calls[edits[-1]][1].get("notebook_path")))
+        why = f"no test ran after the last edit ({last})"
+    elif runs and (calls[runs[-1]][3] or _RUN_FAILED.search(  # its verdict is at the end; prove's red is meant to fail
+            re.sub(r"(?m)^.*start tree.*$", "", calls[runs[-1]][2])[-300:])):
+        why = f"the last test run failed (`{c.fit(str(calls[runs[-1]][1].get('command')), 80)}`)"
+    else:
+        return None
+    g["claims"] = (g["claims"] + [key])[-50:]
+    return (f"Foreman: the reply says \"{m.group(0)}\", but {why} this turn. Run the tests and quote the result, or "
+            "say they weren't run.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):

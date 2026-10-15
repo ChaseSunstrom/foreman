@@ -42,7 +42,7 @@ class Deps(Base):
 
 
 class Decision(Base):
-    def test_a_research_note_ends_in_a_decision_prompt_and_a_research_close_without_one_warns(self):
+    def test_a_research_note_ends_in_a_decision_prompt_and_a_research_close_without_one_is_refused(self):
         bindir = os.path.join(self.tmp, "bin")
         os.makedirs(bindir)
         with open(os.path.join(bindir, "claude"), "w") as f:
@@ -56,9 +56,9 @@ class Decision(Base):
             note = f.read()
         self.assertIn("## Decision", note)
         self.assertIn("fm task set T-0001 --section Decision", note)
-        import fmcli
-        warns = fmcli._close_warnings(self.p, c.find_brief(self.p, "T-0001"), [])
-        self.assertTrue(any("no Decision" in w for w in warns), warns)
+        refused = self.fm("task", "done", "T-0001", check=False)  # T-0896: a refusal now, not a warning
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("no Decision", refused.stderr)
 
 
 class Chesterton(Base):

@@ -1,5 +1,5 @@
 """fm night (T-0236): budgeted background work while the user is away — the daily second read of the last session,
-the landscape scan when due, one research-debt question, the court of the user's steers, a bench tournament for one
+the landscape scan when due, the sentinel (T-0888), one research-debt question, the court of the user's steers, a bench tournament for one
 kept fm evolve candidate — each an existing fm command, kept while the night's estimate fits --max-usd and today's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
@@ -16,7 +16,7 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
-NAMES = ("dream", "cold files", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("dream", "cold files", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
 def current_model(p):
@@ -46,6 +46,8 @@ def jobs(p):
     import fmoutside
     meta, out = c.read_meta(p), [("dream", ["dream"], 0.0)]  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
+    if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
+        out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
     smoke = meta.get("smoke") or {}
     if any(k != "off" for k in smoke) and "off" not in smoke:  # T-0743: a target is set; the crawl runs locally
         out.append(("smoke", ["smoke"], 0.0))

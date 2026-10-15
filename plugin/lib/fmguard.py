@@ -53,7 +53,9 @@ def rule_id(category, detail):
     """T-0672: a stable name for the check behind a refusal: its category and the first words of its wording, with
     paths, quoted text and numbers taken out (rm -rf ~ and rm -rf /x are one rule)."""
     words = re.sub(r"\S*[/~$\\]\S*|\S*\d\S*|`[^`]*`|'[^']*'|\"[^\"]*\"", " ", detail.lower())
-    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or 'other'}"
+    ext = os.path.splitext(detail.split()[0])[1].lstrip(".").lower() if "/" in detail else ""  # T-0894: kinds apart
+    path = ("path-" + ext if ext.isalnum() else "path") if "/" in detail else "other"
+    return f"{category}:{'-'.join(re.findall(r'[a-z]+', words)[:4]) or path}"
 
 
 def findings(tool_name, tool_input, ctx):
@@ -108,13 +110,16 @@ def _focuses(cmd):
         return False
 
 
-def _hint(detail):
+def _hint(detail, cat=""):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
+    research = (" If it is a download or notes for the project's research, write it to the scratchpad and file it with "
+                "fm research add NAME --file PATH.") if cat == "state-direct" else ""  # T-0814
     if "(not known before it runs" in detail:
         return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
-                "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes.")
+                "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes." + research)
     if "unresolvable target" in detail:
-        return " If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+        return (" If it is elsewhere, name the path literally, or set the variable once before any loop or pipe."
+                + research)
     if re.fullmatch(r"downloaded content piped into python[0-9.]*", detail):  # T-0395
         return (" A python -c that only reads the download as data (json.load(sys.stdin)) passes when every command "
                 "before it, or after it in its pipeline, is a plain data tool that writes no file (curl -s, jq, head, "
@@ -127,12 +132,12 @@ def _hint(detail):
                 "checks each file it changes as that task's write.")
     if detail.endswith("(written from interpreter code)"):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
-                "re, json, textwrap or sys, so only those count, or use the Edit tool.")
-    return ""
+                "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
+    return research
 
 
 def message(block, ctx):
-    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "")
+    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "", block.category)
 
 
 def _message(block, ctx):
@@ -733,10 +738,11 @@ def _strip_heredocs(cmd):
     return _heredocs(cmd)[0]
 
 
-def _drop_data_heredocs(cmd):
+def _drop_data_heredocs(cmd, only=None):
     """T-0171: the command without the bodies of heredocs that only write text: cat or tee as the line's first word,
     a quoted delimiter (nothing in the body expands) and no pipe or substitution on the line. For the interpreter gate
-    only: a script written with cat isn't run by writing it. Anything else keeps its body."""
+    only: a script written with cat isn't run by writing it. Anything else keeps its body, and so does a data
+    heredoc whose line `only` (when given) rejects."""
     lines, out, seen, i = cmd.split("\n"), [], [], 0
     while i < len(lines):
         line = lines[i]
@@ -745,7 +751,8 @@ def _drop_data_heredocs(cmd):
         out.append(line)
         seen.append(line)
         for quote, delim in starts:
-            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line)
+            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line) \
+                and (only is None or only(line))
             while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
                     out.append(lines[i])
@@ -1211,6 +1218,27 @@ def _open_targets(code):
     return targets
 
 
+def _chain_dir(starters, shell, ctx):
+    """T-0774: the one folder every python unit runs in, when each starter changes folder only by `cd DIR &&` links
+    (python runs only after each succeeded) to absolute, ~ or ./ ../ targets (no CDPATH lookup, no `cd -`) and nothing
+    else in the command changes folder; None when that isn't certain (every named folder counts then). Review: a
+    regex for folder changes misses "cd", \\cd, source and eval, so the rest of the command may hold nothing but the
+    heredocs' own end lines."""
+    ends = {m.group(1) for s in starters for m in [re.search(r"<<-?\s*'(\w+)'", s)] if m}
+    if any(line.strip() and line.strip() not in ends for line in shell.splitlines()):
+        return None
+    dirs = set()
+    for s in starters:
+        d = ctx.cwd
+        for t in re.findall(r"\bcd\s+([\w./~@+:=,-]+)\s*&&", s):
+            t = _expand(t, ctx)
+            if _unresolvable(t) or not re.match(r"(/|\./|\.\./|\.\.?$)", t):
+                return None
+            d = _resolve(t, d)
+        dirs.add(d)
+    return dirs.pop() if len(dirs) == 1 else None
+
+
 def _proved_writes(cmd, ctx):
     """T-0176: the files a command's python can write, as paths, when every interpreter in it is a quoted heredoc fed
     straight to python whose writes _open_targets proves; None otherwise (the coarse rule decides). A relative path
@@ -1231,13 +1259,31 @@ def _proved_writes(cmd, ctx):
         targets += found
     bases = [ctx.cwd]
     if re.search(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b", around):
-        bases += [d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
-                  if os.path.isdir(d)]
+        only = _chain_dir(starters, shell, ctx)
+        bases = [only] if only else bases + [
+            d for d in (_resolve(_expand(w, ctx), ctx.cwd) for w in _WORD.findall(around) if not _unresolvable(w))
+            if os.path.isdir(d)]
     import ast
     mods = {a.name for code in units for n in ast.walk(ast.parse(code)) if isinstance(n, ast.Import) for a in n.names}
     if any(os.path.exists(os.path.join(b, m + x)) for b in bases for m in mods for x in (".py", "")):
         return None  # python - searches the current folder first: a json.py there would be what runs
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
+
+
+_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*'\w+'\s*$")
+
+
+def _writes_unrun_source(line, cmd, ctx):
+    """T-0761: a data heredoc writing one file of Foreman's own code that the command never names again is a source
+    edit (a core path write the user's yes gates), not interpreter code run here. Run or imported by name, it is."""
+    m = _SOURCE_WRITE.fullmatch(line.strip())
+    if not m:
+        return False
+    path = _resolve(_expand(m.group(1), ctx), ctx.cwd)
+    stem = re.escape(os.path.splitext(os.path.basename(path))[0])
+    real = os.path.realpath(path)  # a symlink in plugin/lib to a scratch script isn't Foreman's code
+    return any(_strictly_under(real, os.path.realpath(os.path.join(ctx.foreman_home, "plugin", d)))
+               for d in _CORE_DIRS) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
 
 
 def _run_dir(starter, cwd):
@@ -1392,7 +1438,7 @@ def _interpreter_writes(cmd, ctx):
     user's yes, rather than never-authorizable state-direct, because the text match can't tell code from test data."""
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
-    if _drives_fm(cmd, ctx.cwd):
+    if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
                          "whose text names its modules, use the Edit or Write tool)")]  # T-0740: 9 repeats in a day
     code = _interp_code(cmd)
@@ -1593,7 +1639,7 @@ def _reads_pipe_as_data(c, argv, cmds, cwds, cmd):
     from _split), as does a substitution in a live heredoc body. A name set here may be read only where its every value
     is a plain word: no space, glob, quote, $ or leading -, so it can't split into flags or close a string in CODE."""
     name, args = (os.path.basename(argv[0]) if argv else ""), argv[1:]
-    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and not c.redirs and len(args) >= 2
+    if not (re.match(r"^python[0-9.]*$", name) and c.argv == argv and set(c.redirs) <= {"/dev/null"} and len(args) >= 2
             and args[0] == "-c"):
         return False
     shell = _mask_quotes(_strip_heredocs(cmd))
@@ -2044,6 +2090,15 @@ def _shell_c(args):
     return out
 
 
+# T-0892: NAME=$(mktemp -d) (no -p/--tmpdir/template) is a fresh folder in TMPDIR or /tmp: read as that literal path,
+# so `rm -r $T` later is a known target, and `$T/../..` still resolves to what it would remove
+_MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)(?:\$\(\s*mktemp\s+-d\s*\)|`\s*mktemp\s+-d\s*`)\2""")
+
+
+def _mktemp_literal(cmd):
+    return _MKTEMP_D.sub(lambda m: m.group(1) + os.path.join(os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp"), cmd)
+
+
 def _track_vars(words, env, home=None):
     """T-0161: the variables after one simple command (its words as written), or None once any could be unknown."""
     words = [w for i, w in enumerate(words) if not re.match(r"\d*(?:[<>]|&>)", w)  # redirections and their targets
@@ -2086,7 +2141,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    cmd = _join_continued(cmd)
+    cmd = _mktemp_literal(_join_continued(cmd))
     unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
     cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
@@ -2214,13 +2269,22 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
             found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
-        for target in c.redirs + _write_targets(name, args) + git_env + _env_files(c.argv):
+        # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
+        init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
+        # security review: git takes unique prefixes of long options (--templ= is --template) and GIT_* env can plant
+        # a template dir, so only `git init` / `git init -q` qualify, and only when nothing in the command sets GIT_*
+        bare_init = init and not lost and not git_env and all(a in ("-q", "--quiet") for a in args[1:]) and all(
+            os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
+            r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
+        for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
-        for target in _tree_targets(name, args) + git_env:
+        for target in [] if bare_init else _tree_targets(name, args) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
-                                                             else "") + ")")  # refusal names fm lane merge
+                                                             else "") + ")" +  # refusal names fm lane merge
+                                  ("; git init writes its folder: chain the cd with && or pass the path, "
+                                   'git init "$S/toy"' if init else ""))
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
@@ -2231,8 +2295,13 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 flag, eq, val = a.partition("=")
                 if flag.startswith("--r") and "--run".startswith(flag):
                     found += check_bash(val if eq else b, ctx, depth + 1)
-            if sub == "check" and rest[:1] == ["add"]:
-                found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
+            for stored in _fm_stored(sub, rest, fm_args):  # T-0901: a command fm keeps and runs later
+                found += check_bash(stored, ctx, depth + 1)
+            if sub in ("quiet", "at"):  # T-0898: their trailing command runs (fm quiet -- rm -rf ~ used to pass)
+                words = _fm_trailing(rest, 1 if sub == "at" else 0)
+                if words:
+                    found += check_bash(words[0] if len(words) == 1 else " ".join(map(shlex.quote, words)), ctx,
+                                        depth + 1)
             if sub == "plugins" and rest[:1] and rest[0] in ("install", "enable", "disable", "add-marketplace"):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
@@ -2686,12 +2755,137 @@ def _check_git(name, args, cwd, ctx):
     return out
 
 
+def discards_work(cmd, cwd, depth=0):
+    """T-0884: [(folder, what)] for each git command in cmd that throws away uncommitted work, what being "tree" (the
+    working files) or "stash drop <ref>" / "stash clear": what the PreToolUse hook saves first. Never a refusal. A cd
+    before it, a -C (~ and $VARS expanded), a shell's -c text and `git worktree remove --force <dir>` are followed;
+    heredoc bodies are data. ponytail: --git-dir/--work-tree and commands python spawns aren't followed."""
+    out = []
+    for cm in _split(_tokens(_lines(_strip_heredocs(_join_continued(cmd))))):
+        argv, _ = _strip_wrappers(cm.argv)
+        name = os.path.basename(argv[0]) if argv else ""
+        here = lambda d, base: os.path.normpath(os.path.join(base, os.path.expanduser(os.path.expandvars(d))))
+        if name == "cd" and argv[1:2] and argv[1] != "-":
+            cwd = here(argv[1], cwd)
+        elif re.fullmatch(r"(ba|z|da|k)?sh", name) and depth < 3:
+            for text in _shell_c(argv[1:]):
+                out += discards_work(text, cwd, depth + 1)
+        if name != "git":
+            continue
+        i, where = 1, cwd
+        while i < len(argv) and argv[i].startswith("-"):
+            if argv[i] == "-C" and i + 1 < len(argv):
+                where = here(argv[i + 1], where)
+            i += 2 if argv[i] in _GIT_VALUED or argv[i] == "-C" else 1
+        if i >= len(argv):
+            continue
+        sub, rest = argv[i], argv[i + 1:]
+        flags = set(rest)
+        short = "".join(a[1:] for a in rest if re.fullmatch(r"-[a-zA-Z]+", a))
+        pos = [a for a in rest if not a.startswith("-")]
+        if sub == "stash" and pos[:1] in (["drop"], ["clear"]):
+            out.append((where, " ".join(["stash"] + pos[:2])))
+            continue
+        if sub == "worktree" and pos[:1] == ["remove"] and pos[1:] and (flags & {"-f", "--force"} or "f" in short):
+            out.append((here(pos[1], where), "tree"))
+            continue
+        # a word that names a file and no commit is a path (git checkout main beside a main/ folder is the branch)
+        paths = [a for a in pos if os.path.exists(os.path.join(where, a))
+                 and not _git(where, "rev-parse", "--verify", "-q", f"{a}^{{commit}}")] if sub == "checkout" else []
+        staged = "--staged" in flags or "S" in short
+        if (sub == "reset" and flags & {"--hard", "--merge"}
+                or sub == "checkout" and (flags & {"--force", "--", "."} or "f" in short or paths)
+                or sub == "restore" and (not staged or "--worktree" in flags or "W" in short)
+                or sub == "clean" and ("--force" in flags or "f" in short)
+                and not ("--dry-run" in flags or "n" in short)
+                or sub == "switch" and (flags & {"--force", "--discard-changes"} or "f" in short)
+                or sub == "rm" and ("--force" in flags or "f" in short)
+                or sub in ("merge", "rebase", "cherry-pick", "revert", "am") and "--abort" in flags):
+            out.append((where, "tree"))
+    return out
+
+
 _DISK = {"fdisk", "sfdisk", "cfdisk", "parted", "gdisk", "sgdisk", "wipefs", "mkswap"}
 _POWER = {"shutdown", "reboot", "poweroff", "halt"}
 _SYSTEMCTL_MUTATE = {"start", "stop", "restart", "reload", "try-restart", "reload-or-restart", "enable", "disable",
                      "reenable", "mask", "unmask", "kill", "isolate", "daemon-reload", "daemon-reexec", "set-default",
                      "poweroff", "reboot", "halt", "suspend", "hibernate", "edit", "set-property", "link", "revert",
                      "preset", "reset-failed"}
+
+
+_FM_VALUED = {"--timeout", "--repeat", "--evidence", "--step", "--ac", "--expect", "--status", "--json-key", "-p",
+              "--project", "--tail", "--top", "--text", "--section", "--file", "--run", "--verify", "--check", "--same",
+              "--stack-check", "--good", "--why", "--audit", "--lens", "--docs", "--lesson", "--commit", "--type",
+              "--tier", "--title", "--source", "--until", "--model", "--max"}
+NOTIFY_PROBE = "rm -rf ~"  # what $1 is read as: a notify command that runs its message as code is refused
+
+
+def _fm_words(rest):
+    """T-0901 review: an fm call's positional words, its options (and their values) left out, as argparse reads them."""
+    out, i = [], 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return out + rest[i + 1:]
+        if a.startswith("-") and len(a) > 1:
+            i += 2 if a in _FM_VALUED else 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+def _fm_stored(sub, rest, fm_args):
+    """T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
+    (`--ac "x :: CMD"`, `--verify`, `fm task ac … "x :: CMD"`, an Acceptance criteria text's `verify with \`CMD\``,
+    an intake `DONE-WHEN: x :: CMD`), `fm task assume --check`, `--same`, `--stack-check`, `fm check add`/`affected`
+    ({tests} and {names} read as one word), `fm smoke set cmd`, `fm notify` ($1 read as NOTIFY_PROBE), and the CMD of
+    `fm record` / `fm whyred`. A capture's text runs nothing, so it isn't one."""
+    out, words = [], _fm_words(rest)
+    section = ""
+    for a, b in zip(fm_args, fm_args[1:] + [""]):  # fm refuses abbreviated options, so these are the spellings
+        flag, eq, v = a.partition("=") if a.startswith("--") else (a, "", "")
+        v = v if eq else b
+        if flag in ("--verify", "--same", "--stack-check") or (flag == "--check" and words[:1] == ["assume"]):
+            out.append(v)
+        elif flag == "--ac" and " :: " in v:
+            out.append(v.rpartition(" :: ")[2])
+        elif flag == "--section":
+            section = v
+        elif flag == "--text" and words[:1] == ["set"] and section.lower().startswith("acceptance"):
+            out += re.findall(r"verify with `([^`]+)`", v)
+    if sub == "task" and words[:1] == ["ac"]:
+        out += [w.rpartition(" :: ")[2] for w in words if " :: " in w]
+    if sub == "intake":
+        out += [ln.rpartition(" :: ")[2] for w in words for ln in w.splitlines()
+                if " :: " in ln and re.match(r"\s*(DONE-WHEN|ACCEPT)\s*:", ln, re.I)]
+    if sub == "check" and words[:1] in (["add"], ["affected"]) and words[1:]:
+        out.append(re.sub(r"\{(tests|names)\}", "tests", " ".join(words[1:])))
+    if sub == "smoke" and words[:2] == ["set", "cmd"] and words[2:]:
+        out.append(" ".join(words[2:]))
+    if sub == "notify" and words:
+        out.append(re.sub(r"\$\{?1\}?", NOTIFY_PROBE, " ".join(words)))
+    if sub in ("record", "whyred") and words:
+        out.append(words[0])
+    return [x for x in dict.fromkeys(out) if x.strip()]
+
+
+def _fm_trailing(rest, positionals):
+    """T-0898: the command words after `fm quiet` / `fm at TARGET` options (argparse's REMAINDER, or after --)."""
+    i, seen = 0, 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return rest[i + 1:]
+        if a in ("--tail", "--timeout", "-p", "--project"):
+            i += 2
+        elif a.startswith("-"):
+            i += 1
+        elif seen < positionals:
+            seen, i = seen + 1, i + 1
+        else:
+            return rest[i:]
+    return []
 
 
 def _fm_subcommand(args, takes_value=("-p", "--project")):

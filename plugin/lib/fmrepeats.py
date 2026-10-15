@@ -18,6 +18,8 @@ _RECORD = re.compile(r"git\s+(?:-C\s+\S+\s+)?(?:log|status|diff|show|rev-parse|b
 _GATE = re.compile(r"(?<![a-z])(test|tests|unittest|pytest|jest|vitest|lint|eslint|ruff|mypy|tsc|check|build|fmt|"
                    r"vet|doctor|bench|clippy|roundtrip)(?![a-z])", re.I)
 _SEQUENCE = re.compile(r"&&|;|\|")
+# T-0857: a run of part of the suite — one test file or module, a name filter — is a step, never a gate for every task
+_NARROW = re.compile(r"(^|\s)(-k|-p|-t|--filter|--grep|-run)(\s|=)|::|(^|[\s/.])test_\w+(\.py)?(\s|$)")
 
 
 def shape(cmd):
@@ -49,6 +51,8 @@ def scan(p):
             if not sh:
                 continue
             r = runs.setdefault(sh, {"count": 0, "tasks": set(), "example": m.group(1)})
+            if _NARROW.search(r["example"]) and not _NARROW.search(m.group(1)):
+                r["example"] = m.group(1)  # T-0857: the whole-suite run speaks for the habit
             r["count"] += 1
             r["tasks"].add(b.id)
         for s in b.steps():
@@ -75,6 +79,8 @@ def suggest(sh, example):
     if _SEQUENCE.search(sh):
         return "a project script (one command for the sequence); fm check add it if it's a gate"
     if any(_GATE.search(os.path.basename(w)) for w in sh.split()):
+        if _NARROW.search(example):
+            return "a project script or alias (it runs part of the suite; the whole-suite command is the gate)"
         return f"fm check add \"{example}\" (a gate for every task)"
     return "a project script or alias"
 

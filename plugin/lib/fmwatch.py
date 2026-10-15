@@ -512,8 +512,22 @@ def projects():
                     "autonomy": sd["autonomy"], "sensitive": sd["sensitive"], "updated": updated,
                     # T-0463: the Foreman its last session ran (and on which machine), and the released fixes it lacks
                     "foreman": meta.get("foreman"), "lacks": fmeco.lacks((meta.get("foreman") or {}).get("version"),
-                                                                         changes)})
+                                                                         changes), "next": _next(sd)})
     return sorted(out, key=lambda r: r.get("updated") or 0, reverse=True)
+
+
+def _next(sd):
+    """T-0890: (rank, line) of a project's next action: waiting on the user 0, active 1, queued 2, inbox 3; None idle."""
+    waits = len(sd["pending"]) + len(sd["asks"])
+    if waits:
+        return 0, f"waiting on you: {waits} ask(s) or approval(s)"
+    if a := sd["active"]:
+        return 1, f"{a['id']} {a['title']} ({a.get('stage')}, step {a.get('steps_done', 0)}/{a.get('steps_total', 0)})"
+    for rank, key, how in ((2, "queue", "queued"), (3, "inbox", "inbox, to plan")):
+        if sd[key]:
+            b = sd[key][0]
+            return rank, f"{b['id']} {b['title']} ({how}{', urgent' if b.get('priority') == 'urgent' else ''})"
+    return None
 
 
 def _usage():
@@ -544,6 +558,10 @@ def cmd_projects(args):
     v = build()
     if args.json:
         print(json.dumps(v))
+        return
+    if args.next:  # T-0890: one list across projects; sorted() keeps most recently active first within a rank
+        for i, r in enumerate(sorted((r for r in v["projects"] if r.get("next")), key=lambda r: r["next"][0]), 1):
+            print(f"{i}. {r['project']}: {r['next'][1]}")
         return
     for r in v["projects"]:
         a, ran, lacks = r.get("active"), r.get("foreman") or {}, r.get("lacks") or []

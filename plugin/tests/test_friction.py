@@ -122,6 +122,43 @@ class Friction(ForemanTestCase):
         c.write_meta(p, meta)
         self.assertIn("self-improvement pass", nxt())
 
+    def test_a_pass_whose_brief_is_out_is_not_due_again(self):
+        # T-0858: the Stop hook kept saying "pass due" while the pass's recon was running
+        nxt = lambda: self.fm("next").stdout
+        self.fm("friction", "--every", "1")
+        self.close_one(1)
+        self.assertIn("self-improvement pass", nxt())
+        self.fm("friction", "--brief")
+        self.assertNotIn("self-improvement pass", nxt(), "in progress: its brief was just written")
+        self.fm("friction", "--mark")
+        self.assertNotIn("self-improvement pass", nxt())
+
+    def test_a_bare_keep_going_prompt_is_a_stall(self):
+        # T-0887: "continue" after Claude stopped says it stopped too early; what the Stop hook did just before says why
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": c.now(), "kind": "drive_drained", "session_id": "sess-1"}) + "\n")
+        for prompt in ("continue", "Keep going!", "go on please", "continue the refactor but skip the tests"):
+            self.hook("UserPromptSubmit", {"prompt": prompt})
+        out = self.fm("friction").stdout
+        self.assertIn("3 keep-going prompt(s)", out)
+        self.assertIn("after drive_drained", out)
+
+    def test_distinct_notes_of_one_kind_are_not_repeats(self):
+        # T-0860: eight tripwire notes, each a different task's lesson on a different file, read as one note "8x"
+        import fmcore as c
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for i in range(8):
+                f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "PreToolUse",
+                                    "key": "done also changed this file", "h": f"h{i}", "chars": 120}) + "\n")
+            for _ in range(3):
+                f.write(json.dumps({"ts": c.now(), "kind": "inject", "event": "PreToolUse", "key": "same note",
+                                    "h": "same", "chars": 80}) + "\n")
+        out = self.fm("friction").stdout
+        repeated = out.split("notes repeated 3+ times", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("same note", repeated)
+        self.assertNotIn("done also changed this file", repeated)
+
     def test_the_digest_rechecks_guard_blocks_and_shows_the_trend(self):
         # T-0187: 'done since: T-0178' said nothing of whether the fix removed its friction. Each guard block is re-run
         # through today's guard (its full command from the session's transcript); a mark keeps the window's counts

@@ -76,7 +76,8 @@ def _env(plugin, state):
     no credentials beyond Claude's own."""
     env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDECODE", "CLAUDE_CODE_ENTRY"))
            and (k.startswith(("ANTHROPIC_", "CLAUDE_")) or not CREDENTIALS.match(k))}  # claude's own login stays
-    env.update(FOREMAN_STATE=state, PATH=os.path.join(plugin, "bin") + os.pathsep + os.environ.get("PATH", ""))
+    env.update(FOREMAN_STATE=state, PATH=os.path.join(plugin, "bin") + os.pathsep + os.environ.get("PATH", ""),
+               FOREMAN_BENCH="1")  # T-0820: its claude -p isn't a one-off (T-0775): the replay is Foreman at work
     return env
 
 

@@ -313,7 +313,8 @@ def cmd_digest(args):
     p = fmcli.resolve(args)
     done, lessons, review = _week(p, args.days)
     since = _since(args.days)
-    grades = collections.Counter(b.meta.get("verified", "ungraded") for b in done)
+    grade = lambda b: "folded into another" if b.meta.get("done_in") else b.meta.get("verified", "ungraded")  # T-0852
+    grades = collections.Counter(grade(b) for b in done)
     fails = collections.Counter(r.get("sig") for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
                                 if str(r.get("at", ""))[:19] >= since and r.get("sig"))
     blocked = [b for b in c.load_briefs(p) if b.status == "blocked"]
@@ -324,7 +325,7 @@ def cmd_digest(args):
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
-    lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({b.meta.get('verified', 'ungraded')})" for b in done[-8:]]
+    lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({grade(b)})" for b in done[-8:]]
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
     insights = [(b.id, b.section("Insight").strip()) for b in done if b.section("Insight").strip()]  # T-0639
     lines += ["Insights:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in insights[-6:]] if insights else []
@@ -378,19 +379,24 @@ def cmd_evals(args):
 
 
 def eval_inbox(p, n=20):
-    """T-0734: [{task, kind, line}] — tasks blocked, and guard blocks later granted for the same task and category
-    (each a false-positive candidate for the guard's own evals), newest last."""
+    """T-0734: [{task, kind, line}] — tasks blocked, and guard blocks today's guard allows (fixed false positives, each
+    worth a case that keeps them allowed), newest last."""
     events = c.ledger_tail(p, 20000)
     rows = [{"task": e.get("task"), "kind": "blocked",
              "line": f"{e.get('task')} blocked: {c.fit(str((e.get('data') or {}).get('reason') or ''), 120)}"}
             for e in events if e.get("event") == "task_block" and e.get("task")]
-    for i, e in enumerate(events):
-        d = e.get("data") or {}
-        if e.get("event") == "guard_block" and e.get("task") and d.get("category"):
-            if any(x.get("event") == "approval_granted" and x.get("task") == e["task"]
-                   and d["category"] in ((x.get("data") or {}).get("allow") or []) for x in events[i + 1:]):
-                rows.append({"task": e["task"], "kind": "guard", "line": f"{e['task']} guard {d['category']} block "
-                             f"granted after (a false positive?): {c.fit(str(d.get('detail') or ''), 100)}"})
+    # T-0754: a block the user then granted is the guard working; a false positive is a block today's guard allows
+    import fmfriction
+    blocks = [e for e in c.tail_jsonl(os.path.join(c.state_dir(), "events.jsonl"), 30000)
+              if e.get("kind") == "guard_block" and e.get("project") == p.slug and e.get("cmd")
+              and e.get("category") != "brief"][-50:]  # "no active task" depends on the moment, not the rule
+    try:
+        now = fmfriction._recheck(blocks)
+    except Exception:  # transcripts unreadable: no candidates rather than a guess
+        now = {}
+    rows += [{"task": None, "kind": "guard", "line": f"guard {e.get('category')} block that today's guard allows now "
+              f"(keep it allowed with an eval case): {c.fit(c.redact(str(e['cmd'])), 100)}"}
+             for i, e in enumerate(blocks) if now.get(i) == "today's guard allows it"]
     seen, out = set(), []
     for r in rows:
         if r["line"] not in seen:

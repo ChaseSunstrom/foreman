@@ -57,6 +57,8 @@ class UndefinedNames(unittest.TestCase):
         self.assertEqual(unbound("import os\ndef f(a):\n    return os, a, len, _gone\n"), ["3 _gone"])
         plugin, found = os.path.dirname(HERE), []
         for path in sorted(glob.glob(f"{plugin}/lib/*.py") + glob.glob(f"{plugin}/hooks/*")):
+            if not os.path.isfile(path):  # T-0783: importing a hook script leaves hooks/__pycache__/
+                continue
             with open(path, encoding="utf-8") as f:
                 src = f.read()
             if path.endswith(".py") or src.startswith("#!/usr/bin/env python3"):  # the hooks are extensionless

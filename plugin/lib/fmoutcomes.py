@@ -41,7 +41,8 @@ def outcomes(p):
     FIX task created after it closed names it), "corrected" (a user correction logged against it after it closed),
     else "held"."""
     briefs = c.load_briefs(p, include_archive=True)
-    closed = {b.id: done_at(b) for b in briefs if b.status == "done"}
+    closed = {b.id: done_at(b) for b in briefs if b.status == "done" and not b.meta.get("done_in")}  # T-0852: a
+    # task folded into another has no close of its own: its host's record is the one that counts
     reverted = collections.defaultdict(list)
     for _, subj, _, tasks in reverts(p):
         for t in tasks:

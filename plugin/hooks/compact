@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""Foreman compact output (T-0783): a PostToolUse hook for Bash that `fm compact-output on` adds to
+~/.claude/settings.json. An output over LIMIT characters reaches the model as its first HEAD lines, every line that
+reads as a failure (deduplicated, at most HITS), its last TAIL lines and the path of the full text; anything smaller,
+interrupted or an image passes untouched. Stdlib only and no Foreman imports, so it starts fast."""
+import hashlib
+import json
+import os
+import re
+import sys
+
+LIMIT, HEAD, TAIL, HITS, WIDE = 6000, 40, 60, 40, 400
+SAVE_MAX = 2_000_000  # T-0824: characters of full text kept per output (head and tail): a runaway can't fill the disk
+FAILURE = re.compile(r"(?i)(error|exception|traceback|fatal|panic|fail(?:ed|ure|ing|s)?\b|denied|assert|warn(?:ing)?\b|"
+                     r"segfault|killed|timed? ?out|not found|refused|cannot|can't|✗)")  # inside names: AssertionError
+
+
+def clip(line):
+    """A long line cut to WIDE, plus the stretch around a failure word that sits past the cut."""
+    if len(line) <= WIDE:
+        return line
+    m = FAILURE.search(line, WIDE)
+    return line[:WIDE] + " …" + (f" {line[max(WIDE, m.start() - 150):m.end() + 150]} …" if m else "")
+
+
+def compact(text, path):
+    lines = text.splitlines()
+    if len(text) <= LIMIT or len(lines) <= HEAD + TAIL:
+        if len(text) <= LIMIT:
+            return None
+        if all(len(l) <= WIDE for l in lines):
+            return None  # T-0821: few lines, none long: nothing to cut
+        lines = [clip(l) for l in lines]  # few, very long lines
+        return "\n".join(lines) + f"\n[Foreman: long lines cut at {WIDE} characters; full output: {path} ]"
+    middle, seen, hits = lines[HEAD:-TAIL], set(), []
+    for i, line in enumerate(middle, HEAD + 1):
+        key = line.strip()  # exact: test_12 and test_13 failing are two failures
+        if FAILURE.search(line) and key not in seen:
+            seen.add(key)
+            hits.append(f"{i}: {clip(line)}")
+    shown = hits[:HITS] + ([f"… {len(hits) - HITS} more failure lines in the full output"] if len(hits) > HITS else [])
+    cut = [clip(l) for l in lines[:HEAD]] + [
+        f"[Foreman: {len(middle)} lines omitted ({len(text):,} characters in all)"
+        + ("; the omitted lines that read as failures follow, with their line numbers" if shown else "")
+        + f"; full output: {path} ]"
+    ] + shown + ([f"[… end of failure lines]"] if shown else []) + [clip(l) for l in lines[-TAIL:]]
+    return "\n".join(cut)
+
+
+def main():
+    try:
+        pl = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        return 0
+    r = pl.get("tool_response")
+    if pl.get("tool_name") != "Bash" or not isinstance(r, dict) or r.get("interrupted") or r.get("isImage"):
+        return 0
+    out, err = str(r.get("stdout") or ""), str(r.get("stderr") or "")
+    if len(out) + len(err) <= LIMIT:
+        return 0
+    home = os.environ.get("FOREMAN_HOME") or os.path.join(os.path.expanduser("~"), ".claude", "foreman")
+    # T-0821: FOREMAN_STATE as fmcore.state_dir reads it. ponytail: state_dir's fallback for an unwritable default
+    # isn't mirrored (that case passes through below); import its logic if sandboxed sessions need compacting
+    state = os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"])) if os.environ.get("FOREMAN_STATE") \
+        else os.path.join(home, "state")
+    sid = re.sub(r"[^\w-]", "", str(pl.get("session_id") or "session"))[:100] or "session"
+    folder = os.path.join(state, "outputs", sid)
+    full = out + (("\n[stderr]\n" + err) if err else "")
+    name = hashlib.sha1(full.encode("utf-8", "replace")).hexdigest()[:12]  # a file name, not a security use
+    if len(full) > SAVE_MAX:
+        half = SAVE_MAX // 2
+        full = (full[:half] + f"\n[Foreman: {len(full) - 2 * half:,} characters cut from the middle of this output]\n"
+                + full[-half:])
+    path = os.path.join(folder, name + ".txt")
+    try:
+        os.makedirs(folder, mode=0o700, exist_ok=True)  # outputs can hold secrets: the user's eyes only
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0), 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8", errors="replace") as f:  # T-0839: a lone surrogate
+            f.write(full)
+    except (OSError, ValueError):
+        return 0  # no full text to point at: the output passes through untouched
+    new_out, new_err = compact(out, path), compact(err, path)
+    if new_out is None and new_err is None:
+        new_out = out + f"\n[Foreman: full output: {path} ]"  # stdout and stderr each under the limit, together over it
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "updatedToolOutput": {
+        "stdout": out if new_out is None else new_out, "stderr": err if new_err is None else new_err,
+        "interrupted": False, "isImage": False}}}))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

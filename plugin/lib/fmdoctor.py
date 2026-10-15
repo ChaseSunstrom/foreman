@@ -227,6 +227,11 @@ def check_frontmatter(plugin=PLUGIN):
             bad.append(f"agent {f}: not read-only (empty or missing tools list = every tool)")
         elif tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set()):
             bad.append(f"agent {f}: not read-only ({', '.join(sorted(tools - READ_ONLY_TOOLS - EDITING_AGENTS.get(f, set())))})")
+        # T-0768: Claude Code ignores a value it doesn't know, so a typo silently undoes the saving
+        for key, ok in (("effort", {"low", "medium", "high", "xhigh", "max"}.__contains__),
+                        ("maxTurns", lambda v: v.isdigit() and int(v) > 0), ("omitClaudeMd", {"true", "false"}.__contains__)):
+            if key in meta and not ok(meta[key]):
+                bad.append(f"agent {f}: {key}: {meta[key]!r} isn't a value Claude Code knows")
     return Result("frontmatter", "FAIL" if bad else "PASS", "; ".join(bad) or "skills and read-only agents valid")
 
 
@@ -288,7 +293,7 @@ def check_backup(home):
     d = os.path.join(home, "backups")
     tgz = sorted(f for f in os.listdir(d) if f.endswith(".tgz")) if os.path.isdir(d) else []
     if not tgz:
-        return Result("backup", "FAIL", "no backups/*.tgz")
+        return Result("backup", "WARN", "no backups/*.tgz yet")  # T-0844: a fresh install has none: not a failure
     files = 0
     try:  # ponytail: reads every member's bytes, never extracts; a real extract into a temp dir if this misses one
         with tarfile.open(os.path.join(d, tgz[-1]), "r:gz") as t:
@@ -442,6 +447,42 @@ def check_python(v=sys.version_info[:3], refresh=None, child=False):
     if exe:
         return Result("python", "WARN", f"python3 is {have}, below 3.12.7; Foreman now runs under {exe}")
     return Result("python", "FAIL", f"python3 is {have}; Foreman needs 3.12.7+ (rerun install.sh to install one)")
+
+
+# T-0785: (feature, minimum Claude Code, globs under plugin/, regex showing it is used); a feature no file uses isn't checked
+CC_FEATURES = [
+    ("hook onFailure", (2, 1, 295), ["hooks/*.json"], r'"onFailure"'),
+    ("agent omitClaudeMd", (2, 1, 271), ["agents/*.md"], r"(?m)^omitClaudeMd:"),
+    ("agent effort/maxTurns", (2, 1, 78), ["agents/*.md"], r"(?m)^(effort|maxTurns):"),
+    ("hook if", (2, 1, 85), ["hooks/*.json"], r'"if"\s*:'),
+    ("plugin monitors", (2, 1, 105), ["monitors/monitors.json"], r"."),
+    ("PostToolUse updatedToolOutput", (2, 1, 121), ["lib/fmhooks.py"], r"updatedToolOutput"),
+    ("UserPromptSubmit sessionTitle", (2, 1, 94), ["lib/fmhooks.py"], r"sessionTitle"),
+    ("worktree.baseRef setting", (2, 1, 133), ["lib/fmsetup.py"], r"baseRef"),  # wired into ~/.claude (T-0803)
+]
+
+
+def check_cc_features(version=None, plugin=PLUGIN):
+    """T-0785: WARN naming each Foreman feature in use that the installed Claude Code is too old for (it would
+    silently do nothing). `version`: stubbed (tuple); default fmhooks._cc_version(); () = unknown, nothing to compare."""
+    if version is None:
+        import fmhooks
+        version = fmhooks._cc_version()
+    if not version:
+        return Result("claude code features", "PASS", "Claude Code version unknown; not compared")
+    old = []
+    for name, need, globs, pat in CC_FEATURES:
+        if version >= need:
+            continue
+        for g in globs:
+            if any(re.search(pat, open(f, encoding="utf-8", errors="replace").read())
+                   for f in glob.glob(os.path.join(plugin, g))):
+                old.append(f"{name} (needs {'.'.join(map(str, need))})")
+                break
+    have = ".".join(map(str, version))
+    return Result("claude code features", "WARN" if old else "PASS",
+                  f"Claude Code {have} is too old for {', '.join(old)}; upgrade it (claude update)" if old
+                  else f"Claude Code {have} supports every Claude Code feature Foreman uses")
 
 
 def check_scripts(home, full=False):
@@ -610,7 +651,14 @@ def check_self_docs(home=None, plugin=PLUGIN):
     readme, install = _read(os.path.join(home, "README.md")) or "", _read(os.path.join(home, "install.sh")) or ""
     header = "\n".join(l for l in install.splitlines()[:20] if l.startswith("#"))  # the --help text
     help_flags = set(re.findall(r"(--[\w-]+)", header))
-    readme_flags = {f for line in readme.splitlines() if line.startswith("Flags:") for f in re.findall(r"`(--[\w-]+)`", line)}
+    readme_flags, in_flags = set(), False  # T-0902: a "Flags:" line, or a **Flags:** heading and the bullets under it
+    for line in readme.splitlines():
+        if re.match(r"\**Flags:", line.strip()):
+            in_flags = True
+        elif line.strip() and not line.lstrip().startswith("- "):
+            in_flags = False
+        if in_flags:
+            readme_flags |= set(re.findall(r"`(--[\w-]+)`", line))
     bad += [f"README.md doesn't document install.sh {f}" for f in sorted(help_flags - readme_flags)]
     bad += [f"README.md lists {f}, which install.sh doesn't have" for f in sorted(readme_flags - help_flags)]
     bad = list(dict.fromkeys(bad))
@@ -646,6 +694,16 @@ def check_hook_events(registered=None):
     if missing:
         return Result("hook events", "FAIL", "handled but not registered in hooks.json: " + ", ".join(missing))
     return Result("hook events", "PASS", f"{len(registered)} events registered (after changes: /reload-plugins)")
+
+
+def check_worktree_base(settings):
+    """T-0803: Agent isolation worktrees start from worktree.baseRef; the default ('fresh', the remote's default branch)
+    makes a builder lane start behind the branch being worked, and the builder stops (T-0379)."""
+    ref = ((settings or {}).get("worktree") or {}).get("baseRef") or "fresh"
+    if ref == "head":
+        return Result("worktree base", "PASS", "builder lanes start from the current HEAD")
+    return Result("worktree base", "WARN", f"worktree.baseRef is {ref!r}: builder lanes start from the remote's default "
+                                           "branch, not yours (fm install-user sets head)")
 
 
 def check_plugins():
@@ -897,7 +955,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply)]
+               check_supply(claude, accept_supply), check_worktree_base(settings)]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
@@ -926,7 +984,7 @@ def run_all(full=False, accept_supply=False):
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
-                check_routing()]
+                check_routing(), check_cc_features()]
     return results
 
 
@@ -953,8 +1011,9 @@ def cmd_doctor(args):
     if args.json:
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
     else:
-        for r in results:
-            print(f"{r.status:4}  {r.name:<20} {r.detail}")
+        for r in results:  # T-0844: only what needs a look, unless -v
+            if r.status != "PASS" or getattr(args, "verbose", False):
+                print(f"{r.status:4}  {r.name:<20} {r.detail}")
         print(f"\nfm doctor: {'OK' if ok else 'FAILED'} ({sum(r.status == 'PASS' for r in results)} pass, "
               f"{sum(r.status == 'WARN' for r in results)} warn, {sum(r.status == 'FAIL' for r in results)} fail)")
     if not ok:
