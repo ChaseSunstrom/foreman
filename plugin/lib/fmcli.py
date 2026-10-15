@@ -3461,7 +3461,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
@@ -3487,6 +3487,7 @@ def cmd_help(args):
 START_HERE = """usage: fm [-p PROJECT] <command> [options]
 
 Foreman state CLI (the only writer of Foreman state). Start here:
+  fm demo                  watch Foreman fix a seeded bug in a throwaway repo (no model calls)
   fm init                  register this repo (once; most commands do it for you)
   fm capture "<request>"   put a request in the inbox
   fm task new "<title>" --type FIX --tier S --ac "<done when> :: <cmd>" --step "<step>" --focus
@@ -4258,6 +4259,8 @@ def build_parser():
     s = add("mission", lazy("fmmission", "cmd_mission"), help="the mission and brainstorm seeds for an open-ended "
                                                                "request, composed from the project (T-0375)")
     s.add_argument("--request", help="the user's words, verbatim")
+    add("demo", lazy("fmdemo", "cmd_demo"), help="see Foreman work on a seeded bug in a throwaway repo, with no model "
+                                                  "calls and nothing left behind (T-0870)")
     s = add("smoke", lazy("fmsmoke", "cmd_smoke"), help="check the product the way its user uses it: the web UI in a "
                                                          "headless browser at desktop and phone width (T-0417)")
     s.add_argument("action", nargs="?", choices=["run", "set"], default="run")
