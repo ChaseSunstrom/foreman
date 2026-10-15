@@ -1791,7 +1791,8 @@ def stop(pl):
         reload_due = sd["drive"] and _ui_changed(sid, _turn_began(p, sid, d0), d0.get("ui_mtime"))
         oneoff = _oneoff()  # T-0775: only its own background work holds a one-off headless session
         nudge = None if reload_due else _headless_wait(pl) if oneoff else (
-            _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _question_nudge(pl)
+            _evidence_gate(p, act, pl, g, {b.id for b in briefs if b.status in c.CLOSED}) or _claims_gate(pl, g)
+            or _question_nudge(pl)
             or _headless_wait(pl))
         reason = nudge or (None if oneoff else _drive(p, sd, briefs, pl, g))
         d = g["drive"].setdefault(sid, {"count": 0})
@@ -1894,6 +1895,75 @@ def _headless_wait(pl):
     return (f"Foreman: this is a headless run (claude -p): it ends with this turn, so the background work still running "
             f"({', '.join(running[:3])}) never reports back. Wait for it now (read its output until it finishes, or "
             f"rerun it in the foreground), then finish with its result.")
+
+
+_TEST_CLAIM = re.compile(r"(?i)\b(?:all |the )?(?:tests?|suite|checks|gates)\s+(?:now\s+|all\s+)?(?:pass(?:es|ing)?|"
+                         r"(?:are |is )?green)\b")
+_TEST_CMD = re.compile(r"\b(pytest|unittest|run\.py|(npm|yarn|pnpm|bun)( run)? test|go test|cargo test|make (test|check)|"
+                       r"tox|jest|vitest|mocha|rspec|phpunit|ctest|fm check|fm task (evidence|finish|prove)\b.*--run)")
+_RUN_FAILED = re.compile(r"\bFAILED\b|\b[1-9]\d* (failed|errors?)\b|✗|\bexit [1-9]\d*\b|Traceback \(most recent")
+_EDIT_TOOLS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+def _turn_calls(path, cap=4_000_000):
+    """T-0886: [(tool, input, result text, is_error)] of the transcript's last turn (since the user's last prompt), in
+    order; [] when it can't be read. Reads at most the last `cap` bytes."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, os.path.getsize(path) - cap))
+            lines = f.read().decode("utf-8", "replace").splitlines()
+    except (OSError, TypeError):
+        return []
+    calls, by_id = [], {}
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except ValueError:
+            continue
+        content = (e.get("message") or {}).get("content") if isinstance(e, dict) else None
+        if e.get("type") == "user" and (isinstance(content, str) or any(
+                isinstance(x, dict) and x.get("type") == "text" for x in content or [])):
+            if not str(content).lstrip().startswith("<task-notification>"):
+                calls, by_id = [], {}  # a new prompt from the user starts the turn again
+            continue
+        for x in content if isinstance(content, list) else []:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "tool_use":
+                by_id[x.get("id")] = len(calls)
+                calls.append([x.get("name"), x.get("input") or {}, "", False])
+            elif x.get("type") == "tool_result" and x.get("tool_use_id") in by_id:
+                body = x.get("content")
+                text = body if isinstance(body, str) else " ".join(
+                    str(y.get("text") or "") for y in body or [] if isinstance(y, dict))
+                calls[by_id[x["tool_use_id"]]][2:] = [text, bool(x.get("is_error"))]
+    return [tuple(x) for x in calls]
+
+
+def _claims_gate(pl, g):
+    """T-0886: a reply saying the tests pass, held once when the turn's own runs don't back it: a file edited after the
+    last test run, or that run failed. A turn with no edits and no runs isn't judged."""
+    msg = pl.get("last_assistant_message") or ""
+    m = next((x for x in _TEST_CLAIM.finditer(msg) if not _NEG.search(msg[max(0, x.start() - 40):x.start()])), None)
+    if not m or pl.get("stop_hook_active") or not pl.get("transcript_path"):
+        return None
+    key = f"{pl.get('session_id')}:{hashlib.sha1(msg.encode()).hexdigest()[:12]}"
+    if key in g.setdefault("claims", []):
+        return None
+    calls = _turn_calls(pl["transcript_path"])
+    edits = [i for i, x in enumerate(calls) if x[0] in _EDIT_TOOLS]
+    runs = [i for i, x in enumerate(calls) if x[0] == "Bash" and _TEST_CMD.search(str(x[1].get("command") or ""))]
+    if edits and (not runs or runs[-1] < edits[-1]):  # an edit after the last run: whatever it said is stale
+        last = os.path.basename(str(calls[edits[-1]][1].get("file_path") or calls[edits[-1]][1].get("notebook_path")))
+        why = f"no test ran after the last edit ({last})"
+    elif runs and (calls[runs[-1]][3] or _RUN_FAILED.search(  # its verdict is at the end; prove's red is meant to fail
+            re.sub(r"(?m)^.*start tree.*$", "", calls[runs[-1]][2])[-300:])):
+        why = f"the last test run failed (`{c.fit(str(calls[runs[-1]][1].get('command')), 80)}`)"
+    else:
+        return None
+    g["claims"] = (g["claims"] + [key])[-50:]
+    return (f"Foreman: the reply says \"{m.group(0)}\", but {why} this turn. Run the tests and quote the result, or "
+            "say they weren't run.")
 
 
 def _evidence_gate(p, act, pl, g, closed=()):

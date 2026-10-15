@@ -1242,6 +1242,42 @@ class Stop(HookCase):
     def decision(self, p):
         return (parse(p) or {}).get("decision")
 
+    def turn(self, *calls):
+        """A transcript: the user's prompt, then (tool, input, result text, is_error) calls in order."""
+        self._turns = getattr(self, "_turns", 0) + 1
+        path = os.path.join(self.tmp, f"turn{self._turns}.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"content": "fix the parser"}}) + "\n")
+            for i, (tool, inp, text, err) in enumerate(calls):
+                f.write(json.dumps({"type": "assistant", "message": {"content": [
+                    {"type": "tool_use", "id": f"u{i}", "name": tool, "input": inp}]}}) + "\n")
+                f.write(json.dumps({"type": "user", "message": {"content": [
+                    {"type": "tool_result", "tool_use_id": f"u{i}", "content": text, "is_error": err}]}}) + "\n")
+        return path
+
+    def test_a_tests_pass_claim_needs_a_passing_run_after_the_last_edit(self):
+        # T-0886: the Stop gate checked only "done"; "all tests pass" went unchecked against the turn's own runs
+        self.fm("init")
+        tid = self.task()
+        self.fm("drive", "off")
+        for n in ("1", "2"):  # the done gate is satisfied: only the test claim is judged
+            self.fm("task", "evidence", tid, "--step", n, "--run", "true")
+        red = ("Bash", {"command": "python3 -m pytest -q"}, "1 failed, 3 passed", True)
+        green = ("Bash", {"command": "python3 -m pytest -q"}, "4 passed in 0.2s", False)
+        edit = ("Edit", {"file_path": "a.py"}, "ok", False)
+        claim = "Fixed the parser; all tests pass now."
+        stop = lambda t, m=claim: self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": m,  # noqa
+                                                     "session_id": "sess-1", "transcript_path": t})
+        p = stop(self.turn(red, edit))
+        self.assertEqual(self.decision(p), "block")
+        self.assertIn("after the last edit (a.py)", parse(p)["reason"])
+        self.assertIsNone(self.decision(stop(self.turn(red, edit))), "once per message")
+        p = stop(self.turn(edit, red), "Done: the tests pass.")
+        self.assertIn("the last test run failed", parse(p)["reason"])
+        self.assertIsNone(self.decision(stop(self.turn(red, edit, green), "Now the tests pass and it's fixed.")))
+        self.assertIsNone(self.decision(stop(self.turn(("Read", {"file_path": "a.py"}, "x", False)),
+                                             "The tests pass, as before.")), "no edit, no run: not judged")
+
     def test_premature_done_blocks_once_per_step(self):
         self.fm("init")
         tid = self.task()

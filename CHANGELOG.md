@@ -34,6 +34,7 @@
   - Work snapshots: before a Bash command discards uncommitted work (`git reset --hard`, `checkout -- .`, `restore`, `clean -f`, `switch -f`, an `--abort`, `worktree remove --force`, `stash drop`/`clear`…), Foreman saves it under `refs/foreman/snapshots` within 3 s and says so (or that it couldn't); `fm snapshots` lists them with the command that brings one back; `fm tidy` prunes them after 14 days (T-0884).
   - `fm night` runs the sentinel: closed tasks' checks against HEAD, a new failure bisected and captured (T-0888). `fm why` quotes the user's own request behind a line (T-0889). `fm projects --next` ranks every project's next action in one list (T-0890).
   - `fm tour` gives each changed file a review-risk verdict (review, glance, safe to skim) with its reasons and names what to review first; `fm tour --since main` does it for a whole branch or night's run, uncommitted work included (T-0885). A bare "continue" is logged as a stall with what the Stop hook did before it, and `fm friction` counts them (T-0887).
+  - A reply saying the tests pass is held once when the turn's own runs don't back it: a file edited after the last test run, or that run failed (T-0886).
   - CI: the suite runs on push and pull requests on Linux (Python 3.12 and 3.14), macOS reported (T-0882).
 
 ## 1.2.27 — 2026-10-09
