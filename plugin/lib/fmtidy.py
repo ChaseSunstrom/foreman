@@ -182,6 +182,7 @@ def check_project(p, apply, actions):
     out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
     out += _prune_snapshots(p, apply, actions)
+    out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
@@ -193,6 +194,32 @@ def check_project(p, apply, actions):
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
     return out
+
+
+BACKUP_KEEP = 5
+BACKUP_PARTS = ("tasks", "archive", "meta.json", "ledger.jsonl", "decisions.md")  # the record; the rest is derived
+
+
+def _backup_state(p, apply, actions):
+    """T-0922: a dated copy of the project's record (briefs, ledger, meta, decisions) at each tidy --apply, the newest
+    BACKUP_KEEP kept; views, graphs, research and audits are rebuilt or reference, so they stay out."""
+    if not apply:
+        return []
+    import tarfile
+    d = os.path.join(p.dir, "backups")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + ".tar.gz")
+    with c.lock(p.dir), tarfile.open(path + ".part", "w:gz") as t:
+        for part in BACKUP_PARTS:
+            if os.path.exists(os.path.join(p.dir, part)):
+                t.add(os.path.join(p.dir, part), arcname=part)
+    os.replace(path + ".part", path)
+    old = sorted(f for f in os.listdir(d) if f.endswith(".tar.gz"))[:-BACKUP_KEEP]
+    for f in old:
+        os.remove(os.path.join(d, f))
+    actions.append(("backup", os.path.basename(path)))
+    return [finding(p.slug, "state_backup", "info", f"record backed up to backups/{os.path.basename(path)}",
+                    f"the newest {BACKUP_KEEP} are kept" + (f"; {len(old)} older removed" if old else ""))]
 
 
 def _prune_snapshots(p, apply, actions):
