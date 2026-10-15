@@ -2293,8 +2293,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 flag, eq, val = a.partition("=")
                 if flag.startswith("--r") and "--run".startswith(flag):
                     found += check_bash(val if eq else b, ctx, depth + 1)
-            if sub == "check" and rest[:1] == ["add"]:
-                found += check_bash(" ".join(rest[1:]), ctx, depth + 1)
+            for stored in _fm_stored(sub, rest, fm_args):  # T-0901: a command fm keeps and runs later
+                found += check_bash(stored, ctx, depth + 1)
             if sub in ("quiet", "at"):  # T-0898: their trailing command runs (fm quiet -- rm -rf ~ used to pass)
                 words = _fm_trailing(rest, 1 if sub == "at" else 0)
                 if words:
@@ -2809,6 +2809,63 @@ _SYSTEMCTL_MUTATE = {"start", "stop", "restart", "reload", "try-restart", "reloa
                      "reenable", "mask", "unmask", "kill", "isolate", "daemon-reload", "daemon-reexec", "set-default",
                      "poweroff", "reboot", "halt", "suspend", "hibernate", "edit", "set-property", "link", "revert",
                      "preset", "reset-failed"}
+
+
+_FM_VALUED = {"--timeout", "--repeat", "--evidence", "--step", "--ac", "--expect", "--status", "--json-key", "-p",
+              "--project", "--tail", "--top", "--text", "--section", "--file", "--run", "--verify", "--check", "--same",
+              "--stack-check", "--good", "--why", "--audit", "--lens", "--docs", "--lesson", "--commit", "--type",
+              "--tier", "--title", "--source", "--until", "--model", "--max"}
+NOTIFY_PROBE = "rm -rf ~"  # what $1 is read as: a notify command that runs its message as code is refused
+
+
+def _fm_words(rest):
+    """T-0901 review: an fm call's positional words, its options (and their values) left out, as argparse reads them."""
+    out, i = [], 0
+    while i < len(rest):
+        a = rest[i]
+        if a == "--":
+            return out + rest[i + 1:]
+        if a.startswith("-") and len(a) > 1:
+            i += 2 if a in _FM_VALUED else 1
+            continue
+        out.append(a)
+        i += 1
+    return out
+
+
+def _fm_stored(sub, rest, fm_args):
+    """T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
+    (`--ac "x :: CMD"`, `--verify`, `fm task ac … "x :: CMD"`, an Acceptance criteria text's `verify with \`CMD\``,
+    an intake `DONE-WHEN: x :: CMD`), `fm task assume --check`, `--same`, `--stack-check`, `fm check add`/`affected`
+    ({tests} and {names} read as one word), `fm smoke set cmd`, `fm notify` ($1 read as NOTIFY_PROBE), and the CMD of
+    `fm record` / `fm whyred`. A capture's text runs nothing, so it isn't one."""
+    out, words = [], _fm_words(rest)
+    section = ""
+    for a, b in zip(fm_args, fm_args[1:] + [""]):  # fm refuses abbreviated options, so these are the spellings
+        flag, eq, v = a.partition("=") if a.startswith("--") else (a, "", "")
+        v = v if eq else b
+        if flag in ("--verify", "--same", "--stack-check") or (flag == "--check" and words[:1] == ["assume"]):
+            out.append(v)
+        elif flag == "--ac" and " :: " in v:
+            out.append(v.rpartition(" :: ")[2])
+        elif flag == "--section":
+            section = v
+        elif flag == "--text" and words[:1] == ["set"] and section.lower().startswith("acceptance"):
+            out += re.findall(r"verify with `([^`]+)`", v)
+    if sub == "task" and words[:1] == ["ac"]:
+        out += [w.rpartition(" :: ")[2] for w in words if " :: " in w]
+    if sub == "intake":
+        out += [ln.rpartition(" :: ")[2] for w in words for ln in w.splitlines()
+                if " :: " in ln and re.match(r"\s*(DONE-WHEN|ACCEPT)\s*:", ln, re.I)]
+    if sub == "check" and words[:1] in (["add"], ["affected"]) and words[1:]:
+        out.append(re.sub(r"\{(tests|names)\}", "tests", " ".join(words[1:])))
+    if sub == "smoke" and words[:2] == ["set", "cmd"] and words[2:]:
+        out.append(" ".join(words[2:]))
+    if sub == "notify" and words:
+        out.append(re.sub(r"\$\{?1\}?", NOTIFY_PROBE, " ".join(words)))
+    if sub in ("record", "whyred") and words:
+        out.append(words[0])
+    return [x for x in dict.fromkeys(out) if x.strip()]
 
 
 def _fm_trailing(rest, positionals):

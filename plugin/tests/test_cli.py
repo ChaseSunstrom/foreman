@@ -983,6 +983,24 @@ class DecisionsResearchSelf(ForemanTestCase):
         self.assertIn("Use tomllib; would change if we need writes", text)
         self.assertIn(tid, text)
 
+    def test_a_stored_verify_the_guard_refuses_is_not_run(self):
+        # T-0901: a verify command that never passed the hook (stored before the guard read them, or a brief another
+        # clone synced in) gets the guard's checks before fm runs it; fm itself is run directly here, as such a brief is
+        self.fm("init")
+        gone = os.path.join(os.path.expanduser("~"), "fm-t0901-never-there")
+        self.fm("task", "new", "tidy the parser", "--type", "FEATURE", "--tier", "S", "--ac", f"it parses :: rm -rf {gone}",
+                "--step", "fix it", "--focus")
+        p = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("rm-outside", p.stderr)
+        self.assertIn("won't run", p.stderr)
+        self.assertFalse([e for e in c.ledger_tail(c.find_project(self.repo)) if e.get("event") == "evidence"],
+                         "refused before anything ran")
+        self.fm("check", "add", f"rm -rf {gone}")  # its review: a stored gate is run by fm check
+        p = self.fm("check", check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("won't run", p.stderr)
+
     def test_research_name_must_be_safe(self):
         self.fm("init")
         self.assertEqual(self.fm("research", "add", "../escape", input="x", check=False).returncode, 1)

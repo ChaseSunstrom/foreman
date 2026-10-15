@@ -103,6 +103,8 @@ def _red(root, commit, cmds):
         if _git(root, "worktree", "add", "-q", "--detach", wt, commit).returncode:
             return "its scratch worktree couldn't be made"
         for cmd in cmds:
+            import fmcli
+            fmcli.guard_stored(c.find_project(root), None, cmd)  # T-0901 review: members' verifies, --stack-check
             code, output = c.run_command(wt, cmd, 600)
             if code:
                 return f"{cmd} → {c.run_result(code, output)}"

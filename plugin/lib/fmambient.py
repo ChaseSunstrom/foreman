@@ -67,6 +67,12 @@ def run(p):
             cmd, tests, _ = fmcli.affected(p)
             if not cmd:  # an edit that undid the change selects nothing; a failing last run still needs its answer
                 cmd, tests = _last_failing(p)
+            try:  # T-0901: the affected template is a stored command; one the guard refuses never runs here
+                if cmd:
+                    fmcli.guard_stored(p, None, cmd)
+            except c.PolicyError as e:  # said where fm check --affected would say it, never silently
+                c.log_event(p, "ambient_refused", data={"cmd": c.fit(cmd, 200), "why": c.fit(str(e), 300)})
+                cmd = None
             if cmd:
                 code, output = c.run_command(p.root, cmd, 600)
                 _record(p, cmd, tests, code, output)

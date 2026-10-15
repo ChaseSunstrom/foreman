@@ -680,6 +680,7 @@ def task_packet(p, args):
     if args.check:  # T-0704: a handoff is trusted only while the failure it hands over still happens
         if not repro:
             raise UsageError(f"{b.id} has no failing run recorded to reproduce (fm task evidence {b.id} --run \"<cmd>\")")
+        guard_stored(p, b, repro)  # T-0901 review: a recorded command, rerun
         code, output = c.run_command(p.root, repro, args.timeout)
         if code:
             return out(args, {"task": b.id, "cmd": repro, "reproduces": True},
@@ -733,6 +734,23 @@ def _lint_verify(p, cmds):
             print(f"fm: warning: verify command `{cmd}`: {'; '.join(problems)}", file=sys.stderr)
 
 
+def guard_stored(p, b, cmd):
+    """T-0901: a command fm stored and is about to run (a verify, the affected template, a sentinel recheck) gets the
+    guard's checks, with the task's grants, the standing yes and trust as the hook would apply them; PolicyError when
+    it's refused. What never passed the hook (a brief stored before the guard read these, one fm sync brought in) is
+    caught here."""
+    import fmguard
+    home, meta = os.path.expanduser("~"), c.read_meta(p)
+    ctx = fmguard.Ctx(cwd=p.root, project_root=fmguard.project_root_for(p.root, home), home=home,
+                      foreman_home=c.foreman_home(), state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks(),
+                      scratch=[x for x in ("/tmp", "/var/tmp", os.environ.get("TMPDIR")) if x],
+                      allow=set(b.meta.get("allow") or []) if b else set(), task_id=b.id if b else None,
+                      standing=set(meta.get("standing") or {}), trusted=bool(c.trusted()))
+    block = fmguard.check("Bash", {"command": cmd}, ctx)
+    if block:
+        raise c.PolicyError(f"fm won't run the stored command `{c.fit(cmd, 100)}`: {fmguard.message(block, ctx)}")
+
+
 def task_finish(p, args):
     """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
@@ -757,6 +775,7 @@ def task_finish(p, args):
 
     def run(cmd):
         if cmd not in runs:
+            guard_stored(p, b, cmd)  # T-0901
             runs[cmd] = c.run_command(p.root, cmd, args.timeout)
         return runs[cmd]
     # T-0142: an open step whose evidence is already recorded (fm task evidence --step) just closes; --run is only for
@@ -778,6 +797,8 @@ def task_finish(p, args):
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
         todo.append(("final", None, args.run))
+    for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
+        guard_stored(p, b, cmd)
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -1180,6 +1201,7 @@ def task_prove(p, args):
 def _run_at(p, rev, cmd, timeout):
     """(exit, output) of cmd in a throwaway worktree of rev (a commit, or a tree such as a task's start snapshot)."""
     import tempfile
+    guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901 review: --vacuous runs stored verifies
     if c._git(p.root, "cat-file", "-t", rev, timeout=10).strip() == "tree":
         rev = c._git(p.root, "commit-tree", "--no-gpg-sign", rev, "-m", "fm scratch", timeout=60).strip()
     if not rev:
@@ -2178,6 +2200,7 @@ def cmd_resume(args):
     extra = (f"\nTried on step {n}: " + "; ".join(f"{x} ×{k}" for x, k in tried)) if tried else ""
     green = None if getattr(args, "no_check", False) else _last_green(b)
     if green:  # T-0649: did anything drift since the last green check?
+        guard_stored(p, b, green)  # T-0901 review: a brief's [ran] line can come from another clone
         code, output = c.run_command(p.root, green, 120)
         extra += (f"\nLast green check `{green}` still passes." if code == 0 else
                   f"\nLast green check `{green}` now fails ({c.run_result(code, output)}): something drifted since it "
@@ -2729,6 +2752,7 @@ def cmd_check(args):
     if getattr(args, "repeat", 0):  # T-0475: an intermittent failure's rate, gate by gate (nothing recorded or cached)
         n, rows = max(1, args.repeat), []
         for cmd in c.read_meta(p).get("checks") or []:
+            guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901 review
             passed = sum(1 for _ in range(n) if not c.run_command(p.root, cmd, args.timeout)[0])
             rows.append({"cmd": cmd, "passed": passed, "runs": n})
         out(args, {"repeat": rows}, "\n".join(f"{'✓' if r['passed'] == n else '✗'} {r['passed']}/{n}  {r['cmd']}"
@@ -2809,6 +2833,7 @@ def cmd_check(args):
             results.append((cmd, 0, skip[0], 0.0))
             skipped[cmd] = {"since": skip[1], "tree": skip[2]}
             continue
+        guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
         code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
         if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
@@ -2904,6 +2929,17 @@ def cmd_sentinel(args):
             if m and not _SIDE_EFFECTS.search(m.group(2)):
                 checks.setdefault(m.group(2), (b.id, m.group(1)))
     results = []
+    refused = []
+    for cmd in list(cmds) + list(checks):  # T-0901: a stored check the guard refuses isn't rerun (all, before --max)
+        try:
+            guard_stored(p, None, cmd)
+        except c.PolicyError:
+            refused.append(cmd)
+            cmds.pop(cmd, None)
+            checks.pop(cmd, None)
+    if refused:
+        print(f"fm: warning: {len(refused)} stored check(s) the guard refuses weren't rerun: "
+              + "; ".join(c.fit(x, 60) for x in refused[:3]), file=sys.stderr)
     for cmd, tid in list(cmds.items())[:args.max]:
         code, output = c.run_command(p.root, cmd, args.timeout)
         results.append({"cmd": cmd, "task": tid, "exit": code, "result": c.run_result(code, output)})
@@ -3158,6 +3194,8 @@ def affected(p):
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     cmd, tests, changed = affected(p)
+    if cmd:
+        guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901: the template is a stored command
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
@@ -4341,8 +4379,10 @@ def build_parser():
     s = add("mission", lazy("fmmission", "cmd_mission"), help="the mission and brainstorm seeds for an open-ended "
                                                                "request, composed from the project (T-0375)")
     s.add_argument("--request", help="the user's words, verbatim")
-    add("demo", lazy("fmdemo", "cmd_demo"), help="see Foreman work on a seeded bug in a throwaway repo, with no model "
-                                                  "calls and nothing left behind (T-0870)")
+    s = add("demo", lazy("fmdemo", "cmd_demo"), help="see Foreman work on a seeded bug in a throwaway repo, with no "
+                                                      "model calls and nothing left behind (T-0870)")
+    s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
+                   help="pause per stage and type the commands out, for watching or recording (try 1)")
     s = add("smoke", lazy("fmsmoke", "cmd_smoke"), help="check the product the way its user uses it: the web UI in a "
                                                          "headless browser at desktop and phone width (T-0417)")
     s.add_argument("action", nargs="?", choices=["run", "set"], default="run")

@@ -1436,6 +1436,36 @@ class PluginChanges(GuardCase):
             ("fm at T-0001 --timeout 60 -- npm publish", "publish"),
             ("fm quiet -- python3 -m unittest", None),
             ("fm at HEAD -- python3 -m unittest", None),
+            # T-0901: commands fm stores and runs later (verify commands, the affected template, notify)
+            ("fm task new t --type FIX --tier S --ac 'ok :: rm -rf ~'", "rm-outside"),
+            ("fm task new t --type FIX --tier S --ac='ok :: npm publish'", "publish"),
+            ("fm task ac T-0001 add works --verify 'npm publish'", "publish"),
+            ("fm task ac T-0001 add 'works :: rm -rf ~'", "rm-outside"),
+            ("fm task ac T-0001 edit 1 --verify='rm -rf ~'", "rm-outside"),
+            ("fm check affected 'rm -rf ~ {{tests}}'", "rm-outside"),
+            ("fm notify 'npm publish'", "publish"),
+            ("fm intake 'FIX: x\nDONE-WHEN: ok :: rm -rf ~'", "rm-outside"),
+            ("fm task new t --type FIX --tier S --ac 'ok :: python3 -m pytest -q'", None),
+            ("fm check affected 'python3 -m pytest -q {{tests}}'", None),
+            ("fm notify 'notify-send Foreman \"$1\"'", None),
+            ("fm capture 'the docs say ok :: rm -rf ~ is how you break it'", None),  # a capture runs nothing
+            # its review: options before or between the words, other storing verbs, a notify that runs its message
+            ("fm check --fresh add 'rm -rf ~'", "rm-outside"),
+            ("fm check add --fresh 'rm -rf ~'", "rm-outside"),
+            ("fm check --timeout 5 affected 'npm publish {{tests}}'", "publish"),
+            ("fm notify --test 'rm -rf ~'", "rm-outside"),
+            ("fm notify 'bash -c \"$1\"'", "rm-outside"),
+            ("fm notify 'eval \"${{1}}\"'", "rm-outside"),
+            ("fm smoke set cmd 'rm -rf ~'", "rm-outside"),
+            ("fm task --json ac T-0001 add 'x :: rm -rf ~'", "rm-outside"),
+            ("fm task set T-0001 --section 'Acceptance criteria' --text '- [ ] x — verify with `rm -rf ~`'", "rm-outside"),
+            ("fm task assume T-0001 add 'the db is up' --check 'rm -rf ~'", "rm-outside"),
+            ("fm task finish T-0001 --same 'npm publish'", "publish"),
+            ("fm task finish T-0001 --stack-check 'rm -rf ~'", "rm-outside"),
+            ("fm whyred 'rm -rf ~'", "rm-outside"),
+            ("fm record 'npm publish'", "publish"),
+            ("fm check --fresh", None),
+            ("fm smoke set cmd 'curl -fsS localhost:8000/health'", None),
         ], self.bash)
 
     def test_installed_plugin_files_are_the_users(self):
