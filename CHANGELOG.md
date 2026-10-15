@@ -19,6 +19,17 @@
   - The stray repo-root `skill-index.json` cache (local paths) is no longer tracked (T-0836).
 - Guard: a data heredoc writing an unrun source file isn't interpreter code driving Foreman (T-0766); a literal `cd DIR && python3 -` resolves relative writes in DIR only (T-0774); a data-only `python -c` may send output to /dev/null; state-direct refusals point to `fm research add`; path-only rule ids read `:path` (T-0817).
 - Builders run only the affected tests (T-0806); the hook benchmark judges by CPU time on a busy machine (T-0805); `fm audit prep` asks for ReportFindings fields (T-0780).
+- Round 4: a newcomer's first hour (T-0843 brainstorm: 437 ideas in 31 clusters, grounded against a clean-HOME walkthrough and a survey of rival plugins).
+  - `fm --help` opens with the few commands a newcomer needs, `fm help --all` lists the rest; `fm task new -h` shows types, tiers and an example; `fm task new` reuses a same-titled capture; `fm task done`'s refusal leads with `fm task finish` (T-0854).
+  - `fm doctor` prints only problems (`-v` for every check) and warns when there are no backups; gate detection picks pytest or `python3 -m unittest discover` only when nothing else runs the tests; `fm check` with no gates prints a ready `fm check add` line; the digest says "folded into another" for merged tasks (T-0855).
+  - `install.sh` links `~/.local/bin/fm` (never over someone else's `fm`) and asks before setting bypassPermissions on a terminal (default no; `--bypass` opts in, no terminal leaves the mode alone); uninstall removes only what it added (T-0855, T-0871).
+  - `fm demo` walks a throwaway project through a whole task in under a second, with no model calls (T-0870). INSTALL.md is written for agents, and the README says when not to use Foreman (T-0872). Help text carries no ticket ids (T-0873).
+  - A bare marketplace install (`/plugin marketplace add ChaseSunstrom/foreman`, `/plugin install foreman@foreman`) works; its first session reads Foreman's rules from the plugin and offers to finish setup (T-0874).
+  - Foreman's own `claude -p` children run in one private folder, and `fm tidy` sweeps the empty project folders they left behind (T-0856).
+- Correctness, round 4.
+  - `fm repeats` never suggests a narrowed test run as a gate (T-0857). `fm friction --brief` marks the pass in progress so it isn't called for again while its recon runs; distinct notes of one kind no longer count as repeats (T-0858, T-0860).
+  - Guard: a bare `git init` (or `-q`) in a folder that already holds `.git` isn't a tree write over core; any other form, or any `GIT_*` variable in the command, still is, and the refusal says to chain the cd with `&&` or pass the path (T-0859).
+  - `fm check --affected` runs a test file the task added or changed even before the map links it (T-0875). Evidence runs drop bytecode older than its source, so a same-second, same-size edit never runs stale code (T-0876). A check's track record counts `fm task prove`'s failing start-tree run (T-0880).
 
 ## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).
