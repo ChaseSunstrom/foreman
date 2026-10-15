@@ -2326,7 +2326,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
-            if sub == "pause" and "off" in rest[:2]:  # T-0591: the user's stop is lifted by the user
+            if sub == "posture" and "lite" in rest:  # review: a flag before the word (--json lite) counts too  # T-0963 review: lowering the hooks is the user's call
+                found.append(("self-authorize", "fm posture lite turns Foreman's hooks off but the guard's: the user "
+                                                "decides that (they can type ! fm posture lite)"))
+            if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
                 found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
                                                 "runs unattended, so only they lift it (they can type ! fm pause off)"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
