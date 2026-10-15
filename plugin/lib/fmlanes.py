@@ -270,7 +270,11 @@ def merge(p, b, main, unverified=None):
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows
         c.log_event(p, "lane_unverified", task=b.id, data={"reason": unverified.strip(), "branch": branch})
     else:
-        _verify(b)
+        try:
+            _verify(b)
+        except (c.PolicyError, fmcli.UsageError) as e:  # T-0949: a refusal is an enforce event fm doctor counts
+            c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": str(e)[:300], "branch": branch})
+            raise
     pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
     pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
