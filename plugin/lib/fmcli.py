@@ -2808,6 +2808,21 @@ def cmd_check(args):
         return out(args, {"ambient": meta["ambient"]},
                    "Ambient tests on: after each edit the affected tests run in the background; you hear only when "
                    "they flip." if meta["ambient"] else "Ambient tests off.")
+    if args.action == "onwrite":  # T-0947: a validator the write hook runs on matching files; a failure blocks
+        glob_, cmd = (args.words[:1] or [None])[0], " ".join(args.words[1:])
+        if cmd and "{file}" not in cmd:
+            raise UsageError("fm check onwrite GLOB 'CMD {file}': the command needs {file}, the path just written")
+        if cmd:
+            guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd.replace("{file}", "file"))
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            rules = dict(meta.get("onwrite") or {})
+            if glob_:
+                rules.pop(glob_, None) if not cmd else rules.update({glob_: cmd})
+                meta["onwrite"] = rules
+                c.write_meta(p, meta)
+        return out(args, {"onwrite": rules}, "\n".join(f"{g}: {x}" for g, x in rules.items())
+                   or "No onwrite validators: fm check onwrite GLOB 'CMD {file}'.")
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -4243,10 +4258,12 @@ def build_parser():
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
-                                                                          "ambient"])
+                                                                          "ambient", "onwrite"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
-                                            "(paths) or {names} (file names without extension)")
+                                            "(paths) or {names} (file names without extension); onwrite: GLOB and a "
+                                            "command with {file}, run on each matching write (5 s; a failure blocks; "
+                                            "GLOB alone removes it; nothing lists them)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
     s.add_argument("--repeat", type=int, default=0, help="run each gate N times and report its pass rate (an "
