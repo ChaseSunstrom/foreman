@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- Scout (T-0950): Foreman finds its own work. When the queue drains under full autonomy, `fm scout` captures what nobody asked for yet: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly self-improvement pass and a weekly brainstorm. Each finding is captured once under its own key, at most 3 a run and 5 open. `fm night` runs it first; skill sources older than a week are refreshed.
+- `fm check --affected` also runs tests that historically change with the edited files (T-0952).
+- A criterion whose verify command reaches a live service (aws, gcloud, kubectl, terraform apply, …) gets a lint warning (T-0943).
 
 ## 1.2.30 — 2026-10-15
 - Stack library (T-0933, T-0941): 1,078 on-demand cards in 27 areas.

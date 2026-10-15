@@ -3637,7 +3637,7 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
                              "plugins docs doctor canary tidy"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
-    ("Running elsewhere", "lane page serve run session claude agents night orders mcp ui projects sweep machine watch "
+    ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -3997,6 +3997,10 @@ def build_parser():
     s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
+    s = add("scout", lazy("fmscout", "cmd_scout"), help="find work nobody asked for yet: a newer Claude Code, stack cards "
+            "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
+    s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
+    s.add_argument("--dry", action="store_true", help="list what it would capture; capture nothing")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
