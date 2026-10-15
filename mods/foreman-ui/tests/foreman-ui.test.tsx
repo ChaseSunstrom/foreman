@@ -367,6 +367,38 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
   await ui.unmount()
 })
 
+test('the Skills card: recent skills and cards with their age, top uses, unread suggestions; folded it still counts unread (T-0939)', async ($, on) => {
+  const skills = {
+    recent: [
+      { name: 'python', kind: 'card', at: '2026-10-15T12:00:00Z' },
+      { name: 'foreman:brainstorm', kind: 'skill', at: '2026-10-15T11:00:00Z' },
+    ],
+    counts: { 'foreman:brainstorm': 3, python: 1 },
+    suggested: ['python', 'typescript', 'semver'],
+    unread: ['typescript', 'semver'],
+  } as const
+  world(on, [{ ...VIEW, skills: { ...skills, recent: [...skills.recent], suggested: [...skills.suggested], unread: [...skills.unread] } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-skills' })).toBeDefined()
+  const missing: string[] = []
+  for (const text of [/4 uses · 7d · 2 unread/, /▤ python \S+ ago/, /✦ foreman:brainstorm \S+ ago/, /foreman:brainstorm ×3 · python ×1/, /fm lib show typescript · fm lib show semver/])
+    if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
+  expect(missing).toEqual([])
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /fm lib show typescript/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /2 unread/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an empty skills block shows no Skills card', async ($, on) => {
+  world(on, [{ ...VIEW, skills: { recent: [], counts: {}, suggested: [], unread: [] } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-skills' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('a quiet day shows no spend, bench or research cards', async ($, on) => {
   world(on, [{ ...VIEW, budget: { ...NEWS.budget!, today_usd: 0, subagent_tokens: 0, halved: null, subagents_paused: null }, bench: null, research: [] }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
