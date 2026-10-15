@@ -4526,6 +4526,8 @@ def build_parser():
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
     s.add_argument("id", nargs="?")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
+    s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
+                                                          "reason on the ledger (main thread only, T-0948)")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")

@@ -310,3 +310,48 @@ class Contract(_Tasks):
         self.assertNotEqual(self.fm("lane", "brief", three, check=False).returncode, 0)
         self.fm("lane", "rm", one)
         self.fm("lane", "brief", three)
+
+
+class LaneMergeGate(_Tasks):
+    """T-0948: fm lane merge re-runs the lane task's criteria in the worktree and refuses red."""
+
+    def gated(self, title, ac):
+        tid = json.loads(self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", ac, "--step", "build",
+                                 "--json").stdout)["id"]
+        wt = os.path.join(self.tmp, "wt-" + tid)
+        git(self.repo, "worktree", "add", "-q", "-b", f"foreman/{tid}", wt)
+        self.fm("focus", tid, cwd=wt)
+        with open(os.path.join(wt, tid + ".py"), "w") as f:
+            f.write("x = 1\n")
+        git(wt, "add", tid + ".py")
+        git(wt, "commit", "-qm", "builder work")
+        return tid, wt
+
+    def test_merge_refuses_red(self):
+        tid, wt = self.gated("Red", "it passes :: sh -c 'echo line1; echo broken; exit 3'")
+        p = self.fm("lane", "merge", tid, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("exit 3", p.stderr + p.stdout)
+        self.assertIn("broken", p.stderr + p.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, tid + ".py")), "red: nothing merged")
+        green, wt2 = self.gated("Green", "it is in the worktree :: test -f T-0002.py")  # the verify runs in the lane
+        self.fm("lane", "merge", green)
+        self.assertTrue(os.path.exists(os.path.join(self.repo, green + ".py")))
+        bare, _ = self.gated("Bare", "nothing to run")
+        p = self.fm("lane", "merge", bare, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("plan verify commands first", p.stderr + p.stdout)
+
+    def test_unverified_guardrails(self):
+        import fmcore as c
+        tid, wt = self.gated("Waived", "it passes :: false")
+        for reason in ("", "   "):
+            p = self.fm("lane", "merge", tid, "--unverified", reason, check=False)
+            self.assertNotEqual(p.returncode, 0, repr(reason))
+        p = self.fm("lane", "merge", tid, "--unverified", "builder waives", cwd=wt, check=False)
+        self.assertNotEqual(p.returncode, 0, "a builder can't waive its own gate")
+        self.assertFalse(os.path.exists(os.path.join(self.repo, tid + ".py")))
+        self.fm("lane", "merge", tid, "--unverified", "gate is flaky here")
+        self.assertTrue(os.path.exists(os.path.join(self.repo, tid + ".py")))
+        ev = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e["event"] == "lane_unverified"]
+        self.assertEqual(ev[-1]["data"]["reason"], "gate is flaky here")
