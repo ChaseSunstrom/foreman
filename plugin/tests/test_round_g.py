@@ -70,15 +70,15 @@ class RoundG(ForemanTestCase):
 
     def test_an_edit_that_breaks_syntax_is_said_at_once(self):
         path = self.write("broken.py", "def f(:\n    pass\n")
-        out = self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": path}}).stdout
+        out = self.hook("PostToolUseValidate", {"tool_name": "Edit", "tool_input": {"file_path": path}}).stdout
         self.assertIn("broken.py:1: SyntaxError", out)
         path = self.write("conf.json", '{"a": 1,}')
-        self.assertIn("not valid JSON", self.hook("PostToolUse", {"tool_name": "Write",
+        self.assertIn("not valid JSON", self.hook("PostToolUseValidate", {"tool_name": "Write",
                                                                   "tool_input": {"file_path": path}}).stdout)
         jsonc = self.write("tsconfig.json", '{"compilerOptions": {}, // comments are fine here\n}')
-        self.assertEqual(self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": jsonc}}).stdout, "")
+        self.assertEqual(self.hook("PostToolUseValidate", {"tool_name": "Edit", "tool_input": {"file_path": jsonc}}).stdout, "")
         ok = self.write("fine.py", "x = 1\n")
-        self.assertEqual(self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": ok}}).stdout, "")
+        self.assertEqual(self.hook("PostToolUseValidate", {"tool_name": "Edit", "tool_input": {"file_path": ok}}).stdout, "")
 
     def test_check_suggests_gates_and_stops_early_when_asked(self):
         self.write("package.json", json.dumps({"scripts": {"test": "jest"}}))
