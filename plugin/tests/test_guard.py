@@ -1052,7 +1052,12 @@ class InterpreterWrites(GuardCase):
                                   for _, d in g.check_bash(self.sub(cmd), self.ctx()))
         body = "import fmcore\nfmcore.write_meta(p, {{}})\nEOF\n"
         for cmd in ("cat >> {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q {fhome}/plugin/tests",
-                    "tee -a {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q"):
+                    "tee -a {fhome}/plugin/lib/fmrecall.py <<'EOF'\n" + body + "python3 -m pytest -q",
+                    # T-0981: a test file, a builder worktree's copy, a double-quoted marker (7 blocks in a week)
+                    "cat >> {fhome}/plugin/tests/test_x.py <<'EOF'\n" + body + "python3 {fhome}/plugin/tests/run.py -k X",
+                    "cat >> {fhome}/.claude/worktrees/agent-1/plugin/lib/fmrecall.py <<'EOF'\n" + body,
+                    "cat >> {fhome}/.claude/worktrees/agent-1/plugin/tests/test_x.py <<'EOF'\n" + body,
+                    "cat >> {fhome}/plugin/lib/fmrecall.py <<\"EOF\"\n" + body):
             self.assertFalse(driving(cmd), cmd)
         for cmd in ("cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 {fhome}/plugin/lib/fmx.py",
                     "cat > {fhome}/plugin/lib/fmx.py <<'EOF'\n" + body + "python3 -c 'import fmx'",

@@ -1270,20 +1270,25 @@ def _proved_writes(cmd, ctx):
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
 
 
-_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*'\w+'\s*$")
+_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*"
+                           r"(?:'\w+'|\"\w+\")\s*$")  # a quoted marker: the body is data, never expanded
+# T-0981: Foreman's code and tests, in the checkout or in a builder worktree's copy of it
+_SOURCE_DIRS = re.compile(r"(?:\.claude/worktrees/[\w.-]+/)?plugin/(?:" + "|".join(_CORE_DIRS) + r"|tests)/")
 
 
 def _writes_unrun_source(line, cmd, ctx):
-    """T-0761: a data heredoc writing one file of Foreman's own code that the command never names again is a source
-    edit (a core path write the user's yes gates), not interpreter code run here. Run or imported by name, it is."""
+    """T-0761: a data heredoc writing one file of Foreman's own code (T-0981: or its tests, or a worktree's copy) that
+    the command never names again is a source edit (a core path write the user's yes gates), not interpreter code run
+    here. Run or imported by name, it is."""
     m = _SOURCE_WRITE.fullmatch(line.strip())
     if not m:
         return False
     path = _resolve(_expand(m.group(1), ctx), ctx.cwd)
     stem = re.escape(os.path.splitext(os.path.basename(path))[0])
     real = os.path.realpath(path)  # a symlink in plugin/lib to a scratch script isn't Foreman's code
-    return any(_strictly_under(real, os.path.realpath(os.path.join(ctx.foreman_home, "plugin", d)))
-               for d in _CORE_DIRS) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
+    home = os.path.realpath(ctx.foreman_home)
+    rel = os.path.relpath(real, home) if _strictly_under(real, home) else ""
+    return bool(_SOURCE_DIRS.match(rel)) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
 
 
 def _run_dir(starter, cwd):
