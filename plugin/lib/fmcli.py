@@ -3983,8 +3983,9 @@ def build_parser():
     s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
     s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
     s = add("lib", lazy("fmlib", "cmd_lib"), help="stack library: cards per language, framework, service and tool, "
-            "plus installed plugins' skills (suggest, search, show, list, check)")
-    s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source"])
+            "plus installed plugins' skills (suggest, search, show, list, check; inject on|off: the edit-time card)")
+    s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source",
+                                                                    "inject"])
     s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
     s.add_argument("--area", help="list: one area's cards")
     s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")

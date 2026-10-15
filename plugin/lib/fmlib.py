@@ -1,7 +1,8 @@
 """fm lib (T-0933): the stack library. Short, checkable cards per language, framework, service, tool and practice
 (skills/library/cards/<area>/<name>.md) that cost no context until read. They are found from a repo's own manifests,
 files and extensions, and searched together with installed plugins' skills. Stdlib only; run by fm commands and
-fm map; the write hook imports it only for lint_card on a card it just wrote (T-0947)."""
+fm map; the write hook imports it for lint_card on a card it just wrote (T-0947), the edit hook for the card that
+matches a file (card_for, from map.json alone, and the one card's Avoid section: T-0949)."""
 import collections
 import fnmatch
 import glob
@@ -322,7 +323,7 @@ def suggest(root, files=None, n=None):
         score, why, specific = match(x, sig, lang_ext)
         if score and specific:
             rows.append({"name": x["name"], "area": x["area"], "score": score, "why": why, "summary": x["summary"],
-                         "focus": score / len(x["detect"])})  # a card about this one thing beats one listing ten
+                         "focus": score / len(x["detect"]), "detect": x["detect"]})  # a card about this one thing beats one listing ten
     rows.sort(key=lambda r: (-r["score"], -r["focus"], r["name"]))
     return rows[:n] if n else rows
 
@@ -549,9 +550,69 @@ def search(query, n=15):
     return rows[:n]
 
 
-def names_for_map(root, files):
-    """The top cards for fm map's session line."""
-    return [r["name"] for r in suggest(root, files, n=8)]
+def for_map(root, files):
+    """The top cards for fm map: the session line's names, and for the edit-time card (T-0949) each one's area, score
+    and file/ext signals, so the hook matches a path from map.json alone."""
+    return [{"name": r["name"], "area": r["area"], "score": r["score"],
+             "detect": [s for s in r["detect"] if s.startswith(("file:", "ext:"))]}
+            for r in suggest(root, files, n=8)]
+
+
+_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+AVOID_MAX = 700
+
+
+def card_for(p, path):
+    """T-0949: the map's best card for a file being edited, or None: a card whose file or ext signal matches it, a
+    framework card before a language card, then the higher score, then the name. Reads map.json only; anything
+    malformed in it matches nothing."""
+    rel = os.path.relpath(path, p.root).replace(os.sep, "/")
+    if rel.startswith("../"):
+        return None
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return None
+    rows = m.get("lib_cards") if isinstance(m, dict) else None
+    base, ext = os.path.basename(rel), os.path.splitext(rel)[1].lower()
+
+    def hit(s):
+        kind, _, val = s.partition(":") if isinstance(s, str) else ("", "", "")
+        return (kind == "ext" and ext and ext == val.lower()) or \
+            (kind == "file" and fnmatch.fnmatchcase(rel if "/" in val else base, val))
+    found = [x for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str) and _NAME.fullmatch(x["name"])
+             and isinstance(x.get("detect"), list) and any(hit(s) for s in x["detect"])] if isinstance(rows, list) else []
+    score = lambda x: x["score"] if isinstance(x.get("score"), (int, float)) else 0
+    found.sort(key=lambda x: (x.get("area") == "lang", -score(x), x["name"]))
+    return found[0]["name"] if found else None
+
+
+def card_avoid(name):
+    """T-0949: the edit-time note for one card (its Avoid section), or None when there is no such card or section."""
+    paths = glob.glob(os.path.join(CARDS, "*", name + ".md")) if _NAME.fullmatch(name) else []
+    if not paths:
+        return None
+    with open(paths[0], encoding="utf-8") as f:
+        return avoid_note(name, f.read())
+
+
+def avoid_note(name, text, limit=AVOID_MAX):
+    """A card's Avoid bullets under a one-line head, at most limit chars: cut after the last whole bullet that fits,
+    with '…'; None without an Avoid section or when not even one bullet fits."""
+    m = re.search(r"(?ms)^## Avoid\n(.*?)(?=^## |\Z)", text)
+    items = [b.strip() for b in re.split(r"\n(?=- )", m.group(1).strip())] if m and m.group(1).strip() else []
+    if not items:
+        return None
+    out = f"Foreman: stack card {name}, what to avoid in this edit (fm lib show {name} for the rest):"
+    full = out + "".join("\n" + b for b in items)
+    if len(full) <= limit:
+        return full
+    for b in items:
+        if len(out) + len(b) + 3 > limit:  # the bullet's newline, then "\n…"
+            break
+        out += "\n" + b
+    return out + "\n…" if "\n" in out else None
 
 
 def sections(text, wanted=None):
@@ -587,6 +648,14 @@ def cmd_lib(args):
     words = " ".join(args.words or [])
     if args.action == "source":
         return cmd_source(args)
+    if args.action == "inject":  # T-0949: the edit-time card, on unless turned off here
+        p = fmcli.resolve(args)
+        if words not in ("", "on", "off"):
+            raise fmcli.UsageError("fm lib inject takes on or off")
+        on = c.update_meta(p, lib_inject=words == "on").get("lib_inject") if words else \
+            c.read_meta(p).get("lib_inject") is not False
+        return print(f"Edit-time stack cards: {'on' if on else 'off'} (the first edit of a file a card covers gets its "
+                     f"Avoid section, once per card per task; FOREMAN_NO_CARDS=1 turns it off for one session).")
     if args.action == "check":
         problems, notes = lint()
         n = len(cards())

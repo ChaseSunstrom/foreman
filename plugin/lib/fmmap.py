@@ -82,10 +82,12 @@ def build(p):
             len(stem) >= 4 or len(_name_stem(s)) - len(stem) <= 2)))]
         if srcs:
             links[t] = srcs
+    lib = _lib(root, files)
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
             "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
             "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
-            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "lib": _lib(root, files), "lib_stamp": _cards_stamp()}
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "lib": [x["name"] for x in lib],
+            "lib_cards": lib, "lib_stamp": _cards_stamp()}
 
 
 def _cards_stamp():
@@ -100,7 +102,7 @@ def _cards_stamp():
 def _lib(root, files):
     try:
         import fmlib
-        return fmlib.names_for_map(root, files)
+        return fmlib.for_map(root, files)
     except Exception:  # the library is a hint: never the map
         return []
 
@@ -140,7 +142,7 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
-VERSION = 4  # bump when build() changes, so older maps are rebuilt
+VERSION = 5  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):

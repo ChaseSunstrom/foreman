@@ -995,6 +995,36 @@ def _check_supply(claude, accept):
         f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
 
 
+ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")
+
+
+def check_enforce(p, days=7):
+    """T-0949: how often the enforced steps fired in this project over the last days: write validators that blocked
+    (T-0947; their first events carry no kind), lane merges refused red or waived (T-0948), cards injected at edit
+    time. Information, never a failure."""
+    if not p:
+        return Result("enforcement", "PASS", "none: not in a Foreman project")
+    counts = dict.fromkeys(ENFORCE_KINDS, 0)
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
+    try:
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            lines = [l for l in f if b'"enforce"' in l or b'"lane_unverified"' in l]
+    except OSError:
+        lines = []
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict) or str(e.get("ts", ""))[:19] < since:
+            continue
+        kind = "lane_unverified" if e.get("event") == "lane_unverified" else \
+            (e.get("data") or {}).get("kind", "validator_block") if e.get("event") == "enforce" else None
+        if kind in counts:
+            counts[kind] += 1
+    return Result("enforcement", "PASS", f"last {days} days: " + ", ".join(f"{k} {n}" for k, n in counts.items()))
+
+
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -1033,6 +1063,7 @@ def run_all(full=False, accept_supply=False):
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
+    results.append(check_enforce(here))
     results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
