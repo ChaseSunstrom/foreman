@@ -650,14 +650,17 @@ def cmd_run(args):
     if os.path.exists(log) and os.path.getsize(log) > RUN_LOG_MAX:
         os.replace(log, log + ".1")
 
+    def block(tid, msg):  # T-0955: blocked with the reason, so the next fm run takes the next task instead; fm task
+        try:  # block itself, so the pause snapshot and the eval case (T-0734) come with it
+            r = _fm(p.root, "task", "block", tid, f"fm run: {msg}", timeout=120)
+            if r.returncode:
+                print(f"fm run: couldn't block {tid}: {(r.stderr or r.stdout).strip()[-200:]}", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"fm run: couldn't block {tid}: {e}", file=sys.stderr)
+
     def fail(msg, quarantine=None):
-        if quarantine:  # T-0955: blocked with the reason, so the next fm run takes the next task instead; fm task
-            try:  # block itself, so the pause snapshot and the eval case (T-0734) come with it
-                r = _fm(p.root, "task", "block", quarantine, f"fm run: {msg}", timeout=120)
-                if r.returncode:
-                    print(f"fm run: couldn't block {quarantine}: {(r.stderr or r.stdout).strip()[-200:]}", file=sys.stderr)
-            except (OSError, subprocess.SubprocessError) as e:
-                print(f"fm run: couldn't block {quarantine}: {e}", file=sys.stderr)
+        if quarantine:
+            block(quarantine, msg)
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
         _notify(p, f"fm run stopped: {msg}")
         sys.exit(1)
@@ -701,8 +704,12 @@ def cmd_run(args):
                     fails += not hit  # a usage limit is waited out, never a failure
                     skip.add(tid)  # not this run again; an empty lane frees the task for the next
                     freed = not _lane_has_work(p, path) and _fm(p.root, "lane", "rm", tid).returncode == 0
+                    stuck = freed and not hit and after.status not in ("blocked", "dropped", "deferred")
                     print(f"{tid} not finished in its lane ({after.status}, exit {code}); "
-                          + ("lane removed, back in the queue" if freed else f"lane kept with its work: {path}"), flush=True)
+                          + ("no progress: blocked" if stuck else "lane removed, back in the queue" if freed
+                             else f"lane kept with its work: {path}"), flush=True)
+                    if stuck:  # T-0968: an empty lane is no progress, quarantined as a single session's is
+                        block(tid, f"no progress in its lane (exit {code})")
             if fails >= FAILS_MAX:
                 fail(f"{fails} sessions in a row ended unfinished; stopping")
             if limited:
