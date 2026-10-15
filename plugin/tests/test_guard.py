@@ -15,6 +15,7 @@ class GuardCase(unittest.TestCase):
     def setUpClass(cls):
         # outside /tmp so that "outside the project" really is outside every scratch root
         base = os.environ.get("XDG_RUNTIME_DIR") or os.path.expanduser("~/.cache")
+        os.makedirs(base, exist_ok=True)  # T-0883: a fresh CI HOME has no ~/.cache; /tmp is scratch to the guard
         cls._tmp = tempfile.TemporaryDirectory(dir=base if os.access(base, os.W_OK) else None)
         t = os.path.realpath(cls._tmp.name)
         cls.home = os.path.join(t, "home")
@@ -709,8 +710,9 @@ class Core(GuardCase):
             ("a=CD; export ${{a}}PATH={fhome}/plugin; cd lib; echo hi > fmguard.py", "core"),
             ("echo hi > ~+/plugin/lib/fmguard.py", "core"),
         ], lambda cmd: self.bash(cmd, cwd=self.fhome))
-        user = os.path.basename(os.path.expanduser("~"))
-        self.assertEqual(g._expand(f"~{user}/x", self.ctx()), os.path.join(os.path.expanduser("~"), "x"))  # ~user
+        import pwd  # T-0883: ~user is the passwd entry's home, which $HOME may not be
+        me = pwd.getpwuid(os.getuid())
+        self.assertEqual(g._expand(f"~{me.pw_name}/x", self.ctx()), os.path.join(me.pw_dir, "x"))  # ~user
 
     def test_symlinked_rules_resolve_to_core(self):
         target = os.path.join(self.fhome, "plugin", "rules", "foreman.md")
