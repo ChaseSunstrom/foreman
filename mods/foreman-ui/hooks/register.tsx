@@ -1540,11 +1540,13 @@ export const register: Register = (on, options) => {
             )}
             {a.audits.need > 0 && (
               <Box flexDirection="row" gap={1} key="fm-pane-audits">
-                <Text color={hex(C.dim)}>audits</Text>
-                {meter(ui, e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
-                <Text bold>
-                  {a.audits.done}/{a.audits.need}
-                </Text>
+                <Box flexDirection="row" gap={1} flexShrink={0} key="fm-pane-audits-head">
+                  <Text color={hex(C.dim)}>audits</Text>
+                  {meter(ui, e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
+                  <Text bold>
+                    {a.audits.done}/{a.audits.need}
+                  </Text>
+                </Box>
                 {a.blockers.length > 0 && (
                   <Text color={hex(C.dim)} wrap="truncate-end">
                     · {a.blockers.length} left before done: {a.blockers[0]}
