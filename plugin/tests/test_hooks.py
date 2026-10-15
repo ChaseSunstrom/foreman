@@ -1305,6 +1305,14 @@ class Stop(HookCase):
         self.assertTrue(any("README examples" in t for t in titles), titles)
         self.stop("Done: the parser handles empty input. I'll ask before touching the schema.")
         self.assertEqual(len([ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]), 2)
+        # T-0908 (review): offers, idioms and narration aren't promises
+        for said in ("Done. I'll get to the bottom of why it fails if you want.",
+                     "If you want, I'll also add a test for the empty case.",
+                     "Happy to help: I would also check the date parser next time.",
+                     "Fixed. I'll also note that the API is slow.",
+                     "Fixed. I'll also mention it in the changelog if you like."):
+            self.stop(said)
+        self.assertEqual(len([ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]), 2)
 
     def test_premature_done_blocks_once_per_step(self):
         self.fm("init")
