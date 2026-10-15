@@ -22,6 +22,7 @@ printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | ./server.js | h
 Then assert a headless run sees it: `claude -p "ping" --output-format stream-json --verbose` and check `mcp_servers` in the `system/init` event for status `connected`.
 
 ## Do
+- To expose a CLI as tools, start from `fm mcp new NAME --wrap 'CMD' [--sub a,b]`: a stdlib server (argv only, validated arguments, a timeout, an output cap) and a test that drives it over stdio; `fm mcp register claude DIR` prints the add line.
 - Shape: `{"mcpServers": {"name": {"type": "stdio", "command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/server.js"], "env": {...}}}}`.
 - Remote servers: `"type": "http", "url": "...", "headers": {...}`; use `http` over `sse`, which is deprecated.
 - Put secrets in the environment and reference `${VAR}` or `${VAR:-default}` (expanded in `command`, `args`, `env`, `url`, `headers`); in plugins use `userConfig` with `sensitive: true`.

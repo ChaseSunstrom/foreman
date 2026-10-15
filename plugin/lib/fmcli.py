@@ -4131,8 +4131,16 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
     s.add_argument("--model", default="haiku", help="the child's model (default haiku)")
     s.add_argument("--timeout", type=float, default=300)
-    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research and briefs as "
-                                                 "read-only MCP tools over stdio (register: claude mcp add foreman -- fm mcp)")
+    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research, briefs, stack "
+                                                 "library and instruments as read-only MCP tools over stdio; new: "
+                                                 "scaffold a tested MCP server wrapping any CLI; register: the "
+                                                 "harness's add line (T-0946)")
+    s.add_argument("action", nargs="?", default="serve", choices=["serve", "new", "register"])
+    s.add_argument("words", nargs="*", help="new: NAME · register: claude|codex|gemini [DIR]")
+    s.add_argument("--wrap", metavar="'CMD'", help="new: the command the server runs, as argv (no shell)")
+    s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
+    s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
+    s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
     add("wiring", lazy("fmdoctor", "cmd_wiring"), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
     s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
