@@ -524,6 +524,9 @@ def cmd_ui(args):
     """fm ui --json: the view model for the foreman-ui mod and any other surface; {"v": 1, "project": null} outside a
     project (never creates one)."""
     import fmcli
+    if getattr(args, "demo", False):  # T-0962: a canned view (ui-demo.json) for building a surface without a project
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui-demo.json"), encoding="utf-8") as f:
+            return print(json.dumps(json.load(f)))
     try:
         p = fmcli.resolve(args, create=False)
     except fmcli.UsageError:
