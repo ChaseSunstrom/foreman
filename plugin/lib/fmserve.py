@@ -372,7 +372,17 @@ def _batch(p, head, skip, n):
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
-                                              else []) + (["--model", model] if model else [])
+                                              else []) + (["--model", model] if model else []) + (
+        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) else [])
+
+
+def _sandbox(p):
+    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only its checkout plus what fm needs (its
+    state; the git dir, where a lane's commits land), and no unsandboxed fallback, so a host without bubblewrap fails
+    the session instead of running it open."""
+    git_dir = c._git(p.root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    return {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+            "filesystem": {"allowWrite": [c.state_dir()] + ([git_dir] if git_dir else [])}}
 
 
 def _run_lanes(p, batch, args, models, log):
