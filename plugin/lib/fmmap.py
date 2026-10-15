@@ -28,6 +28,9 @@ def _name_stem(path):
 def _gates(root, files, checks):
     found = list(checks)
     names = set(files)
+    runner = min((f for f in files if re.search(r"(^|/)(tests?/run(_tests)?|run_?tests)\.py$", f)), key=len, default=None)
+    if runner:  # T-0987: the repo's own runner knows its import paths; unittest discover may not
+        found.append(f"python3 {runner}")
     tests = [f for f in files if re.search(r"(^|/)(test_\w*|\w*_test)\.py$", f)]
     def mentions_pytest(name):
         try:

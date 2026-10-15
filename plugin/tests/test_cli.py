@@ -22,6 +22,16 @@ class Init(ForemanTestCase):
         self.assertIsNone(st["active"])
         self.assertEqual((st["queue"], st["inbox"]), ([], []))
 
+    def test_an_unknown_task_id_names_the_ones_that_exist(self):
+        # T-0987 (T-0978: a model took a task id from another checkout): the refusal says which ids are here
+        self.fm("init")
+        self.fm("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
+        self.fm("capture", "Two")
+        err = self.fm("task", "show", "T-0983", check=False).stderr
+        self.assertIn("no task T-0983", err)
+        self.assertIn("active T-0001", err)
+        self.assertIn("T-0002", err)
+
     def test_commands_auto_register_git_repo(self):
         self.fm("capture", "something")
         self.assertIsNotNone(c.find_project(self.repo))

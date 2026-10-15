@@ -967,6 +967,9 @@ class PreToolUse(HookCase):
             with self.subTest(cmd=ok["command"]):
                 self.assertEqual(self.pre("Bash", ok).returncode, 0)
         self.assertEqual(self.pre("Bash", {"command": "while true; do curl -s x; sleep 30; done"}).returncode, 2)
+        # T-0987 (a Haiku session held itself 9 minutes this way): a for-loop poll is the same wait
+        poll = 'for i in $(seq 1 110); do grep -q "^EXIT" f.log && break; sleep 5; done; tail f.log'
+        self.assertEqual(self.pre("Bash", {"command": poll}).returncode, 2)
 
     def test_every_refusal_names_its_fix(self):
         # T-0440: a refusal that names no allowed form costs a guess; every category names the next action
