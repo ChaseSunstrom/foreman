@@ -467,7 +467,7 @@ def cmd_task(args):
                 raise UsageError("give the command either as --run CMD or as CMD RESULT, not both")
             pre = need_brief(p, args.id)
             code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
-            cmd, result, shown = args.run, c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
+            cmd, result, shown = args.run, c.run_result(code, output, args.run), "\n".join(output.rstrip().splitlines()[-20:])
             result, tried = _step_checks(pre, args.step, args.run, code, output, result)
         elif args.cmd is None or args.result is None:
             raise UsageError("fm task evidence needs --run CMD (preferred) or CMD RESULT")
@@ -825,7 +825,7 @@ def task_finish(p, args):
         for n in evidenced:
             x.mark_step(n)  # refuses a failed run, as fm task step done does
         for kind, n, cmd, code, output in results:
-            x.add_evidence(cmd, c.run_result(code, output), tree=tree, ran=True, **({} if kind == "final" else {kind: n}))
+            x.add_evidence(cmd, c.run_result(code, output, cmd), tree=tree, ran=True, **({} if kind == "final" else {kind: n}))
             if not code and kind != "final":
                 x.check_ac(n) if kind == "ac" else x.mark_step(n)
         if not any(code for *_, code, _ in results):

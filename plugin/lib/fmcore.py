@@ -463,10 +463,36 @@ def env_id():
     return hashlib.sha1("\0".join(os.environ.get(k, "") for k in keys).encode()).hexdigest()[:8]
 
 
-def run_result(code, output):
-    """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed."""
+NEVER_RAN = "(never ran: "  # T-0985: a run whose own command, file or test module didn't exist
+
+
+def never_ran(cmd, code, output):
+    """T-0985: why a failed run never reached its check, or None: the command wasn't found (127), or the file or
+    module the failure names is one the command itself names (a wrong path, not a failing test)."""
+    if not code or not cmd:
+        return None
+    if code == 127:
+        return "command not found"
+    for pat in (r"No module named '([\w.]+)'", r"can't open file '([^']+)'", r"([^\s:'\"]+): No such file or directory",
+                r"file or directory not found: (\S+)", r"No such file or directory: '([^']+)'"):
+        for m in re.finditer(pat, output or ""):
+            name = m.group(1)
+            if name and (name in cmd or os.path.basename(name) in cmd or name.replace(".", "/") in cmd):
+                return f"no {c_short(name)}"
+    return None
+
+
+def c_short(name):
+    return name if len(name) <= 60 else "…" + name[-59:]
+
+
+def run_result(code, output, cmd=None):
+    """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed; T-0985: given the
+    command, a run that never reached its check says so (it doesn't lock the criterion)."""
     lines = [l.strip() for l in output.splitlines() if l.strip()]
     timed = f" ({lines[-1]})" if code == 124 and lines and lines[-1].startswith("timed out after") else ""
+    why = never_ran(cmd, code, output)
+    timed += f" {NEVER_RAN}{why})" if why else ""
     return f"{'✗ ' if code else ''}exit {code}{timed} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
 
 
@@ -1098,8 +1124,9 @@ class Brief:
         return [l for l in self.section("Verification evidence").splitlines() if _INCONCLUSIVE in l
                 and (step is None or ((m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == ("step", step)))]
 
-    def has_evidence(self, step=None, ac=None):
-        lines = self.evidence()
+    def has_evidence(self, step=None, ac=None, checked=False):
+        """With checked (T-0985: the edit lock), a run that never reached its check doesn't count."""
+        lines = [l for l in self.evidence() if not (checked and NEVER_RAN in l)]
         if step is None and ac is None:
             return bool(lines)
         want = ("step", step) if step is not None else ("ac", ac)
@@ -1206,7 +1233,7 @@ class Brief:
     def edit_ac(self, n, text=None, verify=None):
         """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was. T-0342: only while
         it has no evidence (the T-0305 decision: an edit could weaken a failing check until it passes), and logged."""
-        if self.has_evidence(ac=n):
+        if self.has_evidence(ac=n, checked=True):
             raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
                               f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
                               f"with a reason and recreate it with the right check (fm task new … --redo {self.id} keeps its "

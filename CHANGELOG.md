@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A criterion whose check never actually ran (the command, file or test module it names didn't exist) can still be fixed with `fm task ac edit`; a check that ran and failed stays locked. Both recorded demo sessions had to drop and redo their task over this (T-0985).
 - The README's live demo is a real session now (T-0979): Claude Code 2.1.301 with the current pane, working a real Foreman fix in a copy of this repo from one typed request to a red-then-green proof, close and commit. `demo/record_live.py --repo DIR --request TEXT [--dry] [--max-frames N]` records one; names, e-mails (account and git) and the home path are scrubbed.
 - Postures and rivals (T-0963): `fm posture lite|full` (yours to type: only the guard, the evidence gate and `fm ask` grants run in a lite project); `fm compact-output shadow` records what it would cut and never shortens; verify commands that read Foreman's own task files are flagged; `fm bench duel --vs none` races Foreman against Claude with only the guard; a near-empty builder or reviewer report is logged and named by `fm next`.
 - Stack cards reach the work (T-0977, T-0980): a request that names a library or topic with a card (react, postgres, kafka …) gets those cards named at prompt time, read only on demand; the map keeps the repo's language cards, so the first edit of a file gets its language's pitfalls; `fm doctor -v` counts cards named and read.
