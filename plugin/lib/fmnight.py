@@ -3,10 +3,12 @@ the landscape scan when due, the sentinel (T-0888), one research-debt question, 
 kept fm evolve candidate — each an existing fm command, kept while the night's estimate fits --max-usd and today's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
-the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up."""
+the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up;
+--print-timer prints both, ready to paste."""
 import fcntl
 import glob
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -94,9 +96,26 @@ def _usage():
     return fmbudget.usage_high(), fresh
 
 
+def timer(p):
+    """T-0955: a systemd user service + timer and a crontab line that run fm night here nightly; printed, never
+    installed (scheduling stays the user's)."""
+    unit = f"foreman-night-{p.slug}"
+    cmd = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(c.PLUGIN_ROOT, 'bin', 'fm'))} night"
+    return "\n".join([
+        f"# ~/.config/systemd/user/{unit}.service", "[Unit]", f"Description=Foreman night ({p.slug})", "",
+        "[Service]", "Type=oneshot", f"WorkingDirectory={p.root}", f"ExecStart={cmd}", "",
+        f"# ~/.config/systemd/user/{unit}.timer", "[Unit]", f"Description=Foreman night ({p.slug}), nightly", "",
+        "[Timer]", "OnCalendar=*-*-* 02:30", "Persistent=true", "", "[Install]", "WantedBy=timers.target", "",
+        f"# then: systemctl --user daemon-reload && systemctl --user enable --now {unit}.timer",
+        "# or, without systemd, a crontab -e line:", f"30 2 * * * cd {shlex.quote(p.root)} && {cmd}"])
+
+
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "print_timer", False):
+        print(timer(p))
+        return 0
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
     if not getattr(args, "dry_run", False):  # T-0921: one night at a time (a cron firing while a manual one runs)
