@@ -29,6 +29,17 @@ class Demo(ForemanTestCase):
         self.assertEqual(sorted(os.listdir(self.home)), before)  # the user's Foreman state is never touched
         self.assertNotIn("claude was called", out + p.stderr)
 
+    def test_pace_and_colour_for_a_recording(self):
+        # T-0902: a recording needs time to read each stage and colour to scan it; a plain run stays quick and plain
+        self.assertNotIn("\x1b[", self.fm("demo", env={"TMPDIR": self.tmpdir}).stdout)
+        t0 = time.time()
+        out = self.fm("demo", "--pace", "0.05", env={"TMPDIR": self.tmpdir, "FORCE_COLOR": "1"}).stdout
+        self.assertGreater(time.time() - t0, 7 * 0.05)  # at least one pause per stage
+        self.assertIn("\x1b[1;31mRefused", out)
+        self.assertIn("\x1b[32mgreen", out)
+        self.assertIn("nothing was left behind", out)
+        self.assertEqual(os.listdir(self.tmpdir), [])
+
     def test_ctrl_c_still_cleans_up(self):
         with mock.patch.object(fmdemo.tempfile, "tempdir", self.tmpdir), \
                 mock.patch.object(fmdemo, "_hook", side_effect=KeyboardInterrupt):
