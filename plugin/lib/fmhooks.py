@@ -1080,6 +1080,23 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    try:
+        hits = _rule_hits(pl, p)
+    except Exception:  # the guard's half: fails closed
+        log_error("PreToolUse", _tb())
+        hits = [(0, {"action": "block", "pattern": "?", "why": "the rule check failed (fm doctor shows the error)"},
+                 False)]
+    stop = [(n, r, slow) for n, r, slow in hits if r["action"] == "block" or slow]
+    if stop:
+        n, r, slow = stop[0]
+        why = (f"Foreman: the user's rule {n} ({r['pattern']}) took too long to check against this call, so it's "
+               f"refused; the user can simplify it (fm rule rm {n}, then fm rule add)." if slow else
+               f"Foreman: the user's rule {n} blocks this ({r['pattern']}): {r.get('why') or 'no reason given'}. "
+               "Do it another way, or ask the user; only they remove a rule (fm rule rm).")
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                 "permissionDecisionReason": why}}))
+        print(why, file=sys.stderr)
+        return 2
     if p and tool in FILE_TOOLS and os.path.exists(os.path.join(c.state_dir(), "bus", "leases.json")):  # T-0708
         # another session's lease on the function this edit lands in
         try:
@@ -1113,7 +1130,9 @@ def _pre_tool_use(raw):
     if _quiet():
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
-        note = " ".join(filter(None, [saved, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
+                        for n, r, _ in hits[:2])  # what's left after the blocks above: warns
+        note = " ".join(filter(None, [saved, warn, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
@@ -1549,6 +1568,16 @@ def _in_project(path, p):
 
 
 _EDIT_VERBS = "edit write change modify touch update overwrite create"
+
+
+def _rule_hits(pl, p):
+    """T-0971: the user's fm rule patterns this call matches: a Bash command, or an edited file's path."""
+    tool, ti = pl.get("tool_name"), pl.get("tool_input") or {}
+    if not p:
+        return []
+    if tool == "Bash":
+        return c.rule_hits(p, "bash", str(ti.get("command") or ""))
+    return c.rule_hits(p, "path", _edit_path(pl) or "") if tool in FILE_TOOLS else []
 
 
 def _veto_note(pl, p):
