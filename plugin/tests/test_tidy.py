@@ -175,3 +175,30 @@ class Apply(TidyCase):
         os.makedirs(other)
         self.fm("init", other)
         self.assertEqual(len(self.tidy("--all")["projects"]), 2)
+
+
+class TidyStateBackup(TidyCase):
+    # T-0922: the briefs and the ledger are the record; tidy --apply keeps dated copies of them, the newest five
+    def test_apply_keeps_dated_backups_of_the_record_and_only_five(self):
+        import tarfile
+        self.fm("capture", "keep me")
+        self.tidy()  # a dry run writes nothing
+        d = os.path.join(self.p.dir, "backups")
+        self.assertFalse(os.path.isdir(d) and os.listdir(d))
+        self.tidy("--apply")
+        made = sorted(os.listdir(d))
+        self.assertEqual(len(made), 1)
+        with tarfile.open(os.path.join(d, made[0])) as t:
+            names = t.getnames()
+        self.assertTrue(any(n.startswith("tasks/T-0001") for n in names), names)
+        self.assertIn("ledger.jsonl", names)
+        self.assertIn("meta.json", names)
+        self.assertFalse(any(n.startswith(("research", "backups", "graph")) for n in names), names)
+        for i in range(6):  # older copies with earlier stamps
+            with open(os.path.join(d, f"20200101T00000{i}Z.tar.gz"), "wb") as f:
+                f.write(b"")
+        self.tidy("--apply")
+        left = sorted(os.listdir(d))
+        self.assertEqual(len(left), 5)
+        self.assertNotIn("20200101T000000Z.tar.gz", left)
+        self.assertTrue(all(n.endswith(".tar.gz") for n in left))
