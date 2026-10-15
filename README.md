@@ -12,6 +12,8 @@ Public repo:
 curl -fsSL https://raw.githubusercontent.com/ChaseSunstrom/foreman/main/install.sh | bash
 ```
 
+Having Claude install it for you? Tell it: "install Foreman following https://github.com/ChaseSunstrom/foreman/blob/main/INSTALL.md". [INSTALL.md](INSTALL.md) has it explain the defaults and ask before each change.
+
 Private repo (uses your `gh` login):
 
 ```bash
@@ -47,6 +49,14 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE af
 - **Audits before done**: finished work is checked through independent lenses (intent, adversary, edge cases, operations, maintainability) with different prompts and context; small tasks get a self-check, large ones all five.
 - **Docs stay current**: bigger tasks can't close until they record which docs they changed, and those docs must exist and match the code; drift elsewhere is reported when a task closes (`fm docs` shows it any time). Long sessions compact earlier, since Foreman's state makes that cheap.
 - **Full auto**: say `FULL AUTO` (or "don't ask me anything") and Claude works through the whole queue without questions, recording its decisions; anything only you can approve waits for one summary at the end. `STANDARD AUTONOMY` switches back.
+
+## When not to use Foreman
+
+- **Quick one-off questions or scripts.** Planning, evidence and audits are overhead for a five-minute job; plain Claude Code is faster. (Foreman sizes work as S/M/L, but even S has a brief.)
+- **Native Windows.** Foreman needs Linux, macOS or WSL.
+- **When you want to approve every command yourself.** Foreman is built for bypass mode with its guard as the brake; it works in the default mode too, but its unattended drive will keep stopping at prompts.
+- **Tight token budgets.** Brainstorms, second plans and audits run extra model sessions (capped by `fm budget`); turn them down or skip Foreman for budget-critical work.
+- **Code that must not leave the machine.** Mark the repo sensitive (`fm sensitive on`) so outward tools are refused, or don't use cloud-facing features there at all.
 
 ## Headless: keep it working on a server
 
