@@ -90,7 +90,7 @@ def mutate(p, target, text, cases, model, timeout=600):
 def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, live=None, model=None, mutate_model="sonnet",
                runs=1, budget=3.0, timeout=30, quiet=False):
     stamp = time.strftime("%Y%m%d-%H%M%S")
-    git = fmbench._git
+    git = fmbench._safe_git
     rel = target[len(plugin_dir) + 1:] if target.startswith(plugin_dir + "/") else None
     if not rel or ".." in target.split("/") or not TEXT.match(rel):
         raise ValueError(f"--target must be an instruction file in {plugin_dir}/ (skills/**/*.md, skills/routing.json, "
