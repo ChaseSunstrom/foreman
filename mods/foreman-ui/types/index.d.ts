@@ -46,7 +46,14 @@ export type FmBench = {
   verdicts?: { kind: string; ok: boolean | null; verdict: string | null; at?: string }[] // T-0280: fm bench duel / versions
 }
 export type FmResearchAsk = { name: string; claims: number; verified: number; not_found: number; unchecked: number; at?: string; conflicts?: number; single?: number }
-export type FmApproval = { task: string; allow: string[]; why: string }
+// T-0939: recent = newest first, a name once (at most 8); counts = uses per name over 7 days
+export type FmSkills = {
+  recent: { name: string; kind: 'skill' | 'card'; at: string }[]
+  counts: Record<string, number>
+  suggested: string[] // the repo map's stack cards
+  unread: string[] // suggested cards not read this week
+}
+export type FmApproval ={ task: string; allow: string[]; why: string }
 export type FmView = {
   v: number
   project: string | null
@@ -64,6 +71,7 @@ export type FmView = {
   fleet?: { session: string; project?: string | null; task?: string | null; title?: string | null; context_pct?: number | null
     mail?: number; leases?: number; remote?: string; age_s?: number | null; error?: string }[]
   recent?: string[]
+  skills?: FmSkills // T-0939: Skill calls and stack-card reads this week, and the map's unread suggestions
   health?: { hook_p95_ms: number | null; guard_blocks: number; hook_errors: number; paused_hooks?: string[] }
   watch?: string[] // paths whose mtime moves when the record changes
   latency?: number[] // the latest hook run times (ms), oldest first
