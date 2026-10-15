@@ -622,8 +622,14 @@ def cmd_task(args):
                 b.meta["revisit"] = until
             b.append_log((f"{status}: {reason}" if reason else status) + (f" (revisit {until})" if until else ""))
         until = getattr(args, "until", None)
-        if until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
-            raise UsageError("--until takes a date, YYYY-MM-DD")
+        if until and until.startswith("when "):  # T-0958: the file's hash kept, so fm next can tell a change
+            try:
+                until = c.revisit_tag(p.root, until)[len("[revisit: "):-1]
+            except ValueError as e:
+                raise UsageError(str(e).replace("--revisit", "--until"))
+            args.until = until
+        elif until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
+            raise UsageError("--until takes a date, YYYY-MM-DD, or \"when PATH changes\"")
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
@@ -2503,7 +2509,28 @@ def _decision_row(line):
     cells = [x.strip().replace("\\|", "|") for x in re.split(r"(?<!\\)\|", body)]  # cell() escapes a | as \|
     kind = re.match(r"\[(costly|outward)\]\s*", cells[1] if len(cells) > 1 else "")
     return {"date": cells[0], "kind": kind and kind.group(1), "text": (cells[1] if len(cells) > 1 else "")[
-        kind.end() if kind else 0:], "why": cells[2] if len(cells) > 2 else "", "reversed": line.endswith("← reversed later")}
+        kind.end() if kind else 0:], "why": cells[2] if len(cells) > 2 else "", "reversed": line.endswith("← reversed later"),
+        "rejected": cells[3] if len(cells) > 3 else ""}
+
+
+def _export_adr(p, args, rows):
+    """T-0958: one ADR (Nygard: title, status, context, decision, consequences) per decisions.md row, numbered in
+    order, so a re-export rewrites the same files."""
+    top = os.path.abspath(args.export_adr)
+    os.makedirs(top, exist_ok=True)
+    written = []
+    for n, r in enumerate(map(_decision_row, rows), 1):
+        text = re.sub(r"^(\[[^\]]*\]\s*)*", "", r["text"]).strip() or "untitled"
+        slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:50] or "decision"
+        path = os.path.join(top, f"{n:04d}-{slug}.md")
+        c.write_atomic(path, f"# {n}. {text}\n\nDate: {r['date']}\n\n## Status\n\n"
+                       f"{'Superseded (reversed by a later decision)' if r['reversed'] else 'Accepted'}"
+                       + (f" ({r['kind']})" if r["kind"] else "") + f"\n\n## Context\n\n{r['why'] or '(not recorded)'}"
+                       f"\n\n## Decision\n\n{r['text']}\n\n## Consequences\n\nAlternatives rejected: "
+                       f"{r['rejected'] or '(none recorded)'}\n")
+        written.append(path)
+    return out(args, {"dir": top, "files": written}, f"{len(written)} ADR(s) → {top}" if written else
+               "No decisions recorded.")
 
 
 def cmd_decide(args):
@@ -2526,6 +2553,8 @@ def cmd_decide(args):
         pick = [r for r in rows if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
         pick = [r + ("  ← reversed later" if any(x.lower() in r.lower() for x in reversed_ if "[reverses:" not in r)
                      else "") for r in pick]
+        if getattr(args, "export_adr", None):
+            return _export_adr(p, args, pick)
         return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
                    "\n".join(pick[-args.n:]) or "No decisions recorded.")
     try:
@@ -3830,6 +3859,8 @@ def build_parser():
     s.add_argument("--answer", type=int, metavar="N", help="the decision is the user's answer to digest ask N")
     s.add_argument("--list", action="store_true")
     s.add_argument("--review", action="store_true", help="only costly/outward decisions")
+    s.add_argument("--export-adr", metavar="DIR", help="one ADR markdown file per decision in DIR (with --review: "
+                                                       "only those) (T-0958)")
     s.add_argument("-n", type=int, default=30)
 
     s = add("research", cmd_research, help="save a research/recon summary into the project's research/")
@@ -4028,7 +4059,8 @@ def build_parser():
     t = tadd("defer")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
-    t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450)")
+    t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450); \"when PATH changes\": "
+                                   "once that file changes (T-0958)")
 
     s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
@@ -4271,6 +4303,8 @@ def build_parser():
     s.add_argument("--retire", metavar="LESSON", help="with --lessons: leave this lesson (T-0123.1) out of recall and "
                                                       "tripwires (T-0743)")
     s.add_argument("--why", help="with --retire: why it no longer helps")
+    s.add_argument("--export-rules", action="store_true", help="write the live lessons to .claude/rules/"
+                                                               "foreman-lessons.md, paths: their files (T-0958)")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
                                                         "in with fm share on (never sensitive ones), file:line (T-0618)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
