@@ -1060,6 +1060,27 @@ def check_enforce(p, days=7):
     return Result("enforcement", "PASS", f"last {days} days: " + ", ".join(f"{k} {n}" for k, n in counts.items()))
 
 
+def check_idle_stops(p, days=7):
+    """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
+    many of them mean the drive gave up early or the user keeps stopping it."""
+    if not p:
+        return Result("idle stops", "PASS", "none: not in a Foreman project")
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
+    try:  # bytes first, as check_enforce does: prompt events make the ledger large
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            lines = [ln for ln in f if b'"idle_stop"' in ln]
+    except OSError:
+        lines = []
+    n = 0
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except ValueError:
+            continue
+        n += isinstance(e, dict) and e.get("event") == "idle_stop" and str(e.get("ts", ""))[:19] >= since
+    return Result("idle stops", "PASS", f"last {days} days: {n} idle stop{'s' if n != 1 else ''} with open work")
+
+
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -1100,6 +1121,7 @@ def run_all(full=False, accept_supply=False):
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
     results.append(check_enforce(here))
+    results.append(check_idle_stops(here))
     results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),

@@ -335,7 +335,50 @@ def session_start(pl):
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
     if first:
         out["initialUserMessage"] = first
-    return {"hookSpecificOutput": out, "terminalSequence": _title_seq(sd)}
+    res = {"hookSpecificOutput": out, "terminalSequence": _title_seq(sd)}
+    try:
+        news = _whats_new_note(headless=_headless())
+        if news:
+            res["systemMessage"] = news
+    except Exception:
+        log_error("SessionStart", _tb())
+    return res
+
+
+def whats_new(version, text):
+    """T-0957: the top-level bullets of one version's CHANGELOG section."""
+    m = re.search(rf"(?m)^## {re.escape(version)}\b.*\n((?:(?!## ).*\n?)*)", text or "")
+    return [ln[2:].strip() for ln in (m.group(1) if m else "").splitlines() if ln.startswith("- ")]
+
+
+def _whats_new_note(log=None, headless=False):
+    """Once per upgrade on this machine: what the new version changed. A fresh install records the version silently;
+    a headless run (fm run, claude -p) never uses the note up; with no notes for this version yet (no CHANGELOG here,
+    or no section for it) the version isn't recorded, so a later session still shows them."""
+    rev, path = _rev(), os.path.join(c.state_dir(), "seen-version")
+    try:
+        with open(path, encoding="utf-8") as f:
+            old = f.read().strip()
+    except OSError:
+        old = None
+    if rev == "?" or old == rev or headless:
+        return None
+    if old is None:
+        c.write_atomic(path, rev)
+        return None
+    log = log or next((x for x in (os.path.join(os.path.dirname(c.PLUGIN_ROOT), "CHANGELOG.md"),
+                                   os.path.join(c.PLUGIN_ROOT, "CHANGELOG.md")) if os.path.isfile(x)), None)
+    try:
+        with open(log or "", encoding="utf-8", errors="replace") as f:
+            items = whats_new(rev, f.read())
+    except OSError:
+        items = []
+    if not items:
+        return None
+    c.write_atomic(path, rev)
+    return (f"What's new in Foreman {rev} (since {c.fit(old, 20)}):\n"
+                      + "\n".join("• " + c.fit(c.plain(x), 160) for x in items[:8])
+                      + (f"\n… and {len(items) - 8} more in CHANGELOG.md" if len(items) > 8 else ""))
 
 
 def second_due(pl, meta, busy=False):
@@ -554,6 +597,12 @@ def user_prompt_submit(pl):
                         session=sid)
         except Exception:
             log_error("UserPromptSubmit", _tb())
+    try:  # T-0957: the user's words, for reflection and the court; redacted, capped, never in a sensitive project
+        if not c.read_meta(p).get("sensitive"):
+            c.log_event(p, "prompt", data={"text": c.redact(c.plain_lines(text))[:2000],
+                                           "mode": pl.get("permission_mode")}, session=sid)
+    except Exception:
+        log_error("UserPromptSubmit", _tb())
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
@@ -575,7 +624,7 @@ def user_prompt_submit(pl):
                 meta["autonomy"] = "standard"
             c.write_meta(p, meta)
             g = _read_gate(p)
-            hold = c.is_plan_only(text)
+            hold = c.is_plan_only(text) or pl.get("permission_mode") == "plan"  # T-0957: plan mode plans only
             # a plan-only prompt holds drive this turn; turn_at: when this turn began (T-0145)
             g["drive"].setdefault(sid, {}).update(count=0, hold=hold, turn_at=time.time())
             _write_gate(p, g)
@@ -1941,6 +1990,12 @@ def stop(pl):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
     if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
         reason = _push_nudge(sid, sd, drained)
+    if not reason and not oneoff and not reloading and not waiting_on and (sd["active"] or sd["queue"]):
+        # T-0957: open work, and nothing kept it going (a reload or a background wait resumes by itself)
+        try:
+            c.log_event(p, "idle_stop", task=act.id if act else None, data={"queue": len(sd["queue"])}, session=sid)
+        except Exception:
+            log_error("Stop", _tb())
     out = {"terminalSequence": seq}
     promised = []
     if not reason and not oneoff and re.search(r"(?i)\bI(?:['’]ll| will)\b", msg):  # T-0899: kept only if captured
