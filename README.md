@@ -123,7 +123,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm check` runs the project's gates and reuses a pass on an identical tree.
 - `fm task evidence --run` records a command's real exit code and output.
 - `fm task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
-- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs.
+- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not.
 - The suite runs in CI on every push.
 
 **Protects.**
