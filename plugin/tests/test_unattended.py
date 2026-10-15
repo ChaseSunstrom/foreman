@@ -26,6 +26,23 @@ class RunModels(ServeCase):
         self.assertEqual(self.meta()["run_models"], {"S": "haiku", "L": "opus"})
         self.assertEqual(self.fm("run", "--models", "X=1", check=False, env=self.env()).returncode, 2)
 
+    def test_sandbox_runs_each_session_under_claude_codes_sandbox(self):
+        # T-0975: opt-in; fails rather than running unsandboxed; fm's own state and the git dir stay writable
+        self.stub("claude", f'{sys.executable} -c "import json,sys; print(json.dumps(sys.argv[1:]))" "$@" >> '
+                            f'{os.path.join(self.tmp, "argv")}\n')
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "a", "--step", "s")
+        self.fm("run", "--max", "1", env=self.env(), check=False)
+        self.assertNotIn("--settings", read_text(os.path.join(self.tmp, "argv")))
+        os.remove(os.path.join(self.tmp, "argv"))
+        self.fm("task", "new", "y", "--type", "FIX", "--tier", "S", "--ac", "a", "--step", "s")  # x made no progress
+        self.fm("run", "--max", "1", "--sandbox", env=self.env(), check=False)
+        argv = json.loads(read_text(os.path.join(self.tmp, "argv")).splitlines()[0])
+        box = json.loads(argv[argv.index("--settings") + 1])["sandbox"]
+        self.assertEqual((box["enabled"], box["failIfUnavailable"], box["allowUnsandboxedCommands"]), (True, True, False))
+        writes = box["filesystem"]["allowWrite"]
+        self.assertIn(os.path.realpath(c.state_dir()), [os.path.realpath(w) for w in writes])
+        self.assertIn(os.path.realpath(os.path.join(self.repo, ".git")), [os.path.realpath(w) for w in writes])
+
     def test_notify_message_is_an_argument_not_shell_text(self):
         note = os.path.join(self.tmp, "n")
         self.fm("notify", f'printf %s "$1" > {note}')

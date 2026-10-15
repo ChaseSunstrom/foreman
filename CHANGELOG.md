@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm run --sandbox` (T-0975): each headless session runs under Claude Code's sandbox (`--settings` with `sandbox.enabled`, `failIfUnavailable`, no unsandboxed fallback); Bash may write only the checkout, Foreman's state and the git dir, where a lane's commits land. Ambient tests (T-0705) are on in this repo.
 - SessionStart writes Foreman's two exports to Claude Code's env file once per session, not again on every compaction; a long session's Bash prelude had them eight times (T-0988).
 - Small-model gaps (T-0987, measured in T-0978 with a headless Haiku session): `fm check`'s first-run hint offers the repo's own test runner (`tests/run.py`, `run_tests.py`) before `unittest discover`; a foreground `for` loop that sleeps between checks is refused like `until`/`while`; an unknown task id names the active and newest open ids here.
 - `fm next`'s due-back line for a deferral waiting on a file says to defer again with the same `--until "when PATH changes"`, not `--until <date>` (T-0986; found and fixed by a headless Haiku session, T-0978).

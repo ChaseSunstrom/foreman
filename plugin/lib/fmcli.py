@@ -4869,6 +4869,9 @@ def build_parser():
                         "(it leaves for that provider; T-0731)")
     s.add_argument("--wait", type=float, default=6, help="hours to wait out usage limits in total (0: stop at one)")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
+    s.add_argument("--sandbox", action="store_true", help="each session under Claude Code's sandbox: Bash writes only "
+                                                          "its checkout, fm's state and the git dir; no sandbox, no "
+                                                          "session (T-0975)")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
     s = add("notify", lazy("fmserve", "cmd_notify"), help="command fm run uses to tell you a task finished or blocked")
