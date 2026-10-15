@@ -4,10 +4,12 @@ Non-guard handlers fail open: any exception is logged to state/logs/hooks.log an
 The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
+import fnmatch
 import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -694,6 +696,55 @@ def _syntax_note(path):
     except OSError:
         return None
     return None
+
+
+ONWRITE_TIMEOUT = 5  # seconds per project validator (fm check onwrite)
+_CARD = re.compile(r"/skills/library/cards/[^/]+/[^/]+\.md$")
+
+
+def _frontmatter_problem(path):
+    """A skill (SKILL.md) or agent definition (agents/*.md in a plugin or .claude) without name and description in its
+    frontmatter: Claude Code skips it without a word."""
+    parent = os.path.dirname(path)
+    if os.path.basename(path) != "SKILL.md" and not (
+            path.endswith(".md") and os.path.basename(parent) == "agents"
+            and (os.path.basename(os.path.dirname(parent)) == ".claude"
+                 or os.path.isdir(os.path.join(os.path.dirname(parent), ".claude-plugin")))):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            m = re.match(r"---\n(.*?)\n---", f.read(20000), re.S)
+    except (OSError, ValueError):
+        return None
+    keys = {k for k, v in re.findall(r"(?m)^(name|description):[ \t]*(\S.*)?$", m.group(1) if m else "") if v}
+    missing = [k for k in ("name", "description") if k not in keys]
+    return (f"Foreman: {os.path.basename(path)}: the frontmatter needs {' and '.join(missing)} (Claude Code skips it "
+            f"otherwise); add them between --- lines at the top.") if missing else None
+
+
+def _onwrite(p, path):
+    """T-0947: the validators for a file just written, as (problem, note): a problem blocks until fixed; a note (a
+    project validator that timed out, which says nothing about the file) doesn't. Built-ins run in this process; the
+    project's own (fm check onwrite GLOB 'CMD {file}') run in its root, ONWRITE_TIMEOUT seconds each."""
+    problem = _syntax_note(path) or _frontmatter_problem(path)
+    if not problem and _CARD.search(path) and os.path.isfile(path):
+        import fmlib
+        found = fmlib.lint_card(path)
+        problem = (f"Foreman: the stack card fails the lint (fm lib check): {'; '.join(found)}") if found else None
+    if problem:
+        return problem, None
+    rel = os.path.relpath(path, p.root)
+    rules = (c.read_meta(p).get("onwrite") or {}) if not rel.startswith("..") else {}
+    for pattern, cmd in rules.items():
+        if not fnmatch.fnmatch(rel, pattern) or not os.path.isfile(path):
+            continue
+        code, out = c.run_command(p.root, cmd.replace("{file}", shlex.quote(path)), timeout=ONWRITE_TIMEOUT)
+        if code == 124:
+            return None, f"Foreman: the onwrite validator for {pattern} timed out after {ONWRITE_TIMEOUT}s: `{cmd}`"
+        if code:
+            tail = "\n".join([l for l in out.splitlines() if l.strip()][-8:])
+            return f"Foreman: {rel} fails the project's onwrite check `{cmd}` (exit {code}):\n{tail}", None
+    return None, None
 
 
 THRASH = 6  # edits of one file with no check recorded in between
@@ -1572,7 +1623,12 @@ def post_tool_use(pl, ok=True):
             fmbus.after_edit(pl, p, path)
         except Exception:
             log_error("PostToolUse", _tb())
-        note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
+        problem, note = _onwrite(p, path)
+        if problem:  # T-0947: the write isn't done until it validates; Claude (or the subagent) fixes it first
+            c.log_event(p, "enforce", task=act.id if act else None, data={"file": path, "problem": problem[:300]},
+                        session=pl.get("session_id"))
+            return {"decision": "block", "reason": problem}
+        note = note or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None
