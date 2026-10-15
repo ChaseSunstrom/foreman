@@ -4392,8 +4392,9 @@ def build_parser():
     s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
-                                                                "app's list): --json, --follow")
+                                                                "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
+    s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
     s.add_argument("--once", action="store_true")
