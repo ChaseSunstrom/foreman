@@ -8,6 +8,7 @@ the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the
 import fcntl
 import glob
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -101,13 +102,18 @@ def timer(p):
     installed (scheduling stays the user's)."""
     unit = f"foreman-night-{p.slug}"
     cmd = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(c.PLUGIN_ROOT, 'bin', 'fm'))} night"
+    # systemd and cron start with a bare environment: this state dir, and the tools on your PATH (claude, git)
+    path = ":".join(d for d in os.environ.get("PATH", "").split(":") if d and not re.search(r"[\x00-\x1f\"%\s]", d))
+    home = c.foreman_home()
     return "\n".join([
         f"# ~/.config/systemd/user/{unit}.service", "[Unit]", f"Description=Foreman night ({p.slug})", "",
-        "[Service]", "Type=oneshot", f"WorkingDirectory={p.root}", f"ExecStart={cmd}", "",
+        "[Service]", "Type=oneshot", f"WorkingDirectory={p.root}", f'Environment="FOREMAN_HOME={home}"',
+        f'Environment="PATH={path}"', f"ExecStart={cmd}", "",
         f"# ~/.config/systemd/user/{unit}.timer", "[Unit]", f"Description=Foreman night ({p.slug}), nightly", "",
         "[Timer]", "OnCalendar=*-*-* 02:30", "Persistent=true", "", "[Install]", "WantedBy=timers.target", "",
         f"# then: systemctl --user daemon-reload && systemctl --user enable --now {unit}.timer",
-        "# or, without systemd, a crontab -e line:", f"30 2 * * * cd {shlex.quote(p.root)} && {cmd}"])
+        "# or, without systemd, a crontab -e line:",
+        f"30 2 * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} PATH={shlex.quote(path)} {cmd}"])
 
 
 def cmd_night(args):

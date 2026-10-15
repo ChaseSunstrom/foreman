@@ -651,10 +651,13 @@ def cmd_run(args):
         os.replace(log, log + ".1")
 
     def fail(msg, quarantine=None):
-        if quarantine:  # T-0955: blocked with the reason, so the next fm run takes the next task instead
-            why = f"fm run: {msg}"
-            fmcli.mutate(p, quarantine, lambda b: (b.meta.update(status="blocked"), b.append_log(f"blocked: {why}")),
-                         "task_block", {"reason": why})
+        if quarantine:  # T-0955: blocked with the reason, so the next fm run takes the next task instead; fm task
+            try:  # block itself, so the pause snapshot and the eval case (T-0734) come with it
+                r = _fm(p.root, "task", "block", quarantine, f"fm run: {msg}", timeout=120)
+                if r.returncode:
+                    print(f"fm run: couldn't block {quarantine}: {(r.stderr or r.stdout).strip()[-200:]}", file=sys.stderr)
+            except (OSError, subprocess.SubprocessError) as e:
+                print(f"fm run: couldn't block {quarantine}: {e}", file=sys.stderr)
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
         _notify(p, f"fm run stopped: {msg}")
         sys.exit(1)

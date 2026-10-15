@@ -366,5 +366,8 @@ class BoardRun(RunCase):
             self.assertIn(needle, out)
         self.assertRegex(out, r"(?m)^ExecStart=.*\bfm'? night$")
         self.assertRegex(out, r"(?m)^\d+ \d+ \* \* \* cd .* night")
+        self.assertIn(f'Environment="FOREMAN_HOME={self.home}"', out)  # systemd and cron start bare: state and tools
+        self.assertRegex(out, r'(?m)^Environment="PATH=[^"]+"$')
+        self.assertRegex(out, r"(?m)^\d+ \d+ \* \* \* cd .* && FOREMAN_HOME=\S+ PATH=\S+ \S+ \S+ night$")
         self.assertEqual(tree(), before)
         self.assertEqual(self.called(), "")
