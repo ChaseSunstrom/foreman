@@ -1168,3 +1168,15 @@ class Completion(ForemanTestCase):
         self.assertIn("bashcompinit", self.fm("complete", "--shell", "zsh").stdout)
         r = subprocess.run(["bash", "-n"], input=bash, capture_output=True, text=True)
         self.assertEqual(r.returncode, 0, r.stderr)
+
+
+class InboxList(ForemanTestCase):
+    # product check: fm --help lists "fm inbox — captured requests waiting", but bare fm inbox demanded a gh source
+    def test_bare_fm_inbox_lists_the_captured_requests(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        r = self.fm("inbox")
+        self.assertIn("T-0001", r.stdout)
+        self.assertIn("Add a dark theme", r.stdout)
+        self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
+        self.assertIn("{gh}", self.fm("inbox", "--help").stdout)  # the tracker source is still there
