@@ -55,7 +55,7 @@ The plugin-system install changes nothing outside the plugin: the hooks and the 
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude`, and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude` (tested on 2.1.301; the pane needs 2.1.299 or later), and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
 
 **Flags:**
 
@@ -109,6 +109,14 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 ## What it does for you
 
 **Plans.** Intake turns a request into briefs: type and tier (S, M or L), acceptance criteria with the commands that prove them, steps, scope and risks. M and L work lists the approaches first. The queue orders itself, dependencies included. Each brief lives in Foreman's state, outside your repo, unless you turn on `fm sync`.
+
+**Knows your stack.**
+- A library of over 1,000 stack cards spans 27 areas: languages, Python, Node, web, JVM, .NET, mobile, Rust, Go, C/C++ and embedded, data, ML and LLM apps, infra, cloud, ops, testing, security, architecture, product domains, tools, games and hardware, building Claude Code plugins, hooks, skills and mods, and practice (brainstorming, premortems, experiments, self-improvement loops).
+- Each card gives the exact commands that verify the work, a failing-test recipe, the mistakes models actually make, and a review checklist.
+- Cards cost no context until they are read. `fm lib` picks the ones that match your repo's manifests and files, and the session start names them.
+- `fm lib show fastapi pytest --section verify` reads just the parts you need.
+- `fm lib search` also finds installed plugins' skills, disabled ones included, so a big skill pack can stay off and still be found.
+- `fm lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Foreman's state, with no hooks, filters, submodules or symlinks, and nothing run. `fm lib source defaults` adds six vetted ones (wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea): about 870 skills and agents, searchable next to the cards at no context cost.
 
 **Verifies.**
 - `fm check` runs the project's gates and reuses a pass on an identical tree.
@@ -168,8 +176,9 @@ The `foreman-ui` mod draws Foreman live inside the session.
 **The dashboard.** `/fm` (or `[f]`) opens a dashboard pane that reads top-down by urgency:
 - what needs you: a yes Foreman is waiting for, and any plan waiting for approval, shown in full beside its Approve button;
 - the task: type, size, id and title, a stage rail from plan to close with a comet on the stage being worked, the steps bar, the current step, and time on the task against the usual for its type and size (a ┃ marks the usual; past it the bar turns amber);
-- **Now**: each call running this moment with a moving bar (a question waiting on you reads as waiting, not running);
+- **Now**: each call running this moment with a moving bar (a question waiting on you reads as waiting, not running). Live cards hold their place: one that empties stays dimmed ("idle · last: …") for 8 s and gives rows back one a second, so the pane doesn't jump as calls come and go;
 - **Plan**: the steps (one glows green as it gets done), the done-when criteria with the check that proves each, audits and what is left before done;
+- **Skills**: the skills invoked (✦) and stack cards read with `fm lib show` (▤) this week as chips with their age, the most used, and this repo's suggested cards not read yet, dimmed as `fm lib show NAME` (folded, its head still counts them; gone when there is nothing to show);
 - **Pulse**: swim lanes of the session's tool calls by kind (edit, run, read, agent, web) over the last 1 to 30 minutes, tasks closed per day for 14 days, and context, spend, hook-latency and guard gauges;
 - queue and inbox, with type chips, usual times and Start/Drop (one *Up next* card with the capture box when both are empty);
 - then the quieter cards: gates, brainstorm, files, fleet, spend, bench, research and activity (newest first), each folding to its head line with ▾/▸;

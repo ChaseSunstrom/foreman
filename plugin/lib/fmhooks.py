@@ -4,10 +4,12 @@ Non-guard handlers fail open: any exception is logged to state/logs/hooks.log an
 The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
+import fnmatch
 import hashlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -696,6 +698,55 @@ def _syntax_note(path):
     return None
 
 
+ONWRITE_TIMEOUT = 5  # seconds per project validator (fm check onwrite)
+_CARD = re.compile(r"/skills/library/cards/[^/]+/[^/]+\.md$")
+
+
+def _frontmatter_problem(path):
+    """A skill (SKILL.md) or agent definition (agents/*.md in a plugin or .claude) without name and description in its
+    frontmatter: Claude Code skips it without a word."""
+    parent = os.path.dirname(path)
+    if os.path.basename(path) != "SKILL.md" and not (
+            path.endswith(".md") and os.path.basename(parent) == "agents"
+            and (os.path.basename(os.path.dirname(parent)) == ".claude"
+                 or os.path.isdir(os.path.join(os.path.dirname(parent), ".claude-plugin")))):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            m = re.match(r"---\n(.*?)\n---", f.read(20000), re.S)
+    except (OSError, ValueError):
+        return None
+    keys = {k for k, v in re.findall(r"(?m)^(name|description):[ \t]*(\S.*)?$", m.group(1) if m else "") if v}
+    missing = [k for k in ("name", "description") if k not in keys]
+    return (f"Foreman: {os.path.basename(path)}: the frontmatter needs {' and '.join(missing)} (Claude Code skips it "
+            f"otherwise); add them between --- lines at the top.") if missing else None
+
+
+def _onwrite(p, path):
+    """T-0947: the validators for a file just written, as (problem, note): a problem blocks until fixed; a note (a
+    project validator that timed out, which says nothing about the file) doesn't. Built-ins run in this process; the
+    project's own (fm check onwrite GLOB 'CMD {file}') run in its root, ONWRITE_TIMEOUT seconds each."""
+    problem = _syntax_note(path) or _frontmatter_problem(path)
+    if not problem and _CARD.search(path) and os.path.isfile(path):
+        import fmlib
+        found = fmlib.lint_card(path)
+        problem = (f"Foreman: the stack card fails the lint (fm lib check): {'; '.join(found)}") if found else None
+    if problem:
+        return problem, None
+    rel = os.path.relpath(path, p.root)
+    rules = (c.read_meta(p).get("onwrite") or {}) if not rel.startswith("..") else {}
+    for pattern, cmd in rules.items():
+        if not fnmatch.fnmatch(rel, pattern) or not os.path.isfile(path):
+            continue
+        code, out = c.run_command(p.root, cmd.replace("{file}", shlex.quote(path)), timeout=ONWRITE_TIMEOUT)
+        if code == 124:
+            return None, f"Foreman: the onwrite validator for {pattern} timed out after {ONWRITE_TIMEOUT}s: `{cmd}`"
+        if code:
+            tail = "\n".join([l for l in out.splitlines() if l.strip()][-8:])
+            return f"Foreman: {rel} fails the project's onwrite check `{cmd}` (exit {code}):\n{tail}", None
+    return None, None
+
+
 THRASH = 6  # edits of one file with no check recorded in between
 
 
@@ -769,7 +820,8 @@ def _pin_problem(b, target, current):
     if pin is not None and not (isinstance(pin, list) and len(pin) == 3):
         return f"{b.id}'s plugin_pin is malformed; ask again: fm ask {b.id} plugin --pin <plugin id> --why \"…\""
     if target is None:
-        return (f"the user's plugin yes is pinned to installing or enabling {pin[0]}; ask separately for this change"
+        return (f"the user's plugin yes is pinned to installing or enabling {pin[0]} only; any other plugin change "
+                f"(an update, say) is never covered by a pin and needs its own fm ask {b.id} plugin"
                 if pin else None)
     ask = f"ask again: fm ask {b.id} plugin --pin {target} --why \"<what it adds>\""
     if not pin or pin[0] != target:
@@ -1571,10 +1623,28 @@ def post_tool_use(pl, ok=True):
             fmbus.after_edit(pl, p, path)
         except Exception:
             log_error("PostToolUse", _tb())
-        note = _syntax_note(path) or _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
+        note = _generated_note(pl, path) or (_thrash_note(pl, p, act, path) if act else None)
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     note = _big_read_note(pl, ti) if ok and tool == "Read" else None
+    return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
+
+
+def post_tool_validate(pl):
+    """T-0947: the write validators, from their own sync PostToolUse entry (matcher Write|Edit|MultiEdit|NotebookEdit)
+    beside the async catch-all that records every tool: a block needs a sync hook, and a plain matcher keeps every
+    other tool's recording on the catch-all (a lookahead matcher could be rejected by some Claude Code surface)."""
+    tool, ti = pl.get("tool_name", ""), pl.get("tool_input") or {}
+    p = c.find_project(_cwd(pl))
+    if not p or tool not in FILE_TOOLS:
+        return None
+    path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
+    problem, note = _onwrite(p, path)
+    if problem:  # the write isn't done until it validates; Claude (or the subagent) fixes it first
+        act = c.active_brief(c.load_briefs(p), p.lane)
+        c.log_event(p, "enforce", task=act.id if act else None, data={"file": path, "problem": problem[:300]},
+                    session=pl.get("session_id"))
+        return {"decision": "block", "reason": problem}
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
 
 
@@ -2343,7 +2413,7 @@ def session_end(pl):
 
 
 HANDLERS = {
-    "SessionStart": session_start, "UserPromptSubmit": user_prompt_submit, "PostToolUse": post_tool_use,
+    "SessionStart": session_start, "UserPromptSubmit": user_prompt_submit, "PostToolUse": post_tool_use, "PostToolUseValidate": post_tool_validate,
     "PostToolUseFailure": post_tool_use_failure, "PreCompact": pre_compact, "Stop": stop,
     "TaskCompleted": task_completed, "SubagentStart": subagent_start, "SubagentStop": subagent_stop,
     "MessageDisplay": message_display, "Notification": notification, "SessionEnd": session_end,

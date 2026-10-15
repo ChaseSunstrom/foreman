@@ -194,6 +194,16 @@ class UserPromptSubmit(HookCase):
         self.assertEqual(title(self.hook("UserPromptSubmit", {"prompt": "next"})), f"{other} Second thing")
         self.assertIsNone(title(self.hook("UserPromptSubmit", {"prompt": "more"})))
 
+    def test_a_slash_command_is_not_read_as_a_work_request(self):
+        # Claude Code 2.1.299 runs UserPromptSubmit before skill and command expansion, so the hook sees the bare
+        # command: it is no request to classify or capture (T-0944)
+        self.fm("init")
+        for prompt in ("/foreman:next", "/foreman:status", "/compact keep the plan", "/fm"):
+            ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt}))
+            self.assertNotIn("Work request", ctx, prompt)
+            self.assertNotIn("Broad request", ctx, prompt)
+            self.assertNotIn("Open-ended", ctx, prompt)
+
     def test_intake_block_is_summarised(self):
         self.fm("init")
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "FIX: a\nFEATURE!: b\nCLEAN?: c\nCONTEXT: d"}))
@@ -714,6 +724,15 @@ class PluginPins(HookCase):
         self.assertEqual(self.pre("fm plugins install a@m").returncode, 0)
         self.assertNotIn("plugin", self.brief().meta.get("allow") or [])
         self.assertNotIn("plugin_pin", self.brief().meta)
+
+    def test_GuardFriction_an_update_is_never_covered_by_a_pin(self):  # T-0936
+        self.approve("a@m")
+        p = self.pre("claude plugin update a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("update", p.stderr)
+        self.assertIn(f"fm ask {self.tid} plugin", p.stderr)
+        self.assertIn("never covered by a pin", p.stderr)
+        self.assertIn("plugin", self.brief().meta.get("allow"), "a refused call doesn't spend the yes")
 
     def test_changed_content_or_an_old_yes_asks_again(self):
         self.approve("a@m")

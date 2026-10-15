@@ -15,6 +15,8 @@ export const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost tur
 export const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
 export const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
 export const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
+export const HOLD_MS = 8000 // T-0938: a volatile card keeps its tallest recent height this long, then gives a row back
+export const STEP_MS = 1000 // per this long
 export const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 export const FRESH = [
   'Foreman task boundary: a task just closed.',
