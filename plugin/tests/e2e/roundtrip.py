@@ -76,7 +76,7 @@ def main():
                 return set()
 
         # ---- install
-        rc, out = run([os.path.join(fhome, "install.sh"), "--no-plugins"], env)
+        rc, out = run([os.path.join(fhome, "install.sh"), "--no-plugins", "--bypass"], env)  # T-0871: opted in
         check("install.sh --no-plugins exits 0", rc == 0, out.strip().splitlines()[-1] if out.strip() else "")
         s1 = load(os.path.join(claude_dir, "settings.json")) or {}
         wrapper = os.path.join(fhome, "plugin", "hooks", "statusline")
@@ -108,7 +108,7 @@ def main():
         check("uninstalled: state/ removed only after archiving", not os.path.exists(os.path.join(fhome, "state")) and archives)
 
         # ---- reinstall
-        rc, out = run([os.path.join(fhome, "install.sh"), "--no-plugins"], env)
+        rc, out = run([os.path.join(fhome, "install.sh"), "--no-plugins", "--bypass"], env)
         s3 = load(os.path.join(claude_dir, "settings.json")) or {}
         diff = {k: s3.get(k) for k in set(s3) | set(s1) if s3.get(k) != s1.get(k)}
         check("reinstall: identical wiring", rc == 0 and not diff, json.dumps(diff)[:300])
