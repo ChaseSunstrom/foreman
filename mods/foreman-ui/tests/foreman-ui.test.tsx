@@ -433,6 +433,19 @@ test('a running edit is an animated row with its delta; a finished one is the en
   }
 })
 
+test('a subagent turn starting mid-turn leaves the main turn counts alone (Claude Code 2.1.299, T-0944)', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 'm1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.py', old_string: 'a', new_string: 'b\nc', replace_all: false })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q' })
+  await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' }) // turn.start fires for subagents now
+  await $.turn.complete({ answer: '', durationMs: 3100, isAborted: false, turnId: 'm1', reason: 'answer' })
+  const line = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'TurnDuration', props: { word: 'Baked', durationMs: 3100 } })
+  expect(await line.find({ type: 'Text', text: /2 tools · 1 edit \+2 −1/ })).toBeDefined()
+  await line.unmount()
+})
+
 test('the spinner names the Foreman step; the closing line says what the turn did', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })

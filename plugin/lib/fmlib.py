@@ -41,7 +41,8 @@ _FM = re.compile(r"\A---\n(.*?)\n---\n", re.S)
 _SIGNAL = re.compile(r"^(dep|file|ext):([^\s{},]+)$")
 _PLACEHOLDER = re.compile(r"\b(TODO|TBD|FIXME)\b|[Ll]orem ipsum")  # upper case only: a todo app is fine
 _SKIP_DIRS = {"node_modules", ".git", "vendor", "target", "dist", "build", ".venv", "venv", "__pycache__", ".next",
-              ".tox", ".mypy_cache", "Pods", ".gradle", "bin", "obj"}
+              ".tox", ".mypy_cache", ".pytest_cache", ".ruff_cache", ".cache", ".idea", ".vscode", "Pods", ".gradle", "bin",
+              "obj"}
 
 
 def parse(text):
@@ -217,7 +218,7 @@ def _files(root, limit=20000):
         return listed.splitlines()[:limit]
     files = []
     for d, dirs, names in os.walk(root):
-        dirs[:] = [x for x in dirs if x not in _SKIP_DIRS and not x.startswith(".") or x in (".github", ".circleci")]
+        dirs[:] = [x for x in dirs if x not in _SKIP_DIRS]  # dot dirs count: .claude-plugin, .github, .devcontainer
         if d[len(root):].count(os.sep) > 5:
             dirs[:] = []
         files += [os.path.relpath(os.path.join(d, n), root) for n in names]

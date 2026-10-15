@@ -86,7 +86,7 @@ export function rail(ui: UI, e: ResolveInput, stages: readonly string[], current
       <Raster key="stage-rail" columns={width} rows={1} cells={stageCells(stages.length, current, width, f)} />
       <Text key="stage-labels" wrap="truncate-end">
         {stageLabels(stages, current, width).map((r, i) => (
-          <Text key={`sl-${i}`} color={hex(color[r.kind])} bold={r.kind === 'current'}>
+          <Text key={`sl-${i}`} color={hex(color[r.kind])} weight={r.kind === 'current' ? 'bold' : 'regular'}>
             {r.text}
           </Text>
         ))}
@@ -239,7 +239,7 @@ export function shellRow(ui: UI, e: ToolUseRender) {
       paddingX={1} width="100%" key="fm-shell">
       {/* the mark in a column of its own, so a long title wraps under itself (T-0141) */}
       <Box flexDirection="row" key="fm-shell-head">
-        <Text bold color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn)}>
+        <Text weight="bold" color={hex(mark === '✗' ? C.err : mark === '✓' ? C.ok : mark === '◷' ? C.accent2 : C.warn)}>
           {`${mark} `}
         </Text>
         <Text wrap="wrap">
@@ -327,7 +327,7 @@ export function editRow(ui: UI, e: ToolUseRender) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={hex(tint(C.edit))} paddingX={1} width="100%" key="fm-edit">
       <Box flexDirection="row" gap={1} key="fm-edit-head">
-        <Text bold color={hex(C.ok)}>
+        <Text weight="bold" color={hex(C.ok)}>
           ✓
         </Text>
         <Text color={hex(C.edit)}>
@@ -372,7 +372,7 @@ export function agentRow(ui: UI, e: ToolUseRender) {
   return (
     <Box flexDirection="column" borderStyle="round" borderColor={hex(tint(C.agent))} paddingX={1} width="100%" key="fm-agent">
       <Box flexDirection="row" key="fm-agent-head">
-        <Text bold color={hex(bg ? C.accent2 : C.ok)}>
+        <Text weight="bold" color={hex(bg ? C.accent2 : C.ok)}>
           {`${bg ? '◷' : '✓'} `}
         </Text>
         <Text wrap="wrap">
