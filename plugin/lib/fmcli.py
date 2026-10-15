@@ -2519,7 +2519,7 @@ def _export_adr(p, args, rows):
     top = os.path.abspath(args.export_adr)
     os.makedirs(top, exist_ok=True)
     written = []
-    for n, r in enumerate(map(_decision_row, rows), 1):
+    for n, r in ((n, _decision_row(row)) for n, row in rows):
         text = re.sub(r"^(\[[^\]]*\]\s*)*", "", r["text"]).strip() or "untitled"
         slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:50] or "decision"
         path = os.path.join(top, f"{n:04d}-{slug}.md")
@@ -2545,16 +2545,18 @@ def cmd_decide(args):
         return _digest(p, args, applied)
     if getattr(args, "answer", None) is not None:
         return _answer(p, args)
+    if args.decision and getattr(args, "export_adr", None):
+        raise UsageError("--export-adr exports the recorded decisions: run it without a decision text")
     if args.list or args.review or not args.decision:
         rows = [l.rstrip("\n") for l in (open(path, encoding="utf-8").readlines() if os.path.exists(path) else [])
                 if l.startswith("| 2")]
         text = "\n".join(rows)
         reversed_ = re.findall(r"\[reverses: ([^\]]+)\]", text)
-        pick = [r for r in rows if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
-        pick = [r + ("  ← reversed later" if any(x.lower() in r.lower() for x in reversed_ if "[reverses:" not in r)
-                     else "") for r in pick]
-        if getattr(args, "export_adr", None):
-            return _export_adr(p, args, pick)
+        nums = [n for n, r in enumerate(rows, 1) if not args.review or re.search(r"\| \[(costly|outward)\]", r)]
+        pick = [rows[n - 1] + ("  ← reversed later" if any(x.lower() in rows[n - 1].lower() for x in reversed_
+                                                          if "[reverses:" not in rows[n - 1]) else "") for n in nums]
+        if getattr(args, "export_adr", None):  # numbered as in the full list, so a --review export never collides
+            return _export_adr(p, args, list(zip(nums, pick)))
         return out(args, {"decisions": pick, "rows": [_decision_row(r) for r in pick]},
                    "\n".join(pick[-args.n:]) or "No decisions recorded.")
     try:
@@ -4305,7 +4307,7 @@ def build_parser():
                                                       "tripwires (T-0743)")
     s.add_argument("--why", help="with --retire: why it no longer helps")
     s.add_argument("--export-rules", action="store_true", help="write the live lessons to .claude/rules/"
-                                                               "foreman-lessons.md, paths: their files (T-0958)")
+                                                               "foreman-lessons/, one file per task, paths: its files (T-0958)")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
                                                         "in with fm share on (never sensitive ones), file:line (T-0618)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "

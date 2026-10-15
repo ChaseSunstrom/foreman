@@ -546,13 +546,15 @@ def cmd_recall(args):
             raise fmcli.UsageError("--retire needs --why \"<why it no longer helps>\"")
         c.update_meta(p, retired_lessons=dict(retired_lessons(p), **{args.retire: c.redact(args.why)[:200]}))
         write_tripwires(p)
+        if os.path.isdir(os.path.join(p.root, ".claude", "rules", "foreman-lessons")):
+            export_rules(p)  # a retired lesson leaves the exported rules too
         c.log_event(p, "lesson_retired", data={"lesson": args.retire, "why": c.redact(args.why)[:200]})
         return fmcli.out(args, {"retired": args.retire}, f"Retired {args.retire}: recall and tripwires leave it out.")
     if getattr(args, "export_rules", False):
         path, n, files = export_rules(p)
         return fmcli.out(args, {"path": path, "lessons": n, "paths": files},
-                         f"{n} lesson(s) → {os.path.relpath(path, p.root)}"
-                         + (f", loaded with {len(files)} file(s)" if files else ", always loaded (no files touched)"))
+                         f"{n} lesson(s) → {os.path.relpath(path, p.root)}/, each loaded only with its task's files "
+                         f"({len(files)} in all)")
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
@@ -602,23 +604,41 @@ def write_tripwires(p):
     c.write_atomic(os.path.join(p.dir, "tripwires.json"), json.dumps(index))
 
 
+RULES_MAX = 60  # newest tasks exported; each is its own rule file, loaded only with its files
+RULES_HOT = 5  # a file more exported tasks touched than this (a changelog, the CLI) scopes nothing
+
+
 def export_rules(p):
-    """T-0958: finished tasks' live lessons as a Claude Code rule, .claude/rules/foreman-lessons.md, its paths:
-    frontmatter the files those tasks touched (none: no frontmatter, so it always loads). (path, lessons, files)."""
-    retired, rows, files = retired_lessons(p), [], []
+    """T-0958: finished tasks' live lessons as Claude Code rules, one file per task under
+    .claude/rules/foreman-lessons/, each with paths: frontmatter of the files that task touched, so a lesson loads only
+    with its files. Lessons are redacted; a task with no touched file, or only files most tasks touch, isn't exported
+    (it would load every session); stale files there are removed. (folder, lessons, files)."""
+    retired, tasks = retired_lessons(p), []
     for b in c.load_briefs(p, include_archive=True):
         texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
         live = [t for i, t in enumerate(texts, 1) if b.status == "done" and f"{b.id}.{i}" not in retired
                 and not t.lower().startswith("none")]
-        if live:
-            rows += [f"- {c.fit(c.defang(c.plain(t)), 300)} ({b.id})" for t in live]
-            files += [f for f in _files(b) if f not in files]
-    head = ("---\npaths:\n" + "".join(f"  - {json.dumps(f)}\n" for f in files) + "---\n") if files else ""
-    path = os.path.join(p.root, ".claude", "rules", "foreman-lessons.md")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    c.write_atomic(path, head + "# Lessons from finished tasks (written by fm recall --export-rules; regenerated, "
-                   "don't edit)\n\n" + "\n".join(rows) + "\n")
-    return path, len(rows), files
+        if live and _files(b):
+            tasks.append((b.id, live, _files(b)))
+    tasks = sorted(tasks, key=lambda t: c.id_num(t[0]))[-RULES_MAX:]
+    hot = {f for f, n in collections.Counter(f for _, _, fs in tasks for f in set(fs)).items() if n > RULES_HOT}
+    folder = os.path.join(p.root, ".claude", "rules", "foreman-lessons")
+    os.makedirs(folder, exist_ok=True)
+    keep, n, files = set(), 0, set()
+    for tid, live, fs in tasks:
+        scope = [f for f in fs if f not in hot]
+        if not scope:
+            continue
+        keep.add(f"{tid}.md")
+        n += len(live)
+        files.update(scope)
+        c.write_atomic(os.path.join(folder, f"{tid}.md"), "---\npaths:\n" + "".join(f"  - {json.dumps(f)}\n" for f in scope)
+                       + f"---\n# Lessons from {tid} (fm recall --export-rules; regenerated, don't edit)\n\n"
+                       + "".join(f"- {c.fit(c.defang(c.redact(c.plain(t))), 300)}\n" for t in live))
+    for old in os.listdir(folder):
+        if re.fullmatch(r"T-\d+\.md", old) and old not in keep:
+            os.remove(os.path.join(folder, old))
+    return folder, n, sorted(files)
 
 
 def tripwire(p, rel, active=None):

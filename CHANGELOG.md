@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Knowledge out (T-0958): `fm recall --export-rules` writes each finished task's lessons to `.claude/rules/foreman-lessons/T-NNNN.md`, scoped by `paths:` to that task's files, so Claude Code loads a lesson only with its files; `fm decide --export-adr DIR` writes one ADR per decision; `fm task defer ID --until "when PATH changes"` brings a task back once the file changes.
 - Brainstorm and cost (T-0959): a brainstorm child that fails after printing keeps its answer, flagged partial; `fm ideas` writes a manifest.json; `fm cost --sessions` labels each cache bust ttl or context edit; `fm friction --minutes` estimates the minutes friction cost this week; `fm burden --by-verb` lists the fm verbs nobody calls. Reports over days now read the rotated event logs too.
 - Session signals (T-0957): plan mode holds the drive like a plan-only prompt; stops that leave open work idle are counted (`fm doctor -v`); your prompts are kept in the ledger (redacted, capped, never in a sensitive project); the first session after an upgrade shows what's new, once.
 - Close-out (T-0956): `fm task finish` opens its warnings with one "N warnings: kinds" line, flags merge conflict markers and debugger lines in the task's added lines, and ends with "Landed: committed SHA · pushed/not pushed" or "not committed", counting only the task's own files.
