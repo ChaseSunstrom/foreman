@@ -4309,9 +4309,9 @@ def build_parser():
     s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
     s = add("adopt", lazy("fmeco", "cmd_adopt"), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
-    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="capture work from a tracker: gh reads the repo's open issues "
-                                                       "(read-only) into briefs, their text kept as untrusted data")
-    s.add_argument("source", choices=["gh"])
+    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="captured requests waiting; fm inbox gh reads the repo's open "
+                                                       "issues (read-only) into briefs, their text kept as untrusted data")
+    s.add_argument("source", nargs="?", choices=["gh"], help="a tracker to capture from; none lists the inbox")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
     s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "

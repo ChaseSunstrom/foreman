@@ -257,6 +257,9 @@ def inbox_gh(p, repo=None, limit=30):
 
 def cmd_inbox(args):
     import fmcli
+    if not args.source:  # what fm --help promises: the captured requests waiting, ranked as STATE ranks them
+        sd = c.state_dict(fmcli.resolve(args))
+        return fmcli.out(args, {"inbox": sd["inbox"]}, c.render_inbox(sd).split("\n", 2)[2].strip())
     d = inbox_gh(fmcli.resolve(args), args.repo, args.limit)
     fmcli.out(args, d, f"GitHub issues: {len(d['captured'])} captured" + (f" ({', '.join(d['captured'])})" if
                                                                            d["captured"] else "")
