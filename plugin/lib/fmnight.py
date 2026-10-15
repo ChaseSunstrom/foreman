@@ -4,6 +4,7 @@ kept fm evolve candidate — each an existing fm command, kept while the night's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
 the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up."""
+import fcntl
 import glob
 import os
 import subprocess
@@ -16,6 +17,7 @@ import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
+_LEASE = None  # T-0921: the open lock file of a running night
 NAMES = ("dream", "cold files", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
@@ -96,6 +98,13 @@ def cmd_night(args):
     p = fmcli.resolve(args)
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
+    if not getattr(args, "dry_run", False):  # T-0921: one night at a time (a cron firing while a manual one runs)
+        global _LEASE
+        _LEASE = open(os.path.join(p.dir, "night.lock"), "w")  # held until the process ends
+        try:
+            fcntl.flock(_LEASE, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise fmcli.UsageError(f"another fm night is already running for {p.slug}")
     if not getattr(args, "dry_run", False):
         try:  # T-0452: standing orders capture their tasks (no session runs, so no spend)
             import fmorders
