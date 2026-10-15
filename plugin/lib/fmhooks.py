@@ -1036,13 +1036,63 @@ def _pre_tool_use(raw):
         return 0  # T-0077: the guard has spoken; no brief requirement or notes in a session another tool drives
     try:
         note = " ".join(filter(None, [saved, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl)]))
+                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act)]))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _card_note(pl, p, act):
+    """T-0949: the first edit of a file the map's stack cards cover gets that card's Avoid section, once per card per
+    task. The ledger event is the memory (it outlives the session) and is written before the note goes out, so a lost
+    output loses the note rather than repeating it; two edits at once may both inject it. Off with FOREMAN_NO_CARDS=1
+    or fm lib inject off; any failure here injects nothing and never blocks the edit."""
+    if not p or not act or pl.get("tool_name") not in FILE_TOOLS or os.environ.get("FOREMAN_NO_CARDS", "") not in ("", "0"):
+        return None
+    try:
+        ti = pl.get("tool_input") or {}
+        path = ti.get("file_path") or ti.get("notebook_path")
+        if not isinstance(path, str) or not path or c.read_meta(p).get("lib_inject") is False:
+            return None
+        import fmlib
+        path = os.path.normpath(os.path.join(_cwd(pl), path))
+        name = fmlib.card_for(p, path)
+        if not name or _card_injected(p, act.id, name):
+            return None
+        note = fmlib.card_avoid(name)
+        if note:
+            c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
+                                                         "file": os.path.relpath(path, p.root)},
+                        session=pl.get("session_id"))
+        return note
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
+def _card_injected(p, tid, name):
+    """Whether the ledger already has this card injected for this task: a byte search for the event's kind, then
+    JSON for those lines only. ponytail: reads the whole ledger on each covered edit; an index if ledgers grow huge."""
+    try:
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            data = f.read()
+    except OSError:
+        return False
+    i = data.find(b'"card_injected"')
+    while i >= 0:
+        end = data.find(b"\n", i)
+        end = len(data) if end < 0 else end
+        try:
+            e = json.loads(data[data.rfind(b"\n", 0, i) + 1:end])
+        except ValueError:
+            e = None
+        if isinstance(e, dict) and e.get("task") == tid and (e.get("data") or {}).get("card") == name:
+            return True
+        i = data.find(b'"card_injected"', end)
+    return False
 
 
 def _snapshot_note(pl, guard):
@@ -1642,7 +1692,7 @@ def post_tool_validate(pl):
     problem, note = _onwrite(p, path)
     if problem:  # the write isn't done until it validates; Claude (or the subagent) fixes it first
         act = c.active_brief(c.load_briefs(p), p.lane)
-        c.log_event(p, "enforce", task=act.id if act else None, data={"file": path, "problem": problem[:300]},
+        c.log_event(p, "enforce", task=act.id if act else None, data={"kind": "validator_block", "file": path, "problem": problem[:300]},
                     session=pl.get("session_id"))
         return {"decision": "block", "reason": problem}
     return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}} if note else None
