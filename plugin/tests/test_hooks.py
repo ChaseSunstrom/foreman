@@ -150,6 +150,21 @@ class SessionStart(HookCase):
         self.assertIn("Sensitive", ctx)
         self.assertIn("other-se", ctx)
 
+    def test_a_bare_plugin_install_is_told_where_the_rules_are(self):
+        # T-0874: /plugin install alone runs the hooks but never wires the rules into ~/.claude
+        self.fm("init")
+        home = os.path.join(self.tmp, "barehome")
+        os.makedirs(os.path.join(home, ".claude"))
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
+                                    env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
+        self.assertIn(os.path.join("rules", "foreman.md"), ctx)
+        self.assertIn("fm install-user", ctx)
+        os.makedirs(os.path.join(home, ".claude", "rules"))
+        open(os.path.join(home, ".claude", "rules", "foreman.md"), "w").close()  # wired: nothing to say
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"},
+                                    env={"CLAUDE_ENV_FILE": self.env_file, "HOME": home}))
+        self.assertNotIn("fm install-user", ctx)
+
     def test_non_git_unregistered_dir_gets_nothing(self):
         plain = os.path.join(self.tmp, "plain")
         os.makedirs(plain)
