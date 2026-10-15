@@ -300,6 +300,22 @@ class TaskLifecycle(ForemanTestCase):
         self.assertEqual(self.fm("task", "evidence", "T-0001", "--step", "1", "pytest", check=False).returncode, 1,
                          "a typed result is still required without --run")
 
+    def test_evidence_run_never_reads_bytecode_older_than_its_source(self):
+        # T-0876: a fix that kept the file's size and second of mtime ran the old code from __pycache__
+        import py_compile
+        self.fm("task", "step", "T-0001", "add", "a")
+        mod = os.path.join(self.repo, "mod.py")
+        with open(mod, "w") as f:
+            f.write("X = 1\n")
+        t = int(time.time()) - 60
+        os.utime(mod, ns=(t * 10**9 + 100, t * 10**9 + 100))
+        pyc = py_compile.compile(mod, doraise=True)
+        os.utime(pyc, ns=(t * 10**9 + 300, t * 10**9 + 300))  # compiled between the two edits of that second
+        with open(mod, "w") as f:
+            f.write("X = 2\n")
+        os.utime(mod, ns=(t * 10**9 + 800, t * 10**9 + 800))
+        self.fm("task", "evidence", "T-0001", "--step", "1", "--run", "python3 -c 'import mod; assert mod.X == 2'")
+
     def test_focus_requires_a_plan(self):
         p = self.fm("focus", "T-0001", check=False)
         self.assertEqual(p.returncode, 2)

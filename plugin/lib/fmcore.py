@@ -351,8 +351,28 @@ def task_diff(root, base, *opts):
     return _git(root, "diff", *opts, base, tree, timeout=300, fail=None) if tree else None
 
 
+def _drop_racy_pyc(root):
+    """T-0876: Python trusts a .pyc whose recorded source mtime (whole seconds) and size match, so a same-size edit in
+    the second it was compiled runs the old code. Bytecode not newer than its source goes; Python rebuilds it. A walk,
+    not git: git here would run the fsmonitor or filter a bench session configured (test_bench_family)."""
+    # ponytail: walks the whole root each run (~0.1 s per 10k files); narrow it if a huge repo makes evidence slow
+    for top, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ("node_modules", "site-packages")]
+        if os.path.basename(top) != "__pycache__":
+            continue
+        for name in files:
+            pyc, src = os.path.join(top, name), os.path.join(os.path.dirname(top), name.split(".", 1)[0] + ".py")
+            try:
+                if name.endswith(".pyc") and os.stat(pyc).st_mtime_ns <= os.stat(src).st_mtime_ns:
+                    os.unlink(pyc)
+            except OSError:  # no source (a module that moved), or the file went
+                continue
+
+
 def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
+    if root and os.path.isdir(root):
+        _drop_racy_pyc(root)
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)
