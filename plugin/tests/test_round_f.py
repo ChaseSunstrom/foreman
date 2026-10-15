@@ -54,6 +54,13 @@ class RoundF(ForemanTestCase):
         self.assertIn("empty carts total 0", out)
         self.assertIn("T-0001 [FIX S, captured] handle empty carts", out.replace("planned", "captured"))
         self.assertIn("No commits found", self.fm("why", "nothere.py:1").stdout)
+        self.assertNotIn("asked:", out, "a raw request that is just the title isn't repeated")
+        self.fm("capture", "checkout crashes when the cart is empty; it should just say the total is zero, and the "
+                           "same goes for the mini cart in the header and the order summary email")  # T-0889: past the title
+        with open(os.path.join(self.repo, "cart.py"), "a") as f:
+            f.write("ZERO = 0\n")
+        self.git("commit", "-qam", "fix(T-0002): empty cart totals zero")
+        self.assertIn('asked: "checkout crashes when the cart is empty', self.fm("why", "cart.py:3").stdout)
 
     def test_a_bare_status_is_answered_by_the_hook(self):
         self.fm("task", "new", "ship it", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")

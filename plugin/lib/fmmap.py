@@ -526,6 +526,9 @@ def cmd_why(args):
                 lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
                 lines.append(c.fit(f"  {tid} [{b.type} {b.tier}, {b.status}] {b.title}"
                                    + (f" — lesson: {lesson}" if lesson else ""), 220))
+                asked = " ".join(x.lstrip("> ").strip() for x in b.section("Raw request").splitlines() if x.strip())
+                if asked and asked.lower().rstrip(".") != b.title.lower().rstrip("."):  # T-0889: the user's own words
+                    lines.append(c.fit(f"    asked: \"{asked}\"", 240))
     fmcli.out(args, {"path": rel, "line": int(line) if line else None, "commits": rows},
               c.plain_lines("\n".join(lines)) if lines else f"No commits found for {rel}{':' + line if line else ''} "
                                                             f"(uncommitted, or not in git).")
