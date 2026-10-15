@@ -738,8 +738,10 @@ def check_state_dir(home, state):
 def check_hook_events(registered=None):
     """Every event fmhooks handles is registered in hooks.json (a new hook needs /reload-plugins to take effect)."""
     import fmhooks
-    if registered is None:
-        registered = set(_load_json(os.path.join(PLUGIN, "hooks", "hooks.json")).get("hooks") or {})
+    if registered is None:  # an event's name, or the handler an entry names in its args (T-0947: PostToolUseValidate)
+        hooks = _load_json(os.path.join(PLUGIN, "hooks", "hooks.json")).get("hooks") or {}
+        registered = set(hooks) | {(h.get("args") or [None])[0] for gs in hooks.values() for g in gs
+                                   for h in g.get("hooks") or []} - {None}
     missing = sorted((set(fmhooks.HANDLERS) | {"PreToolUse"}) - set(registered))
     if missing:
         return Result("hook events", "FAIL", "handled but not registered in hooks.json: " + ", ".join(missing))
