@@ -97,3 +97,14 @@ class Crossbreed(Base):
         _, md = self.ideas("--crossbreed")
         self.assertIn("## Cross-bred", md)
         self.assertIn("Retrying mascot", md)
+
+
+class ChildFolder(ForemanTestCase):
+    def test_children_share_one_private_folder(self):
+        # T-0856: a fresh temp dir per child gave Claude Code a new ~/.claude/projects shell each time (564 of them)
+        import stat
+        a, b = fmideas._child_dir(), fmideas._child_dir()
+        self.assertEqual(a, b)
+        st = os.lstat(a)
+        self.assertTrue(stat.S_ISDIR(st.st_mode))
+        self.assertEqual((st.st_uid, stat.S_IMODE(st.st_mode)), (os.getuid(), 0o700))

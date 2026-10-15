@@ -348,6 +348,17 @@ def check_global(apply, actions, plugins=False):
                     except OSError:  # gone meanwhile
                         pass
                 actions.append(("global", kind))
+    projects = os.path.join(home_claude, "projects")  # T-0856: shells Claude Code made for Foreman's child folders
+    shells = [os.path.join(projects, d) for d in (os.listdir(projects) if os.path.isdir(projects) else [])
+              if re.match(r"-(run-user-\d+|tmp)-fm-", d)
+              and not any(files for _, _, files in os.walk(os.path.join(projects, d)))]
+    if shells:
+        out.append(finding(None, "child_shells", "action", f"{len(shells)} empty ~/.claude/projects folder(s) left by "
+                           "Foreman's own claude -p runs", "delete (no files in them)", auto=True))
+        if apply:
+            for d in shells:
+                shutil.rmtree(d, ignore_errors=True)
+            actions.append(("global", "child_shells"))
     if plugins:
         out += _check_plugins()
     return out

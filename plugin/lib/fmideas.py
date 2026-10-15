@@ -62,6 +62,29 @@ def _tail(s, n):
     return s if len(s) <= n else "…" + s[1 - n:]
 
 
+def _child_dir():
+    """T-0856: the one private folder every tool-less child runs in. Claude Code makes a ~/.claude/projects folder
+    per working directory, so a fresh temp dir per child left 564 of them. OSError when it isn't ours to use."""
+    import stat
+    d = os.path.join(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir(), f"fm-children-{os.getuid()}")
+    try:
+        os.mkdir(d, 0o700)
+    except FileExistsError:
+        pass
+    st = os.lstat(d)  # never a link or someone else's folder (a shared /tmp)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or stat.S_IMODE(st.st_mode) != 0o700:
+        raise OSError(f"{d} isn't a private folder of ours")
+    return d
+
+
+def _child_cwd(feature):
+    import contextlib
+    try:
+        return contextlib.nullcontext(_child_dir())
+    except OSError:
+        return tempfile.TemporaryDirectory(prefix=f"fm-{feature}-", dir=os.environ.get("XDG_RUNTIME_DIR") or None)
+
+
 def _child_env():
     return dict(os.environ, FOREMAN_NO_BACKGROUND="1")  # a child never starts Foreman's own background reviews
 
@@ -73,7 +96,7 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
         fmbudget.check(feature, fmbudget.estimate(feature, 1, fallback))
     except fmbudget.BudgetError as e:
         raise ValueError(str(e))
-    with tempfile.TemporaryDirectory(prefix=f"fm-{feature}-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
+    with _child_cwd(feature) as cwd:
         try:
             r = subprocess.run(child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
                                timeout=timeout, env=_child_env())
@@ -89,7 +112,7 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
 def run_children(jobs, timeout, feature):
     """T-0295: [(argv, stdin, detail)] run in parallel in one scratch folder under one deadline, each recorded:
     [(text or None, error)]. OSError when one can't start (the started ones are stopped)."""
-    with tempfile.TemporaryDirectory(prefix=f"fm-{feature}-", dir=os.environ.get("XDG_RUNTIME_DIR") or None) as cwd:
+    with _child_cwd(feature) as cwd:
         procs = []
         try:
             for argv, stdin, detail in jobs:
