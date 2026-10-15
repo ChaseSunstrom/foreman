@@ -20,7 +20,7 @@ Claude Code is fast. Left to itself it also fails in familiar ways: it edits bef
 | **Guards bypass mode** | A fail-closed guard stops recursive deletes outside the project, force-pushes, credential reads, `curl \| sh`, publishes and edits to Foreman itself. Before a git command throws away uncommitted work, Foreman saves that work first. |
 | **Stays on task** | One active task. New requests go to the inbox instead of being chased. `NOW:` switches tasks on purpose. |
 | **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. |
-| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. `fm run` and `fm serve` keep it working headless. |
+| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. When the queue drains it finds its own next work (`fm scout`: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly brainstorm), so you never have to ask. `fm run` and `fm serve` keep it working headless. |
 | **Learns** | Lessons, tripwires and a self-improvement loop turn your corrections and Foreman's own friction into fixes. |
 
 ## Quick start
@@ -136,7 +136,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
 - `fm digest` sums up the week.
 
-**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
+**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
 **Improves itself.** `fm friction` digests Foreman's own friction, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
