@@ -596,6 +596,11 @@ class Checks(ForemanTestCase):
         self.assertIn("affected", out)
         self.assertIn("tests/test_parser.py", read_text(log))
         self.assertNotIn("tests/test_report.py", read_text(log))
+        for rel in ("src/demo.py", "tests/test_demo.py"):  # T-0875: new and untracked, so the map has no link for it
+            with open(os.path.join(self.repo, rel), "w") as f:
+                f.write("x = 1\n")
+        self.fm("check", "--affected")
+        self.assertIn("tests/test_demo.py", read_text(log))
 
     def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
         # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
