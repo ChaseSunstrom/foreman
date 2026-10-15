@@ -1127,3 +1127,21 @@ class SetLists(ForemanTestCase):
         for value in ("[plugin/a.py, plugin/b.py]", '["plugin/a.py","plugin/b.py"]', "plugin/a.py,plugin/b.py"):
             self.fm("task", "set", tid, f"scope={value}")
             self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])
+
+
+class BareFm(ForemanTestCase):
+    # T-0917: bare fm inside a project answers "what now?"; outside one it is the help it always was
+    def test_bare_fm_in_a_project_says_where_things_stand_and_what_is_next(self):
+        self.fm("init")
+        self.fm("capture", "Add a dark theme")
+        out = self.fm().stdout
+        self.assertIn("Next:", out)
+        self.assertRegex(out, r"in1\b")  # the status line
+        self.assertIn("fm help", out)
+
+    def test_bare_fm_outside_a_project_is_the_help(self):
+        import tempfile
+        with tempfile.TemporaryDirectory(dir=self.home) as d:
+            out = self.fm(cwd=d).stdout
+        self.assertIn("fm <command> -h for its options.", out)
+        self.assertNotIn("Next:", out)

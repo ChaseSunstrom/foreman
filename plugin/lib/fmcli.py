@@ -4580,7 +4580,11 @@ def main(argv=None):
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     parser = build_parser()
-    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm: the tiers, not a usage error
+    if not argv and c.find_project(os.getcwd()):  # T-0917: bare fm in a project answers "what now?"
+        main(["state", "--line"])
+        print("fm help: every command")
+        return main(["next"])
+    args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
     _sync_in(args)
     try:
         rc = args.fn(args)
