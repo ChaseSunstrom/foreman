@@ -715,6 +715,15 @@ class PluginPins(HookCase):
         self.assertNotIn("plugin", self.brief().meta.get("allow") or [])
         self.assertNotIn("plugin_pin", self.brief().meta)
 
+    def test_GuardFriction_an_update_is_never_covered_by_a_pin(self):  # T-0936
+        self.approve("a@m")
+        p = self.pre("claude plugin update a@m")
+        self.assertEqual(p.returncode, 2)
+        self.assertIn("update", p.stderr)
+        self.assertIn(f"fm ask {self.tid} plugin", p.stderr)
+        self.assertIn("never covered by a pin", p.stderr)
+        self.assertIn("plugin", self.brief().meta.get("allow"), "a refused call doesn't spend the yes")
+
     def test_changed_content_or_an_old_yes_asks_again(self):
         self.approve("a@m")
         with open(self.skill["a"], "a") as f:
