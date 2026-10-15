@@ -73,6 +73,9 @@ class BoardExport(ForemanTestCase):
         out = self.fm("next").stdout
         self.assertIn(f"deferred {tid} is due back", out)
         self.assertIn("auth.py", out)
+        # T-0986 (found by a Haiku probe, T-0978): deferring again keeps the file trigger, not a date
+        self.assertIn('--until "when auth.py changes"', out)
+        self.assertNotIn("--until <date>", out)
 
     def test_a_deferral_trigger_outside_the_project_is_refused(self):
         self.fm("task", "new", "x", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")

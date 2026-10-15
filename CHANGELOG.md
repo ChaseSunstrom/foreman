@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm next`'s due-back line for a deferral waiting on a file says to defer again with the same `--until "when PATH changes"`, not `--until <date>` (T-0986; found and fixed by a headless Haiku session, T-0978).
 - `fm rule` (T-0971): your own regex rules on Bash commands or edited paths that block (denied with your why) or warn (a note), checked in PreToolUse after the guard. A path rule also covers Bash writes to the path and symlinks to it; a command too long to check fails closed. `fm rule rm` is yours to type; `fm rule add --from-veto N` turns a recorded veto into a stop.
 - Test first at edit time (T-0969): the first source edit of a FIX/FEATURE task with no changed test and no failing run gets one line to write and record the failing test; once per task, never a block.
 - A criterion whose check never actually ran (the command, file or test module it names didn't exist) can still be fixed with `fm task ac edit`; a check that ran and failed stays locked. Both recorded demo sessions had to drop and redo their task over this (T-0985).

@@ -2437,9 +2437,11 @@ def next_for(p, briefs=None):
     due = [x for x in (briefs if briefs is not None else load_briefs(p))
            if x.status == "deferred" and deferral_due(p.root, x.meta.get("revisit"), today)]
     if due:
-        action += (f" · deferred {due[0].id} is due back (revisit {due[0].meta['revisit']})"
+        rv = due[0].meta["revisit"]
+        again = f'"{re.sub(r" @[0-9a-f]+$", "", rv)}"' if rv.startswith("when ") else "<date>"  # T-0986: same trigger
+        action += (f" · deferred {due[0].id} is due back (revisit {rv})"
                    + (f" and {len(due) - 1} more" if len(due) > 1 else "")
-                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until <date>")
+                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until {again}")
     d = read_meta(p).get("ask_digest")
     if isinstance(d, dict) and d.get("asks"):  # T-0461
         n = len(d["asks"])
