@@ -2620,8 +2620,9 @@ def glob_match(rel, pattern):
 # ---------------------------------------------------------------- checkpoint / resume
 
 def _git(root, *args, timeout=2, fail="", proc=False):
-    """git's stdout, or `fail` on any failure; with `proc`, the CompletedProcess (returncode 1 and the error as stderr
-    when git can't run or times out). Paths come raw (no quoting of spaces or non-ASCII), undecodable bytes are
+    """git's stdout, or `fail` on any failure; with `proc`, the CompletedProcess (returncode 124 on a timeout and 127
+    when git can't run, the error as stderr, so neither reads as git's own 1, "no match"). Paths come raw (no
+    quoting of spaces or non-ASCII), undecodable bytes are
     replaced, and GIT_* variables can't point it at another repository. Foreman's one git runner (T-0961); fmguard
     keeps its own, it is hook-hot."""
     import subprocess
@@ -2630,8 +2631,10 @@ def _git(root, *args, timeout=2, fail="", proc=False):
     try:  # never interactive: no terminal prompt, no stdin to wait on
         r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout, env=env,
                            stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:
+        r = subprocess.CompletedProcess(cmd, 124, "", f"timed out after {e.timeout:g} s")
     except (OSError, subprocess.SubprocessError) as e:
-        r = subprocess.CompletedProcess(cmd, 1, "", str(e))
+        r = subprocess.CompletedProcess(cmd, 127, "", str(e))
     return r if proc else r.stdout if r.returncode == 0 else fail
 
 

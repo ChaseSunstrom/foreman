@@ -38,8 +38,12 @@ def _safe_git(root, *args, timeout=120):
     # (T-0290) no filter driver, from any config file (a session may have written one anywhere), whatever
     # .gitattributes names it — but git-lfs, so LFS repos still check out content: its driver is always git-lfs's own
     # fixed commands, never the configured values (T-0299: a prefix check let `git-lfs smudge -- %f; <cmd>` run)
-    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in c._git(
-        root, "config", "--get-regexp", r"^filter\.", timeout=timeout).split("\n")) if m}
+    found = c._git(root, "config", "--get-regexp", r"^filter\.", timeout=timeout, proc=True)
+    if found.returncode not in (0, 1) or found.returncode == 1 and found.stderr.strip():  # git's quiet 1: no filter
+        # configured; anything else (a timeout is 124, an error says why) fails closed
+        return subprocess.CompletedProcess(args, found.returncode or 1, "", "refused: couldn't list git's filter "
+                                           f"drivers to turn them off ({found.stderr.strip()[:200]})")
+    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in found.stdout.split("\n")) if m}
     neutral = [x for d in sorted(drivers - {"lfs"}) for k in ("clean=", "smudge=", "process=", "required=false")
                for x in ("-c", f"filter.{d}.{k}")]
     neutral += [x for k, v in LFS_DRIVER.items() for x in ("-c", f"filter.lfs.{k}={v}")]
