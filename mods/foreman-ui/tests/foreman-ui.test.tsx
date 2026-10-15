@@ -1481,3 +1481,22 @@ test('motion off: nothing moves while work runs; the pane is still (T-0912)', { 
   expect(blits).toBe(0)
   expect(spinning).toBe(false) // the head shows ▍, not a spinner
 })
+
+test('a close takes the top of the pane for a moment: the done card with grade, proof and time, then it settles (T-0913)', async ($, on) => {
+  const working = { ...VIEW, typical: { 'FIX/M': 25 }, active: { ...VIEW.active!, on_task_s: 22 * 60 } }
+  const closed = { ...VIEW, active: null, closed: [{ id: 'T-0007', status: 'done', title: 'Login times out', grade: 'strong', lenses: ['edge'] }] }
+  const { clock } = world(on, [working, closed])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ key: 'card-closed' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /✔ T-0007 done · strong · edge/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /1 criterion proven · 22m 00s · usually ~25m/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'closed-sweep')).toBe(true)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn.indexOf('"card-closed"')).toBeLessThan(drawn.indexOf('"fm-pane-head"'))
+  await clock.advance(6500)
+  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  await ui.unmount()
+})

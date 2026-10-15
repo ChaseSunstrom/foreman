@@ -225,6 +225,21 @@ async function refresh($: EngineInterface): Promise<boolean> {
     if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
     else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
     const closed = lines.map(l => /^✔ (T-\d+) done/.exec(l)?.[1]).filter((x): x is string => !!x)
+    if (closed.length) {
+      const t = await $.clock.now()
+      const was = prev?.active?.id === closed[0] ? prev.active : null
+      const rec = (next.closed ?? []).find(x => x.id === closed[0])
+      closing = {
+        id: closed[0]!, title: was?.title ?? rec?.title ?? '', grade: rec?.grade, lenses: rec?.lenses,
+        proved: was ? was.criteria.length : null, // done means every criterion has its evidence
+        minutes: typeof was?.on_task_s === 'number' ? (was.on_task_s * 1000 + Math.max(0, t - lastFull)) / 60000 : null,
+        usual: was ? prev?.typical?.[`${was.type}/${was.tier}`] : undefined, at: t,
+      }
+      if (cfg.motion !== 'off') {
+        flashUntil = Math.max(flashUntil, t + CLOSING_MS) // the clock runs until the card has settled away
+        await wake($)
+      }
+    }
     if (closed.length) await update($, away, list => [...list, ...closed.filter(x => !list.includes(x))])
     if (lines.some(l => l.startsWith('✔'))) {
       happyUntil = (await $.clock.now()) + 6000
@@ -362,6 +377,11 @@ const flashed = new Map<string, number>() // "T-0007:2" → when it was seen don
 const FLASH_MS = 2500
 const BG = 0x181a21 // the terminal's background the glow fades into
 let flashUntil = 0
+// T-0913: the task that just closed, shown for CLOSING_MS at the top of the pane: grade, proof, time against the usual
+type Closing = { id: string; title: string; grade?: string | null; lenses?: string[]; proved: number | null; minutes: number | null; usual?: number; at: number }
+let closing: Closing | null = null
+const CLOSING_MS = 6000
+const SWEEP_MS = 900
 
 let painting = false
 async function repaint($: EngineInterface) {
@@ -396,7 +416,10 @@ async function advance($: EngineInterface) {
   const f = await read($, frame)
   if (starts.size) lastActive = f // a long build is live work: its row keeps moving (finally always clears starts)
   const quiet = !turns.size && !starts.size && (await $.clock.now()) >= flashUntil // a step's glow is still fading
-  if (quiet && !bgLive && f - lastActive > 2) return sleep()
+  if (quiet && !bgLive && f - lastActive > 2) {
+    await update($, frame, n => n + 1) // one last redraw, so what faded (a glow, the done card) is drawn settled
+    return sleep()
+  }
   if (!bgLive && f - lastActive > IDLE_FRAMES) return sleep()
   if (quiet && bgLive && ++calm % 4) return // only background work: a calmer pace (~2 frames a second)
   await update($, frame, n => n + 1)
@@ -1193,6 +1216,28 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" key="fm-pane">
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
+
+        {closing && clockNow - closing.at < CLOSING_MS && (() => {
+          const c = closing
+          const sweep = (t: number) => Math.min(1, Math.max(0, (t - c.at) / SWEEP_MS))
+          if (blit) blit.set('closed-sweep', { columns: inner, rows: 1, draw: fr => progressCells(inner, sweep(fr * FRAME_MS), mix(C.ok, C.accent2, 0.6), C.ok, null) }) // meter's own colours
+          return (
+            <Box key="card-closed" {...card(C.ok)}>
+              {meter(ui, e, 'closed-sweep', inner, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}
+              <Text bold color={hex(C.ok)} wrap="truncate-end">
+                ✔ {c.id} done{closeCard(c)}
+              </Text>
+              {c.title && <Text wrap="truncate-end">{c.title}</Text>}
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                {[
+                  c.proved !== null ? `${c.proved} criteri${c.proved === 1 ? 'on' : 'a'} proven` : '',
+                  c.minutes !== null ? elapsed(c.minutes * 60000) : '',
+                  c.usual !== undefined ? `usually ${about(c.usual)}` : '',
+                ].filter(Boolean).join(' · ')}
+              </Text>
+            </Box>
+          )
+        })()}
 
         {asks.length > 0 && (
           <Box key="card-asks" {...card(C.warn)}>
