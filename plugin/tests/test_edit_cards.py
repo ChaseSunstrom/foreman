@@ -197,3 +197,21 @@ class EditCardsReview(_CardCase):
         r = self.fm("lib", "inject", cwd=other)
         self.assertIn("Edit-time stack cards", r.stdout)
         self.assertIsNone(c.find_project(other, create=False))
+
+
+class LangCardsKept(HookCase):
+    """T-0980: the map keeps the repo's language cards past the top 8, so an edit in a repo whose top cards are tools
+    still gets its language's card (Foreman's own map had 8 claude-code cards and no python)."""
+
+    def test_language_cards_survive_a_crowded_top_eight(self):
+        import fmlib
+        rows = [{"name": f"tool{i}", "area": "tools", "score": 50 - i, "detect": ["ext:.py"]} for i in range(10)]
+        rows.append({"name": "python", "area": "lang", "score": 3, "detect": ["ext:.py"]})
+        real = fmlib.suggest
+        fmlib.suggest = lambda root, files, n=None: rows if n is None else rows[:n]
+        try:
+            names = [r["name"] for r in fmlib.for_map(self.repo, [])]
+        finally:
+            fmlib.suggest = real
+        self.assertIn("python", names)
+        self.assertLessEqual(len(names), 8 + 3)  # the top 8 plus at most a few languages

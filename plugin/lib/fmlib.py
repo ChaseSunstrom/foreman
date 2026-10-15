@@ -553,12 +553,15 @@ def search(query, n=15):
 def for_map(root, files):
     """The top cards for fm map: the session line's names, and for the edit-time card (T-0949) each one's area, score
     and file/ext signals, so the hook matches a path from map.json alone. A non-language card's ext signal that a
-    language card also has is kept as lext:, so the edit hook ranks it after that language's card."""
+    language card also has is kept as lext:, so the edit hook ranks it after that language's card. T-0980: the repo's
+    language cards (up to 3) are kept past the top 8, or a repo whose top cards are tools never gets its language's."""
     lang_ext = {s for x in cards() if x["area"] == "lang" for s in x.get("detect") or [] if s.startswith("ext:")}
+    rows = suggest(root, files)
+    keep = rows[:8] + [r for r in rows[8:] if r["area"] == "lang"][:3]
     return [{"name": r["name"], "area": r["area"], "score": r["score"],
              "detect": ["l" + s if s in lang_ext and r["area"] != "lang" else s for s in r["detect"]
                         if s.startswith(("file:", "ext:"))]}
-            for r in suggest(root, files, n=8)]
+            for r in keep]
 
 
 _NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
