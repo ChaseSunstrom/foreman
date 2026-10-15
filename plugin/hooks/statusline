@@ -253,7 +253,7 @@ def foreman_segs(st, mode):
                 ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
         if a["total"]:
             segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
-                [(f" step {a['done']}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
+                [(f" step {a.get('n', a['done'])}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
         need = a["audits"][1]
         if need:
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Surfaces (T-0962): the status line honours NO_COLOR and names the current step ("step 2/3"); `fm ui --demo` prints a canned view; `fm page --catalogue NAME --picks FILE|-` stores an Artifact's add/veto picks; `fm sync status` prints the teammate join line; README shows a tmux status-bar line that follows the pane and never creates a project.
 - `fm cost --forecast` says when the 5-hour and weekly usage windows fill at the current pace (T-0973).
 - Lanes and internals (T-0961): a lane merge saves its base before `git merge` runs and restores it if the merge fails; one git runner (fmcore) behind lanes, secrets, the map and the bench, which tells a timeout from git's own "no match", so the bench's filter-driver guard and the secrets audit fail closed.
 - Outside text (T-0972): a fetched page, search result or MCP answer that holds instruction-like text ("ignore previous instructions", `<system>` tags, curl piped to a shell, …) gets a note that it is data, not your request; no tokens spent.

@@ -45,7 +45,7 @@ class BoardSurfaces(ForemanTestCase):
     def test_the_statusline_shows_step_n_of_m(self):
         self._focus()
         self.fm("task", "step", "T-0001", "done", "1", "--evidence", "repro.sh", "fails as reported")
-        self.assertIn("step 1/2", self._statusline(NO_COLOR="1"))
+        self.assertIn("step 2/2", self._statusline(NO_COLOR="1"))  # the current step's number, as fm next says
 
     def test_ui_demo_has_every_key_a_real_view_has(self):
         self._focus()
@@ -77,8 +77,15 @@ class BoardSurfaces(ForemanTestCase):
         self.assertIn("teammate", out)
         self.assertIn("fm sync on", out)
 
+    def test_state_line_outside_a_project_never_creates_one(self):
+        plain = os.path.join(self.tmp, "plain")
+        os.makedirs(plain)
+        subprocess.run(["git", "init", "-q", plain], check=True)
+        self.fm("state", "--line", cwd=plain, check=False)  # what a tmux status bar polls every few seconds
+        self.assertIsNone(c.find_project(plain, create=False))
+
     def test_docs_name_the_tmux_line_and_lsp_diagnostics(self):
-        self.assertIn("#(fm state --line)", read_text(os.path.join(ROOT, "README.md")))
+        self.assertIn("fm state --line)", read_text(os.path.join(ROOT, "README.md")))
         ref = read_text(os.path.join(ROOT, "plugin", "skills", "intake", "references", "execute.md"))
         self.assertIn("LSP", ref)
         self.assertIn("diagnostics", ref)
