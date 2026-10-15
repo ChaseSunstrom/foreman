@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
-import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
+import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, stable, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -1375,9 +1375,64 @@ test('a running call shows under Now with a moving bar; the pulse charts the ses
   expect(await ui.find({ type: 'Text', text: /3 tool calls · last 1 min/ })).toBeDefined()
   await clock.advance(1000)
   await ui.unmount()
+  await clock.advance(20000) // past the hold (T-0938)
   const after = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await after.find({ key: 'card-now' })).toBeUndefined() // it finished
   await after.unmount()
+})
+
+test('a card that shrinks keeps its tallest recent height for the hold, then eases down a row at a time (T-0938)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 1000
+  void $.tool.call({ tool: 'Bash', command: 'make a', description: 'quick one' })
+  await clock.advance(10) // the quick one has read its hold
+  answer.hold = 30000
+  void $.tool.call({ tool: 'Bash', command: 'make b', description: 'slow one' })
+  await clock.advance(100)
+  const h = async (quick: boolean) => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+    const box = await ui.find({ key: 'card-now' })
+    expect(!!(await ui.find({ type: 'Text', text: 'quick one' }))).toBe(quick)
+    expect(await ui.find({ type: 'Text', text: 'slow one' })).toBeDefined()
+    await ui.unmount()
+    return box?.props.minHeight as number | undefined
+  }
+  expect(await h(true)).toBe(5) // border, head, two calls
+  await clock.advance(2000) // the quick one ended; the card keeps its two rows
+  expect(await h(false)).toBe(5)
+  await clock.advance(5000) // 7 s since it was last drawn two calls tall
+  expect(await h(false)).toBe(5) // still inside the hold
+  await clock.advance(2000)
+  expect(await h(false)).toBe(4) // the hold is over: a row a second given back, down to what it shows
+})
+
+test('kit: a held height gives its rows back one a second after the hold; growing takes effect at once (T-0938)', () => {
+  expect(stable('t', 6, 1000)).toBe(6)
+  expect(stable('t', 3, 2000)).toBe(6)
+  expect(stable('t', 3, 8999)).toBe(6)
+  expect([9000, 10000, 11000, 12000].map(t => stable('t', 3, t))).toEqual([5, 4, 3, 3])
+  expect(stable('t', 7, 12500)).toBe(7)
+})
+
+test('Now, Subagents and Shells linger dimmed after their last item ends, then go (T-0938)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 1000
+  void $.tool.call({ tool: 'Bash', command: 'make test', description: 'run the tests' })
+  await clock.advance(100)
+  const first = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await first.find({ key: 'card-now' })).toBeDefined()
+  await first.unmount()
+  await clock.advance(3000)
+  const idle = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await idle.find({ key: 'card-now' })).toBeDefined() // it lingers
+  expect(await idle.find({ type: 'Text', text: /idle · last: .*run the tests · \d+s ago/ })).toBeDefined()
+  await idle.unmount()
+  await clock.advance(20000)
+  const gone = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await gone.find({ key: 'card-now' })).toBeUndefined()
+  await gone.unmount()
 })
 
 test('a quiet project folds queue and inbox into one Up next card with the capture box (T-0909)', async ($, on) => {
