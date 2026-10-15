@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.29 — 2026-10-15
 - Security (T-0906): the guard reads `T=$(mktemp -d)` as a temp path only when nothing in the command moves mktemp or TMPDIR (`PATH=`, `hash -p`, `enable`, `TMPDIR=`, its own `mktemp`); a command that set PATH could make `$(mktemp -d)` return `/` while the guard read it as /tmp.
 - Round 5–6 review fixes: the Stop gate's "tests pass" check leaves a green run standing after a doc edit, knows mvn, gradle, dotnet, deno, node --test, bats and `make -jN test`, and no longer counts `fm checkpoint` or `toxic` as test runs (T-0907); promise capture skips offers ("if you want, I'll also…"), idioms and narration, and keeps at most three (T-0908).
 - Round 7: bare `fm` in a project prints where things stand and the next action (T-0917); a close prints its undo (`git revert --no-edit <sha>`) and "Nothing needed from you" when every criterion was proved by its own check (T-0918); `fm demo` run inside a project ends with that project's next step (T-0919); `fm doctor` warns when a project's state passes 200 MB (T-0920) and when two Foreman installs differ in version (T-0923); `fm night` runs one at a time (T-0921); `fm tidy --apply` keeps dated backups of each project's record, the newest five (T-0922); `fm complete` gives tab completion for commands, options and live task ids (`eval "$(fm complete --shell bash)"`, T-0924).
