@@ -85,6 +85,11 @@ function world(on: On, views: FmView[]) {
     toasted.push(e.text)
     return { value: undefined }
   })
+  const blits: string[] = [] // T-0909: each Raster the plugin repainted without a redraw
+  on('ui.blit', async ($, e) => {
+    blits.push(String((e as { key?: unknown }).key))
+    return { value: {} }
+  })
   on('ui.open', async ($, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -150,7 +155,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes, blits }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -1401,7 +1406,7 @@ test('a step that just got done glows, then settles (T-0909)', async ($, on) => 
 })
 
 test('while work runs the rail moves between redraws (30 fps blit), and settles when it ends (T-0909)', async ($, on) => {
-  const { answer, clock } = world(on, [VIEW])
+  const { answer, clock, blits } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   answer.hold = 2000
   void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
@@ -1414,6 +1419,7 @@ test('while work runs the rail moves between redraws (30 fps blit), and settles 
     await clock.advance(40)
   }
   expect(seen.size).toBeGreaterThan(1) // the comet moved
+  expect(blits.filter(k => k === 'stage-rail').length).toBeGreaterThan(5) // and between redraws: the 30 fps blit
   await clock.advance(3000) // the call ended: nothing live
   const a = await cells()
   await clock.advance(400)
@@ -1443,4 +1449,35 @@ test('off the terminal the lanes are labelled sparklines over the whole window (
   expect(await ui.find({ type: 'Text', text: /^run\s+[▁▂▃▄▅▆▇█ ]+$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
   await ui.unmount()
+})
+
+const railFrames = async ($: Parameters<Parameters<typeof test>[1]>[0], on: On) => {
+  const { answer, clock, blits } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 2000
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const seen = new Set<string | undefined>()
+  for (let i = 0; i < 8; i++) {
+    seen.add(((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'stage-rail')?.props as { cells?: string } | undefined)?.cells)
+    await clock.advance(40)
+  }
+  const spinning = await ui.find({ type: 'Text', text: /^[·✢✳✶✻✽] Foreman$/ })
+  await clock.advance(3000)
+  await ui.unmount()
+  return { seen: seen.size, spinning: !!spinning, blits: blits.length }
+}
+
+test('motion calm: the rail moves only with the 8 fps redraws, never by blit (T-0912)', { options: { motion: 'calm' } }, async ($, on) => {
+  const { seen, blits } = await railFrames($, on)
+  expect(seen).toBeGreaterThan(1)
+  expect(blits).toBe(0)
+})
+
+test('motion off: nothing moves while work runs; the pane is still (T-0912)', { options: { motion: 'off' } }, async ($, on) => {
+  const { seen, spinning, blits } = await railFrames($, on)
+  expect(seen).toBe(1)
+  expect(blits).toBe(0)
+  expect(spinning).toBe(false) // the head shows ▍, not a spinner
 })

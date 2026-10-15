@@ -210,7 +210,7 @@ async function refresh($: EngineInterface): Promise<boolean> {
     const prev = await read($, view)
     const was = prev?.active
     const now = next.active
-    if (was && now && was.id === now.id) {
+    if (cfg.motion !== 'off' && was && now && was.id === now.id) { // a glow needs the clock to fade
       const t = await $.clock.now()
       for (const s of now.steps)
         if (s.done && !was.steps.find(x => x.n === s.n)?.done) {
@@ -386,7 +386,8 @@ async function repaint($: EngineInterface) {
 // The frame clock runs only while work is live: a turn, or a tool call (a subagent's included).
 async function wake($: EngineInterface) {
   lastActive = await read($, frame)
-  if (!motionClock) motionClock = $.clock.every(MOTION_MS, () => void repaint($))
+  if (cfg.motion === 'off') return // T-0912: a still UI; the 2 s poll still brings every change
+  if (!motionClock && cfg.motion === 'full') motionClock = $.clock.every(MOTION_MS, () => void repaint($))
   if (clock) return
   clock = $.clock.every(FRAME_MS, () => void advance($))
 }
@@ -479,6 +480,8 @@ export const register: Register = (on, options) => {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
+  // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
+  cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
@@ -1092,11 +1095,14 @@ export const register: Register = (on, options) => {
     }
     const live = turns.size > 0 || starts.size > 0
     const clockNow = await $.clock.now()
-    const f = live || clockNow < flashUntil ? await read($, frame) : null // a fading step glow redraws too
+    const moving = live && cfg.motion !== 'off' // T-0912: motion off draws work still
+    const f = moving || clockNow < flashUntil ? await read($, frame) : null // a fading step glow redraws too
     const idleBeat = live || cfg.mascot === 'off' ? 0 : await read($, beat)
     const term = e.surface === 'terminal'
     if (term) motion.clear() // this drawing registers what moves
-    const ft = live ? frameAt(clockNow) : null // the rasters' time: the same the blit uses, so a redraw never jumps
+    // the rasters' time: the blit's clock in full motion (so a redraw never jumps), the frame in calm, none when off
+    const ft = !moving ? null : cfg.motion === 'full' ? frameAt(clockNow) : f
+    const blit = term && cfg.motion === 'full' ? motion : undefined
     const a = v.active
     const m = v.mode
     const inner = Math.max(24, e.props.bodyColumns - 6) // inside a card: border and padding
@@ -1233,7 +1239,7 @@ export const register: Register = (on, options) => {
           <Box flexDirection="column" flexGrow={1} flexShrink={1}>
             <Box flexDirection="row" gap={1}>
               <Text bold color={hex(C.accent)}>
-                {live ? spin(f ?? 0) : '▍'} Foreman
+                {moving ? spin(f ?? 0) : '▍'} Foreman
               </Text>
               <Text color={hex(C.dim)} wrap="truncate-end">
                 {v.project}
@@ -1261,7 +1267,7 @@ export const register: Register = (on, options) => {
                     {a.title}
                   </Text>
                 </Box>
-                {stageIdx >= 0 && rail(ui, e, a.stages, stageIdx, heroW, ft, term ? motion : undefined)}
+                {stageIdx >= 0 && rail(ui, e, a.stages, stageIdx, heroW, ft, blit)}
                 {a.steps.length > 0 && (
                   <Box flexDirection="row" gap={1} key="hero-progress">
                     {meter(ui, e, 'fm-pane-bar', Math.max(8, heroW - 14), done / a.steps.length, C.ok, f)}
@@ -1273,7 +1279,7 @@ export const register: Register = (on, options) => {
                 )}
                 {cur && (
                   <Text wrap="truncate-end" key="hero-step">
-                    <Text color={hex(C.accent)}>{live ? spin(f ?? 0) : '▸'}</Text> step {cur.n} · {cur.text}
+                    <Text color={hex(C.accent)}>{moving ? spin(f ?? 0) : '▸'}</Text> step {cur.n} · {cur.text}
                   </Text>
                 )}
                 {onMin !== null && (
@@ -1323,7 +1329,7 @@ export const register: Register = (on, options) => {
                     {x.verb} · {elapsed(clockNow - x.at)}
                   </Text>
                 )
-              if (term && ft !== null) motion.set(`now-bar-${i}`, { columns: 8, rows: 1, draw: t => activityCells(8, x.color, t + i * 3) })
+              if (blit && ft !== null) blit.set(`now-bar-${i}`, { columns: 8, rows: 1, draw: t => activityCells(8, x.color, t + i * 3) })
               return (
                 <Box flexDirection="row" gap={1} key={`now-${id}`}>
                   <Box flexShrink={0} flexDirection="row" gap={1}>
@@ -1403,7 +1409,7 @@ export const register: Register = (on, options) => {
                   wrap="truncate-end"
                 >
                   {'  '}
-                  {s.done ? '✓' : s.current ? (live ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
+                  {s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
                 </Text>
               )
             })}
@@ -1487,7 +1493,7 @@ export const register: Register = (on, options) => {
         {(laneRows.length > 0 || days.some(Boolean) || cx || v.health) && (
           <Box key="card-pulse" {...card()}>
             {head('Pulse', C.accent2, laneRows.length ? `${recentTicks.length} tool call${recentTicks.length === 1 ? '' : 's'} · last ${span / 60000} min` : 'no tool calls lately')}
-            {laneRows.length > 0 && lanes(ui, e, laneRows, laneW, ft, term ? motion : undefined)}
+            {laneRows.length > 0 && lanes(ui, e, laneRows, laneW, ft, blit)}
             {laneRows.length > 0 && term && (
               <Text color={hex(mix(C.dim, C.track, 0.3))} key="lanes-axis">
                 {`${' '.repeat(6)}${span / 60000}m ago`.padEnd(laneW + 3)}now

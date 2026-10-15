@@ -30,7 +30,7 @@ export const starts = new Map<string, number>() // tool_use_id → when it start
 export const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 
 /** userConfig and the session's folder, set by register (rows read them). */
-export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '' }
+export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '', motion: 'full' as 'full' | 'calm' | 'off' }
 
 // T-0909: what the pane charts live. Every tool call's lane and start (the swim lanes, the last hour), and each call
 // still running with how it reads (the "now" card); neither needs to survive a reload.
