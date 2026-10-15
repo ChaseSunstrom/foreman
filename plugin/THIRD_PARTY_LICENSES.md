@@ -2,6 +2,8 @@
 
 Foreman ports procedures from two MIT-licensed projects. Each ported file names its source in a header comment.
 
+`fm lib source` repositories (wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent/awesome-claude-code-subagents, K-Dense-AI/claude-scientific-skills, morluto/rea) are indexed, not copied: their files stay in the user's Foreman state under their own licenses (`fm lib source list` shows each one), and Foreman ships none of their text.
+
 ## ECC (https://github.com/affaan-m/ECC) — `skills/playbooks/references/**`
 
 ```
