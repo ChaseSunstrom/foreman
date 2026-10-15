@@ -177,6 +177,14 @@ def record_pid(sid):
             break
 
 
+def claude_pid():
+    """T-0841: the nearest ancestor process named claude (the session's Claude Code), or None."""
+    for pid, _ in _chain(os.getpid(), 12):
+        if _comm(pid) == "claude":
+            return pid
+    return None
+
+
 def _comm(pid):
     """A process's command name ("claude"), or ""."""
     try:
@@ -219,12 +227,20 @@ def watch(sid=None, interval=2.0, out=None, stop=None):
     out, ppid = out or sys.stdout, os.getppid()
     stop = stop or (lambda: os.getppid() != ppid)
     mail, since, sig, beat, anchor = os.path.join(_dir(), "mail.jsonl"), time.time(), None, None, None
-    tries = 30
+    follow, tries = sid is None, 30
     try:
         while not stop():
-            if not anchor and (tries := tries - 1) >= 0:  # SessionStart records the claude process (first minute)
-                found, anchor = _by_pid()
-                sid = sid or _sid(c.session_id()) or found
+            if follow and (anchor or (tries := tries - 1) >= 0):  # SessionStart records the claude process
+                found, a = _by_pid()
+                anchor = anchor or a
+                now = found or _sid(c.session_id())  # T-0841: a resume moves its claude process to a new id
+                if now and now != sid:
+                    if beat:
+                        try:
+                            os.remove(beat)
+                        except OSError:
+                            pass
+                    sid, beat, sig = now, None, None  # re-read the mail for the new id
             if anchor:
                 try:
                     os.kill(anchor, 0)

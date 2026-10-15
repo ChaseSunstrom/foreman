@@ -2016,7 +2016,9 @@ def cmd_focus(args):
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
-        if other.get("id") and session() and other["id"] != session() and age is not None and age < 10 / 1440:
+        import fmbus
+        if other.get("id") and session() and other["id"] != session() and age is not None and age < 10 / 1440 \
+                and not (other.get("pid") and other["pid"] == fmbus.claude_pid()):  # T-0841: a resume is no other
             warn = f"note: another Claude Code session ({other['id'][:8]}) was active in this project within 10 minutes"
         c.log_event(p, "focus", task=target.id, session=session())
         c.regen_views(p)

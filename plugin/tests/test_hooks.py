@@ -144,6 +144,8 @@ class SessionStart(HookCase):
         self.fm("init")
         self.fm("sensitive", "on")
         self.hook("UserPromptSubmit", {"prompt": "hi", "session_id": "other-session"})
+        # T-0841: run under Claude Code, both hooks share its process; the other session is another process
+        c.update_meta(self.project(), session=dict(c.read_meta(self.project())["session"], pid=1))
         ctx = self.ctx_of(self.run_ss())
         self.assertIn("Sensitive", ctx)
         self.assertIn("other-se", ctx)
