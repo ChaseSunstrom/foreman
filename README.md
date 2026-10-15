@@ -211,6 +211,8 @@ Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, 
 - A config with comments (JSONC) is left alone with a note.
 - The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `fm agents uninstall`, needs your yes.
 
+**Knowledge out:** `fm recall --export-rules` writes the lessons from finished tasks to `.claude/rules/foreman-lessons.md`, scoped by `paths:` to the files those tasks touched, so Claude Code loads them without Foreman. `fm decide --export-adr DIR` writes one ADR file per recorded decision. `fm task defer ID --until "when PATH changes"` brings a task back in `fm next` once that file changes.
+
 **Desktop app:** [Foreman Desktop](https://github.com/ChaseSunstrom/foreman-desktop) (Tauri 2 + Svelte 5; `install.sh --desktop` installs its newest release) shows every project, agent session and device in one animated window.
 - Live project dashboards with Start, Drop, Approve-plan, capture, drive and autonomy controls.
 - It starts, watches, messages and stops sessions for Claude Code, Codex, Gemini CLI and opencode.
