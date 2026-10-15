@@ -177,6 +177,7 @@ The `foreman-ui` mod draws Foreman live inside the session.
 - the task: type, size, id and title, a stage rail from plan to close with a comet on the stage being worked, the steps bar, the current step, and time on the task against the usual for its type and size (a ┃ marks the usual; past it the bar turns amber);
 - **Now**: each call running this moment with a moving bar (a question waiting on you reads as waiting, not running). Live cards hold their place: one that empties stays dimmed ("idle · last: …") for 8 s and gives rows back one a second, so the pane doesn't jump as calls come and go;
 - **Plan**: the steps (one glows green as it gets done), the done-when criteria with the check that proves each, audits and what is left before done;
+- **Skills**: the skills invoked (✦) and stack cards read with `fm lib show` (▤) this week as chips with their age, the most used, and this repo's suggested cards not read yet, dimmed as `fm lib show NAME` (folded, its head still counts them; gone when there is nothing to show);
 - **Pulse**: swim lanes of the session's tool calls by kind (edit, run, read, agent, web) over the last 1 to 30 minutes, tasks closed per day for 14 days, and context, spend, hook-latency and guard gauges;
 - queue and inbox, with type chips, usual times and Start/Drop (one *Up next* card with the capture box when both are empty);
 - then the quieter cards: gates, brainstorm, files, fleet, spend, bench, research and activity (newest first), each folding to its head line with ▾/▸;

@@ -6,6 +6,75 @@ import os
 from helpers import ForemanTestCase
 
 
+class UiSkills(ForemanTestCase):
+    """T-0939: the pane's Skills card: Skill tool calls and fm lib card reads, this week, and the unread suggestions."""
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        import fmcore as c
+        self.c, self.p = c, c.find_project(self.repo)
+
+    def skills(self):
+        return json.loads(self.fm("ui", "--json").stdout)["skills"]
+
+    def test_empty_without_any_use_or_map(self):
+        self.assertEqual(self.skills(), {"recent": [], "counts": {}, "suggested": [], "unread": []})
+
+    def test_skill_calls_and_card_reads_this_week(self):
+        c, p, slug = self.c, self.p, self.p.slug
+        old = c.time.strftime("%Y-%m-%dT%H:%M:%SZ", c.time.gmtime(c.time.time() - 8 * 86400))
+        at = [c.time.strftime("%Y-%m-%dT%H:%M:%SZ", c.time.gmtime(c.time.time() - 60 * n)) for n in range(5, 0, -1)]
+        rows = [{"ts": old, "kind": "tool", "tool": "Skill", "target": "foreman:old", "project": slug},
+                {"ts": at[0], "kind": "tool", "tool": "Skill", "target": "foreman:brainstorm", "project": slug},
+                {"ts": at[1], "kind": "tool", "tool": "Skill", "target": "foreman:brainstorm", "project": slug},
+                {"ts": at[1], "kind": "tool", "tool": "Skill", "target": "elsewhere:x", "project": "other-1"},
+                {"ts": at[2], "kind": "tool", "tool": "Bash", "target": "ls", "project": slug},
+                {"kind": "tool", "tool": "Skill", "target": "no:ts", "project": slug},
+                {"ts": at[3], "kind": "tool_fail", "tool": "Skill", "target": "foreman:broken", "project": slug}]
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+            f.write("{not json\n")
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": old, "event": "lib", "data": {"cards": ["bash"]}}) + "\n")
+            f.write(json.dumps({"ts": at[2], "event": "lib", "data": {"cards": ["python", "bash"]}}) + "\n")
+            f.write(json.dumps({"event": "lib", "data": {"cards": ["nots"]}}) + "\n")
+            f.write(json.dumps({"ts": at[4], "event": "lib", "data": {"cards": "python"}}) + "\n")  # malformed
+        with open(os.path.join(p.dir, "map.json"), "w") as f:
+            json.dump({"lib": ["python", "typescript", "bash", "semver"]}, f)
+        s = self.skills()
+        self.assertEqual([(x["name"], x["kind"]) for x in s["recent"]],
+                         [("python", "card"), ("bash", "card"), ("foreman:brainstorm", "skill")])
+        self.assertEqual(s["recent"][2]["at"], at[1], "a name shows once, at its newest use")
+        self.assertEqual(s["counts"], {"foreman:brainstorm": 2, "python": 1, "bash": 1})
+        self.assertEqual(s["suggested"], ["python", "typescript", "bash", "semver"])
+        self.assertEqual(s["unread"], ["typescript", "semver"])
+
+    def test_a_call_from_days_ago_shows_behind_a_busy_events_file(self):
+        # a tail of events.jsonl holds an hour or two on a busy day; the week is the whole file
+        c, slug = self.c, self.p.slug
+        at = c.time.strftime("%Y-%m-%dT%H:%M:%SZ", c.time.gmtime(c.time.time() - 3 * 86400))
+        filler = json.dumps({"ts": at, "kind": "tool", "tool": "Read", "target": "x" * 200, "project": slug}) + "\n"
+        os.makedirs(c.state_dir(), exist_ok=True)
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "w") as f:
+            f.write(json.dumps({"ts": at, "kind": "tool", "tool": "Skill", "target": "foreman:intake", "project": slug}) + "\n")
+            f.write(filler * 2000)  # ~500 KB
+        self.assertEqual(self.skills()["counts"], {"foreman:intake": 1})
+
+    def test_recent_holds_eight_and_a_broken_map_is_no_map(self):
+        c, p = self.c, self.p
+        for i in range(12):
+            c.log_event(p, "lib", data={"cards": [f"card-{i}"]})
+        with open(os.path.join(p.dir, "map.json"), "w") as f:
+            f.write("{broken")
+        s = self.skills()
+        self.assertEqual(len(s["recent"]), 8)
+        self.assertEqual(s["recent"][0]["name"], "card-11")
+        self.assertEqual(len(s["counts"]), 12)
+        self.assertEqual((s["suggested"], s["unread"]), ([], []))
+
+
 class UiView(ForemanTestCase):
     def setUp(self):
         super().setUp()
@@ -39,6 +108,7 @@ class UiView(ForemanTestCase):
         self.assertEqual(v["inbox_total"], 1)
         self.assertEqual(v["approvals"], [])
         self.assertIsInstance(v["recent"], list)
+        self.assertEqual(set(v["skills"]), {"recent", "counts", "suggested", "unread"})  # T-0939
         self.assertEqual(set(v["health"]), {"hook_p95_ms", "guard_blocks", "hook_errors", "paused_hooks"})
         self.assertTrue(v["watch"] and all(os.path.exists(w) for w in v["watch"]))
         self.assertTrue(any(w.endswith("ledger.jsonl") for w in v["watch"]), "appends move the ledger, not the dir")
