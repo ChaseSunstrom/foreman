@@ -265,6 +265,8 @@ def merge(p, b, main, unverified=None):
     for f in files:
         blk = fmguard.check("Write", {"file_path": os.path.join(main, f), "content": ""}, ctx)
         if blk:
+            c.log_event(p, "enforce", task=b.id, data={"kind": "merge_refused", "reason": f"guard: {blk.category}",
+                                                       "branch": branch})
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
     if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows

@@ -21,7 +21,7 @@ def card(name, area, score, *detect):
     return {"name": name, "area": area, "score": score, "detect": list(detect)}
 
 
-class EditCards(HookCase):
+class _CardCase(HookCase):
     def setUp(self):
         super().setUp()
         self.fm("init")
@@ -44,6 +44,9 @@ class EditCards(HookCase):
         return [e for e in c.ledger_tail(self.project(), 200)
                 if e["event"] == "enforce" and e["data"].get("kind") == "card_injected"]
 
+
+
+class EditCards(_CardCase):
     def test_first_edit_injects_the_cards_avoid_section_once_per_task(self):
         self.map([card("python", "lang", 5, "ext:.py", "file:pyproject.toml")])
         note = self.edit("app.py")
@@ -61,14 +64,17 @@ class EditCards(HookCase):
     def test_a_framework_card_beats_its_language_card_and_ties_go_by_name(self):
         self.map([card("python", "lang", 9, "ext:.py"), card("pytest", "python", 2, "file:conftest.py")])
         self.assertIn("stack card pytest", self.edit("tests/conftest.py"))
-        self.map([card("python", "lang", 9, "ext:.py"), card("ruff", "python", 2, "ext:.py"),
+        self.map([card("python", "lang", 2, "ext:.py"), card("ruff", "python", 2, "ext:.py"),
                   card("mypy", "python", 2, "ext:.py")])
         self.fm("task", "new", "Two", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
-        self.assertIn("stack card mypy", self.edit("a.py"))
-        self.map([card("python", "lang", 2, "ext:.py"), card("ruff", "python", 2, "ext:.py"),
-                  card("uv", "python", 7, "ext:.py")])
+        self.assertIn("stack card mypy", self.edit("a.py"), "own-ext framework cards tie by name before the language")
+        self.map([card("python", "lang", 2, "ext:.py"), card("go-concurrency", "go", 9, "lext:.py"),
+                  card("uv", "python", 1, "lext:.py")])
         self.fm("task", "new", "Three", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
-        self.assertIn("stack card uv", self.edit("a.py"), "the higher score first among framework cards")
+        self.assertIn("stack card python", self.edit("a.py"), "a card sharing only the language's ext comes after it")
+        self.map([card("uv", "python", 7, "lext:.py"), card("ruff", "python", 2, "lext:.py")])
+        self.fm("task", "new", "Four", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
+        self.assertIn("stack card uv", self.edit("a.py"), "without the language card, the higher score")
 
     def test_a_long_avoid_section_is_cut_at_a_bullet_under_700_chars(self):
         self.map([card("vault", "infra", 2, "file:*.hcl")])
@@ -118,6 +124,8 @@ class EditCards(HookCase):
         self.assertEqual(py[0]["area"], "lang")
         self.assertIn("ext:.py", py[0]["detect"])
         self.assertFalse([s for x in m["lib_cards"] for s in x["detect"] if s.startswith("dep:")])
+        shared = [x for x in m["lib_cards"] if x["area"] != "lang" and "ext:.py" in x["detect"]]
+        self.assertFalse(shared, "a non-language card keeps the language's ext only as lext:")
         self.assertEqual(m["lib"], [x["name"] for x in m["lib_cards"]])
 
 
@@ -157,3 +165,35 @@ class EditCardsMerge(_Tasks):
         ev = [e for e in c.ledger_tail(c.find_project(self.repo), 50) if e["event"] == "enforce"]
         self.assertEqual([(e["task"], e["data"]["kind"]) for e in ev], [(tid, "merge_refused")])
         self.assertTrue(re.search(r"criterion 1 is red", ev[0]["data"]["reason"]))
+
+
+class EditCardsReview(_CardCase):
+    """T-0949 review: every file tool, a marker instead of a ledger scan, fm lib inject never creates a project."""
+
+    def tool(self, name, inp):
+        proc = self.hook("PreToolUse", {"tool_name": name, "tool_input": inp})
+        ctx = self.ctx_of(proc)
+        return ctx[ctx.index(HEAD):] if HEAD in ctx else ""
+
+    def test_write_multiedit_and_notebookedit_get_the_card(self):
+        self.map([card("python", "lang", 5, "ext:.py"), card("jupyter", "ml", 5, "ext:.ipynb"),
+                  card("rust", "lang", 5, "ext:.rs")])
+        self.assertIn("python", self.tool("Write", {"file_path": os.path.join(self.repo, "w.py"), "content": "x"}))
+        self.assertIn("rust", self.tool("MultiEdit", {"file_path": os.path.join(self.repo, "m.rs"), "edits": []}))
+        nb = self.tool("NotebookEdit", {"notebook_path": os.path.join(self.repo, "n.ipynb"), "new_source": "x"})
+        self.assertIn("jupyter", nb) if nb else None
+
+    def test_dedupe_reads_a_small_marker_not_the_ledger(self):
+        self.map([card("python", "lang", 5, "ext:.py")])
+        self.assertIn("python", self.edit("a.py"))
+        with open(os.path.join(self.project().dir, "ledger.jsonl"), "w") as f:
+            f.write("")  # the ledger rolled or was archived: the marker still knows
+        self.assertEqual(self.edit("b.py"), "")
+
+    def test_fm_lib_inject_status_never_creates_a_project(self):
+        other = os.path.join(self.tmp, "plain")
+        os.makedirs(other)
+        subprocess.run(["git", "init", "-q", other], check=True)
+        r = self.fm("lib", "inject", cwd=other)
+        self.assertIn("Edit-time stack cards", r.stdout)
+        self.assertIsNone(c.find_project(other, create=False))

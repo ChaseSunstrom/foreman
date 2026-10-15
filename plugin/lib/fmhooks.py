@@ -1064,6 +1064,7 @@ def _card_note(pl, p, act):
             return None
         note = fmlib.card_avoid(name)
         if note:
+            _card_mark(p, act.id, name)
             c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
                                                          "file": os.path.relpath(path, p.root)},
                         session=pl.get("session_id"))
@@ -1074,25 +1075,26 @@ def _card_note(pl, p, act):
 
 
 def _card_injected(p, tid, name):
-    """Whether the ledger already has this card injected for this task: a byte search for the event's kind, then
-    JSON for those lines only. ponytail: reads the whole ledger on each covered edit; an index if ledgers grow huge."""
+    """Whether this card was injected in this task: a small marker (cards.json, the last 50 tasks), not a ledger scan,
+    so every later edit stays cheap and an archived ledger doesn't repeat a card."""
     try:
-        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
-            data = f.read()
-    except OSError:
+        with open(os.path.join(p.dir, "cards.json"), encoding="utf-8") as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
         return False
-    i = data.find(b'"card_injected"')
-    while i >= 0:
-        end = data.find(b"\n", i)
-        end = len(data) if end < 0 else end
-        try:
-            e = json.loads(data[data.rfind(b"\n", 0, i) + 1:end])
-        except ValueError:
-            e = None
-        if isinstance(e, dict) and e.get("task") == tid and (e.get("data") or {}).get("card") == name:
-            return True
-        i = data.find(b'"card_injected"', end)
-    return False
+    return isinstance(seen, dict) and name in (seen.get(tid) or [])
+
+
+def _card_mark(p, tid, name):
+    path = os.path.join(p.dir, "cards.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = {}
+    seen = seen if isinstance(seen, dict) else {}
+    seen[tid] = sorted(set(seen.pop(tid, None) or []) | {name})  # re-inserted last: the newest task
+    c.write_atomic(path, json.dumps(dict(list(seen.items())[-50:])))
 
 
 def _snapshot_note(pl, guard):
