@@ -1196,6 +1196,29 @@ def _run_at(p, rev, cmd, timeout):
             c._git(p.root, "worktree", "prune", timeout=30)
 
 
+def cmd_at(args):
+    """T-0898: CMD run in a throwaway worktree of TARGET — a task id (its start snapshot, uncommitted work included) or
+    a git revision — with its exit code; the working tree isn't touched."""
+    import shlex
+    p = resolve(args)
+    words = args.words[1:] if args.words[:1] == ["--"] else args.words
+    if not words:
+        raise UsageError("fm at TARGET -- <command> (TARGET: a task id, or a commit, branch or tag)")
+    if re.fullmatch(r"T-\d+", args.target):
+        rev = c.task_base(p.root, need_brief(p, args.target))
+        if not rev:
+            raise UsageError(f"{args.target} has no start point on record (it was never focused)")
+    else:
+        rev = c._git(p.root, "rev-parse", "--verify", "-q", f"{args.target}^{{commit}}", timeout=10).strip()
+        if not rev:
+            raise UsageError(f"no commit named {args.target}")
+    cmd = words[0] if len(words) == 1 else shlex.join(words)
+    code, output = _run_at(p, rev, cmd, args.timeout)
+    out(args, {"target": args.target, "rev": rev, "exit": code, "output": output},
+        f"{'✗' if code else '✓'} at {args.target} ({rev[:12]}): {cmd} → {c.run_result(code, output)}")
+    return code
+
+
 def task_prove_vacuous(p, b, args):
     """T-0457: a criterion whose check also passes on the tree the task started from doesn't test this change."""
     base = c.task_base(p.root, b)
@@ -3512,7 +3535,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo recall explain surprise vetoes why snapshots outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output wiring "
@@ -3928,6 +3951,10 @@ def build_parser():
                    help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
     s.add_argument("--lesions", action="store_true", help="what each fm evolve --drop ablation found (T-0664)")
+    s = add("at", cmd_at, help="run a command as of a task's start or a commit, in a throwaway worktree")
+    s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
+    s.add_argument("--timeout", type=float, default=600)
+    s.add_argument("words", nargs=argparse.REMAINDER)
     s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)

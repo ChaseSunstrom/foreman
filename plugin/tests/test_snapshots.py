@@ -117,6 +117,19 @@ class Snapshots(ForemanTestCase):
         self.assertIn("work at drop saved", log)
         self.assertIn("restore --source=", log)
 
+    def test_fm_at_runs_a_command_as_of_a_commit_or_a_tasks_start(self):
+        # T-0898: "did this pass before?" without stashing or checking anything out
+        with open(os.path.join(self.repo, "README.md"), "w") as f:
+            f.write("changed now\n")
+        before = self.fm("at", "HEAD", "--", "grep -q '# app' README.md")
+        self.assertIn("HEAD", before.stdout)
+        p = self.fm("at", "HEAD", "--", "grep -q changed README.md", check=False)
+        self.assertEqual(p.returncode, 1, "HEAD has the old text")
+        self.assertEqual(self.fm("at", "T-0001", "--", "grep -q '# app' README.md").returncode, 0)  # its start tree
+        with open(os.path.join(self.repo, "README.md")) as f:
+            self.assertEqual(f.read(), "changed now\n", "the working tree is left alone")
+        self.assertNotEqual(self.fm("at", "no-such-ref", "--", "true", check=False).returncode, 0)
+
     def test_tidy_prunes_old_snapshots(self):
         with open(os.path.join(self.repo, "README.md"), "a") as f:
             f.write("x\n")
