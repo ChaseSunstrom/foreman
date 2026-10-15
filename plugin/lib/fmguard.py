@@ -2739,6 +2739,56 @@ def _check_git(name, args, cwd, ctx):
     return out
 
 
+def discards_work(cmd, cwd, depth=0):
+    """T-0884: [(folder, what)] for each git command in cmd that throws away uncommitted work, what being "tree" (the
+    working files) or "stash drop <ref>" / "stash clear": what the PreToolUse hook saves first. Never a refusal. A cd
+    before it, a -C (~ and $VARS expanded), a shell's -c text and `git worktree remove --force <dir>` are followed;
+    heredoc bodies are data. ponytail: --git-dir/--work-tree and commands python spawns aren't followed."""
+    out = []
+    for cm in _split(_tokens(_lines(_strip_heredocs(_join_continued(cmd))))):
+        argv, _ = _strip_wrappers(cm.argv)
+        name = os.path.basename(argv[0]) if argv else ""
+        here = lambda d, base: os.path.normpath(os.path.join(base, os.path.expanduser(os.path.expandvars(d))))
+        if name == "cd" and argv[1:2] and argv[1] != "-":
+            cwd = here(argv[1], cwd)
+        elif re.fullmatch(r"(ba|z|da|k)?sh", name) and depth < 3:
+            for text in _shell_c(argv[1:]):
+                out += discards_work(text, cwd, depth + 1)
+        if name != "git":
+            continue
+        i, where = 1, cwd
+        while i < len(argv) and argv[i].startswith("-"):
+            if argv[i] == "-C" and i + 1 < len(argv):
+                where = here(argv[i + 1], where)
+            i += 2 if argv[i] in _GIT_VALUED or argv[i] == "-C" else 1
+        if i >= len(argv):
+            continue
+        sub, rest = argv[i], argv[i + 1:]
+        flags = set(rest)
+        short = "".join(a[1:] for a in rest if re.fullmatch(r"-[a-zA-Z]+", a))
+        pos = [a for a in rest if not a.startswith("-")]
+        if sub == "stash" and pos[:1] in (["drop"], ["clear"]):
+            out.append((where, " ".join(["stash"] + pos[:2])))
+            continue
+        if sub == "worktree" and pos[:1] == ["remove"] and pos[1:] and (flags & {"-f", "--force"} or "f" in short):
+            out.append((here(pos[1], where), "tree"))
+            continue
+        # a word that names a file and no commit is a path (git checkout main beside a main/ folder is the branch)
+        paths = [a for a in pos if os.path.exists(os.path.join(where, a))
+                 and not _git(where, "rev-parse", "--verify", "-q", f"{a}^{{commit}}")] if sub == "checkout" else []
+        staged = "--staged" in flags or "S" in short
+        if (sub == "reset" and flags & {"--hard", "--merge"}
+                or sub == "checkout" and (flags & {"--force", "--", "."} or "f" in short or paths)
+                or sub == "restore" and (not staged or "--worktree" in flags or "W" in short)
+                or sub == "clean" and ("--force" in flags or "f" in short)
+                and not ("--dry-run" in flags or "n" in short)
+                or sub == "switch" and (flags & {"--force", "--discard-changes"} or "f" in short)
+                or sub == "rm" and ("--force" in flags or "f" in short)
+                or sub in ("merge", "rebase", "cherry-pick", "revert", "am") and "--abort" in flags):
+            out.append((where, "tree"))
+    return out
+
+
 _DISK = {"fdisk", "sfdisk", "cfdisk", "parted", "gdisk", "sgdisk", "wipefs", "mkswap"}
 _POWER = {"shutdown", "reboot", "poweroff", "halt"}
 _SYSTEMCTL_MUTATE = {"start", "stop", "restart", "reload", "try-restart", "reload-or-restart", "enable", "disable",

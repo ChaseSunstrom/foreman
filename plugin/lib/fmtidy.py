@@ -20,6 +20,7 @@ EVENTS_ROTATE_BYTES = 5_000_000
 HOOKS_LOG_ROTATE_BYTES = 1_000_000
 ROTATED_KEEP = 3
 SNAPSHOT_MAX_DAYS = 7
+WORK_SNAPSHOT_DAYS = 14  # T-0884: saved working files before a discarding command
 MEMORY_MAX_LINES, MEMORY_MAX_BYTES = 200, 25_000
 GLOBAL_MD_MAX, PROJECT_MD_MAX = 50, 150
 KNOWN_PLUGINS = {"ponytail", "claude-hud", "security-guidance", "code-review", "context7", "skill-creator",
@@ -180,6 +181,7 @@ def check_project(p, apply, actions):
     import fmlanes
     out += fmlanes.stale(p, briefs, apply, actions, finding)
     out += _roll_ledger(p, apply, actions)
+    out += _prune_snapshots(p, apply, actions)
     out += _check_memory(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
@@ -191,6 +193,22 @@ def check_project(p, apply, actions):
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
     return out
+
+
+def _prune_snapshots(p, apply, actions):
+    """T-0884: work snapshots (refs/foreman/snapshots/<UTC stamp>-<sha>) older than WORK_SNAPSHOT_DAYS go."""
+    top = c.git_root(p.root)
+    refs = c._git(top, "for-each-ref", "--format=%(refname)", c.SNAPSHOTS, timeout=30).split() if top else []
+    cut = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(time.time() - WORK_SNAPSHOT_DAYS * 86400))
+    old = [r for r in refs if r[len(c.SNAPSHOTS):].split("-", 1)[0] < cut]
+    if not old:
+        return []
+    if apply:
+        for r in old:
+            c._git(top, "update-ref", "-d", r, timeout=10)
+        actions.append(("snapshots", len(old)))
+    return [finding(p.slug, "work_snapshots", "action", f"{len(old)} work snapshot(s) older than {WORK_SNAPSHOT_DAYS}d",
+                    "deleted (git gc reclaims them)", auto=True)]
 
 
 def _roll_ledger(p, apply, actions):
