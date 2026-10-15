@@ -1805,6 +1805,15 @@ def stop(pl):
     if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
         reason = _push_nudge(sid, sd, drained)
     out = {"terminalSequence": seq}
+    promised = []
+    if not reason and not oneoff:  # T-0899: the turn ends here, so a promise in it is only kept if it's captured
+        try:
+            import fmcli
+            promised = fmcli.capture_promises(p, msg, sid)
+        except Exception:
+            log_error("Stop", _tb())
+    if promised:
+        out["systemMessage"] = f"Foreman captured the reply's promise(s) for later: {', '.join(promised)}"
     if reason:
         out.update(decision="block", reason=reason)
     elif reloading:

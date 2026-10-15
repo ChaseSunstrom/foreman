@@ -1278,6 +1278,20 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(stop(self.turn(("Read", {"file_path": "a.py"}, "x", False)),
                                              "The tests pass, as before.")), "no edit, no run: not judged")
 
+    def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
+        # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked
+        self.fm("init")
+        self.fm("drive", "off")
+        msg = "Fixed the parser. I'll also update the README examples later. I'll follow up on the flaky date test."
+        p = self.stop(msg)
+        self.assertIn("promise", (parse(p) or {}).get("systemMessage", ""))
+        self.stop(msg)
+        titles = [ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]
+        self.assertEqual(len(titles), 2, titles)  # two promises, each once
+        self.assertTrue(any("README examples" in t for t in titles), titles)
+        self.stop("Done: the parser handles empty input. I'll ask before touching the schema.")
+        self.assertEqual(len([ln for ln in self.fm("state").stdout.splitlines() if "Promised" in ln]), 2)
+
     def test_premature_done_blocks_once_per_step(self):
         self.fm("init")
         tid = self.task()
