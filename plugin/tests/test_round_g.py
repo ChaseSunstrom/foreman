@@ -83,7 +83,7 @@ class RoundG(ForemanTestCase):
     def test_check_suggests_gates_and_stops_early_when_asked(self):
         self.write("package.json", json.dumps({"scripts": {"test": "jest"}}))
         self.commit()
-        self.assertIn("found in the project: npm run test", self.fm("check", check=False).stderr)
+        self.assertIn("fm check add 'npm run test'", self.fm("check", check=False).stderr)  # T-0850 wording
         self.fm("check", "add", "false")
         self.fm("check", "add", "true")
         data = self.fm_json("check", "--fail-fast", check=False)

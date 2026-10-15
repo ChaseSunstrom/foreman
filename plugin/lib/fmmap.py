@@ -28,8 +28,17 @@ def _name_stem(path):
 def _gates(root, files, checks):
     found = list(checks)
     names = set(files)
-    if names & {"pyproject.toml", "pytest.ini", "setup.cfg", "tox.ini"} or any(f.startswith("tests/") and f.endswith(".py") for f in files):
-        found.append("pytest (or python3 -m unittest)")
+    tests = [f for f in files if re.search(r"(^|/)(test_\w*|\w*_test)\.py$", f)]
+    def mentions_pytest(name):
+        try:
+            with open(os.path.join(root, name), encoding="utf-8", errors="replace") as f:
+                return "pytest" in f.read(200_000)
+        except OSError:
+            return False
+    pytest = names & {"pytest.ini", "conftest.py", "tox.ini"} or any(f.endswith("/conftest.py") for f in files) \
+        or any(n in names and mentions_pytest(n) for n in ("pyproject.toml", "setup.cfg", "requirements-dev.txt"))
+    if pytest:
+        found.append("python3 -m pytest -q")  # T-0850: a command that runs, not "pytest (or unittest)"
     if "package.json" in names:
         try:
             scripts = json.load(open(os.path.join(root, "package.json"))).get("scripts") or {}
@@ -47,6 +56,9 @@ def _gates(root, files, checks):
             found += [f"make {t}" for t in targets]
         except OSError:
             pass
+    if tests and not pytest and not any("test" in g for g in found):  # T-0850: only when nothing else runs them
+        found.append("python3 -m unittest discover -s tests -q" if all(f.startswith("tests/") for f in tests)
+                     else "python3 -m unittest discover -q")
     return list(dict.fromkeys(found))
 
 

@@ -293,7 +293,7 @@ def check_backup(home):
     d = os.path.join(home, "backups")
     tgz = sorted(f for f in os.listdir(d) if f.endswith(".tgz")) if os.path.isdir(d) else []
     if not tgz:
-        return Result("backup", "FAIL", "no backups/*.tgz")
+        return Result("backup", "WARN", "no backups/*.tgz yet")  # T-0844: a fresh install has none: not a failure
     files = 0
     try:  # ponytail: reads every member's bytes, never extracts; a real extract into a temp dir if this misses one
         with tarfile.open(os.path.join(d, tgz[-1]), "r:gz") as t:
@@ -1004,8 +1004,9 @@ def cmd_doctor(args):
     if args.json:
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))
     else:
-        for r in results:
-            print(f"{r.status:4}  {r.name:<20} {r.detail}")
+        for r in results:  # T-0844: only what needs a look, unless -v
+            if r.status != "PASS" or getattr(args, "verbose", False):
+                print(f"{r.status:4}  {r.name:<20} {r.detail}")
         print(f"\nfm doctor: {'OK' if ok else 'FAILED'} ({sum(r.status == 'PASS' for r in results)} pass, "
               f"{sum(r.status == 'WARN' for r in results)} warn, {sum(r.status == 'FAIL' for r in results)} fail)")
     if not ok:

@@ -243,7 +243,7 @@ class Checks(unittest.TestCase):
 
     def test_backup(self):
         home = os.path.join(self.t, "fh")
-        self.assertEqual(d.check_backup(home).status, "FAIL")
+        self.assertEqual(d.check_backup(home).status, "WARN", "T-0844: a fresh install has none yet; not a failure")
         self.write("fh/backups/claude-20260101-000000.tgz", "x")
         self.assertEqual(d.check_backup(home).status, "FAIL")  # T-0574: an archive that doesn't open isn't a backup
         import tarfile
@@ -305,6 +305,16 @@ class Command(ForemanTestCase):
                   "frontmatter", "briefs", "file map", "backup", "plugin validate", "git hygiene", "statusline",
                   "deny rules", "rules symlink", "scripts", "name collisions", "hook state writers"):
             self.assertIn(n, names)
+
+    def test_plain_output_lists_only_problems_unless_verbose(self):
+        # T-0844: a newcomer's first doctor run printed 40 lines of passes around the one line that mattered
+        self.fm("init")
+        quiet = self.fm("doctor", check=False, env={"HOME": self.tmp}).stdout
+        loud = self.fm("doctor", "-v", check=False, env={"HOME": self.tmp}).stdout
+        self.assertNotIn("PASS ", quiet)
+        self.assertIn("PASS ", loud)
+        self.assertIn("fm doctor:", quiet)
+        self.assertIn("pass", quiet.splitlines()[-1], "the summary still counts them")
 
 
 if __name__ == "__main__":
