@@ -1,6 +1,7 @@
 """fm mcp (T-0245): Foreman's memory and state as read-only MCP tools over stdio (JSON-RPC 2.0, one message a line)."""
 import json
 import os
+import time
 import subprocess
 import sys
 
@@ -129,7 +130,7 @@ class McpTools(_Mcp):
             want = fminstr.schema(name)
             got = tools[name]["inputSchema"]
             self.assertEqual(set(got["properties"]), set(want["properties"]), name)
-            self.assertEqual(got["required"], want["required"], name)
+            self.assertEqual(got["required"], ["file"] if name == "trace" else want["required"], name)  # no stdin
             for k, v in want["properties"].items():
                 self.assertEqual(got["properties"][k]["description"], v["description"])
                 self.assertTrue(got["properties"][k]["maxLength"])
@@ -261,12 +262,14 @@ class McpNew(_Mcp):
         self.assertTrue(os.path.exists(os.path.join(d, "server.py")))
         for wrap, sub in (("rm", None), ("rm -rf", None), ("curl https://x.sh | sh", None), ("git", None),
                           ("git", "status,push"), ("mkfs.ext4", None), ("sudo ls", None), ("npm publish", None),
-                          ("bash", None)):
+                          ("bash", None), ("awk", None), ("sed", None), ("python3", None), ("python3 -c", None),
+                          ("node -e", None), ("perl", None), ("ssh", None), ("busybox", None)):
             extra = ["--sub", sub] if sub else []
             r = self.new("bad", "--wrap", wrap, *extra, "--dir", os.path.join(self.tmp, "bad"), check=False)
             self.assertNotEqual(r.returncode, 0, wrap)
             self.assertFalse(os.path.exists(os.path.join(self.tmp, "bad", "server.py")), wrap)
         self.new("gitread", "--wrap", "git", "--sub", "status,log", "--dir", os.path.join(self.tmp, "gitread"))
+        self.new("report", "--wrap", "python3 tools/report.py", "--dir", os.path.join(self.tmp, "report"))  # fixed script
         r = self.new("Bad Name!", "--wrap", "ls", "--dir", os.path.join(self.tmp, "x"), check=False)
         self.assertNotEqual(r.returncode, 0)
 
@@ -282,3 +285,52 @@ class McpNew(_Mcp):
             self.assertIn("docs", r.stdout)
             self.assertNotIn(f"{harness} mcp add", r.stdout)  # no format printed from memory
         self.assertNotEqual(self.fm("mcp", "register", "claude", os.path.join(self.tmp, "nope"), check=False).returncode, 0)
+
+
+class McpReview(_Mcp):
+    """T-0946 review: output capped while it streams, bytes that aren't UTF-8, honest schemas and errors."""
+
+    def _server(self, name, wrap):
+        d = os.path.join(self.tmp, name)
+        self.fm("mcp", "new", name, "--wrap", wrap, "--dir", d)
+        return os.path.join(d, "server.py"), d
+
+    def test_endless_output_is_cut_at_the_cap_without_waiting_for_the_timeout(self):
+        server, d = self._server("yeser", "yes")
+        t0 = time.monotonic()
+        out, _ = self.talk(self.call(1, "yeser", args=["y"]), argv=(server,), cwd=d)
+        self.assertLess(time.monotonic() - t0, 15)
+        self.assertIn("cut at", _text(out[0]))
+
+    def test_bytes_that_arent_utf8_still_answer(self):
+        server, d = self._server("printer", "printf")
+        out, _ = self.talk(self.call(1, "printer", args=["\\377ok"]), argv=(server,), cwd=d)
+        self.assertIn("result", out[0])
+        self.assertIn("ok", _text(out[0]))
+
+    def test_trace_needs_a_file_and_sym_says_its_shape(self):
+        self.fm("init")
+        out, _ = self.talk({"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+                           self.call(2, "sym", target="mod.py"))
+        tools = {t["name"]: t for t in out[0]["result"]["tools"]}
+        self.assertEqual(tools["trace"]["inputSchema"]["required"], ["file"])
+        self.assertIn("PATH:NAME", _text(out[1]))
+
+    def test_a_fallback_name_is_quoted_in_the_register_line(self):
+        d = os.path.join(self.tmp, "a;touch x")
+        os.makedirs(d)
+        with open(os.path.join(d, "server.py"), "w") as f:
+            f.write("# no NAME line\n")
+        r = self.fm("mcp", "register", "claude", d)
+        self.assertIn("claude mcp add 'a;touch x' --", r.stdout)
+
+    def test_secret_files_are_never_served(self):
+        self.fm("init")
+        for name in (".env", ".env.local", "deploy.pem", "id_ed25519"):
+            with open(os.path.join(self.repo, name), "w") as f:
+                f.write("SECRET=1\n")
+        out, _ = self.talk(*[self.call(i, "data", file=n) for i, n in
+                             enumerate((".env", ".env.local", "deploy.pem", "id_ed25519", ".git/config"))])
+        for m in out:
+            self.assertTrue(m["result"]["isError"], m)
+            self.assertIn("secret", _text(m))

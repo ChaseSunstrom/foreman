@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 
 NAME = "__NAME__"
 WRAP = ["__WRAP__"]  # the command, as argv
@@ -54,17 +55,27 @@ def call(args):
     """(text, is_error) for one tool call."""
     try:
         argv = argv_for(args)
-        r = subprocess.run(argv, capture_output=True, text=True, timeout=TIMEOUT, stdin=subprocess.DEVNULL)
+        proc = subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
     except Refused as e:
         return str(e), True
-    except subprocess.TimeoutExpired:
-        return f"timed out after {TIMEOUT} s", True
     except OSError as e:
         return f"can't run {WRAP[0]}: {e.strerror}", True
-    text = r.stdout + (("\n" if r.stdout else "") + r.stderr if r.stderr else "")
-    if len(text) > MAX_OUT:
-        text = text[:MAX_OUT] + f"\n… cut at {MAX_OUT} characters"
-    return text + ("" if r.returncode == 0 else f"\n(exit {r.returncode})"), r.returncode != 0
+    fired = threading.Event()
+    timer = threading.Timer(TIMEOUT, lambda: (fired.set(), proc.kill()))
+    timer.start()
+    try:
+        data = proc.stdout.read(MAX_OUT + 1)  # read as it streams: never more than the cap is held
+    finally:
+        if len(data or b"") > MAX_OUT:
+            proc.kill()
+        code = proc.wait()
+        timer.cancel()
+    if fired.is_set() and len(data) <= MAX_OUT:
+        return f"timed out after {TIMEOUT} s", True
+    text = data[:MAX_OUT].decode("utf-8", "replace")
+    if len(data) > MAX_OUT:
+        return text + f"\n… cut at {MAX_OUT} bytes", False
+    return text + ("" if code == 0 else f"\n(exit {code})"), code != 0
 
 
 def answer(msg):
