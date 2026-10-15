@@ -149,6 +149,30 @@ def demo(work):
         raise Off("claude was called")
 
 
+def cmd_release_check(args):
+    """T-0960: what a newcomer runs first, the way they run it: fm doctor and fm demo on this checkout with a temporary
+    HOME and Foreman state (nothing of the user's), each passing. Exit 0 when both do. fm demo stubs claude itself."""
+    work = tempfile.mkdtemp(prefix="fm-release-")
+    try:
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("FOREMAN_", "CLAUDE", "GIT_"))}
+        env.update(HOME=os.path.join(work, "home"), XDG_STATE_HOME=os.path.join(work, "xdg"),
+                   FOREMAN_HOME=os.path.dirname(PLUGIN), FOREMAN_STATE=os.path.join(work, "state"),
+                   FOREMAN_NO_BACKGROUND="1", PYTHONDONTWRITEBYTECODE="1", GIT_CONFIG_NOSYSTEM="1")
+        os.makedirs(env["HOME"])
+        bad = 0
+        for verb in ("doctor", "demo"):
+            p = subprocess.run([sys.executable, FM, verb], env=env, cwd=env["HOME"], capture_output=True, text=True,
+                               timeout=300, stdin=subprocess.DEVNULL)
+            ok = p.returncode == 0
+            bad += not ok
+            print(f"{'PASS' if ok else 'FAIL'}  fm {verb}" + ("" if ok else f" (exit {p.returncode}):\n"
+                  + "\n".join("  " + ln for ln in (p.stdout + p.stderr).strip().splitlines()[-15:])))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    print(f"fm release-check: {'OK' if not bad else 'FAILED'} (a temporary HOME, deleted)")
+    return 1 if bad else 0
+
+
 def cmd_demo(args):
     global PACE, COLOR
     PACE = max(0.0, float(getattr(args, "pace", 0) or 0))

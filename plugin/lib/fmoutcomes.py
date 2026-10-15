@@ -110,6 +110,11 @@ def cmd_outcomes(args):
     import fmcli
     p = fmcli.resolve(args)
     outs = outcomes(p)
+    if getattr(args, "readme", False):  # T-0960: the one sentence a README publishes
+        held = sum(o["fate"] == "held" for o in outs.values())
+        ungraded = sum(1 for b in c.load_briefs(p) if b.id in outs and not b.meta.get("verified"))
+        return fmcli.out(args, {"held": held, "closed": len(outs), "ungraded": ungraded},
+                         f"{held} of {len(outs)} closed tasks held; {ungraded} ungraded.")
     bad = {t: o for t, o in outs.items() if o["fate"] != "held"}
     fates = collections.Counter(o["fate"] for o in bad.values())
     lines = [f"{len(outs)} finished task(s): {len(outs) - len(bad)} held"
