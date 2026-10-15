@@ -169,7 +169,7 @@ class Serve(ServeCase):
         self.assertIn("disable --now", self.called())
 
 
-class Run(ServeCase):
+class RunCase(ServeCase):
     def setUp(self):
         super().setUp()
         # a stub session that finishes whatever task it is scoped to, the way a real one would through fm
@@ -187,6 +187,8 @@ class Run(ServeCase):
     def run_fm(self, *args, check=True):
         return self.fm("run", *args, check=check, env=self.env())
 
+
+class Run(RunCase):
     def test_each_task_runs_in_its_own_fresh_session(self):
         a, b = self.task("one"), self.task("two")
         self.stub("claude", self.finisher)
@@ -322,3 +324,47 @@ class Failover(ServeCase):
             time.sleep(0.1)
         self.assertIn("codex ", self.called())
         self.assertIn(f"Handoff: {a}", read_text(os.path.join(c.find_project(self.repo).dir, "handoffs", f"{a}.md")))
+
+
+class BoardRun(RunCase):
+    """T-0955: a no-progress task is quarantined across runs, fm run holds a sleep lock, fm night prints a timer."""
+
+    def test_a_no_progress_task_is_blocked_and_the_next_run_takes_the_next(self):
+        a, b = self.task("one"), self.task("two")
+        p = self.run_fm(check=False)  # the stub session does nothing
+        self.assertEqual((p.returncode, "no progress" in p.stderr), (1, True))
+        proj = c.find_project(self.repo)
+        stuck, other = (a, b) if c.find_brief(proj, a).status == "blocked" else (b, a)
+        self.assertEqual(c.find_brief(proj, stuck).status, "blocked")
+        self.assertIn("no progress", c.find_brief(proj, stuck).section("Log"))
+        self.assertNotEqual(c.find_brief(proj, other).status, "blocked")
+        self.stub("claude", self.finisher)
+        self.run_fm()
+        self.assertEqual([c.find_brief(proj, t).status for t in (stuck, other)], ["blocked", "done"])
+
+    def test_run_re_execs_once_under_systemd_inhibit(self):
+        # a pass-through stub: --list answers, anything else drops its options and runs the command
+        self.stub("systemd-inhibit", '[ "$1" = --list ] && exit 0\nwhile [ "${1#--}" != "$1" ]; do shift; done\n'
+                                     'exec "$@"\n')
+        p = self.fm("run", env=self.env(FOREMAN_INHIBITED=""))
+        self.assertIn("nothing else runnable", p.stdout)
+        held = [l for l in self.called().splitlines() if l.startswith("systemd-inhibit --what=sleep:idle")]
+        self.assertEqual(len(held), 1, self.called())
+        self.assertIn(" run", held[0])
+        open(self.calls, "w").close()
+        self.fm("run", env=self.env(FOREMAN_INHIBITED="1"))
+        self.assertNotIn("--what", self.called(), "the guard stops a second re-exec")
+
+    def test_night_print_timer_prints_units_and_a_crontab_line_and_changes_nothing(self):
+        def tree():
+            return sorted(os.path.join(d, f) for top in (self.home, self.uhome)
+                          for d, _, fs in os.walk(top) for f in fs)
+        before = tree()
+        out = self.fm("night", "--print-timer", env=self.env()).stdout
+        for needle in ("[Timer]", "OnCalendar=", "Persistent=true", "[Service]", "WorkingDirectory=" + self.repo,
+                       "timers.target", "systemctl --user enable --now"):
+            self.assertIn(needle, out)
+        self.assertRegex(out, r"(?m)^ExecStart=.*\bfm'? night$")
+        self.assertRegex(out, r"(?m)^\d+ \d+ \* \* \* cd .* night")
+        self.assertEqual(tree(), before)
+        self.assertEqual(self.called(), "")
