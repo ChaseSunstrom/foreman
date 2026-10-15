@@ -1277,6 +1277,20 @@ class Stop(HookCase):
         self.assertIsNone(self.decision(stop(self.turn(red, edit, green), "Now the tests pass and it's fixed.")))
         self.assertIsNone(self.decision(stop(self.turn(("Read", {"file_path": "a.py"}, "x", False)),
                                              "The tests pass, as before.")), "no edit, no run: not judged")
+        # T-0907 (review): a doc edit after a green run isn't stale code, other runners count, and look-alikes don't
+        doc = ("Edit", {"file_path": "CHANGELOG.md"}, "ok", False)
+        for cmd in ("mvn -q test", "./gradlew test", "dotnet test", "deno test", "node --test", "bats t/",
+                    "make -j8 test"):
+            ok = ("Bash", {"command": cmd}, "BUILD SUCCESS", False)
+            self.assertIsNone(self.decision(stop(self.turn(edit, ok, doc), f"Tests pass ({cmd}).")), cmd)
+        for cmd in ("fm checkpoint", "toxic --help"):
+            p = stop(self.turn(edit, ("Bash", {"command": cmd}, "ok", False)), f"All tests pass ({cmd}).")
+            self.assertIn("no test ran after the last edit", (parse(p) or {}).get("reason", ""), cmd)
+        path = self.turn(red, edit)  # a background job's notice in list form is part of the same turn
+        with open(path, "a") as f:
+            f.write(json.dumps({"type": "user", "message": {"content": [
+                {"type": "text", "text": "<task-notification>\n<status>completed</status>"}]}}) + "\n")
+        self.assertEqual(self.decision(stop(path, "So the tests pass.")), "block")
 
     def test_a_promise_in_a_reply_that_ends_the_turn_is_captured_once(self):
         # T-0899: "I'll also update the README later" in a closing reply was a promise nothing tracked

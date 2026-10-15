@@ -2037,6 +2037,7 @@ def veto_hits(p, text):
 
 CODE = re.compile(r"\.(py|js|jsx|ts|tsx|go|rs|rb|java|kt|c|cc|cpp|h|hpp|cs|swift|php|sh|lua|zig)$")
 TESTISH = re.compile(r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*$|_test\.\w+$|\.(test|spec)\.\w+$")
+DOC = re.compile(r"(?i)\.(md|markdown|rst|txt|adoc)$")  # prose files
 # T-0272: the names of failing tests in a gate's output (unittest, pytest, go test, cargo test)
 _FAILING_TEST = re.compile(r"(?m)^(?:(?:FAIL|ERROR): \S+ \(([A-Za-z_]\w*(?:\.\w+)+)\)|FAILED (\S+::\S+)|--- FAIL: (\S+)|"
                            r"test (\S+) \.\.\. FAILED)")  # unittest's (module.Class.test): dotted, not "ERROR: x (30)"
