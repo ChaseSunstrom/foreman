@@ -909,7 +909,7 @@ def _name(argv):
 
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
-_FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|fetch)(?![\w.-])")  # T-0421: a fetcher anywhere
+_FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -1439,8 +1439,11 @@ def _interpreter_writes(cmd, ctx):
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
     if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
+        # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
-                         "whose text names its modules, use the Edit or Write tool)")]  # T-0740: 9 repeats in a day
+                         "whose text names its modules, use the Edit or Write tool"
+                         + ("; chain the cd with && instead of ;, or pass the path)" if re.search(r"\bcd\s+[^\n;&|]+;", cmd)
+                            else ")"))]
     code = _interp_code(cmd)
     # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
     ticks = "`" in code and any(not _TEXT_TICKS.match(m.group(1)) for m in _INTERP.finditer(cmd))
@@ -2620,6 +2623,12 @@ def _write_targets(name, args):
         outs += _git_writes(sub, rest)
         outs = [os.path.join(base, o) for o in outs]
         read_only = sub == "stash" and rest[:1] in (["list"], ["show"])  # T-0265: listing a stash writes nothing
+        # T-0935: reset moves HEAD and the index; only --hard/--merge/--keep (or a unique prefix of one, git takes
+        # those; or --recurse-submodules) rewrite files
+        if sub == "reset" and not any(a.startswith("--") and len(a) > 2 and a != "--" and (
+                any(w.startswith(a) for w in ("--hard", "--merge", "--keep", "--recurse-submodules")))
+                for a in rest):
+            read_only = True
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
             return ([os.path.join(base, t) for t in trees] or [base]) + outs

@@ -85,7 +85,24 @@ def build(p):
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
             "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
             "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
-            "ci": _ci(root, files), "pairs": _co_change(root, set(files))}
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "lib": _lib(root, files), "lib_stamp": _cards_stamp()}
+
+
+def _cards_stamp():
+    """How many stack cards there are: a Foreman update that adds cards rebuilds the map's list (a few listdirs)."""
+    root = os.path.join(c.PLUGIN_ROOT, "skills", "library", "cards")
+    try:
+        return sum(len(os.listdir(os.path.join(root, d))) for d in os.listdir(root))
+    except OSError:
+        return 0
+
+
+def _lib(root, files):
+    try:
+        import fmlib
+        return fmlib.names_for_map(root, files)
+    except Exception:  # the library is a hint: never the map
+        return []
 
 
 _CI_FILE = re.compile(r"^(\.github/workflows/[^/]+\.ya?ml|\.gitlab-ci\.yml)$")
@@ -123,7 +140,7 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
-VERSION = 3  # bump when build() changes, so older maps are rebuilt
+VERSION = 4  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -134,7 +151,7 @@ def load(p, rebuild=False):
     except (OSError, ValueError):
         m = None
     head = _git(p.root, "rev-parse", "HEAD").strip()
-    if rebuild or not m or m.get("head") != head or m.get("version") != VERSION:
+    if rebuild or not m or m.get("head") != head or m.get("version") != VERSION or m.get("lib_stamp") != _cards_stamp():
         m = build(p)
         c.write_atomic(path, json.dumps(m))
     return m
@@ -160,6 +177,8 @@ def render(m):
         lines.append("tests → sources: " + "; ".join(f"{t} → {', '.join(s[:2])}" for t, s in list(m["tests"].items())[:10]))
     if m.get("ci"):
         lines.append("CI runs: " + "; ".join(m["ci"]))
+    if m.get("lib"):
+        lines.append("stack cards: " + ", ".join(m["lib"]) + " (fm lib show NAME)")
     out = "\n".join(c.plain(x) for x in lines)
     return out if len(out) <= OUT_MAX else out[:OUT_MAX - 1] + "…"
 
@@ -175,7 +194,7 @@ def compact(p, limit=500):
     except (OSError, ValueError):
         m = None
     head = _git(p.root, "rev-parse", "HEAD").strip()
-    if (not m or m.get("head") != head) and not os.environ.get("FOREMAN_NO_BACKGROUND"):
+    if (not m or m.get("head") != head or m.get("lib_stamp") != _cards_stamp()) and not os.environ.get("FOREMAN_NO_BACKGROUND"):
         try:
             subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "map", "--json"], cwd=p.root,
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -190,6 +209,8 @@ def compact(p, limit=500):
     parts.append("layout: " + ", ".join(f"{d} ({n})" for d, n in m["layout"][:5]))
     if m["tests"]:
         parts.append("tests→src: " + "; ".join(f"{t}→{s[0]}" for t, s in list(m["tests"].items())[:4] if s))
+    if m.get("lib"):  # T-0933: before the tests, which the 500-char cut trims first
+        parts.insert(-1 if m["tests"] else len(parts), "cards: " + ", ".join(m["lib"][:6]) + " (fm lib show NAME)")
     line = c.plain(f"Map ({m['files']} files{'' if m.get('head') == head else ', as of an older HEAD'}; fm map for "
                    f"more): " + " · ".join(parts))
     return line if len(line) <= limit else line[:limit - 1] + "…"

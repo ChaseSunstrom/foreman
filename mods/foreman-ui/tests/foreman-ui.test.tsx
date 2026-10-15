@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
-import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
+import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, stable, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
 const VIEW: FmView = {
@@ -367,6 +367,38 @@ test('the pane shows spend, the bench and evolve, research asks, and the task le
   await ui.unmount()
 })
 
+test('the Skills card: recent skills and cards with their age, top uses, unread suggestions; folded it still counts unread (T-0939)', async ($, on) => {
+  const skills = {
+    recent: [
+      { name: 'python', kind: 'card', at: '2026-10-15T12:00:00Z' },
+      { name: 'foreman:brainstorm', kind: 'skill', at: '2026-10-15T11:00:00Z' },
+    ],
+    counts: { 'foreman:brainstorm': 3, python: 1 },
+    suggested: ['python', 'typescript', 'semver'],
+    unread: ['typescript', 'semver'],
+  } as const
+  world(on, [{ ...VIEW, skills: { ...skills, recent: [...skills.recent], suggested: [...skills.suggested], unread: [...skills.unread] } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-skills' })).toBeDefined()
+  const missing: string[] = []
+  for (const text of [/4 uses · 7d · 2 unread/, /▤ python \S+ ago/, /✦ foreman:brainstorm \S+ ago/, /foreman:brainstorm ×3 · python ×1/, /fm lib show typescript · fm lib show semver/])
+    if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
+  expect(missing).toEqual([])
+  await ui.press({ key: 'fold-skills' })
+  expect(await ui.find({ type: 'Text', text: /fm lib show typescript/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /2 unread/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('an empty skills block shows no Skills card', async ($, on) => {
+  world(on, [{ ...VIEW, skills: { recent: [], counts: {}, suggested: [], unread: [] } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-skills' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('a quiet day shows no spend, bench or research cards', async ($, on) => {
   world(on, [{ ...VIEW, budget: { ...NEWS.budget!, today_usd: 0, subagent_tokens: 0, halved: null, subagents_paused: null }, bench: null, research: [] }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -431,6 +463,19 @@ test('a running edit is an animated row with its delta; a finished one is the en
       await done.unmount()
     }
   }
+})
+
+test('a subagent turn starting mid-turn leaves the main turn counts alone (Claude Code 2.1.299, T-0944)', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 'm1' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/a.py', old_string: 'a', new_string: 'b\nc', replace_all: false })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q' })
+  await $.turn.start({ text: 'sub', turnId: 's1', agentId: 'agent-1' }) // turn.start fires for subagents now
+  await $.turn.complete({ answer: '', durationMs: 3100, isAborted: false, turnId: 'm1', reason: 'answer' })
+  const line = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'TurnDuration', props: { word: 'Baked', durationMs: 3100 } })
+  expect(await line.find({ type: 'Text', text: /2 tools · 1 edit \+2 −1/ })).toBeDefined()
+  await line.unmount()
 })
 
 test('the spinner names the Foreman step; the closing line says what the turn did', async ($, on) => {
@@ -1375,9 +1420,64 @@ test('a running call shows under Now with a moving bar; the pulse charts the ses
   expect(await ui.find({ type: 'Text', text: /3 tool calls · last 1 min/ })).toBeDefined()
   await clock.advance(1000)
   await ui.unmount()
+  await clock.advance(20000) // past the hold (T-0938)
   const after = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await after.find({ key: 'card-now' })).toBeUndefined() // it finished
   await after.unmount()
+})
+
+test('a card that shrinks keeps its tallest recent height for the hold, then eases down a row at a time (T-0938)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 1000
+  void $.tool.call({ tool: 'Bash', command: 'make a', description: 'quick one' })
+  await clock.advance(10) // the quick one has read its hold
+  answer.hold = 30000
+  void $.tool.call({ tool: 'Bash', command: 'make b', description: 'slow one' })
+  await clock.advance(100)
+  const h = async (quick: boolean) => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+    const box = await ui.find({ key: 'card-now' })
+    expect(!!(await ui.find({ type: 'Text', text: 'quick one' }))).toBe(quick)
+    expect(await ui.find({ type: 'Text', text: 'slow one' })).toBeDefined()
+    await ui.unmount()
+    return box?.props.minHeight as number | undefined
+  }
+  expect(await h(true)).toBe(5) // border, head, two calls
+  await clock.advance(2000) // the quick one ended; the card keeps its two rows
+  expect(await h(false)).toBe(5)
+  await clock.advance(5000) // 7 s since it was last drawn two calls tall
+  expect(await h(false)).toBe(5) // still inside the hold
+  await clock.advance(2000)
+  expect(await h(false)).toBe(4) // the hold is over: a row a second given back, down to what it shows
+})
+
+test('kit: a held height gives its rows back one a second after the hold; growing takes effect at once (T-0938)', () => {
+  expect(stable('t', 6, 1000)).toBe(6)
+  expect(stable('t', 3, 2000)).toBe(6)
+  expect(stable('t', 3, 8999)).toBe(6)
+  expect([9000, 10000, 11000, 12000].map(t => stable('t', 3, t))).toEqual([5, 4, 3, 3])
+  expect(stable('t', 7, 12500)).toBe(7)
+})
+
+test('Now, Subagents and Shells linger dimmed after their last item ends, then go (T-0938)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 1000
+  void $.tool.call({ tool: 'Bash', command: 'make test', description: 'run the tests' })
+  await clock.advance(100)
+  const first = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await first.find({ key: 'card-now' })).toBeDefined()
+  await first.unmount()
+  await clock.advance(3000)
+  const idle = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await idle.find({ key: 'card-now' })).toBeDefined() // it lingers
+  expect(await idle.find({ type: 'Text', text: /idle · last: .*run the tests · \d+s ago/ })).toBeDefined()
+  await idle.unmount()
+  await clock.advance(20000)
+  const gone = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await gone.find({ key: 'card-now' })).toBeUndefined()
+  await gone.unmount()
 })
 
 test('a quiet project folds queue and inbox into one Up next card with the capture box (T-0909)', async ($, on) => {

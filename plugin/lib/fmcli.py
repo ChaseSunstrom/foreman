@@ -2808,6 +2808,21 @@ def cmd_check(args):
         return out(args, {"ambient": meta["ambient"]},
                    "Ambient tests on: after each edit the affected tests run in the background; you hear only when "
                    "they flip." if meta["ambient"] else "Ambient tests off.")
+    if args.action == "onwrite":  # T-0947: a validator the write hook runs on matching files; a failure blocks
+        glob_, cmd = (args.words[:1] or [None])[0], " ".join(args.words[1:])
+        if cmd and "{file}" not in cmd:
+            raise UsageError("fm check onwrite GLOB 'CMD {file}': the command needs {file}, the path just written")
+        if cmd:
+            guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd.replace("{file}", "file"))
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            rules = dict(meta.get("onwrite") or {})
+            if glob_:
+                rules.pop(glob_, None) if not cmd else rules.update({glob_: cmd})
+                meta["onwrite"] = rules
+                c.write_meta(p, meta)
+        return out(args, {"onwrite": rules}, "\n".join(f"{g}: {x}" for g, x in rules.items())
+                   or "No onwrite validators: fm check onwrite GLOB 'CMD {file}'.")
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -3610,7 +3625,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo recall explain surprise vetoes why snapshots at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive pause sensitive trust standing budget sync share notify compact-output complete wiring "
@@ -3967,6 +3982,15 @@ def build_parser():
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
     s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
+    s = add("lib", lazy("fmlib", "cmd_lib"), help="stack library: cards per language, framework, service and tool, "
+            "plus installed plugins' skills (suggest, search, show, list, check)")
+    s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source"])
+    s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
+    s.add_argument("--area", help="list: one area's cards")
+    s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")
+    s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
+                                                     "repeatable")
+    s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
     s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
     s.add_argument("path")
     s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
@@ -4234,10 +4258,12 @@ def build_parser():
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
     s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
-                                                                          "ambient"])
+                                                                          "ambient", "onwrite"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
                                             "the globs it covers (none: always run); affected: a command with {tests} "
-                                            "(paths) or {names} (file names without extension)")
+                                            "(paths) or {names} (file names without extension); onwrite: GLOB and a "
+                                            "command with {file}, run on each matching write (5 s; a failure blocks; "
+                                            "GLOB alone removes it; nothing lists them)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
     s.add_argument("--repeat", type=int, default=0, help="run each gate N times and report its pass rate (an "
@@ -4500,6 +4526,8 @@ def build_parser():
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
     s.add_argument("id", nargs="?")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
+    s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
+                                                          "reason on the ledger (main thread only, T-0948)")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")
