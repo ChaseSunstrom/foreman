@@ -43,6 +43,8 @@ def paths():
     return {"settings": os.path.join(claude, "settings.json"), "claude_md": os.path.join(claude, "CLAUDE.md"),
             "rules_link": os.path.join(claude, "rules", "foreman.md"),
             "rules_target": os.path.join(fh, "plugin", "rules", "foreman.md"),
+            "fm_link": os.path.join(os.path.expanduser("~"), ".local", "bin", "fm"),  # T-0853: fm in any shell
+            "fm_target": os.path.join(fh, "plugin", "bin", "fm"),
             "wrapper": os.path.join(fh, "plugin", "hooks", "statusline"),
             "manifest": os.path.join(c.state_dir(), "install-manifest.json"), "backups": os.path.join(fh, "backups")}
 
@@ -145,6 +147,10 @@ def plan_install(P):
     if link == "absent":
         new_m["rules_symlink"] = P["rules_link"]
         actions.append(f"{P['rules_link']} → {P['rules_target']} (symlink)")
+    if not os.path.lexists(P["fm_link"]):  # T-0853: someone else's fm stays where it is
+        on_path = os.path.dirname(P["fm_link"]) in os.environ.get("PATH", "").split(os.pathsep)
+        actions.append(f"{P['fm_link']} → {P['fm_target']} (fm in any shell"
+                       + ("" if on_path else "; add ~/.local/bin to your PATH to use it outside Claude Code") + ")")
     return s, new_s, m, new_m, md, new_md, link, actions
 
 
@@ -175,6 +181,9 @@ def cmd_install(args):
     if link == "absent":
         os.makedirs(os.path.dirname(P["rules_link"]), exist_ok=True)
         os.symlink(P["rules_target"], P["rules_link"])
+    if not os.path.lexists(P["fm_link"]):
+        os.makedirs(os.path.dirname(P["fm_link"]), exist_ok=True)
+        os.symlink(P["fm_target"], P["fm_link"])
     new_m.setdefault("installed", c.now())
     c.write_atomic(P["manifest"], json.dumps(new_m, indent=2, sort_keys=True) + "\n")
     print("Wired Foreman into ~/.claude:\n  - " + "\n  - ".join(actions) +
@@ -282,7 +291,9 @@ def cmd_uninstall(args):
                 perms.pop("defaultMode", None)
             else:
                 perms["defaultMode"] = m["defaultMode_original"]
-            actions.append(f"permissions.defaultMode = {m['defaultMode_original']}")
+            was = m["defaultMode_original"]
+            actions.append(f"permissions.defaultMode = {was}" if was is not None
+                           else "permissions.defaultMode unset (as before)")  # T-0851: not "= None"
         if not perms and m.get("permissions_created"):
             new_s.pop("permissions")
     env = new_s.get("env")
@@ -316,8 +327,9 @@ def cmd_uninstall(args):
         print("Would change:\n  - " + "\n  - ".join(actions + ["rules symlink removed", "manifest removed"]))
         return
     _backup(P)
-    if m.get("settings_created") and not new_s:
-        os.remove(P["settings"])
+    if not new_s:  # T-0851: nothing left; `claude plugin install` may have made it as {} before the wiring ran
+        if os.path.exists(P["settings"]):
+            os.remove(P["settings"])
     elif new_s != s:
         c.write_atomic(P["settings"], json.dumps(new_s, indent=2) + "\n")
     if new_md != md:
@@ -328,6 +340,13 @@ def cmd_uninstall(args):
     if _link_state(P) == "ours":
         os.unlink(P["rules_link"])
         actions.append("rules symlink removed")
+        try:
+            os.rmdir(os.path.dirname(P["rules_link"]))  # T-0851: only when empty
+        except OSError:
+            pass
+    if os.path.islink(P["fm_link"]) and os.path.realpath(P["fm_link"]) == os.path.realpath(P["fm_target"]):
+        os.unlink(P["fm_link"])  # T-0853: ours only
+        actions.append(f"{P['fm_link']} removed")
     if kept:
         c.write_atomic(P["manifest"], json.dumps(kept, indent=2) + "\n")
         actions.append("manifest kept for what couldn't be removed: fm uninstall-user retries it, "

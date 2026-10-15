@@ -2724,8 +2724,9 @@ def cmd_check(args):
         try:  # R3 bootstrap: what the project itself says it runs
             import fmmap
             m = fmmap.load(p) if c.git_root(p.root) else {}
-            hint = "; found in the project: " + "; ".join((m.get("gates") or []) + (m.get("ci") or [])[:4]) \
-                if m.get("gates") or m.get("ci") else ""
+            found = (m.get("gates") or []) + (m.get("ci") or [])[:4]
+            hint = (f"; this project's tests look like: fm check add '{found[0]}'"  # T-0850: the line, ready to run
+                    + (f" (also found: {'; '.join(found[1:])})" if found[1:] else "")) if found else ""
         except Exception:
             pass
         raise UsageError(f"no checks configured for this project: fm check add '<cmd>' (tests, lint, fm doctor…){hint}")
@@ -4055,6 +4056,7 @@ def build_parser():
 
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
+    s.add_argument("-v", "--verbose", action="store_true", help="list the passing checks too")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
     s.add_argument("--accept-supply", action="store_true",

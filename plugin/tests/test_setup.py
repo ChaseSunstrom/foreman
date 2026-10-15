@@ -85,6 +85,32 @@ class Install(SetupCase):
         self.run_fm("uninstall-user")
         self.assertEqual(self.load()["outputStyle"], "Concise")
 
+    def test_uninstall_on_a_bare_home_leaves_no_shell_behind(self):
+        # T-0851 (newcomer walkthrough): settings.json was left as {}, an empty rules/ dir stayed, and the report read
+        # "permissions.defaultMode = None"
+        os.remove(self.settings)
+        os.remove(self.claude_md)
+        with open(self.settings, "w") as f:
+            f.write("{}\n")  # what `claude plugin install` leaves before Foreman's wiring runs
+        self.run_fm("install-user")
+        out = self.run_fm("uninstall-user").stdout
+        self.assertNotIn("None", out)
+        self.assertFalse(os.path.exists(self.settings), "an empty settings.json goes")
+        self.assertFalse(os.path.isdir(os.path.join(self.home, ".claude", "rules")), "an empty rules/ goes")
+
+    def test_fm_works_from_a_plain_shell(self):
+        # T-0853 (newcomer walkthrough): every doc says "run fm …", but fm was on PATH only inside Claude Code
+        link = os.path.join(self.home, ".local", "bin", "fm")
+        self.run_fm("install-user")
+        self.assertEqual(os.path.realpath(link), os.path.realpath(os.path.join(self.fhome, "plugin", "bin", "fm")))
+        self.run_fm("uninstall-user")
+        self.assertFalse(os.path.lexists(link))
+        with open(link, "w") as f:
+            f.write("#!/bin/sh\necho mine\n")  # someone else's fm
+        self.run_fm("install-user")
+        with open(link) as f:
+            self.assertIn("mine", f.read(), "a command of the same name that isn't Foreman's stays")
+
     def test_builder_worktrees_start_from_head(self):
         # T-0803: worktree.baseRef 'fresh' (the default) made both builder lanes start from origin/main, days behind
         self.run_fm("install-user")

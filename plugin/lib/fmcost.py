@@ -313,7 +313,8 @@ def cmd_digest(args):
     p = fmcli.resolve(args)
     done, lessons, review = _week(p, args.days)
     since = _since(args.days)
-    grades = collections.Counter(b.meta.get("verified", "ungraded") for b in done)
+    grade = lambda b: "folded into another" if b.meta.get("done_in") else b.meta.get("verified", "ungraded")  # T-0852
+    grades = collections.Counter(grade(b) for b in done)
     fails = collections.Counter(r.get("sig") for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
                                 if str(r.get("at", ""))[:19] >= since and r.get("sig"))
     blocked = [b for b in c.load_briefs(p) if b.status == "blocked"]
@@ -324,7 +325,7 @@ def cmd_digest(args):
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
-    lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({b.meta.get('verified', 'ungraded')})" for b in done[-8:]]
+    lines += [f"- {b.id} [{b.type} {b.tier}] {c.fit(b.title, 90)} ({grade(b)})" for b in done[-8:]]
     lines += ["Lessons:"] + [f"- {tid}: {c.fit(x, 140)}" for tid, x in lessons[-6:]] if lessons else []
     insights = [(b.id, b.section("Insight").strip()) for b in done if b.section("Insight").strip()]  # T-0639
     lines += ["Insights:"] + [f"- {tid}: {c.fit(x, 160)}" for tid, x in insights[-6:]] if insights else []

@@ -28,7 +28,7 @@ Flags: `--security` (Trail of Bits security skills), `--docs` (Office/PDF skills
 2. Runs `setup-plugins.sh`: installs the curated plugins that are missing, installs language-server plugins only when the server is on your PATH, reports conflicting or heavy plugins. It never uninstalls anything.
 3. Registers this repo as a local plugin marketplace and installs `foreman@foreman` (loads in place: edits under `plugin/` apply on `/reload-plugins`).
 4. Sets `bypassPermissions` as your default permission mode (backing up `settings.json` and recording the original) unless you pass `--no-bypass`.
-5. Wires Foreman into `~/.claude` with `fm install-user` unless you pass `--no-wiring`: a statusLine wrapper (your original line and claude-hud still render above the Foreman line), catastrophic-command deny rules, a raised Stop-hook continuation cap for drive mode, a marked block in `~/.claude/CLAUDE.md`, and the `~/.claude/rules/foreman.md` symlink. Every change is recorded in `state/install-manifest.json` so it can be undone exactly.
+5. Wires Foreman into `~/.claude` with `fm install-user` unless you pass `--no-wiring`: a statusLine wrapper (your original line and claude-hud still render above the Foreman line), catastrophic-command deny rules, a raised Stop-hook continuation cap for drive mode, a marked block in `~/.claude/CLAUDE.md`, the `~/.claude/rules/foreman.md` symlink, and a `~/.local/bin/fm` link so `fm` works in any shell (unless a different `fm` is already there). Every change is recorded in `state/install-manifest.json` so it can be undone exactly.
 
 ## Using it
 
