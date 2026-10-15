@@ -6,11 +6,11 @@ import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } fro
 import {
   C,
   MASCOT_COLORS,
-  SIZE_LEGEND,
   about,
   hoursAgo,
   tokensWord,
   activityCells,
+  bucketize,
   agentColor,
   TONE_COLOR,
   changedLines,
@@ -39,7 +39,7 @@ import {
   toolFace,
   typeColor,
 } from './kit'
-import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, LIST, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, cfg, starts, took } from './state'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, LANES, LIST, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, cfg, laneOf, running, starts, ticks, took } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
@@ -53,7 +53,9 @@ const beat = atom({ plugin: 'foreman-ui', key: 'beat' } as const, 0)
 const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
-import { agentOut, agentRow, churn, editChanges, editRow, mascotTree, meter, more, shellRow, spark } from './rows'
+const folded = atom({ plugin: 'foreman-ui', key: 'folded' } as const, [] as string[]) // T-0914: cards folded to their head
+import { agentOut, agentRow, bars, churn, editChanges, editRow, eta, lanes, mascotTree, meter, miniRail, more, rail, shellRow, spark } from './rows'
+import type { Motion } from './rows'
 
 // Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
 // every rule and gate stays in fm and its classic hooks (which still run under claude -p and older builds); buttons
@@ -207,11 +209,38 @@ async function refresh($: EngineInterface): Promise<boolean> {
     if (r.exitCode !== 0) throw new Error(r.stderr.trim().split('\n').at(-1) || `fm ui exited ${r.exitCode}`)
     const next = JSON.parse(r.stdout) as FmView
     const prev = await read($, view)
+    const was = prev?.active
+    const now = next.active
+    if (cfg.motion !== 'off' && was && now && was.id === now.id) { // a glow needs the clock to fade
+      const t = await $.clock.now()
+      for (const s of now.steps)
+        if (s.done && !was.steps.find(x => x.n === s.n)?.done) {
+          for (const [k, at] of flashed) if (t - at > FLASH_MS) flashed.delete(k)
+          flashed.set(`${now.id}:${s.n}`, t)
+          flashUntil = t + FLASH_MS
+        }
+      if (flashUntil > t) await wake($)
+    }
     const lines = toasts(prev, next)
     for (const line of lines) $.ui.toast(line)
     if (lines.some(l => l.startsWith('⚠'))) await chime($, 'needs')
     else if (lines.some(l => l.startsWith('✔'))) await chime($, 'done')
     const closed = lines.map(l => /^✔ (T-\d+) done/.exec(l)?.[1]).filter((x): x is string => !!x)
+    if (closed.length) {
+      const t = await $.clock.now()
+      const was = prev?.active?.id === closed[0] ? prev.active : null
+      const rec = (next.closed ?? []).find(x => x.id === closed[0])
+      closing = {
+        id: closed[0]!, title: was?.title ?? rec?.title ?? '', grade: rec?.grade, lenses: rec?.lenses,
+        proved: was ? was.criteria.length : null, // done means every criterion has its evidence
+        minutes: typeof was?.on_task_s === 'number' ? (was.on_task_s * 1000 + Math.max(0, t - lastFull)) / 60000 : null,
+        usual: was ? prev?.typical?.[`${was.type}/${was.tier}`] : undefined, at: t,
+      }
+      if (cfg.motion !== 'off') {
+        flashUntil = Math.max(flashUntil, t + CLOSING_MS) // the clock runs until the card has settled away
+        await wake($)
+      }
+    }
     if (closed.length) await update($, away, list => [...list, ...closed.filter(x => !list.includes(x))])
     if (lines.some(l => l.startsWith('✔'))) {
       happyUntil = (await $.clock.now()) + 6000
@@ -332,14 +361,60 @@ async function steer($: EngineInterface, text: string) {
   await refresh($)
 }
 
+// T-0914: fold or unfold one of the quieter cards; the choice is kept across sessions
+async function toggleFold($: EngineInterface, key: string) {
+  await update($, folded, list => (list.includes(key) ? list.filter(x => x !== key) : [...list, key]))
+  await $.store.set('folded', await read($, folded))
+}
+
 async function openPane($: EngineInterface, focus: boolean) {
   // ~76 columns docked: the cards fit, and the transcript and band keep the rest (T-0122: the share left them ~37)
   return $.ui.open(focus ? { id: PANE, title: 'Foreman', focus: true, columns: 76 } : { id: PANE, title: 'Foreman', columns: 76 })
 }
 
+// T-0909: the pane's moving rasters (the rail's comet, the live lane's glow) repaint by blit at ~30 fps while work is
+// live, without redrawing the pane; the pane registers them as it draws and the 8 fps frame clock keeps the rest.
+const motion: Motion = new Map()
+const MOTION_MS = 33
+let motionClock: { cancel: () => void } | null = null
+const frameAt = (ms: number) => ms / FRAME_MS // time in frames, fractional: what a comet takes
+const LANE_COLOR: Record<string, number> = { edit: C.edit, run: C.accent, read: C.accent2, agent: C.agent, web: C.web }
+// A step that just got done glows green and fades over FLASH_MS; the frame clock runs until it has
+const flashed = new Map<string, number>() // "T-0007:2" → when it was seen done
+const FLASH_MS = 2500
+const BG = 0x181a21 // the terminal's background the glow fades into
+let flashUntil = 0
+// T-0913: the task that just closed, shown for CLOSING_MS at the top of the pane: grade, proof, time against the usual
+type Closing = { id: string; title: string; grade?: string | null; lenses?: string[]; proved: number | null; minutes: number | null; usual?: number; at: number }
+let closing: Closing | null = null
+const CLOSING_MS = 6000
+const SWEEP_MS = 900
+
+let painting = false
+async function repaint($: EngineInterface) {
+  if (painting) return // a slow blit: skip a tick rather than pile them up
+  if (!turns.size && !starts.size) {
+    motionClock?.cancel() // live work ended: everything settles on the next redraw
+    motionClock = null
+    return
+  }
+  painting = true
+  try {
+    const f = frameAt(await $.clock.now())
+    for (const [key, m] of [...motion]) {
+      const r = await $.ui.blit({ requestId: PANE, key, columns: m.columns, rows: m.rows, cells: m.draw(f) }).catch(() => ({ deny: 'failed' }))
+      if (r && 'deny' in r && r.deny) motion.delete(key) // not mounted (pane closed, redrawn smaller): until it draws again
+    }
+  } finally {
+    painting = false
+  }
+}
+
 // The frame clock runs only while work is live: a turn, or a tool call (a subagent's included).
 async function wake($: EngineInterface) {
   lastActive = await read($, frame)
+  if (cfg.motion === 'off') return // T-0912: a still UI; the 2 s poll still brings every change
+  if (!motionClock && cfg.motion === 'full') motionClock = $.clock.every(MOTION_MS, () => void repaint($))
   if (clock) return
   clock = $.clock.every(FRAME_MS, () => void advance($))
 }
@@ -347,8 +422,11 @@ async function wake($: EngineInterface) {
 async function advance($: EngineInterface) {
   const f = await read($, frame)
   if (starts.size) lastActive = f // a long build is live work: its row keeps moving (finally always clears starts)
-  const quiet = !turns.size && !starts.size
-  if (quiet && !bgLive && f - lastActive > 2) return sleep()
+  const quiet = !turns.size && !starts.size && (await $.clock.now()) >= flashUntil // a step's glow is still fading
+  if (quiet && !bgLive && f - lastActive > 2) {
+    await update($, frame, n => n + 1) // one last redraw, so what faded (a glow, the done card) is drawn settled
+    return sleep()
+  }
   if (!bgLive && f - lastActive > IDLE_FRAMES) return sleep()
   if (quiet && bgLive && ++calm % 4) return // only background work: a calmer pace (~2 frames a second)
   await update($, frame, n => n + 1)
@@ -357,6 +435,8 @@ async function advance($: EngineInterface) {
 function sleep() {
   clock?.cancel()
   clock = null
+  motionClock?.cancel() // T-0909 review: a lost turn.complete must not leave the 30 fps blit running for good
+  motionClock = null
 }
 
 // A subagent's tool calls carry its id: count them and tie the subagent to the Agent row that started it.
@@ -430,6 +510,8 @@ export const register: Register = (on, options) => {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
+  // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
+  cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
@@ -439,6 +521,8 @@ export const register: Register = (on, options) => {
     })
     const stored = await $.store.get('sound').catch(() => undefined)
     if (stored === false) await update($, sound, () => false)
+    const kept = await $.store.get('folded').catch(() => undefined)
+    if (Array.isArray(kept)) await update($, folded, () => kept.filter((x): x is string => typeof x === 'string'))
     await refresh($)
     await resumeAfterReload($)
     poll?.cancel() // one poller per environment, however often the session starts
@@ -509,7 +593,11 @@ export const register: Register = (on, options) => {
     const id = e.tool_use_id
     let noteTimer: { cancel: () => void } | null = null
     const face = toolFace(String(e.tool), e, cfg.root)
-    starts.set(id, await $.clock.now())
+    const at = await $.clock.now()
+    starts.set(id, at)
+    if (face.icon !== '⚠') ticks.push({ at, lane: laneOf(face.icon) }) // T-0909: the swim lanes (a question isn't work)
+    while (ticks.length && (ticks.length > 2000 || at - ticks[0]!.at > 2 * TIMELINE_MS)) ticks.shift()
+    running.set(id, { icon: face.icon, verb: face.verb, target: face.target, color: face.color, at, agent: !!e.agentId })
     try {
       if (face.icon === '◆') agentCalls.set(id, String((e as { description?: unknown }).description ?? ''))
       if (e.agentId) await noteSubagent($, e.agentId, `${face.verb} ${face.target}`.trim()).catch(() => undefined)
@@ -553,6 +641,7 @@ export const register: Register = (on, options) => {
       if (began !== undefined) took.set(id, (await $.clock.now()) - began)
       if (took.size > 400) took.delete(took.keys().next().value!)
       starts.delete(id)
+      running.delete(id)
       agentCalls.delete(id)
       agentOf.delete(id)
       isDirty = true
@@ -918,6 +1007,8 @@ export const register: Register = (on, options) => {
         {a && (
           <Box flexDirection="row" gap={1}>
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
+            {/* T-0909: a mini stage rail, the pane's in small */}
+            {miniRail($.ui.resolve(e), e, a.stages.length, a.stages.indexOf(a.stage), working ? f : null)}
             <Text color={hex(C.dim)}>{a.stage}</Text>
             {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             {a.steps.length > 0 && (
@@ -1018,8 +1109,12 @@ export const register: Register = (on, options) => {
     )
   })
 
+  // T-0909: the pane reads top-down by urgency: what needs the person, then the hero (the task, its stage rail, progress
+  // and time against the usual), what runs this moment, the plan in detail, the pulse charts, what's next, and the
+  // quieter cards below. Rasters that move are registered for the 30 fps blit while work is live.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Input, Text } = $.ui.resolve(e)
+    const ui = $.ui.resolve(e)
+    const { Box, Button, Input, Text } = ui
     const v = await read($, view)
     const err = await read($, error)
     if (!v?.project) {
@@ -1031,11 +1126,18 @@ export const register: Register = (on, options) => {
       )
     }
     const live = turns.size > 0 || starts.size > 0
-    const f = live ? await read($, frame) : null
-    const idleBeat = live || cfg.mascot === 'off' ? 0 : await read($, beat)
     const clockNow = await $.clock.now()
+    const moving = live && cfg.motion !== 'off' // T-0912: motion off draws work still
+    const f = moving || clockNow < flashUntil ? await read($, frame) : null // a fading step glow redraws too
+    const idleBeat = live || cfg.mascot === 'off' ? 0 : await read($, beat)
+    const term = e.surface === 'terminal'
+    if (term) motion.clear() // this drawing registers what moves
+    // the rasters' time: the blit's clock in full motion (so a redraw never jumps), the frame in calm, none when off
+    const ft = !moving ? null : cfg.motion === 'full' ? frameAt(clockNow) : f
+    const blit = term && cfg.motion === 'full' ? motion : undefined
     const a = v.active
     const m = v.mode
+    const inner = Math.max(24, e.props.bodyColumns - 6) // inside a card: border and padding
     const width = Math.max(10, e.props.bodyColumns - 12)
     const touched = await read($, files)
     const base = `${v.root || cfg.root}/` // T-0146: the project's files, relative; scratch files elsewhere aren't this card's
@@ -1044,20 +1146,28 @@ export const register: Register = (on, options) => {
     const bgShells = await read($, shells)
     const fb = bgShells.length ? await read($, frame) : 0
     const isOn = await read($, sound)
+    const cx = await read($, ctx)
     const queue = v.queue ?? []
     const inbox = v.inbox ?? []
+    const inboxN = v.inbox_total ?? inbox.length
     const recent = (v.recent ?? []).slice(-LIST)
     const checks = v.checks
     // T-0181: 'the pannels color doesnt match': cards are the chat's quiet grey, colour only where it signals (the active
     // task, something waiting on the person, failing gates); each card's heading keeps its colour
     const card = (color: number | null = null) =>
       ({ flexDirection: 'column', borderStyle: 'round', borderColor: hex(color === null ? C.dim : pulse(color, f)), paddingX: 1 }) as const
-    const head = (title: string, color: number, count?: string) => (
+    const foldedSet = new Set(await read($, folded))
+    const isFolded = (key: string) => foldedSet.has(key)
+    // a card's head; a quieter card's carries a ▾/▸ that folds it to this one line (T-0914)
+    const head = (title: string, color: number, count?: string, fold?: string) => (
       <Box flexDirection="row" gap={1}>
+        {fold && (
+          <Button key={`fold-${fold}`} label={isFolded(fold) ? '▸' : '▾'} plain dimColor onPress={() => toggleFold($, fold)} />
+        )}
         <Text bold color={hex(color)}>
           ▍{title}
         </Text>
-        {count !== undefined && <Text color={hex(C.dim)}>{count}</Text>}
+        {count !== undefined && <Text color={hex(C.dim)} wrap="truncate-end">{count}</Text>}
       </Box>
     )
     const chip = (it: FmItem) => (
@@ -1069,169 +1179,90 @@ export const register: Register = (on, options) => {
       </Box>
     )
     const done = a ? a.steps.filter(s => s.done).length : 0
+    const proved = a ? a.criteria.filter(x => x.checked).length : 0
+    const stageIdx = a ? a.stages.indexOf(a.stage) : -1
+    const cur = a?.steps.find(s => s.current)
+    const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
+    const onMin = a && typeof a.on_task_s === 'number' ? (a.on_task_s * 1000 + Math.max(0, clockNow - lastFull)) / 60000 : null
     const maxChurn = Math.max(1, ...touched.map(t => t.add + t.del))
     const passed = checks ? checks.results.filter(r => !r.exit).length : 0
+    const failing = !!checks && passed < checks.results.length
+    const asks = v.approvals ?? []
+    const plans = queue.flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : []))
+    const nowCalls = [...running].filter(([, x]) => !x.agent)
+    const mascotW = cfg.mascot === 'off' ? 0 : 13 + Math.min(4, subs.filter(s => !s.done).length) * 8
+    const heroW = Math.max(16, inner - mascotW)
+    // the swim lanes: the last half hour of tool calls, a row per kind that ran
+    const laneW = Math.max(10, inner - 6)
+    // the window grows with the session, 1 to 30 minutes, so a fresh session's calls spread out instead of piling up
+    const spanMin = Math.min(TIMELINE_MS, Math.max(60000, ticks.length ? clockNow - ticks[0]!.at : TIMELINE_MS)) / 60000
+    const span = Math.ceil(spanMin) * 60000
+    const recentTicks = ticks.filter(t => clockNow - t.at <= span)
+    const laneRows = LANES.map(l => ({
+      label: l,
+      color: LANE_COLOR[l],
+      slots: bucketize(recentTicks.filter(t => t.lane === l).map(t => t.at), clockNow, span, laneW * 2),
+    })).filter(r => r.slots.some(Boolean))
+    const days = v.done_days ?? []
+    const gaugeW = Math.max(6, Math.min(16, inner - (days.length ? days.length * 2 + 1 : 0) - 24))
+
+    const gate = checks && checks.results.length > 0 && (
+      <Box key="card-gates" {...card(failing ? C.err : null)}>
+        {head(
+          'Gates',
+          failing ? C.err : C.ok,
+          `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`,
+          'gates',
+        )}
+        {!isFolded('gates') && (
+          <Box key="gates-body" flexDirection="column">
+            {checks.results.map((r, i) => (
+              <Box flexDirection="row" gap={1} key={`gate-${i}`}>
+                <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>
+                <Text wrap="truncate-end">{r.cmd.slice(0, 60)}</Text>
+                <Text color={hex(C.dim)}>{r.s.toFixed(1)}s</Text>
+                {r.note ? (
+                  <Text color={hex(C.warn)} wrap="truncate-end">
+                    {r.note.slice(0, 40)}
+                  </Text>
+                ) : null}
+          </Box>
+        ))}
+          </Box>
+        )}
+      </Box>
+    )
 
     return (
       <Box flexDirection="column" key="fm-pane">
-        <Box flexDirection="row" justifyContent="space-between" borderStyle="round"
-          borderColor={hex(live ? pulse(C.accent, f) : C.accent)} paddingX={1} key="fm-pane-head">
-          <Box flexDirection="column">
-            <Box flexDirection="row" gap={1}>
-              <Text bold color={hex(C.accent)}>
-                {live ? spin(f ?? 0) : '▍'} Foreman
-              </Text>
-              <Text color={hex(C.dim)} wrap="truncate-end">
-                {v.project}
-              </Text>
-            </Box>
-            {m && (
-              <Box flexDirection="row" gap={1}>
-                <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>
-                <Text color={hex(m.drive ? C.dim : C.warn)}>· drive {m.drive ? 'on' : 'off'}</Text>
-                {m.sensitive && <Text color={hex(C.warn)}>· sensitive</Text>}
-                {m.trust && <Text color={hex(C.warn)}>· trust on</Text>}
-                {(m.standing ?? []).length > 0 && <Text color={hex(C.dim)}>· standing yes</Text>}
-              </Box>
-            )}
-            <Text color={hex(C.dim)}>
-              <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {v.inbox_total ?? inbox.length} in inbox
-            </Text>
-            {(v.vetoes ?? []).length > 0 && (
-              <Text key="fm-pane-vetoes" color={hex(C.dim)} wrap="truncate-end">
-                ✋ you said: {v.vetoes![0]}{v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}
-              </Text>
-            )}
-            {(v.revisit ?? []).length > 0 && (
-              <Text key="fm-pane-revisit" color={hex(C.warn)} wrap="truncate-end">
-                ◆ revisit: {v.revisit![0].decision} ({v.revisit![0].why}){v.revisit!.length > 1 ? ` · ${v.revisit!.length - 1} more` : ''}
-              </Text>
-            )}
-          </Box>
-          {mascotTree($.ui.resolve(e), e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
-        </Box>
         {err && <Text color={hex(C.err)}>fm: {err}</Text>}
 
-        <Box key="card-task" {...card(a ? C.accent : null)}>
-          {a ? (
-            <Box flexDirection="column">
-              <Box flexDirection="row" gap={1}>
-                <Box flexDirection="row" gap={1} flexShrink={0}>
-                  {chip(a)}
-                  <Text bold color={hex(C.accent)}>
-                    {a.id}
-                  </Text>
-                </Box>
-                <Text bold wrap="wrap">
-                  {a.title}
-                </Text>
-              </Box>
-              <Text wrap="wrap">
-                {a.stages
-                  .map(s => (s === a.stage ? `◉ ${s}` : a.stages.indexOf(s) < a.stages.indexOf(a.stage) ? `● ${s}` : `○ ${s}`))
-                  .join('  ')}
+        {closing && clockNow - closing.at < CLOSING_MS && (() => {
+          const c = closing
+          const sweep = (t: number) => Math.min(1, Math.max(0, (t - c.at) / SWEEP_MS))
+          if (blit) blit.set('closed-sweep', { columns: inner, rows: 1, draw: fr => progressCells(inner, sweep(fr * FRAME_MS), mix(C.ok, C.accent2, 0.6), C.ok, null) }) // meter's own colours
+          return (
+            <Box key="card-closed" {...card(C.ok)}>
+              {meter(ui, e, 'closed-sweep', inner, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}
+              <Text bold color={hex(C.ok)} wrap="truncate-end">
+                ✔ {c.id} done{closeCard(c)}
               </Text>
-              {a.steps.length > 0 && (
-                <Box flexDirection="row" gap={1}>
-                  {meter($.ui.resolve(e), e, 'fm-pane-bar', Math.min(40, width - 8), done / a.steps.length, C.ok, f)}
-                  <Text bold>
-                    {done}/{a.steps.length}
-                  </Text>
-                </Box>
-              )}
-              {/* T-0181: 'the AC and audits thing not matching': steps and done-when criteria under small labels in one
-                  glyph column; audits a bar like the steps' */}
-              {a.steps.length > 0 && <Text color={hex(C.dim)}>steps</Text>}
-              {a.steps.map(s => (
-                <Text key={`step-${s.n}`} color={s.current ? hex(C.accent) : s.done ? hex(C.dim) : undefined} wrap="truncate-end">
-                  {'  '}
-                  {s.done ? '✓' : s.current ? (live ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
-                </Text>
-              ))}
-              {a.criteria.length > 0 && <Text color={hex(C.dim)}>done when</Text>}
-              {a.criteria.map(c => (
-                <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
-                  {'  '}
-                  {c.checked ? '✓' : '○'} {c.n}. {c.text}
-                </Text>
-              ))}
-              {/* T-0711: the plan tree — the parts fm task split made, each with its progress */}
-              {(a.children ?? []).length > 0 && <Text color={hex(C.dim)}>parts</Text>}
-              {(a.children ?? []).map(k => (
-                <Text key={`kid-${k.id}`} color={k.status === 'done' ? hex(C.dim) : k.status === 'active' ? hex(C.accent) : undefined} wrap="truncate-end">
-                  {'  '}
-                  {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'} {k.id} {k.title}
-                  {k.steps_total ? `  ${k.steps_done}/${k.steps_total}` : ''}
-                </Text>
-              ))}
-              {/* T-0228: the debugging ledger, the oracle's open questions and a batch's members, where the task is */}
-              {(a.hypotheses ?? []).length > 0 && <Text color={hex(C.dim)}>hypotheses</Text>}
-              {(a.hypotheses ?? []).map(hy => (
-                <Text
-                  key={`hyp-${hy.n}`}
-                  color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)}
-                  wrap="truncate-end"
-                >
-                  {'  '}
-                  {hy.status === 'confirmed' ? '✓' : hy.status === 'ruled out' ? '✗' : '?'} H{hy.n}. {hy.text}
-                </Text>
-              ))}
-              {a.oracle && (
-                <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
-                  oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
-                  {a.oracle.ambiguities.length
-                    ? ` · ${a.oracle.ambiguities.length} open question${a.oracle.ambiguities.length === 1 ? '' : 's'}: ${a.oracle.ambiguities[0]}`
-                    : ' · no open questions'}
-                </Text>
-              )}
-              {(a.batch ?? []).length > 0 && (
-                <Text key="fm-pane-batch" color={hex(C.dim)} wrap="truncate-end">
-                  batch of {(a.batch ?? []).join(', ')}
-                </Text>
-              )}
-              {/* T-0261: a run that proved nothing, and the assumptions the plan rests on unchecked */}
-              {(a.inconclusive ?? 0) > 0 && (
-                <Text key="fm-pane-inconclusive" color={hex(C.warn)} wrap="truncate-end">
-                  ≈ {a.inconclusive} inconclusive run{a.inconclusive === 1 ? '' : 's'}: a sharper check is next
-                </Text>
-              )}
-              {(a.unverified ?? []).length > 0 && (
-                <Text key="fm-pane-unverified" color={hex(C.dim)} wrap="truncate-end">
-                  ? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}
-                </Text>
-              )}
-              {a.audits.need > 0 && (
-                <Box flexDirection="row" gap={1} key="fm-pane-audits">
-                  <Text color={hex(C.dim)}>audits</Text>
-                  {meter($.ui.resolve(e), e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
-                  <Text bold>
-                    {a.audits.done}/{a.audits.need}
-                  </Text>
-                  {a.blockers.length > 0 && (
-                    <Text color={hex(C.dim)} wrap="truncate-end">
-                      · {a.blockers.length} left before done
-                    </Text>
-                  )}
-                </Box>
-              )}
-              <Text color={hex(mix(C.dim, C.track, 0.4))} wrap="truncate-end">
-                sizes: {SIZE_LEGEND}
+              {c.title && <Text wrap="truncate-end">{c.title}</Text>}
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                {[
+                  c.proved !== null ? `${c.proved} criteri${c.proved === 1 ? 'on' : 'a'} proven` : '',
+                  c.minutes !== null ? elapsed(c.minutes * 60000) : '',
+                  c.usual !== undefined ? `usually ${about(c.usual)}` : '',
+                ].filter(Boolean).join(' · ')}
               </Text>
             </Box>
-          ) : (
-            <Text color={hex(C.dim)}>No active task.</Text>
-          )}
-          {v.next && (
-            <Text color={hex(C.dim)} wrap="truncate-end">
-              → {humanNext(v.next)}
-            </Text>
-          )}
-        </Box>
+          )
+        })()}
 
-        {(v.approvals ?? []).length > 0 && (
+        {asks.length > 0 && (
           <Box key="card-asks" {...card(C.warn)}>
-            {head('Needs you', C.warn)}
-            {(v.approvals ?? []).map(x => (
+            {head('Needs you', C.warn, `${asks.length} waiting`)}
+            {asks.map(x => (
               <Text color={hex(C.warn)} wrap="wrap" key={`ask-${x.task}`}>
                 ⚠ {x.task} · {x.allow.join(', ')}: {x.why}
               </Text>
@@ -1239,7 +1270,7 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        {queue.flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : [])).map(q => (
+        {plans.map(q => (
           <Box key={`plan-${q.id}`} {...card(C.warn)}>
             {head(`${q.id} plan awaits your approval`, C.warn)}
             <Text bold wrap="wrap">
@@ -1268,12 +1299,127 @@ export const register: Register = (on, options) => {
           </Box>
         ))}
 
+        <Box flexDirection="row" justifyContent="space-between" borderStyle="round"
+          borderColor={hex(a ? pulse(C.accent, f) : C.dim)} paddingX={1} key="fm-pane-head">
+          <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+            <Box flexDirection="row" gap={1}>
+              <Text bold color={hex(C.accent)}>
+                {moving ? spin(f ?? 0) : '▍'} Foreman
+              </Text>
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                {v.project}
+              </Text>
+            </Box>
+            {m && (
+              <Box flexDirection="row" gap={1}>
+                <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>
+                <Text color={hex(m.drive ? C.dim : C.warn)}>· drive {m.drive ? 'on' : 'off'}</Text>
+                {m.sensitive && <Text color={hex(C.warn)}>· sensitive</Text>}
+                {m.trust && <Text color={hex(C.warn)}>· trust on</Text>}
+                {(m.standing ?? []).length > 0 && <Text color={hex(C.dim)}>· standing yes</Text>}
+              </Box>
+            )}
+            {a ? (
+              <Box flexDirection="column" key="hero-task">
+                <Box flexDirection="row" gap={1} key="hero-title">
+                  <Box flexDirection="row" gap={1} flexShrink={0}>
+                    {chip(a)}
+                    <Text bold color={hex(C.accent)}>
+                      {a.id}
+                    </Text>
+                  </Box>
+                  <Text bold wrap="wrap">
+                    {a.title}
+                  </Text>
+                </Box>
+                {stageIdx >= 0 && rail(ui, e, a.stages, stageIdx, heroW, ft, blit)}
+                {a.steps.length > 0 && (
+                  <Box flexDirection="row" gap={1} key="hero-progress">
+                    {meter(ui, e, 'fm-pane-bar', Math.max(8, heroW - 14), done / a.steps.length, C.ok, f)}
+                    <Text bold>
+                      {done}/{a.steps.length}
+                    </Text>
+                    <Text color={hex(C.dim)}>{Math.round((100 * done) / a.steps.length)}%</Text>
+                  </Box>
+                )}
+                {cur && (
+                  <Text wrap="truncate-end" key="hero-step">
+                    <Text color={hex(C.accent)}>{moving ? spin(f ?? 0) : '▸'}</Text> step {cur.n} · {cur.text}
+                  </Text>
+                )}
+                {onMin !== null && (
+                  <Box flexDirection="row" gap={1} key="hero-time">
+                    {usual !== undefined && eta(ui, e, Math.max(8, heroW - 30), onMin, usual)}
+                    <Text color={hex(usual !== undefined && onMin > usual ? C.warn : C.dim)} wrap="truncate-end">
+                      {elapsed(onMin * 60000)} on it{usual !== undefined ? ` · usually ${about(usual)}` : ''}
+                    </Text>
+                  </Box>
+                )}
+              </Box>
+            ) : (
+              <Text color={hex(C.dim)} key="hero-idle">
+                Nothing active{live ? ' · working' : ''}
+              </Text>
+            )}
+            <Text color={hex(C.dim)}>
+              <Text color={hex(C.ok)}>✓ {v.today_done ?? 0}</Text> today · {queue.length} queued · {inboxN} in inbox
+            </Text>
+            {(v.vetoes ?? []).length > 0 && (
+              <Text key="fm-pane-vetoes" color={hex(C.dim)} wrap="truncate-end">
+                ✋ you said: {v.vetoes![0]}{v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}
+              </Text>
+            )}
+            {(v.revisit ?? []).length > 0 && (
+              <Text key="fm-pane-revisit" color={hex(C.warn)} wrap="truncate-end">
+                ◆ revisit: {v.revisit![0].decision} ({v.revisit![0].why}){v.revisit!.length > 1 ? ` · ${v.revisit!.length - 1} more` : ''}
+              </Text>
+            )}
+            {v.next && (
+              <Text color={hex(C.dim)} wrap="truncate-end">
+                → {humanNext(v.next)}
+              </Text>
+            )}
+          </Box>
+          {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
+        </Box>
+
+        {nowCalls.length > 0 && (
+          <Box key="card-now" {...card(C.accent)}>
+            {head('Now', C.accent, `${nowCalls.filter(([, x]) => x.icon !== '⚠').length} running`)}
+            {nowCalls.slice(0, 4).map(([id, x], i) => {
+              if (x.icon === '⚠')
+                return (
+                  <Text key={`now-${id}`} color={hex(C.warn)} wrap="truncate-end">
+                    {'⚠ '}
+                    {x.verb} · {elapsed(clockNow - x.at)}
+                  </Text>
+                )
+              if (blit && ft !== null) blit.set(`now-bar-${i}`, { columns: 8, rows: 1, draw: t => activityCells(8, x.color, t + i * 3) })
+              return (
+                <Box flexDirection="row" gap={1} key={`now-${id}`}>
+                  <Box flexShrink={0} flexDirection="row" gap={1}>
+                    {meter(ui, e, `now-bar-${i}`, 8, null, x.color, ft === null ? null : ft + i * 3)}
+                    <Text color={hex(x.color)}>
+                      {x.icon} {x.verb}
+                    </Text>
+                  </Box>
+                  <Text wrap="truncate-end">{x.target}</Text>
+                  <Box flexShrink={0}>
+                    <Text color={hex(C.dim)}>{elapsed(clockNow - x.at)}</Text>
+                  </Box>
+                </Box>
+              )
+            })}
+            {nowCalls.length > 4 && <Text color={hex(C.dim)}>{more(nowCalls.length - 4, 'call')}</Text>}
+          </Box>
+        )}
+
         {subs.length > 0 && (
           <Box key="card-agents" {...card()}>
             {head('Subagents', C.agent, `${subs.filter(s => !s.done).length} running`)}
             {subs.map(s => (
               <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
-                <Text color={hex(s.done ? C.dim : C.agent)}>{s.done ? '✓' : spin((f ?? 0) + s.tools)}</Text>
+                <Text color={hex(s.done ? C.dim : agentColor(s.id))}>{s.done ? '✓' : spin((f ?? 0) + s.tools)}</Text>
                 <Text bold color={hex(s.done ? C.dim : C.agent)}>
                   {s.type}
                 </Text>
@@ -1309,162 +1455,191 @@ export const register: Register = (on, options) => {
           </Box>
         )}
 
-        {v.brainstorm && (
-          <Box key="card-brainstorm" {...card()}>
-            {head(
-              'Brainstorm',
-              C.agent,
-              v.brainstorm.running
-                ? `${spin(fb + clockNow / 300)} ${v.brainstorm.answers}/${v.brainstorm.expected ?? '?'} answers · ${v.brainstorm.count} ideas so far`
-                : v.brainstorm.grounded // its slate is built: one line however recent (T-0196)
-                  ? `${v.brainstorm.count} ideas · grounded`
-                  : (v.brainstorm.age_h ?? 0) < 2
-                    ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
-                    : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
-            )}
-            {(v.brainstorm.running || (!v.brainstorm.grounded && (v.brainstorm.age_h ?? 0) < 2) ? v.brainstorm.ideas : []).map((idea, i) => (
-              <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
-                {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
-              </Text>
-            ))}
-          </Box>
-        )}
+        {failing && gate}
 
-        {/* T-0228: spend against fm budget's caps, the bench and evolve, research asks — each only when it has news */}
-        {v.budget && (v.budget.today_usd > 0 || v.budget.subagent_tokens > 0 || v.budget.halved || v.budget.subagents_paused) && (
-          <Box key="card-budget" {...card(v.budget.halved || v.budget.subagents_paused ? C.warn : null)}>
-            {head(
-              'Spend today',
-              C.accent2,
-              `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)}${v.budget.subagents_paused ? ` · waiting: ${v.budget.subagents_paused}` : ''}`,
-            )}
-            <Box flexDirection="row" gap={1}>
-              {meter($.ui.resolve(e), e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
-              {v.budget.halved && <Text color={hex(C.warn)}>caps halved: {v.budget.halved}</Text>}
-            </Box>
-            {v.budget.top.map(t => (
-              <Text key={`spend-${t.feature}`} color={hex(C.dim)} wrap="truncate-end">
-                {'  '}
-                {t.feature} · {t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`} · {t.runs} run{t.runs === 1 ? '' : 's'}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {v.bench && (
-          <Box key="card-bench" {...card()}>
-            {head('Bench', C.agent, `${v.bench.cases} case${v.bench.cases === 1 ? '' : 's'}`)}
-            {v.bench.last && (
-              <Text wrap="truncate-end">
-                <Text color={hex(v.bench.last.passed === v.bench.last.total ? C.ok : C.warn)}>
-                  {v.bench.last.passed}/{v.bench.last.total} passed
+        {a && (
+          <Box key="card-task" {...card()}>
+            {head('Plan', C.accent, `${done}/${a.steps.length} steps · ${proved}/${a.criteria.length} proved`)}
+            {/* T-0181: 'the AC and audits thing not matching': steps and done-when criteria under small labels in one
+                glyph column; audits a bar like the steps' */}
+            {a.steps.length > 0 && <Text color={hex(C.dim)}>steps</Text>}
+            {a.steps.map(s => {
+              const lit = flashed.get(`${a.id}:${s.n}`)
+              const k = lit === undefined ? 1 : (clockNow - lit) / FLASH_MS
+              return (
+                <Text
+                  key={`step-${s.n}`}
+                  color={s.current ? hex(C.accent) : s.done ? hex(k < 1 ? C.ok : C.dim) : undefined}
+                  backgroundColor={k < 1 ? hex(mix(mix(C.ok, BG, 0.62), BG, k)) : undefined}
+                  wrap="truncate-end"
+                >
+                  {'  '}
+                  {s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
                 </Text>
-                <Text color={hex(C.dim)}>
-                  {' '}
-                  · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
-                  {v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}
-                  {v.bench.last.repeats != null ? ` · ${v.bench.last.repeats} repeat${v.bench.last.repeats === 1 ? '' : 's'}` : ''}
+              )
+            })}
+            {a.criteria.length > 0 && <Text color={hex(C.dim)}>done when</Text>}
+            {a.criteria.map(c => (
+              <Box key={`ac-${c.n}`} flexDirection="column">
+                <Text color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
+                  {'  '}
+                  {c.checked ? '✓' : '○'} {c.n}. {c.text}
                 </Text>
-              </Text>
-            )}
-            {(v.bench.verdicts ?? []).map((x, i) => (
-              <Text key={`verdict-${i}`} color={hex(x.ok ? C.ok : C.warn)} wrap="truncate-end">
-                {x.ok ? '✓' : '✗'} {x.kind}: {x.verdict ?? ''}
-              </Text>
-            ))}
-            {v.bench.evolve.map((x, i) => (
-              <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
-                {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {(v.research ?? []).length > 0 && (
-          <Box key="card-research" {...card()}>
-            {head('Research', C.accent2, 'quotes checked against their pages')}
-            {(v.research ?? []).map(r => (
-              <Text key={`research-${r.name}`} wrap="truncate-end">
-                <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
-                <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
-                {(r.conflicts ?? 0) > 0 && <Text color={hex(C.warn)}> · ⟷{r.conflicts} conflict{r.conflicts === 1 ? '' : 's'}</Text>}
-                {(r.single ?? 0) > 0 && <Text color={hex(C.dim)}> · {r.single} single-source</Text>}
-              </Text>
-            ))}
-          </Box>
-        )}
-
-        {mine.length > 0 && (
-          <Box key="card-files" {...card()}>
-            {head('Files this session', C.edit, `${mine.length}`)}
-            {mine
-              .slice(-LIST)
-              .reverse()
-              .map((t, i) => (
-                <Box flexDirection="row" gap={1} key={`file-${i}`}>
-                  {churn($.ui.resolve(e), e, `file-bar-${i}`, t, maxChurn)}
-                  <Text color={hex(C.ok)}>+{t.add}</Text>
-                  <Text color={hex(C.err)}>−{t.del}</Text>
-                  <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
-                </Box>
-              ))}
-            {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
-          </Box>
-        )}
-
-        {(v.fleet ?? []).length > 0 && (
-          // T-0711: the fleet deck — every live session here, a tile per remote session, one steer for all
-          <Box key="card-fleet" {...card()}>
-            {head('Fleet', C.agent, `${(v.fleet ?? []).filter(s => !s.error).length}`)}
-            {(v.fleet ?? []).slice(0, LIST).map(s => (
-              <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
-                <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
-                <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
-                  <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
-                    {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
+                {!c.checked && c.verify && (
+                  <Text color={hex(mix(C.dim, C.track, 0.3))} wrap="truncate-end" key={`ac-verify-${c.n}`}>
+                    {'     ↳ '}
+                    {c.verify}
                   </Text>
-                </Box>
-                <Text wrap="truncate-end" color={s.error ? hex(C.warn) : undefined}>
-                  {s.error ?? `${s.project ?? '-'} · ${s.task ?? 'no task'}${s.title ? ` ${s.title}` : ''}`}
-                </Text>
-                {!s.error && (
-                  <Box flexShrink={0} key={`fleet-ctx-${s.remote ?? 'here'}-${s.session}`}>
-                    <Text color={hex(C.dim)}>
-                      {`ctx ${s.context_pct ?? '?'}%${s.mail ? ` · mail ${s.mail}` : ''}${s.remote && s.age_s != null ? ` · ${elapsed(s.age_s * 1000)} ago` : ''}`}
-                    </Text>
-                  </Box>
                 )}
               </Box>
             ))}
-            {e.surface !== 'mobile' && (
-              <Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />
+            {/* T-0711: the plan tree — the parts fm task split made, each with its progress */}
+            {(a.children ?? []).length > 0 && <Text color={hex(C.dim)}>parts</Text>}
+            {(a.children ?? []).map(k => (
+              <Text key={`kid-${k.id}`} color={k.status === 'done' ? hex(C.dim) : k.status === 'active' ? hex(C.accent) : undefined} wrap="truncate-end">
+                {'  '}
+                {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'} {k.id} {k.title}
+                {k.steps_total ? `  ${k.steps_done}/${k.steps_total}` : ''}
+              </Text>
+            ))}
+            {/* T-0228: the debugging ledger, the oracle's open questions and a batch's members, where the task is */}
+            {(a.hypotheses ?? []).length > 0 && <Text color={hex(C.dim)}>hypotheses</Text>}
+            {(a.hypotheses ?? []).map(hy => (
+              <Text
+                key={`hyp-${hy.n}`}
+                color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)}
+                wrap="truncate-end"
+              >
+                {'  '}
+                {hy.status === 'confirmed' ? '✓' : hy.status === 'ruled out' ? '✗' : '?'} H{hy.n}. {hy.text}
+              </Text>
+            ))}
+            {a.oracle && (
+              <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
+                oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
+                {a.oracle.ambiguities.length
+                  ? ` · ${a.oracle.ambiguities.length} open question${a.oracle.ambiguities.length === 1 ? '' : 's'}: ${a.oracle.ambiguities[0]}`
+                  : ' · no open questions'}
+              </Text>
+            )}
+            {(a.batch ?? []).length > 0 && (
+              <Text key="fm-pane-batch" color={hex(C.dim)} wrap="truncate-end">
+                batch of {(a.batch ?? []).join(', ')}
+              </Text>
+            )}
+            {/* T-0261: a run that proved nothing, and the assumptions the plan rests on unchecked */}
+            {(a.inconclusive ?? 0) > 0 && (
+              <Text key="fm-pane-inconclusive" color={hex(C.warn)} wrap="truncate-end">
+                ≈ {a.inconclusive} inconclusive run{a.inconclusive === 1 ? '' : 's'}: a sharper check is next
+              </Text>
+            )}
+            {(a.unverified ?? []).length > 0 && (
+              <Text key="fm-pane-unverified" color={hex(C.dim)} wrap="truncate-end">
+                ? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}
+              </Text>
+            )}
+            {a.audits.need > 0 && (
+              <Box flexDirection="row" gap={1} key="fm-pane-audits">
+                <Box flexDirection="row" gap={1} flexShrink={0} key="fm-pane-audits-head">
+                  <Text color={hex(C.dim)}>audits</Text>
+                  {meter(ui, e, 'fm-pane-audits-bar', 10, a.audits.done / a.audits.need, C.accent2, null)}
+                  <Text bold>
+                    {a.audits.done}/{a.audits.need}
+                  </Text>
+                </Box>
+                {a.blockers.length > 0 && (
+                  <Text color={hex(C.dim)} wrap="truncate-end">
+                    · {a.blockers.length} left before done: {a.blockers[0]}
+                  </Text>
+                )}
+              </Box>
             )}
           </Box>
         )}
 
-        <Box key="card-queue" {...card(queue.some(q => q.waits) ? C.warn : null)}>
-          {head('Queue', C.accent2, `${queue.length}`)}
-          {queue.length === 0 && <Text color={hex(C.dim)}>empty</Text>}
-          {queue.slice(0, LIST).map((q, i) => (
-            <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
-              <Text color={hex(fade(LIST - 1 - i, LIST, C.accent2))}>{i + 1}.</Text>
-              {chip(q)}
-              {q.steps_total ? meter($.ui.resolve(e), e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
-              {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
-                <Box key={`q-typ-${q.id}`} flexShrink={0}>
-                  <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
-                </Box>
-              )}
-              <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : undefined}>
-                {q.id} {q.title}
-                {q.waits ? `  (${q.waits})` : ''}
-              </Text>
+        {(laneRows.length > 0 || days.some(Boolean) || cx || v.health) && (
+          <Box key="card-pulse" {...card()}>
+            {head('Pulse', C.accent2, laneRows.length ? `${recentTicks.length} tool call${recentTicks.length === 1 ? '' : 's'} · last ${span / 60000} min` : 'no tool calls lately', 'pulse')}
+            {!isFolded('pulse') && (
+              <Box key="pulse-body" flexDirection="column">
+                {laneRows.length > 0 && lanes(ui, e, laneRows, laneW, ft, blit)}
+                {laneRows.length > 0 && term && (
+                  <Text color={hex(mix(C.dim, C.track, 0.3))} key="lanes-axis">
+                    {`${' '.repeat(6)}${span / 60000}m ago`.padEnd(laneW + 3)}now
+                  </Text>
+                )}
+                <Box flexDirection="row" gap={2} key="pulse-row">
+                  {days.length > 0 && (
+                    <Box flexDirection="column" flexShrink={0} key="pulse-days">
+                      {bars(ui, e, 'done-days', days, 3, C.accent2, C.ok)}
+                      <Text color={hex(C.dim)}>
+                        {days.reduce((x, y) => x + y, 0)} closed · 14d
+                      </Text>
+                    </Box>
+                  )}
+                  <Box flexDirection="column" flexGrow={1} key="pulse-gauges">
+                    {cx && (
+                      <Box flexDirection="row" gap={1} key="g-ctx">
+                        <Text color={hex(C.dim)}>{'context'.padEnd(7)}</Text>
+                        {meter(ui, e, 'fm-pane-ctx', gaugeW, cx.percent / 100, cx.percent >= CHECKPOINT_AT ? C.err : cx.percent >= 60 ? C.warn : C.ok, null)}
+                        <Text>{Math.round(cx.percent)}%</Text>
+                      </Box>
+                    )}
+                    {v.budget && (
+                      <Box flexDirection="row" gap={1} key="g-spend">
+                        <Text color={hex(C.dim)}>{'spend'.padEnd(7)}</Text>
+                        {meter(ui, e, 'fm-pane-spend', gaugeW, Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
+                        <Text>${v.budget.today_usd.toFixed(2)}</Text>
+                      </Box>
+                    )}
+                    {v.health && (
+                      <Box flexDirection="row" gap={1} key="g-hooks">
+                        <Text color={hex(C.dim)}>{'hooks'.padEnd(7)}</Text>
+                        {(v.latency ?? []).length > 1 && spark(ui, e, 'fm-latency', v.latency ?? [], gaugeW)}
+                        <Text color={hex(v.health.hook_errors ? C.err : C.dim)} wrap="truncate-end">
+                          p95 {v.health.hook_p95_ms ?? '–'} ms
+                        </Text>
+                      </Box>
+                    )}
+                    {v.health && (
+                      <Text color={hex(v.health.hook_errors || (v.health.paused_hooks ?? []).length ? C.err : C.dim)} wrap="truncate-end" key="g-guard">
+                        {'guard'.padEnd(7)} {v.health.guard_blocks} block{v.health.guard_blocks === 1 ? '' : 's'}
+                        {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
+                        {(v.health.paused_hooks ?? []).length ? ` · paused: ${(v.health.paused_hooks ?? []).join(', ')}` : ''}
+                      </Text>
+                    )}
+              </Box>
             </Box>
-          ))}
-        </Box>
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {queue.length > 0 ? (
+          <Box key="card-queue" {...card(queue.some(q => q.waits) ? C.warn : null)}>
+            {head('Queue', C.accent2, `${queue.length}${queue.length ? ` · ${queue.filter(q => !q.waits).length} ready` : ''}`)}
+            {queue.slice(0, LIST).map((q, i) => (
+              <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
+                <Text color={hex(fade(LIST - 1 - i, LIST, C.accent2))}>{i === 0 ? '▶' : `${i + 1}.`}</Text>
+                {chip(q)}
+                {q.steps_total ? meter(ui, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
+                {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
+                  <Box key={`q-typ-${q.id}`} flexShrink={0}>
+                    <Text color={hex(C.dim)}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
+                  </Box>
+                )}
+                <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : i === 0 ? undefined : hex(mix(C.dim, 0xc8ccd4, 0.6))}>
+                  {q.id} {q.title}
+                  {q.waits ? `  (${q.waits})` : ''}
+                </Text>
+              </Box>
+            ))}
+            {queue.length > LIST && <Text color={hex(C.dim)}>{more(queue.length - LIST, 'task')}</Text>}
+          </Box>
+        ) : null}
 
         <Box key="card-inbox" {...card()}>
-          {head('Inbox', C.accent, `${v.inbox_total ?? inbox.length}`)}
+          {queue.length + inboxN > 0 ? head('Inbox', C.accent, `${inboxN}`) : head('Up next', C.accent, 'queue and inbox empty')}
           {captureBox($, e)}
           {inbox.slice(0, LIST).map(it => (
             <Box flexDirection="row" gap={1} key={`in-${it.id}`}>
@@ -1494,49 +1669,186 @@ export const register: Register = (on, options) => {
               />
             </Box>
           ))}
-          {(v.inbox_total ?? inbox.length) > Math.min(LIST, inbox.length) && (
-            <Text color={hex(C.dim)}>{`… ${(v.inbox_total ?? inbox.length) - Math.min(LIST, inbox.length)} more in the inbox`}</Text>
+          {inboxN > Math.min(LIST, inbox.length) && (
+            <Text color={hex(C.dim)}>{`… ${inboxN - Math.min(LIST, inbox.length)} more in the inbox`}</Text>
           )}
         </Box>
 
-        {checks && checks.results.length > 0 && (
-          <Box key="card-gates" {...card(passed === checks.results.length ? null : C.err)}>
+        {!failing && gate}
+
+        {v.brainstorm && (
+          <Box key="card-brainstorm" {...card()}>
             {head(
-              'Gates',
-              passed === checks.results.length ? C.ok : C.err,
-              `${passed}/${checks.results.length} passed · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`,
+              'Brainstorm',
+              C.agent,
+              v.brainstorm.running
+                ? `${spin(fb + clockNow / 300)} ${v.brainstorm.answers}/${v.brainstorm.expected ?? '?'} answers · ${v.brainstorm.count} ideas so far`
+                : v.brainstorm.grounded // its slate is built: one line however recent (T-0196)
+                  ? `${v.brainstorm.count} ideas · grounded`
+                  : (v.brainstorm.age_h ?? 0) < 2
+                    ? `${v.brainstorm.count} ideas · ${v.brainstorm.name.replace('brainstorm-', '')}`
+                    : `${v.brainstorm.count} ideas · ${hoursAgo(v.brainstorm.age_h ?? 0)}`, // an old one is one line (T-0146)
+              'brainstorm',
             )}
-            {checks.results.map((r, i) => (
-              <Box flexDirection="row" gap={1} key={`gate-${i}`}>
-                <Text color={hex(r.exit ? C.err : C.ok)}>{r.exit ? '✗' : '✓'}</Text>
-                <Text wrap="truncate-end">{r.cmd.slice(0, 60)}</Text>
-                <Text color={hex(C.dim)}>{r.s.toFixed(1)}s</Text>
-                {r.note ? (
-                  <Text color={hex(C.warn)} wrap="truncate-end">
-                    {r.note.slice(0, 40)}
+            {!isFolded('brainstorm') && (
+              <Box key="brainstorm-body" flexDirection="column">
+                {(v.brainstorm.running || (!v.brainstorm.grounded && (v.brainstorm.age_h ?? 0) < 2) ? v.brainstorm.ideas : []).map((idea, i) => (
+                  <Text key={`idea-${i}`} color={hex(fade(i, v.brainstorm!.ideas.length, /wild/i.test(idea) ? C.agent : 0xc8ccd4))} wrap="truncate-end">
+                    {/wild/i.test(idea) ? '✦' : '•'} {idea.replace(/^wild:\s*/i, '').replace(/\s*\(wild\)$/i, '')}
                   </Text>
-                ) : null}
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {mine.length > 0 && (
+          <Box key="card-files" {...card()}>
+            {head('Files this session', C.edit, `${mine.length} · +${mine.reduce((n, t) => n + t.add, 0)} −${mine.reduce((n, t) => n + t.del, 0)}`, 'files')}
+            {!isFolded('files') && (
+              <Box key="files-body" flexDirection="column">
+                {mine
+                  .slice(-LIST)
+                  .reverse()
+                  .map((t, i) => (
+                    <Box flexDirection="row" gap={1} key={`file-${i}`}>
+                      {churn(ui, e, `file-bar-${i}`, t, maxChurn)}
+                      <Text color={hex(C.ok)}>+{t.add}</Text>
+                      <Text color={hex(C.err)}>−{t.del}</Text>
+                      <Text wrap="truncate-start">{shortPath(t.path.slice(base.length), 40)}</Text>
+                    </Box>
+                  ))}
+                {mine.length > LIST && <Text color={hex(C.dim)}>{`… ${mine.length - LIST} more`}</Text>}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {(v.fleet ?? []).some(s => s.remote || s.error) || (v.fleet ?? []).length > 1 ? (
+          // T-0711: the fleet deck — every live session here, a tile per remote session, one steer for all; one session
+          // alone is this one, already above (T-0909)
+          <Box key="card-fleet" {...card()}>
+            {head('Fleet', C.agent, `${(v.fleet ?? []).filter(s => !s.error).length}`, 'fleet')}
+            {!isFolded('fleet') && (
+              <Box key="fleet-body" flexDirection="column">
+                {(v.fleet ?? []).slice(0, LIST).map(s => (
+                  <Box flexDirection="row" gap={1} key={`fleet-${s.remote ?? 'here'}-${s.session}`}>
+                    <Text color={hex(s.error ? C.warn : s.remote ? C.accent2 : C.agent)}>{s.error ? '!' : '●'}</Text>
+                    <Box flexShrink={0} key={`fleet-who-${s.remote ?? 'here'}-${s.session}`}>
+                      <Text bold color={hex(s.remote ? C.accent2 : C.agent)}>
+                        {s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)}
+                      </Text>
+                    </Box>
+                    <Text wrap="truncate-end" color={s.error ? hex(C.warn) : undefined}>
+                      {s.error ?? `${s.project ?? '-'} · ${s.task ?? 'no task'}${s.title ? ` ${s.title}` : ''}`}
+                    </Text>
+                    {!s.error && (
+                      <Box flexShrink={0} key={`fleet-ctx-${s.remote ?? 'here'}-${s.session}`}>
+                        <Text color={hex(C.dim)}>
+                          {`ctx ${s.context_pct ?? '?'}%${s.mail ? ` · mail ${s.mail}` : ''}${s.remote && s.age_s != null ? ` · ${elapsed(s.age_s * 1000)} ago` : ''}`}
+                        </Text>
+                      </Box>
+                    )}
               </Box>
             ))}
+            {e.surface !== 'mobile' && (
+              <Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />
+            )}
+              </Box>
+            )}
+          </Box>
+        ) : null}
+
+        {/* T-0228: spend against fm budget's caps, the bench and evolve, research asks — each only when it has news */}
+        {v.budget && (v.budget.today_usd > 0 || v.budget.subagent_tokens > 0 || v.budget.halved || v.budget.subagents_paused) && (
+          <Box key="card-budget" {...card(v.budget.halved || v.budget.subagents_paused ? C.warn : null)}>
+            {head(
+              'Spend today',
+              C.accent2,
+              `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)} · subagents ${tokensWord(v.budget.subagent_tokens)}${v.budget.subagents_paused ? ` · waiting: ${v.budget.subagents_paused}` : ''}`,
+              'spend',
+            )}
+            {!isFolded('spend') && (
+              <Box key="spend-body" flexDirection="column">
+                <Box flexDirection="row" gap={1}>
+                  {meter(ui, e, 'fm-budget-bar', Math.min(30, width - 10), Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)), C.accent2, null)}
+                  {v.budget.halved && <Text color={hex(C.warn)}>caps halved: {v.budget.halved}</Text>}
+                </Box>
+                {v.budget.top.map(t => (
+                  <Text key={`spend-${t.feature}`} color={hex(C.dim)} wrap="truncate-end">
+                    {'  '}
+                    {t.feature} · {t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`} · {t.runs} run{t.runs === 1 ? '' : 's'}
+                  </Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {v.bench && (
+          <Box key="card-bench" {...card()}>
+            {head('Bench', C.agent, `${v.bench.cases} case${v.bench.cases === 1 ? '' : 's'}`, 'bench')}
+            {!isFolded('bench') && (
+              <Box key="bench-body" flexDirection="column">
+                {v.bench.last && (
+                  <Text wrap="truncate-end">
+                    <Text color={hex(v.bench.last.passed === v.bench.last.total ? C.ok : C.warn)}>
+                      {v.bench.last.passed}/{v.bench.last.total} passed
+                    </Text>
+                    <Text color={hex(C.dim)}>
+                      {' '}
+                      · ${v.bench.last.cost_usd.toFixed(2)} · {v.bench.last.label}
+                      {v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}
+                      {v.bench.last.repeats != null ? ` · ${v.bench.last.repeats} repeat${v.bench.last.repeats === 1 ? '' : 's'}` : ''}
+                    </Text>
+                  </Text>
+                )}
+                {(v.bench.verdicts ?? []).map((x, i) => (
+                  <Text key={`verdict-${i}`} color={hex(x.ok ? C.ok : C.warn)} wrap="truncate-end">
+                    {x.ok ? '✓' : '✗'} {x.kind}: {x.verdict ?? ''}
+                  </Text>
+                ))}
+                {v.bench.evolve.map((x, i) => (
+                  <Text key={`evolve-${i}`} color={hex(x.kept ? C.ok : C.dim)} wrap="truncate-end">
+                    {x.kept ? '✓ kept' : '✗ dropped'} {shortPath(x.target ?? '', 34)} · {x.why ?? ''}
+                  </Text>
+                ))}
+              </Box>
+            )}
+          </Box>
+        )}
+
+        {(v.research ?? []).length > 0 && (
+          <Box key="card-research" {...card()}>
+            {head('Research', C.accent2, 'quotes checked against their pages', 'research')}
+            {!isFolded('research') && (
+              <Box key="research-body" flexDirection="column">
+                {(v.research ?? []).map(r => (
+                  <Text key={`research-${r.name}`} wrap="truncate-end">
+                    <Text color={hex(C.ok)}>✓{r.verified}</Text> <Text color={hex(r.not_found ? C.err : C.dim)}>✗{r.not_found}</Text>{' '}
+                    <Text color={hex(C.dim)}>?{r.unchecked}</Text> {r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')}
+                    {(r.conflicts ?? 0) > 0 && <Text color={hex(C.warn)}> · ⟷{r.conflicts} conflict{r.conflicts === 1 ? '' : 's'}</Text>}
+                    {(r.single ?? 0) > 0 && <Text color={hex(C.dim)}> · {r.single} single-source</Text>}
+                  </Text>
+                ))}
+              </Box>
+            )}
           </Box>
         )}
 
         <Box key="card-activity" {...card()}>
-          {head('Activity', C.dim)}
-          {recent.map((line, i) => (
-            <Text color={hex(fade(i, recent.length))} wrap="truncate-end" key={`r-${i}`}>
-              {line}
-            </Text>
-          ))}
-          {v.health && (
-            <Box flexDirection="row" gap={1}>
-              <Text color={hex(C.dim)}>hooks</Text>
-              {(v.latency ?? []).length > 1 && spark($.ui.resolve(e), e, 'fm-latency', v.latency ?? [], 24)}
-              <Text color={hex(v.health.hook_errors ? C.err : C.dim)}>
-                p95 {v.health.hook_p95_ms ?? '–'} ms · guard blocks {v.health.guard_blocks}
-                {v.health.hook_errors ? ` · ${v.health.hook_errors} hook error(s)` : ''}
-                {(v.health.paused_hooks ?? []).length ? ` · paused: ${(v.health.paused_hooks ?? []).join(', ')}` : ''}
-              </Text>
+          {head('Activity', C.dim, recent.length ? 'newest first' : 'nothing yet', 'activity')}
+          {!isFolded('activity') && (
+            <Box key="activity-body" flexDirection="column">
+              {[...recent].reverse().map((line, i) => {
+                const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
+                return (
+                  <Text color={hex(fade(recent.length - 1 - i, recent.length, 0xc8ccd4))} wrap="truncate-end" key={`r-${i}`}>
+                    {time ? <Text color={hex(C.dim)}>{`${time} `}</Text> : null}
+                    {rest}
+                  </Text>
+                )
+              })}
             </Box>
           )}
         </Box>

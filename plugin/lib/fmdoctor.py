@@ -195,6 +195,34 @@ def check_footprint(rules_path, claude_md_path, plugin=PLUGIN):
                                     f"(≤ {ALWAYS_ON_MAX}), rules {chars} chars (≤ {RULES_CHARS_MAX}); descriptions {desc} chars (≤ {DESCRIPTIONS_MAX})")
 
 
+STATE_BUDGET = 200 * 1024 * 1024  # T-0920: bytes of state per project before doctor speaks up (the largest here: ~55 MB)
+
+
+def check_state_size(projects, budget=STATE_BUDGET):
+    """T-0920: a project's state past the budget, with its largest top-level part; fm tidy prunes and rolls."""
+    over = []
+    for p in projects:
+        parts = {}
+        for root, _, names in os.walk(p.dir):
+            top = os.path.relpath(root, p.dir).split(os.sep)[0]
+            for n in names:
+                try:
+                    size = os.path.getsize(os.path.join(root, n))
+                except OSError:
+                    continue
+                if top == "backups":  # tidy's own copies: counting them would warn about the fix
+                    continue
+                key = n if top == "." else top
+                parts[key] = parts.get(key, 0) + size
+        total = sum(parts.values())
+        if total > budget:
+            big = max(parts, key=parts.get)
+            over.append(f"{p.slug} {total // 2**20} MB (most in {big}: {parts[big] // 2**20} MB)")
+    return Result("state size", "WARN" if over else "PASS",
+                  f"{'; '.join(over)} > {budget // 2**20} MB: fm tidy --apply prunes and rolls it" if over
+                  else f"{len(projects)} project(s) under {budget // 2**20} MB each")
+
+
 def _frontmatter(path):
     m = re.match(r"^---\n(.*?)\n---\n", _read(path) or "", re.S)
     if not m:
@@ -377,6 +405,28 @@ def check_rules_symlink(plugin=PLUGIN):
 
 def _version(root):
     return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
+
+
+def check_dual_install(home=None, known=None, installed=None):
+    """T-0923: Foreman installed from a marketplace that isn't this home (GitHub, another folder) beside install.sh's
+    copy here: sessions run whichever they started with, and the two drift apart. Different versions warn."""
+    home = home or c.foreman_home()
+    entry = next(iter(((_load_json(installed or os.path.expanduser("~/.claude/plugins/installed_plugins.json")) or {})
+                       .get("plugins") or {}).get("foreman@foreman") or []), None)
+    if not entry or not os.path.isdir(os.path.join(home, "plugin")):
+        return Result("installs", "PASS", "one Foreman install")
+    src = ((_load_json(known or os.path.expanduser("~/.claude/plugins/known_marketplaces.json")) or {})
+           .get("foreman") or {}).get("source") or {}
+    if src.get("source") == "directory" and os.path.realpath(src.get("path") or "") == os.path.realpath(home):
+        return Result("installs", "PASS", f"the foreman marketplace is this home ({home})")
+    there = entry.get("version") or _version(entry.get("installPath") or "")
+    here = _version(os.path.join(home, "plugin"))
+    where = src.get("repo") or src.get("url") or src.get("path") or "another marketplace"
+    if there == here:
+        return Result("installs", "PASS", f"two Foreman installs at {here}: {where} and {home}")
+    return Result("installs", "WARN", f"two Foreman installs: {there} from {where} and {here} in {home}; a session runs "
+                  "whichever it started with. Keep one: claude plugin update foreman@foreman (or uninstall it and keep "
+                  "this home's)")
 
 
 def check_product(p):
@@ -967,6 +1017,7 @@ def run_all(full=False, accept_supply=False):
                 check_frontmatter()]
     projects = [p for p, _ in c.all_projects()]
     results.append(check_heartbeats(projects))
+    results.append(check_state_size(projects))
     brief_results = [check_briefs(p) for p in projects]
     worst = next((s for s in ("FAIL", "WARN") if any(r.status == s for r in brief_results)), "PASS")
     results.append(Result("briefs", worst, "; ".join(r.detail for r in brief_results if r.status != "PASS")
@@ -976,6 +1027,7 @@ def run_all(full=False, accept_supply=False):
                           f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --repair regenerates them"
                           if stale else "status views match the briefs"))
     here = c.find_project(os.getcwd())
+    results.append(check_dual_install())
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))

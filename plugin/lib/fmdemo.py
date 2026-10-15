@@ -11,6 +11,8 @@ import sys
 import tempfile
 import time
 
+import fmcore as c
+
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FM = os.path.join(PLUGIN, "bin", "fm")
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
@@ -162,6 +164,8 @@ def cmd_demo(args):
         return 1
     finally:
         shutil.rmtree(work, ignore_errors=True)
-    print("\nThe demo's repo and Foreman home are deleted: nothing was left behind. "
-          "To start for real: fm init in your repo, or just give Claude a request.")
+    here = c.find_project(os.getcwd())  # T-0919: run inside a project, end on that project's own next step
+    print("\nThe demo's repo and Foreman home are deleted: nothing was left behind. " + (
+        f"Back in this project ({here.slug}), next: {c.next_for(here)[2].split(' — ')[0]}" if here else
+        "To start for real: fm init in your repo, or just give Claude a request."))
     return 0

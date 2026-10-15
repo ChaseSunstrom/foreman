@@ -69,6 +69,7 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
   bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
@@ -119,6 +120,7 @@ declare module 'claude-code' {
       shells: LiveShell[]
       away: string[]
       resumed: string | null // the resume record (its `at`) this session already acted on
+      folded: string[] // T-0914: the quieter cards folded to their head line
     }
   }
 }

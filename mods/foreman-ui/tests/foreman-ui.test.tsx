@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, C, changedLines, clawd, clean, elapsed, hex, miniClawd, outputSummary, progressCells, shortPath, sizeWord, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 
@@ -85,6 +85,11 @@ function world(on: On, views: FmView[]) {
     toasted.push(e.text)
     return { value: undefined }
   })
+  const blits: string[] = [] // T-0909: each Raster the plugin repainted without a redraw
+  on('ui.blit', async ($, e) => {
+    blits.push(String((e as { key?: unknown }).key))
+    return { value: {} }
+  })
   on('ui.open', async ($, e) => {
     opened.push(e.id)
     return { value: { isPlaced: true } }
@@ -150,7 +155,7 @@ function world(on: On, views: FmView[]) {
     if (e.component === 'SessionMode') return <Text>{`modes:${e.props.modes.join(',')}`}</Text>
     return <Text>engine</Text>
   })
-  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes }
+  return { calls, toasted, opened, clock, answer, suggested, played, usage, compacted, noticed, agentStatus, tools, submitted, session, panes, blits }
 }
 
 test('kit: a gradient bar has one cell per column, brighter where the comet is', () => {
@@ -165,6 +170,45 @@ test('kit: a gradient bar has one cell per column, brighter where the comet is',
   expect(textBar(4, 0.5)).toEqual(['━━', '──'])
 })
 
+test('kit: the stage rail puts a node per stage, done behind, the current one lit, a comet on its link (T-0909)', () => {
+  const rail = decode(stageCells(7, 2, 25, null))
+  expect(rail.length).toBe(25)
+  expect(nodeAt(7, 25)).toEqual([0, 4, 8, 12, 16, 20, 24])
+  expect([0, 4, 8, 12, 24].map(i => rail[i]!.ch)).toEqual(['●', '●', '◉', '○', '○'])
+  expect(rail[2]!.ch).toBe('━') // behind the current node: the done gradient
+  expect(rail[14]!.ch).toBe('─') // past the next node: the thin track
+  const moving = decode(stageCells(7, 2, 25, 3))
+  expect([9, 10, 11].some(i => moving[i]!.fg !== rail[i]!.fg)).toBe(true) // the link 8→12 carries the comet
+  const runs = stageLabels(['planning', 'ready', 'executing', 'verifying', 'documenting', 'auditing', 'closing'], 2, 60)
+  expect(runs.map(r => r.text).join('').length).toBe(60)
+  expect(runs.find(r => r.kind === 'current')?.text).toBe('build')
+  expect(runs.filter(r => r.kind === 'done').map(r => r.text)).toEqual(['plan', 'ready'])
+  expect(stageText(3, 1)).toBe('● ─ ◉ ─ ○')
+})
+
+test('kit: swim lanes rise with how busy each slot was; quiet slots are a faint floor (T-0909)', () => {
+  expect(bucketize([0, 500, 1500, 3999, 4000], 4000, 4000, 4)).toEqual([2, 1, 0, 2])
+  const lanes = decode(laneCells([{ color: 0xff0000, slots: [4, 0, 0, 0] }, { color: 0x00ff00, slots: [0, 1, 2, 2] }], 2, null))
+  expect(lanes.length).toBe(4) // two lanes × two cells, row-major
+  expect(lanes[0]!.ch).toBe(String.fromCharCode(0x2800 | 0x40 | 0x04 | 0x02 | 0x01)) // left column full
+  expect(lanes[1]!.ch).toBe('⣀') // nothing ran: the floor
+  expect(lanes[3]!.ch).toBe(String.fromCharCode(0x2800 | 0x40 | 0x04 | 0x80 | 0x20)) // 2 of 4 both sides
+  expect(lanes[0]!.fg).not.toBe(lanes[2]!.fg) // the busier slot is brighter
+})
+
+test('kit: day bars grow in eighths with a floor for zero; the eta bar marks the usual time and goes amber past it (T-0909)', () => {
+  const bars = decode(barCells([0, 2, 4], 2, 0x112233, 0x88ff88))
+  expect(bars.length).toBe(10) // 5 columns (3 bars, 2 gaps) × 2 rows
+  expect(bars[5]!.ch).toBe('▁') // zero: the floor on the bottom row
+  expect([bars[4]!.ch, bars[9]!.ch]).toEqual(['█', '█']) // the tallest fills both rows
+  expect(bars[2]!.ch).toBe(' ') // half height: top row empty
+  const eta = decode(etaCells(20, 30, 20))
+  expect(eta.filter(c => c.ch === '┃').length).toBe(1)
+  const mark = eta.findIndex(c => c.ch === '┃')
+  expect(eta[mark + 1]!.fg).toBe(C.warn) // past the usual time
+  expect(eta[19]!.fg).toBe(C.track) // the headroom stays a track
+})
+
 test('kit: each tool reads as what it does', () => {
   expect(toolFace('Edit', { file_path: '/r/src/a.py', old_string: 'x', new_string: 'y\nz' })).toMatchObject({
     verb: 'Editing', target: '/r/src/a.py', delta: '+2 −1', add: 2, del: 1,
@@ -173,6 +217,7 @@ test('kit: each tool reads as what it does', () => {
   expect(toolFace('Bash', { command: 'pytest -q', description: 'Run tests' }).target).toBe('Run tests')
   expect(toolFace('Agent', { subagent_type: 'fm-reviewer', description: 'Review' })).toMatchObject({ icon: '◆', target: 'fm-reviewer: Review' })
   expect(toolFace('mcp__docs__query', {})).toMatchObject({ verb: 'query', target: 'docs' })
+  expect(toolFace('AskUserQuestion', {})).toMatchObject({ verb: 'Waiting for your answer', color: C.warn }) // T-0909: not "running"
   expect(elapsed(1234)).toBe('1.2s')
   expect(elapsed(75000)).toBe('1m 15s')
   expect(shortPath('/a/very/long/path/to/some/deeply/nested/file_name.py', 24)).toBe('…/nested/file_name.py')
@@ -233,7 +278,8 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
     expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: 'standard' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /\bq\d|\bin\d/ })).toBeUndefined() // no letter codes
-    expect((await ui.findAll({ type: 'Raster' })).length).toBe(surface === 'terminal' ? 2 : 0) // the step bar and today's queue bar
+    // the stage rail in small (T-0909), the step bar and today's queue bar
+    expect((await ui.findAll({ type: 'Raster' })).map(r => r.key)).toEqual(surface === 'terminal' ? ['fm-band-rail', 'fm-band-bar', 'fm-band-queue'] : [])
     expect(await ui.find({ key: 'approve-T-0009' })).toBeUndefined()
     await ui.press({ key: 'review-T-0009' })
     expect(opened).toContain('foreman')
@@ -345,7 +391,11 @@ test('pane is organized cards; a waiting plan shows what a yes approves, and its
     expect((await ui.find({ key: 'fm-pane-head' }))?.props.borderStyle).toBe('round')
     expect((await ui.find({ key: 'fm-pane-controls' }))?.props.borderStyle).toBe('round')
     expect((await ui.find({ key: 'card-inbox' }))?.props.borderColor).toBe(hex(C.dim))
-    expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
+    // T-0909: the stage list is a rail with short names on the terminal; elsewhere its text twin
+    if (surface === 'terminal') {
+      expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'stage-rail')).toBe(true)
+      expect(await ui.find({ type: 'Text', text: 'build' })).toBeDefined()
+    } else expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /csv module vs pandas: csv module/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /write the exporter/ })).toBeDefined()
     await ui.press({ key: 'approve-T-0009' })
@@ -681,12 +731,12 @@ test('a paused hook shows in the band and the pane (T-0087)', async ($, on) => {
   await pane.unmount()
 })
 
-test('the pane wears the mascot top-right; a size legend explains the words', async ($, on) => {
+test('the pane wears the mascot top-right; the size legend is gone (T-0909: noise)', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await ui.find({ type: 'Text', text: '  ▐▛███▜▌  ' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /sizes: small ≤30 lines/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /sizes: small ≤30 lines/ })).toBeUndefined()
   await ui.unmount()
   const desk = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
   expect(await desk.find({ type: 'Text', text: '(•ᴗ•)' })).toBeDefined()
@@ -1278,4 +1328,196 @@ test('the pane shows a brainstorm while it runs, then its ideas', async ($, on) 
   const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'i1', props })
   expect(await row.find({ type: 'Text', text: /✦ 3\/12 answers · 41 ideas so far · A mascot/ })).toBeDefined()
   await row.unmount()
+})
+
+test('the pane reads top-down: what needs you, the hero with its rail, progress and time against the usual, then the plan and the pulse (T-0909)', async ($, on) => {
+  world(on, [{
+    ...VIEW,
+    approvals: [{ task: 'T-0007', allow: ['core'], why: 'edit the guard' }],
+    typical: { 'FIX/M': 20 },
+    active: { ...VIEW.active!, on_task_s: 1800 },
+    done_days: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 3],
+  }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const drawn = JSON.stringify(await ui.drawn())
+  const at = (key: string) => drawn.indexOf(`"${key}"`)
+  const order = ['card-asks', 'fm-pane-head', 'card-task', 'card-pulse', 'card-queue', 'card-inbox', 'card-activity', 'fm-pane-controls']
+  expect(order.map(at).every(i => i >= 0)).toBe(true)
+  expect([...order.map(at)].sort((x, y) => x - y)).toEqual(order.map(at))
+  const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
+  expect(rasters).toEqual(expect.arrayContaining(['stage-rail', 'fm-pane-bar', 'eta-bar', 'done-days', 'fm-latency']))
+  expect(await ui.find({ type: 'Text', text: /30m 00s on it · usually ~20m/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /6 closed · 14d/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /↳ pytest -q/ })).toBeDefined() // an unproved criterion names its check
+  expect(await ui.find({ type: 'Text', text: /1 left before done: step 2 not done/ })).toBeDefined()
+  // live at 70 columns the label and count wrapped ('audit'/'s', '0/'/'1'): they never shrink, the blocker truncates
+  expect((await ui.find({ key: 'fm-pane-audits-head' }))?.props.flexShrink).toBe(0)
+  expect(await ui.find({ key: 'card-fleet' })).toBeUndefined() // one session alone is this one
+  await ui.unmount()
+})
+
+test('a running call shows under Now with a moving bar; the pulse charts the session in swim lanes (T-0909)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/a.py' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/a.py', old_string: 'a', new_string: 'b', replace_all: false })
+  answer.hold = 1000
+  void $.tool.call({ tool: 'Bash', command: 'make test', description: 'run the tests' })
+  await clock.advance(100)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-now' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /❯ Running/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'run the tests' })).toBeDefined()
+  const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
+  expect(rasters).toEqual(expect.arrayContaining(['now-bar-0', 'lanes', 'stage-rail']))
+  for (const lane of ['edit', 'run', 'read']) expect(await ui.find({ type: 'Text', text: lane })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /3 tool calls · last 1 min/ })).toBeDefined()
+  await clock.advance(1000)
+  await ui.unmount()
+  const after = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await after.find({ key: 'card-now' })).toBeUndefined() // it finished
+  await after.unmount()
+})
+
+test('a quiet project folds queue and inbox into one Up next card with the capture box (T-0909)', async ($, on) => {
+  world(on, [{ ...VIEW, active: null, queue: [], inbox: [], inbox_total: 0 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-queue' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /queue and inbox empty/ })).toBeDefined()
+  expect(await ui.find({ key: 'capture' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Nothing active/ })).toBeDefined()
+  expect(await ui.find({ key: 'card-task' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
+  const doneTwo = { ...VIEW, active: { ...VIEW.active!, steps: VIEW.active!.steps.map(s => ({ ...s, done: true, current: false })) } }
+  const { clock } = world(on, [VIEW, doneTwo])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
+  await ui.press({ key: 'refresh' }) // the next snapshot: step 2 is done now
+  expect((await ui.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeDefined()
+  await ui.unmount()
+  await clock.advance(3000)
+  const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await later.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
+  await later.unmount()
+})
+
+test('while work runs the rail moves between redraws (30 fps blit), and settles when it ends (T-0909)', async ($, on) => {
+  const { answer, clock, blits } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 2000
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const cells = async () => ((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'stage-rail')?.props as { cells?: string } | undefined)?.cells
+  const seen = new Set<string | undefined>()
+  for (let i = 0; i < 8; i++) {
+    seen.add(await cells())
+    await clock.advance(40)
+  }
+  expect(seen.size).toBeGreaterThan(1) // the comet moved
+  expect(blits.filter(k => k === 'stage-rail').length).toBeGreaterThan(5) // and between redraws: the 30 fps blit
+  await clock.advance(3000) // the call ended: nothing live
+  const a = await cells()
+  await clock.advance(400)
+  expect(await cells()).toBe(a)
+  await ui.unmount()
+})
+
+test('a question waiting on you shows as waiting, not as running work, and is not charted (T-0909)', async ($, on) => {
+  const { answer, clock } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 5000
+  void $.tool.call({ tool: 'AskUserQuestion', questions: [] })
+  await clock.advance(100)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /⚠ Waiting for your answer/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /0 running/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'now-bar-0' || r.key === 'lanes')).toBe(false)
+  await clock.advance(5000)
+  await ui.unmount()
+})
+
+test('off the terminal the lanes are labelled sparklines over the whole window (T-0909)', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /^run\s+[▁▂▃▄▅▆▇█ ]+$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
+  await ui.unmount()
+})
+
+const railFrames = async ($: Parameters<Parameters<typeof test>[1]>[0], on: On) => {
+  const { answer, clock, blits } = world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  answer.hold = 2000
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const seen = new Set<string | undefined>()
+  for (let i = 0; i < 8; i++) {
+    seen.add(((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'stage-rail')?.props as { cells?: string } | undefined)?.cells)
+    await clock.advance(40)
+  }
+  const spinning = await ui.find({ type: 'Text', text: /^[·✢✳✶✻✽] Foreman$/ })
+  await clock.advance(3000)
+  await ui.unmount()
+  return { seen: seen.size, spinning: !!spinning, blits: blits.length }
+}
+
+test('motion calm: the rail moves only with the 8 fps redraws, never by blit (T-0912)', { options: { motion: 'calm' } }, async ($, on) => {
+  const { seen, blits } = await railFrames($, on)
+  expect(seen).toBeGreaterThan(1)
+  expect(blits).toBe(0)
+})
+
+test('motion off: nothing moves while work runs; the pane is still (T-0912)', { options: { motion: 'off' } }, async ($, on) => {
+  const { seen, spinning, blits } = await railFrames($, on)
+  expect(seen).toBe(1)
+  expect(blits).toBe(0)
+  expect(spinning).toBe(false) // the head shows ▍, not a spinner
+})
+
+test('a close takes the top of the pane for a moment: the done card with grade, proof and time, then it settles (T-0913)', async ($, on) => {
+  const working = { ...VIEW, typical: { 'FIX/M': 25 }, active: { ...VIEW.active!, on_task_s: 22 * 60 } }
+  const closed = { ...VIEW, active: null, closed: [{ id: 'T-0007', status: 'done', title: 'Login times out', grade: 'strong', lenses: ['edge'] }] }
+  const { clock } = world(on, [working, closed])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  await ui.press({ key: 'refresh' })
+  expect(await ui.find({ key: 'card-closed' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /✔ T-0007 done · strong · edge/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /1 criterion proven · 22m 00s · usually ~25m/ })).toBeDefined()
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'closed-sweep')).toBe(true)
+  const drawn = JSON.stringify(await ui.drawn())
+  expect(drawn.indexOf('"card-closed"')).toBeLessThan(drawn.indexOf('"fm-pane-head"'))
+  await clock.advance(6500)
+  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a quiet card folds to its head line with ▾/▸, and stays folded after a reload (T-0914)', async ($, on) => {
+  world(on, [VIEW])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeDefined() // the activity line
+  await ui.press({ key: 'fold-activity' })
+  expect(await ui.find({ key: 'card-activity' })).toBeDefined() // the head stays
+  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
+  for (const key of ['fold-pulse', 'fold-gates']) expect(await ui.find({ key })).toBeDefined()
+  expect(await ui.find({ key: 'fold-task' })).toBeUndefined() // the task, what needs you and the queue never fold
+  await ui.unmount()
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a reload reads the store
+  const again = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
+  await again.press({ key: 'fold-activity' })
+  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeDefined()
+  await again.unmount()
 })

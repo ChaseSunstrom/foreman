@@ -2093,9 +2093,16 @@ def _shell_c(args):
 # T-0892: NAME=$(mktemp -d) (no -p/--tmpdir/template) is a fresh folder in TMPDIR or /tmp: read as that literal path,
 # so `rm -r $T` later is a known target, and `$T/../..` still resolves to what it would remove
 _MKTEMP_D = re.compile(r"""(?<![\w$])(\w+=)(["']?)(?:\$\(\s*mktemp\s+-d\s*\)|`\s*mktemp\s+-d\s*`)\2""")
+# T-0906: a command that names TMPDIR or PATH at all (TMPDIR=, TMPDIR[0]=, ${TMPDIR:=…}), gives a shell an rc file
+# (BASH_ENV, ENV, --rcfile, --init-file), defines its own mktemp or repoints it (hash -p, enable, an alias) makes the
+# folder somewhere else (after eval or source the guard already treats T as unknown: see the KnownVars cases)
+_MKTEMP_MOVED = re.compile(r"\b(?:TMPDIR|PATH|BASH_ENV|ENV)\b|--(?:rcfile|init-file)\b|\bmktemp\s*\(\s*\)|"
+                           r"\bfunction\s+mktemp\b|\balias\b[^;&|\n]*\bmktemp\b|\b(?:hash|enable)\s")
 
 
 def _mktemp_literal(cmd):
+    if _MKTEMP_MOVED.search(cmd):
+        return cmd
     return _MKTEMP_D.sub(lambda m: m.group(1) + os.path.join(os.environ.get("TMPDIR") or "/tmp", "tmp.mktemp"), cmd)
 
 
@@ -2141,7 +2148,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     """Return [(category, detail)] for every dangerous thing found in a shell command."""
     if depth > 4:
         return [("rm-outside", "command nesting too deep to analyse")]
-    cmd = _mktemp_literal(_join_continued(cmd))
+    # the whole command only: a nested shell's text alone would miss what its caller set (BASH_ENV=… bash -c '…')
+    cmd = _mktemp_literal(_join_continued(cmd)) if depth == 0 else _join_continued(cmd)
     unreadable = _ifs_unreadable(cmd)  # added last, never instead: a granted system mustn't let the rest through
     cmd = _ifs_spaces(cmd)  # T-0576: rm${IFS}-rf ~ is "rm -rf ~" to bash (IFS splits the expansion into words)
     cmd = _expand_literal_loops(cmd)  # T-0411: a loop over literal words, as the commands it runs
