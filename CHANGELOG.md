@@ -40,6 +40,11 @@
   - The README opens with a recording of Claude Code itself with the foreman-ui mod fixing a seeded bug (`demo/record_live.py` re-records it; `demo/live.mp4` to share); `shot.py` gains `render()` and no longer passes this session's `CLAUDE_*` variables to the Claude Code it harnesses (T-0903).
   - Showcase: the README opens with a recording of `fm demo` (animated SVG; `demo/record.py` re-records it, `--mp4` for a shareable video), a scannable why/quick start, and the long detail folded; `fm demo --pace 1` plays the demo at a watchable speed with colour (T-0902).
   - CI: the suite runs on push and pull requests on Linux (Python 3.12 and 3.14), macOS reported (T-0882).
+- Round 6 (49 ideas grounded; 6 built).
+  - `fm task drop` keeps an in-progress task's work as a snapshot named in its brief (T-0895). A RESEARCH task closes with a Decision, which lands in decisions.md (T-0896). `fm spec` starts from the examples the user wrote and keeps them when the model child fails (T-0897).
+  - `fm at TARGET -- CMD` runs a command as of a task's start or any commit, in a throwaway worktree (T-0898).
+  - A reply's own promises ("I'll also…", "I'll follow up on…") become inbox items when the turn ends (T-0899). A close lists the criteria no command of their own proved, to check by hand (T-0900).
+  - Guard: `T=$(mktemp -d)` is a known temp folder, so `rm -r $T` later isn't refused (T-0892); a path-only refusal's rule id names the file kind (T-0894). The guard tests keep their temp folder outside /tmp on a fresh HOME, as on a CI runner (T-0883).
 
 ## 1.2.27 — 2026-10-09
 - Learning, paid half (T-0752 milestone: T-0734, T-0743).
