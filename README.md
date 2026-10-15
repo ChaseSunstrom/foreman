@@ -5,7 +5,7 @@
 **The discipline layer for Claude Code.** Foreman makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until it's done or needs you, while a guard hook stops the commands you'd never want run in bypass mode.
 
 <p align="center">
-  <img src="demo/live.svg" width="960" alt="Claude Code with the foreman-ui mod: asked to fix calc.add, Claude plans task T-0001, edits the code, is refused a close until a red-then-green proof exists, proves it, closes and commits; the Foreman pane shows the task card with its stages, files, fleet, queue and activity">
+  <img src="demo/live.svg" width="960" alt="Claude Code with the foreman-ui mod: asked to fix calc.add, Claude plans task T-0001, edits the code, is refused a close until a red-then-green proof exists, proves it, closes and commits; the Foreman pane shows the task with its stage rail and progress, what is running now, the plan's steps and criteria, and live charts of the session's tool calls">
 </p>
 <p align="center"><sub>Claude Code with the foreman-ui mod, recorded as it fixes a seeded bug: one typed request, the rest is Claude working through Foreman. Sped up where the model thinks; <a href="demo/live.mp4">MP4</a>.</sub></p>
 
@@ -134,7 +134,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 ## Seeing what's going on
 
-**In Claude Code**, the `foreman-ui` mod draws Foreman live in the session: a card above the prompt shows the task, its stage and a step bar, and each tool call gets an animated row. `/fm` opens a dashboard. Below the prompt is a true-color status line. **Foreman Desktop** shows every project, agent session and device in one window. **Other agents** (Codex, Gemini CLI, opencode) can run the same guard and context.
+**In Claude Code**, the `foreman-ui` mod draws Foreman live in the session: a card above the prompt shows the task, a mini stage rail and a step bar, and each tool call gets an animated row. `/fm` opens a dashboard that reads top-down by urgency, with live charts. Below the prompt is a true-color status line. **Foreman Desktop** shows every project, agent session and device in one window. **Other agents** (Codex, Gemini CLI, opencode) can run the same guard and context.
 
 <details>
 <summary><b>The foreman-ui mod in detail</b></summary>
@@ -142,7 +142,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 The `foreman-ui` mod draws Foreman live inside the session.
 
 **The card.** Above the prompt sits a card showing:
-- the task's type chip, id and title, and its stage;
+- the task's type chip, id and title, and its stage on a mini rail (●━●━◉─○─○);
 - a true-color gradient step bar that animates while Claude works;
 - audits, queue and inbox counts, and what waits on you;
 - `[f]` dashboard and `[n]` next.
@@ -153,7 +153,7 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **Context.** The band carries a context meter. At 85% Foreman checkpoints the task once, so a `/compact` resumes at the exact step. When a task closes with context at 40% or more, the mod compacts right there. It keeps your standing requests and live decisions, drops finished work, and Foreman's resume note restores the exact point. The threshold is the mod's `freshAt` setting; 0 turns it off.
 
-**Your project's own timings.** Sizes read as words (`FIX · small`, `· medium`, `· large`; the pane explains them) and carry this project's history:
+**Your project's own timings.** Sizes read as words (`FIX · small`, `· medium`, `· large`) and carry this project's history:
 - The band shows how long you've been on the task and what that type and size usually takes (`12m on it · usually ~25m`). That is the median from first focus to done, once three such tasks have closed.
 - Queue rows show their usual time, and the gates card shows what a full run costs.
 - The band shows the whole queue (done today, queued, in the inbox, what's next), so it never looks nearly finished while work waits.
@@ -165,12 +165,17 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **The mascot.** The pane's top-right corner has Claude Code's own Claude from the welcome screen. Its `mascot` setting picks blue, orange, purple, green or off. It dances while Claude works, blinks while idle and cheers when a task closes, with a mini Claude in its own color beside it for each running subagent.
 
-**The dashboard.** `/fm` (or `[f]`) opens a dashboard pane of cards:
-- the task, with a stage stepper, steps, criteria and audits;
-- any plan waiting for your approval, shown in full beside its Approve button;
-- queue and inbox, with type chips and Start/Drop;
-- activity and hook health;
+**The dashboard.** `/fm` (or `[f]`) opens a dashboard pane that reads top-down by urgency:
+- what needs you: a yes Foreman is waiting for, and any plan waiting for approval, shown in full beside its Approve button;
+- the task: type, size, id and title, a stage rail from plan to close with a comet on the stage being worked, the steps bar, the current step, and time on the task against the usual for its type and size (a ┃ marks the usual; past it the bar turns amber);
+- **Now**: each call running this moment with a moving bar (a question waiting on you reads as waiting, not running);
+- **Plan**: the steps (one glows green as it gets done), the done-when criteria with the check that proves each, audits and what is left before done;
+- **Pulse**: swim lanes of the session's tool calls by kind (edit, run, read, agent, web) over the last 1 to 30 minutes, tasks closed per day for 14 days, and context, spend, hook-latency and guard gauges;
+- queue and inbox, with type chips, usual times and Start/Drop (one *Up next* card with the capture box when both are empty);
+- then the quieter cards: gates, brainstorm, files, fleet, spend, bench, research and activity (newest first), each folding to its head line with ▾/▸;
 - Next, Drive and Autonomy controls.
+
+When a task closes, its done card tops the pane for six seconds: a green sweep, the grade and lenses, the criteria it proved and its time against the usual. The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`.
 
 Every card shares the animated look: borders that breathe while Claude works, true-color bars and recency fades. Queue rows have step bars, and inbox rows show their age. A quick-capture box takes an idea on Enter and runs `fm capture` without interrupting Claude. Other cards show live subagents with their tool counts, files touched this session with +/− bars, the last `fm check` gates, and activity with a hook-latency sparkline. Toasts mark finished steps and tasks, needed yeses (with a soft chime; Sound off in the pane) and guard refusals. The mod only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.
 
