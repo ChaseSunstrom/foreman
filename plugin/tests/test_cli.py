@@ -1180,3 +1180,27 @@ class InboxList(ForemanTestCase):
         self.assertIn("Add a dark theme", r.stdout)
         self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
         self.assertIn("{gh}", self.fm("inbox", "--help").stdout)  # the tracker source is still there
+
+
+class AffectedPairs(ForemanTestCase):
+    """T-0952: a test that historically changes with a file runs when only that file changes, so a hooks.json edit
+    runs the wiring tests even though no test is named after it."""
+
+    def test_a_co_changed_test_is_affected(self):
+        import fmcli
+        self.fm("init")
+        self.fm("check", "affected", "python3 -m pytest -q {tests}")
+        os.makedirs(os.path.join(self.repo, "hooks"))
+        os.makedirs(os.path.join(self.repo, "tests"))
+        for i in range(3):
+            for rel, body in (("hooks/hooks.json", f'{{"n": {i}}}\n'), ("tests/test_wiring.py", f"N = {i}\n")):
+                with open(os.path.join(self.repo, rel), "w") as f:
+                    f.write(body)
+            for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", f"wire {i}"]):
+                subprocess.run(["git", "-C", self.repo, *args], check=True)
+        self.fm("task", "new", "edit the hooks", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
+                "--focus")
+        with open(os.path.join(self.repo, "hooks", "hooks.json"), "w") as f:
+            f.write('{"n": 9}\n')
+        _, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
+        self.assertIn("tests/test_wiring.py", tests)
