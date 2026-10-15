@@ -75,6 +75,14 @@ class SessionStart(HookCase):
         self.fm("drive", "off")
         self.assertIsNone(first(self.run_ss("resume")))
 
+    def test_the_env_file_gets_the_exports_once(self):
+        # T-0988: every start and compaction appended them again; each Bash call's prelude ran them 8 times
+        self.fm("init")
+        for source in ("startup", "compact", "compact"):
+            self.run_ss(source)
+        with open(self.env_file) as f:
+            self.assertEqual(f.read().count("export FOREMAN_PROJECT="), 1)
+
     def test_a_state_fallback_in_use_is_named(self):
         self.fm("init")
         self.assertNotIn("fallback", self.ctx_of(self.run_ss()))
