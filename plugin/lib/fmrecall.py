@@ -339,6 +339,9 @@ def note_failure(p, task, text):
                                             f"assumed. Read the real one before another guess: context7 "
                                             f"(resolve-library-id, then get-library-docs), the installed package's "
                                             f"own source, or fm research ask \"<library> <symbol> in <version>\"."]))
+    if "No such file" in (text or "") and re.search(r"plugin/bin/fm\w*\.py", text or ""):  # T-0984
+        hint = " ".join(filter(None, [hint, "Foreman: its modules are in plugin/lib/ (plugin/bin/ holds only the fm "
+                                            "launcher)."]))
     if task and same >= REPEATS and not hinted:  # R1 thrash: once per task and failure, when it becomes a pattern
         hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
                                              f"retrying variations, diagnose the cause first "
