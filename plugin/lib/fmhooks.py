@@ -1386,7 +1386,7 @@ def undo_point(root, tid=None):
     return {"head": head, "stash": stash, "ref": ref if pinned else "", "dirty": dirty}
 
 
-_WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)
+_WAIT_LOOP = re.compile(r"(?<![\w-])(?:until|while|for)\s.*?(?<![\w-])sleep\s+(?:(\d+(?:\.\d+)?)([smhd]?)|\$)", re.S)
 
 
 def _wait_loop(pl):

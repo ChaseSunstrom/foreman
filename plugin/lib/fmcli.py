@@ -61,8 +61,12 @@ def resolve(args, create=True):
 
 def need_brief(p, tid):
     b = c.find_brief(p, tid)
-    if not b:
-        raise UsageError(f"no task {tid} in {p.slug}")
+    if not b:  # T-0987: name what is here, so an id from another checkout isn't guessed at again
+        briefs = c.load_briefs(p)
+        act = getattr(c.active_brief(briefs), "id", None)
+        open_ = [x.id for x in briefs if x.status not in c.CLOSED and x.id != act][-3:]
+        here = ", ".join(([f"active {act}"] if act else []) + open_)
+        raise UsageError(f"no task {tid} in {p.slug}" + (f" (here: {here})" if here else ""))
     return b
 
 
