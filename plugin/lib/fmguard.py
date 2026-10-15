@@ -2258,13 +2258,20 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
             found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
-        for target in c.redirs + _write_targets(name, args) + git_env + _env_files(c.argv):
+        # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
+        init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
+        bare_init = init and not lost and not git_env and not _git_pos(args[1:], ("-b", "--initial-branch")) and all(
+            os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not any(
+            a.startswith(("--separate-git-dir", "--template", "--object-format", "--ref-format")) for a in args)
+        for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
-        for target in _tree_targets(name, args) + git_env:
+        for target in [] if bare_init else _tree_targets(name, args) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
-                                                             else "") + ")")  # refusal names fm lane merge
+                                                             else "") + ")" +  # refusal names fm lane merge
+                                  ("; git init writes its folder: chain the cd with && or pass the path, "
+                                   'git init "$S/toy"' if init else ""))
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
