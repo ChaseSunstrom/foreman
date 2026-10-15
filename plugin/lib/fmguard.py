@@ -943,6 +943,7 @@ _EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\
 _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
 _FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
+                          r"add_rule|drop_rule|add_veto|drop_veto|"  # T-0971 review: the user's rules and vetoes
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
                           r"restore_default_state)\s*\(|"
                           rf"\bgetattr\s*\(\s*{_FM_ENTRY}\b|"
@@ -2596,6 +2597,20 @@ def _tree_targets(name, args):
             (name in ("cp", "install") and recursive):
         return _write_targets(name, args)
     return []
+
+
+def write_targets(cmd):
+    """T-0971 review: the paths a Bash command writes, as the guard reads them (redirects and the writers it knows),
+    unresolved; [] when it can't be parsed."""
+    out = []
+    try:
+        for x in _split(_tokens(cmd)):
+            if x.argv:
+                stripped, _ = _strip_wrappers(x.argv)
+                out += list(x.redirs) + (_write_targets(os.path.basename(stripped[0]), stripped[1:]) if stripped else [])
+    except Exception:
+        return []
+    return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
 def _write_targets(name, args):

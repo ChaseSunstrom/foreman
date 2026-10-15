@@ -2071,7 +2071,8 @@ def drop_veto(p, n):
 
 
 RULE_MAX = 300      # T-0971: a user rule's pattern, in characters
-RULE_SCAN = 4000    # what a rule reads of a command or path: a long command can't make a pattern backtrack for long
+RULE_SCAN = 200_000  # T-0971 review: rules read the whole call (the time budget bounds a slow pattern); longer fails closed
+RULE_SCAN_NO_ALARM = 4000  # off the main thread there's no alarm: past this, block rules fail closed
 RULE_BUDGET = 0.25  # seconds all of a call's rules get (of PreToolUse's 5 s)
 
 
@@ -2122,15 +2123,19 @@ def rule_hits(p, on, text):
     todo = [(n, r) for n, r in enumerate(rules(p), 1) if r["on"] == on]
     if not todo or not text:
         return []
-    text, hits = text[:RULE_SCAN], []
+    hits = []
 
     def expire(*_):
         raise TimeoutError
 
     try:
         old = signal.signal(signal.SIGALRM, expire)
-    except ValueError:  # not the main thread: no alarm, the RULE_SCAN cap alone bounds it
+    except ValueError:  # not the main thread: no alarm to bound a slow pattern
         old = None
+    if len(text) > (RULE_SCAN if old is not None else RULE_SCAN_NO_ALARM):  # too long to read safely: a block rule
+        if old is not None:                                                  # can't be shown not to match, so it does
+            signal.signal(signal.SIGALRM, old)
+        return [(n, r, True) for n, r in todo if r["action"] == "block"][:1]
     try:
         if old is not None:
             signal.setitimer(signal.ITIMER_REAL, RULE_BUDGET)
