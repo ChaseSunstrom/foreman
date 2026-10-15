@@ -155,7 +155,9 @@ class RuleIds(Base):
         b = g.check("Bash", {"command": "rm -rf /home/other"}, ctx)
         self.assertTrue(a.rule.startswith("rm-outside:"), a.rule)
         self.assertEqual(a.rule, b.rule, "the same check fires the same rule whatever the path")
-        self.assertEqual(g.Block("brief", os.path.join(self.repo, "a.py")).rule, "brief:path", "T-0815: not 'other'")
+        self.assertEqual(g.Block("brief", os.path.join(self.repo, "a.py")).rule, "brief:path-py", "T-0815: not 'other'")
+        self.assertEqual(g.Block("brief", os.path.join(self.repo, "notes.md")).rule, "brief:path-md")  # T-0894
+        self.assertEqual(g.Block("brief", os.path.join(self.repo, "Makefile")).rule, "brief:path")
 
     def test_a_state_write_is_pointed_at_fm_research_not_at_naming_it(self):
         # T-0814: state-direct can't be granted: when research/ was the real target, "name it literally" only moved the
