@@ -144,6 +144,43 @@ class Watch(Base):
         finally:
             os.environ.update({k: v for k, v in saved.items() if v})
 
+    def test_a_resumed_session_keeps_its_watcher(self):
+        # T-0841 (live, 2026-10-15): Claude Code started as one session, then resumed this conversation under another
+        # id; the monitor kept the first id from its environment, so the resumed session's mail never printed
+        import io
+        import threading
+        import time
+        import fmbus
+        saved = {k: os.environ.pop(k, None) for k in ("CLAUDE_CODE_SESSION_ID", "FOREMAN_SESSION_ID")}
+        buf, done = io.StringIO(), threading.Event()
+        try:
+            self.hook("SessionStart", {"session_id": "sess-first", "source": "startup"})
+            t = threading.Thread(target=fmbus.watch, kwargs={"interval": 0.05, "out": buf, "stop": done.is_set})
+            t.start()
+            time.sleep(0.3)
+            self.hook("SessionStart", {"session_id": "sess-resumed", "source": "resume"})
+            time.sleep(0.3)
+            fmbus.send("sess-resumed", "picked up after the resume", sender="sess-1")
+            for _ in range(100):
+                if "picked up" in buf.getvalue():
+                    break
+                time.sleep(0.05)
+        finally:
+            done.set()
+            t.join(5)
+            os.environ.update({k: v for k, v in saved.items() if v})
+        self.assertIn("picked up after the resume", buf.getvalue())
+
+    def test_a_resume_in_the_same_claude_process_is_not_another_session(self):
+        # T-0841: the same live resume told the session another one (its own first id) was active 0m ago
+        import fmhooks
+        now = c.now()
+        self.assertIsNone(fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 4242))
+        self.assertIn("Another Claude Code session",
+                      fmhooks._other_session({"id": "sess-first", "seen": now, "pid": 4242}, "sess-b", 999) or "")
+        self.assertIn("Another Claude Code session",
+                      fmhooks._other_session({"id": "sess-first", "seen": now}, "sess-b", None) or "", "unknown: as before")
+
     def test_wake_prefers_a_fresh_watcher_over_tmux(self):
         import time
         import fmbus

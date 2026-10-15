@@ -231,6 +231,26 @@ def _write_gate(p, g):
 
 # ---------------------------------------------------------------- SessionStart
 
+def _claude_pid():
+    """The Claude Code process this hook runs under, or None."""
+    try:
+        import fmbus
+        return fmbus.claude_pid()
+    except Exception:
+        return None
+
+
+def _other_session(other, sid, mine):
+    """The note when another session claimed this project in the last 15 minutes. T-0841: a resume (or /clear) in the
+    same claude process changes the id but is the same session, so a claim from this process is no other."""
+    age = c.age_days(other.get("seen"))
+    if not other.get("id") or other["id"] == sid or age is None or age >= 15 / 1440:
+        return None
+    if mine and other.get("pid") == mine:
+        return None
+    return f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+
+
 def session_start(pl):
     sid = pl.get("session_id")
     if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
@@ -260,10 +280,7 @@ def session_start(pl):
             f.write(f"export FOREMAN_SESSION_ID={sid}\nexport FOREMAN_PROJECT={p.slug}\n")
     with c.lock(p.dir, timeout=LOCK_QUICK):
         meta = c.read_meta(p)
-        other, other_note = meta.get("session") or {}, None
-        age = c.age_days(other.get("seen"))
-        if other.get("id") and other["id"] != sid and age is not None and age < 15 / 1440:
-            other_note = f"Another Claude Code session ({other['id'][:8]}) was active in this project {int(age * 1440)}m ago."
+        other_note = _other_session(meta.get("session") or {}, sid, _claude_pid())
         busy = other_note is not None
         offered = c.age_days(meta.get("digest_offered"))
         if offered is None or offered >= 7:  # once a week: what got done (R1 weekly digest)
@@ -518,7 +535,7 @@ def user_prompt_submit(pl):
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
-            meta["session"] = {"id": sid, "seen": c.now()}
+            meta["session"] = {"id": sid, "seen": c.now(), "pid": _claude_pid()}  # T-0841: whose process it is
             if (meta.get("resume_after_reload") or {}).get("session") == sid:
                 meta.pop("resume_after_reload")  # T-0145: the reloaded mod's prompt (or the user's) resumed it
             if "PAUSE" in r.overrides:
