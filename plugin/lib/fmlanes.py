@@ -55,7 +55,12 @@ def cmd_lane(args):
         if b.meta.get("lane_spike"):  # T-0732: a spike answers a question; its code is thrown away
             raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
                                 f"{b.id} fact \"…\"), then fm lane rm {b.id}")
-        return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main)}, f"{b.id}: merged {merge.last} into {main} "
+        why = getattr(args, "unverified", None)
+        if why is not None and not why.strip():
+            raise c.PolicyError("--unverified needs a reason (what makes the criteria's re-run wrong)")
+        if why is not None and p.lane:  # T-0948: a builder can't waive its own gate
+            raise c.PolicyError("--unverified is for the main thread: a builder can't waive its own gate")
+        return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main, why)}, f"{b.id}: merged {merge.last} into {main} "
                          f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
     if args.action == "new":
         if c.panicked():
@@ -200,7 +205,26 @@ def _secretish(lane, rel):
     return out
 
 
-def merge(p, b, main):
+def _verify(b):
+    """T-0948: re-run each criterion's verify command in the lane's worktree (the runner and timeout fm task evidence
+    --run uses, nothing recorded); the first red one refuses the merge, and so does a brief with nothing to run."""
+    import fmcli
+    cmds = [(n, v) for n, v in b.verify_cmds() if v]
+    if not cmds:
+        raise fmcli.UsageError(f"{b.id} has no criterion with a verify command, so there is nothing to re-run: plan "
+                               f"verify commands first (fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
+    wt = b.meta.get("lane")
+    if not wt or not os.path.isdir(wt):
+        raise fmcli.UsageError(f"{b.id}: its lane worktree is gone, so its criteria can't be re-run there")
+    for n, cmd in cmds:
+        code, out = c.run_command(wt, cmd, 600)
+        if code:
+            raise c.PolicyError(f"{b.id}: criterion {n} is red in {wt}: `{cmd}` → exit {code}\n"
+                                + "\n".join(out.rstrip().splitlines()[-15:]) + f"\nFix it on the branch, then merge "
+                                f"(fm lane merge {b.id} --unverified \"<reason>\" waives it, logged)")
+
+
+def merge(p, b, main, unverified=None):
     """T-0377: merge a reviewed builder branch into the main checkout (--no-ff) through fm. On Foreman's own repo the
     guard refuses `git merge` (a tree write over core); here every file the branch changes must pass the guard as a
     write by its task would (its grants, the standing yes, trust), so fm is no way around it. Refused over staged
@@ -243,6 +267,10 @@ def merge(p, b, main):
         if blk:
             raise c.PolicyError(f"{b.id}: {branch} changes {f}, which the guard refuses for this task "
                                 f"({blk.category}: {blk.detail}); grant it the way an edit is granted, then merge")
+    if unverified is not None:  # T-0948: the waiver is on the ledger before the merge it allows
+        c.log_event(p, "lane_unverified", task=b.id, data={"reason": unverified.strip(), "branch": branch})
+    else:
+        _verify(b)
     pre_merge = c.git_head(main)  # T-0804: the task's diff starts here, not at the old focus snapshot
     pre_tree = c.worktree_tree(main)  # T-0812: and from these files, or focus re-snapshots them after the merge
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
