@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Use when a request is open-ended with no concrete target ("just get it done", "super improve it", "make it better", "what should we build next?", "brainstorm features") or the Foreman prompt note says so. Builds one context pack, fans out tool-less brainstorm sub-agents (fm ideas) with different lenses, grounds and scores their ideas against the real code, and turns the best into ordered Foreman briefs.
+description: Use for an open-ended request with no concrete target ("super improve it", "what should we build next?") or when Foreman's note says so: fans out lens brainstormers (fm ideas), grounds and scores their ideas, and briefs the best.
 ---
 
 # Foreman: brainstorm

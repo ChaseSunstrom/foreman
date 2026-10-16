@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Use for any new work request before editing anything — tagged lines (FIX:, FEATURE:, CLEAN:, PERF:, SECURITY:, RESEARCH:, with CONTEXT/CONSTRAINT/DONE-WHEN/SKIP) or a plain one-line request. Turns it into Foreman briefs, expands (R1), grounds in the real code (R2), anticipates follow-ups (R3), compiles a self-contained Execution prompt (R4), orders the queue canonically and starts per autonomy. Also covers the execute loop, evidence, debugging, regression tests and delegation.
+description: Use for any new work request before editing anything (tagged FIX:/FEATURE:/CLEAN:/PERF:/SECURITY:/RESEARCH: lines or a plain request): turns it into grounded, ordered Foreman briefs and starts the first.
 ---
 
 # Foreman intake

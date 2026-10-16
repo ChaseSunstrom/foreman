@@ -30,6 +30,24 @@ class Claims(Base):
         self.assertIn("overlaps", r.stdout + r.stderr)
         self.assertIn("a.py::f", self.fm("lease", "list").stdout)
 
+    def test_a_bare_drop_keeps_another_tasks_leases_in_the_same_session(self):
+        # T-1216: builder lanes share the main session's id; a builder's bare drop released the main thread's leases
+        self.fm("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)
+        self.fm("lease", "take", "a.py", env=A)
+        self.fm("task", "new", "Two", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)
+        self.fm("lease", "take", "b.py", env=A)
+        self.assertIn("Dropped 1 lease(s)", self.fm("lease", "drop", env=A).stdout)
+        held = self.fm("lease", "list").stdout
+        self.assertIn("a.py", held, "the first task's lease stays")
+        self.assertNotIn("b.py", held)
+
+    def test_dropping_a_file_releases_its_symbol_leases(self):
+        self.fm("lease", "take", "a.py::f", "a.py::g", "c.py::h", env=A)
+        self.assertIn("Dropped 2 lease(s)", self.fm("lease", "drop", "a.py", env=A).stdout)
+        held = self.fm("lease", "list").stdout
+        self.assertNotIn("a.py", held)
+        self.assertIn("c.py::h", held)
+
     def test_drop_and_expiry_free_the_claim(self):
         self.fm("lease", "take", "a.py::f", env=A)
         self.fm("lease", "drop", "a.py::f", env=A)

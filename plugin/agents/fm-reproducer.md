@@ -1,6 +1,6 @@
 ---
 name: fm-reproducer
-description: Foreman reproducer for a FIX before any fix is written, launched only with isolation "worktree" from the brief `fm lane brief ID` writes. Given the reported symptom, where it shows and how to run the tests, writes the smallest failing test (or a repro script when no test harness fits) that fails for the reported reason, confirms it fails, commits only that test on its branch, and hands back the exact command for fm task prove. Never fixes the bug, never merges.
+description: Foreman reproducer for a FIX before any fix is written, launched only with isolation "worktree" from the brief `fm lane brief ID` writes: commits only the smallest failing test and returns the command for fm task prove. Never fixes or merges.
 tools: Read, Grep, Glob, Edit, Write, Bash
 model: sonnet
 color: yellow

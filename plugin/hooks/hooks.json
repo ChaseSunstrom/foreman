@@ -58,7 +58,7 @@
         ]
       },
       {
-        "matcher": "PushNotification|Artifact|ArtifactData|ArtifactComments|SendMessage|RemoteTrigger|mcp__claude_ai_Claude_Docs__.*",
+        "matcher": "PushNotification|Artifact|ArtifactData|ArtifactComments|SendMessage|RemoteTrigger|CronCreate|ScheduleWakeup|mcp__claude_ai_Claude_Docs__.*",
         "hooks": [
           {
             "type": "command",
@@ -136,7 +136,7 @@
             "args": [
               "Stop"
             ],
-            "timeout": 5
+            "timeout": 30
           }
         ]
       }

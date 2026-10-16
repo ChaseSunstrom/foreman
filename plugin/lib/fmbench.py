@@ -20,6 +20,7 @@ import shlex
 import shutil
 import subprocess
 import tempfile
+import threading
 import time
 
 import fmbudget
@@ -52,20 +53,38 @@ def _safe_git(root, *args, timeout=120):
 
 
 @contextlib.contextmanager
+def _frozen(plugin):
+    """T-1231: a copy of the plugin folder for one bench command, so editing Foreman while a duel runs can't change
+    the code its later sessions load. Removed afterwards."""
+    tmp = tempfile.mkdtemp(prefix="fm-bench-plugin-")
+    try:
+        snap = os.path.join(tmp, "plugin")
+        shutil.copytree(plugin, snap, symlinks=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests"))
+        yield snap
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+_GIT = threading.Lock()  # T-1231: cases run in parallel (--jobs) add and remove worktrees of one repo
+
+
+@contextlib.contextmanager
 def _worktree(root, rev):
     """A detached worktree of the repo at rev in a temporary folder: (folder, worktree). Always removed."""
     tmp = tempfile.mkdtemp(prefix="fm-bench-")
     wt = os.path.join(tmp, "repo")
-    r = _safe_git(root, "worktree", "add", "--detach", "-q", wt, rev)
+    with _GIT:
+        r = _safe_git(root, "worktree", "add", "--detach", "-q", wt, rev)
     if r.returncode:
         shutil.rmtree(tmp, ignore_errors=True)
         raise OSError(f"git worktree add {rev[:10]}: {r.stderr.strip()[:200]}")
     try:
         yield tmp, wt
     finally:
-        _safe_git(root, "worktree", "remove", "--force", wt)
-        shutil.rmtree(tmp, ignore_errors=True)
-        _safe_git(root, "worktree", "prune")
+        with _GIT:
+            _safe_git(root, "worktree", "remove", "--force", wt)
+            shutil.rmtree(tmp, ignore_errors=True)
+            _safe_git(root, "worktree", "prune")
 
 
 # Credentials a replay never needs (claude's own login stays): forge, cloud and package-registry tokens.
@@ -97,8 +116,11 @@ def has_guard(plugin):
 
 
 def _grade(wt, case, env, timeout=900):
-    """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored."""
-    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"])
+    """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored. T-1237 review: and
+    every other file in their folders as the reference commit has them, so an arm that edited or gutted an existing
+    test to make its change pass is graded by the real one."""
+    folders = sorted({os.path.dirname(t) for t in case["tests"]} - {""})
+    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"], *folders)
     if r.returncode:  # grading without the hidden tests would grade whatever the session left
         return [("restore the hidden tests", r.returncode, r.stderr.strip()[-200:])]
     out = []
@@ -180,7 +202,7 @@ def build_commits(p, rng, verify, last=30):
             skipped.append(f"{cid}: " + ("a root commit" if not base else "no test files" if not tests else "tests only"))
             continue
         case = {"id": cid, "title": c.fit(msg.splitlines()[0] if msg else sha, 100), "tier": "?", "type": "COMMIT",
-                "commit": sha, "base": base, "tests": tests, "prompt": c.plain(msg) or cid,
+                "commit": sha, "base": base, "tests": tests, "prompt": c.plain_lines(msg).strip() or cid,
                 "verify": [verify.replace("{tests}", " ".join(shlex.quote(t) for t in tests))]}
         why = validate(p, case)
         (skipped.append(f"{cid}: {why}") if why else cases.append(case))
@@ -494,7 +516,7 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
 
 
 def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
-            bare=False):
+            bare=False, jobs=1):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
     Ctrl-C keeps what was paid for). Refuses a plugin without the guard here, so no caller can skip it (replays run in
     bypass mode). `bare` (T-0963): no plugin loaded, only the plugin's guard as a settings hook."""
@@ -508,14 +530,26 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
            **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
     _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
-    for case in cases:
+    def one(case):
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
-            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare))
+            return run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare)
         except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
-            results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
-                            "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
-        c.write_atomic(os.path.join(_results_dir(p), label + ".json"), json.dumps(res, indent=1))
+            return {"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None, "seconds": 0,
+                    "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"}
+    import concurrent.futures
+    done = {}
+    ex = concurrent.futures.ThreadPoolExecutor(max(1, jobs))  # T-1231: --jobs cases at once, order kept
+    try:
+        futures = {ex.submit(one, case): i for i, case in enumerate(cases)}
+        for f in concurrent.futures.as_completed(futures):
+            done[futures[f]] = f.result()
+            results[:] = [done[i] for i in sorted(done)]
+            c.write_atomic(os.path.join(_results_dir(p), label + ".json"), json.dumps(res, indent=1))
+    except BaseException:  # review: Ctrl-C or an uncaught error starts no more paid sessions
+        ex.shutdown(wait=False, cancel_futures=True)
+        raise
+    ex.shutdown()
     return res
 
 
@@ -697,11 +731,14 @@ def _contest(p, args):
             new = {x["id"] for x in cases}
             c.write_atomic(_cases_path(p), json.dumps(cases + [x for x in _load_cases(p) if x["id"] not in new],
                                                       indent=1))
-    else:
-        cases = [x for x in _load_cases(p) if not args.ids or x["id"] in args.ids][:args.max]
+    else:  # T-1231: a court case grades what Foreman learned from this user's state, which a fresh duel has none of
+        cases = [x for x in _load_cases(p) if (x["id"] in args.ids if args.ids else
+                                               args.bench_cmd == "soak" or x.get("type") != "COURT")][:args.max]
         if not cases:
             raise fmcli.UsageError("no bench cases: fm bench build first (or --ids names none of them)")
     arm = dict(model=args.model, budget=args.budget, timeout=args.timeout, quiet=args.json)
+    if args.bench_cmd in ("duel", "versions"):
+        arm.update(runs=max(1, args.runs), jobs=max(1, args.jobs))
     try:
         if args.bench_cmd == "soak":
             if not has_guard(plugin):
@@ -840,7 +877,8 @@ def cmd_bench(args):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,60}", label):
             raise fmcli.UsageError(f"label must be a plain name, got {label!r}")
         try:
-            res = run_arm(p, cases, plugin, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
+            with _frozen(plugin) as snap:
+                res = run_arm(p, cases, snap, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
         except ValueError as e:
             raise fmcli.UsageError(str(e))
         results = res["cases"]
@@ -901,7 +939,9 @@ def cmd_bench(args):
                          f"stranger: {len(found)} finding(s), {len(captured)} new self item(s)"
                          + "".join(f"\n  - {x}" for x in found) + (f"\n  captured: {', '.join(captured)}" if captured else ""))
     if args.bench_cmd in ("duel", "versions", "court", "soak"):
-        return _contest(p, args)
+        with _frozen(os.path.abspath(getattr(args, "plugin_dir", None) or c.PLUGIN_ROOT)) as snap:
+            args.plugin_dir = snap
+            return _contest(p, args)
     if args.bench_cmd == "gate":
         runs = []
         for label in (args.a, args.b):

@@ -92,6 +92,9 @@ def findings(tool_name, tool_input, ctx):
         return [(cat, path) for cat in classify_write(path, ctx)]
     if tool_name == "Bash":
         return check_bash(tool_input["command"], ctx)
+    if tool_name == "Read":  # T-1224
+        path = _resolve(_expand(str(tool_input.get("file_path") or ""), ctx), ctx.cwd)
+        return [(cat, path) for cat in classify_read(path, ctx)]
     return []
 
 
@@ -279,6 +282,140 @@ def _is_credential(path, ctx):
     # a design system's tokens (colours, spacing, durations) aren't auth tokens (JARVIS: design/tokens.json was refused)
     design = re.search(r"/(design|themes?|styles?|ui)/", path.lower()) or re.match(r"(design|theme|style)[._-]", stem.lower())
     return bool(re.search(r"(^|[._-])tokens?([._-]|$)", stem.lower())) and not (design and stem.lower() != "token")
+
+
+_CRED_PUBLIC = {".ssh": {"known_hosts", "known_hosts.old", "authorized_keys", "authorized_keys2", "config"},
+                ".aws": {"config"}}  # profiles and regions
+
+
+def classify_read(path, ctx):
+    """T-1224: a read of the home folder's credential folders and files (their public parts aside: *.pub, ~/.ssh's
+    known_hosts, authorized_keys and config, ~/.aws/config), where the path is and where it really is. A project's .env
+    or *.key is the project's own: its reads stay ordinary."""
+    for p in _variants(re.sub(r"^/+", "/", path)):
+        if p.endswith(".pub") or os.path.basename(p) in _CRED_PUBLIC.get(
+                os.path.relpath(os.path.dirname(p), ctx.home), ()):
+            continue
+        if any(_under(p, os.path.join(ctx.home, d)) for d in _CRED_DIRS) or p in {
+                os.path.join(ctx.home, f) for f in _CRED_FILES}:
+            return ["credentials"]
+    return []
+
+
+# T-1224: commands whose file arguments are read (a tool that only uses a key, ssh or ssh-add, is not a read of it)
+_READERS = {"cat", "tac", "less", "more", "most", "head", "tail", "nl", "sort", "uniq", "cut", "paste", "fold", "rev",
+            "cp", "scp", "rsync", "tar", "zip", "gzip", "bzip2", "xz", "zstd", "base64", "base32", "basenc", "xxd", "od",
+            "hexdump", "strings", "bat", "batcat", "view", "vi", "vim", "nvim", "nano", "emacs", "diff", "cmp", "iconv",
+            "grep", "egrep", "fgrep", "zgrep", "rg", "ag", "awk", "gawk", "mawk", "sed", "jq", "yq"}
+_PATTERN_FIRST = {"grep", "egrep", "fgrep", "zgrep", "rg", "ag", "awk", "gawk", "mawk", "sed", "jq", "yq"}
+_SENDERS = {"curl", "wget", "nc", "ncat", "netcat", "socat", "telnet"}
+_SKIPS = ("--exclude", "--include", "--exclude-from", "--include-from")
+_VALUE_OPTS = {"scp": ("-i", "-F", "-o", "-c", "-J", "-l", "-P", "-S", "-D", "-X") + _SKIPS,
+               "rsync": ("-e", "--rsh", "-f", "--filter", "--files-from", "--log-file", "-T", "--temp-dir") + _SKIPS,
+               "tar": ("-C", "--directory", "-X", "-T", "--files-from") + _SKIPS}
+# security review: these options read the file they name (a list of names or patterns)
+_LIST_OPTS = {"rsync": ("--files-from", "--exclude-from", "--include-from"),
+              "tar": ("-X", "-T", "--files-from", "--exclude-from", "--include-from")}
+
+
+def _read_targets(name, args):
+    """The files a reading command reads: its operands (a grep-like's first one is its pattern, unless -e or -f gives
+    it; tar's relative ones are under its -C folder), the lists tar and rsync read names from, and dd's if=."""
+    if name == "dd":
+        return [a[3:] for a in args if a.startswith("if=")]
+    if name not in _READERS:
+        return []
+    takes = _VALUE_OPTS.get(name, ())  # review: scp -i KEY uses the key; tar --exclude .ssh names what it skips
+    pos, cdir = [], None
+    for i, a in enumerate(args):
+        if name == "tar" and (i and args[i - 1] in ("-C", "--directory") or a.startswith("--directory=")):
+            cdir = a.split("=", 1)[1] if a.startswith("--directory=") else a
+        elif not a.startswith("-") and not (i and args[i - 1] in takes):
+            pos.append(a if cdir is None or a.startswith(("/", "~", "$")) else os.path.join(cdir, a))
+    if name in _PATTERN_FIRST and not any(re.match(r"-[a-zA-Z]*[ef]|--(regexp|file|expression|from-file)", a)
+                                          for a in args):
+        pos = pos[1:]
+    return pos + _opt_values(args, *_LIST_OPTS.get(name, ()))
+
+
+def _sent_files(name, args):
+    """T-1224: (files, reads stdin) a network sender attaches: curl's -d/--data*/--json @F, -F x=@F or x=<F and -T F;
+    wget's --post-file/--body-file; nc, socat and telnet send their stdin."""
+    if name in ("nc", "ncat", "netcat", "socat", "telnet"):
+        return [], True
+    if name == "wget":
+        files = _opt_values(args, "--post-file", "--body-file")
+    else:
+        files = [v[1:] for v in _opt_values(args, "-d", "--data", "--data-binary", "--data-ascii", "--json")
+                 if v.startswith("@")]
+        files += [v.split("@", 1)[1] for v in _opt_values(args, "--data-urlencode") if "@" in v.split("=", 1)[0]]
+        files += [m[1] for v in _opt_values(args, "-F", "--form") for m in [re.search(r"=[@<]([^;]*)", v)] if m]
+        files += _opt_values(args, "-T", "--upload-file")
+    stdin = [f for f in files if f in ("-", ".", "/dev/stdin")]
+    return [f for f in files if f not in stdin], bool(stdin)
+
+
+_ENVIRON = re.compile(r"/proc/[^/\s]+/environ$")
+
+
+def _prints_environment(c):
+    """env, printenv (no names), set, export -p or declare -x print the whole environment; or a read of /proc/*/environ."""
+    argv, _ = _strip_wrappers(c.argv)  # env CMD is a wrapper (it runs CMD); env with no command is left as nothing
+    if not argv:
+        return any(os.path.basename(a) == "env" for a in c.argv)
+    name, args = os.path.basename(argv[0]), argv[1:]
+    if any(_ENVIRON.search(a) for a in args):
+        return True
+    return (name == "printenv" and not _positionals(args) or name in ("set", "export", "declare", "typeset")
+            and all(a in ("-p", "-x", "-px", "-xp") for a in args) and (name != "set" or not args))
+
+
+# T-1224: chmod/chown/chgrp -R, or a mode that opens write to others, on / , the home folder or a system folder:
+# folders always the system's (anything under them), and folders whose top only is (/var, /opt, /home: what's inside
+# may be the user's). /dev, /proc and /sys count inside only recursively: chmod 666 /dev/ttyUSB0 is a dev box's chore
+_SYS_TREES = ("/etc", "/usr", "/bin", "/sbin", "/lib", "/lib32", "/lib64", "/boot", "/System", "/Library", "/private/etc")
+_DEV_TREES = ("/dev", "/proc", "/sys")
+_SYS_TOPS = ("/", "/var", "/opt", "/srv", "/home", "/root", "/Users", "/private", "/snap", "/run", "/mnt", "/media")
+_MODE_OPT = re.compile(r"--\S+|-[RfvchHLP]+")
+
+
+def _opens_mode(mode, bits):
+    """A mode that gives group or other any of `bits` ("w", or "wx"): 0775, g+w, o=rwx, +w (no who: all, less the
+    umask). Taking them away (go-w) or setting them for the owner only (u+w, 0700) is no hazard."""
+    if re.fullmatch(r"[0-7]{1,4}", mode):
+        mask = (2 if "w" in bits else 0) | (1 if "x" in bits else 0)
+        return any(int(d) & mask for d in mode.zfill(3)[-2:])
+    for cl in mode.split(","):
+        m = re.fullmatch(r"([ugoa]*)([+=])([rwxXst]*)", cl)
+        if m and set(m[3]) & set(bits + ("X" if "x" in bits else "")) and (not m[1] or set(m[1]) & set("goa")):
+            return True
+    return False
+
+
+def _mode_targets(name, args):
+    """(targets, recursive) of a chmod/chown/chgrp that changes them recursively (chmod: opening write or exec to
+    others) or opens write to others; ([], False) for any other."""
+    if name not in ("chmod", "chown", "chgrp"):
+        return [], False
+    words = [a for a in args if not _MODE_OPT.fullmatch(a) and a != "--"]
+    recursive = any(a.startswith("--rec") or re.fullmatch(r"-[RfvchHLP]*R[RfvchHLP]*", a) for a in args)
+    if any(a.startswith("--ref") for a in args) or not words:
+        return (words, True) if recursive else ([], False)
+    if name != "chmod":
+        return (words[1:], True) if recursive else ([], False)
+    if _opens_mode(words[0], "wx" if recursive else "w"):
+        return words[1:], recursive
+    return [], False
+
+
+def classify_system_mode(path, ctx, recursive=True):
+    for p in _variants(re.sub(r"^/+", "/", os.path.normpath(path))):  # //etc is /etc; a link is where it points
+        if _SAFE_DEV.match(p):  # /dev/null is 666 already
+            continue
+        if p in _SYS_TOPS + _DEV_TREES + (os.path.normpath(ctx.home),) or any(
+                _under(p, t) for t in _SYS_TREES + (_DEV_TREES if recursive else ())):
+            return ["system"]
+    return []
 
 
 # T-0340: where Codex, Gemini CLI and opencode load Foreman's hooks from (user-wide or a project's): editing one can
@@ -851,7 +988,7 @@ def _split(tokens):
             i += 1
             continue
         if re.fullmatch(r"[;&|()]+", t) and not re.fullmatch(r"&>+", t):
-            empty = not (cur.argv or cur.redirs or cur.procsub)
+            empty = not (cur.argv or cur.redirs or cur.procsub or cur.stdin)  # T-1224: $(< file) reads file
             if t == ";" and empty and cur.op in ("|", "|&", "&&", "||"):
                 i += 1  # a newline after | && || continues the command (_lines made it a ;): T-0355 review
                 continue
@@ -884,7 +1021,7 @@ def _split(tokens):
             continue
         cur.argv.append(t)
         i += 1
-    if cur.argv or cur.redirs or cur.procsub:
+    if cur.argv or cur.redirs or cur.procsub or cur.stdin:
         cmds.append(cur)
     return cmds
 
@@ -2162,7 +2299,7 @@ def _prefix_vars(shell, cmds, home=None):
     return {k: v for k, v in env.items() if counts[k] == 1 and set_first(k)}
 
 
-def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note=""):
+def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="", guess=True):
     """(category, detail) for one write target, through the variables known here (T-0175: a target with a $ in it was
     skipped), in every place the shell may be. A resolved one is named by its path, so a standing or trusted yes covers
     it as usual. One the command itself makes unknown (a name it sets in a way the guard can't follow, a command
@@ -2177,8 +2314,10 @@ def _target_cats(target, known, bare, cwds, lost, shell, ctx, classify, note="")
         for path in dict.fromkeys(_resolve(e, b) for b in ([ctx.cwd] if os.path.isabs(e) else cwds)):
             found += [(cat, f"{path}{note}") for cat in classify(path, ctx)]  # T-0180: its real path, as Edit's
             found += [(cat, f"{p}{note}") for p in _expansions(path) if p != path for cat in classify(p, ctx)]
-        if os.path.isabs(e) or not lost:
+        if os.path.isabs(e) or not lost or not guess:
             return found
+    elif not guess:  # T-1224: reads and modes judge resolved paths only
+        return found
     elif not any(not (m.group(1) or m.group(2)) or bare is None or (m.group(1) or m.group(2)) in bare
                  or _SHELL_SET.match(m.group(1) or m.group(2)) for m in _PART.finditer(t)):
         # only names it neither sets nor inherits: bash expands them to nothing (T-0374: echo x > $NOPE/<guard file>
@@ -2519,6 +2658,23 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                                                              else "") + ")" +  # refusal names fm lane merge
                                   ("; git init writes its folder: chain the cd with && or pass the path, "
                                    'git init "$S/toy"' if init else ""))
+        # T-1224: the files it reads (operands, a < redirect), what it sends out, a recursive or world-writable mode;
+        # an unknown name is guessed from the words the command names, as a write's is (security review: for f in
+        # ~/.ssh/*; do cat $f; done read every key)
+        for target in _read_targets(name, args) + ([c.stdin] if c.stdin else []):
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, " (read)")
+        if name in _SENDERS:
+            files, stdin = _sent_files(name, args)
+            for target in files:
+                found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, f" (sent by {name})")
+            if stdin and c.piped and any(_prints_environment(x) for x in chain):
+                found.append(("credentials", f"the environment piped into {name}, which sends it off the machine"))
+        targets, recursive = _mode_targets(name, args)
+        for target in targets:
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx,
+                                  lambda p, x: classify_system_mode(p, x, recursive),
+                                  f" ({name} {'recursive' if recursive else 'opening write to others'} on a system "
+                                  "folder)", guess=False)
         if name == "fm" or (re.match(r"^python[0-9.]*$", name) and any(a.endswith("/fm") for a in args[:1])):
             fm_args = args[1:] if name != "fm" else args
             if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(fm_args, fm_args[1:] + [""])):
