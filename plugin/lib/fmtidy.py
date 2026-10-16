@@ -310,8 +310,11 @@ def _roll_ledger(p, apply, actions):
         # inode, and a writer waiting on the old one would append to the unlinked file. ponytail: an older Foreman's
         # log_event never flocks, so its line can land mid-roll (lost) or between a writer's tail read and its write
         # (a false break in fm verify-ledger); closing that needs every writer upgraded.
+        side = path + ".rolling"
         with open(path, "r+b") as f:
             fcntl.flock(f, fcntl.LOCK_EX)
+            _resume_rewrite(f, side)
+            f.seek(0)
             lines = f.readlines()
             run = ([os.path.basename(a)[7:14] for a in c.ledger_files(p)[:-1]] or [None])[-1]
             months = []
@@ -326,24 +329,55 @@ def _roll_ledger(p, apply, actions):
                 rolled.setdefault(m, []).append(line if line.endswith(b"\n") else line + b"\n")
             os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
             for m, chunk in rolled.items():
-                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "ab") as a:
-                    a.writelines(chunk)
-                    a.flush()
-                    os.fsync(a.fileno())  # archived for good before the live file lets them go
+                chunk = b"".join(chunk)
+                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "a+b") as a:
+                    a.seek(max(0, a.seek(0, os.SEEK_END) - len(chunk)))
+                    if a.read() != chunk:  # equal: a roll that died before its rewrite archived these already
+                        a.write(chunk)
+                        a.flush()
+                        os.fsync(a.fileno())  # archived for good before the live file lets them go
             if cut:
-                f.seek(0)
-                f.write(b"".join(lines[cut:]))
-                f.truncate()
-        c.log_event(p, "ledger_rolled", data={m: len(v) for m, v in rolled.items()})
-        actions.append(("roll_ledger", ",".join(sorted(rolled))))
+                _rewrite(f, side, b"".join(lines), b"".join(lines[cut:]))
+        if rolled:
+            c.log_event(p, "ledger_rolled", data={m: len(v) for m, v in rolled.items()})
+            actions.append(("roll_ledger", ",".join(sorted(rolled))))
     return out
+
+
+def _rewrite(f, side, whole, keep):
+    """The live ledger `whole` cut down to its suffix `keep`, in place. The sidecar first holds keep, the old size and the
+    hash of the bytes past keep that the rewrite leaves until its truncate, so a roll that dies midway can be resumed."""
+    c.write_atomic(side, b"%d %s\n" % (len(whole), c.ledger_hash(whole[len(keep):]).encode()) + keep)
+    f.seek(0)
+    f.write(keep)
+    f.flush()
+    os.ftruncate(f.fileno(), len(keep))
+    os.fsync(f.fileno())
+    os.remove(side)
+
+
+def _resume_rewrite(f, side):
+    """T-1099 review: finish a rewrite a dead roll left. Bytes past the sidecar's keep still as they were: it never
+    truncated, so the live ledger is keep plus whatever landed past the old size since. Else it did, and the sidecar
+    is stale."""
+    try:
+        with open(side, "rb") as s:
+            head, keep = s.readline(), s.read()
+    except FileNotFoundError:
+        return
+    size, h = head.split()
+    live = f.read()
+    if c.ledger_hash(live[len(keep):int(size)]) == h.decode():
+        _rewrite(f, side, live, keep + live[int(size):])
+    else:
+        os.remove(side)
 
 
 def _ledger_month(line, month):
     """A ledger line's YYYY-MM, None when its ts is missing, unparseable or past `month` (a clock that ran ahead)."""
     try:
         ts = json.loads(line.decode("utf-8", "replace")).get("ts")
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, RecursionError):
         return None
     m = ts[:7] if isinstance(ts, str) and re.match(r"\d{4}-\d\d", ts) else None
     return m if m and m <= month else None

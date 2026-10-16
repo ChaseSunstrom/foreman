@@ -200,12 +200,38 @@ class Chain(ForemanTestCase):
             return f.read().splitlines()
 
     def test_roll_survives_a_bad_byte(self):
-        bad = b'{"ts": "2026-01-15T00:00:00Z", "event": "note", "data": "\xff"}'
+        bad, deep = b'{"ts": "2026-01-15T00:00:00Z", "event": "note", "data": "\xff"}', b"[" * 100000  # RecursionError
         with open(self.ledger, "wb") as f:
-            f.write(bad + b"\n" + json.dumps({"ts": MARCH, "event": "note"}).encode() + b"\n")
+            f.write(bad + b"\n" + deep + b"\n" + json.dumps({"ts": MARCH, "event": "note"}).encode() + b"\n")
         self.roll()
-        self.assertEqual(self.archived(), [bad], "the bad byte is archived byte for byte")
+        self.assertEqual(self.archived(), [bad, deep], "the bad byte is archived byte for byte")
         self.assertEqual(json.loads(self.lines()[0])["ts"], MARCH)
+
+    # T-1099 review: a roll that dies at any point loses no line, archives none twice and leaves a green chain
+    def crash_roll(self, target, name, again=()):
+        self.put([])
+        for ts in ("2026-01-15T00:00:00Z", "2026-01-16T00:00:00Z", MARCH):
+            with mock.patch.object(c, "now", return_value=ts):
+                c.log_event(self.p, "note")
+        with mock.patch.object(target, name, side_effect=OSError(5, "crash")), self.assertRaises(OSError):
+            self.roll()
+        c.log_event(self.p, "note", data={"after": 1})  # lands before the next roll
+        self.roll()
+        self.assertEqual([json.loads(x)["ts"] for x in self.archived()], ["2026-01-15T00:00:00Z", "2026-01-16T00:00:00Z"])
+        self.assertEqual([json.loads(x)["data"] for x in self.lines()], [{}, {"after": 1}, *again],
+                         "ledger_rolled only when lines left the live file")
+        self.assertFalse(os.path.exists(self.ledger + ".rolling"))
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_crash_before_the_rewrite_archives_nothing_twice(self):
+        self.crash_roll(c, "write_atomic", [{"2026-01": 2}])  # the live file still had them: rolled again, appended once
+
+    def test_crash_mid_rewrite_is_restored_from_the_sidecar(self):
+        self.crash_roll(os, "ftruncate")
+
+    def test_crash_after_the_rewrite_drops_the_stale_sidecar(self):
+        self.crash_roll(os, "remove")
 
     def test_unparseable_ts_rolls_with_its_neighbours(self):
         self.put(["not json"])  # a leading line with no ts goes with the first line that has one
