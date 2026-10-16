@@ -48,6 +48,15 @@ class Init(ForemanTestCase):
 
 
 class CaptureAndIntake(ForemanTestCase):
+    def test_a_missing_file_argument_is_a_usage_error(self):
+        # T-1189: fm intake --file on a path that isn't there printed a Python traceback
+        self.fm("init")
+        for argv in (["intake", "--file", "nope.txt"], ["research", "add", "x", "--file", "nope.md"]):
+            r = self.fm(*argv, check=False)
+            self.assertNotIn("Traceback", r.stderr, argv)
+            self.assertIn("nope.", r.stderr, argv)
+            self.assertNotEqual(r.returncode, 0)
+
     def test_capture_creates_captured_brief_and_inbox_view(self):
         out = self.fm("capture", "export report as CSV", "--type", "FEATURE", "--source", "discovered").stdout
         self.assertIn("T-0001", out)

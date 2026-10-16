@@ -5761,6 +5761,12 @@ def main(argv=None):
     except (UsageError, KeyError) as e:
         print(f"fm: {e.args[0] if e.args else e}", file=sys.stderr)
         return 1
+    except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
+        if not any(a == e.filename or a.endswith(f"={e.filename}") for a in argv):  # T-1189: only a file named on
+            # the command line (--file X or --file=X) is the caller's mistake; any other is a real error
+            raise
+        print(f"fm: can't read {e.filename}: {e.strerror.lower()}", file=sys.stderr)
+        return 1
     except ValueError as e:
         print(f"fm: state looks corrupt: {e} (run fm doctor)", file=sys.stderr)
         return 4

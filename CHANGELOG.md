@@ -4,6 +4,7 @@
 - `fm guard wrong` stores the case in the corpus of the Foreman checkout it runs in (with a cwd relative to that checkout), so a builder's worktree no longer writes into the main checkout's tests mid-gates (T-1175).
 - `fm task finish` refuses a task that added a `plugin/<entry>` MASTER.md's File map doesn't list, naming the entry, instead of leaving it to release-check in the full gates (T-1179).
 - The Stop drive no longer offers a builder lane for a RESEARCH task or a release, and doesn't offer a task whose `fm check --evidence` gate run is still going (T-1176).
+- A file named on an `fm` command line that can't be read (`fm intake --file nope.txt`) is a one-line error, not a Python traceback (T-1189).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
