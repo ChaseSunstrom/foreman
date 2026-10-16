@@ -576,7 +576,7 @@
      }
     },
     {
-     "case": "Round tax half to even,",
+     "case": "Round tax half to even",
      "foreman": {
       "pass": true,
       "cost": 0.087,
@@ -767,7 +767,7 @@
      }
     },
     {
-     "case": "Round tax half to even,",
+     "case": "Round tax half to even",
      "foreman": {
       "pass": true,
       "cost": 0.01,

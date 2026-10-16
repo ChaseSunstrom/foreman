@@ -197,6 +197,37 @@ class Site(unittest.TestCase):
     resolve, and every feature page carries a chart or figures from site/data/stats.json."""
     ROOT = os.path.dirname(PLUGIN)
 
+    def test_a_long_chart_label_stays_inside_its_card(self):
+        # T-1239: the harder suite's task names ("Add ledger.lexer.tokenize") ran out of the paired bars' card
+        import importlib.util
+        import re
+        spec = importlib.util.spec_from_file_location("site_build", os.path.join(self.ROOT, "site", "build.py"))
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        svg = build.pairs("Cost", "note", [("Add ledger.lexer.tokenize", 0.07, 0.08), ("Group thousands in invoice "
+                                                                                       "amounts", 0.1, 0.09)])
+        labels = re.findall(r'(<text class="lab"[^>]*>)([^<]+)<', svg)
+        self.assertEqual(len(labels), 2)
+        for tag, label in labels:
+            x, anchor = float(re.search(r' x="([\d.]+)"', tag)[1]), (re.search(r'text-anchor="(\w+)"', tag) or [0, ""])[1]
+            left = x - (len(label) * 6.5 if anchor == "end" else 0)
+            self.assertGreaterEqual(left, 0, label)
+            self.assertLessEqual(x + (0 if anchor == "end" else len(label) * 6.5), 640, label)
+
+    def test_the_benchmarks_page_opens_with_why_use_foreman(self):
+        # T-1241: a reader saw equal pass rates and asked why anyone would use Foreman; the page answers first
+        import sys
+        sys.path.insert(0, os.path.join(self.ROOT, "site"))
+        try:
+            import pages
+        finally:
+            sys.path.pop(0)
+        bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
+        kind, title, body = bench["blocks"][0]
+        self.assertEqual((kind, title), ("text", "Why use Foreman"))
+        for words in ("24 dangerous", "both sides pass", "more", "not measured yet"):
+            self.assertIn(words, body)
+
     def test_the_site_builds_and_every_local_link_resolves(self):
         import subprocess
         import sys
