@@ -1053,6 +1053,7 @@ export const register: Register = (on, options) => {
             {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
             {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
             {m?.trust && <Text color={hex(C.warn)}>trust on</Text>}
+            {v.loop?.on && <Text color={hex(C.agent)}>∞ round {v.loop.round}</Text> /* T-1057: the forever loop */}
             {sl && <Text color={hex(sl.level === 'red' ? C.err : C.warn)} wrap={cut}>{sl.level === 'red' ? '●' : '◐'} {sl.text}</Text>}
           </Box>
         </Box>
@@ -1507,6 +1508,7 @@ export const register: Register = (on, options) => {
           ...(m.drive ? [] : ([['drive off', C.warn]] as [string, number][])),
           ...(m.sensitive ? ([['sensitive', C.warn]] as [string, number][]) : []),
           ...(m.trust ? ([['trust on', C.warn]] as [string, number][]) : []),
+          ...(v.loop?.on ? ([[`∞ round ${v.loop.round}${v.loop.dry ? ` · ${v.loop.dry} dry` : ''}`, C.agent]] as [string, number][]) : []), // T-1057
         ]
       : []
     // T-1026 ('doesn't show how many things have been complete and how many are left'): the work as one bar
