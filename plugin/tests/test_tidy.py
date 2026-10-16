@@ -284,3 +284,42 @@ class TidyStateBackup(TidyCase):
         self.assertEqual(len(left), 5)
         self.assertNotIn("20200101T000000Z.tar.gz", left)
         self.assertTrue(all(n.endswith(".tar.gz") for n in left))
+
+
+class TidyHygiene(TidyCase):
+    # T-1072: fixes unused for 60 days (or losing) are listed and retired on --apply; unused cards are only listed
+    def seed_fixes(self):
+        import fmfixes
+        self.fm("fix", "add", "stale-sig: boom", "--do", "run the old thing")
+        self.fm("fix", "add", "fresh-sig: bang", "--do", "run the new thing")
+        ids = {f["sig"]: f["id"] for f in fmfixes.known(self.p)}
+        stamp = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {ids["stale-sig: boom"]: {"worked": 1, "last": stamp(time.time() - 90 * 86400)},
+                                 ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())}}}, f)
+
+    def test_dry_run_lists_the_stale_fix_only_and_apply_removes_it(self):
+        self.seed_fixes()
+        stale = [f for f in self.tidy()["findings"] if f["kind"] == "stale_fix"]
+        self.assertEqual(len(stale), 1)
+        self.assertIn("stale-sig", stale[0]["detail"])
+        self.assertEqual(len(self.fm_json("fix", "list")), 2)
+        self.tidy("--apply")
+        self.assertEqual([f["sig"] for f in self.fm_json("fix", "list")], ["fresh-sig: bang"])
+
+    def test_unused_cards_are_listed_and_a_recent_injection_counts_as_use(self):
+        import fmlib
+        n = len(fmlib.cards())
+
+        def unused():
+            f = [x for x in self.tidy()["findings"] if x["kind"] == "unused_card"]
+            self.assertEqual(len(f), 1)
+            return int(re.match(r"(\d+) of", f[0]["detail"]).group(1)), f[0]["detail"]
+        self.assertEqual(unused()[0], n)
+        name = fmlib.cards()[0]["name"]
+        c.log_event(self.p, "enforce", data={"kind": "card_injected", "card": name})
+        k, detail = unused()
+        self.assertEqual(k, n - 1)
+        self.assertNotIn(name, detail)
+        self.tidy("--apply")
+        self.assertEqual(len(fmlib.cards()), n)  # shipped files are never retired

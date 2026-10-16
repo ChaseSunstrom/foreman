@@ -239,6 +239,7 @@ def check_project(p, apply, actions):
     out += _prune_snapshots(p, apply, actions)
     out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
+    out += _hygiene(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
                                os.path.join(p.root, ".claude", "rules"), PROJECT_MD_MAX)
@@ -248,6 +249,38 @@ def check_project(p, apply, actions):
         c.update_meta(p, last_tidy=c.now())
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
+    return out
+
+
+HINT_STALE_DAYS = 60
+
+
+def _hygiene(p, apply, actions):
+    """T-1072: known fixes unused for 60 days (or losing: it keeps missing) are retired on --apply; library cards that
+    reached no edit in 60 days are listed once (a shipped card file is never retired). Lessons keep no fire record."""
+    import fmfixes
+    import fmlib
+    slug, out, st = p.slug, [], fmfixes._load(fmfixes._stats_path())
+    for f in fmfixes.known(p, st):
+        x = (st.get("fixes") or {}).get(f["id"]) or {}
+        age = c.age_days(x.get("last"))  # no record at all: unknown age, kept
+        why = "keeps missing" if fmfixes._losing(st, f["id"]) else f"unused {int(age)}d" if age and age > HINT_STALE_DAYS else ""
+        if why:
+            out.append(finding(slug, "stale_fix", "warn", f"known fix `{f['sig'][:60]}` ({why})", "fm tidy --apply retires it",
+                               auto=True))
+            if apply and fmfixes.remove(p, f["id"]):
+                actions.append(("stale_fix", f["id"]))
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - HINT_STALE_DAYS * 86400))
+    used = set()
+    for e in c.ledger_tail(p, 20000):
+        d = e.get("data") or {}
+        if e.get("event") == "enforce" and d.get("kind") == "card_injected" and str(e.get("ts") or "") >= since:
+            used.add(d.get("card"))
+    names = sorted({x["name"] for x in fmlib.cards() if isinstance(x.get("name"), str)} - used)
+    if names:  # info, not warn: a fresh project would otherwise never be clean
+        out.append(finding(slug, "unused_card", "info", f"{len(names)} of {len(fmlib.cards())} library cards reached no edit "
+                           f"here in {HINT_STALE_DAYS} days: {', '.join(names[:8])}…",
+                           "listed only: cards ship with the plugin (fm lib stats shows use)"))
     return out
 
 
