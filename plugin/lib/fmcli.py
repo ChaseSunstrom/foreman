@@ -4953,6 +4953,8 @@ def build_parser():
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+    s.add_argument("--forge", action="store_true", help="draft a script or skill for each repeat in research/ and "
+                                                        "capture a task to adopt it (T-1070)")
     s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
                                                         "the same order (T-0734; adopting it is asked first)")
 
@@ -5027,6 +5029,8 @@ def build_parser():
     b.add_argument("--coverage", action="store_true", help="which rules a command corpus is blocked by")
     b.add_argument("--mutate", action="store_true", help="drop one rule site at a time and run the guard's tests on each")
     b.add_argument("--weaken", action="store_true", help="with --mutate: negate the guarding if instead of dropping")
+    b.add_argument("--flip", action="store_true", help="with --mutate: flip one operator or constant inside a check "
+                                                       "function per mutant instead (T-1121)")
     b.add_argument("--days", type=int, default=14, help="--coverage: session-log days to read (default 14)")
     b.add_argument("--cmds", metavar="FILE", help="--coverage: one command per line instead of the session logs")
     b.add_argument("--tests", metavar="CMD", help="--mutate: the test command (default: run.py -p 'test_guard*.py')")
