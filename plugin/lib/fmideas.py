@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -361,6 +362,44 @@ def proposals(p):
     return out
 
 
+CORRECTION_REPEATS = 2
+_CORRECTION_STOP = {"nope", "wrong", "said", "meant", "why", "did", "what"}  # how a correction opens, not what it's about
+
+
+def _stem(w):
+    # ponytail: plural/-ing/-ed only ("mocks", "mocking" → "mock"); a real stemmer if clusters miss
+    s = re.sub(r"(?:ing|ed|(?<!s)s)$", "", w)
+    return s if len(s) >= 4 else w
+
+
+def correction_clusters(p):
+    """T-1042: [{words, count, said, suggest}]: key words (stemmed) shared by CORRECTION_REPEATS or more of the user's
+    corrections — two or more words, or one the user rarely says otherwise (in at most a tenth of their prompts) — each
+    with a ready fm rule add line; none a recorded veto, a rule or a declined proposal already covers."""
+    ledger = c.ledger_tail(p, 3000)
+    stems = lambda t: list(dict.fromkeys(_stem(w) for w in _key_words(t) if w not in _CORRECTION_STOP))
+    sets = [(t, stems(t)) for t in (str((e.get("data") or {}).get("text") or "") for e in ledger
+                                     if e.get("event") == "correction")]
+    prompts = [set(stems(str((e.get("data") or {}).get("text") or ""))) for e in ledger if e.get("event") == "prompt"]
+    covered = [{_stem(w) for w in v["words"]} for v in c.vetoes(p)] + \
+        [set(w) for w in c.read_meta(p).get("taste_declined") or []]
+    out, seen = [], set()
+    for w in dict.fromkeys(x for _, ws in sets for x in ws):
+        group = [(s, ws) for s, ws in sets if w in ws]
+        shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
+        rare = len(shape) > 1 or sum(shape[0] in ps for ps in prompts) <= max(len(group), len(prompts) // 10)
+        if len(group) < CORRECTION_REPEATS or not rare or tuple(sorted(shape)) in seen \
+                or any(h <= set(shape) for h in covered) \
+                or any(c.rule_hits(p, on, " ".join(shape)) for on in ("bash", "path")):
+            continue
+        seen.add(tuple(sorted(shape)))
+        said = c.fit(c.plain(group[-1][0]), 160)
+        pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(x)})" for x in shape)  # as fm rule add --from-veto
+        out.append({"words": shape, "count": len(group), "said": said,
+                    "suggest": f"fm rule add {shlex.quote(pattern)} --warn --why {shlex.quote(said)}"})
+    return out
+
+
 def taste_default(p, options):
     """(option, why): the option the user's record favours — none a recorded veto covers (unless every one is), then the
     most key words shared with their finished requests and their steers that aren't a no; a tie keeps the caller's order."""
@@ -408,14 +447,16 @@ def cmd_taste(args):
                          ("Your rework of an agent's change (taste to learn from):\n" + "\n".join(
                              f"  {f} after {t}: {s} ({h})" for f, t, s, h in rows[-args.n * 2:])) if rows else
                          "No commit of yours reworked an agent's file within two weeks of it.")
-    props = proposals(p)
+    props, corr = proposals(p), correction_clusters(p)
     if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
-        pick = props if args.which is None else props[args.which - 1:args.which] if args.which > 0 else []
+        every = props + corr  # T-1042: numbered on from the steer proposals, as fm taste lists them
+        pick = every if args.which is None else every[args.which - 1:args.which] if args.which > 0 else []
         if not pick:
             raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " "))
         if args.action == "adopt":
             for x in pick:
-                c.add_veto(p, f"{x['said']} (steered {x['count']} times)", words=x["words"])
+                how = "corrected" if "suggest" in x else "steered"
+                c.add_veto(p, f"{x['said']} ({how} {x['count']} times)", words=x["words"])
         else:
             with c.lock(p.dir):
                 meta = c.read_meta(p)
@@ -425,7 +466,7 @@ def cmd_taste(args):
         return fmcli.out(args, {"action": args.action, "proposals": pick},
                          f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
                          + "; ".join(f"never {' '.join(x['words'])}" for x in pick) + ".")
-    t = dict(taste(p, args.n), proposed=props)
+    t = dict(taste(p, args.n), proposed=props, corrections=corr)
     lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]
     for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
                        ("Steered", t["steered"]), ("Corrected", t["corrected"])):
@@ -439,6 +480,12 @@ def cmd_taste(args):
         lines += [f"  {i}. never {' '.join(x['words'])} — steered {x['count']} times, last: {x['said']}"
                   for i, x in enumerate(props, 1)]
         lines += ["Ask the user once (one AskUserQuestion, adopt first): yes → fm taste adopt (all) or fm taste adopt N; "
+                  "no → fm taste decline N."]
+    if corr:  # T-1042
+        lines += ["Corrections met twice (a rule to propose):"]
+        lines += [f"  {i}. {' '.join(x['words'])} — corrected {x['count']} times, last: {x['said']}\n     {x['suggest']}"
+                  for i, x in enumerate(corr, len(props) + 1)]
+        lines += ["Ask the user once (one AskUserQuestion, the rule first): yes → run its fm rule add line; "
                   "no → fm taste decline N."]
     fmcli.out(args, t, "\n".join(lines))
 
