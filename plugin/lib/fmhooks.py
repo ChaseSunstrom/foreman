@@ -1261,10 +1261,18 @@ def _card_note(pl, p, act):
         notes = []
         fresh = [n for n in fmlib.cards_for(p, path, text if isinstance(text, str) else "")  # T-1036: imports' cards too
                  if not _card_injected(p, act.id, n)][:2]  # review: the cap after the filter, so none is crowded out
+        sid = pl.get("session_id")
+        skey = f"session:{sid}" if isinstance(sid, str) and sid else None  # T-1193: the note is shown once per session
         for name in fresh:
+            if skey and _card_injected(p, skey, name):
+                _card_mark(p, act.id, name)  # the pointer comes once per card per task
+                notes.append(f"Foreman: stack card {name}: its notes were shown earlier this session; fm lib show {name}")
+                continue
             note = fmlib.card_avoid(name)
             if note:
                 _card_mark(p, act.id, name)
+                if skey:
+                    _card_mark(p, skey, name)
                 c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
                                                              "file": os.path.relpath(path, p.root)},
                             session=pl.get("session_id"))
