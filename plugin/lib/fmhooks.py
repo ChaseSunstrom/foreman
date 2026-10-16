@@ -637,21 +637,34 @@ def _exe(pid):
 
 
 def _hook_claude():
-    """T-1226 review: (pid, start, argv) of the Claude Code process running this hook: the nearest ancestor that isn't
-    one of this hook's own layers — python running this very hook script, or a system shell's -c launching it. No
-    process name is trusted (a copy of claude renamed bash is still the Claude Code it is). None if there is none."""
+    """T-1226/T-1233 review: (pid, start, argv) of the Claude Code process running this hook, found by a fixed shape:
+    at most one python layer (this hook's own dispatcher, running this very file by absolute path), then at most one
+    system shell (/bin or /usr/bin) whose -c command starts with this hook, then Claude Code. Nothing else is skipped
+    and no name is trusted: a nested claude, renamed or not, is the Claude Code it is. None if the chain is too short."""
     import fmbus
     me = os.path.realpath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
-    for pid, start in fmbus._chain(os.getppid(), 12):
-        argv, exe = _argv(pid), _exe(pid)
-        runs_me = bool(me) and any(os.path.realpath(a) == me for a in argv[:2] if a and not a.startswith("-"))
-        shell = (os.path.dirname(exe) in ("/bin", "/usr/bin") and os.path.basename(exe) in _SHELLS) if exe else \
-            fmbus._comm(pid) in _SHELLS
-        if (runs_me and re.match(r"python[\d.]*$", os.path.basename(exe or argv[0] or "")) or
-                shell and argv[1:2] == ["-c"] and len(argv) > 2 and "/hooks/hook" in argv[2]):
-            continue
-        return pid, start, argv
-    return None
+    chain = fmbus._chain(os.getppid(), 4)
+
+    def is_me(word):
+        return bool(me) and os.path.isabs(word) and os.path.realpath(word) == me
+
+    i = 0
+    if i < len(chain):
+        argv, exe = _argv(chain[i][0]), _exe(chain[i][0])
+        if re.match(r"python[\d.]*$", os.path.basename(exe or "")) and len(argv) > 1 and is_me(argv[1]):
+            i += 1
+    if i < len(chain):
+        argv, exe = _argv(chain[i][0]), _exe(chain[i][0])
+        try:
+            first = shlex.split(argv[2])[0] if len(argv) > 2 and argv[1] == "-c" else ""
+        except ValueError:
+            first = ""
+        if (os.path.dirname(exe or "") in ("/bin", "/usr/bin") and os.path.basename(exe) in _SHELLS) and is_me(first):
+            i += 1
+    if i >= len(chain):
+        return None
+    pid, start = chain[i]
+    return pid, start, _argv(pid)
 
 
 def _sent_by_program(hc=None):

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The Claude Code process behind a hook is found by a fixed shape: at most this hook's own python dispatcher (the same file by absolute path), then at most one system shell whose `-c` starts with the hook, then Claude Code. Nothing else is skipped and no process name or argv substring is trusted, so a disguised nested claude can't pass for the asking session (T-1236)
 - A neutral benchmark suite: `bench/spec-suite/make.py DIR` builds a small repo of eight fully specified tasks (durations, an LRU cache, SemVer precedence, text tables, ranges, dotted paths, a token bucket, CSV lines) whose hidden tests check only what each commit message states; `--check` proves each fail-to-pass and the build reproducible (T-1232)
 - A chat yes now answers a pending `fm ask` only when it is typed into the same Claude Code process that ran the ask. That process is named exactly: the hook's nearest ancestor that isn't its own python or the system shell launching it, never trusted by name. A nested or resumed Claude Code (renamed, under a pty, with a positional prompt) is always another process (T-1233)
 - An unattended run (claude -p, fm run, a bench replay) is told at start to end with a reply that names each check it ran and its result, and anything it left undone: the duel's judge reads only that reply (T-1228)
