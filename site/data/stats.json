@@ -1,13 +1,13 @@
 {
  "generated": "2026-10-16",
  "totals": {
-  "tasks_done": 722,
-  "evidence": 2662,
+  "tasks_done": 723,
+  "evidence": 2667,
   "proofs": 250,
-  "commits": 562,
-  "gate_runs": 549,
-  "subagents": 535,
-  "lanes_merged": 130,
+  "commits": 563,
+  "gate_runs": 550,
+  "subagents": 536,
+  "lanes_merged": 131,
   "findings": 134,
   "guard_blocks": 293,
   "captures": 513,
@@ -104,23 +104,23 @@
   },
   {
    "day": "2026-10-16",
-   "FEATURE": 100,
+   "FEATURE": 101,
    "FIX": 63,
    "CLEAN": 13,
    "PERFORMANCE": 8,
    "SECURITY": 13,
    "RESEARCH": 4,
-   "lanes": 85,
-   "evidence": 727
+   "lanes": 86,
+   "evidence": 732
   }
  ],
  "tiers": {
   "S": 378,
-  "M": 299,
+  "M": 300,
   "L": 45
  },
  "types": {
-  "FEATURE": 331,
+  "FEATURE": 332,
   "FIX": 236,
   "CLEAN": 41,
   "PERFORMANCE": 21,
@@ -152,7 +152,7 @@
   }
  },
  "subagents": {
-  "fm-builder": 222,
+  "fm-builder": 223,
   "fm-reviewer": 146,
   "general-purpose": 76,
   "fm-recon": 71,
@@ -160,8 +160,8 @@
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 549,
-  "median": 75.1
+  "runs": 550,
+  "median": 75.2
  },
  "releases": [
   {
@@ -365,22 +365,22 @@
      "case": "csvlite",
      "foreman": {
       "pass": true,
-      "cost": 0.062,
+      "cost": 0.06,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 17.3333,
-      "turns": 3.6667,
+      "seconds": 15.0,
+      "turns": 3.0,
       "error": false
      },
      "bare": {
       "pass": true,
-      "cost": 0.051,
+      "cost": 0.055,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 15.6667,
-      "turns": 3.3333,
+      "seconds": 14.3333,
+      "turns": 4.0,
       "error": false
      }
     },
@@ -388,22 +388,22 @@
      "case": "tokenbucket",
      "foreman": {
       "pass": true,
-      "cost": 0.068,
+      "cost": 0.078,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 19.6667,
-      "turns": 3.0,
+      "seconds": 21.6667,
+      "turns": 3.3333,
       "error": false
      },
      "bare": {
       "pass": true,
-      "cost": 0.067,
+      "cost": 0.078,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 23.0,
-      "turns": 4.0,
+      "seconds": 22.6667,
+      "turns": 4.6667,
       "error": false
      }
     },
@@ -411,22 +411,22 @@
      "case": "dotted",
      "foreman": {
       "pass": true,
-      "cost": 0.077,
+      "cost": 0.076,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 22.0,
+      "seconds": 20.6667,
       "turns": 3.0,
       "error": false
      },
      "bare": {
       "pass": true,
-      "cost": 0.07,
+      "cost": 0.073,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 22.0,
-      "turns": 3.6667,
+      "seconds": 23.3333,
+      "turns": 3.3333,
       "error": false
      }
     },
@@ -444,12 +444,12 @@
      },
      "bare": {
       "pass": true,
-      "cost": 0.066,
+      "cost": 0.068,
       "score": null,
       "runs": 3,
       "passed": 3,
       "seconds": 19.0,
-      "turns": 4.6667,
+      "turns": 4.0,
       "error": false
      }
     },
@@ -457,12 +457,35 @@
      "case": "table",
      "foreman": {
       "pass": true,
-      "cost": 0.063,
+      "cost": 0.06,
       "score": null,
       "runs": 3,
       "passed": 3,
       "seconds": 17.3333,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.057,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.0,
       "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "semver",
+     "foreman": {
+      "pass": true,
+      "cost": 0.073,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.3333,
+      "turns": 4.3333,
       "error": false
      },
      "bare": {
@@ -471,31 +494,8 @@
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 22.0,
-      "turns": 4.3333,
-      "error": false
-     }
-    },
-    {
-     "case": "semver",
-     "foreman": {
-      "pass": true,
-      "cost": 0.067,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 15.6667,
-      "turns": 3.0,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
-      "cost": 0.063,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 21.0,
-      "turns": 4.0,
+      "seconds": 16.0,
+      "turns": 3.3333,
       "error": false
      }
     },
@@ -503,22 +503,22 @@
      "case": "lru",
      "foreman": {
       "pass": true,
-      "cost": 0.059,
+      "cost": 0.063,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 13.6667,
-      "turns": 3.0,
+      "seconds": 14.0,
+      "turns": 3.6667,
       "error": false
      },
      "bare": {
       "pass": true,
-      "cost": 0.052,
+      "cost": 0.055,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 13.3333,
-      "turns": 3.6667,
+      "seconds": 15.3333,
+      "turns": 4.3333,
       "error": false
      }
     },
@@ -526,27 +526,409 @@
      "case": "duration",
      "foreman": {
       "pass": true,
-      "cost": 0.064,
+      "cost": 0.069,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 18.3333,
-      "turns": 4.0,
+      "seconds": 19.3333,
+      "turns": 4.3333,
       "error": false
      },
      "bare": {
       "pass": true,
-      "cost": 0.063,
+      "cost": 0.058,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 25.0,
-      "turns": 5.3333,
+      "seconds": 18.0,
+      "turns": 4.3333,
       "error": false
      }
     }
    ],
    "name": "quality"
+  },
+  {
+   "model": "sonnet",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "Add ledger.lexer.tokenize",
+     "foreman": {
+      "pass": true,
+      "cost": 0.073,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.6667,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.081,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 24.3333,
+      "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Round tax half to even,",
+     "foreman": {
+      "pass": true,
+      "cost": 0.087,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 7.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.084,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.3333,
+      "turns": 9.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.interval.Interval",
+     "foreman": {
+      "pass": true,
+      "cost": 0.099,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 29.0,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.081,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.6667,
+      "turns": 3.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Typed invoice lines take prices",
+     "foreman": {
+      "pass": true,
+      "cost": 0.087,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.3333,
+      "turns": 6.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.079,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 24.3333,
+      "turns": 7.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.ini.parse",
+     "foreman": {
+      "pass": true,
+      "cost": 0.082,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 26.0,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.071,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 3.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Export file names",
+     "foreman": {
+      "pass": true,
+      "cost": 0.078,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 20.0,
+      "turns": 5.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.05,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 14.6667,
+      "turns": 3.3333,
+      "error": false
+     }
+    },
+    {
+     "case": "Wrap text with indents, paragraphs",
+     "foreman": {
+      "pass": true,
+      "cost": 0.076,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 23.0,
+      "turns": 5.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.076,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.3333,
+      "turns": 5.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Group thousands in invoice amounts",
+     "foreman": {
+      "pass": true,
+      "cost": 0.08,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.0,
+      "turns": 7.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.068,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 18.6667,
+      "turns": 6.3333,
+      "error": false
+     }
+    }
+   ],
+   "name": "hard"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "Add ledger.lexer.tokenize",
+     "foreman": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 33.3333,
+      "turns": 7.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 31.3333,
+      "turns": 8.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Round tax half to even,",
+     "foreman": {
+      "pass": true,
+      "cost": 0.01,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 38.3333,
+      "turns": 14.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 24.6667,
+      "turns": 10.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.interval.Interval",
+     "foreman": {
+      "pass": true,
+      "cost": 0.011,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 45.3333,
+      "turns": 7.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.01,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 44.6667,
+      "turns": 9.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Typed invoice lines take prices",
+     "foreman": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 38.0,
+      "turns": 8.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 21.3333,
+      "turns": 7.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.ini.parse",
+     "foreman": {
+      "pass": true,
+      "cost": 0.01,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 42.0,
+      "turns": 8.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 35.6667,
+      "turns": 6.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Export file names",
+     "foreman": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 28.6667,
+      "turns": 7.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 26.6667,
+      "turns": 8.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Wrap text with indents, paragraphs",
+     "foreman": {
+      "pass": true,
+      "cost": 0.015,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 63.3333,
+      "turns": 14.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 38.0,
+      "turns": 9.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Group thousands in invoice amounts",
+     "foreman": {
+      "pass": true,
+      "cost": 0.01,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 39.0,
+      "turns": 14.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 35.0,
+      "turns": 12.3333,
+      "error": false
+     }
+    }
+   ],
+   "name": "hard-haiku"
   }
  ]
 }
