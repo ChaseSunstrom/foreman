@@ -149,6 +149,9 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   pipeline, `fm task evidence`/`fm task log` in a lane): that's the harness, not a bug. Don't retry or rephrase it;
   run what it allows, commit, and list each refused check in your report as one for the main thread to run after the
   merge.
+- Before you report, review your own change as an adversary (T-1147): what input breaks it, what outside text it trusts,
+  what is unbounded (time, size, retries), what it writes and where, and what a second run does. Fix what you find, or
+  list it under a Self-review section of your report.
 - Return: branch, commit sha, each criterion ✓/✗ with its evidence, what's unfinished, files to read first, and the
   weakest link: the criterion whose evidence you trust least, and why (T-0651)."""
 
