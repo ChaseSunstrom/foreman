@@ -2489,29 +2489,39 @@ def deferral_due(root, revisit, today):
         return True
 
 
-def fired_decisions(p):
-    """T-0247: [(date, decision, why)] for decisions whose revisit trigger fired and no later row settled
-    (fm decide … --revisited WORDS, or --reverses WORDS)."""
+def _decision_rows(p):
+    """[(date, leading tags, decision)]: only the tag run fm wrote counts, never words in the free text."""
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
             rows = [x for x in f if x.startswith("| 2")]
     except OSError:
         return []
-    out, today, top = [], now()[:10], os.path.realpath(p.root)
-    parsed = []  # (date, leading tags, decision): only the tag run fm wrote counts, never words in the free text
+    parsed = []
     for row in rows:
         cells = re.split(r"(?<!\\)\|", row)
         if len(cells) >= 3:
             tags, decision = re.match(r"^((?:\[[^\]]*\] )*)(.*)$", cells[2].strip()).groups()
             parsed.append((cells[1].strip(), tags, decision))
+    return parsed
+
+
+def _settled(parsed, i):
+    """A later row's [revisited: W] or [reverses: W] names row i (whole words, 4+ characters)."""
+    decision = parsed[i][2].lower()
+    words = [w.strip().lower() for _, t, _ in parsed[i + 1:]
+             for w in re.findall(r"\[(?:revisited|reverses): ([^\]]+)\]", t)]
+    return any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", decision) for w in words)
+
+
+def fired_decisions(p):
+    """T-0247: [(date, decision, why)] for decisions whose revisit trigger fired and no later row settled
+    (fm decide … --revisited WORDS, or --reverses WORDS)."""
+    out, today, top = [], now()[:10], os.path.realpath(p.root)
+    parsed = _decision_rows(p)
     for i, (date, tags, decision) in enumerate(parsed):
         m = _REVISIT_TAG.search(tags)
-        if not m:
+        if not m or _settled(parsed, i):
             continue
-        words = [w.strip().lower() for _, t, _ in parsed[i + 1:]
-                 for w in re.findall(r"\[(?:revisited|reverses): ([^\]]+)\]", t)]
-        if any(len(w) >= 4 and re.search(r"(?<!\w)" + re.escape(w) + r"(?!\w)", decision.lower()) for w in words):
-            continue  # settled by a later row naming it (whole words, 4+ characters)
         if m.group(1):
             why = f"due {m.group(1)}" if today >= m.group(1) else None
         else:
@@ -2524,6 +2534,16 @@ def fired_decisions(p):
                 why = f"{m.group(2)} is gone"
         if why:
             out.append((date, decision, why))
+    return out
+
+
+def expired_decisions(p):
+    """T-1084: [(date, decision, sunset)] for decisions whose [sunset: DATE] has passed."""
+    out, today, parsed = [], now()[:10], _decision_rows(p)
+    for i, (date, tags, decision) in enumerate(parsed):
+        s = re.search(r"\[sunset: (\d{4}-\d\d-\d\d)\]", tags)
+        if s and s.group(1) <= today and not _settled(parsed, i):
+            out.append((date, decision, s.group(1)))
     return out
 
 
