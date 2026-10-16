@@ -46,6 +46,10 @@ export const running = new Map<string, { icon: string; verb: string; target: str
 export type FeedItem = { id: string; agent: string | null; icon: string; verb: string; target: string; color: number
   at: number; end?: number; ok?: boolean }
 export const feed: FeedItem[] = []
+// T-1090: what each node of the live tree last said (a model step's first line), keyed by subagent id ('' for this
+// session): the newest three, the one still streaming marked live
+export type Said = { text: string; at: number; live: boolean }
+export const said = new Map<string, Said[]>()
 export const TREE_MS = 2 * 60 * 1000 // the band's full tree stays this long after the last call
 export const laneOf = (icon: string): Lane =>
   icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' ? 'agent' : icon === '✦' ? 'skill' : icon === '◍' || icon === '⬡' ? 'web' : 'read'

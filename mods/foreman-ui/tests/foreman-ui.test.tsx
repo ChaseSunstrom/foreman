@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, narration, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -2171,4 +2171,65 @@ test('the forever loop shows its round in the pane head and the band (T-1057)', 
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
   expect(await ui.find({ type: 'Text', text: /∞ round 2/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('each node of the live tree holds its own narration, fewer lines as agents multiply; a divider tops it (T-1090)', async ($, on) => {
+  // 'I want the stuff for the SESSION/EACH SUB AGENT THING to hold a FEW inline chat stuff … not MY CHAT' / 'theres no
+  // bar/gap seperating the this session from the chat UI'
+  world(on, [{ ...CALM, worktrees: [{ path: '/w/ag1', branch: 'wt-ag1', task: 'T-0007', agent: 'ag1', age_s: 5, ahead: 1 }] }])
+  on('turn.step', async function* ($, e) {
+    const said = e.agentId === 'ag1' ? 'Scanning the parser for the --days flag.' : e.agentId === 'ag2'
+      ? 'Reading the stats branch.' : 'Writing the failing test first, then the fix.'
+    yield { kind: 'text', index: 0, text: said.slice(0, 9) } as never
+    yield { kind: 'text', index: 0, text: said.slice(9) } as never
+    return { turnId: e.turnId, index: e.index, answer: said, toolUses: [] } as never
+  })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  const got: unknown[] = []
+  for await (const ch of $.turn.step({ turnId: 't1', index: 0, model: 'm', messageCount: 1 } as never)) got.push(ch)
+  expect(got.length).toBe(2) // the tap forwards every chunk unchanged
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q', description: 'Run the tests' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/b.py', agentId: 'ag1' } as never)
+  for await (const _ of $.turn.step({ turnId: 't1', index: 1, model: 'm', messageCount: 1, agentId: 'ag1' } as never)) void _
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await ui.find({ type: 'Raster', key: 'tree-rule' })).toBeDefined() // the divider between the chat and the tree
+  expect(await ui.find({ type: 'Text', text: /Writing the failing test first/ })).toBeDefined() // under this session
+  expect(await ui.find({ type: 'Text', text: /Scanning the parser/ })).toBeDefined() // under its subagent
+  expect(await ui.find({ type: 'Text', text: /⎇ wt-ag1/ })).toBeDefined() // a builder's node names its worktree
+  await ui.unmount()
+})
+
+test('kit: a narration line is the first thing said, one line, markdown marks gone, names kept (T-1090)', () => {
+  expect(narration('**Done.** Now the parser.\n\n- Changed: `a.py`')).toBe('Done. Now the parser.')
+  expect(narration('Editing fm_ui.py for C# and __init__')).toBe('Editing fm_ui.py for C# and __init__') // review
+  expect(narration('## Plan\nx')).toBe('Plan')
+  expect(narration('   \n\n')).toBe('')
+  expect(narration('x'.repeat(500)).length).toBeLessThanOrEqual(200)
+})
+
+test('review (T-1090): the tap is cheap on a long one-line step, the session keeps its words past 40 agents, and words shrink as agents multiply', async ($, on) => {
+  world(on, [CALM])
+  let steps = 0
+  on('turn.step', async function* ($, e) {
+    steps++
+    const said = e.agentId ? `Agent ${e.agentId} is on it.` : 'This session plans the work.'
+    for (let i = 0; i < 2000; i++) yield { kind: 'text', index: 0, text: i ? 'x' : said } as never // a long single line
+    return { turnId: e.turnId, index: e.index, answer: said + 'x'.repeat(1999), toolUses: [] } as never
+  })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  let n = 0
+  for await (const _ of $.turn.step({ turnId: 't1', index: 0, model: 'm', messageCount: 1 } as never)) n++
+  expect(n).toBe(2000)
+  for (let a = 0; a < 45; a++)
+    for await (const _ of $.turn.step({ turnId: 't1', index: a + 1, model: 'm', messageCount: 1, agentId: `ag${a}` } as never)) void _
+  for (const a of ['ag41', 'ag42', 'ag43', 'ag44']) await $.tool.call({ tool: 'Read', file_path: `/repo/${a}.py`, agentId: a } as never)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await ui.find({ type: 'Text', text: /This session plans the work/ })).toBeDefined() // evicted last, not first
+  const words = (await ui.findAll({ type: 'Text', text: /^Agent ag4\d is on it/ })).length
+  expect(words).toBeGreaterThan(0)
+  expect(words).toBeLessThanOrEqual(4) // one line each with four agents, never two
+  await ui.unmount()
+  expect(steps).toBe(46)
 })

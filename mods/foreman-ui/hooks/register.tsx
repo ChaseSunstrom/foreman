@@ -26,6 +26,7 @@ import {
   ganttCells,
   heat,
   ruleCells,
+  narration,
   stackCells,
   stepCells,
   hex,
@@ -48,7 +49,7 @@ import {
   toolFace,
   typeColor,
 } from './kit'
-import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, TREE_MS, cfg, feed, laneOf, running, starts, ticks, took } from './state'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, TREE_MS, cfg, feed, laneOf, running, said, starts, ticks, took } from './state'
 import type { FeedItem } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
@@ -171,6 +172,7 @@ const waiting = (v: FmView | null) =>
 let fmPath: string | null = null
 let marks = ''
 let isDirty = true
+let saidSeq = 0 // T-1090: one id per model step, for its narration entry
 let isBusy = false
 let lastFull = 0
 let poll: { cancel: () => void } | null = null
@@ -375,9 +377,9 @@ async function capture($: EngineInterface, text: string) {
 
 // T-0711: one steer for every live session here and on the remotes the user added (fm conductor steer)
 async function steer($: EngineInterface, text: string) {
-  const said = text.trim()
-  if (!said) return
-  const r = await run($, ['conductor', 'steer', said])
+  const words = text.trim()
+  if (!words) return
+  const r = await run($, ['conductor', 'steer', words])
   $.ui.toast(r.exitCode === 0 ? `↯ ${lastLine({ stdout: r.stdout }) || 'Steer sent'}` : `fm conductor: ${lastLine({ stderr: r.stderr })}`)
   await refresh($)
 }
@@ -537,6 +539,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
+    said.clear() // T-1090: and so do its nodes' words
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
@@ -675,6 +678,42 @@ export const register: Register = (on, options) => {
       agentCalls.delete(id)
       agentOf.delete(id)
       isDirty = true
+    }
+  })
+
+  // T-1090 ('the this session has a few inlined/summarized things for what YOURE doing, and each subagent has its own'):
+  // every model step's text, per subagent (agentId; none on the main loop), feeds its node in the live tree. A pure
+  // tap: each chunk goes on unchanged, and a failure here never touches the stream.
+  on('turn.step', async function* ($, e, next) {
+    const key = e.agentId ?? ''
+    const at = ++saidSeq // this step's entry (review: no clock round trip before the first chunk)
+    let acc = ''
+    let settled = false
+    const note = (text: string, live: boolean) => {
+      try {
+        const line = narration(text)
+        const list = (said.get(key) ?? []).filter(x => x.at !== at)
+        if (line) list.push({ text: line, at, live })
+        said.delete(key) // review: re-inserted last, so eviction takes the least recent node, never this session
+        said.set(key, list.slice(-3))
+        if (said.size > 40) said.delete([...said.keys()].find(k => k !== '')!) // this session's own words always stay
+      } catch { /* the tree is a view; the stream is not ours to break */ }
+    }
+    const stream = next(e)
+    try {
+      for await (const ch of stream) {
+        if (acc.length < 400 && (ch as { kind?: unknown }).kind === 'text') { // review: the line is cut at 200; stop there
+          acc += String((ch as { text?: unknown }).text ?? '')
+          note(acc, true)
+        }
+        yield ch
+      }
+      const r = await stream.result
+      note(typeof r?.answer === 'string' && r.answer ? r.answer : acc, false)
+      settled = true
+      return r
+    } finally {
+      if (!settled) note(acc, false) // an abort or error: the line stops spinning
     }
   })
 
@@ -965,13 +1004,18 @@ export const register: Register = (on, options) => {
     // T-1039 ('sticky so the text doesn't scroll the chat'): one height for the turn, padded, with a blank row under it
     const tree = (rows: number, sticky = true) => {
       treeDrawn = sticky
-      const els = liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f,
-        width: e.props.bodyColumns, rows: sticky ? Math.max(1, rows - 1) : rows, turnMs: turnStartedAt ? treeAt - turnStartedAt : 0,
+      const els = liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f, said, worktrees: v.worktrees ?? [],
+        width: e.props.bodyColumns, rows: sticky ? Math.max(1, rows - 2) : rows, turnMs: turnStartedAt ? treeAt - turnStartedAt : 0,
         task: a ? `${a.id} · step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}${cur ? ` ${cur.text}` : ''}` : 'no task in focus' })
       if (!sticky) return <Box key="fm-band-tree" flexDirection="column">{els}</Box>
-      treeTall = Math.min(Math.max(1, rows - 1), Math.max(treeTall, els.length, 5))
+      treeTall = Math.min(Math.max(1, rows - 2), Math.max(treeTall, els.length, 5))
+      const { Raster } = $.ui.resolve(e)
       return (
         <Box key="fm-band-tree" flexDirection="column">
+          {/* T-1090 ('theres no bar/gap seperating the this session from the chat UI'): a fading rule over the tree */}
+          {e.surface === 'terminal'
+            ? <Raster key="tree-rule" columns={Math.max(10, e.props.bodyColumns - 1)} rows={1} cells={ruleCells(Math.max(10, e.props.bodyColumns - 1), C.accent)} />
+            : null}
           {els}
           {Array.from({ length: Math.max(0, treeTall - els.length) }, (_, i) => <Text key={`tree-pad-${i}`}> </Text>)}
           <Box key="tree-gap" height={1} />
