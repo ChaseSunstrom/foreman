@@ -433,6 +433,9 @@ def cmd_rule(args):
         except ValueError as e:
             raise UsageError(f"fm rule add: {e}")
         n = len(c.rules(p))
+        if args.moves:  # T-1059: a pre-registered trial, graded in fm digest
+            import fmtrials
+            fmtrials.add(p, f"rule add {pattern}", args.moves, args.by)
         return out(args, dict(rec, n=n), f"Rule {n}: {rec['action']} {rec['on']} matching {rec['pattern']}"
                                          f"{' — ' + rec['why'] if rec['why'] else ''}.")
     v = c.rules(p)
@@ -4333,7 +4336,7 @@ HELP_TIERS = [
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget risk sync share notify compact-output complete wiring "
                              "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
-    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay backtest bench evolve"),
+    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay backtest bench evolve trial"),
     ("Running elsewhere", "lane page serve run session claude agents night draft scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -4984,6 +4987,9 @@ def build_parser():
     g.add_argument("--warn", action="store_true", help="a note on a matching call, which still runs")
     s.add_argument("--why", help="what the refusal or note says")
     s.add_argument("--from-veto", type=int, metavar="N", help="the rule from veto N (fm vetoes): its key words")
+    s.add_argument("--moves", metavar="METRIC", help="the ledger metric this should lower (e.g. corrections): a trial fm digest grades")
+    s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
+    s = add("trial", lazy("fmtrials", "cmd_trial"), help="self-changes registered with --moves, graded once due (T-1059)")
     s = add("surprise", cmd_surprise, help="log where the model of the code was wrong: \"<expected> → <observed>\"")
     s.add_argument("text", nargs="+")
     s.add_argument("--task", help="the task it came up in (default: the active one)")
@@ -5335,6 +5341,8 @@ def build_parser():
     s.add_argument("--live", help="reuse these earlier live results instead of replaying live again")
     s.add_argument("--budget", type=float, default=3.0)
     s.add_argument("--timeout", type=int, default=30)
+    s.add_argument("--moves", metavar="METRIC", help="the ledger metric a kept change should lower: a trial fm digest grades (T-1059)")
+    s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
 
     s = add("oracle", lazy("fmideas", "cmd_oracle"), help="behaviour examples and ambiguities from the task's spec alone, "
                                                            "before the code is read (T-0226)")
