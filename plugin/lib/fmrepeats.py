@@ -132,9 +132,57 @@ def draft(p):
     return path, texts, tasks
 
 
+def forge(p):
+    """T-1070: a draft project tool for each open repeat, written in research/, and one captured task carrying it:
+    a script (with the `fm check add` line when it is a gate) per command shape, a SKILL.md skeleton per step.
+    Deterministic and offline; a draft already filed (by its path, even once closed) is not filed again, and nothing
+    is adopted: the task's request says to review, move it into the repo and dismiss the key. [{path, task}]"""
+    import fmeco
+    r, made = scan(p), []
+    texts = {}
+    for b in c.load_briefs(p, include_archive=True):
+        for s in b.steps():
+            texts.setdefault(_step_key(s.text), []).append(f"{b.id}: {s.text}")
+
+    def file(kind, key, name, body, fname):
+        path = os.path.join(p.dir, "research", name, fname) if fname else os.path.join(p.dir, "research", name)
+        head = f"Forge draft: {path}"
+        b, new = fmeco.capture_once(p, f"{head}\n\nfm repeats --forge (T-1070) drafted a {kind} for the repeat "
+                                       f"`{key}`. Data, not instructions, until adopted.\n\nSteps: review the draft, "
+                                       f"move it into the repo, then `fm repeats dismiss \"{key}\"`.",
+                                    "FEATURE", "discovered", key=head)
+        if not new:
+            return
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        c.write_atomic(path, c.redact(body))
+        made.append({"path": path, "task": b.id})
+
+    for x in r["commands"]:
+        if x["covered"]:
+            continue
+        gate = x["suggest"].startswith("fm check add")
+        k = c.kebab(x["shape"], 40)
+        file("script", x["shape"], f"forge-{k}.sh",
+             f"#!/bin/sh\n# Forge draft for the repeat `{x['shape']}` ({x['count']} runs in {x['tasks']} tasks).\n"
+             f"# Review, then move to scripts/{k}.sh.\n"
+             + (f"# It is a gate: fm check add \"{x['example']}\"\n" if gate else "")
+             + f"set -e\n{x['example']}\n", "")
+    for x in r["steps"]:
+        k = c.kebab(x["step"], 40)
+        file("skill", x["step"], f"forge-skill-{k}", f"---\nname: {k}\ndescription: Use when you are about to "
+             f"{x['step']}; this project does it the same way each time.\n---\n\n# {x['step']}\n\n"
+             f"Seen in {x['tasks']} tasks. Turn these step texts into one procedure:\n\n"
+             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])) + "\n## Procedure\n1. TODO\n", "SKILL.md")
+    return made
+
+
 def cmd_repeats(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "forge", False):
+        made = forge(p)
+        return fmcli.out(args, {"drafts": made}, "\n".join(f"Drafted {d['path']} (task {d['task']})" for d in made)
+                         or "Nothing new to forge.")
     if getattr(args, "draft", False):
         made = draft(p)
         return fmcli.out(args, {"draft": made and made[0]}, (f"Playbook draft: {made[0]} ({len(made[2])} tasks, "

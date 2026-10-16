@@ -91,3 +91,23 @@ class Repeats(ForemanTestCase):
         self.fm("init", cwd=fresh)
         self.assertIn("Nothing repeated", self.fm("repeats", cwd=fresh).stdout)
         self.assertEqual(self.fm_json("repeats", cwd=fresh), {"commands": [], "steps": []})
+
+    def test_forge_drafts_a_script_and_a_skill_and_files_one_task_each_once(self):
+        # T-1070: nothing is adopted; the draft sits in research/ and a captured task carries its path
+        paths = {d["path"]: d["task"] for d in self.fm_json("repeats", "--forge")["drafts"]}
+        script = next(x for x in paths if x.endswith(".sh") and "npm" in open(x).read())
+        self.assertIn("npm run build && npm run lint", open(script).read())
+        skill = next(x for x in paths if x.endswith("SKILL.md") and "Write a failing test" in open(x).read())
+        gate = next(x for x in paths if x.endswith(".sh") and "unittest" in open(x).read())
+        self.assertIn("fm check add", open(gate).read())
+        p = c.find_project(self.repo)
+        self.assertEqual(len([b for b in c.load_briefs(p) if script in b.section("Raw request")]), 1)
+        self.assertEqual(self.fm_json("repeats", "--forge")["drafts"], [], "a second run files nothing new")
+        self.assertEqual(len([b for b in c.load_briefs(p) if script in b.section("Raw request")]), 1)
+
+    def test_forge_skips_dismissed_shapes(self):
+        self.fm("repeats", "dismiss", "npm run build && npm run lint")
+        self.fm("repeats", "dismiss", "Write a failing test.")
+        for d in self.fm_json("repeats", "--forge")["drafts"]:
+            self.assertNotIn("npm run", open(d["path"]).read())
+            self.assertNotIn("Write a failing test", open(d["path"]).read())
