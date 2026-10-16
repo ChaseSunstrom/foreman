@@ -350,9 +350,10 @@ def note_failure(p, task, text):
                                              f"retrying variations, diagnose the cause first "
                                              f"(skills/intake/references/debugging.md): write each suspicion down "
                                              f"(fm task hypo {task} add \"<claim>\" --probe \"<cmd>\") and test it "
-                                             f"(fm task hypo {task} mark N ruled-out|confirmed --run \"<cmd>\"), or "
-                                             f"get fresh eyes: foreman:fm-debugger with the failure, what is ruled "
-                                             f"out and the files."]))
+                                             f"(fm task hypo {task} mark N ruled-out|confirmed --run \"<cmd>\" "
+                                             f"--why \"<reason>\"), or get fresh eyes: foreman:fm-debugger with the "
+                                             f"failure, the files and what is ruled out (fm task hypo {task} ruled "
+                                             f"--write)."]))
     return hint
 
 

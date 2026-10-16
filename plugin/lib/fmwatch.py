@@ -127,6 +127,8 @@ def _history(events, by_id, n=60):
             mark, text = ("✔", "granted") if kind == "approval_granted" else ("✖", "declined")
         elif kind == "task_done":
             mark, text = "■", "done"
+        elif kind == "outcome" and d.get("survival") == "lost":  # T-1060: a close undone within 30 days (a first
+            mark, text = "✗", "lost"  # settle grades hundreds; the survivors would flood the 60 rows)
         else:
             continue
         b = by_id.get(t)

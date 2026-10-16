@@ -8,11 +8,13 @@ import hashlib
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 
 import fmbudget
 import fmcore as c
@@ -287,7 +289,7 @@ def user_voice(p, n=20):
 HOUSEKEEPING = re.compile(r"(?i)\s*(folded into|done in|fixed (inline )?in|duplicate|merged into|superseded|covered by)\b")
 
 
-def taste(p, n=8):
+def taste(p, n=8, ledger=None):
     """T-0112: what the user's choices say about their taste: their requests that were finished (kept), work dropped
     and the reason given, and their steers and corrections, newest last (briefs, archive included, and the ledger)."""
     briefs = sorted(c.load_briefs(p, include_archive=True), key=lambda b: b.meta.get("created") or "")
@@ -296,7 +298,7 @@ def taste(p, n=8):
     def why(b):
         return next((fit(ln.split("dropped:", 1)[1], 160) for ln in reversed(b.section("Log").splitlines())
                      if "dropped:" in ln), "")
-    ledger = c.ledger_tail(p, 3000)
+    ledger = _ledger(p, ledger)
     notes = [str((e.get("data") or {}).get("text") or "") for e in ledger if e.get("event") == "note"]
     return {"kept": [{"id": b.id, "type": b.type, "title": fit(b.title, 90)} for b in briefs
                      if b.status == "done" and b.meta.get("source") == "user"][-n:],
@@ -342,22 +344,71 @@ def _key_words(text):
                               if w not in c._VETO_STOP and w not in _STEER_STOP))
 
 
-def proposals(p):
+def _stem(w):
+    # ponytail: -s/-es/-ing/-ed only ("mocks", "mocking" → "mock", "branches" → "branch"); a real stemmer if clusters miss
+    s = re.sub(r"(?:ing|ed|(?:(?<=ss)|(?<=[xz])|(?<=[cs]h))es|(?<![su])s)$", "", w)
+    return s if len(s) >= 3 else w
+
+
+def _covered(p):
+    """Stemmed word sets a recorded veto or a declined proposal covers (T-1042: steer words are kept unstemmed, a
+    correction cluster's stemmed, so both sides compare as stems)."""
+    return [{_stem(w) for w in ws} for ws in [v["words"] for v in c.vetoes(p)] + (c.read_meta(p).get("taste_declined") or [])]
+
+
+def _ledger(p, ledger):
+    return c.ledger_tail(p, 3000) if ledger is None else ledger
+
+
+def proposals(p, ledger=None):
     """[{words, count, said}]: key words shared by TASTE_REPEATS or more steers that say no, as vetoes to propose; none
     a recorded veto or a declined proposal already covers (its words a subset of the shape)."""
-    notes = [str((e.get("data") or {}).get("text") or "") for e in c.ledger_tail(p, 3000) if e.get("event") == "note"]
+    notes = [str((e.get("data") or {}).get("text") or "") for e in _ledger(p, ledger) if e.get("event") == "note"]
     sets = [(s, _key_words(s)) for s in (t[len("steer:"):].strip() for t in notes if t.startswith("steer:")) if _NO.search(s)]
-    covered = [set(v["words"]) for v in c.vetoes(p)] + [set(w) for w in c.read_meta(p).get("taste_declined") or []]
+    covered = _covered(p)
     out, seen = [], set()
     for w in dict.fromkeys(x for _, ws in sets for x in ws):
         group = [(s, ws) for s, ws in sets if w in ws]
         shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
         standing = any(c.STANDING_STEER.search(x) for x, _ in group)  # T-0601: said as a rule, once is enough
         if (len(group) < TASTE_REPEATS and not standing) or tuple(sorted(shape)) in seen \
-                or any(h <= set(shape) for h in covered):
+                or any(h <= {_stem(x) for x in shape} for h in covered):
             continue
         seen.add(tuple(sorted(shape)))
         out.append({"words": shape, "count": len(group), "said": c.fit(c.plain(group[-1][0]), 160)})
+    return out
+
+
+CORRECTION_REPEATS = 2
+_CORRECTION_STOP = {"nope", "wrong", "said", "meant", "why", "did", "what", "didn", "doesn", "wasn", "isn", "don", "won",
+                    "can", "already", "think", "would", "because"}  # how a correction is said, not what it's about
+
+
+def correction_clusters(p, ledger=None):
+    """T-1042: [{words, count, said, suggest}]: key words (stemmed) shared by CORRECTION_REPEATS or more of the user's
+    corrections, each one the user rarely says otherwise (in at most a tenth of their prompts), with a ready fm rule
+    add line; none a recorded veto, a rule or a declined proposal already covers."""
+    ledger = _ledger(p, ledger)
+    stems = lambda t: list(dict.fromkeys(s for s in (_stem(w) for w in _key_words(t) if w not in _CORRECTION_STOP)
+                                         if s not in c._VETO_STOP))
+    sets = [(t, stems(t)) for t in (str((e.get("data") or {}).get("text") or "") for e in ledger
+                                     if e.get("event") == "correction")]
+    prompts = [stems(str((e.get("data") or {}).get("text") or "")) for e in ledger if e.get("event") == "prompt"]
+    df, covered = Counter(x for ps in prompts for x in ps), _covered(p)
+    out, seen = [], set()
+    for w in dict.fromkeys(x for _, ws in sets for x in ws):
+        group = [(s, ws) for s, ws in sets if w in ws]
+        shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)
+                 and df[x] <= max(len(group), len(prompts) // 10)][:3]  # a word they say all the time ties nothing
+        if len(group) < CORRECTION_REPEATS or not shape or tuple(sorted(shape)) in seen \
+                or any(h <= set(shape) for h in covered) \
+                or any(c.rule_hits(p, on, " ".join(shape)) for on in ("bash", "path")):
+            continue
+        seen.add(tuple(sorted(shape)))
+        said = c.fit(c.plain(group[-1][0]), 160)
+        pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(x)})" for x in shape)  # as fm rule add --from-veto
+        out.append({"words": shape, "count": len(group), "said": said,
+                    "suggest": f"fm rule add {shlex.quote(pattern)} --warn --why {shlex.quote(said)}"})
     return out
 
 
@@ -408,14 +459,18 @@ def cmd_taste(args):
                          ("Your rework of an agent's change (taste to learn from):\n" + "\n".join(
                              f"  {f} after {t}: {s} ({h})" for f, t, s, h in rows[-args.n * 2:])) if rows else
                          "No commit of yours reworked an agent's file within two weeks of it.")
-    props = proposals(p)
+    ledger = c.ledger_tail(p, 3000)
+    props, corr = proposals(p, ledger), correction_clusters(p, ledger)
     if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
-        pick = props if args.which is None else props[args.which - 1:args.which] if args.which > 0 else []
+        # T-1042: a bare adopt or decline takes the steer proposals; a correction cluster only by its N (numbered on)
+        pick = props if args.which is None else (props + corr)[args.which - 1:args.which] if args.which > 0 else []
         if not pick:
-            raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " "))
+            raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " ")
+                                   + (" (a correction is taken by its number)" if corr and args.which is None else ""))
         if args.action == "adopt":
             for x in pick:
-                c.add_veto(p, f"{x['said']} (steered {x['count']} times)", words=x["words"])
+                how = "corrected" if "suggest" in x else "steered"
+                c.add_veto(p, f"{x['said']} ({how} {x['count']} times)", words=x["words"])
         else:
             with c.lock(p.dir):
                 meta = c.read_meta(p)
@@ -425,7 +480,7 @@ def cmd_taste(args):
         return fmcli.out(args, {"action": args.action, "proposals": pick},
                          f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
                          + "; ".join(f"never {' '.join(x['words'])}" for x in pick) + ".")
-    t = dict(taste(p, args.n), proposed=props)
+    t = dict(taste(p, args.n, ledger), proposed=props, corrections=corr)
     lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]
     for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
                        ("Steered", t["steered"]), ("Corrected", t["corrected"])):
@@ -439,6 +494,12 @@ def cmd_taste(args):
         lines += [f"  {i}. never {' '.join(x['words'])} — steered {x['count']} times, last: {x['said']}"
                   for i, x in enumerate(props, 1)]
         lines += ["Ask the user once (one AskUserQuestion, adopt first): yes → fm taste adopt (all) or fm taste adopt N; "
+                  "no → fm taste decline N."]
+    if corr:  # T-1042
+        lines += ["Corrections met twice (a rule to propose):"]
+        lines += [f"  {i}. {' '.join(x['words'])} — corrected {x['count']} times, last: {x['said']}\n     {x['suggest']}"
+                  for i, x in enumerate(corr, len(props) + 1)]
+        lines += ["Ask the user once (one AskUserQuestion, the rule first): yes → run its fm rule add line; "
                   "no → fm taste decline N."]
     fmcli.out(args, t, "\n".join(lines))
 

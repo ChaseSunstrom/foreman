@@ -308,7 +308,12 @@ def _runs_later(p, ctx):
     home = ctx.home
     return (any(p == os.path.join(home, f) for f in _SHELL_RC) or any(_under(p, os.path.join(home, d))
                                                                       for d in _LATER_DIRS)
-            or "/.git/hooks/" in p)
+            or "/.git/hooks/" in p or _GIT_CONFIG_FILE.search(p) is not None
+            or p in (os.path.join(home, ".gitconfig"), os.path.join(home, ".config", "git", "config")))
+
+
+# T-1107: a git config file can set core.hooksPath, a `!` alias or a filter driver, as `git config` can (_git_config_code)
+_GIT_CONFIG_FILE = re.compile(r"/\.git/(?:worktrees/[^/]+/)?config(?:\.worktree)?$", re.I)  # I: macOS folds case
 
 
 def _protected_roots(ctx):
