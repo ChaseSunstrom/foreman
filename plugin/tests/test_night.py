@@ -97,6 +97,50 @@ class Night(ForemanTestCase):
         self.assertEqual(json.loads(out)["findings"], [])
         self.assertEqual(c.find_brief(p, tid).status, "blocked")
 
+    def _queue_job(self, *extra):
+        out = json.loads(self.fm("night", "--dry-run", "--only", "queue", "--json", *extra).stdout)
+        return next((j for j in out["jobs"] if j["name"] == "queue"), None), out
+
+    def test_queue_job_only_with_an_unblocked_small_task(self):  # T-1046
+        self.assertIsNone(self._queue_job()[0])  # empty queue
+        self.fm("task", "new", "Stuck", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.fm("task", "block", "T-0001", "waiting")
+        self.assertIsNone(self._queue_job()[0])  # only a blocked task
+        self.fm("task", "new", "Big", "--type", "FEATURE", "--tier", "L", "--ac", "ok :: true", "--step", "s")
+        self.assertIsNone(self._queue_job()[0])  # L is never run overnight
+        self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        job, _ = self._queue_job()
+        self.assertEqual(job["argv"][0], "run")
+        job, out = self._queue_job("--max-usd", "0.01")
+        self.assertIsNone(job)
+        self.assertIn("queue", [s["name"] for s in out["skipped"]])  # too small a budget for it
+
+    def test_a_night_records_the_tasks_the_queue_closed_and_the_digest_says_so(self):  # T-1046
+        import argparse
+        from unittest import mock
+        import fmnight
+        self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        p = c.find_project(self.repo)
+
+        seen = []
+
+        def fake(argv, **kw):  # fm run closing T-0001
+            seen.append(argv)
+            c.log_event(p, "task_done", task="T-0001", data={})
+            return mock.Mock(returncode=0, stdout="finished 1", stderr="")
+        args = argparse.Namespace(only=["queue"], max_usd=5.0, dry_run=False, json=True, print_timer=False, project=None)
+        cwd = os.getcwd()
+        os.chdir(self.repo)
+        try:
+            with mock.patch.object(fmnight.subprocess, "run", fake):
+                fmnight.cmd_night(args)
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(seen[0][seen[0].index("--max-usd") + 1], "5.0000")  # the night's remaining budget
+        night = [e for e in c.ledger_tail(p, 50) if e.get("event") == "night"][-1]
+        self.assertEqual(night["data"]["closed"], ["T-0001"])
+        self.assertIn("closed T-0001", self.fm("digest").stdout)
+
     def test_high_usage_runs_nothing(self):
         sessions = os.path.join(c.state_dir(), "sessions")
         os.makedirs(sessions, exist_ok=True)

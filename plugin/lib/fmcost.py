@@ -639,6 +639,7 @@ def cmd_digest(args):
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
                                                         for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
+        + (f"; closed {', '.join((e.get('data') or {}).get('closed'))}" if (e.get("data") or {}).get("closed") else "")  # T-1046
         for e in nights[-5:]] if nights else []
     fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
                      "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
