@@ -1,0 +1,359 @@
+{
+ "generated": "2026-10-16",
+ "totals": {
+  "tasks_done": 710,
+  "evidence": 2624,
+  "proofs": 249,
+  "commits": 553,
+  "gate_runs": 540,
+  "subagents": 524,
+  "lanes_merged": 126,
+  "findings": 97,
+  "guard_blocks": 286,
+  "captures": 505,
+  "lessons_shown": 694
+ },
+ "daily": [
+  {
+   "day": "2026-10-02",
+   "FEATURE": 8,
+   "FIX": 2,
+   "CLEAN": 0,
+   "PERFORMANCE": 1,
+   "SECURITY": 0,
+   "RESEARCH": 2,
+   "lanes": 0,
+   "evidence": 57
+  },
+  {
+   "day": "2026-10-03",
+   "FEATURE": 46,
+   "FIX": 28,
+   "CLEAN": 2,
+   "PERFORMANCE": 2,
+   "SECURITY": 16,
+   "RESEARCH": 2,
+   "lanes": 0,
+   "evidence": 287
+  },
+  {
+   "day": "2026-10-04",
+   "FEATURE": 33,
+   "FIX": 12,
+   "CLEAN": 1,
+   "PERFORMANCE": 2,
+   "SECURITY": 4,
+   "RESEARCH": 5,
+   "lanes": 0,
+   "evidence": 254
+  },
+  {
+   "day": "2026-10-06",
+   "FEATURE": 16,
+   "FIX": 12,
+   "CLEAN": 0,
+   "PERFORMANCE": 0,
+   "SECURITY": 6,
+   "RESEARCH": 1,
+   "lanes": 0,
+   "evidence": 197
+  },
+  {
+   "day": "2026-10-08",
+   "FEATURE": 0,
+   "FIX": 3,
+   "CLEAN": 0,
+   "PERFORMANCE": 1,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 18
+  },
+  {
+   "day": "2026-10-09",
+   "FEATURE": 58,
+   "FIX": 58,
+   "CLEAN": 13,
+   "PERFORMANCE": 2,
+   "SECURITY": 22,
+   "RESEARCH": 5,
+   "lanes": 15,
+   "evidence": 605
+  },
+  {
+   "day": "2026-10-14",
+   "FEATURE": 8,
+   "FIX": 23,
+   "CLEAN": 4,
+   "PERFORMANCE": 5,
+   "SECURITY": 2,
+   "RESEARCH": 3,
+   "lanes": 10,
+   "evidence": 196
+  },
+  {
+   "day": "2026-10-15",
+   "FEATURE": 62,
+   "FIX": 35,
+   "CLEAN": 8,
+   "PERFORMANCE": 0,
+   "SECURITY": 5,
+   "RESEARCH": 3,
+   "lanes": 20,
+   "evidence": 321
+  },
+  {
+   "day": "2026-10-16",
+   "FEATURE": 96,
+   "FIX": 61,
+   "CLEAN": 12,
+   "PERFORMANCE": 7,
+   "SECURITY": 9,
+   "RESEARCH": 4,
+   "lanes": 81,
+   "evidence": 689
+  }
+ ],
+ "tiers": {
+  "S": 372,
+  "M": 294,
+  "L": 44
+ },
+ "types": {
+  "FEATURE": 327,
+  "FIX": 234,
+  "CLEAN": 40,
+  "PERFORMANCE": 20,
+  "SECURITY": 64,
+  "RESEARCH": 25
+ },
+ "guard": {
+  "core": 109,
+  "brief": 78,
+  "state-direct": 34,
+  "plugin": 26,
+  "rm-outside": 14,
+  "system": 11,
+  "pipe-shell": 6,
+  "credentials": 4
+ },
+ "findings": {
+  "lenses": {
+   "edge": 37,
+   "adversary": 35,
+   "operator": 13,
+   "maintainer": 8,
+   "intent": 4
+  },
+  "severity": {
+   "LOW": 32,
+   "MEDIUM": 19,
+   "HIGH": 8
+  }
+ },
+ "subagents": {
+  "fm-builder": 217,
+  "fm-reviewer": 141,
+  "general-purpose": 76,
+  "fm-recon": 71,
+  "Explore": 8,
+  "claude-code-guide": 7
+ },
+ "gate_seconds": {
+  "runs": 540,
+  "median": 73.9
+ },
+ "releases": [
+  {
+   "version": "1.2.20",
+   "day": "2026-10-09",
+   "tests": 1127
+  },
+  {
+   "version": "1.2.21",
+   "day": "2026-10-09",
+   "tests": 1148
+  },
+  {
+   "version": "1.2.22",
+   "day": "2026-10-09",
+   "tests": 1158
+  },
+  {
+   "version": "1.2.23",
+   "day": "2026-10-09",
+   "tests": 1163
+  },
+  {
+   "version": "1.2.24",
+   "day": "2026-10-09",
+   "tests": 1186
+  },
+  {
+   "version": "1.2.25",
+   "day": "2026-10-09",
+   "tests": 1215
+  },
+  {
+   "version": "1.2.26",
+   "day": "2026-10-09",
+   "tests": 1249
+  },
+  {
+   "version": "1.2.27",
+   "day": "2026-10-09",
+   "tests": 1263
+  },
+  {
+   "version": "1.2.28",
+   "day": "2026-10-15",
+   "tests": 1372
+  },
+  {
+   "version": "1.2.29",
+   "day": "2026-10-15",
+   "tests": 1385
+  },
+  {
+   "version": "1.2.30",
+   "day": "2026-10-15",
+   "tests": 1418
+  },
+  {
+   "version": "1.2.31",
+   "day": "2026-10-15",
+   "tests": 1591
+  },
+  {
+   "version": "1.2.32",
+   "day": "2026-10-16",
+   "tests": 1935
+  },
+  {
+   "version": "1.2.33",
+   "day": "2026-10-16",
+   "tests": 2018
+  },
+  {
+   "version": "1.2.34",
+   "day": "2026-10-16",
+   "tests": 2081
+  },
+  {
+   "version": "1.2.35",
+   "day": "2026-10-16",
+   "tests": 2131
+  }
+ ],
+ "cards": {
+  "python": 62,
+  "data": 60,
+  "infra": 60,
+  "tools": 59,
+  "security": 59,
+  "design": 58,
+  "web": 57,
+  "node": 56,
+  "cloud": 55,
+  "ml": 54,
+  "lang": 50,
+  "testing": 50,
+  "jvm": 50,
+  "domains": 45,
+  "native": 41,
+  "frontend": 37,
+  "mobile": 28,
+  "claude-code": 27,
+  "rust": 26,
+  "practice": 25,
+  "ops": 24,
+  "go": 24,
+  "dotnet": 22,
+  "games": 21,
+  "idioms": 16,
+  "docs": 10,
+  "hardware": 8
+ },
+ "bench": {
+  "SessionStart": {
+   "p50": 55.9,
+   "p95": 63.4,
+   "budget": 150
+  },
+  "UserPromptSubmit": {
+   "p50": 58.0,
+   "p95": 92.6,
+   "budget": 150
+  },
+  "PreToolUse:Bash": {
+   "p50": 58.5,
+   "p95": 67.1,
+   "budget": 150
+  },
+  "PreToolUse:Bash:block": {
+   "p50": 44.6,
+   "p95": 48.7,
+   "budget": 150
+  },
+  "PreToolUse:Bash:script": {
+   "p50": 267.3,
+   "p95": 274.0,
+   "budget": 300
+  },
+  "PreToolUse:Edit": {
+   "p50": 47.1,
+   "p95": 56.5,
+   "budget": 150
+  },
+  "PostToolUse": {
+   "p50": 38.7,
+   "p95": 41.5,
+   "budget": 150
+  },
+  "PostToolUseFailure": {
+   "p50": 36.9,
+   "p95": 39.0,
+   "budget": 150
+  },
+  "PreCompact": {
+   "p50": 42.6,
+   "p95": 45.3,
+   "budget": 150
+  },
+  "Stop": {
+   "p50": 42.5,
+   "p95": 47.6,
+   "budget": 150
+  },
+  "TaskCompleted": {
+   "p50": 33.3,
+   "p95": 35.8,
+   "budget": 150
+  },
+  "SubagentStart": {
+   "p50": 33.0,
+   "p95": 35.4,
+   "budget": 150
+  },
+  "SubagentStop": {
+   "p50": 35.1,
+   "p95": 41.4,
+   "budget": 150
+  },
+  "MessageDisplay": {
+   "p50": 33.9,
+   "p95": 35.6,
+   "budget": 100
+  },
+  "Notification": {
+   "p50": 40.0,
+   "p95": 42.4,
+   "budget": 150
+  },
+  "SessionEnd": {
+   "p50": 34.4,
+   "p95": 38.8,
+   "budget": 150
+  }
+ }
+}
