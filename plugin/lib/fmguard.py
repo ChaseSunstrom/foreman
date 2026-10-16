@@ -2433,8 +2433,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
             r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
         # T-1195: an environment that changes how git reads pathspecs makes a named-file checkout a tree write
-        targs = args + ["--pathspec-from-file"] if name == "git" and any(
-            a.startswith(("GIT_GLOB_PATHSPECS=", "GIT_ICASE_PATHSPECS=")) for a in c.argv) else args
+        # (anywhere in the command text: export, env, an earlier assignment)
+        targs = args + ["--pathspec-from-file"] if name == "git" and re.search(
+            r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_(?:GLOB|ICASE)_PATHSPECS=", cmd) else args
         for target in c.redirs + ([] if bare_init else _write_targets(name, targs)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
@@ -2817,7 +2818,9 @@ def _write_targets(name, args):
             read_only = True
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
-            if sub == "checkout" and not trees and (files := _checkout_files(base, rest)):
+            if sub == "checkout" and not trees and not any(  # --icase/--glob-pathspecs change what a word matches
+                    a.endswith("pathspecs") and a not in ("--literal-pathspecs", "--noglob-pathspecs")
+                    for a in args[:i]) and (files := _checkout_files(base, rest)):
                 return [os.path.join(base, f) for f in files] + outs  # T-1195: named files, not the whole tree
             return ([os.path.join(base, t) for t in trees] or [base]) + outs
         return outs
