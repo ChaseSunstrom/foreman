@@ -391,24 +391,27 @@ export function ago(days: number | undefined): string {
 export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
 
-/** T-0989: the pane's row budget. One panel of fixed sections whose heights come from the dock's rows, never from what
- * they hold, so it always fits and nothing moves as work comes and goes. Header 3, attention 1 and controls 1 are fixed;
- * each section takes a label row while it has any rows of its own. */
+/** T-0989, T-1000: the pane's row budget. One panel that fills the dock exactly: Task, Queue and More take the rows
+ * they hold (each capped, so none starves the rest), Live keeps a fixed height (its quiet rows draw the tool lanes), and
+ * Pulse takes what's left, its charts stretching to fill it. Header 3, attention 1 and controls 1 are fixed; each section
+ * takes a label row while it has rows of its own. */
 export type Layout = { task: number; live: number; pulse: number; queue: number; also: number }
-export function layout(rows: number): Layout {
+export type Demand = { task: number; queue: number; more: number }
+export function layout(rows: number, want: Demand): Layout {
   const h = Math.max(0, Math.floor(rows))
-  let r = Math.max(0, h - 5)
-  const take = (want: number) => {
-    const n = Math.max(0, Math.min(want, r - 1))
-    if (n > 0) r -= n + 1
-    return n
+  const live = h >= 30 ? 4 : h >= 20 ? 3 : 2
+  const pulseMin = h >= 26 ? 4 : 0
+  let r = Math.max(0, h - 5 - (live + 1) - (pulseMin ? pulseMin + 1 : 0))
+  const take = (n: number, cap: number) => {
+    const k = Math.max(0, Math.min(n, cap, r - 1))
+    if (k > 0) r -= k + 1
+    return k
   }
-  const pulse = take(h >= 34 ? 5 : h >= 26 ? 4 : 0)
-  const live = take(h >= 30 ? 4 : h >= 20 ? 3 : 2)
-  const also = take(h >= 44 ? Math.min(8, Math.round(h / 8)) : h >= 36 ? 2 : 0)
-  const both = Math.max(0, r - 2) // the task and the queue share the rest, a label each
-  const task = Math.min(both, Math.ceil(both * 0.55))
-  return { task, live, pulse, queue: both - task, also }
+  const task = take(want.task, Math.max(3, Math.round(h * 0.4)))
+  const queue = take(want.queue, Math.max(2, Math.round(h * 0.25)))
+  const also = take(want.more, Math.max(1, Math.round(h * 0.18)))
+  if (pulseMin) return { task, live, pulse: pulseMin + r, queue, also } // the charts take the rest
+  return r >= 2 ? { task, live, pulse: r - 1, queue, also } : { task, live: live + r, pulse: 0, queue, also }
 }
 
 // The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
