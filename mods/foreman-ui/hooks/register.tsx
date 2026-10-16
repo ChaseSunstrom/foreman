@@ -1315,8 +1315,8 @@ export const register: Register = (on, options) => {
     const T = H >= 44 ? 6 : H >= 32 ? 5 : 4 // the Today charts' rows
     const L = layout(H, [
       { key: 'task', want: taskWant, cap: Math.max(4, Math.round(H * 0.4)), min: Math.min(taskWant, 4), bare: true },
-      { key: 'activity', want: 1, fixed: nLanes + axis },
-      { key: 'today', want: 1, fixed: T },
+      { key: 'activity', want: 1, fixed: nLanes + axis, grow: KINDS.length - nLanes }, // spare rows: every lane
+      { key: 'today', want: 1, fixed: T, grow: Math.max(0, 8 - T) }, // then taller charts
       { key: 'queue', want: queueRows.length, cap: Math.max(3, Math.round(H * 0.2)), min: plans.length + 2 }, // every plan's approve
       { key: 'sessions', want: sessionRows.length, cap: 5 },
       { key: 'history', want: historyRows.length, stretch: true },
@@ -1535,7 +1535,8 @@ export const register: Register = (on, options) => {
     bgShells.forEach(x => put('run', { key: x.id, text: `◷ ${x.command}`, time: elapsed(clockNow - x.startedAt), color: C.accent2 }))
     const nLive = Object.values(nowIn).reduce((n, xs) => n + xs.length, 0)
     const counts = Object.fromEntries(KINDS.map(k => [k, recentTicks.filter(t => t.lane === k).length])) as Record<string, number>
-    const busiest = [...KINDS].sort((x, y) => counts[y]! - counts[x]!).slice(0, nLanes) // by the window only: nothing swaps as calls start
+    const lanes = Math.max(1, Math.min(KINDS.length, R.activity! - axis)) // more when the dock has rows to spare
+    const busiest = [...KINDS].sort((x, y) => counts[y]! - counts[x]!).slice(0, lanes) // by the window only: nothing swaps as calls start
     const laneRows: RenderElement[] = KINDS.filter(k => busiest.includes(k)).map(k => {
       const n = counts[k]!
       const slots = bucketize(recentTicks.filter(t => t.lane === k).map(t => t.at), clockNow, spanMs, laneW * 2)

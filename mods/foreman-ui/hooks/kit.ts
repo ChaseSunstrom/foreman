@@ -396,13 +396,14 @@ export const sizeWord = (tier: string) => SIZE[tier] ?? tier
  * attention row) and the controls take 4 rows; every section but a `bare` one (the task under the head) gets a titled
  * divider, and on a tall dock (40 rows up) a blank row above it, under the head and above the controls. Sections take
  * the rows they hold: each its `min` (2) first, then up to its `cap` in order; a `fixed` one its height, and the
- * `stretch` one (the history) everything left. When sections get no rows the least important (last) of them is dropped
- * and the rest placed again, so its divider goes to the others; with the stretch one gone, what's left pads the task. */
-export type Part = { key: string; want: number; cap?: number; min?: number; fixed?: number; stretch?: boolean; bare?: boolean }
+ * `stretch` one (the history) what it holds of the rest; rows still spare go to the `grow` ones (more lanes, taller
+ * charts) up to their allowance, then pad the history (or the task). When sections get no rows the least important
+ * (last) of them is dropped and the rest placed again, so its divider goes to the others. */
+export type Part = { key: string; want: number; cap?: number; min?: number; fixed?: number; stretch?: boolean; bare?: boolean; grow?: number }
 export function layout(rows: number, parts: Part[]): { gap: number; rows: Record<string, number> } {
   const h = Math.max(0, Math.floor(rows))
   const gap = h >= 40 ? 1 : 0
-  let shown = parts.filter(p => p.want > 0 || p.fixed || p.stretch)
+  let shown = parts.filter(p => p.want > 0 || p.fixed)
   let out: Record<string, number> = {}
   for (let pass = 0; pass < parts.length + 1; pass++) {
     const titled = shown.filter(p => !p.bare).length
@@ -417,7 +418,13 @@ export function layout(rows: number, parts: Part[]): { gap: number; rows: Record
       r -= more
     }
     const stretch = shown.find(p => p.stretch)
-    const spare = stretch ?? shown.find(p => p.bare) // with the history gone, a blank row under the task
+    if (stretch) r -= out[stretch.key] = Math.min(stretch.want, r) // what it holds
+    for (const p of shown) if (p.grow) { // spare rows: more of the charts, up to each one's `grow`
+      const more = Math.min(p.grow, r)
+      out[p.key] = (out[p.key] ?? 0) + more
+      r -= more
+    }
+    const spare = stretch ?? shown.find(p => p.bare) // then blank rows under the history, or under the task
     if (spare) out[spare.key] = (out[spare.key] ?? 0) + r
     const empty = shown.filter(p => !out[p.key])
     if (!empty.length) break
