@@ -1729,6 +1729,7 @@ export const register: Register = (on, options) => {
           {v.next ? <Text color={dim}>Next  </Text> : null}
           {v.next ? humanNext(v.next) : <Text color={dim}>The queue and the inbox are empty.</Text>}
         </Text>,
+        ...(v.learned && !live ? [<Text key="idle-learned" color={dim} wrap="truncate-end">{v.learned}</Text>] : []), // T-1045
       )
     }
     if (taskRows.length + (hidden ? 1 : 0) > R.task!) { // never cut silently (T-0146): the last row counts what's gone

@@ -514,6 +514,8 @@ def view(p):
         "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
+        # T-1045: what Foreman learned this week, the idle line. ponytail: recomputed each poll, cache if it shows in profiles
+        "learned": _guarded(lambda: (lambda m: m.learned(p, 7, len(m._week(p, 7)[0]))["line"])(__import__("fmcost"))),
         "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
