@@ -326,6 +326,13 @@ PAGES = [
           "The Claude Code side runs with no plugins but keeps Foreman's guard on, so neither side can damage the "
           "machine. <code>bench/spec-suite/make.py</code> builds the repo.</p>"),
          ("chart", lambda s: _duel(s, "quality")),
+         ("text", "Harder: eight tasks where checking matters", "<p>A second neutral repo, an invoicing package whose "
+          "modules share helpers, graded by its whole test suite. Four tasks change a shared helper, where the obvious "
+          "edit breaks another module's existing tests unless the request's \"Keep\" rules are followed; four are dense "
+          "edge-case specs (text wrapping, INI files, interval arithmetic, a tokenizer). Each task's plausible shortcut "
+          "is recorded and proven to fail. Grading restores the reference tests, so editing an existing test can't "
+          "pass. <code>bench/spec-suite/make.py --suite hard</code> builds it.</p>"),
+         ("chart", lambda s: _duel(s, "hard")),
          ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
           "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "

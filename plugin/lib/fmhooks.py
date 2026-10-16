@@ -597,14 +597,14 @@ def _first_brief(p, sid):
     r = c.parse_intake(asks[0])
     head = re.sub(r"(?i)^\s*task:\s*", "", asks[0]).strip()  # a bench or scripted prompt's "Task: <request>"
     first_line = head.splitlines()[0] if head else ""
-    if len(r.items) > 1 or c.is_plan_only(asks[0]) or c.is_open_ended(first_line) or \
-            not r.items and not c._WORK_VERB.match(first_line):  # review: a plan-only or open-ended ask isn't S work
-        return None
+    if len(r.items) > 1 or c.is_plan_only(asks[0]) or c.is_open_ended(first_line) or not r.items and not (
+            _headless() or c._WORK_VERB.match(first_line)):  # review: a plan-only or open-ended ask isn't S work;
+        return None  # an unattended run's one request is its work whatever its first word ("Group thousands in …")
     first = r.items[0] if r.items else None
     type_ = first.type if first else "FEATURE"
     title = c.fit(c.plain((first.text if first else head).strip().splitlines()[0]), 90)
     done = (r.done_when or (first.own.get("done_when") if first else None) or ["the request is done as asked"])[:6]
-    tier = "L" if c.guess_tier(type_, asks[0]) == "L" else "M" if type_ == "SECURITY" else "S"  # S: the cheap close
+    tier = "M" if type_ == "SECURITY" else "S"  # one request worked in one session; L words in a long spec misled it
     import fcntl
     with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
@@ -2681,7 +2681,8 @@ def stop(pl):
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
     drained = bool(had_work and not d["had_work"])
-    if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"]:
+    if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"] \
+            and not os.environ.get("FOREMAN_BENCH"):  # T-1229: a replay's job is its request, not new work after it
         try:  # T-0950: the queue just drained: Foreman looks for work itself (an answer to a question isn't a drain)
             import fmscout
             made, slow = fmscout.idle(p) if fmscout.due(p) else ([], False)

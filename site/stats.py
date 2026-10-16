@@ -160,7 +160,10 @@ def duel(state):
             titles = {x["id"]: x.get("title") or "" for x in json.load(f)}
     except (OSError, ValueError, TypeError, KeyError):
         titles = {}
-    name = lambda cid: (re.findall(r"\bkit\.(\w+)", titles.get(cid, "")) or [cid])[0]
+    def name(cid):  # kit.lru → "lru"; otherwise the title's first words
+        t = titles.get(cid, "")
+        mod = re.findall(r"\bkit\.(\w+)", t)
+        return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]) or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
     return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}
