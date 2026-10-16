@@ -420,7 +420,9 @@ def _worktrees(p, briefs):
     root = c.git_root(p.root)
     if not root:
         return []
+    import fmlanes
     lanes = {os.path.realpath(b.meta["lane"]): b.id for b in briefs if b.meta.get("lane")}
+    gone = set(fmlanes.stopped(p, briefs))  # T-1119: builders whose Claude Code session ended
     out = []
     for block in c._git(root, "worktree", "list", "--porcelain").strip().split("\n\n")[1:]:
         f = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
@@ -432,8 +434,9 @@ def _worktrees(p, briefs):
         except OSError:
             age = None
         m = re.fullmatch(r"worktree-agent-([0-9a-f]+)", branch)
-        out.append({"path": path, "branch": branch, "task": lanes.get(os.path.realpath(path)),
-                    "agent": m.group(1) if m else None, "age_s": age, "ahead": None})
+        task = lanes.get(os.path.realpath(path))
+        out.append({"path": path, "branch": branch, "task": task, "agent": m.group(1) if m else None,
+                    "age_s": age, "ahead": None, "stopped": task in gone})
     out = sorted(out, key=lambda w: w["age_s"] if w["age_s"] is not None else 1 << 40)[:12]  # newest first, then capped
     for w in out:  # one git call each, only for those listed; a detached one's merge state stays unknown (None)
         n = c._git(root, "rev-list", "--count", f"HEAD..refs/heads/{w['branch']}").strip() if w["branch"] else ""
