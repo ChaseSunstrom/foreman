@@ -250,7 +250,7 @@ class Ledger(ForemanTestCase):
             lines = [json.loads(l) for l in f]
         self.assertEqual([l["event"] for l in lines[-2:]], ["note", "note2"])
         rec = lines[-2]
-        self.assertEqual(set(rec), {"ts", "session_id", "project", "task", "event", "data"})
+        self.assertEqual(set(rec), {"prev", "ts", "session_id", "project", "task", "event", "data"})  # T-1065: chained
         self.assertEqual(rec["session_id"], "s1")
         self.assertNotIn("abcdef123456", json.dumps(rec))
         self.assertRegex(rec["ts"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")

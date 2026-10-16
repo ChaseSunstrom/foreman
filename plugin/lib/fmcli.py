@@ -626,7 +626,8 @@ def cmd_task(args):
             ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
         by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
-                              check_by_hand=by_hand),
+                              check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
+                                                        else {})),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
@@ -906,8 +907,16 @@ def task_finish(p, args):
     if args.commit and not rc:
         _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
     if not rc and not getattr(args, "json", False):
-        print(_landed(p, b))
+        import fmledger
+        print(fmledger.receipt(p))  # T-1065: the chain head, the anchor fm verify-ledger --head checks later
+        print(_landed(p, b))  # T-0956: the close's last line
     return rc
+
+
+def _ledger_head(p):
+    import fmledger
+    r = fmledger.chain(p)
+    return {k: r[k] for k in ("head", "chained", "broken")}
 
 
 def _theirs(p, b, files):
@@ -3920,7 +3929,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
-                             "plugins docs doctor release-check canary tidy round"),
+                             "plugins docs doctor verify-ledger release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
@@ -4305,6 +4314,9 @@ def build_parser():
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
+    s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), help="prove no ledger line was edited or removed: "
+                                                                         "each carries the hash of the one before (T-1065)")
+    s.add_argument("--head", help="also prove this head (a finish receipt's) is still in the chain: the tail wasn't cut")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
                                                         "what could become one (T-0734)")
     s.add_argument("action", choices=["add", "inbox"])

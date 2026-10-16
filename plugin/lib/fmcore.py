@@ -772,10 +772,59 @@ def log_event(p, event, task=None, data=None, session=None):
     rec = {"ts": now(), "session_id": session or session_id(), "project": p.slug,
            "task": task, "event": event, "data": redact_obj(data or {})}
     os.makedirs(p.dir, exist_ok=True)
-    # One short O_APPEND write per event: atomic for concurrent writers on a local filesystem.
-    with open(os.path.join(p.dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
-        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    # T-1065: each line carries prev, the hash of the line before it (fm verify-ledger walks the chain). Under an flock
+    # on the ledger, so racing writers chain in the order they land: read the last line, then one O_APPEND write.
+    with open(os.path.join(p.dir, "ledger.jsonl"), "a+b") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        size = os.fstat(f.fileno()).st_size
+        f.seek(max(0, size - 1))
+        cut = size and f.read(1) != b"\n"  # a line cut short (a crash, a hand edit) stays its own line
+        rec["ts"] = now()  # in landing order, so fm tidy's monthly roll never reorders the chain
+        rec = {"prev": ledger_hash(_last_line(f) if size else _archived_last(p)), **rec}
+        f.write(("\n" if cut else "").encode() + (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8"))
     return rec
+
+
+LEDGER_ARCHIVE = re.compile(r"ledger-\d{4}-\d\d\.jsonl")
+
+
+def ledger_hash(raw):
+    """T-1065: a ledger line's link, the first 16 hex of the sha256 of its bytes (newline left out); b"" (no line
+    before) is the chain's genesis."""
+    return hashlib.sha256(raw).hexdigest()[:16]
+
+
+def ledger_files(p):
+    """T-1065: the ledger in chain order: fm tidy's monthly archives, oldest first, then the live file."""
+    folder = os.path.join(p.dir, "archive")
+    try:
+        rolled = sorted(n for n in os.listdir(folder) if LEDGER_ARCHIVE.fullmatch(n))
+    except OSError:
+        rolled = []
+    return [os.path.join(folder, n) for n in rolled] + [os.path.join(p.dir, "ledger.jsonl")]
+
+
+def _last_line(f):
+    """A binary file's last line without its newline; b"" when the file is empty."""
+    end, chunk = f.seek(0, os.SEEK_END), 4096
+    while True:
+        start = max(0, end - chunk)
+        f.seek(start)
+        body = f.read(end - start)
+        body = body[:-1] if body.endswith(b"\n") else body
+        if b"\n" in body or not start:
+            return body.rsplit(b"\n", 1)[-1]
+        chunk *= 4
+
+
+def _archived_last(p):
+    """What an empty live ledger's first line follows: the newest archive's last line (b"" with none)."""
+    for path in reversed(ledger_files(p)[:-1]):
+        with open(path, "rb") as f:
+            line = _last_line(f)
+        if line:
+            return line
+    return b""
 
 
 def ledger_tail(p, n=200):
