@@ -188,10 +188,8 @@ def builder_brief(p, b, args):
     model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
-    import fmserve
-    sb = "on" if fmserve._sandbox_available() else "off"  # T-1086: what fm run would use; a subagent builder has none
-    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "sandbox": sb},
-                     f"{b.id}: builder brief {path}\n  sandbox: {sb}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
+    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
+                     f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
                      f"(skills/intake/references/delegate.md)")
