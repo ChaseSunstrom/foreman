@@ -889,9 +889,7 @@ def _strip_wrappers(argv):
             while i < len(argv) and (argv[i].startswith("-") or "=" in argv[i]):
                 i += 2 if argv[i] in ("-u", "-C", "--unset", "--chdir") else 1
         elif base == "xargs":
-            i += 1
-            while i < len(argv) and argv[i].startswith("-"):
-                i += 2 if argv[i] in ("-n", "-I", "-L", "-P", "-d", "-s", "-E", "-a") else 1
+            i += 1 + _xargs_opts(argv[i + 1:])[0]
         elif base in ("npx", "bunx"):
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
@@ -899,6 +897,27 @@ def _strip_wrappers(argv):
         else:
             break
     return argv[i:], any(os.path.basename(a) == "xargs" for a in argv[:i])
+
+
+def _xargs_opts(words):
+    """T-1123: (words xargs's options take, whether one changes how stdin splits or is replaced), read as getopt does:
+    a cluster's value options (n s P L E I a d, and the old e i l) swallow the rest of the cluster or the next word."""
+    i, odd = 0, False
+    while i < len(words) and words[i].startswith("-") and words[i] != "-":
+        w = words[i]
+        i += 1
+        if w == "--":
+            break
+        if w.startswith("--"):
+            odd = odd or bool(re.match(r"--(?:arg-file|delimiter|replace|null|max-lines|eof)", w))
+            i += 1 if w in ("--max-args", "--max-procs", "--max-chars", "--arg-file", "--delimiter", "--eof") else 0
+            continue
+        odd = odd or any(ch in "adEeIiLl0" for ch in w[1:])  # any such letter, even inside a value: doubt is unknown
+        for k, ch in enumerate(w[1:], 1):
+            if ch in "nsPLEIad":
+                i += 1 if k == len(w) - 1 else 0
+                break
+    return i, odd
 
 
 def _positionals(args):
@@ -2270,8 +2289,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
-        xodd = via_xargs and any(re.match(r"-[adIiL0]|--(?:arg-file|delimiter|replace|null|max-lines)", x)  # T-1123
-                                 for x in c.argv[:len(c.argv) - len(argv)] if x.startswith("-"))
+        xodd = via_xargs and any(_xargs_opts(c.argv[j + 1:])[1] for j, x in enumerate(c.argv[:len(c.argv) - len(argv)])
+                                 if os.path.basename(x) == "xargs")  # T-1123
         if not c.piped:
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
