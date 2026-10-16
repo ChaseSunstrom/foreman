@@ -150,7 +150,8 @@ class Parallel(ForemanTestCase):
         self.task("one", "work-T-0001.txt")
         self.task("two", "work-T-0002.txt")
         pids = os.path.join(self.tmp, "pids")
-        self.stub("quick", "sleep 1\n")
+        # T-1201: on a loaded machine the slow session hadn't written its pid when the quick one ended the batch
+        self.stub("quick", f"for i in $(seq 200); do [ -s {pids} ] && break; sleep 0.1; done\nsleep 1\n")
         self.stub("slow", f"echo $$ >> {pids}\nsleep 30\n")
         p = c.find_project(self.repo)
         batch = [c.find_brief(p, "T-0001"), c.find_brief(p, "T-0002")]
