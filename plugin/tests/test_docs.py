@@ -193,22 +193,36 @@ class PluginFiles(unittest.TestCase):
 
 
 class Site(unittest.TestCase):
-    """T-1206: the Pages site's local links resolve, as the workflow assembles it (site/ plus the demo files)."""
+    """T-1206, T-1220: the Pages site builds (site/build.py, as the workflow runs it) into pages whose local links all
+    resolve, and every feature page carries a chart or figures from site/data/stats.json."""
     ROOT = os.path.dirname(PLUGIN)
 
-    def test_every_local_link_resolves_and_the_workflow_copies_what_exists(self):
+    def test_the_site_builds_and_every_local_link_resolves(self):
+        import subprocess
+        import sys
+        import tempfile
         flow = read_text(os.path.join(self.ROOT, ".github", "workflows", "pages.yml"))
-        copied = re.findall(r"\bdemo/[\w.-]+", flow.split("Assemble the site", 1)[1])
-        self.assertTrue(copied)
-        for f in copied:
-            self.assertTrue(os.path.isfile(os.path.join(self.ROOT, f)), f)
-        page = read_text(os.path.join(self.ROOT, "site", "index.html"))
-        local = [u for u in re.findall(r'(?:src|href|poster)="([^"#:]+)"', page) if not u.startswith("//")]
-        self.assertTrue(local)
-        for u in local:
-            self.assertTrue(u in copied or os.path.isfile(os.path.join(self.ROOT, "site", u)), u)
-        for anchor in re.findall(r'href="#([\w-]+)"', page):
-            self.assertIn(f'id="{anchor}"', page)
+        self.assertIn("python3 site/build.py _site", flow)
+        with tempfile.TemporaryDirectory() as out:
+            p = subprocess.run([sys.executable, os.path.join(self.ROOT, "site", "build.py"), out], capture_output=True,
+                               text=True, timeout=120)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            pages = [os.path.join(d, f) for d, _, fs in os.walk(out) for f in fs if f.endswith(".html")]
+            features = [f for f in pages if os.sep + "features" + os.sep in f and not f.endswith("index.html")]
+            self.assertGreaterEqual(len(features), 12)
+            for path in pages:
+                page = read_text(path)
+                for u in re.findall(r'(?:src|href|poster)="([^"]+)"', page):
+                    u = u.split("#")[0].split("?")[0]
+                    if u and ":" not in u and not u.startswith("//"):
+                        self.assertTrue(os.path.exists(os.path.normpath(os.path.join(os.path.dirname(path), u))),
+                                        f"{os.path.relpath(path, out)} links to {u}")
+                for anchor in re.findall(r'href="#([\w-]+)"', page):
+                    self.assertIn(f'id="{anchor}"', page, os.path.relpath(path, out))
+            for path in features:
+                page = read_text(path)
+                self.assertTrue('class="viz"' in page or 'class="tiles"' in page or 'class="flow"' in page, path)
+                self.assertIn('class="side"', page)
 
 
 if __name__ == "__main__":
