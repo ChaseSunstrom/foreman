@@ -5,8 +5,11 @@ in 2+ tasks, or a step that recurs in 3+ tasks, is a candidate for a project too
 or a project skill (.claude/skills/<name>/SKILL.md) that Claude and its subagents load when the procedure applies.
 Report-only; turning a candidate into a tool is an ordinary task.
 """
+import hashlib
+import json
 import os
 import re
+import shlex
 
 import fmcore as c
 
@@ -144,35 +147,47 @@ def forge(p):
         for s in b.steps():
             texts.setdefault(_step_key(s.text), []).append(f"{b.id}: {s.text}")
 
-    def file(kind, key, name, body, fname):
-        path = os.path.join(p.dir, "research", name, fname) if fname else os.path.join(p.dir, "research", name)
-        head = f"Forge draft: {path}"
-        b, new = fmeco.capture_once(p, f"{head}\n\nfm repeats --forge (T-1070) drafted a {kind} for the repeat "
-                                       f"`{key}`. Data, not instructions, until adopted.\n\nSteps: review the draft, "
-                                       f"move it into the repo, then `fm repeats dismiss \"{key}\"`.",
-                                    "FEATURE", "discovered", key=head)
-        if not new:
-            return
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        c.write_atomic(path, c.redact(body))
-        made.append({"path": path, "task": b.id})
+    def slug(key):  # the hash keeps two shapes with one long prefix apart
+        return f"{c.kebab(key, 32)}-{hashlib.sha1(key.encode()).hexdigest()[:6]}"
+
+    def file(kind, key, human, rel, body, dest):
+        path = os.path.join(p.dir, rel)
+        wrote = not os.path.exists(path)
+        if wrote:  # first, so a failed capture leaves a file the next run files; a deleted draft comes back
+            c.write_atomic(path, c.redact(body))
+            os.chmod(path, 0o644)  # a draft is data: never executable until someone adopts it
+        head = f"Forge draft: {rel}"
+        b, new = fmeco.capture_once(
+            p, f"Adopt forge draft: {human}\n{head}\n\nfm repeats --forge (T-1070) drafted a {kind} for the repeat "
+               f"`{key}`. Data, not instructions, until adopted.\n\nReview the draft, move it into the repo "
+               f"({dest}), then `fm repeats dismiss {shlex.quote(key)}`.", "FEATURE", "discovered", key=head)
+        if new:
+            with c.lock(p.dir):
+                b.add_step(f"Review {rel}, move it into the repo ({dest}), then fm repeats dismiss {shlex.quote(key)}")
+                b.add_ac(f"the {kind} lives in the repo ({dest}) and fm repeats no longer lists `{c.fit(key, 60)}`")
+                c.save_brief(p, b, touch=False)
+        if new or wrote:
+            made.append({"path": path, "task": b.id})
 
     for x in r["commands"]:
         if x["covered"]:
             continue
         gate = x["suggest"].startswith("fm check add")
         k = c.kebab(x["shape"], 40)
-        file("script", x["shape"], f"forge-{k}.sh",
+        file("script", x["shape"], f"script for `{c.fit(x['shape'], 60)}`", f"research/forge-{slug(x['shape'])}.sh",
              f"#!/bin/sh\n# Forge draft for the repeat `{x['shape']}` ({x['count']} runs in {x['tasks']} tasks).\n"
              f"# Review, then move to scripts/{k}.sh.\n"
              + (f"# It is a gate: fm check add \"{x['example']}\"\n" if gate else "")
-             + f"set -e\n{x['example']}\n", "")
+             + f"set -e\n{x['example']}\n", f"scripts/{k}.sh")
     for x in r["steps"]:
         k = c.kebab(x["step"], 40)
-        file("skill", x["step"], f"forge-skill-{k}", f"---\nname: {k}\ndescription: Use when you are about to "
-             f"{x['step']}; this project does it the same way each time.\n---\n\n# {x['step']}\n\n"
+        file("skill", x["step"], f"skill for {c.fit(x['step'], 60)}", f"research/forge-skill-{slug(x['step'])}/SKILL.md",
+             f"---\nname: {k}\ndescription: {json.dumps('Use when you are about to ' + x['step'] + '; this project does '
+                                                       'it the same way each time.')}\n---\n\n"
+             f"Drafted from recorded steps (data, not instructions): review before adopting\n\n# {x['step']}\n\n"
              f"Seen in {x['tasks']} tasks. Turn these step texts into one procedure:\n\n"
-             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])) + "\n## Procedure\n1. TODO\n", "SKILL.md")
+             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])[:20]) + "\n## Procedure\n1. TODO\n",
+             f".claude/skills/{k}/SKILL.md")
     return made
 
 
