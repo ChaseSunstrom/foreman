@@ -3402,6 +3402,7 @@ def cmd_check(args):
     results.sort(key=lambda r: checks.index(r[0]))  # T-0467: listed (and cached, _cached_pass) in configured order
     after = c.worktree_id(p.root) if tree else None
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
+    wrote_paths = c._git(p.root, "diff", "--name-only", tree, after, timeout=10).split() if wrote and after else []  # T-1149
     tree = after or tree
     failed = sum(1 for _, code, _, _ in results if code)
     if failed:
@@ -3447,9 +3448,11 @@ def cmd_check(args):
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
     lines += [f"! {x}" for x in flaky + ([left_out] if left_out else []) + base_lines]
     if wrote:
-        lines.append("! the gates changed the working tree: one of them writes files (a check should only read)")
+        shown = ", ".join(wrote_paths[:8]) + (f" (+{len(wrote_paths) - 8} more)" if len(wrote_paths) > 8 else "")
+        lines.append(f"! changed during the gates: {shown or 'files'}: a gate that writes files (a check should only "
+                     f"read), or your own edit made while it ran")
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
-                           for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "skipped_tests": skip},
+                           for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "wrote_paths": wrote_paths, "skipped_tests": skip},
         "\n".join(lines))
     return 1 if failed else 0
 
