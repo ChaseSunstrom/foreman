@@ -342,6 +342,12 @@ def session_start(pl):
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
+    try:  # T-1155: after a long silence, at a real start only (a compaction mid-run is not a return)
+        import fmaway
+        if pl.get("source") in ("startup", "resume") and (away := fmaway.line(p)):
+            other_note = " ".join(x for x in (other_note, away) if x)
+    except Exception:
+        log_error("SessionStart", _tb())
     c.log_event(p, "session_start", data={"source": pl.get("source"), "root": c.PLUGIN_ROOT},  # T-0391: the code
                 session=sid)  # this session runs (fm doctor compares it with the installed one)
     if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time
