@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.36 — 2026-10-16
 - The site has a page for every feature (planning, proof, the guard, permissions, review, builder lanes, drive and headless, stack cards, the panel, speed, learning, tools, Foreman Code, releases), each with charts drawn from Foreman's own record of building itself: tasks closed per day by type, task sizes, guard refusals by rule, review findings by lens, hook time against budgets, tests per release. `site/build.py` renders them from `site/pages.py` and `site/data/stats.json` (made by `site/stats.py` from Foreman's state: counts only), and the Pages workflow runs it (T-1220).
 
 ## 1.2.35 — 2026-10-16
