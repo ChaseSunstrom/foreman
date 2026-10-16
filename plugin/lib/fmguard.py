@@ -2912,7 +2912,20 @@ _BUDGET = 0.2  # CPU seconds. 0.5 gave a cold hook p95 of 331 ms over 330 real s
 
 
 def _script_cache_path(ctx):
-    return os.path.join(ctx.home, ".cache", "foreman", "guard-scripts.json")
+    """In Foreman's state folder, where the guard refuses a direct write: a session can't forge an entry."""
+    return os.path.join(ctx.state_dir or os.path.join(ctx.foreman_home, "state"), "guard-scripts.json")
+
+
+_GUARD_HASH = []
+
+
+def _guard_hash():
+    """sha256 of this file's bytes: an edited guard reads every script again."""
+    if not _GUARD_HASH:
+        import hashlib
+        with open(__file__, "rb") as f:
+            _GUARD_HASH.append(hashlib.sha256(f.read()).hexdigest()[:16])
+    return _GUARD_HASH[0]
 
 
 _CACHE_MAX = 200
@@ -2945,35 +2958,91 @@ def _cache_store(path, key, entry):
         pass  # no cache dir: the next run reads the file again
 
 
+_SCAN = [(re.compile(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
+    (r"\brm[ \t]+(?:-[A-Za-z-]+[ \t]+)*?(?:-[A-Za-z]*[rR][A-Za-z]*|--recursive)(?:[ \t]+-[A-Za-z-]+)*[ \t]+[\"']?"
+     r"(?:~|/|\$HOME|\$\{HOME\})/?\*?[\"']?(?=[ \t;&|)\n]|$)", "rm -r of ~, / or $HOME", False),
+    (r"\b(?:curl|wget)\b[^\n|]*\|[ \t]*(?:sudo[ \t]+(?:-\S+[ \t]+)*)?(?:ba|z|da|k)?sh\b", "a download piped into a shell", False),
+    (r"\b(?:LD_PRELOAD|LD_AUDIT|BASH_ENV|PROMPT_COMMAND|RSYNC_RSH|PERL5OPT)=[^\s\n]", "a code-loading variable", False),
+    (r"\b(?:NODE_OPTIONS|RUBYOPT)=[^\n]*(?:--require|--import|--loader|(?:^|[ \t'\"=])-r)", "code loaded by an option", False),
+    (r"-javaagent|OnOutOfMemoryError|-XX:OnError|--to-command|--use-compress-program|--checkpoint-action=exec|"
+     r"--rsh-command|--rmt-command|--unzip-command", "a command an option runs", False),
+    (r"\b(?:Proxy|Local)Command[ =]|\bvim?[ \t][^\n]*-c[ \t]*['\"]?!", "a command an option runs", True),
+)]
+
+
+def _literal_scan(text, ctx=None):
+    """[(line number, line, why)] for the dangerous literals in a script's raw text: a plain regex pass with no shell
+    parsing (about 10 ms for 256 KB). What the guard falls back to when a script can't be parsed in time."""
+    out = []
+    # a write into Foreman's state: find the path as a plain substring (a regex over the whole text was 30 ms), then
+    # look for a writing word on that line
+    marks = [".claude/foreman/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state"]
+    if ctx is not None:  # the state folder this guard runs with, when it isn't under ~/.claude/foreman
+        marks.append(ctx.state_dir or os.path.join(ctx.foreman_home, "state"))
+    verbs = re.compile(r"\b(?:tee|cp|mv|rm|install|ln)\b|\bsed[ \t]+-i")
+    redirect = re.compile(r">>?[ \t]*[\"']?([^\s;&|\"']+)")  # the target of a redirect, not `>/dev/null` on the line
+    for mark in marks:
+        i = text.find(mark)
+        while i != -1:
+            a, b = text.rfind("\n", 0, i) + 1, text.find("\n", i)
+            line = text[a:len(text) if b == -1 else b]
+            if not line.lstrip().startswith("#") and (verbs.search(line) or any(
+                    mark in r.group(1) for r in redirect.finditer(line))):
+                out.append((text.count("\n", 0, i) + 1, line.strip(), "a write into Foreman's state"))
+                break
+            i = text.find(mark, len(text) if b == -1 else b)
+    for rx, why in _SCAN:
+        for m in rx.finditer(text):
+            a, b = text.rfind("\n", 0, m.start()) + 1, text.find("\n", m.start())
+            line = text[a:len(text) if b == -1 else b].strip()
+            if line.startswith("#"):  # a usage comment ("#   curl … | sh") isn't run
+                continue
+            out.append((text.count("\n", 0, m.start()) + 1, line, why))
+            break  # the first of each kind is enough to refuse
+    return sorted(out)
+
+
+_TEXTS = []  # (path, text) of the scripts read since the outermost read began: what a budget cut-off scans
+
+
 def _script_verdict(script, cwd, kind, ctx, depth):
-    """Findings for the script file a command runs, cached by (realpath, size, mtime_ns) so a script run again costs
-    a stat (the hook runs before every Bash call: a 20 KB script took seconds to read cold). One cold read has a time
-    budget (FM_GUARD_SCRIPT_BUDGET, CPU seconds, default _BUDGET): past it the script is allowed unread, noted in _UNREAD, and that too is
-    cached. The file's own size over the limit is refused (_script_text)."""
+    """Findings for the script file a command runs, cached by the sha256 of its bytes (and of this guard file) in
+    Foreman's state folder, where the guard refuses direct writes: a script run again costs a hash, not a parse (the
+    hook runs before every Bash call: a 20 KB script took seconds to parse cold). One cold read has a time budget
+    (FM_GUARD_SCRIPT_BUDGET, CPU seconds, default _BUDGET). Past it the whole file gets the literal scan instead
+    (_literal_scan): a hit is refused, none is allowed unread and noted in _UNREAD; either is cached. The file's own
+    size over the limit is refused (_script_text)."""
     if re.search(r"[$`*?\[]", script):
         return []
     p = os.path.realpath(os.path.join(cwd, os.path.expanduser(script)))
-    try:
-        st = os.stat(p)
-    except OSError:
-        return []
     import hashlib
     import signal
     import time
-    salt =hashlib.sha1(repr((ctx.home, ctx.foreman_home, ctx.project_root, kind, os.stat(__file__).st_mtime_ns))
-                        .encode()).hexdigest()[:12]
-    key = f"{p}|{st.st_size}|{st.st_mtime_ns}|{salt}"
+    try:
+        with open(p, "rb") as f:
+            data = f.read(_SCRIPT_LIMIT + 1)
+    except OSError:
+        return []
+    key = None
+    if len(data) <= _SCRIPT_LIMIT:  # over it: refused below, nothing to cache
+        key = "|".join((p, hashlib.sha256(data).hexdigest(), hashlib.sha256(repr(
+            (ctx.home, ctx.foreman_home, ctx.project_root, kind, _guard_hash())).encode()).hexdigest()[:16]))
     nested = bool(_IN_SCRIPT)
     path = _script_cache_path(ctx)
-    hit = None if nested else _cache_load(path).get(key)
+    hit = None if nested or key is None else _cache_load(path).get(key)
     if hit:
         if hit.get("u"):
             _UNREAD.append((p, hit["u"]))
         return [tuple(f) for f in hit["f"]]
     found, unread = [], None
+    if not nested:
+        _TEXTS.clear()
     _IN_SCRIPT.append(1)
     old = None
     try:
+        text, why, got = _script_text(script, cwd, shebang=kind == "exec")
+        if text is not None:
+            _TEXTS.append((p, text))
         if not nested:
             def over(*_):
                 raise _OverBudget()
@@ -2982,7 +3051,6 @@ def _script_verdict(script, cwd, kind, ctx, depth):
                 signal.setitimer(signal.ITIMER_PROF, _script_budget())
             except ValueError:  # not the main thread: no clock (ponytail: only the main thread is time-boxed)
                 old = None
-        text, why, got = _script_text(script, cwd, shebang=kind == "exec")
         if why:
             found.append(("system", why))
         elif text is not None and (got or kind) == "py":
@@ -2994,7 +3062,10 @@ def _script_verdict(script, cwd, kind, ctx, depth):
     except _OverBudget:
         if nested:
             raise  # the outermost read owns the clock and decides
-        unread = f"read past its {_script_budget():g} s budget; allowed unread"
+        unread = f"read past its {_script_budget():g} s budget; only scanned for literals"
+        for sp, st in _TEXTS:  # never an empty verdict for a script not fully read: the whole text, plain regexes
+            found += [("system", f"{sp} line {n}: {line[:80]} ({why}; the script was too long to parse in time)")
+                      for n, line, why in _literal_scan(st, ctx)]
     finally:
         _IN_SCRIPT.pop()
         if old is not None:
@@ -3004,7 +3075,8 @@ def _script_verdict(script, cwd, kind, ctx, depth):
         return found  # the owner's read decides what is cached
     if unread:
         _UNREAD.append((p, unread))
-    _cache_store(path, key, {"p": p, "f": found, "u": unread, "at": time.time()})
+    if key:
+        _cache_store(path, key, {"p": p, "f": found, "u": unread, "at": time.time()})
     return found
 
 
