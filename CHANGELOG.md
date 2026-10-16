@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Evidence and other verification runs never inherit an exported `FOREMAN_SKIP_TESTS`, so a run of the test suite can't leave modules out silently (T-1114).
 - `fm check` leaves test files that are only another open task's red-first tests out of the suite run (`FOREMAN_SKIP_TESTS`, honoured by `run.py`, never inherited from the environment) and says which task's tests it skipped; a cached pass is reused only for the same skip set (T-1101).
 - The cached Claude Code version refreshes as soon as the `claude` binary is newer than the cache (it waited a day, so `fm doctor` said to update right after an update), and failure signatures zero hex ids such as `agent-a0bd0ad0edc0`, so one failure in two builders' worktrees groups as a repeat (T-1109).
 - A subagent's work no longer puts notes into the main thread's context: its repeated edits raise no thrash note, its failed commands no known-fix, recall or suspects note (nor a failure filed against the main thread's task), and its edits start no ambient test run (T-1110).

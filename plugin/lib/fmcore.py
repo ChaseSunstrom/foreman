@@ -430,6 +430,8 @@ def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     if root and os.path.isdir(root):
         _drop_racy_pyc(root)
+    if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently
+        env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)
