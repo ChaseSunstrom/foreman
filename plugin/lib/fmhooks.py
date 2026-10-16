@@ -342,9 +342,9 @@ def session_start(pl):
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
-    try:  # T-1155: once, after a long silence; before this session's own events could count
+    try:  # T-1155: after a long silence, at a real start only (a compaction mid-run is not a return)
         import fmaway
-        if away := fmaway.line(p):
+        if pl.get("source") in ("startup", "resume") and (away := fmaway.line(p)):
             other_note = " ".join(x for x in (other_note, away) if x)
     except Exception:
         log_error("SessionStart", _tb())

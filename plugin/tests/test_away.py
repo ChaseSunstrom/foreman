@@ -55,3 +55,27 @@ class Away(ForemanTestCase):
         ctx = json.loads(self.hook("SessionStart", {"source": "startup"}, env={"CLAUDE_ENV_FILE": self.env_file}).stdout
                          )["hookSpecificOutput"]["additionalContext"]
         self.assertNotIn("Away:", ctx)
+
+    def start(self, source):
+        return json.loads(self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file}).stdout
+                          )["hookSpecificOutput"]["additionalContext"]
+
+    def test_a_compact_or_clear_start_after_a_gap_has_no_away_line(self):
+        self.gap()
+        for source in ("compact", "clear"):
+            self.assertNotIn("Away:", self.start(source))
+
+    def test_a_git_revert_after_the_gap_is_listed_under_reverted(self):
+        import subprocess
+        self.gap()
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-m", 'Revert "add thing (T-0009)"',
+                        "-m", "This reverts commit abc123."], check=True)  # like git revert's: a body-less one is skipped by reverts()
+        text = self.fm("away").stdout
+        self.assertIn("T-0009", text)
+        self.assertIn("Reverted:", text)
+
+    def test_the_session_line_names_the_newest_ids(self):
+        self.seed([(10, "prompt", None, {"text": "go"})] + [(9 - i * 0.1, "task_done", f"T-{i:04d}", {}) for i in range(1, 10)])
+        ctx = self.start("startup")
+        self.assertIn("T-0009", ctx)
+        self.assertNotIn("T-0001", ctx)
