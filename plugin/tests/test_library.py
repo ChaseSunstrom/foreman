@@ -79,6 +79,18 @@ class LibrarySuggest(ForemanTestCase):
             self.assertFalse(never & set(got), f"{kind}: {sorted(never & set(got))} in {got}")
         self.assertLess(got.index("github-actions"), len(got))
 
+    def test_a_go_mod_s_indirect_requires_are_not_its_dependencies(self):
+        # T-1021: fm scout asked for cards for 60-odd transitive Go modules (golang.org/x/*, go4.org/mem, gvisor…)
+        root = os.path.join(self.tmp, "gomod")
+        os.makedirs(root)
+        with open(os.path.join(root, "go.mod"), "w") as f:
+            f.write("module example.com/svc\n\ngo 1.22\n\nrequire github.com/gin-gonic/gin v1.10.0\n"
+                    "require golang.org/x/text v0.14.0 // indirect\n\nrequire (\n\tgithub.com/spf13/cobra v1.8.0\n"
+                    "\tgo4.org/mem v0.0.0-20220726221520-4f986261bf13 // indirect\n)\n")
+        deps = set(fmlib.signals(root)["deps"])
+        self.assertTrue({"github.com/gin-gonic/gin", "github.com/spf13/cobra"} <= deps, deps)
+        self.assertFalse({"golang.org/x/text", "go4.org/mem"} & deps, deps)
+
     def test_a_hostile_go_mod_cannot_hang_detection(self):
         root = os.path.join(self.tmp, "hostile")
         os.makedirs(root)
