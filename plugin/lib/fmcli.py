@@ -2907,6 +2907,20 @@ def cmd_posture(args):
     out(args, {"posture": args.state}, f"{p.slug}: posture {args.state} ({what}).")
 
 
+def cmd_approve_reads(args):
+    """T-0974: Foreman answers Claude Code's permission dialog for a command that only reads (fmguard.read_only); on is
+    the user's to type (the guard refuses it from Claude), off is anyone's."""
+    p = resolve(args)
+    if args.state:
+        c.update_meta(p, approve_reads=args.state == "on")
+        with c.lock(p.dir):
+            c.log_event(p, "approve_reads", data={"on": args.state == "on"}, session=session())
+    on = bool(c.read_meta(p).get("approve_reads"))
+    out(args, {"approve_reads": on}, f"{p.slug}: " + (
+        "Foreman approves commands that only read (ls, cat, grep, git status …); anything else still asks." if on
+        else "every permission dialog is yours, as Claude Code shows it."))
+
+
 def cmd_pause(args):
     """T-0436: one flag for every project. It grants nothing, and lifting it only lets back what ran before, so
     either way it's no consent to guard."""
@@ -4552,6 +4566,10 @@ def build_parser():
 
     s = add("posture", cmd_posture, help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])
+
+    s = add("approve-reads", cmd_approve_reads, help="on: Foreman answers Claude Code's permission dialog for commands "
+                                                       "that only read (yours to turn on; T-0974)")
+    s.add_argument("state", nargs="?", choices=["on", "off"])
 
     s = add("pause", cmd_pause, help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")

@@ -1507,9 +1507,16 @@ def _prompts_path(p):
 
 
 def permission_request(pl):
-    """Claude Code is about to show a permission dialog: note it for an `fm ask`, so only that approved call grants."""
+    """Claude Code is about to show a permission dialog: note it for an `fm ask`, so only that approved call grants;
+    with fm approve-reads on, answer it for a command that only reads (T-0974)."""
     import fmguard
-    args = fmguard.lone_fm_ask((pl.get("tool_input") or {}).get("command") or "") if pl.get("tool_name") == "Bash" else None
+    cmd = (pl.get("tool_input") or {}).get("command") or "" if pl.get("tool_name") == "Bash" else ""
+    if cmd and fmguard.read_only(cmd):
+        p = c.find_project(_cwd(pl))
+        if p and c.read_meta(p).get("approve_reads"):
+            c.log_event(p, "read_approved", data={"cmd": c.fit(cmd, 200)}, session=pl.get("session_id"))
+            return {"hookSpecificOutput": {"hookEventName": "PermissionRequest", "decision": {"behavior": "allow"}}}
+    args = fmguard.lone_fm_ask(cmd) if cmd else None
     p = c.find_project(_cwd(pl)) if args else None
     if not p or not pl.get("session_id"):
         return None

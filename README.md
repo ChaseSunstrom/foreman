@@ -245,6 +245,8 @@ A blocked command says how to authorize it for the current task. For anything th
 
 **Trust mode.** To let Claude edit those too (the guard and Claude Code's settings, never Foreman state), type `/fm-trust on` yourself. The foreman-ui mod only accepts it from your own prompt (or your phone), never from Claude, a scheduled prompt or a skill, and the guard refuses any attempt by Claude to turn it on. The band shows `⚠ trust on` while it lasts. `/fm-trust off` (or `fm trust off`) ends it. Other questions come as a prompt too.
 
+**Fewer dialogs outside bypass mode.** In Claude Code's default mode every Bash command off your allow list asks. Type `! fm approve-reads on` and Foreman answers that dialog for commands that only read (`ls`, `cat`, `grep`, `git status` or `git log`, `find` without `-exec` or `-delete`, …): every part of the command has to be one of those without a writing flag, with no redirect except to `/dev/null` and no `$` (a variable can print a secret). Anything else still asks. Only you can turn it on (the guard refuses it from Claude); `fm approve-reads off` ends it.
+
 **Sensitive repos.** To opt a repo out (client code, anything with production credentials), tell Claude "this repo is sensitive" (it runs `fm sensitive on`). That writes this to the repo's `.claude/settings.local.json`, kept out of commits via `.git/info/exclude`, and Foreman shows the repo as sensitive at session start:
 
 ```json
