@@ -6,6 +6,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import time
 
 import fmcore as c
@@ -77,6 +78,106 @@ def events(days=DAYS):
             continue
         for i in order:
             yield calls[i]
+
+
+_REFUSAL = re.compile(r"Foreman guard: blocked ([\w-]+): ([^.]*)")
+MINE_CAP = 500  # refusals read, newest files first
+MINE_SHOW = 5  # examples per rule in the text report
+
+
+def _result_text(r):
+    if isinstance(r, list):
+        r = " ".join(b.get("text", "") for b in r if isinstance(b, dict))
+    return r if isinstance(r, str) else ""
+
+
+def mine(days=7):
+    """T-1187: [{command, cwd, rule, message, label, session}] for each guard refusal in this project's transcripts
+    (a Bash call whose error result opens with the guard's wording; text that merely quotes it is ignored). label,
+    from the session's next Bash call: retried-unchanged, rewritten-not-refused, rewritten-refused or abandoned.
+    ponytail: 'next call' stands in for 'the retry'; an unrelated next command reads as a rewrite."""
+    import fmclaude
+    import fmguard as g
+    home = os.path.expanduser("~")
+    root = os.path.realpath(g.project_root_for(os.getcwd(), home) or os.getcwd())  # None at $HOME or /
+    # Claude Code names the folder after the session's cwd (root, a subdirectory, a worktree under it; a long name gets a
+    # hash suffix), so every folder starting with the root's name is a candidate and the calls' own cwd decides
+    folder = os.path.join(fmclaude.config_dir(), "projects", re.sub(r"[^A-Za-z0-9]", "-", root))
+    since = time.time() - days * 86400
+    files = sorted((f for pat in (folder, folder + "-*") for f in glob.glob(os.path.join(pat, "*.jsonl"))
+                    if os.path.getmtime(f) >= since), key=os.path.getmtime, reverse=True)
+    cutoff = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(since))
+    found = []
+    for path in files:
+        calls, order, seen = {}, [], 0
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if '"Bash"' not in line and "is_error" not in line:  # as corpus() does: most lines are neither
+                        continue
+                    if seen >= MINE_CAP - len(found):
+                        break
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    content = (entry.get("message") or {}).get("content") if isinstance(entry, dict) else None
+                    for b in content if isinstance(content, list) else []:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get("type") == "tool_use" and b.get("name") == "Bash" and isinstance(b.get("input"), dict) \
+                                and isinstance(b["input"].get("command"), str):
+                            calls[b.get("id")] = {"command": b["input"]["command"], "cwd": entry.get("cwd") or "",
+                                                  "ts": str(entry.get("timestamp") or ""), "msg": None,
+                                                  "grp": (entry.get("message") or {}).get("id") or b.get("id")}
+                            order.append(b.get("id"))
+                        elif b.get("type") == "tool_result" and b.get("tool_use_id") in calls and b.get("is_error"):
+                            calls[b["tool_use_id"]]["msg"] = _result_text(b.get("content"))[:600]
+                            seen += bool(_REFUSAL.match(calls[b["tool_use_id"]]["msg"].lstrip()))
+        except OSError:
+            continue
+        seq = [calls[i] for i in order]
+        for i, call in enumerate(seq):
+            m = _REFUSAL.match((call["msg"] or "").lstrip())
+            cwd = call["cwd"]
+            if not m or (call["ts"] and call["ts"][:19] < cutoff) or \
+                    (cwd and os.path.realpath(cwd) != root and not os.path.realpath(cwd).startswith(root + os.sep)):
+                continue  # too old, or another project whose folder name merely starts like this one's
+            nxt = next((n for n in seq[i + 1:] if n["grp"] != call["grp"]), None)  # parallel siblings aren't a reaction
+            label = "abandoned" if nxt is None else "retried-unchanged" if nxt["command"] == call["command"] else \
+                "rewritten-refused" if _REFUSAL.match((nxt["msg"] or "").lstrip()) else "rewritten-not-refused"
+            found.append({"command": c.redact(call["command"]), "cwd": call["cwd"], "rule": g.rule_id(m[1], m[2]),
+                          "message": c.redact(call["msg"]), "label": label, "session": os.path.basename(path)[:-6],
+                          "_raw": call["command"]})
+            if len(found) >= MINE_CAP:
+                break
+        if len(found) >= MINE_CAP:
+            break
+    today = verdicts([(r["_raw"], r["cwd"]) for r in found])
+    for r in found:
+        r["today"] = today[_key(r.pop("_raw"), r["cwd"] or home)]
+    return found
+
+
+def cmd_mine(args, fmcli):
+    args.days = min(max(args.days, 1), 365)
+    found = mine(args.days)
+    rules = {}
+    for r in found:
+        rules[r["rule"].split(":")[0]] = rules.get(r["rule"].split(":")[0], 0) + 1
+    if not found:
+        text = f"No guard refusals in this project's transcripts in the last {args.days} days."
+    else:
+        lines = [f"{len(found)} guard refusals in the last {args.days} days (newest transcripts first)"]
+        by = {}
+        for r in found:
+            by.setdefault(r["rule"], []).append(r)
+        for rule, rs in sorted(by.items(), key=lambda kv: -len(kv[1])):
+            lines.append(f"{rule}  x{len(rs)}")
+            for r in rs[:MINE_SHOW]:
+                lines.append(f"  {r['label']}; today {r['today']}: {c.fit(c.plain(r['command'].replace(chr(10), ' ⏎ ')), 400)}")
+        text = "\n".join(lines)
+    fmcli.out(args, {"days": args.days, "rules": rules, "refusals": found}, text)
 
 
 def _key(cmd, cwd):
