@@ -1413,6 +1413,17 @@ class Stop(HookCase):
         self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
         self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
 
+    def test_drive_does_not_push_an_unapproved_m_task_while_plans_keep_missing(self):
+        # T-1061: under "slow" fm focus refuses the M task, so the drive pushing it spun the model
+        self.fm("init")
+        self.task(tier="M", focus=False)
+        self.assertEqual(self.decision(self.stop("Continuing.")), "block")
+        import fmoutcomes
+        p = c.find_project(self.repo)
+        for _ in range(5):
+            fmoutcomes.record_close(p, {"outside": 9})
+        self.assertIsNone(self.decision(self.stop("Continuing.")))
+
     def test_drive_allows_stop_when_asking_the_user(self):
         self.fm("init")
         self.task()
