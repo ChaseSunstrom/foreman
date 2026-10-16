@@ -101,7 +101,47 @@ class TaskCostCap(HookCase):
         self.assertNotIn("Cost:", self.fm("task", "show", t).stdout, "no cap, no cache: nothing")
         self.fm("task", "set", t, "cost_cap=2M")
         line = [x for x in self.fm("task", "show", t).stdout.splitlines() if x.startswith("Cost:")][0]
-        self.assertRegex(line, r"forecast ≈ 100k \(median of 2 FEATURE M\), cap 2\.0M, spent 300k")
+        self.assertRegex(line, r"forecast ≈ 100k \(median of 2 FEATURE M, rough\), cap 2\.0M, spent 300k")
         self.assertIn("Cost: forecast", self.fm("focus", t).stdout)
-        self.fm("task", "set", t, "cost_cap=2M")  # uncapped readers use the cache
+        self.fm("task", "set", t, "cost_cap=")  # T-1083 review / T-1126: empty clears it; readers use the cache
+        self.assertNotIn("cost_cap", c.find_brief(self.project(), t).meta)
         self.assertIn("Cost: forecast", self.fm("task", "show", t).stdout)
+
+    def test_the_cache_lives_outside_the_session_snapshots_and_heals(self):
+        # review: state/sessions/cost-*.json was read as the newest session snapshot and crowded rate limits out
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.fm("task", "set", t, "cost_cap=2M")
+        self.fm("task", "show", t)
+        self.assertFalse([n for n in os.listdir(os.path.join(self.home, "state", "sessions")) if n.startswith("cost-")]
+                         if os.path.isdir(os.path.join(self.home, "state", "sessions")) else [])
+        cache = os.path.join(self.home, "state", "cache", f"cost-{self.project().slug}.json")
+        self.assertTrue(os.path.exists(cache))
+        with open(cache, "w") as f:
+            f.write("[]")  # the wrong shape: treated as no cache, rewritten
+        self.assertIn("spent 300k", self.fm("task", "show", t).stdout)
+
+    def test_turns_go_to_the_task_their_own_session_was_on(self):
+        # review: attribution by global time put session A's turns on session B's task
+        self.fm("init")
+        p = self.project()
+        folder = fmcost.transcripts_dir(p.root)
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.write(json.dumps({"ts": self.day(1, 1), "task": "T-0911", "event": "touched", "session_id": "A"}) + "\n")
+            f.write(json.dumps({"ts": self.day(1, 2), "task": "T-0912", "event": "touched", "session_id": "B"}) + "\n")
+        with open(os.path.join(folder, "A.jsonl"), "w") as f:  # A works at 03:00, after B's 02:00 event
+            f.write(json.dumps({"type": "assistant", "timestamp": self.day(1, 3), "sessionId": "A",
+                                "message": {"id": "a1", "usage": {"input_tokens": 50000}, "content": []}}) + "\n")
+        costs = fmcost.task_costs(p, 7)
+        self.assertEqual(costs.get("T-0911"), 50000)
+        self.assertFalse(costs.get("T-0912"))
+
+    def test_a_cap_raise_is_on_the_record(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.fm("task", "set", t, "cost_cap=200k")
+        self.fm("task", "set", t, "cost_cap=2M")
+        self.assertIn("cost_cap 200000 → 2000000", c.find_brief(self.project(), t).section("Log"))
+        self.assertRegex(self.fm("digest").stdout, rf"Cost caps raised: {t} 200k → 2\.0M")

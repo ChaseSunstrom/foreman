@@ -2541,7 +2541,8 @@ def _drive(p, sd, briefs, pl, g):
     if wb.meta.get("cost_cap"):  # T-1083: a cap hit asks for a checkpoint, once; the cap value hit is remembered
         try:
             import fmcost
-            cap, spent = fmcost.parse_tokens(wb.meta["cost_cap"]), fmcost.cached_costs(p)[wb.id]
+            cap = fmcost.parse_tokens(wb.meta["cost_cap"])  # T-1083 review: the cache only; a stale one is redone
+            spent = (fmcost.cached_costs(p, compute=False, refresh=True) or {}).get(wb.id, 0)  # detached, off the 5 s
         except Exception:  # fails open: a cap that can't be read never traps the drive
             cap = spent = 0
         if cap and spent >= cap:
