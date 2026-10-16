@@ -66,6 +66,9 @@ class Brief(_Tasks):
         self.assertIn("merge --ff-only", brief)
         self.assertIn("isolated in the worktree", brief)
         self.assertIn("main thread", brief)
+        # T-1196: builders hit the isolation refusal 31 times by cd-ing into the main checkout: name it, and pwd
+        self.assertIn(f"main checkout ({self.repo})", " ".join(brief.split()))
+        self.assertIn("`pwd`", brief)
 
     def test_the_brief_says_edit_with_the_edit_tool(self):
         # T-0399 (JARVIS 2026-10-09): builders edited files with `python3 - <<'E' … s.replace(…)` and `cat > f <<EOF`;

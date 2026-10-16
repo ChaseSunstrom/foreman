@@ -16,7 +16,9 @@ The contract — break none of it:
   older. If `git rev-parse HEAD` isn't <BASE>: when `git merge-base --is-ancestor HEAD <BASE>` succeeds, run
   `git merge --ff-only <BASE>`; otherwise stop and report the two commits (T-0379).
 - Then, in your worktree: `fm focus <ID>`. Refused → stop and report why.
-- Stay in your worktree; never touch the main checkout, other worktrees or Foreman's state except through fm.
+- Stay in your worktree, the folder you start in (`pwd` prints it): never cd into the main checkout (<MAIN>), name a
+  path under it or point `git -C` at it, and never touch other worktrees or Foreman's state except through fm. fm verbs
+  run from your worktree act on your lane (T-1196: builders hit 31 isolation refusals by leaving it).
 - Test-first; record each step: `fm task evidence <ID> --step N --run "<cmd>"`; then
   `fm check --affected --evidence <ID>` (the tests linked to your files; the full gates run after the merge, T-0806).
   Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).

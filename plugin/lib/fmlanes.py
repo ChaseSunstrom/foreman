@@ -139,7 +139,9 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   older. If `git rev-parse HEAD` isn't {base}: when `git merge-base --is-ancestor HEAD {base}` succeeds, run
   `git merge --ff-only {base}`; otherwise stop and report the two commits (T-0379).
 - Then, in your worktree: `fm focus {id}`. Refused → stop and report why.
-- Stay in your worktree; never touch the main checkout, other worktrees or Foreman's state except through fm.
+- Stay in your worktree, the folder you start in (`pwd` prints it): never cd into the main checkout ({main}), name a
+  path under it or point `git -C` at it, and never touch other worktrees or Foreman's state except through fm. fm verbs
+  run from your worktree act on your lane (T-1196: builders hit 31 isolation refusals by leaving it).
 - Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then
   `fm check --affected --evidence {id}` (the tests linked to your files; the full gates run after the merge, T-0806).
   Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).
@@ -578,7 +580,7 @@ def builder_brief(p, b, args, resume_branch=None):
     if keeps:
         parts += ["## Defects this project keeps shipping", "Reviewers confirmed these in the last 30 days; check your "
                   "diff for each before you report:", *keeps, ""]
-    parts.append(CONTRACT.format(id=b.id, base=base))
+    parts.append(CONTRACT.format(id=b.id, base=base, main=p.root))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
