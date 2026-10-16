@@ -4330,7 +4330,7 @@ HELP_TIERS = [
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
                              "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
-    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
+    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay backtest bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
@@ -4947,6 +4947,12 @@ def build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
+    s = add("backtest", lazy("fmbacktest", "cmd_backtest"), help="where a changed rule, known fix or card would have "
+                                                                 "fired on recent real sessions, read-only (T-1058)")
+    s.add_argument("--rule", metavar="REGEX", help="calls (command, path, pattern) the regex matches")
+    s.add_argument("--fix", metavar="SIG", help="failed calls whose output contains this error signature")
+    s.add_argument("--card", metavar="NAME", help="calls that mention this library card by name")
+    s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
     s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
     import fminstr  # T-0701: the instruments, their help and arguments come from one registry
