@@ -1625,6 +1625,16 @@ test('spare rows go to more lanes and taller Today charts before History pads wi
   expect([full.rows.activity, full.rows.today]).toEqual([4, 5]) // a long History keeps them at their size
 })
 
+test('a task block with rows to spare (a new project, no History yet) lists what proves it done', async ($, on) => {
+  world(on, [{ ...CALM, recent: [] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: 'done when' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /slow wifi logs in/ })).toBeDefined()
+  expect(await ui.find({ key: 'history' })).toBeUndefined()
+  await ui.unmount()
+})
+
 test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
   const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
   const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))

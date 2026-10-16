@@ -1489,6 +1489,20 @@ export const register: Register = (on, options) => {
         }),
         ...extras,
       )
+      // rows to spare (no History yet to take them): what proves it done, all of it or none
+      const spare = R.task! - taskRows.length - (hidden ? 1 : 0)
+      if (!hidden && a.criteria.length && spare >= a.criteria.length + 2)
+        push(
+          0,
+          <Text key="ac-gap"> </Text>,
+          <Text key="ac-head" color={soft}>done when</Text>,
+          ...a.criteria.map(c => (
+            <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
+              <Text color={hex(c.checked ? C.ok : C.dim)}>{c.checked ? '✓ ' : '○ '}</Text>
+              {c.text}
+            </Text>
+          )),
+        )
     } else {
       push(
         0,
