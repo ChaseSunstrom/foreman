@@ -5,8 +5,11 @@ in 2+ tasks, or a step that recurs in 3+ tasks, is a candidate for a project too
 or a project skill (.claude/skills/<name>/SKILL.md) that Claude and its subagents load when the procedure applies.
 Report-only; turning a candidate into a tool is an ordinary task.
 """
+import hashlib
+import json
 import os
 import re
+import shlex
 
 import fmcore as c
 
@@ -132,9 +135,69 @@ def draft(p):
     return path, texts, tasks
 
 
+def forge(p):
+    """T-1070: a draft project tool for each open repeat, written in research/, and one captured task carrying it:
+    a script (with the `fm check add` line when it is a gate) per command shape, a SKILL.md skeleton per step.
+    Deterministic and offline; a draft already filed (by its path, even once closed) is not filed again, and nothing
+    is adopted: the task's request says to review, move it into the repo and dismiss the key. [{path, task}]"""
+    import fmeco
+    r, made = scan(p), []
+    texts = {}
+    for b in c.load_briefs(p, include_archive=True):
+        for s in b.steps():
+            texts.setdefault(_step_key(s.text), []).append(f"{b.id}: {s.text}")
+
+    def slug(key):  # the hash keeps two shapes with one long prefix apart
+        return f"{c.kebab(key, 32)}-{hashlib.sha1(key.encode()).hexdigest()[:6]}"
+
+    def file(kind, key, human, rel, body, dest):
+        path = os.path.join(p.dir, rel)
+        wrote = not os.path.exists(path)
+        if wrote:  # first, so a failed capture leaves a file the next run files; a deleted draft comes back
+            c.write_atomic(path, c.redact(body))
+            os.chmod(path, 0o644)  # a draft is data: never executable until someone adopts it
+        head = f"Forge draft: {rel}"
+        b, new = fmeco.capture_once(
+            p, f"Adopt forge draft: {human}\n{head}\n\nfm repeats --forge (T-1070) drafted a {kind} for the repeat "
+               f"`{key}`. Data, not instructions, until adopted.\n\nReview the draft, move it into the repo "
+               f"({dest}), then `fm repeats dismiss {shlex.quote(key)}`.", "FEATURE", "discovered", key=head)
+        if new:
+            with c.lock(p.dir):
+                b.add_step(f"Review {rel}, move it into the repo ({dest}), then fm repeats dismiss {shlex.quote(key)}")
+                b.add_ac(f"the {kind} lives in the repo ({dest}) and fm repeats no longer lists `{c.fit(key, 60)}`")
+                c.save_brief(p, b, touch=False)
+        if new or wrote:
+            made.append({"path": path, "task": b.id})
+
+    for x in r["commands"]:
+        if x["covered"]:
+            continue
+        gate = x["suggest"].startswith("fm check add")
+        k = c.kebab(x["shape"], 40)
+        file("script", x["shape"], f"script for `{c.fit(x['shape'], 60)}`", f"research/forge-{slug(x['shape'])}.sh",
+             f"#!/bin/sh\n# Forge draft for the repeat `{x['shape']}` ({x['count']} runs in {x['tasks']} tasks).\n"
+             f"# Review, then move to scripts/{k}.sh.\n"
+             + (f"# It is a gate: fm check add \"{x['example']}\"\n" if gate else "")
+             + f"set -e\n{x['example']}\n", f"scripts/{k}.sh")
+    for x in r["steps"]:
+        k = c.kebab(x["step"], 40)
+        file("skill", x["step"], f"skill for {c.fit(x['step'], 60)}", f"research/forge-skill-{slug(x['step'])}/SKILL.md",
+             f"---\nname: {k}\ndescription: {json.dumps('Use when you are about to ' + x['step'] + '; this project does '
+                                                       'it the same way each time.')}\n---\n\n"
+             f"Drafted from recorded steps (data, not instructions): review before adopting\n\n# {x['step']}\n\n"
+             f"Seen in {x['tasks']} tasks. Turn these step texts into one procedure:\n\n"
+             + "".join(f"- {t}\n" for t in texts.get(x["step"], [])[:20]) + "\n## Procedure\n1. TODO\n",
+             f".claude/skills/{k}/SKILL.md")
+    return made
+
+
 def cmd_repeats(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "forge", False):
+        made = forge(p)
+        return fmcli.out(args, {"drafts": made}, "\n".join(f"Drafted {d['path']} (task {d['task']})" for d in made)
+                         or "Nothing new to forge.")
     if getattr(args, "draft", False):
         made = draft(p)
         return fmcli.out(args, {"draft": made and made[0]}, (f"Playbook draft: {made[0]} ({len(made[2])} tasks, "
