@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The README demo and the site's poster are re-recorded in true color: Claude Code drops to 256 colours inside tmux unless `CLAUDE_CODE_TMUX_TRUECOLOR` is set, so the recording harness's every colour had been rounded to the 256 palette and the pane's tinted chart wells showed as neutral gray blocks. The new recording is a real fix to Foreman (T-1213) (T-1209).
 - `fm edit`'s block form can delete: a block whose `===` line runs straight into `>>>` replaces the old text with nothing, instead of being counted as incomplete and refusing the batch. This fix is the one recorded in the new README demo (T-1213).
 - `fm guard mine` run from a builder's linked worktree reads the main checkout's sessions (it had read only the worktree's own, empty, transcript folder) (T-1203).
 - A website for GitHub Pages (`site/`): the recorded session, the eight stations every request walks, what Foreman holds Claude to, the guard refusing real commands, proof before done, builder lanes, install with copy buttons, light and dark. `.github/workflows/pages.yml` deploys it with the demo video on pushes to main once Pages is set to deploy from GitHub Actions (T-1206).
