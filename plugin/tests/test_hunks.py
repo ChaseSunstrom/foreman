@@ -3,6 +3,7 @@ removal still passes is unproven — the check doesn't test it."""
 import json
 import os
 import subprocess
+import time
 
 from helpers import ForemanTestCase
 
@@ -171,3 +172,12 @@ class Ablate(_Case):
         res, end = json.JSONDecoder().raw_decode(p.stdout)
         self.assertEqual(p.stdout[end:].strip(), "", p.stdout[end:])
         self.assertEqual((res["ablation"]["total"], res["ablation"]["proven"]), (2, 1))
+
+    def test_a_slow_run_is_cut_at_the_deadline(self):
+        self.write("calc.py", AFTER)  # the reverted f() sleeps; the baseline is fast
+        self.write("test_calc.py", "import calc, time\nif calc.f() != 2:\n    time.sleep(5)\nassert calc.f() == 2\n")
+        t = time.time()
+        p = self.finish(env={"FM_ABLATE_BUDGET": "1"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertRegex(p.stdout, r"not run|timed out")
+        self.assertLess(time.time() - t, 5)  # uncapped, the 5 s sleep alone would exceed this
