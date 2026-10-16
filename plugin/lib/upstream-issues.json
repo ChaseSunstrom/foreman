@@ -1,0 +1,14 @@
+[
+  {"id": "zsh-heredoc-sandbox", "pattern": "can't create temp file for here document",
+   "issue_url": "https://github.com/anthropics/claude-code/issues/25990", "fixed_in": "2.1.47",
+   "note": "sandboxed zsh heredocs fail: read-only file system (TMPPREFIX not set)"},
+  {"id": "sandbox-cwd-tmp", "pattern": "operation not permitted: \\S*cwd-[0-9a-f]+",
+   "issue_url": "https://github.com/anthropics/claude-code/issues/21654", "fixed_in": "2.1.45",
+   "note": "macOS sandbox: every Bash call prints operation not permitted on Claude Code's cwd temp file"},
+  {"id": "subagent-handoff", "pattern": "classifyHandoffIfNeeded is not defined",
+   "issue_url": "https://github.com/anthropics/claude-code/issues/22087", "fixed_in": "2.1.45",
+   "note": "a finished subagent is marked failed at SubagentStop; its results are kept"},
+  {"id": "remote-control-sdk-url", "pattern": "bad option: --sdk-url",
+   "issue_url": "https://github.com/anthropics/claude-code/issues/28334", "fixed_in": "2.1.69",
+   "note": "claude remote-control fails at once on npm installs"}
+]
