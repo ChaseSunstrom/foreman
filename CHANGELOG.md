@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm tidy` and `fm digest` flag queued plans that went stale since planning: a scope file changed (judged by git commit time from the main checkout), went away, or a dependency was dropped. Each reads "re-plan: <why>", and `fm task log ID "plan re-read: …"` clears it (T-1077).
 - `fm doctor` names the upstream Claude Code issue behind an error seen twice in 7 days (hook errors and every project's failure signatures, counted only after the installed version arrived) and the version that fixes it, from a bundled list verified against GitHub and the upstream changelog (`plugin/lib/upstream-issues.json`) (T-1076).
 - The `claude -p` helpers (ideas, second, research, relate) run in their own process group: a timeout or ^C kills the whole group, grandchildren too, and SessionStart sweeps helpers a dead run left behind (checking the start time and command line, or for a dead leader, that a member it started still holds its group), logging `orphans_reaped` (T-1044).
 - Change many spots in one call (T-1089): `fm edit` applies a batch of exact replacements from stdin (JSON or `@@` blocks), all or none, inside the task's scope and only where the guard would let an Edit write; `fm sub PATTERN REPL --glob G` previews a regex change and writes it with `--apply`; the third edit of one file in a row points at them once; `fm lane max N` raises the builder cap (default 2, up to 6).
