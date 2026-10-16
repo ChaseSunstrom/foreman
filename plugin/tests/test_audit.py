@@ -31,6 +31,12 @@ class CompactDiff(ForemanTestCase):
         self.assertIn("package-lock.json: a fixture or lockfile, +1 −1 lines, left out", out)
         self.assertLess(len(out), len(diff))
 
+    def test_pre_audit_flags_a_hotspot_file_only(self):
+        import fmmap
+        found = [x for x in fmmap.pre_audit(self.repo, "", ["a.py", "b.py"], {"fixy": ["a.py"]}) if "hotspot" in x]
+        self.assertEqual(len(found), 1)
+        self.assertIn("a.py", found[0])
+
     def test_a_plain_diff_is_unchanged(self):
         diff = block("a.py", "@@ -1 +1 @@\n-x = 1\n+x = 2\n")
         self.assertEqual(fmcli._compact_diff(diff), diff)
