@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard tests pin every rule site the mutation run found untested: eval of a download, `fm posture lite` / `pause off` / `approve-reads on` / `rule rm`, recursive rm with stdin targets, nesting depth, ufw, firewall-cmd, cryptsetup, dd and `git core.hooksPath`; dropping any system, rm-outside, self-authorize or pipe-shell site now fails a test (T-1120).
 - Tools forged from repeats (T-1070): `fm repeats --forge` drafts a script for each repeated command shape fm check doesn't cover and a SKILL.md for each repeated step (in state `research/`, never executable, secrets redacted, labelled as data), and captures one task per draft with a step and a criterion to adopt it; a re-run restores a deleted draft and files nothing new.
 - `fm bench guard --mutate --flip` flips one operator or constant inside the guard's check functions per mutant, the class the old `plugin/tests/mutate_guard.py` script covered; the script is gone (its copy skipped the test fixtures, so every mutant looked killed); run from a builder's worktree, `--mutate` now mutates that checkout's guard, not the main one's (T-1121).
 - Deferred-work triage (T-1048): `fm tidy` and `fm digest` propose do (its revisit date or watched file came), drop (90+ days, its scope gone from git history, no revisit trigger) or ask for each deferred brief, applying nothing; the digest lists do and drop first.
