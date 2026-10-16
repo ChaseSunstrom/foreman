@@ -11,6 +11,7 @@ Cards are short, checkable notes, one per language, framework, service, tool or 
 - `fm lib search WORDS`: cards and installed plugins' skills (ECC and others), ranked together.
 - `fm lib show NAME`: prints a card. For a plugin skill (`plugin:skill`), it prints the path of its SKILL.md.
 - `fm lib list [--area A]` gives counts and names. `fm lib check` lints every card.
+- Growing it: `fm lib gaps` lists dependencies no card covers; `fm lib draft NAME --area AREA` stages a skeleton, fill it in, then `fm lib admit NAME` lints it, checks it for untrusted instructions and moves it into the library.
 - At edit time the hook adds the Avoid section of the best card for the file (once per card per task); `fm lib inject off` stops it.
 
 **Use in the loop.**
