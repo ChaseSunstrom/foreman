@@ -627,7 +627,7 @@ def user_prompt_submit(pl):
     r = c.parse_intake(text)
     if _CORRECTION.match(text):  # R2: the user's corrections, for /foreman:reflect to turn into durable preferences
         try:
-            act = c.active_brief(c.load_briefs(p), p.lane)
+            act = c.active_brief_fast(p, p.lane)
             c.log_event(p, "correction", task=act.id if act else None, data={"text": c.fit(c.plain(text), 300)},
                         session=sid)
             c.add_veto(p, text)  # T-0251: "never X" is checked before the next X
@@ -635,7 +635,7 @@ def user_prompt_submit(pl):
             log_error("UserPromptSubmit", _tb())
     elif _KEEP_GOING.match(text):  # T-0887: Claude stopped before the user wanted; what the Stop hook did says why
         try:
-            act = c.active_brief(c.load_briefs(p), p.lane)
+            act = c.active_brief_fast(p, p.lane)
             c.log_event(p, "stall", task=act.id if act else None, data={"text": c.fit(text, 60), "after": _last_stop(sid)},
                         session=sid)
         except Exception:
@@ -1333,7 +1333,7 @@ def _guard_ctx(pl, fmguard):
     p = act = None
     try:
         p = c.find_project(cwd)
-        act = c.active_brief(c.load_briefs(p), p.lane) if p else None
+        act = c.active_brief_fast(p, p.lane) if p else None
     except Exception:
         log_error("PreToolUse", "the working copy of fmcore failed to read the task; trying the committed fmcore "
                                 "(fix plugin/lib/fmcore.py):\n" + _tb())
@@ -1807,7 +1807,7 @@ def _bash_touches(pl, p):
     import subprocess
     if _oneoff():  # T-1007: a one-off session's files aren't the working session's task's
         return None
-    act, top = c.active_brief(c.load_briefs(p), p.lane), c.git_root(p.root)
+    act, top = c.active_brief_fast(p, p.lane), c.git_root(p.root)
     if not act or not top:
         return None
     since = time.time() - (pl.get("duration_ms") or 0) / 1000 - 2  # mtime granularity and hook latency
@@ -1928,7 +1928,7 @@ def post_tool_use(pl, ok=True):
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     if ok and p and tool in FILE_TOOLS:
-        act = None if _oneoff() else c.active_brief(c.load_briefs(p), p.lane)  # T-1007: a one-off owns no task
+        act = None if _oneoff() else c.active_brief_fast(p, p.lane)  # T-1007: a one-off owns no task
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
@@ -2037,7 +2037,7 @@ def _taint_check(pl, p):
             c.log_event(p, "taint_flag", data={"line": c.fit(hit, 80)}, session=pl.get("session_id"))
         why = f"Foreman: this command came from text a web/MCP result returned (\"{c.fit(hit, 80)}\")."
         if deny:
-            tid = c.active_brief(c.load_briefs(p), p.lane) if p else None
+            tid = c.active_brief_fast(p, p.lane) if p else None
             return ("deny", why + f" Nobody can answer a permission prompt here: fm task block {tid.id if tid else 'ID'} "
                             "\"needs the user to confirm a command from fetched text\", or ask the user.")
         return ("ask", why + " Run it only if the user wants that.")
@@ -2087,7 +2087,7 @@ def _outbound(pl, p, tool, ti):
     else:
         targets = [tool[5:]]
     try:
-        act = c.active_brief(c.load_briefs(p), p.lane)
+        act = c.active_brief_fast(p, p.lane)
         for target in targets:
             c.log_event(p, "outbound", task=act.id if act else None, data={"tool": tool, "target": target},
                         session=pl.get("session_id"))
@@ -2109,7 +2109,7 @@ def post_tool_validate(pl):
     path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
     problem, note = _onwrite(p, path)
     if problem:  # the write isn't done until it validates; Claude (or the subagent) fixes it first
-        act = c.active_brief(c.load_briefs(p), p.lane)
+        act = c.active_brief_fast(p, p.lane)
         c.log_event(p, "enforce", task=act.id if act else None, data={"kind": "validator_block", "file": path, "problem": problem[:300]},
                     session=pl.get("session_id"))
         return {"decision": "block", "reason": problem}
@@ -2121,7 +2121,7 @@ def _auto_evidence(pl, p, ok):
     evidence with its real result, as if fm had run it ([ran]); no second run through fm task evidence --run."""
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
     cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
-    act = c.active_brief(c.load_briefs(p), p.lane) if cmd else None
+    act = c.active_brief_fast(p, p.lane) if cmd else None
     hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
     if not hits:
         if ok and act:
@@ -2215,7 +2215,7 @@ def post_tool_use_failure(pl):
         if not p:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": fix}} if fix else None
         import fmrecall
-        act = c.active_brief(c.load_briefs(p), p.lane)
+        act = c.active_brief_fast(p, p.lane)
         note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err)]))
         if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
             import fmdebug
@@ -2906,7 +2906,7 @@ def subagent_stop(pl):
             log_error("SubagentStop", _tb())
     p = c.find_project(_cwd(pl))
     if p and pl.get("agent_type"):
-        act = c.active_brief(c.load_briefs(p), p.lane)
+        act = c.active_brief_fast(p, p.lane)
         c.log_event(p, "subagent", task=act.id if act else None,
                     data={"agent_type": pl.get("agent_type"), "agent_id": pl.get("agent_id"),
                           "transcript": pl.get("agent_transcript_path"),
