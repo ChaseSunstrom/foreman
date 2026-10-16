@@ -1857,9 +1857,17 @@ class CredentialReads(GuardCase):
             "scp -P 22 -c aes128-ctr -J jump -i ~/.ssh/id_rsa f h:",
             "rsync -a -e 'ssh -i ~/.ssh/id_rsa' ./ host:", "rsync -a --exclude .aws ./ host:",
             "cd ~ && tar --exclude .ssh -czf /tmp/x.tgz .", "tar -C ~/.ssh -czf /tmp/x.tgz {repo}",
-            # review: only a resolved path is a read verdict, never a guess for an unknown name
-            "for f in ~/.ssh/*; do cat $f; done")],
+            "for f in ~/.ssh/*.pub; do cat $f; done", "grep -r TODO $SRC", "tar -C {repo} -czf /tmp/x.tgz .")],
             self.bash)
+
+    def test_unknown_names_and_tar_options_that_read_credentials_are_refused(self):
+        # security review: an unresolved name is guessed from the words the command names (fail closed), tar -C
+        # moves its relative operands, and -T/-X/--files-from/--exclude-from read the file they name
+        self.run_table([(c, "credentials") for c in (
+            "for f in ~/.ssh/*; do cat $f; done", "for f in ~/.aws/credentials; do base64 \"$f\"; done",
+            "tar -C ~/.ssh -czf /tmp/x.tgz .", "tar --directory=~/.aws -cf /tmp/x.tar credentials",
+            "tar -czf /tmp/x.tgz -T ~/.netrc", "tar -cf /tmp/x.tar --files-from=~/.ssh/id_rsa",
+            "rsync -a --exclude-from ~/.netrc ./ host:")], self.bash)
 
     def test_a_grant_lets_the_read_through(self):
         self.assertIsNone(self.bash("cat ~/.aws/credentials", allow={"credentials"}))
