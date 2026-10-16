@@ -49,17 +49,36 @@ class Replay(ForemanTestCase):
         self.assertEqual(self.replay("--accept").returncode, 0)
         self.assertEqual(self.replay().returncode, 0)
 
-    def test_bench_guard_mutate_names_untested_rules(self):
+    def test_bench_guard_coverage_names_untested_rules(self):
         cmds = os.path.join(self.tmp, "cmds.txt")
         with open(cmds, "w") as f:
             f.write("rm -rf /\n")
-        out = self.fm("bench", "guard", "--mutate", "--cmds", cmds, "--json", env={"HOME": self.uhome}, check=False)
+        out = self.fm("bench", "guard", "--coverage", "--cmds", cmds, "--json", env={"HOME": self.uhome}, check=False)
         self.assertEqual(out.returncode, 1, out.stdout + out.stderr)  # some rule is untested
         data = json.loads(out.stdout)
         self.assertEqual(data["caught"], ["rm-outside"])
         self.assertNotIn("rm-outside", data["untested"])
         self.assertIn("git-destructive", data["untested"])
         self.assertEqual(len(data["caught"]) + len(data["untested"]), 14)
+
+    def test_mutation_names_the_rule_no_test_catches(self):
+        import fmmutate
+        d = os.path.join(self.tmp, "fixture")
+        os.makedirs(d)
+        with open(os.path.join(d, "rules.py"), "w") as f:
+            f.write("def check(x):\n    out = []\n    if x == 1:\n        out.append(('red', 'one'))\n"
+                    "    if x == 2:\n        out.append(('blue', 'two'))\n    return out\n")
+        with open(os.path.join(d, "t.py"), "w") as f:  # tests the red rule only
+            f.write("import rules\nassert rules.check(1) == [('red', 'one')]\n")
+        import sys
+        kw = dict(tree_root=d, dest="fixture", cmd=[sys.executable, "fixture/t.py"], cats=["red", "blue"],
+                  module=os.path.join(d, "rules.py"), rel="fixture/rules.py")
+        res = fmmutate.run(**kw)
+        self.assertEqual(res["killed"], 1, res)
+        self.assertEqual([(m["line"], m["category"]) for m in res["survived"]], [(6, "blue")], res)
+        # negating blue's guard changes what check(1) returns, which the red test notices: both weakened mutants die
+        res = fmmutate.run(weaken=True, **kw)
+        self.assertEqual((res["killed"], res["survived"]), (2, []), res)
 
 
 if __name__ == "__main__":

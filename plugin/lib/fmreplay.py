@@ -92,11 +92,35 @@ def mutate(cmds):
     return ([x for x in g.CATEGORIES if x in seen], [x for x in g.CATEGORIES if x not in seen])
 
 
+def cmd_mutate(args, fmcli):
+    """Drop (or --weaken) one rule site of the guard at a time and run its tests on each; survivors are untested rules."""
+    import sys
+    import fmguard as g
+    import fmmutate
+    module = args.module or os.path.join(c.PLUGIN_ROOT, "lib", "fmguard.py")
+    rel = os.path.join("plugin", "lib", "fmguard.py") if not args.module else os.path.join("plugin", "lib", os.path.basename(module))
+    cmd = args.tests.split() if args.tests else [sys.executable, os.path.join("plugin", "tests", "run.py"), "-p", "test_guard*.py"]
+    try:
+        res = fmmutate.run(module, rel, c.PLUGIN_ROOT, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
+                           only=args.only, limit=args.max, timeout=args.timeout)
+    except (ValueError, OSError, SyntaxError) as e:
+        raise fmcli.UsageError(str(e))
+    s = res["survived"]
+    lines = [f"Guard mutation ({'weaken' if args.weaken else 'drop'}): {res['tried']} of {res['total']} mutants, "
+             f"{res['killed']} killed, {len(s)} survived"]
+    lines += [f"  survived: fmguard.py:{m['line']} {m['category']}: {c.fit(m['stmt'], 110)}" for m in s]
+    fmcli.out(args, {**res, "survivors": len(s)}, "\n".join(lines))
+    if s:
+        raise SystemExit(1)
+
+
 def cmd_guard(args):
-    """fm bench guard --mutate: the rules no command notices; exit 1 when any (wild C10)."""
+    """fm bench guard --coverage: the rules no command notices; --mutate: the rules no test notices (wild C10)."""
     import fmcli
-    if not args.mutate:
-        raise fmcli.UsageError("fm bench guard needs --mutate")
+    if args.mutate:
+        return cmd_mutate(args, fmcli)
+    if not args.coverage:
+        raise fmcli.UsageError("fm bench guard needs --coverage or --mutate")
     if args.cmds:
         try:
             with open(args.cmds, encoding="utf-8") as f:
