@@ -14,7 +14,7 @@ import time
 import fmcore as c
 
 EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title",
-            "confidence"}
+            "confidence", "predict_minutes", "predict_attempts"}
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -617,6 +617,14 @@ def cmd_task(args):
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
                           planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
+            if b.meta.get("predict_minutes") or b.meta.get("predict_attempts"):  # T-1061: the plan's guesses vs what happened
+                evs = [e for e in c.ledger_tail(p, 5000) if e.get("task") == b.id]
+                began = min((c.parse_ts(e.get("ts")) for e in evs if e.get("event") == "focus" and c.parse_ts(e.get("ts"))),
+                            default=None)
+                logged.update(predict_minutes=int(b.meta.get("predict_minutes") or 0),
+                              predict_attempts=int(b.meta.get("predict_attempts") or 0),
+                              minutes=round((time.time() - began.timestamp()) / 60) if began else 0,
+                              attempts=1 + sum(1 for e in evs if e.get("event") == "finish" and (e.get("data") or {}).get("failed")))
         first_edit = c.first_touch(p, pre.id)
         gaps = _plan_gaps(p, pre)
         logged = {"lesson": lesson[:300]} if lesson else {}
@@ -2180,6 +2188,8 @@ def task_set(p, args):
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
         if k == "confidence" and not (v.isdigit() and 0 <= int(v) <= 100):  # T-0619
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
+        if k in ("predict_minutes", "predict_attempts") and not (v.isdigit() and int(v) > 0):  # T-1061
+            raise UsageError(f"{k} is a whole number above 0: the plan's guess, compared at the close")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -2288,7 +2298,7 @@ def cmd_focus(args):
         if target.status in c.CLOSED:
             raise UsageError(f"{target.id} is {target.status}")
         gaps = [] if target.status in ("active", "verifying") else \
-            c.plan_gaps(target, c.read_meta(p).get("autonomy", "standard"))
+            c.plan_gaps(target, c.effective_autonomy(p))
         if gaps:
             raise c.PolicyError(f"{target.id} isn't planned enough to start: missing {', '.join(gaps)} "
                                 f"(fm task set/ac/step, or /foreman:intake; fm next says what's next)")
@@ -2479,7 +2489,7 @@ def _queue_preview(p, args, order, briefs):
     import fmguard
     import fmwatch
     meta = c.read_meta(p)
-    autonomy, pending, standing = meta.get("autonomy", "standard"), c.pending_tasks(meta), set(meta.get("standing") or {})
+    autonomy, pending, standing = c.effective_autonomy(p, meta), c.pending_tasks(meta), set(meta.get("standing") or {})
     usual = fmwatch.typical(c.ledger_tail(p, 5000))
     ctx = fmguard.Ctx(cwd=p.root, project_root=p.root, home=os.path.expanduser("~"), foreman_home=c.foreman_home(),
                       state_dir=c.state_dir(), state_fallbacks=c.state_fallbacks())

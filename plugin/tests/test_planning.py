@@ -120,3 +120,39 @@ class SelfDocsModules(Base):
         with open(os.path.join(home, "MASTER.md"), "w") as f:
             f.write("fmcore does things.\n")
         self.assertEqual(fmdoctor.missing_modules(home), ["fmnew"])
+
+
+class CalibrationLedger(Base):
+    """T-1061: closes that keep missing their plan slow the project to approval for M."""
+
+    def close(self, miss):
+        c.log_event(self.p, "task_done", task="T-0001", data=dict(planned=2, changed=9 if miss else 2))
+
+    def test_misses_after_three_of_five_and_not_after_one(self):
+        import fmoutcomes
+        for miss in (1, 0, 1, 0, 1):
+            self.close(miss)
+        self.assertTrue(fmoutcomes.misses(self.p))
+        for _ in range(3):
+            self.close(0)
+        self.assertFalse(fmoutcomes.misses(self.p))  # the last five hold 1 miss
+
+    def test_minutes_and_attempts_predictions_count(self):
+        import fmoutcomes
+        self.assertTrue(fmoutcomes.missed(dict(predict_minutes=10, minutes=25)))
+        self.assertTrue(fmoutcomes.missed(dict(predict_attempts=1, attempts=2)))
+        self.assertFalse(fmoutcomes.missed(dict(predict_minutes=10, minutes=15, predict_attempts=2, attempts=2)))
+
+    def test_slow_gates_m_not_s_and_the_digest_says_so(self):
+        m, s = self.new("M work", "FEATURE", "M"), self.new("S work")
+        for _ in range(5):
+            self.close(1)
+        a = c.effective_autonomy(self.p)
+        self.assertEqual(a, "slow")
+        self.assertTrue(c.needs_approval(c.find_brief(self.p, m), a))
+        self.assertFalse(c.needs_approval(c.find_brief(self.p, s), a))
+        self.assertFalse(c.needs_approval(c.find_brief(self.p, m), "full"))
+        self.assertIn("slows to approval for M", self.fm("digest").stdout)
+        for _ in range(3):
+            self.close(0)
+        self.assertEqual(c.effective_autonomy(self.p), "standard")
