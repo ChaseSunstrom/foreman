@@ -2388,6 +2388,7 @@ def cmd_focus(args):
         target = need_brief(p, args.id)
         if target.status in c.CLOSED:
             raise UsageError(f"{target.id} is {target.status}")
+        stage_before = c.stage(target)  # T-1137: focus saves outside mutate, so it logs its own stage move
         gaps = [] if target.status in ("active", "verifying") else \
             c.plan_gaps(target, c.effective_autonomy(p))
         if gaps:
@@ -2466,6 +2467,8 @@ def cmd_focus(args):
                 and not (other.get("pid") and other["pid"] == fmbus.claude_pid()):  # T-0841: a resume is no other
             warn = f"note: another Claude Code session ({other['id'][:8]}) was active in this project within 10 minutes"
         c.log_event(p, "focus", task=target.id, session=session())
+        if c.stage(target) != stage_before:
+            c.log_event(p, "stage", task=target.id, data={"from": stage_before, "to": c.stage(target)}, session=session())
         c.regen_views(p)
     if warn:
         print(warn, file=sys.stderr)
