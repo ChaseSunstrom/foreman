@@ -3472,6 +3472,8 @@ def cmd_check(args):
             f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)"
             + (f"\n! {left_out}" if left_out else ""))
         return 0
+    if args.evidence:  # T-1176: the drive reads this (a dead pid = stale) so it doesn't offer or leave the task meanwhile
+        c.update_meta(p, gates_running={"task": args.evidence, "pid": os.getpid(), "at": c.now()})
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -3508,6 +3510,8 @@ def cmd_check(args):
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
     wrote_paths = c._git(p.root, "diff", "--name-only", tree, after, timeout=10).split() if wrote and after else []  # T-1149
     tree = after or tree
+    if args.evidence:  # T-1176: the gates are done; the task is no longer "in progress" for the drive
+        c.update_meta(p, gates_running=None)
     failed = sum(1 for _, code, _, _ in results if code)
     if failed:
         c.hints_reset(p)  # T-0250: a quieted hint gets its detail back when a gate fails
