@@ -15,6 +15,13 @@ def cmd_lane(args):
     import fmcli
     p = fmcli.resolve(args)
     main = c.main_worktree(p.root) or p.root  # from inside a lane: its main checkout
+    if args.action == "max":  # T-1089: how many builders may be out at once
+        if args.id:
+            if not (args.id.isascii() and args.id.isdecimal()) or not 1 <= int(args.id) <= BUILDERS_MAX:
+                raise fmcli.UsageError(f"fm lane max N: N from 1 to {BUILDERS_MAX}")
+            c.update_meta(p, builders=int(args.id))
+        return fmcli.out(args, {"builders": builders_cap(p)}, f"Builders at once: {builders_cap(p)} (fm lane max N, "
+                         f"1 to {BUILDERS_MAX})")
     if args.action == "list":
         briefs = c.load_briefs(p)
         rows, lines = [], []
@@ -98,7 +105,13 @@ def cmd_lane(args):
                      + ".")
 
 
-BUILDERS = 2  # at once: each is a full session's worth of tokens, and two merging into one tree is plenty to review
+BUILDERS = 2  # at once by default: each is a full session's worth of tokens, and every merge is reviewed here
+BUILDERS_MAX = 6  # T-1089: fm lane max N raises it for an unattended run; more than this is more merging than building
+
+
+def builders_cap(p):
+    v = c.read_meta(p).get("builders")
+    return v if isinstance(v, int) and 1 <= v <= BUILDERS_MAX else BUILDERS
 CONTRACT = """## Your contract (foreman:fm-builder)
 - Start from the main checkout's commit {base}: Claude Code makes your worktree from the default branch, which can be
   older. If `git rev-parse HEAD` isn't {base}: when `git merge-base --is-ancestor HEAD {base}` succeeds, run
@@ -112,7 +125,8 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
 - Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
-  sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399).
+  sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399). Many spots at
+  once: Write the batch to a file (JSON [{{"file", "old", "new"}}]) and run fm edit --file F (T-1089).
 - Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
   the main thread adds it at finish (T-0428).
 - Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
@@ -141,8 +155,10 @@ def builder_brief(p, b, args):
         raise fmcli.UsageError(f"{b.id} has no criterion with a verify command: a builder needs checks it can run "
                                f"(fm task ac {b.id} add \"…\" --verify \"<cmd>\")")
     out = [x.id for x in c.load_briefs(p) if x.meta.get("builder") and x.status not in c.CLOSED and x.id != b.id]
-    if len(out) >= BUILDERS:
-        raise c.PolicyError(f"two builders are already out ({', '.join(out)}): merge and close one first")
+    cap = builders_cap(p)
+    if len(out) >= cap:
+        raise c.PolicyError(f"{len(out)} builders are already out ({', '.join(out)}), the cap is {cap}: merge and close "
+                            f"one first (fm lane max N raises the cap, up to {BUILDERS_MAX})")
     try:
         fmbudget.check_subagent()
     except fmbudget.BudgetError as e:

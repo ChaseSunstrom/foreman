@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Change many spots in one call (T-1089): `fm edit` applies a batch of exact replacements from stdin (JSON or `@@` blocks), all or none, inside the task's scope and only where the guard would let an Edit write; `fm sub PATTERN REPL --glob G` previews a regex change and writes it with `--apply`; the third edit of one file in a row points at them once; `fm lane max N` raises the builder cap (default 2, up to 6).
 - Tamper-evident ledger (T-1065): each ledger line carries `prev`, the hash of the one before (written under an flock, so racing writers chain in order; a failed lock or unreadable archive writes the event unchained instead of losing it); `fm verify-ledger [--head H]` walks the monthly archives and the live file and names the first edited, removed or cut line; `fm task finish` prints the chain head.
 - `fm ui` no longer crashes when a subagent's outline list is the newest file in the sessions folder: that crash blanked the band and the pane (T-1097).
 - foreman-ui 0.17.0 (T-1090): every node of the live tree above the prompt holds its own words: this session shows the last thing Claude said it is doing, and each subagent its own (the first line of each model step, streaming in as it is written; tapped from `turn.step` per subagent, each chunk passed on unchanged), fewer lines each as agents multiply; a builder's node names its worktree; a fading rule separates the tree from the chat.
