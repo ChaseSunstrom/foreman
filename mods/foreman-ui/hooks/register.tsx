@@ -539,6 +539,7 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
+    treeTall = 0 // T-1041: and at its own height
     said.clear() // T-1090: and so do its nodes' words
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({

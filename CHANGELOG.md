@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A new session's band tree starts at its own height; it kept the last session's padding when a turn never completed (T-1041).
 - Chat tree: the ↻ resume row and a background task's note hang on the rail like every other row; it no longer breaks at them (T-1088).
 - A refused interpreter write made from a shell left inside `state/` says so ("The shell is in …, so a relative path lands there"); the reported false positive was a real state write from a stale cwd (T-1125).
 - A criterion whose check ran no tests at all (a mistyped test module: unittest's or pytest's "no tests ran" in the run's last lines) stays editable with `fm task ac ID edit`, like a missing command or file already did (T-1128).
