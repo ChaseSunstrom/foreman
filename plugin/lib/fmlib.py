@@ -259,6 +259,8 @@ def _deps_of(path):
         out = []  # line by line, no backtracking regex: a committed go.mod of one 400 KB line once hung fm map
         for line in text.splitlines():
             parts = line.split()
+            if parts[-2:] == ["//", "indirect"]:  # T-1021: a dependency's dependency, not the project's
+                continue
             if 2 <= len(parts) <= 4 and len(line) < 500:
                 mod = parts[1] if parts[0] == "require" and len(parts) >= 3 else parts[0]
                 if "/" in mod and "." in mod.split("/")[0]:
