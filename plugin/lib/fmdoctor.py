@@ -727,6 +727,12 @@ def check_self_docs(home=None, plugin=PLUGIN):
     missing = [n for n in sorted(cmds) if n not in listed]
     if missing:
         bad.append("MASTER.md lacks fm " + ", ".join(missing))
+    import fmcli  # T-1011: fm help's tiers name every command once (a new verb with none passed every check but the suite)
+    tiered = [w for _, names in fmcli.HELP_TIERS for w in names.split()]
+    if [n for n in sorted(cmds) if n not in tiered]:
+        bad.append("fm help's tiers lack " + ", ".join(n for n in sorted(cmds) if n not in tiered))
+    bad += [f"fm help's tiers list {n} twice" for n in sorted({w for w in tiered if tiered.count(w) > 1})]
+    bad += [f"fm help's tiers: {n} isn't an fm command" for n in sorted(set(tiered) - set(cmds))]
     for kind, folder, strip in (("skill", "skills", ""), ("agent", "agents", ".md")):
         for name in sorted(os.listdir(os.path.join(plugin, folder))) if os.path.isdir(os.path.join(plugin, folder)) else []:
             name = name[:-len(strip)] if strip and name.endswith(strip) else name
