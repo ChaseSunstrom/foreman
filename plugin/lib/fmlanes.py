@@ -55,6 +55,10 @@ def cmd_lane(args):
     branch = f"foreman/{b.id}"
     if args.action == "brief":
         return builder_brief(p, b, args)
+    if args.action == "resume":
+        if not b.meta.get("builder"):
+            raise fmcli.UsageError(f"{b.id} has no builder to resume (fm lane brief {b.id})")
+        return resume(p, b, main, args)
     if args.action == "merge":
         if b.meta.get("lane_spike"):  # T-0732: a spike answers a question; its code is thrown away
             raise c.PolicyError(f"{b.id}'s lane is a spike: it is never merged. Note what it found (fm task note "
@@ -95,7 +99,7 @@ def cmd_lane(args):
                          f"{b.id}: lane {path} on {branch}. Work there: cd into it and start claude; fm focus {b.id}.")
     if not b.meta.get("lane"):
         if b.meta.get("builder"):  # briefed, never launched (or its worktree went): the slot comes back
-            fmcli.mutate(p, b.id, lambda x: (x.meta.pop("builder", None), x.append_log("builder slot freed")),
+            fmcli.mutate(p, b.id, lambda x: (x.meta.pop("builder", None), x.meta.pop("builder_proc", None), x.append_log("builder slot freed")),
                          "lane_rm", {"builder": True})
             return fmcli.out(args, {"id": b.id, "path": None, "branch_kept": []}, f"{b.id}: builder slot freed.")
         raise fmcli.UsageError(f"{b.id} isn't in a lane")
@@ -137,7 +141,76 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   weakest link: the criterion whose evidence you trust least, and why (T-0651)."""
 
 
-def builder_brief(p, b, args):
+def stopped(p, briefs=None):
+    """T-1028: ids of open tasks with a worktree whose builder's Claude Code process (on this host) has ended."""
+    import fmbus
+    return [b.id for b in (c.load_briefs(p) if briefs is None else briefs)
+            if b.meta.get("builder_proc") and b.meta.get("lane") and b.status not in c.CLOSED
+            and fmbus.proc_state(b.meta["builder_proc"]) == "stopped"]
+
+
+def _ignored(path):
+    """Ignored files in a worktree that removing it would delete (build caches excepted, as in remove())."""
+    out = _git(path, "status", "--porcelain", "--ignored=matching").stdout.splitlines()
+    return [ln[3:] for ln in out if ln.startswith("!! ") and not _CACHE.search(ln[3:])]
+
+
+def resume(p, b, main, args):
+    """T-1028: take back a stopped builder's lane, keeping its work: uncommitted files (secret-looking ones excepted) are
+    committed as WIP on its branch, the worktree folder goes, the branch stays, the task is reset, and a fresh builder
+    brief starts from that branch. Refused while the builder's process lives or can't be judged; --force REASON overrides."""
+    import fmbus
+    import fmcli
+    why = (getattr(args, "force", None) or "").strip()
+    if not why and b.id not in stopped(p, [b]):
+        state = fmbus.proc_state(b.meta.get("builder_proc"))
+        raise c.PolicyError(f"{b.id}'s builder isn't known to be stopped ({state or 'no process recorded'}"
+                            f"{', recorded on another host' if state == 'unknown' else ''}): resuming would remove a "
+                            f"worktree it may be using. If it is gone: fm lane resume {b.id} --force \"<why>\"")
+    path, branch = b.meta.get("lane"), f"foreman/{b.id}"
+    if path and os.path.isdir(path):
+        ignored = _ignored(path)
+        if ignored and not why:
+            raise c.PolicyError(f"lane {path} has ignored files ({', '.join(ignored[:5])}) that removing it would "
+                                f"delete: move them, or fm lane resume {b.id} --force \"<why>\"")
+        branch = _git(path, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or branch
+        if _git(path, "status", "--porcelain").stdout.strip():
+            _git(path, "add", "-A")
+            held = [x for x in _git(path, "diff", "--cached", "--name-only").stdout.splitlines()
+                    if _SECRETISH.search(os.path.basename(x))]
+            for x in held:  # keys and .env files never ride into a commit
+                _git(path, "rm", "-q", "--cached", "--", x)
+            if _git(path, "diff", "--cached", "--quiet").returncode:
+                r = _git(path, "commit", "-qm", f"WIP: {b.id} builder stopped; work kept by fm lane resume")
+                if r.returncode:  # a pre-commit hook says no: nothing is removed
+                    raise fmcli.UsageError(f"could not commit the WIP in {path}: {r.stderr.strip()[:300]}")
+            if held:
+                raise c.PolicyError(f"left out of the WIP commit (secret-looking): {', '.join(held)}. Move or commit them "
+                                    f"in {path}, then fm lane resume {b.id} again; nothing was removed")
+        if branch == "HEAD":  # detached: the commit needs a branch before the worktree goes
+            branch = f"foreman/{b.id}"
+            r = _git(path, "branch", branch)
+            if r.returncode:
+                raise fmcli.UsageError(f"detached HEAD in {path} and branch {branch} can't be made: {r.stderr.strip()[:200]}")
+        _git(main, "worktree", "unlock", path)  # Claude Code locks a builder's worktree to its (dead) process
+        r = _git(main, "worktree", "remove", *(["--force"] if why else []), path)
+        if r.returncode:
+            raise fmcli.UsageError(f"git worktree remove failed: {r.stderr.strip()[:300]}")
+    _git(main, "worktree", "prune")
+    have = _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{branch}").returncode == 0
+
+    def reset(x):
+        for k in ("lane", "lane_branch", "builder", "builder_proc"):
+            x.meta.pop(k, None)
+        if x.status in ("active", "verifying"):
+            x.meta["status"] = "planned"
+        x.append_log(f"builder stopped: lane {path} removed" + (f", work kept on {branch}" if have else "")
+                     + (f" (forced: {why})" if why else ""))
+    fmcli.mutate(p, b.id, reset, "lane_resume", {"path": path, "branch": branch if have else None, "forced": why or None})
+    return builder_brief(p, c.find_brief(p, b.id), args, resume_branch=branch if have else None)
+
+
+def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
     thread reviews the branch, merges it, refocuses the task here, re-runs its criteria and closes it."""
@@ -173,6 +246,11 @@ def builder_brief(p, b, args):
             parts += [f"## {name}", body, ""]
     main = c.main_worktree(p.root) or p.root
     base = _git(main, "rev-parse", "HEAD").stdout.strip() or "HEAD"
+    if resume_branch:
+        parts += ["## Resume", f"A builder worked this task before and stopped. Its work, including a WIP commit of its "
+                  f"unfinished files, is on branch `{resume_branch}`. Right after `fm focus {b.id}`, run "
+                  f"`git merge {resume_branch}` (never rebase), read `git log {base}..{resume_branch}` and the Steps "
+                  f"already ticked, and carry on from there.", ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
     path = os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
@@ -180,7 +258,13 @@ def builder_brief(p, b, args):
         c.write_atomic(path, c.redact("\n".join(parts)) + "\n")
 
     def mark(x):
+        import fmbus
         x.meta["builder"] = c.now()
+        proc = fmbus.claude_proc()  # T-1028: when this process ends, the builder is stopped (fm lane resume)
+        if proc:
+            x.meta["builder_proc"] = proc
+        else:
+            x.meta.pop("builder_proc", None)
         x.append_log(f"builder brief: {path}")
     fmcli.mutate(p, b.id, mark, "lane_builder", {"path": path})
     # T-0373: an S task's builder runs on Sonnet; an M task's keeps the main model (the main thread reviews either)
@@ -384,7 +468,7 @@ def remove(p, b, main):
     kept = [x for x in have if _git(main, "branch", "-d", x).returncode]  # -d refuses an unmerged one: commits stay
 
     def take_back(x):
-        for k in ("lane", "lane_branch", "builder"):  # the builder slot comes back too (review)
+        for k in ("lane", "lane_branch", "builder", "builder_proc"):  # the builder slot comes back too (review)
             x.meta.pop(k, None)
         if x.status in ("active", "verifying"):
             x.meta["status"] = "planned"  # not the main checkout's active task by accident
