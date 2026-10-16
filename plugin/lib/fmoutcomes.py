@@ -271,23 +271,29 @@ def calibration_lines(p, outs=None):
         + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
 
 
-PLAN_WINDOW, PLAN_MISS = 5, 3  # T-1061: the last 5 closes with a plan to compare; 3 of them missed = slow
+PLAN_WINDOW, PLAN_MISS, PLAN_DAYS, PLAN_OUTSIDE = 5, 3, 14, 2  # T-1061: last 5 closes within 14 days; 3 missed = slow
 
 
 def missed(d):
-    """A close missed its plan: more than twice the planned files or predicted minutes, or more attempts than predicted;
-    None when it predicted nothing."""
-    checks = [d["changed"] > 2 * d["planned"] if d.get("planned") and "changed" in d else None,
+    """A close missed its plan: more than PLAN_OUTSIDE files outside the scope it had at first focus, more than twice the
+    predicted minutes, or more attempts than predicted; None when nothing was compared."""
+    checks = [d["outside"] > PLAN_OUTSIDE if "outside" in d else None,
               d["minutes"] > 2 * d["predict_minutes"] if d.get("predict_minutes") and "minutes" in d else None,
               d["attempts"] > d["predict_attempts"] if d.get("predict_attempts") and "attempts" in d else None]
     checks = [x for x in checks if x is not None]
     return any(checks) if checks else None
 
 
+def record_close(p, d):
+    """Keep this close's verdict in project meta (the last PLAN_WINDOW), so reading it costs nothing per turn."""
+    m = missed(d)
+    if m is not None:
+        c.update_meta(p, plan_verdicts=((c.read_meta(p).get("plan_verdicts") or []) + [[c.now(), m]])[-PLAN_WINDOW:])
+
+
 def plan_window(p):
-    """[bool] — missed or not — for the last PLAN_WINDOW closes that had something to compare."""
-    rows = [missed(e.get("data") or {}) for e in c.ledger_tail(p, 5000) if e.get("event") == "task_done"]
-    return [m for m in rows if m is not None][-PLAN_WINDOW:]
+    """[bool] — missed or not — for the stored verdicts under PLAN_DAYS old."""
+    return [bool(m) for ts, m in c.read_meta(p).get("plan_verdicts") or [] if (c.age_days(ts) or 0) < PLAN_DAYS]
 
 
 def misses(p):
@@ -298,7 +304,7 @@ def misses(p):
 
 def plan_lines(p):
     w = plan_window(p)
-    return [f"Calibration ledger: {sum(w)} of the last {len(w)} closes missed their plan"
+    return [f"Plan calibration: {sum(w)} of the last {len(w)} closes missed their plan"
             + ("; autonomy slows to approval for M until they recover" if misses(p) else "")] if w else []
 
 
