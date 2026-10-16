@@ -1072,7 +1072,7 @@ def _theirs(p, b, files):
     this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
     this task's first focus, not its capture: edits made before it started say nothing about its own changes."""
     events = c.ledger_tail(p, c.TASK_WINDOW)
-    mine = set(c.task_touches(p, b.id))
+    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
     since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
     others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
@@ -1080,6 +1080,16 @@ def _theirs(p, b, files):
               and (i > first if first is not None else str(e.get("ts", "")) >= since)
               and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
     return [f for f in files if f in others and f not in mine]
+
+
+def _claimed(p, b):
+    """T-1122: the files this task says are its own, its scope and the paths its 'scope:' log reasons name: an edit
+    made in the same command as the finish has no touched record yet, so the record alone can't say it's this task's."""
+    named = [s.rstrip("/") for s in b.meta.get("scope") or []]
+    for line in b.section("Log").splitlines():
+        head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
+        named += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]
+    return {n for n in named if n and not n.startswith(("/", "..")) and os.path.isfile(os.path.join(p.root, n))}
 
 
 def _landed(p, b):
