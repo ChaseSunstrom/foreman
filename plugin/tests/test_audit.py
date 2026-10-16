@@ -33,7 +33,7 @@ class CompactDiff(ForemanTestCase):
 
     def test_pre_audit_flags_a_hotspot_file_only(self):
         import fmmap
-        found = [x for x in fmmap.pre_audit(self.repo, "", ["a.py", "b.py"], {"fixy": ["a.py"]}) if "hotspot" in x]
+        found = [x for x in fmmap.pre_audit(self.repo, "", ["a.py", "b.py"], {"fixy": {"a.py": 4}}) if "hotspot" in x]
         self.assertEqual(len(found), 1)
         self.assertIn("a.py", found[0])
 
