@@ -189,6 +189,16 @@ class RunCase(ServeCase):
 
 
 class Run(RunCase):
+    def test_a_usd_contract_counts_each_sessions_cost_without_max_usd(self):  # T-1158
+        for t in ("one", "two", "three"):
+            self.task(t)
+        self.stub("claude", self.finisher + 'echo \'{"type":"result","total_cost_usd":0.30,"result":"ok"}\'\n')
+        self.fm("contract", "--usd", "0.5")
+        out = self.run_fm().stdout
+        self.assertEqual(len([l for l in self.called().splitlines() if l.startswith("claude ")]), 2)
+        self.assertIn("contract ended (spend bound)", out)
+        self.assertIn("contract receipt: 2 task(s) closed", out)
+
     def test_a_contract_that_is_over_stops_fm_run_starting_tasks(self):  # T-1158
         self.task("one")
         self.stub("claude", self.finisher + 'echo \'{"type":"result","total_cost_usd":0.30,"result":"ok"}\'\n')

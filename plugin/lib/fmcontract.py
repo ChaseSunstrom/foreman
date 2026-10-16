@@ -44,8 +44,15 @@ def used(p, k, refresh=False):
     return None if now is None else max(0, now - (k.get("tokens0") or 0))
 
 
-def over(p, now=None):
-    """'time', 'spend' or 'tokens' once a bound is reached (frozen at the first time it is seen), else None; no contract: None."""
+def tracks_usd(p):
+    """Whether fm run should record each session's cost: a contract with a USD bound is on and running."""
+    k = c.read_meta(p).get("contract")
+    return bool(k and k.get("usd") is not None and not k.get("ended"))
+
+
+def over(p, now=None, held=False, freeze=True):
+    """'time', 'spend' or 'tokens' once a bound is reached (frozen at the first time it is seen), else None; no contract: None.
+    held: the caller already holds the project lock (the Stop hook does); freeze=False: read only, write nothing."""
     k = c.read_meta(p).get("contract")
     if not k:
         return None
@@ -57,18 +64,34 @@ def over(p, now=None):
     if not why and k.get("tokens") is not None:
         tok = used(p, k, refresh=True)
         why = "tokens" if tok is not None and tok >= k["tokens"] else None
-    if why:
-        c.update_meta(p, contract={**k, "ended": why, "ended_at": now,
-                                   "tokens_used": tok if tok is not None else used(p, k)})
+    if why and freeze:
+        new = {**k, "ended": why, "ended_at": now, "tokens_used": tok if tok is not None else used(p, k)}
+        if held:
+            meta = c.read_meta(p)
+            meta["contract"] = new
+            c.write_meta(p, meta)
+        else:
+            c.update_meta(p, contract=new)
     return why
 
 
 def receipt(p):
-    import fmcost
     over(p)  # notice a bound reached since anyone last looked
-    k = c.read_meta(p).get("contract")
-    if not k:
-        return "no contract"
+    meta = c.read_meta(p)
+    return _receipt(p, meta["contract"]) if meta.get("contract") else meta.get("contract_receipt") or "no contract"
+
+
+def clear_ended(p, meta):
+    """A new session after the bound was reached starts a free run: the contract is finished, its receipt kept (meta is
+    the caller's, under the project lock)."""
+    k = meta.get("contract")
+    if k and k.get("ended"):
+        meta["contract_receipt"] = _receipt(p, k)
+        del meta["contract"]
+
+
+def _receipt(p, k):
+    import fmcost
     end = k.get("ended_at")
     since = _iso(k["started"])
     done = [e["task"] for e in c.ledger_tail(p, 20000) if e.get("event") == "task_done" and e.get("task")
@@ -85,7 +108,7 @@ def line(p):
     k = c.read_meta(p).get("contract")
     if not k:
         return ""
-    if over(p):
+    if over(p):  # an ended contract: the loop's next round and the drive are off
         return f" · contract ended ({c.read_meta(p)['contract']['ended']} bound): the drive stops; fm contract receipt"
     return ""
 
@@ -94,9 +117,10 @@ def cmd_contract(args):
     import fmcli
     p = fmcli.resolve(args)
     if args.action == "off":
-        meta = c.read_meta(p)
-        meta.pop("contract", None)
-        c.write_meta(p, meta)
+        with c.lock(p.dir):
+            meta = c.read_meta(p)
+            meta.pop("contract", None)
+            c.write_meta(p, meta)
         return fmcli.out(args, {"contract": None}, f"{p.slug}: contract off.")
     if args.action == "receipt":
         return fmcli.out(args, {"receipt": receipt(p)}, receipt(p))
