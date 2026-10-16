@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard stops credential reads (`cat`, `grep`, `cp`, `base64`, `tar`, `<` and the Read tool on ~/.ssh keys, ~/.aws/credentials, ~/.netrc …, including through a loop variable, `tar -C` or a `--files-from` list). It also stops the environment or a key piped or attached to `curl`, `wget` or `nc`, and `chmod`/`chown -R` or world-writable modes on /, the home folder or system folders. Public parts (`*.pub`, known_hosts, ~/.ssh/config, ~/.aws/config) and using a key (`ssh -i`, `scp -i`) stay allowed. The safety benchmark now stops 20 of 24 dangerous commands and 0 of 25 everyday ones (T-1224)
 - A bare `fm lease drop` releases only the active task's leases. Builder lanes share their main session's id, so a builder's drop had released the main thread's leases, three times in one day. `fm lease drop FILE` also releases every symbol lease on that file (T-1216).
 - `fmmodels`, Foreman Code's model layer: one stdlib client for OpenAI-compatible endpoints and Anthropic's Messages API. Profiles come from `$FOREMAN_HOME/models.json`, keyed clouds (Anthropic, OpenAI, OpenRouter, Groq, Gemini) and local servers (Ollama, LM Studio, llama.cpp, vLLM, probed in order). It retries on 429 and 5xx with one stop vocabulary, and the key never appears in an error and is never sent over plain http to a remote host (T-1211).
 

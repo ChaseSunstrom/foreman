@@ -313,21 +313,29 @@ _SKIPS = ("--exclude", "--include", "--exclude-from", "--include-from")
 _VALUE_OPTS = {"scp": ("-i", "-F", "-o", "-c", "-J", "-l", "-P", "-S", "-D", "-X") + _SKIPS,
                "rsync": ("-e", "--rsh", "-f", "--filter", "--files-from", "--log-file", "-T", "--temp-dir") + _SKIPS,
                "tar": ("-C", "--directory", "-X", "-T", "--files-from") + _SKIPS}
+# security review: these options read the file they name (a list of names or patterns)
+_LIST_OPTS = {"rsync": ("--files-from", "--exclude-from", "--include-from"),
+              "tar": ("-X", "-T", "--files-from", "--exclude-from", "--include-from")}
 
 
 def _read_targets(name, args):
     """The files a reading command reads: its operands (a grep-like's first one is its pattern, unless -e or -f gives
-    it) and dd's if=."""
+    it; tar's relative ones are under its -C folder), the lists tar and rsync read names from, and dd's if=."""
     if name == "dd":
         return [a[3:] for a in args if a.startswith("if=")]
     if name not in _READERS:
         return []
     takes = _VALUE_OPTS.get(name, ())  # review: scp -i KEY uses the key; tar --exclude .ssh names what it skips
-    pos = [a for i, a in enumerate(args) if not a.startswith("-") and not (i and args[i - 1] in takes)]
+    pos, cdir = [], None
+    for i, a in enumerate(args):
+        if name == "tar" and (i and args[i - 1] in ("-C", "--directory") or a.startswith("--directory=")):
+            cdir = a.split("=", 1)[1] if a.startswith("--directory=") else a
+        elif not a.startswith("-") and not (i and args[i - 1] in takes):
+            pos.append(a if cdir is None or a.startswith(("/", "~", "$")) else os.path.join(cdir, a))
     if name in _PATTERN_FIRST and not any(re.match(r"-[a-zA-Z]*[ef]|--(regexp|file|expression|from-file)", a)
                                           for a in args):
         pos = pos[1:]
-    return pos
+    return pos + _opt_values(args, *_LIST_OPTS.get(name, ()))
 
 
 def _sent_files(name, args):
@@ -2651,14 +2659,14 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                                   ("; git init writes its folder: chain the cd with && or pass the path, "
                                    'git init "$S/toy"' if init else ""))
         # T-1224: the files it reads (operands, a < redirect), what it sends out, a recursive or world-writable mode;
-        # resolved paths only (guess=False): a guess for an unknown name is no read verdict
+        # an unknown name is guessed from the words the command names, as a write's is (security review: for f in
+        # ~/.ssh/*; do cat $f; done read every key)
         for target in _read_targets(name, args) + ([c.stdin] if c.stdin else []):
-            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, " (read)", guess=False)
+            found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, " (read)")
         if name in _SENDERS:
             files, stdin = _sent_files(name, args)
             for target in files:
-                found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, f" (sent by {name})",
-                                      guess=False)
+                found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_read, f" (sent by {name})")
             if stdin and c.piped and any(_prints_environment(x) for x in chain):
                 found.append(("credentials", f"the environment piped into {name}, which sends it off the machine"))
         targets, recursive = _mode_targets(name, args)

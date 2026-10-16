@@ -247,7 +247,8 @@ The app never talks to a server: it runs `fm … --json` on this machine, and on
 Foreman is built for bypass mode (no tool-call prompts), which the installer offers to turn on. What still stops a dangerous command is Foreman's guard hook, plus 20 deny rules for the truly catastrophic cases. The guard covers:
 - recursive deletes outside the project;
 - force-pushes and hard resets on default branches;
-- credential files and `curl | sh`;
+- reading credential files (~/.ssh keys, ~/.aws/credentials, ~/.netrc …), sending the environment or a key over the network, and `curl | sh`;
+- recursive or world-writable `chmod`/`chown` on /, the home folder or system folders;
 - disk, firewall and system-service changes;
 - publish and deploy commands;
 - direct writes to Foreman state, edits to Foreman's own protected core and to Claude Code's `~/.claude.json`;
