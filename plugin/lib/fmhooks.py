@@ -2440,7 +2440,22 @@ def _drive(p, sd, briefs, pl, g):
     d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
+    import fmloop  # T-1057
+    looping = fmloop.on(p)
+    if looping:  # review: with the forever loop on, a closed task is progress: DRIVE_MAX counts spins, not work
+        closed = sum(1 for b in briefs if b.status == "done")
+        if d.get("closed") != closed:
+            d.update(closed=closed, count=0)
     if not work:  # nothing left that doesn't need the user
+        # T-1057: the forever loop continues into its next round on every drain, once per round started (a started
+        # round is progress, so it resets the cap); usage ahead of pace pauses it until a later Stop
+        if looping and not scope and not waiting and not _headless():
+            key = [int(fmloop.state(p).get("round") or 0), len(briefs)]
+            if d.get("loop") == key or _pace():
+                return None
+            d.update(loop=key, count=1, marks=_marks(p))
+            _event({"kind": "drive_loop", "session_id": sid, "project": p.slug, "round": key[0] + 1})
+            return f"Foreman loop: the queue is empty and the forever loop is on. Next: {fmloop.action(p)}."
         # waiting: what's left is the user's; drained: checked already, and no task has been made since; review: only
         # after this turn worked a task (answering a question isn't a drain) and within DRIVE_MAX
         began = _turn_began(p, sid, d) or time.time()

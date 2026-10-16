@@ -80,6 +80,7 @@ export type FmView = {
   blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
+  loop?: { on: boolean; round: number; dry: number } | null // the forever loop (T-1057)
   worktrees?: FmWorktree[] | null // T-1023: git worktrees beside the main checkout
   history?: FmHistory[] | null // T-1026: what happened, structured, newest last
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents

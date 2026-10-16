@@ -3919,7 +3919,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo show recall fix explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
+    ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
                              "plugins docs doctor release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
@@ -4588,6 +4588,11 @@ def build_parser():
 
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
+
+    s = add("loop", lazy("fmloop", "cmd_loop"), help="the forever loop (T-1057): on, an empty queue starts the next "
+            "improvement round (review, brainstorm past every earlier run, queue, build) until two dry rounds")
+    s.add_argument("action", nargs="?", choices=["status", "on", "off", "round", "yield"])
+    s.add_argument("n", nargs="?", type=int, help="yield: how many grounded ideas this round queued")
 
     s = add("posture", cmd_posture, help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])

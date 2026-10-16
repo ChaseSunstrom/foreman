@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The forever loop (T-1057): `fm loop on` turns an empty queue into the next improvement round (review what shipped, brainstorm past the newest earlier runs, ground, queue, build), enforced by `fm next` and the Stop drive rather than left to the session; a round's yield is the tasks it made unless `fm loop yield N` says otherwise, two dry rounds in a row or `fm loop off` end it (with a decision on record), and usage ahead of pace pauses it. The pane and band show `∞ round N`.
 
 ## 1.2.31 — 2026-10-16
 - The README's demo is re-recorded with the current UI (T-1035): the chat as a tree, the live tree above the prompt with a scout subagent's branch, the pane's work bar and Agents graph. Its change ships too: `fm lib stats --days N` counts only the last N days of card use.
