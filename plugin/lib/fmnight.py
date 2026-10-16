@@ -21,7 +21,7 @@ import fmserve
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "compost", "consolidate", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("scout", "dream", "cold files", "compost", "consolidate", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue")
 
 
 def current_model(p):
@@ -89,6 +89,11 @@ def jobs(p):
         est = fmbudget.estimate("bench", 4, 0.5)
         out.append((f"evolve candidate {cand}", ["bench", "versions", cand, "--max", "2", "--budget",
                                                  f"{max(0.1, est / 4):.2f}"], est))
+    briefs = c.load_briefs(p)
+    state = {b.id: b.status for b in briefs}
+    if any(b.tier in ("S", "M") and all(state.get(d) in c.CLOSED for d in c._deps(b))
+           for b in c.order_queue(briefs)[0]):  # T-1046: an unblocked small task is waiting: fm run works it
+        out.append(("queue", ["run", "--fit", "--max", "2", "--wait", "0"], fmbudget.estimate("run", 2, 0.5)))
     return out
 
 
@@ -167,7 +172,7 @@ def cmd_night(args):
            [f"  skipped {j['name']} (≈ ${j['usd']:.2f}: over the limit)" for j in skipped]
     if args.dry_run:
         return fmcli.out(args, {"jobs": plan, "skipped": skipped, "limit": limit, "note": note}, "\n".join([head] + rows))
-    ran, stopped = [], ""
+    ran, stopped, t0 = [], "", c.now()
     for j in plan:  # one at a time; before each, the real spend so far and the usage now (review)
         night_usd = fmbudget.spent()[0] - start
         if night_usd >= limit and ran:
@@ -193,9 +198,11 @@ def cmd_night(args):
         ran.append({"name": j["name"], "exit": code, "tail": c.fit(c.plain(" ".join(tail)), 160)})
     if not stopped and ran and fmbudget.spent()[0] - start > limit:
         stopped = f"spend ${fmbudget.spent()[0] - start:.2f} passed the limit ${limit:.2f} in the last job"
+    closed = [e["task"] for e in c.ledger_tail(p, 5000) if e.get("event") == "task_done" and e.get("task")
+              and str(e.get("ts", ""))[:19] >= t0[:19]] if any(x["name"] == "queue" for x in ran) else []
     with c.lock(p.dir):
         c.log_event(p, "night", data={"ran": ran, "skipped": [s["name"] for s in skipped], "limit": limit,
-                                      "stopped": stopped}, session=fmcli.session())
+                                      "stopped": stopped, "closed": closed}, session=fmcli.session())
     fmcli.out(args, {"ran": ran, "skipped": skipped, "limit": limit, "stopped": stopped, "note": note},
               "\n".join([head] + [f"  {'✓' if x['exit'] == 0 else '✗'} {x['name']}: {x['tail']}" for x in ran]
                         + [f"  skipped {s['name']}" for s in skipped] + ([f"  stopped: {stopped}"] if stopped else [])))
