@@ -9,8 +9,8 @@ from helpers import ForemanTestCase
 import fmcore as c
 
 STUB = r'''#!/usr/bin/env python3
-import os
-open("drafted.txt", "w").write(os.getcwd())
+import os, sys
+open("drafted.txt", "w").write(os.getcwd() + "\n" + " ".join(sys.argv[1:]))
 print('{"type": "result", "is_error": false, "total_cost_usd": 0.1, "result": "ok"}')
 '''
 
@@ -45,6 +45,9 @@ class Draft(ForemanTestCase):
         out = json.loads(self.fm("draft", "--json", env=self.env).stdout)
         self.assertEqual(out["drafted"], tid)
         self.assertEqual(self.branches(), [f"draft/{tid}"])
+        drafted = subprocess.run(["git", "-C", self.repo, "show", f"draft/{tid}:drafted.txt"], capture_output=True,
+                                 text=True).stdout
+        self.assertIn("--permission-mode acceptEdits", drafted, "headless, the draft must be able to edit its worktree")
         p = c.find_project(self.repo)
         fp = json.load(open(os.path.join(p.dir, "draft.json")))
         self.assertEqual(fp["task"], tid)

@@ -81,7 +81,9 @@ def cmd_draft(args):
         import argparse
         import fmserve
         # same flags fm run gives its sessions (sandbox, models, permission mode); only the prompt differs
-        cmd = fmserve._claude_cmd(p, top, argparse.Namespace(max_usd=0, permission_mode=None), {})
+        # acceptEdits: a headless session can't answer an edit prompt, and the draft only ever edits its own throwaway
+        # worktree (never merged); shell commands still ask (denied headless) and the guard still runs
+        cmd = fmserve._claude_cmd(p, top, argparse.Namespace(max_usd=0, permission_mode="acceptEdits"), {})
         cmd[2] = prompt
         subprocess.run(cmd, cwd=wt, capture_output=True, text=True,
                        timeout=TIMEOUT)
