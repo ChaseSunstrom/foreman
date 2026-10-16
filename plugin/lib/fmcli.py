@@ -908,14 +908,20 @@ def task_finish(p, args):
         _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
     if not rc and not getattr(args, "json", False):
         import fmledger
-        print(fmledger.receipt(p))  # T-1065: the chain head, the anchor fm verify-ledger --head checks later
+        try:  # T-1065: the chain head, the anchor fm verify-ledger --head checks later
+            print(fmledger.receipt(p))
+        except OSError as e:  # the close has landed; an unreadable archive must not make it look failed
+            print(f"Ledger: unreadable ({e.strerror or e})")
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
 
 
 def _ledger_head(p):
     import fmledger
-    r = fmledger.chain(p)
+    try:
+        r = fmledger.chain(p)
+    except OSError as e:  # the task is done already: an unreadable archive is reported, never a crash
+        return {"head": None, "unreadable": e.strerror or str(e)}
     return {k: r[k] for k in ("head", "chained", "broken")}
 
 
