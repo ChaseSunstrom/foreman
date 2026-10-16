@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm lib gaps | draft | admit`: list dependencies no card covers, stage a card, and admit it into the library only after the card lint and an untrusted-text check pass, never outside the cards folder (T-1037).
 - Racing builders: `fm lane race T` has two builders work an S/M task under their own ids, `--score` compares them (criteria passing, lines changed), and `fm lane pick W` merges the winner and drops the other, keeping its branch (T-1069).
 - fm logs a stage event whenever a task's stage changes (from every task write and fm focus), and pane splits use those real stage times (T-1137).
 - `fm check affected --for .tsx "<cmd>"` gives each test-file extension its own affected command, so a changed `.tsx` test runs in `fm check --affected` and at close beside the Python ones; this repo now runs the mod's tests that way (T-1135).
