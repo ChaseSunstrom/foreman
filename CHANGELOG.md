@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- `fm adopt` learns from git history: fix/revert commits become a `git-history-lessons` note recall finds, and `error: X → Y` commit lines become known fixes that stay hints until trusted (`fm adopt --history` alone) (T-1047).
+- Lane claims: `fm lease take FILE[::SYM]...` refuses a claim that overlaps another session's, naming it and its task (`--warn` takes an advisory one); lane briefs pre-claim the task's scope files, released on rm, merge and resume (T-1068).
+- Night gardening: `fm night` composts closed tasks' worktrees and branches (`fm tidy --lanes-only`) and files one task proposing merged near-duplicate lessons (`fm recall --lessons --consolidate`) (T-1071).
 - A new session's band tree starts at its own height; it kept the last session's padding when a turn never completed (T-1041).
 - Chat tree: the ↻ resume row and a background task's note hang on the rail like every other row; it no longer breaks at them (T-1088).
 - A refused interpreter write made from a shell left inside `state/` says so ("The shell is in …, so a relative path lands there"); the reported false positive was a real state write from a stale cwd (T-1125).
