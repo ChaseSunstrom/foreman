@@ -24,6 +24,7 @@
 - `fm pr ID --post [--pr N]` comments the rendered description, with its proof, on the PR; posting is outward, so it needs the task's publish grant and spends it (T-1167).
 - `fm task finish --commit` leaves out files that were already uncommitted when the task was focused (and no other Foreman task touched), and names them; `--with FILE` commits one (T-1169).
 - `fm guard wrong "CMD" --should allow|block` stores a labelled guard case in the repo's test fixtures; the guard tests hold every label, `fm replay --cases` reports them, and `fm night` captures one FIX per drifted case (T-1162).
+- `fm contract --until HH:MM [--usd N] [--tokens N]` bounds an unattended run: past the time, the headless spend or this project's token use, the Stop drive, the forever loop and `fm run` stop, and `fm contract receipt` lists what closed, what it cost and which bound ended it (T-1158).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
