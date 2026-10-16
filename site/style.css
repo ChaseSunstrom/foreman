@@ -262,3 +262,19 @@ footer .fine { flex-basis: 100%; }
 }
 :root[data-theme="dark"] { --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300;
                            --grid: #1f2a3d; --axis: #2c3a52; --muted: #8190a6; }
+
+/* benchmarks (T-1222) */
+.stamp.warn { color: var(--signal-ink); }
+.verdicts { margin-top: 28px; overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); }
+.verdicts table { border-collapse: collapse; width: 100%; min-width: 560px; }
+.verdicts th, .verdicts td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+.verdicts th { font: 600 .95rem Barlow, sans-serif; color: var(--ink-2); }
+.verdicts td small { color: var(--ink-2); }
+.verdicts code { font-size: .8rem; }
+.verdicts .stamp { transform: rotate(-3deg); }
+@media (max-width: 600px) {
+  .verdicts table { min-width: 0; }
+  .verdicts th, .verdicts td { padding: 8px 10px; }
+  .verdicts code { overflow-wrap: anywhere; }
+  .verdicts .stamp { font-size: .62rem; padding: 2px 5px; }
+}
