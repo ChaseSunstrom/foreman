@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Install commands are checked before they run (`npm`/`pip`/`uv`/`poetry`/`pipx`/`yarn`/`cargo`/`go`): a name one edit away from a popular package, or (when the network is allowed) first published in the last 30 days, gets a note; `fm deps check "<cmd>"` runs it by hand. Lookups share a 1.2 s budget, skip popular, scoped and private-registry names, and are off under `FOREMAN_NO_NET=1` or a sensitive repo (T-1049).
+- A command copied from a web page or MCP result asks before it runs (once per line per session); headless or in full autonomy it is denied with a way forward, every time (T-1053).
 - The user proxy: once the user has given the same answer twice to the same ask (same question and options, within 180 days), `fm decide --ask` answers it for them with `proxy: true` and says so in the digest. Two overruled proxy answers stop it; guard asks and an empty key are never proxied; `fm decide --answer` is user-only (T-1064).
 - A hit cost cap is recorded on the task (`cap_hit`), so `fm run`, `fm next`, lanes and the drive all hold it until its cap changes, and `fm next` says so; before, only the interactive drive did (T-1127).
 - Per-task cost cap and forecast (T-1083): `fm task set ID cost_cap=2M` (input-equivalent tokens; empty or 0 removes it, and every change is logged, raises listed in `fm digest`) makes the drive ask for a checkpoint at the cap and stop pushing that task until the cap changes; `fm cost --task ID`, `fm focus` and `fm task show` show spent, cap and a forecast from finished tasks of the same type and tier. Spend is attributed to the task the turn's own session was on, cached in `state/cache`, and refreshed off the Stop hook's path. `fm task set ID key=` clears an optional field (T-1126).
