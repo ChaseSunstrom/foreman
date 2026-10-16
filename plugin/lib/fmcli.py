@@ -3904,7 +3904,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo show recall explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing budget sync share notify compact-output complete wiring "
+    ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
                              "plugins docs doctor release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
