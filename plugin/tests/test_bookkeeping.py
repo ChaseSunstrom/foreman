@@ -135,7 +135,7 @@ class CloseUndo(HookCase):
         sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
         self.assertIn(f"Undo: git revert --no-edit {sha}", out)
         self.assertIn("Nothing needed from you", out)
-        self.assertNotIn("Check by hand", out)
+        self.assertNotIn("Not verified", out)
 
 
 class CommitAfterFocus(HookCase):

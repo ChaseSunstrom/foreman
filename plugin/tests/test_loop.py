@@ -106,17 +106,32 @@ class LoopReview(ForemanTestCase):
     def test_a_round_left_without_a_yield_counts_the_tasks_it_queued(self):
         self.fm("loop", "on")
         self.fm("loop", "round")
-        self.fm("loop", "round")  # nothing queued in round 1 and no yield: dry, counted by Foreman
+        self.assertIn("fm loop round --next", self.fm("next").stdout, "a drained open round is ended with --next")
+        self.fm("loop", "round", "--next")  # nothing queued in round 1 and no yield: dry, counted by Foreman
         self.assertIn("1 dry", self.fm("loop").stdout)
-        self.fm("loop", "round")  # round 2: dry again, so the loop ends
+        self.fm("loop", "round", "--next")  # round 2: dry again, so the loop ends
         self.assertIn("off", self.fm("loop").stdout)
+
+    def test_reading_the_open_round_again_does_not_advance_it(self):
+        # T-1153: a second fm loop round mid-round (re-reading the brief) counted round 1 dry and started round 2
+        self.fm("loop", "on")
+        self.fm("loop", "round")
+        again = self.fm("loop", "round").stdout
+        self.assertIn("round 1", again)
+        self.assertIn("fm loop yield", again)
+        out = self.fm("loop").stdout
+        self.assertIn("round 1", out)
+        self.assertNotIn("dry", out)
+        self.fm("loop", "yield", "5")
+        self.fm("loop", "round")  # a recorded yield closes the round: the next call starts round 2
+        self.assertIn("round 2", self.fm("loop").stdout)
 
     def test_tasks_captured_during_a_round_are_its_yield(self):
         self.fm("loop", "on")
         self.fm("loop", "round")
         for i in range(4):
             self.fm("capture", f"idea {i}", "--source", "self")
-        self.fm("loop", "round")
+        self.fm("loop", "round", "--next")
         out = self.fm("loop").stdout
         self.assertNotIn("dry", out)
         self.assertIn("round 2", out)

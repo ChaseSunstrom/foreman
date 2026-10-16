@@ -1061,9 +1061,8 @@ export const register: Register = (on, options) => {
             {working && <Text color={hex(C.accent)}>{spin(f ?? 0)}</Text>}
             {meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
             <Text wrap={cut}>
-              <Text weight="bold">
-                {done}/{a.steps.length}
-              </Text>{' '}
+              {/* T-1154: the current step's own number ('1/3' beside step 2's text read as step 1) */}
+              <Text weight="bold">{`step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}`}</Text>{' '}
               {cur?.text ?? ''}
             </Text>
           </Box>
@@ -1113,11 +1112,7 @@ export const register: Register = (on, options) => {
             {miniRail($.ui.resolve(e), e, a.stages.length, a.stages.indexOf(a.stage), working ? f : null)}
             <Text color={hex(C.dim)}>{a.stage}</Text>
             {a.steps.length > 0 && meter($.ui.resolve(e), e, 'fm-band-bar', width, done / a.steps.length, C.ok, f)}
-            {a.steps.length > 0 && (
-              <Text weight="bold">
-                {done}/{a.steps.length}
-              </Text>
-            )}
+            {a.steps.length > 0 && <Text weight="bold">{`step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}`}</Text>}
             {cur && <Text wrap={cut}>{cur.text}</Text>}
             {a.audits.need > 0 && (
               <Text color={hex(a.audits.done >= a.audits.need ? C.ok : C.dim)}>
@@ -1168,7 +1163,7 @@ export const register: Register = (on, options) => {
             </Text>
           </Box>
         )}
-        {!working && v.next && (
+        {!working && v.next && !(a && v.next.startsWith(`${a.id} step `)) && ( // T-1154: not the step the head shows
           <Text color={hex(C.dim)} wrap={cut}>
             → {humanNext(v.next)}
           </Text>
@@ -1451,7 +1446,8 @@ export const register: Register = (on, options) => {
       key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
       start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
       status: w.stopped ? `stopped · fm lane resume ${w.task}`
-        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
+        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge`
+        : w.open ? 'working' : 'merged', // T-1152: a fresh builder's branch has nothing ahead yet
       statusColor: w.ahead && !w.stopped ? C.accent2 : C.warn,
     })
     const gantt: Gantt[] = recentSubs.map(s => {

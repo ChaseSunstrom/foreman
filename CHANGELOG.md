@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 1.2.33 — 2026-10-16
+- Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
+- Builders self-review as an adversary before they report (what input breaks it, what outside text it trusts, what is unbounded, what it writes where, what a second run does) and say so in a Self-review section (T-1147).
+- `fm lease take` with a path relative to the repo root, run from a subdirectory, leases that file instead of a doubled path (T-1148).
+- The pane's Agents graph says "working" for a builder's fresh worktree (its task still open, nothing committed yet) instead of "merged" (T-1152).
+- The builder contract has one source: a test fails when `fmlanes.CONTRACT` and `agents/fm-builder.md` drift apart (T-1151).
+- `fm check` names the files that changed during its gates and says the change may be your own edit, instead of blaming a gate that writes files (T-1149).
+- A verify naming a test module or script that doesn't exist yet is kept with a note saying so; a verify naming an npm script its package.json lacks is refused when the criterion is added (T-1145).
+- `fm guard try "CMD"` (or `--tool Edit --path P`) prints the guard's real decision for this session (task, grants, cwd) without running anything, so a false block can be checked before a retry (T-1146).
+- `fm loop round` run again during a round shows that round's brief instead of counting it dry and starting the next one; `fm loop round --next` (what `fm next` says once the round's work has drained) ends it (T-1153).
+- A mistyped `fm` command prints the nearest match and points at `fm help` instead of listing all ~170 commands (T-1170).
+- The band reads "step 2/3" (the step being worked) beside that step's text instead of "1/3", and drops the "→" line when it only repeats that step (T-1154).
+- `fm todo` lists what only you can do (pending asks, blocked-on-you tasks, recent costly or outward decisions), each with what to type, and drops entries as they're resolved (T-1157).
+- Every close prints one "Not verified" block, replacing "Check by hand": a skipped affected-tests run (only when it was really waived), claims recorded as unchecked or inferred, then criteria no command of their own proved (T-1159).
+- `fm lane list` and `fm next` flag a live builder lane with no edit, commit or ledger event for 15 minutes (`FM_STALL_MIN`) as stalled and say how to resume it; returned and merged lanes are skipped (T-1156).
+- `fm away`: what closed, blocked, was asked or reverted since you last spoke; a session start or resume after a 2 h gap carries one "Away" line (T-1155).
+- The guard's "driving Foreman's modules" refusal for a test written with `cat <<EOF` and run in the same command now says to write it in one command and run it in the next (each half passes), the cause of 12 of 31 such refusals in four days (T-1171).
+- `fm lane merge` records the files that conflicted, and `fm lane brief` warns when a new lane's scope includes a file two or more other lanes conflicted on in the last 30 days (T-1161).
+- `fm inbox spec FILE` captures each unchecked `- [ ]` item of a SPEC.md or checklist once, quoted as untrusted data (T-1165).
+- Builder briefs list the defect classes reviewers confirmed in the last 30 days (class, count, one example) under "Defects this project keeps shipping", so builders check for them before reporting (T-1164).
+- `fm deps --capture` queues one inbox task per dependency a major version behind ("Migrate X from 2.x to 3.1.0"), never twice for the same target major (T-1166).
+- `fm pr ID --post [--pr N]` comments the rendered description, with its proof, on the PR; posting is outward, so it needs the task's publish grant and spends it (T-1167).
+- `fm task finish --commit` leaves out files that were already uncommitted when the task was focused (and no other Foreman task touched, and not written in the minute before the focus, which is the task starting), and names them; `--with FILE` commits one (T-1169).
+- `fm guard wrong "CMD" --should allow|block` stores a labelled guard case in the repo's test fixtures; the guard tests hold every label, `fm replay --cases` reports them, and `fm night` captures one FIX per drifted case (T-1162).
+- `fm contract --until HH:MM [--usd N] [--tokens N]` bounds an unattended run: past the time, the headless spend or this project's token use, the Stop drive, the forever loop and `fm run` stop, and `fm contract receipt` lists what closed, what it cost and which bound ended it (T-1158).
+- Foreman ships two Claude Code workflows: `/foreman:review` (one reviewer per audit lens over a diff, two skeptics per finding, only confirmed defects returned) and `/foreman:ideas` (a brainstorm whose lens agents read the code, so each idea comes back marked new, partial or built, with evidence) (T-0787).
+
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
 - The guard reads a heredoc fed to `fm edit` as data, like one fed to `cat`: an edit block that names Foreman's modules is no longer refused as interpreter code just because the same command also runs python3 (T-1141).

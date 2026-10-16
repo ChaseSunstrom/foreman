@@ -149,8 +149,8 @@ class BoardClose(Base):
         self.fm("task", "new", "Again", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
                 "--focus")
         self.write("x.py", "A = 3\n")
-        last = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Again"
-                       ).stdout.strip().splitlines()[-1]
+        last = self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "Again",
+                       "--with", "x.py").stdout.strip().splitlines()[-1]  # T-1169: x.py was left dirty at focus
         sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "--short", "HEAD"], capture_output=True,
                              text=True).stdout.strip()
         self.assertEqual(last, f"Landed: committed {sha} · not pushed")

@@ -8,6 +8,7 @@ import functools
 import io
 import os
 import re
+import time
 
 import fmcore as c
 
@@ -42,6 +43,13 @@ def cmd_lane(args):
                          + ("; ".join(f"{b.id} {b.status} {c.fit(b.title, 50)}" for b in tasks) or "no task")
                          + (f" — fm lane rm {tasks[0].id} frees it" if gone and tasks else "")
                          + (f" — ANDON: {c.fit(rows[-1]['andon'], 120)}" if andon else ""))
+        idle = stalled(p, briefs)
+        for i, r in enumerate(rows):
+            tid = r["tasks"][0]["id"] if r["tasks"] else None
+            r["stalled_min"] = round(idle[tid]) if tid in idle else None
+            if r["stalled_min"] is not None:
+                lines[i] += (f" — STALLED {r['stalled_min']} min: no edit, commit or event; stop the agent, then "
+                             f"fm lane resume {tid} --force \"hung\"")
         listed = {r["path"] for r in rows}
         for b in briefs:  # review: a task whose lane folder is gone is still held; say how to free it
             if b.meta.get("lane") and b.meta["lane"] not in listed and b.status not in c.CLOSED:
@@ -149,6 +157,9 @@ CONTRACT = """## Your contract (foreman:fm-builder)
   pipeline, `fm task evidence`/`fm task log` in a lane): that's the harness, not a bug. Don't retry or rephrase it;
   run what it allows, commit, and list each refused check in your report as one for the main thread to run after the
   merge.
+- Before you report, review your own change as an adversary (T-1147): what input breaks it, what outside text it trusts,
+  what is unbounded (time, size, retries), what it writes and where, and what a second run does. Fix what you find, or
+  list it under a Self-review section of your report.
 - Return: branch, commit sha, each criterion ✓/✗ with its evidence, what's unfinished, files to read first, and the
   weakest link: the criterion whose evidence you trust least, and why (T-0651)."""
 
@@ -159,6 +170,72 @@ def stopped(p, briefs=None):
     return [b.id for b in (c.load_briefs(p) if briefs is None else briefs)
             if b.meta.get("builder_proc") and b.meta.get("lane") and b.status not in c.CLOSED
             and fmbus.proc_state(b.meta["builder_proc"]) == "stopped"]
+
+
+def stalled(p, briefs=None):
+    """T-1156: {task id: minutes} for live builders whose lane shows no file change (tracked or untracked, not ignored), no
+    commit and no ledger event for FM_STALL_MIN minutes (default 15): a hang, not slow work."""
+    import json
+
+    try:
+        limit = float(os.environ.get("FM_STALL_MIN") or 15)
+    except ValueError:
+        limit = 15
+    limit = limit if limit > 0 else 15
+    try:
+        ttl = float(os.environ.get("FM_STALL_CACHE_S") or 60)
+    except ValueError:
+        ttl = 60
+    cache = os.path.join(p.dir, "stalled.json")  # fm next runs every turn: don't re-stat the lanes each time
+    try:
+        if briefs is None and ttl > 0 and time.time() - os.stat(cache).st_mtime < ttl:
+            with open(cache) as f:
+                return json.load(f)
+    except (OSError, ValueError):
+        pass
+    out = _stalled(p, briefs, limit)
+    if briefs is None:
+        try:
+            c.write_atomic(cache, json.dumps(out))
+        except OSError:
+            pass
+    return out
+
+
+def _stalled(p, briefs, limit):
+    import fmbus
+    git = functools.partial(_git, timeout=10)
+    main = c.main_worktree(p.root) or p.root
+    base = git(main, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
+    now, out, events = time.time(), {}, None
+    for b in (c.load_briefs(p) if briefs is None else briefs):
+        path = b.meta.get("lane")
+        if (not b.meta.get("builder_proc") or not path or b.status in c.CLOSED or not os.path.isdir(path)
+                or fmbus.proc_state(b.meta["builder_proc"]) != "alive"):
+            continue
+        # builder_proc is the main session's, alive after the builder returns: a returned builder (commits ahead, clean
+        # tree) or a merged lane waits on review, it isn't hung
+        events = c.ledger_tail(p, 500) if events is None else events
+        mine = [e for e in events if e.get("task") == b.id]
+        if mine and mine[-1].get("event") in ("lane_merge", "hollow_return"):
+            continue
+        ahead = git(path, "rev-list", "--count", "HEAD", "--not", base).stdout.strip()
+        if ahead not in ("", "0") and not git(path, "status", "--porcelain").stdout.strip():
+            continue
+        newest = 0.0
+        files = git(path, "ls-files", "-co", "--exclude-standard").stdout.splitlines()
+        for f in files[:20000]:  # ponytail: a lane past 20000 files is judged on these
+            try:
+                newest = max(newest, os.stat(os.path.join(path, f)).st_mtime)
+            except OSError:
+                pass
+        newest = max(newest, float(git(path, "log", "-1", "--format=%ct").stdout.strip() or 0))
+        for e in mine:
+            if t := c.parse_ts(e.get("ts")):
+                newest = max(newest, t.timestamp())
+        if (idle := (now - newest) / 60) >= limit:
+            out[b.id] = idle
+    return out
 
 
 def _ignored(path):
@@ -373,6 +450,53 @@ def pick(p, b, main, args):
                      f"criteria, fm task finish" + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
 
 
+def hot_files(p, b, days=30, times=2):
+    """T-1161: a warning per scope file that conflicted at fm lane merge `times`+ times in the last `days` days."""
+    scope = b.meta.get("scope") or []
+    if not scope:
+        return []
+    seen = {}
+    for e in c.ledger_events(p, ["lane_conflict"], since=c.iso(time.time() - days * 86400)):
+        if e.get("task") != b.id:  # a lane's own retries (fm lane resume) aren't a trend
+            for f in (e.get("data") or {}).get("files") or []:
+                seen.setdefault(f, set()).add(e.get("task"))
+    return [f"Warning: {f} conflicted {len(t)} times (in {len(t)} lanes) at lane merge in the last {days} days: merge "
+            f"this lane first, or keep its edits to that file small" for f, t in sorted(seen.items())
+            if len(t) >= times and any(c.glob_match(f, s) for s in scope)]
+
+
+# T-1164: keyword -> class, first match wins; ponytail: a keyword table, a model could classify better but costs a call
+DEFECT_CLASSES = [
+    ("hot path / cost", ("hot path", "every prompt", "every hook", "per call", "slow", "o(n", "scans the whole")),
+    ("cwd vs root paths", ("cwd", "relative path", "worktree root", "main checkout", "symlink")),
+    ("duplicated output", ("duplicate", "twice", "redundant", "printed again", "repeated")),
+    ("counting events not actors", ("distinct", "dedupe", "count events", "per event", "same session")),
+    ("wrong signal or stale state", ("stale", "expired", "ignored", "never written", "display time", "main session",
+                                     "forever")),
+    ("half-done on failure", ("mid-", "half-", "abort", "partial", "rollback", "left behind")),
+    ("pattern too loose or narrow", ("regex", "plural", "false match", "false positive", "matched")),
+    ("untested branch", ("untested", "no test", "not covered", "never exercised")),
+    ("unbounded input", ("unbounded", "no limit", "no cap", "huge", "too large", "truncat")),
+    ("untrusted input", ("inject", "untrusted", "unescaped", "traversal", "redact", "secret")),
+    ("race / lock", ("race", "lock", "concurrent", "atomic")),
+]
+
+
+def defect_classes(p, days=30, top=5):
+    """Lines for the defect classes reviewers confirmed in the last `days` days: class, count and one 100-char example."""
+    seen = {}
+    for e in c.ledger_events(p, ["finding"], since=c.iso(time.time() - days * 86400)):
+        d = e.get("data") or {}
+        text = " ".join(str(d.get("text") or "").split())
+        if d.get("verdict") != "confirmed" or not text:
+            continue
+        low = text.lower()
+        name = next((n for n, ks in DEFECT_CLASSES if any(k in low for k in ks)), "other")
+        seen.setdefault(name, []).append(text)
+    ranked = sorted(seen.items(), key=lambda kv: -len(kv[1]))[:top]
+    return [f"- {n}: {len(t)} (e.g. {t[-1][:100]})" for n, t in ranked]
+
+
 def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -421,6 +545,13 @@ def builder_brief(p, b, args, resume_branch=None):
     if skipped:
         parts += ["## Claims", "Not pre-claimed, already held live (ask the holder with `fm bus send`): "
                   + "; ".join(f"{f} by {w}" for f, w in skipped), ""]
+    warns = hot_files(p, b)
+    if warns:
+        parts += ["## Warning", *warns, ""]
+    keeps = defect_classes(p)
+    if keeps:
+        parts += ["## Defects this project keeps shipping", "Reviewers confirmed these in the last 30 days; check your "
+                  "diff for each before you report:", *keeps, ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
@@ -442,7 +573,8 @@ def builder_brief(p, b, args, resume_branch=None):
     model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
-    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
+    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},
+                     "".join(f"{w}\n" for w in warns) +
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
@@ -558,8 +690,11 @@ def merge(p, b, main, unverified=None):
     _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
-        brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
+        clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
+        brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
         _git(main, "merge", "--abort")
+        if clashed:  # T-1161: after the abort, so a failed ledger write can't leave main mid-merge
+            c.log_event(p, "lane_conflict", task=b.id, data={"files": clashed[:50], "branch": branch})
 
         def restore(x):  # the aborted merge takes its base back: the task still starts where it did
             for k in keys:
@@ -574,10 +709,9 @@ def merge(p, b, main, unverified=None):
     return files
 
 
-def _conflict_brief(p, b, main, branch):
+def _conflict_brief(p, b, main, branch, files):
     """T-0446: while a lane's merge is still in conflict, write what clashed (files, their conflict hunks, the tasks
     on each side) and the steps that resolve it on the lane's branch, where the guard lets the builder's task edit."""
-    files = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
     if not files:
         return None
     hunks = _git(main, "diff", "--", *files).stdout

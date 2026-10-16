@@ -335,6 +335,12 @@ def session_start(pl):
             if week:
                 other_note = " ".join(x for x in (other_note, week) if x)
         import fmeco  # T-0463, T-0574: the Foreman this project runs, on which machine (fm projects, fm doctor)
+        if pl.get("source") in ("startup", "clear"):  # T-1158: a new session after an ended contract runs free
+            try:
+                import fmcontract
+                fmcontract.clear_ended(p, meta)
+            except Exception:
+                log_error("SessionStart", _tb())
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
                     foreman=fmeco.stamp())
         c.write_meta(p, meta)
@@ -342,6 +348,12 @@ def session_start(pl):
         sd = c.regen_views(p)
     if synced:
         other_note = " ".join(x for x in (other_note, synced) if x)
+    try:  # T-1155: after a long silence, at a real start only (a compaction mid-run is not a return)
+        import fmaway
+        if pl.get("source") in ("startup", "resume") and (away := fmaway.line(p)):
+            other_note = " ".join(x for x in (other_note, away) if x)
+    except Exception:
+        log_error("SessionStart", _tb())
     c.log_event(p, "session_start", data={"source": pl.get("source"), "root": c.PLUGIN_ROOT},  # T-0391: the code
                 session=sid)  # this session runs (fm doctor compares it with the installed one)
     if second_due(pl, meta, busy) and not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-0276: never in the hook's time
@@ -1020,6 +1032,29 @@ def _guard_decision(pl, guard):
     ctx, p, act = _guard_ctx(pl, guard)
     found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
     return ctx, p, act, found, guard.check(pl.get("tool_name", ""), pl.get("tool_input"), ctx, found)
+
+
+def cmd_guard_try(args):
+    """T-1146: fm guard try: the hook's own decision (task, grants, cwd) for a command or a file edit, never run."""
+    import fmcli
+    import fmguard as g
+    if args.action == "wrong":  # T-1162
+        import fmreplay
+        k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)  # "" = here
+        return fmcli.out(args, k, f"Stored guard case {k['id']}: should {k['should']}. fm replay --cases reports it.")
+    if args.action != "try":
+        raise fmcli.UsageError("fm guard: the actions are try and wrong")
+    key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(args.tool, "file_path")
+    target = args.text if args.tool == "Bash" else args.path
+    if not target:
+        raise fmcli.UsageError("fm guard try needs a command" if args.tool == "Bash" else f"--tool {args.tool} needs --path")
+    pl = {"tool_name": args.tool, "tool_input": {key: target}, "cwd": os.path.abspath(args.cwd or os.getcwd()),
+          "session_id": c.session_id()}
+    ctx, _p, _act, _found, block = _guard_decision(pl, g)
+    msg = g.message(block, ctx) if block else None
+    fmcli.out(args, {"decision": "deny" if block else "allow", "category": block.category if block else None,
+                     "rule": getattr(block, "rule", None) if block else None, "message": msg},
+              f"deny {block.category}: {c.plain(msg)}" if block else "allow")
 
 
 def _pre_tool_use(raw):
@@ -2630,6 +2665,12 @@ def _drive(p, sd, briefs, pl, g):
     full = sd.get("autonomy") == "full"
     if sd.get("panic") or not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
         return None
+    try:
+        import fmcontract  # T-1158: a spent time or USD bound ends the drive and the forever loop
+        if fmcontract.over(p, held=True):  # _drive runs under stop's project lock
+            return None
+    except Exception:  # fails open like the cost cap: an unreadable contract never traps the drive
+        pass
     waiting = [t for t in sd.get("pending") or [] if t]
     if waiting and not full:
         return None  # an `fm ask` is open: the user's reply decides it

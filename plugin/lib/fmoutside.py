@@ -276,11 +276,21 @@ def cmd_deps(args):
                 asked.append(fmresearch._ask(p, ask, d["question"])[0]["path"])
             except fmcli.UsageError as e:
                 asked.append(f"failed: {d['name']}: {e}")
+    captured = []
+    if getattr(args, "capture", False):  # T-1166: each migration once, keyed by ecosystem, name and target major
+        import fmeco
+        for d in outdated:
+            key = f"CONTEXT: deps {d['ecosystem']} {d['name']} major {_major(d['latest'])}"
+            b, new = fmeco.capture_once(p, f"Migrate {d['name']} from {_major(d['current'])}.x to {d['latest']} "
+                                           f"({d['ecosystem']})\n{key}\n{d['question']}", "CLEAN", "deps", key=key)
+            if new:
+                captured.append({"name": d["name"], "id": b.id})
     fmcli.out(args, {"checked": len(deps), "outdated": outdated, "failed": failed, "uncapped": uncapped,
-                     "researched": asked},
+                     "researched": asked, "captured": captured},
               f"{len(deps)} dependencies checked; {len(outdated)} behind a major"
               + "".join(f"\n  {d['name']} {d['current']} → {d['latest']} ({d['ecosystem']})\n    "
                         f"fm research ask \"{d['question']}\"" for d in outdated)
               + (f"\n  no upper bound (a new major installs as is): {', '.join(uncapped[:8])}" if uncapped else "")
               + (f"\n  not checked: {', '.join(x['name'] + ' (' + x['why'] + ')' for x in failed[:8])}" if failed else "")
-              + "".join(f"\n  researched: {x}" for x in asked))
+              + "".join(f"\n  researched: {x}" for x in asked)
+              + "".join(f"\n  captured {x['id']}: migrate {x['name']}" for x in captured))
