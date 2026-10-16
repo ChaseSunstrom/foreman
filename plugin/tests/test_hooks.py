@@ -3,10 +3,12 @@ import datetime
 import glob
 import json
 import os
+import subprocess
+import sys
 import time
 import unittest
 
-from helpers import ForemanTestCase, read_json, read_text
+from helpers import HOOK, RELAY, ForemanTestCase, read_json, read_text
 
 import fmcore as c
 
@@ -43,6 +45,9 @@ class HookCase(ForemanTestCase):
     def ctx_of(self, proc):
         data = parse(proc) or {}
         return (data.get("hookSpecificOutput") or {}).get("additionalContext", "")
+
+    def out_of(self, proc):
+        return (parse(proc) or {}).get("hookSpecificOutput") or {}
 
     def hooks_log(self):
         path = os.path.join(self.home, "state", "logs", "hooks.log")
@@ -341,6 +346,42 @@ class Approvals(HookCase):
         self.assertEqual(self.pending(), [])
         granted = [e for e in c.ledger_tail(self.project()) if e["event"] == "approval_granted"]
         self.assertEqual((len(granted), granted[0]["task"]), (1, tid))
+
+    def test_a_prompt_claude_sends_itself_never_answers_an_ask(self):
+        # T-1226: claude --resume <this session> -p yes, run from Claude's own Bash, was a yes in the asking session
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        for flags in (["-p"], ["--print"], ["--resume", "sess-1", "--output-format=stream-json"],
+                      ["--input-format", "stream-json"]):
+            self.hook("UserPromptSubmit", {"prompt": "yes"}, flags=flags)
+            self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), f"{flags}: not granted, still pending")
+        bash = os.path.join(self.tmp, "renamed", "bash")  # a claude renamed as a shell is still checked
+        os.makedirs(os.path.dirname(bash))
+        os.symlink(sys.executable, bash)
+        e = dict(os.environ, FOREMAN_HOME=self.home)
+        payload = json.dumps({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "UserPromptSubmit",
+                              "prompt": "yes"})
+        for flags in (["-p"], ["-cp"]):
+            subprocess.run([bash, "-c", RELAY, sys.executable, HOOK, "UserPromptSubmit", *flags], input=payload, env=e,
+                           cwd=self.repo, capture_output=True, text=True, timeout=20)
+            self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), f"renamed {flags}")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.allow(tid), ["core"], "the person's own yes still grants")
+
+    def test_a_scheduled_prompt_that_reads_as_a_yes_is_refused(self):
+        self.fm("init")
+        self.task()
+        for tool, ti in (("CronCreate", {"cron": "* * * * *", "prompt": "yes"}),
+                         ("ScheduleWakeup", {"delaySeconds": 60, "prompt": "Yes, go ahead", "reason": "r"}),
+                         ("RemoteTrigger", {"action": "run", "prompt": "ok"}),
+                         ("CronCreate", {"cron": "* * * * *", "prompt": "<pasted_content id='1'>x</pasted_content> yes"})):
+            out = self.out_of(self.hook("PreToolUse", {"tool_name": tool, "tool_input": ti}))
+            self.assertEqual(out.get("permissionDecision"), "deny", tool)
+            self.assertIn("fm ask", out.get("permissionDecisionReason", ""))
+        out = self.out_of(self.hook("PreToolUse", {"tool_name": "CronCreate",
+                                                   "tool_input": {"cron": "0 9 * * *", "prompt": "continue the queue"}}))
+        self.assertNotEqual(out.get("permissionDecision"), "deny")
 
     def test_other_replies_clear_without_granting(self):
         self.fm("init")
