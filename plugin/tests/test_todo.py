@@ -1,5 +1,6 @@
 """T-1157: fm todo lists what only the user can do, each with what to type, and drops what is resolved."""
 import json
+import re
 import unittest
 
 from helpers import ForemanTestCase
@@ -51,6 +52,35 @@ class Todo(ForemanTestCase):
         self.assertEqual([e["kind"] for e in out], ["decision"])
         self.assertIn("publish the beta", out[0]["text"])
         self.assertIn("fm decide --review", out[0]["command"])
+
+    def test_reversed_decision_not_listed(self):
+        self.fm("decide", "publish the beta", "--why", "w", "--kind", "outward")
+        self.fm("decide", "hold the beta", "--why", "w", "--reverses", "publish the beta")
+        self.assertNotIn("publish the beta", self.fm("todo").stdout)
+
+    def test_old_decisions_counted_not_listed(self):
+        self.fm("decide", "publish the beta", "--why", "w", "--kind", "outward")
+        path = c.os.path.join(self.p.dir, "decisions.md")
+        s = open(path).read()
+        open(path, "w").write(re.sub(r"\| \d{4}-\d\d-\d\d \|", "| 2000-01-01 |", s))
+        out = self.fm("todo").stdout
+        self.assertNotIn("publish the beta", out)
+        self.assertIn("1 older: fm decide --review", out)
+
+    def test_expired_ask_says_ask_again(self):
+        self.pend([{"task": "T-0001", "allow": ["publish"], "why": "w", "session": "s", "at": "2000-01-01T00:00:00Z"}])
+        out = self.fm("todo").stdout
+        self.assertIn("expired: ask again", out)
+        self.assertNotIn("reply", out)
+
+    def test_user_words_and_no_false_matches(self):
+        self.fm("capture", "Two")
+        self.fm("capture", "Three")
+        self.fm("task", "block", "T-0002", "needs credentials")
+        self.fm("task", "block", "T-0003", "hit the token limit")
+        out = self.fm("todo").stdout
+        self.assertIn("T-0002", out)
+        self.assertNotIn("T-0003", out)
 
 
 if __name__ == "__main__":
