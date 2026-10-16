@@ -271,9 +271,46 @@ class DeferredTriage(TidyCase):
             c.save_brief(self.p, b, touch=False)
         return tid
 
+    def verdicts(self):
+        return {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+
+    def touch(self, rel, commit=False):
+        import subprocess
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write("x\n")
+        if commit:
+            subprocess.run(["git", "-C", self.repo, "add", rel], check=True)
+            subprocess.run(["git", "-C", self.repo, "commit", "-qm", rel], check=True)
+
+    def test_edge_cases(self):
+        self.touch("live.py")
+        self.touch("src_a.py")
+        new = self.defer("creates a file", 120, scope="plugin/lib/fmnew.py")  # never existed: the plan creates it
+        noscope = self.defer("no scope", 120)
+        future = self.defer("future", 120, revisit="2999-01-01", scope="nothere.py")
+        glob = self.defer("glob", 120, scope="src_*.py")  # matches something: live
+        deadglob = self.defer("dead glob", 120, scope="zzz_*.py")  # matches nothing, never did
+        edge89 = self.defer("89", 89)
+        edge91 = self.defer("91", 91)
+        self.touch("w.py", commit=True)
+        os.remove(os.path.join(self.repo, "w.py"))
+        gone = self.defer("was tracked", 120, scope="w.py")
+        changed = self.defer("file changed", 5, revisit="when live.py changes @" + "0" * 8)
+        same = self.defer("file same", 5, revisit="when live.py changes @" + c.file_digest(os.path.join(self.repo, "live.py")))
+        self.assertEqual(self.verdicts(), {new: "ask", noscope: "drop", future: "ask", glob: "ask", deadglob: "ask",
+                                           edge89: "ask", edge91: "drop", gone: "drop", changed: "do", same: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertEqual(text.count("propose ask"), 0, "asks collapse into one line")
+        self.assertRegex(text, r"\d+ deferred briefs to decide: T-")
+        d = self.fm("digest").stdout
+        self.assertLess(d.index(f"Deferred: {changed} → do"), d.index("→ drop"), "do first, then drop, then ask")
+        self.assertIn("more: fm tidy", d)
+
     def test_old_with_a_dead_scope_is_drop_a_due_one_is_do_and_the_rest_ask_and_nothing_changes(self):
         with open(os.path.join(self.repo, "live.py"), "w") as f:
             f.write("x\n")
+        self.touch("gone.py", commit=True)
+        os.remove(os.path.join(self.repo, "gone.py"))
         dead = self.defer("dead", 120, scope="gone.py")
         due = self.defer("due", 10, revisit="2020-01-01")
         rest = self.defer("rest", 50, scope="live.py")

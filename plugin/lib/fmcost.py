@@ -441,7 +441,9 @@ def cmd_digest(args):
         if any(r for _, r in rev.values()) else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
+    triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
     lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
+    lines += [f"Deferred: +{len(triage) - 6} more: fm tidy"] if len(triage) > 6 else []
     lines += [f"Plans to re-plan ({len(stale)}): " + ", ".join(f"{t} ({why})" for t, why in list(stale.items())[:5])
               ] if stale else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
