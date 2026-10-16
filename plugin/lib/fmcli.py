@@ -5288,7 +5288,9 @@ def build_parser():
                                                           "note and known fixes")
     s = add("inbox", lazy("fmeco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; fm inbox gh reads the repo's open "
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
-    s.add_argument("source", nargs="?", choices=["gh"], help="a tracker to capture from; none lists the inbox")
+    s.add_argument("source", nargs="?", choices=["gh", "spec"], help="a source to capture from (spec FILE: each unchecked "
+                                                                     "`- [ ]` item, once); none lists the inbox")
+    s.add_argument("file", nargs="?", help="with spec: the markdown checklist")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "

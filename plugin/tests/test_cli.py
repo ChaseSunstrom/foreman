@@ -1246,7 +1246,7 @@ class InboxList(ForemanTestCase):
         self.assertIn("T-0001", r.stdout)
         self.assertIn("Add a dark theme", r.stdout)
         self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
-        self.assertIn("{gh}", self.fm("inbox", "--help").stdout)  # the tracker source is still there
+        self.assertIn("{gh,spec}",self.fm("inbox", "--help").stdout)  # the tracker source is still there
 
 
 class AffectedPairs(ForemanTestCase):
