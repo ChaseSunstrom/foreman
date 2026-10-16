@@ -2453,10 +2453,14 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         bare_init = init and not lost and not git_env and all(a in ("-q", "--quiet") for a in args[1:]) and all(
             os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
             r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
-        for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
+        # T-1195: an environment that changes how git reads pathspecs makes a named-file checkout a tree write
+        # (anywhere in the command text: export, env, an earlier assignment)
+        targs = args + ["--pathspec-from-file"] if name == "git" and re.search(
+            r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_(?:GLOB|ICASE)_PATHSPECS=", cmd) else args
+        for target in c.redirs + ([] if bare_init else _write_targets(name, targs)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
-        for target in [] if bare_init else _tree_targets(name, args) + git_env:
+        for target in [] if bare_init else _tree_targets(name, targs) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
                                                              else "") + ")" +  # refusal names fm lane merge
@@ -3459,6 +3463,29 @@ def write_targets(cmd):
     return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
+def _checkout_files(base, rest):
+    """The files `git checkout` restores when it names only files (after `--`, or every word an existing path and
+    no commit), else [] (a branch, -b/-B/--orphan, `.`, a pathspec magic word or a word that is also a commit: the
+    whole tree). T-1195."""
+    if "--" in rest:
+        if any(a.startswith("--p") for a in rest[:rest.index("--")]):  # --pathspec-from-file, or a prefix of it
+            return []
+        files = rest[rest.index("--") + 1:]
+    else:
+        if any(a.startswith("-") and a != "-" for a in rest):  # -b, -B, --orphan, --pathspec-from-file, -p ...
+            return []
+        files = rest
+        if not files or any(not os.path.exists(os.path.join(base, a))
+                            or _git(base, "rev-parse", "--verify", "-q", f"{a}^{{commit}}") for a in files):
+            return []
+    # git expands globs in a pathspec (and GIT_GLOB_PATHSPECS / GIT_ICASE_PATHSPECS change how), so a word with a
+    # glob character names files the guard can't list
+    if any(f.startswith(":") or f.startswith("-") or os.path.normpath(f) == "." or re.search(r"[*?\[\\]", f)
+           for f in files):
+        return []
+    return files
+
+
 def _write_targets(name, args):
     """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
     the guard can't see an archive's members, so the destination itself is what's checked."""
@@ -3507,6 +3534,10 @@ def _write_targets(name, args):
             read_only = True
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
+            if sub == "checkout" and not trees and not any(  # --icase/--glob-pathspecs change what a word matches
+                    a.endswith("pathspecs") and a not in ("--literal-pathspecs", "--noglob-pathspecs")
+                    for a in args[:i]) and (files := _checkout_files(base, rest)):
+                return [os.path.join(base, f) for f in files] + outs  # T-1195: named files, not the whole tree
             return ([os.path.join(base, t) for t in trees] or [base]) + outs
         return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):
