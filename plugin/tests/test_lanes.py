@@ -317,6 +317,15 @@ class BuilderGates(unittest.TestCase):
             self.assertNotRegex(text, r"`fm check --evidence")
         self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808
 
+    def test_builders_review_their_own_change_as_an_adversary_before_reporting(self):
+        # T-1147: reviewers found real defects in almost every builder branch
+        import fmlanes
+        agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
+        for text in (fmlanes.CONTRACT, agent):
+            for w in ("Self-review", "what input breaks it", "what outside text it trusts", "what is unbounded",
+                      "what it writes and where", "a second run"):
+                self.assertIn(w, text)
+
 
 class BoardLanes(ForemanTestCase):
     """T-0961: the merge base is on disk before git merge runs (a merge that dies midway still measures the task from
