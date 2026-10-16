@@ -1,17 +1,17 @@
 {
  "generated": "2026-10-16",
  "totals": {
-  "tasks_done": 717,
-  "evidence": 2646,
+  "tasks_done": 722,
+  "evidence": 2662,
   "proofs": 250,
-  "commits": 559,
-  "gate_runs": 542,
-  "subagents": 530,
-  "lanes_merged": 129,
-  "findings": 115,
-  "guard_blocks": 292,
-  "captures": 509,
-  "lessons_shown": 703
+  "commits": 562,
+  "gate_runs": 549,
+  "subagents": 535,
+  "lanes_merged": 130,
+  "findings": 134,
+  "guard_blocks": 293,
+  "captures": 513,
+  "lessons_shown": 717
  },
  "daily": [
   {
@@ -104,33 +104,33 @@
   },
   {
    "day": "2026-10-16",
-   "FEATURE": 98,
+   "FEATURE": 100,
    "FIX": 63,
    "CLEAN": 13,
-   "PERFORMANCE": 7,
-   "SECURITY": 11,
+   "PERFORMANCE": 8,
+   "SECURITY": 13,
    "RESEARCH": 4,
-   "lanes": 84,
-   "evidence": 711
+   "lanes": 85,
+   "evidence": 727
   }
  ],
  "tiers": {
-  "S": 376,
-  "M": 297,
-  "L": 44
+  "S": 378,
+  "M": 299,
+  "L": 45
  },
  "types": {
-  "FEATURE": 329,
+  "FEATURE": 331,
   "FIX": 236,
   "CLEAN": 41,
-  "PERFORMANCE": 20,
-  "SECURITY": 66,
+  "PERFORMANCE": 21,
+  "SECURITY": 68,
   "RESEARCH": 25
  },
  "guard": {
   "core": 109,
   "brief": 80,
-  "state-direct": 34,
+  "state-direct": 35,
   "plugin": 26,
   "rm-outside": 15,
   "system": 12,
@@ -139,29 +139,29 @@
  },
  "findings": {
   "lenses": {
-   "edge": 42,
-   "adversary": 39,
-   "operator": 19,
+   "edge": 48,
+   "adversary": 45,
+   "operator": 22,
    "maintainer": 10,
-   "intent": 5
+   "intent": 9
   },
   "severity": {
-   "LOW": 41,
-   "MEDIUM": 27,
-   "HIGH": 9
+   "LOW": 48,
+   "MEDIUM": 38,
+   "HIGH": 10
   }
  },
  "subagents": {
-  "fm-builder": 221,
-  "fm-reviewer": 143,
+  "fm-builder": 222,
+  "fm-reviewer": 146,
   "general-purpose": 76,
   "fm-recon": 71,
   "Explore": 8,
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 542,
-  "median": 74.0
+  "runs": 549,
+  "median": 75.1
  },
  "releases": [
   {
@@ -356,124 +356,197 @@
    "budget": 150
   }
  },
- "duel": {
-  "model": "sonnet",
-  "at": "2026-10-16",
-  "cases": [
-   {
-    "case": "R-T-0218-b40c34",
-    "foreman": {
-     "pass": false,
-     "cost": 0.115,
-     "score": 1,
-     "seconds": 79.0,
-     "turns": 10.0,
-     "error": false
+ "duels": [
+  {
+   "model": "sonnet",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "csvlite",
+     "foreman": {
+      "pass": true,
+      "cost": 0.062,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.3333,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.051,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.6667,
+      "turns": 3.3333,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": false,
-     "cost": 0.223,
-     "score": 1,
-     "seconds": 189.0,
-     "turns": 21.0,
-     "error": false
-    }
-   },
-   {
-    "case": "R-T-0201-39a53b",
-    "foreman": {
-     "pass": false,
-     "cost": 0.256,
-     "score": 2,
-     "seconds": 236.0,
-     "turns": 26.0,
-     "error": false
+    {
+     "case": "tokenbucket",
+     "foreman": {
+      "pass": true,
+      "cost": 0.068,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.6667,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.067,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 23.0,
+      "turns": 4.0,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": true,
-     "cost": 0.161,
-     "score": 4,
-     "seconds": 152.0,
-     "turns": 12.0,
-     "error": false
-    }
-   },
-   {
-    "case": "R-T-0205-8d4b0f",
-    "foreman": {
-     "pass": false,
-     "cost": 0.367,
-     "score": 1,
-     "seconds": 225.0,
-     "turns": 20.0,
-     "error": false
+    {
+     "case": "dotted",
+     "foreman": {
+      "pass": true,
+      "cost": 0.077,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.0,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.07,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.0,
+      "turns": 3.6667,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": false,
-     "cost": 0.224,
-     "score": 1,
-     "seconds": 257.0,
-     "turns": 13.0,
-     "error": false
-    }
-   },
-   {
-    "case": "T-0205",
-    "foreman": {
-     "pass": false,
-     "cost": 0.351,
-     "score": null,
-     "seconds": 167.0,
-     "turns": 23.0,
-     "error": false
+    {
+     "case": "ranges",
+     "foreman": {
+      "pass": true,
+      "cost": 0.069,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.3333,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.066,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.0,
+      "turns": 4.6667,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": false,
-     "cost": 0.227,
-     "score": null,
-     "seconds": 416.0,
-     "turns": 16.0,
-     "error": false
-    }
-   },
-   {
-    "case": "T-0207",
-    "foreman": {
-     "pass": false,
-     "cost": 0.417,
-     "score": null,
-     "seconds": 425.0,
-     "turns": 30.0,
-     "error": false
+    {
+     "case": "table",
+     "foreman": {
+      "pass": true,
+      "cost": 0.063,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.3333,
+      "turns": 4.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.056,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.0,
+      "turns": 4.3333,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": false,
-     "cost": 0.351,
-     "score": null,
-     "seconds": 297.0,
-     "turns": 22.0,
-     "error": false
-    }
-   },
-   {
-    "case": "T-0206",
-    "foreman": {
-     "pass": false,
-     "cost": 0.44,
-     "score": null,
-     "seconds": 185.0,
-     "turns": 32.0,
-     "error": false
+    {
+     "case": "semver",
+     "foreman": {
+      "pass": true,
+      "cost": 0.067,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.6667,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.063,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 21.0,
+      "turns": 4.0,
+      "error": false
+     }
     },
-    "bare": {
-     "pass": false,
-     "cost": 0.279,
-     "score": null,
-     "seconds": 213.0,
-     "turns": 18.0,
-     "error": false
+    {
+     "case": "lru",
+     "foreman": {
+      "pass": true,
+      "cost": 0.059,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 13.6667,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.052,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 13.3333,
+      "turns": 3.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "duration",
+     "foreman": {
+      "pass": true,
+      "cost": 0.064,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 18.3333,
+      "turns": 4.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.063,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 5.3333,
+      "error": false
+     }
     }
-   }
-  ]
- }
+   ],
+   "name": "quality"
+  }
+ ]
 }
