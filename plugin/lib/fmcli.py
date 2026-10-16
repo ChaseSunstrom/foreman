@@ -4920,9 +4920,10 @@ def build_parser():
     s.add_argument("--since", metavar="REF", help="everything since REF's merge base with HEAD, uncommitted included")
     s = add("export", lazy("fmcost", "cmd_export"),
             help="AGENTS.md for other harnesses: working rules, corrections, map, lessons, decisions, playbooks")
-    s.add_argument("what", choices=["agents"])
-    s.add_argument("--out", metavar="PATH", help="where to write it (default: AGENTS.md at the project root)")
-    s.add_argument("--force", action="store_true", help="replace an AGENTS.md fm export didn't write")
+    s.add_argument("what", choices=["agents", "cursor", "gemini"])
+    s.add_argument("--out", metavar="PATH",
+                   help="where to write it (default: AGENTS.md, .cursor/rules/foreman.mdc or GEMINI.md at the project root)")
+    s.add_argument("--force", action="store_true", help="replace a file fm export didn't write")
     s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
     add("snapshots", cmd_snapshots, help="uncommitted work Foreman saved before a command discarded it, and how to "
