@@ -189,6 +189,15 @@ class RunCase(ServeCase):
 
 
 class Run(RunCase):
+    def test_max_usd_stops_starting_tasks_once_spend_reaches_it(self):  # T-1046
+        for t in ("one", "two", "three"):
+            self.task(t)
+        self.stub("claude", self.finisher + 'echo \'{"type":"result","total_cost_usd":0.30,"result":"ok"}\'\n')
+        out = self.run_fm("--max-usd", "0.5").stdout
+        sessions = [l for l in self.called().splitlines() if l.startswith("claude ")]
+        self.assertEqual(len(sessions), 2)  # 0.30 < 0.5 starts a second; 0.60 >= 0.5 stops the third
+        self.assertIn("spend cap reached", out)
+
     def test_each_task_runs_in_its_own_fresh_session(self):
         a, b = self.task("one"), self.task("two")
         self.stub("claude", self.finisher)

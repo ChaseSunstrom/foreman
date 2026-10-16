@@ -5418,6 +5418,8 @@ def build_parser():
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
                                                            "its own lane, merged back when gated and clean (max 3)")
     s.add_argument("--timeout", type=float, default=60, help="minutes per session")
+    s.add_argument("--max-usd", type=float, help="stop starting tasks once this run's measured spend reaches it "
+                                                 "(one at a time; T-1046)")
     s.add_argument("--stall", type=float, default=20, help="minutes a session's transcript may sit still before fm "
                                                           "run stops it and goes on (0: never; T-0447)")
     s.add_argument("--fit", action="store_true", help="small tasks first (S, M, then L), so more finish before a usage "
