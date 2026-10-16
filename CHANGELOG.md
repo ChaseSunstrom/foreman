@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.37 — 2026-10-16
 - A one-request unattended run's first task is S (M for SECURITY), not a size guessed from words in a long spec. An L guess had sent a lexer task into the full plan-and-audit flow (25 turns, 272 s). The run's one request is its work whatever its first word (T-1231)
 - A bench replay doesn't scout for new work once its request is done; that was overhead the judge also marked down (T-1229)
 - A harder round of the neutral benchmark: `bench/spec-suite/make.py --suite hard DIR` builds `ledger`, an invoicing package whose modules share helpers, with eight tasks graded by the whole test suite. Four are tasks whose obvious edit to a shared helper breaks another module's existing tests unless the spec's "Keep:" rules are followed; four have dense edge-case specs (text wrapping, INI, interval arithmetic, a tokenizer). `--check` proves each fail-to-pass and that each task's recorded naive variant fails (T-1237)
