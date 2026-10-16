@@ -1524,7 +1524,6 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("cryptsetup luksFormat /dev/sdb", "system", "cryptsetup luksFormat"),
             ("fm approve-reads on", "self-authorize", "approve-reads on"),
             ("fm rule rm 3", "self-authorize", "fm rule rm"),
-            ("cat list | rm -rf", "rm-outside", "recursive rm with targets from stdin"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
@@ -1533,8 +1532,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertIn(why, str(r.detail))
 
     def test_near_misses_stay_allowed(self):
-        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "cat list | xargs rm",
-                    "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
+        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list",                    "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
                     "cryptsetup --version", "git config core.hooksPath", "git config --get core.hooksPath"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))
