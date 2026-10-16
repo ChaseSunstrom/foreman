@@ -357,13 +357,17 @@ def _week(p, days):
             if b.status == "done" and str(b.meta.get("updated", ""))[:19] >= since]
     lessons = [(b.id, x.lstrip("- ").strip()) for b in done for x in b.section("Lessons").splitlines()[:1]
                if x.strip() and not x.lstrip("- ").lower().startswith("none")]
+    review = [l for l in week_decisions(p, days) if re.search(r"\| \[(costly|outward)\]", l)]
+    return done, lessons, review
+
+
+def week_decisions(p, days):
+    """T-1084: every decisions.md row since the cutoff (the digest's "Decided without you")."""
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8") as f:
-            review = [l.strip() for l in f if l.startswith("| 2") and l[2:12] >= since[:10]
-                      and re.search(r"\| \[(costly|outward)\]", l)]
+            return [l.strip() for l in f if l.startswith("| 2") and l[2:12] >= _since(days)[:10]]
     except OSError:
-        review = []
-    return done, lessons, review
+        return []
 
 
 def weekly_line(p):
@@ -439,6 +443,8 @@ def cmd_digest(args):
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
+    decided = week_decisions(p, args.days)
+    lines += [f"Decided without you: {len(decided)}"] + [f"- {c.fit(x, 160)}" for x in decided[-6:]] if decided else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks

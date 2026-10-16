@@ -2795,6 +2795,12 @@ def cmd_decide(args):
         revisit = c.revisit_tag(p.root, args.revisit) + " " if getattr(args, "revisit", None) else ""  # callers build
     except ValueError as e:                                                                          # their own args
         raise UsageError(str(e))
+    if getattr(args, "sunset", None):  # T-1084: the decision lapses on this date; fm tidy lists it as expired
+        try:
+            c.datetime.date.fromisoformat(args.sunset)
+        except ValueError:
+            raise UsageError("--sunset takes YYYY-MM-DD")
+        revisit += f"[sunset: {args.sunset}] "
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
                     getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None))
     out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
@@ -4334,6 +4340,7 @@ def build_parser():
     s.add_argument("--cites", metavar="REF", help="what it rests on: the user's message, a veto or a decision (T-0654)")
     s.add_argument("--revisit", metavar="TRIGGER",
                    help='"after YYYY-MM-DD" or "when PATH changes": fm next brings the decision back then')
+    s.add_argument("--sunset", metavar="YYYY-MM-DD", help="the decision expires then: fm tidy lists it as expired (T-1084)")
     s.add_argument("--revisited", metavar="WORDS", help="words from an earlier decision whose trigger fired: it still holds")
     s.add_argument("--ask", metavar="QUESTION", help="a question for the user, with --default or --options (the taste "
                                                      "record picks): urgent → ask now; full autonomy → decided now; "
