@@ -4985,6 +4985,13 @@ def build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
+    s = add("guard", lazy("fmhooks", "cmd_guard_try"), tier=("Finding your way", 305), help="guard try \"CMD\" [--cwd DIR]: the real guard's "
+                                                           "verdict for a command or --tool Edit --path P, as this session would get it; never run (T-1146)")
+    s.add_argument("action", help="try")
+    s.add_argument("text", nargs="?", help="the command to ask about")
+    s.add_argument("--cwd", metavar="DIR", help="the folder it would run in (default: here)")
+    s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit"], help="the tool (default Bash)")
+    s.add_argument("--path", metavar="P", help="with --tool Edit/Write: the file")
     s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
                                                                  "fired on recent real sessions, read-only (T-1058)")
     s.add_argument("--rule", metavar="REGEX", help="calls (command, path, pattern) the regex matches")
