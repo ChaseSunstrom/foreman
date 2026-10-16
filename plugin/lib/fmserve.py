@@ -769,6 +769,11 @@ def cmd_run(args):
     while finished < args.max:
         if c.panicked():  # T-0436: before the first session and between every two
             fail(c.PAUSED)
+        import fmcontract  # T-1158
+        if fmcontract.over(p):
+            print(f"fm run: contract ended ({c.read_meta(p)['contract']['ended']} bound); no more tasks started\n"
+                  + fmcontract.receipt(p), flush=True)
+            break
         if cap is not None and run_usd >= cap:  # T-1046: measured from each session's JSON result
             print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
             capped = True

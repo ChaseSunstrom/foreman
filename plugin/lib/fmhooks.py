@@ -2649,6 +2649,12 @@ def _drive(p, sd, briefs, pl, g):
     full = sd.get("autonomy") == "full"
     if sd.get("panic") or not sd["drive"] or sd["paused"] or (needs_user(pl.get("last_assistant_message")) and not full):
         return None
+    try:
+        import fmcontract  # T-1158: a spent time or USD bound ends the drive and the forever loop
+        if fmcontract.over(p):
+            return None
+    except Exception:  # fails open like the cost cap: an unreadable contract never traps the drive
+        pass
     waiting = [t for t in sd.get("pending") or [] if t]
     if waiting and not full:
         return None  # an `fm ask` is open: the user's reply decides it
