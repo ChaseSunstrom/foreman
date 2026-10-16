@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- A chat yes now answers a pending `fm ask` only when it is typed into the same Claude Code process that ran the ask. That process is named exactly: the hook's nearest ancestor that isn't its own python or the system shell launching it, never trusted by name. A nested or resumed Claude Code (renamed, under a pty, with a positional prompt) is always another process (T-1233)
+- An unattended run (claude -p, fm run, a bench replay) is told at start to end with a reply that names each check it ran and its result, and anything it left undone: the duel's judge reads only that reply (T-1228)
+- Fewer turns spent on Foreman itself, from the duel's transcripts (T-1231):
+  - `fm task <sub>` without an id uses the active task and says which.
+  - `ac` and `step` take their action on either side of the id (`fm task ac add T-1 …`); with no action, they add.
+  - `drop`, `block` and `defer` take `--reason`.
+  - A criterion whose check couldn't import its own test module (run outside the suite's path) can be corrected; one that ran and failed still can't.
+  - A small task's steps close on its passing criteria.
+  - In a full-autonomy session whose only request is the one being worked, the first edit makes that request's task (S, its tag's type, its DONE-WHEN lines as criteria) instead of refusing twice.
+- `fm bench duel` leaves court cases out unless they are named (they grade what Foreman learned from your own state, which a fresh duel lacks), and takes `--runs N` and `--jobs N` (T-1231)
 - The site has a Benchmarks page. The safety set: 24 dangerous commands (Foreman stops 20 and lets 4 through after saving your work; Claude Code alone in bypass mode runs all of them) and 25 everyday commands (none stopped). The quality duel: six real tasks graded blind, run once with Foreman and once with Claude Code. Its first run is published as it came out: Foreman passed 0 of 6, Claude Code 1 of 6, and Foreman cost 33% more. The page lists what the losses showed (T-1222)
 - The test runner writes each failed class as a GitHub Actions error annotation when it runs in Actions, so a red CI run shows why without a login (job logs need one; annotations are public) (T-1223)
 - A pending `fm ask` can't be answered by Claude itself. A yes from a Claude Code started with `-p`, `--print`, stream-json or the SDK (`claude --resume <this session> -p yes`, even renamed) no longer grants it, and the guard refuses a CronCreate, ScheduleWakeup or RemoteTrigger prompt that starts with a yes. A yes typed at Claude Code's prompt, or through Remote Control, still grants as before; the permission dialog is unchanged (T-1226)
