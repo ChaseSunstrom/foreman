@@ -4329,7 +4329,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
-                             "plugins docs doctor verify-ledger outbound sandbox release-check canary tidy rollback round"),
+                             "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
@@ -5162,6 +5162,12 @@ def build_parser():
     s.add_argument("source", nargs="?", choices=["gh"], help="a tracker to capture from; none lists the inbox")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
+    s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), help="after a push, poll the branch's latest CI run through gh; a "
+                                                           "failure's log tail becomes a FIX brief (data), up to --max-retries")
+    s.add_argument("--branch", help="default: the branch gh finds here")
+    s.add_argument("--max-retries", type=int, default=3)
+    s.add_argument("--interval", type=float, default=30, help="seconds between polls")
+    s.add_argument("--max-polls", type=int, default=120)
     s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
                                                          "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
     s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")
