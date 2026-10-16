@@ -9,6 +9,7 @@
 - `fm check` names the files that changed during its gates and says the change may be your own edit, instead of blaming a gate that writes files (T-1149).
 - A verify naming a test module or script that doesn't exist yet is kept with a note saying so; a verify naming an npm script its package.json lacks is refused when the criterion is added (T-1145).
 - `fm guard try "CMD"` (or `--tool Edit --path P`) prints the guard's real decision for this session (task, grants, cwd) without running anything, so a false block can be checked before a retry (T-1146).
+- `fm loop round` run again during a round shows that round's brief instead of counting it dry and starting the next one; `fm loop round --next` (what `fm next` says once the round's work has drained) ends it (T-1153).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
