@@ -27,6 +27,11 @@ if os.environ.get("STUB_ALTERNATE"):  # solve every other attempt: a flaky candi
     open(n, "w").write(str(k + 1))
     if k % 2 == 0:
         os.environ["STUB_SOLVE"] = "1"
+if os.environ.get("STUB_GUT"):  # does the new work, breaks the old, and guts the existing test that would say so
+    with open("calc.py", "w") as f:
+        f.write("def half(x):\n    return x\n\n\ndef third(x):\n    return x / 3\n")
+    with open("tests/test_half.py", "w") as f:
+        f.write("print('ok')\n")
 model = args[args.index("--model") + 1] if "--model" in args else ""
 if os.environ.get("STUB_SOLVE") or model and model in os.environ.get("STUB_SOLVE_MODELS", "").split(","):
     with open("calc.py", "w") as f:
@@ -180,12 +185,29 @@ class Bench(ForemanTestCase):
         self.assertEqual(pricey.returncode, 1, "more passes don't buy 50% more cost")
         self.assertIn("cost", pricey.stdout)
 
+    def test_grading_restores_the_reference_tests_an_arm_edited(self):
+        # T-1237 review: only the commit's own test files were restored, so gutting another existing test passed
+        self.write("calc.py", "def half(x):\n    return x / 2\n")
+        self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "half")
+        self.write("calc.py", "def half(x):\n    return x / 2\n\n\ndef third(x):\n    return x / 3\n")
+        self.write("tests/test_third.py", "from calc import third\nassert third(9) == 3\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Add third()\n\nthird(x) divides by three; half() keeps working.")
+        sha = git(self.repo, "rev-parse", "HEAD")
+        self.fm("bench", "build", "--commits", "HEAD~1..HEAD", "--verify",
+                "PYTHONPATH=. python3 tests/test_half.py && PYTHONPATH=. python3 {tests}", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--ids", f"C-{sha[:10]}", "--label", "gut", "--json",
+                                 env=dict(self.env, STUB_GUT="1"), check=False).stdout)
+        self.assertFalse(res["cases"][0]["pass"], "the reference test_half.py runs, not the gutted one")
+
     def test_any_commit_with_a_test_and_a_fix_is_a_case(self):
         # T-0222: bench from a repo's own history, no Foreman brief needed
         self.write("calc.py", "def double(x):\n    return x * 2\n\n\ndef half(x):\n    return x / 2\n")
         self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
         git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.")
+        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.\n- half(0) is 0")
         sha = git(self.repo, "rev-parse", "HEAD")
         self.write("tests/test_more.py", "print('ok')\n")
         git(self.repo, "add", "-A")
@@ -196,6 +218,7 @@ class Bench(ForemanTestCase):
         case = res["cases"][0]
         self.assertEqual(case["verify"], ["PYTHONPATH=. python3 tests/test_half.py"])
         self.assertIn("half(x) divides by two", case["prompt"])
+        self.assertIn("two.\n- half(0)", case["prompt"], "T-1231: a spec keeps its lines (it was one run-on line)")
         self.assertIn("tests only", " ".join(res["skipped"]))
         self.fm("bench", "build", env=self.env)
         ids = [x["id"] for x in json.loads(self.fm("bench", "list", "--json", env=self.env).stdout)["cases"]]
@@ -238,11 +261,12 @@ class Bench(ForemanTestCase):
         self.assertEqual((case["cost_usd"], case["turns"]), (0.42, 7))
         call = self.calls()[-1]
         self.assertIn("--plugin-dir", call["args"])
-        self.assertEqual(call["args"][call["args"].index("--plugin-dir") + 1], c.PLUGIN_ROOT)
+        snap = call["args"][call["args"].index("--plugin-dir") + 1]
+        self.assertIn("fm-bench-plugin-", snap, "T-1231: a snapshot of this Foreman, not the live folder")
         self.assertIn("off by one", " ".join(call["args"]))
         self.assertNotEqual(os.path.realpath(call["cwd"]), os.path.realpath(self.repo))
         self.assertTrue(call["state"] and not call["state"].startswith(c.state_dir()), "a fresh Foreman state")
-        self.assertEqual(call["path"], os.path.join(c.PLUGIN_ROOT, "bin"), "the candidate's fm comes first")
+        self.assertEqual(call["path"], os.path.join(snap, "bin"), "the candidate's fm comes first")
         self.assertEqual(git(self.repo, "worktree", "list").count("\n"), 0, "the replay worktree is removed")
         self.assertEqual(read_text(os.path.join(self.repo, "calc.py")), "def double(x):\n    return x * 2\n")
         out = self.fm("bench", "compare", "nofix", "fix", env=self.env).stdout

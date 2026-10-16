@@ -247,7 +247,8 @@ The app never talks to a server: it runs `fm … --json` on this machine, and on
 Foreman is built for bypass mode (no tool-call prompts), which the installer offers to turn on. What still stops a dangerous command is Foreman's guard hook, plus 20 deny rules for the truly catastrophic cases. The guard covers:
 - recursive deletes outside the project;
 - force-pushes and hard resets on default branches;
-- credential files and `curl | sh`;
+- reading credential files (~/.ssh keys, ~/.aws/credentials, ~/.netrc …), sending the environment or a key over the network, and `curl | sh`;
+- recursive or world-writable `chmod`/`chown` on /, the home folder or system folders;
 - disk, firewall and system-service changes;
 - publish and deploy commands;
 - direct writes to Foreman state, edits to Foreman's own protected core and to Claude Code's `~/.claude.json`;
@@ -286,6 +287,13 @@ In a repo on your server, ask Claude to "serve this repo". Claude asks you once 
 - Claude Code has to trust the repo first: open `claude` there once.
 
 `fm run` is the other option. It works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context. It waits out a usage limit (up to six hours by default) before retrying. A task that makes no progress is blocked with the reason, so the next run moves on, and the machine is kept from sleeping while it runs (systemd-inhibit, where there is one). To run `fm night` every night, `fm night --print-timer` prints a systemd timer and a crontab line to paste. The sandbox is opt-in: `fm run --sandbox`, or `fm sandbox on` to keep it for later runs and `fm night` timers (`--no-sandbox` skips it for one run). Each session then runs under Claude Code's own sandbox (bubblewrap with socat on Linux, Seatbelt on macOS): Bash writes only the checkout, the cache dirs, Foreman's state and the git dir, and reaches only the allowed domains (`fm sandbox allow DOMAIN`; default: the git remote's host and the package registries for the project's languages). `fm run` refuses to start when the host can't run the sandbox. `fm outbound ID` lists the hosts and queries a task's sessions reached.
+
+### Foreman Code: any model, Foreman's loop
+
+`fm code "make calc.add add"` runs Foreman's loop without Claude Code, on whatever model you have: a local server (Ollama, LM Studio, llama.cpp, vLLM), a profile in `$FOREMAN_HOME/models.json`, or a cloud whose API key is set (`fm code models` lists them). The harness does the stations itself: the model writes a short plan (checked, and sent back to fix when it's malformed), then picks one action at a time for each step. Every edit, file write and command goes past Foreman's guard first, so a refused `rm -rf ~` never runs; the model reads the refusal and tries another way. The harness runs each criterion's check, hands a failure back to the model (three rounds, three more on `--escalate MODEL`), and closes and commits the task, or blocks it with the reason.
+- `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
+- A run that was killed or lost its model carries on with `fm code --resume`.
+- In a repo marked sensitive, only a model on this machine is used.
 
 ## When not to use Foreman
 

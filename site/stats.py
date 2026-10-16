@@ -137,9 +137,44 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
+def duel(state, model=None):
+    """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
+    arms (T-1222)."""
+    res = os.path.join(state, "bench", "results")
+    for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")), reverse=True):
+        bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
+        with open(path, encoding="utf-8") as f:
+            fm_ = json.load(f)
+        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model):
+            break
+    else:
+        return None
+    with open(bare_path, encoding="utf-8") as f:
+        bare = json.load(f)
+    pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
+                      "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
+                      "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error"))}
+    b = {x["id"]: x for x in bare.get("cases", [])}
+    try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
+        with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
+            titles = {x["id"]: x.get("title") or "" for x in json.load(f)}
+    except (OSError, ValueError, TypeError, KeyError):
+        titles = {}
+    def name(cid):  # kit.lru → "lru"; otherwise the title's first words
+        t = titles.get(cid, "")
+        mod = re.findall(r"\bkit\.(\w+)", t)
+        return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]) or cid)
+    cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
+             if x["id"] in b]
+    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--state")
+    ap.add_argument("--duel", action="append", metavar="NAME=DIR",
+                    help="a Foreman project state folder whose newest duel to show, named (repeatable); default: this "
+                         "repo's, as the quality duel")
     ap.add_argument("--no-bench", action="store_true", help="keep the hook timings already in stats.json")
     a = ap.parse_args()
     state = a.state or state_dir()
@@ -150,7 +185,10 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench()}
+             "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(*x.partition("=")[2].split("@", 1)))
+                                                     for x in (a.duel or [f"quality={state}"])) if d]
+             or old.get("duels") or []}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=1)

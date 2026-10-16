@@ -1,6 +1,6 @@
 ---
 name: playbooks
-description: Use when working a Foreman stage and a proven procedure or checklist would help — CLEAN refactors and dead-code removal, PERF benchmarking, SECURITY review, build/compile error fixing, TDD and verification loops, code review checklists (C++, Rust, Python, TypeScript), planning, codebase exploration, ADRs, context budgeting, eval design. Index of on-demand references ported from ECC; load only the one you need.
+description: Use when a Foreman stage needs a proven procedure: refactors and dead code, perf benchmarking, security review, build errors, TDD and verification loops, review checklists, planning, ADRs, eval design.
 ---
 
 # Foreman playbooks

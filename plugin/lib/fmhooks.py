@@ -4,6 +4,7 @@ Non-guard handlers fail open: any exception is logged to state/logs/hooks.log an
 The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
+import collections
 import fnmatch
 import hashlib
 import json
@@ -379,6 +380,13 @@ def session_start(pl):
     except Exception:
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    if _headless():  # T-1228: an unattended run is judged by its final reply; nobody can ask it what it checked
+        layout = None if sd["active"] or sd["queue"] or sd["paused"] else _layout_note(p)
+        if layout:  # T-1231: one request, nothing queued: the map, not the queue (and any other session's note)
+            out["additionalContext"] = " ".join(filter(None, [f"Foreman project {p.slug}.", other_note, layout]))
+        out["additionalContext"] += ("\nUnattended run: end with one short line per check you ran and its result "
+                                     "(✓/✗), and one for anything the request asked that you left undone; nothing "
+                                     "else.")
     if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
         out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
@@ -573,14 +581,198 @@ def _pin_hashes(pins):
     return {x: fmplugins.content_hash(x) for x in pins}
 
 
-def _resolve_approvals(p, meta, sid, text, hashes=None):
-    """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session.
+def _first_brief(p, sid):
+    """T-1231: the first edit of a full-autonomy session whose only request so far is the one being worked makes its
+    task: a brief from that request (its tag's type, a guessed tier, its DONE-WHEN lines as criteria), focused. The
+    duel's Foreman sessions each spent two turns on the refusal and fm task new. Returns the note for the agent, or
+    None. Review: one request with one item that reads as work; parallel edits make one task (a lock)."""
+    if not sid or c.effective_autonomy(p) != "full":
+        return None
+    if c.active_brief_fast(p, getattr(p, "lane", None)):
+        return ""  # review: a parallel edit's hook made it a moment ago; the caller re-runs the guard with it
+    mine = [e for e in c.ledger_tail(p, 3000) if e.get("session_id") == sid]
+    asks = [str((e.get("data") or {}).get("text") or "") for e in mine if e.get("event") == "prompt"]
+    if len(asks) != 1 or not asks[0].strip() or any(e.get("event") in ("task_new", "focus") for e in mine):
+        return None
+    r = c.parse_intake(asks[0])
+    head = re.sub(r"(?i)^\s*task:\s*", "", asks[0]).strip()  # a bench or scripted prompt's "Task: <request>"
+    first_line = head.splitlines()[0] if head else ""
+    if len(r.items) > 1 or c.is_plan_only(asks[0]) or c.is_open_ended(first_line) or not r.items and not (
+            _headless() or c._WORK_VERB.match(first_line)):  # review: a plan-only or open-ended ask isn't S work;
+        return None  # an unattended run's one request is its work whatever its first word ("Group thousands in …")
+    first = r.items[0] if r.items else None
+    type_ = first.type if first else "FEATURE"
+    title = c.fit(c.plain((first.text if first else head).strip().splitlines()[0]), 90)
+    done = (r.done_when or (first.own.get("done_when") if first else None) or ["the request is done as asked"])[:6]
+    tier = "M" if type_ == "SECURITY" else "S"  # one request worked in one session; L words in a long spec misled it
+    import fcntl
+    with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        if c.active_brief_fast(p, getattr(p, "lane", None)):
+            return ""  # a parallel edit's hook made it a moment ago: its own note said so
+        cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
+               "--step", "do what the request asks", "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
+        r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
+                           env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+    act = c.active_brief_fast(p, getattr(p, "lane", None))
+    if r.returncode or not act:
+        log_error("PreToolUse", f"first brief: {r.stderr.strip()[-300:]}")
+        return None
+    c.log_event(p, "first_brief", task=act.id, session=sid)  # the Stop hook may close it (_close_first_brief)
+    close = (" When you stop, Foreman runs the project's tests and, if they pass, closes and commits this task "
+             "itself; no fm task finish needed." if act.tier == "S" and act.type != "FIX" and _headless() else
+             " When the work is written, one call runs the tests, closes the task and commits: fm task finish --run "
+             "\"<the test command>\" --audit \"<how you checked it>\" --commit \"<message>\".")
+    return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
+            f"{len(done)} criterion(s) from it; this edit goes ahead.{close} Wrong size? fm task set {act.id} "
+            f"tier=S|M|L.")
+
+
+def _tracked(p):
+    r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3)
+    return r.stdout.splitlines() if not r.returncode else []
+
+
+def _test_gate(p, files):
+    """The project's detected test command (fmmap's gates, one that runs tests first), or None. No map build: hooks
+    never build it (review)."""
+    import fmmap
+    gates = fmmap._gates(p.root, files, c.read_meta(p).get("checks") or [])
+    return next((g for g in gates if "test" in g), gates[0] if gates else None)
+
+
+def _layout_note(p):
+    """T-1231: the tracked layout (top folders with file counts) and the detected test command, in one line, so an
+    unattended run starts writing instead of listing folders. None when git can't list the files in time."""
+    try:
+        files = _tracked(p)
+        if not files:
+            return None
+        tops = collections.Counter(f.split("/", 1)[0] + ("/" if "/" in f else "") for f in files)
+        gate = _test_gate(p, files)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (f"Layout ({len(files)} tracked files): " + ", ".join(f"{d} {n}" for d, n in tops.most_common(10))
+            + (f". Tests: {gate}." if gate else "."))
+
+
+def _close_first_brief(p, act, sid):
+    """T-1231: at Stop in an unattended run, the S task this session's first edit made (not a FIX: its red→green proof
+    stays the agent's) closes itself when the project's test command passes: fm task finish runs it, records the
+    audit and commits, within 20 s. The duel's last extra turn was the agent's own fm task finish. Returns (ran, note):
+    ran when finish ran (reload the briefs), note once when the tests failed (the agent fixes its work before it ends).
+    Review: never in an interactive session (the user reviews their own first request), paused or panicked; a close
+    that timed out isn't retried."""
+    if not _headless() or not act or act.tier != "S" or act.type == "FIX" or act.status != "active" or not sid \
+            or c.panicked() or c.read_meta(p).get("paused"):
+        return False, None
+    mine = [e for e in c.ledger_tail(p, 3000) if e.get("task") == act.id and e.get("session_id") == sid]
+    if not any(e.get("event") == "first_brief" for e in mine) or any(
+            e.get("event") == "first_brief_close_timeout" for e in mine):
+        return False, None
+    cmd = _test_gate(p, _tracked(p))
+    if not cmd:
+        return False, None
+    proc = subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd,
+                             "--audit", f"auto: Foreman closed the task it made for this session's one request at "
+                             f"stop; {cmd} passed after the last edit", "--commit", f"{act.title} ({act.id})"],
+                            cwd=p.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off"),
+                            start_new_session=True)  # a timeout takes the test run down with it
+    try:
+        out, err = proc.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        c.kill_group(proc)
+        proc.communicate()
+        c.log_event(p, "first_brief_close_timeout", task=act.id, session=sid, data={"cmd": cmd})
+        return True, None
+    if not proc.returncode:
+        return True, None
+    tail = c.fit(c.plain(" / ".join(l.strip() for l in (err or out).strip().splitlines()[-4:])), 400)
+    told = any(e.get("event") == "first_brief_close_failed" for e in mine)
+    c.log_event(p, "first_brief_close_failed", task=act.id, session=sid, data={"cmd": cmd, "tail": tail})
+    return True, None if told else (
+        f"Foreman ran {cmd} to close {act.id} and it didn't pass: {tail}. Fix the work before you stop, or say in your "
+        f"reply what is left and why.")
+
+
+_PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
+_SHELLS = {"sh", "bash", "dash", "zsh", "busybox"}
+
+
+def _argv(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode(errors="replace").split("\0")
+    except OSError:
+        if os.path.isdir("/proc"):
+            return []
+    r = subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, timeout=5)  # no procfs
+    return r.stdout.split()
+
+
+def _exe(pid):
+    try:
+        return os.path.realpath(f"/proc/{pid}/exe")
+    except OSError:
+        return ""
+
+
+def _hook_claude():
+    """T-1226/T-1233 review: (pid, start, argv) of the Claude Code process running this hook, found by a fixed shape:
+    at most one python layer (this hook's own dispatcher, running this very file by absolute path), then at most one
+    system shell (/bin or /usr/bin) whose -c command starts with this hook, then Claude Code. Nothing else is skipped
+    and no name is trusted: a nested claude, renamed or not, is the Claude Code it is. None if the chain is too short."""
+    import fmbus
+    me = os.path.realpath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    chain = fmbus._chain(os.getppid(), 4)
+
+    def is_me(word):
+        return bool(me) and os.path.isabs(word) and os.path.realpath(word) == me
+
+    i = 0
+    if i < len(chain):
+        argv, exe = _argv(chain[i][0]), _exe(chain[i][0])
+        if re.match(r"python[\d.]*$", os.path.basename(exe or "")) and len(argv) > 1 and is_me(argv[1]):
+            i += 1
+    if i < len(chain):
+        argv, exe = _argv(chain[i][0]), _exe(chain[i][0])
+        try:
+            first = shlex.split(argv[2])[0] if len(argv) > 2 and argv[1] == "-c" else ""
+        except ValueError:
+            first = ""
+        if (os.path.dirname(exe or "") in ("/bin", "/usr/bin") and os.path.basename(exe) in _SHELLS) and is_me(first):
+            i += 1
+    if i >= len(chain):
+        return None
+    pid, start = chain[i]
+    return pid, start, _argv(pid)
+
+
+def _sent_by_program(hc=None):
+    """T-1226: True when the Claude Code running this hook took its prompt from argv or a stream (-p, --print,
+    stream-json, the SDK) rather than from a person at its prompt — claude --resume <this session> -p yes, run from
+    Claude's own Bash, was a yes in the asking session — or when that Claude Code can't be found."""
+    hc = hc or _hook_claude()
+    return not hc or any(a in _PROGRAM_FLAGS or re.fullmatch(r"-[A-Za-oq-z]*p[A-Za-z]*", a)
+                         or a.startswith(tuple(f + "=" for f in _PROGRAM_FLAGS[1:])) for a in hc[2][1:])
+
+
+def _claude_id(hc=None):
+    """"pid:start" of the Claude Code running this hook, or None."""
+    hc = hc or _hook_claude()
+    return f"{hc[0]}:{hc[1]}" if hc else None
+
+
+def _resolve_approvals(p, meta, sid, text, hashes=None, claude=None):
+    """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session, typed
+    into the very Claude Code process that asked (T-1226 review: `claude`, its "pid:start").
 
     A reply starting with yes grants every pending request of the session; anything else cancels them."""
     pend = meta.get("pending_approvals") or []
     valid = [a for a in pend if isinstance(a, dict) and a.get("task") and isinstance(a.get("allow"), list)
              and a.get("session")]  # a request no session owns is never answerable
-    mine = [a for a in valid if sid and a["session"] == sid]
+    mine = [a for a in valid if sid and a["session"] == sid and claude and a.get("claude") == claude]
     if len(valid) != len(pend):
         meta["pending_approvals"] = valid
     if not mine:
@@ -659,10 +851,16 @@ def user_prompt_submit(pl):
     except Exception:
         log_error("UserPromptSubmit", _tb())
     try:
+        hc = _hook_claude()
+        program, claude = _sent_by_program(hc), _claude_id(hc)
+    except Exception:  # unknown: no approval from this prompt (the permission dialog still grants)
+        log_error("UserPromptSubmit", _tb())
+        program, claude = True, None
+    try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
-            approvals = _resolve_approvals(p, meta, sid, text, hashes)
+            approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes, claude)
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
@@ -734,7 +932,8 @@ def user_prompt_submit(pl):
     else:
         state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
     try:
-        state.append("Next: " + c.next_for(p)[2])
+        if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
+            state.append("Next: " + c.next_for(p)[2])
     except Exception:
         log_error("UserPromptSubmit", _tb())
     if sd["inbox"]:
@@ -1010,6 +1209,7 @@ def _committed(name):
 
 
 OUTWARD = {"PushNotification", "Artifact", "ArtifactData", "ArtifactComments", "SendMessage", "RemoteTrigger"}
+SCHEDULERS = {"CronCreate", "ScheduleWakeup", "RemoteTrigger"}  # their prompt later arrives as if typed
 OUTWARD_MCP = "mcp__claude_ai_Claude_Docs__"
 _READS = {"get", "list", "query", "profiles", "read", "open", "quickstart", "guide", "export"}
 
@@ -1026,6 +1226,40 @@ def _outward_denial(pl):
         return None
     return (f"Foreman: this repo is marked sensitive (fm sensitive on), so {tool} can't send its content off the machine "
             f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
+
+
+# fmguard._CRED_DIRS and _CRED_FILES (a test keeps them in step): read here before fmguard is imported
+_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
+_CRED_FILES = [".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude/.credentials.json", ".docker/config.json"]
+
+
+def _credential_like(path):
+    """A cheap superset of the guard's credential read: a credential folder or file's name anywhere in the path or
+    where it really is."""
+    for p in {path, os.path.realpath(path)}:
+        if any(f"/{d}/" in p + "/" for d in _CRED_DIRS) or any(p.endswith("/" + f) for f in _CRED_FILES):
+            return True
+    return False
+
+
+def _credential_read(pl):
+    """T-1224: the guard's refusal of a Read of a credential, or None. Only a credential-like path imports the guard
+    and looks the task up (for a grant), so a guard broken mid-edit never stops an ordinary read; for that path a broken
+    guard falls back to the committed one, and with neither the read is refused."""
+    raw = str((pl.get("tool_input") or {}).get("file_path") or "")
+    if not raw or not _credential_like(os.path.join(_cwd(pl), os.path.expanduser(raw))):
+        return None
+    try:
+        import fmguard as guard
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    except Exception:
+        log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard:\n" + _tb())
+        guard = _committed("fmguard")
+        if guard is None:
+            return (f"Foreman guard: {raw} looks like a credential and the guard can't load (fm doctor shows the "
+                    "error), so the read is refused until it works again.")
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    return guard.message(block, ctx) if block else None
 
 
 def _guard_decision(pl, guard):
@@ -1075,14 +1309,28 @@ def _pre_tool_use(raw):
                 log_error("PreToolUse", _tb())
             return 0
         if tool == "Read":  # T-0724: its own hook entry, which never blocks a read on failure
+            try:  # T-1224: but a credential read is the guard's, and that check fails closed
+                d = _credential_read(pl)
+            except Exception:
+                log_error("PreToolUse", _tb())
+                d = ("Foreman guard: the credential-read check failed (fm doctor shows the error), so this read is "
+                     "refused until that check works again.")
             try:
-                d = _outline_first(pl)
+                d = d or _outline_first(pl)
             except Exception:
                 log_error("PreToolUse", _tb())
                 d = None
             if d:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                          "permissionDecisionReason": d}}))
+            return 0
+        ti = pl.get("tool_input") if isinstance(pl.get("tool_input"), dict) else {}
+        # T-1226: a scheduled prompt later arrives as if typed, so a yes in it would answer a pending fm ask
+        if tool in SCHEDULERS and _YES.match(_PASTED.sub("", str(ti.get("prompt") or "")).strip()):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": (
+                "Foreman: a scheduled prompt that starts with a yes could answer a pending fm ask in the user's place. "
+                "Word it as an instruction (for example 'continue the queue').")}}))
             return 0
         if tool in OUTWARD or tool.startswith(OUTWARD_MCP):  # T-0784: content leaving the machine
             try:
@@ -1118,6 +1366,19 @@ def _pre_tool_use(raw):
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
+    made = None
+    if block and block.category == "brief" and p:
+        try:
+            made = _first_brief(p, pl.get("session_id"))
+            if made is not None:  # the whole guard again, with the task active: the edit goes ahead if nothing stops it
+                ctx, p, act, found, block = _guard_decision(pl, guard)
+        except Exception:
+            log_error("PreToolUse", _tb())
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": (
+                "Foreman: making this session's task failed partway, so a task may exist now: check fm status, then "
+                "retry the edit (or start one: fm task new … --focus).")}}))
+            return 0
     if block:
         reason = guard.message(block, ctx)
         long_cmd = str((pl.get("tool_input") or {}).get("command") or "") if tool == "Bash" else ""
@@ -1216,7 +1477,7 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        note = " ".join(filter(None, [saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        note = " ".join(filter(None, [made, saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
@@ -1432,6 +1693,13 @@ def _record_asks(pl, p, fmguard):
             asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
+    try:
+        claude = _claude_id()  # T-1226 review: only this process's own next prompt can answer it in chat
+    except Exception:
+        log_error("PreToolUse", _tb())
+        claude = None
+    for a in asks:
+        a["claude"] = claude
     path = os.path.join(p.dir, "asks.json")
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(path)
@@ -2383,8 +2651,18 @@ def stop(pl):
     if not p:
         return None
     briefs = c.load_briefs(p)
-    sd = c.state_dict(p, briefs)
     act = c.active_brief(briefs, p.lane)
+    if act:
+        try:
+            ran, failed = _close_first_brief(p, act, sid)
+            if ran:  # closed, or a close that failed partway: what the briefs say now
+                briefs = c.load_briefs(p)
+                act = c.active_brief(briefs, p.lane)
+            if failed:
+                return {"decision": "block", "reason": failed}
+        except Exception:  # the task stays open and drive handles it as before
+            log_error("Stop", _tb())
+    sd = c.state_dict(p, briefs)
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)
@@ -2403,7 +2681,8 @@ def stop(pl):
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
     drained = bool(had_work and not d["had_work"])
-    if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"]:
+    if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"] \
+            and not os.environ.get("FOREMAN_BENCH"):  # T-1229: a replay's job is its request, not new work after it
         try:  # T-0950: the queue just drained: Foreman looks for work itself (an answer to a question isn't a drain)
             import fmscout
             made, slow = fmscout.idle(p) if fmscout.due(p) else ([], False)

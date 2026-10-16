@@ -1,6 +1,6 @@
 ---
 name: reflect
-description: Use after finishing a Foreman task or phase, after a block or a long back-and-forth, or when the user asks for a retro — records decisions, durable learnings (auto memory) and Foreman self-improvement ideas with evidence, without changing Foreman itself.
+description: Use after a Foreman task or phase, a block, or when the user asks for a retro: records decisions, durable learnings and Foreman self-improvement ideas with evidence.
 ---
 
 # Foreman: reflect

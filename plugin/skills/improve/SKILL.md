@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when the user asks to improve Foreman itself, or when Foreman's self-inbox has items and the queue is empty. Proposes and tests improvements from the self-inbox (source self), bounded and eval-gated — builds candidates in a git worktree, compares them with the live plugin using claude plugin eval and fm bench (replays of finished tasks), and needs the user's yes before any merge.
+description: Use when the user asks to improve Foreman itself, or the self-inbox has items and the queue is empty: builds eval-gated candidates in a worktree; any merge needs the user's yes.
 ---
 
 # Foreman: improve (bounded, eval-gated)

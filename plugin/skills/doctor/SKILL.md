@@ -1,6 +1,6 @@
 ---
 name: doctor
-description: Use when the user asks whether Foreman is healthy or working, when a Foreman hook or fm command misbehaves, or after changing Foreman. Runs fm doctor and fixes or explains each failure — settings, hooks and latency, guard fixtures, skills/agents, briefs vs STATE, MASTER.md file map, backups, plugin validation, git hygiene, statusline and install scripts.
+description: Use when the user asks whether Foreman is healthy, a Foreman hook or fm command misbehaves, or after changing Foreman: runs fm doctor and fixes or explains each failure.
 argument-hint: "[--full]"
 ---
 

@@ -1,6 +1,6 @@
 """The feature pages (T-1220): content as data, charts as calls into build.py's helpers over site/data/stats.json.
 Every claim here is something Foreman does today; the charts are its own record of building itself."""
-from build import TYPES, columns, hbars, line, tiles
+from build import TYPES, columns, hbars, line, pairs, tiles, verdicts
 
 
 def _daily_types(s):
@@ -71,6 +71,54 @@ def _totals(s, keys):
              "findings": "Review findings", "guard_blocks": "Guard blocks", "captures": "Ideas captured",
              "lessons_shown": "Lessons recalled"}
     return tiles([(names[k], t[k]) for k in keys])
+
+
+def _safety(s):
+    x = s.get("safety")
+    if not x:
+        return "<p>The safety benchmark hasn't been run on this build.</p>"
+    n, m = len(x["dangerous"]), len(x["everyday"])
+    return tiles([("Dangerous commands stopped", f"{x['stopped']} of {n}"), ("Allowed after saving your work", x["saved"]),
+                  ("Everyday commands stopped", f"{x['false_stops']} of {m}")]) + verdicts(x["dangerous"])
+
+
+def _duel(s, name):
+    d = next((x for x in s.get("duels") or [] if x.get("name") == name), None)
+    if not d or not d.get("cases"):
+        return "<p><strong>Not run yet.</strong> Its results replace this line when the run finishes.</p>"
+    cs = d["cases"]
+    won, lost = sum(c["foreman"]["pass"] for c in cs), sum(c["bare"]["pass"] for c in cs)
+    cost_f, cost_b = sum(c["foreman"]["cost"] for c in cs), sum(c["bare"]["cost"] for c in cs)
+    time_f, time_b = sum(c["foreman"]["seconds"] for c in cs), sum(c["bare"]["seconds"] for c in cs)
+    pct = lambda a, b: round((a / b - 1) * 100) if b else 0
+    n = len(cs)
+    head = tiles([("Tasks passed, with Foreman", f"{won} of {n}"), (f"Cost of the {n}, with Foreman", f"${cost_f:.2f}"),
+                  (f"Time for the {n}, with Foreman", f"{time_f:.0f} s"), ("Tasks passed, Claude Code", f"{lost} of {n}"),
+                  (f"Cost of the {n}, Claude Code", f"${cost_b:.2f}"), (f"Time for the {n}, Claude Code", f"{time_b:.0f} s")],
+                 "three")
+    if won > lost:
+        verdict = f"Foreman passed {won - lost} more of the {len(cs)} tasks."
+    elif won == lost:
+        verdict = f"Both passed {won} of the {len(cs)} tasks."
+    else:
+        verdict = f"Foreman passed {lost - won} fewer of the {len(cs)} tasks."
+    for what, a, b in (("cost", cost_f, cost_b), ("time", time_f, time_b)):
+        p = pct(a, b)
+        verdict += (f" Foreman's {what} was {abs(p)}% {'lower' if p < 0 else 'higher'}." if abs(p) >= 3 else
+                    f" Its {what} was within 3% of Claude Code's.")
+
+    def cell(x):
+        mark = "✓ passed" if x["pass"] else "✗ failed"
+        if x.get("score") is not None:
+            return f"{mark} (judge {x['score']} of 5)"
+        return f"{mark} ({x['passed']} of {x['runs']} runs)" if x.get("runs", 1) > 1 else f"{mark} (hidden tests)"
+    rows = "".join(f"<tr><td>{c['case']}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>" for c in cs)
+    table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
+             f'</thead><tbody>{rows}</tbody></table></div>')
+    return (head + f"<p><strong>{verdict}</strong></p>" + table
+            + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
+            + pairs("Time per task", "Seconds from the first prompt to the session ending.",
+                    [(c["case"], c["foreman"]["seconds"], c["bare"]["seconds"]) for c in cs], unit=" s"))
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
@@ -261,6 +309,62 @@ PAGES = [
           "edit, through the hook other harnesses use.</li><li><strong>A bench</strong> that grades any model as a "
           "Foreman worker on seeded tasks.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", 52), ("Endpoints it finds", 9), ("Status", "Building")]))]},
+    {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
+     "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
+     "lede": "Two benchmarks, run for real on this machine and published as they came out: a set of commands that "
+             "destroy work or leak secrets, and sixteen fully specified coding tasks graded by hidden tests, each run "
+             "three times with Foreman and three times with Claude Code on its own.",
+     "blocks": [
+         ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
+          "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
+          "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
+         ("chart", _safety),
+         ("text", "Quality: eight fully specified tasks, graded blind", "<p>Each task asks for one small module in "
+          "a neutral Python repo (durations, an LRU cache, SemVer precedence, text tables, ranges, dotted paths, a "
+          "token bucket, CSV lines). The request states every rule its hidden tests check, so passing means doing "
+          "the whole spec, not guessing wording. Both sides get the same request, model, budget and time limit, each "
+          "in a clean worktree, three runs per task; a task counts as passed when at least two of its three runs pass. "
+          "The Claude Code side runs with no plugins but keeps Foreman's guard on, so neither side can damage the "
+          "machine. <code>bench/spec-suite/make.py</code> builds the repo.</p>"),
+         ("chart", lambda s: _duel(s, "quality")),
+         ("text", "Harder: eight tasks where checking matters", "<p>A second neutral repo, an invoicing package whose "
+          "modules share helpers, graded by its whole test suite. Four tasks change a shared helper, where the obvious "
+          "edit breaks another module's existing tests unless the request's \"Keep\" rules are followed; four are dense "
+          "edge-case specs (text wrapping, INI files, interval arithmetic, a tokenizer). Each task's plausible shortcut "
+          "is recorded and proven to fail. Grading restores the reference tests, so editing an existing test can't "
+          "pass. <code>bench/spec-suite/make.py --suite hard</code> builds it.</p>"),
+         ("chart", lambda s: _duel(s, "hard")),
+         ("text", "The harder tasks with a smaller model", "<p>The same eight harder tasks with Haiku on both sides, "
+          "where mistakes should be likelier and a test run at the end should matter more. Haiku sessions cost about "
+          "a cent each, so Foreman's fixed cost (its skill and agent listings, its hooks and the test run at the end) "
+          "weighs more here.</p>"),
+         ("chart", lambda s: _duel(s, "hard-haiku")),
+         ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
+          "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
+          "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "
+          "bookkeeping out of the model and into its hooks:</p><ul><li><strong>The task makes itself.</strong> The "
+          "first edit of a one-request session creates its task from the request and goes ahead.</li><li><strong>It "
+          "closes itself.</strong> At the end, Foreman runs the project's tests and closes and commits the task when "
+          "they pass. When they fail, it tells the agent once, so the run fixes its work instead of ending on "
+          "it.</li><li><strong>It starts informed.</strong> The session begins with the project's layout and test "
+          "command, so the agent writes instead of listing folders.</li><li><strong>Less friction.</strong> Commands "
+          "default to the active task, a broken check can be corrected, and only real security names ask for an "
+          "adversary review.</li></ul>"),
+         ("text", "The first run, and why it was replaced", "<p>The first duel used six tasks from Foreman's own "
+          "history and came out at 0 of 6 for Foreman, 1 of 6 for Claude Code, with Foreman costing 33% more. "
+          "Reading its transcripts showed the case set couldn't measure either side: three cases graded what Foreman "
+          "had learned from this user's own past corrections, which a fresh session can't have, and the other three "
+          "checked exact wording their requests never stated. Both sides also worked inside Foreman's own code, which "
+          "the guard protects. The transcripts did show where Foreman spent extra turns on its own commands; those "
+          "were cut before this run.</p>"),
+         ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Sixteen tasks, three runs each, two "
+          "models: enough to see a direction, not a precise rate.</li><li><strong>Both sides passed everything."
+          "</strong> Fully specified tasks this size are within reach of today's models without help, so these runs "
+          "measure cost and time more than quality; larger, multi-file work and a public benchmark are next."
+          "</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
+          "benchmark on your own finished tasks; <code>python3 site/bench_safety.py</code> reruns the safety set."
+          "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
+          "plugin beside Foreman.</li></ul>")]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
      "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "

@@ -588,7 +588,8 @@ def cmd_task(args):
             risky.append("diff unavailable, so its content wasn't checked")
 
         def done(b):
-            reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
+            reasons = [r + f" (security-sensitive: {', '.join(risky)}); record it in this close: --lens \"adversary: "
+                       f"<what you tried and what held>\"" if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             import fmsplit  # T-0709: a parent closes after its children
             reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"
@@ -931,8 +932,12 @@ def task_finish(p, args):
             return False
         return b.has_evidence(step=n)
     evidenced = [s.n for s in b.steps() if not s.done and closes(s.n)]
+    # T-1231: a small task's criteria prove its steps; a step with no evidence at all closes on their run (one whose
+    # own run failed still needs a passing run of its own)
+    proves = args.run or next((cmd for _, cmd in b.verify_cmds() if cmd), None) if b.tier == "S" else args.run
     todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
-        ("step", s.n, args.run) for s in b.steps() if not s.done and s.n not in evidenced]
+        ("step", s.n, args.run if b.has_evidence(step=s.n) else proves) for s in b.steps()
+        if not s.done and s.n not in evidenced]
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
     gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
@@ -2869,8 +2874,8 @@ def cmd_ask(args):
                              "If it was its own command, state was busy: run the same fm ask again")
         meta = c.read_meta(p)
         pend = [a for a in meta.get("pending_approvals") or [] if a.get("task") != b.id]
-        pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now()},
-                         **({"pin": args.pin} if args.pin else {})))
+        pend.append(dict({"task": b.id, "allow": cats, "why": why, "session": sid, "at": c.now(),
+                          "claude": seen.get("claude")}, **({"pin": args.pin} if args.pin else {})))
         meta["pending_approvals"] = pend
         c.write_meta(p, meta)
         c.log_event(p, "approval_requested", task=b.id, data={"allow": cats, "why": why}, session=sid)
@@ -5176,7 +5181,7 @@ def build_parser():
     s.add_argument("--should", choices=["allow", "block"], help="with wrong: the verdict the guard should give")
     s.add_argument("--why", default="", help="with wrong: what went wrong")
     s.add_argument("--cwd", metavar="DIR", help="the folder it would run in (default: here)")
-    s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit"], help="the tool (default Bash)")
+    s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit", "Read"], help="the tool (default Bash)")
     s.add_argument("--path", metavar="P", help="with --tool Edit/Write: the file")
     s.add_argument("--days", type=int, default=7, help="with mine: how far back the transcripts are read (default 7)")
     s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
@@ -5539,6 +5544,8 @@ def build_parser():
         b.add_argument("--timeout", type=int, default=30, help="minutes per session")
         if name in ("duel", "versions"):
             b.add_argument("--cost-tolerance", type=float, default=0.15, help="allowed rise in mean cost per case")
+            b.add_argument("--runs", type=int, default=1, help="attempts per case and arm: a pass rate, not one sample")
+            b.add_argument("--jobs", type=int, default=1, help="cases run at once (each in its own worktree)")
         if name == "court":
             b.add_argument("--label", help="name for these results (default: court-<time>)")
 
@@ -5623,6 +5630,19 @@ def build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
+    s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
+            help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
+                 "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
+                 "closes. fm code models lists the profiles (T-1212)")
+    s.add_argument("request", nargs="*", help="what to do (or: models)")
+    s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
+    s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
+    s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
+                                                 "run's own unless given)")
+    s.add_argument("--dry-plan", action="store_true", help="print the plan and stop: no task, no change")
+    s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
+                                                                     "journal (default: the newest unfinished one)")
+    s.add_argument("--no-commit", action="store_true", help="close the task without committing")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
@@ -5794,14 +5814,60 @@ def _alias(argv):
     return argv, None
 
 
+_TASK_ID = re.compile(r"^T-\d+$", re.I)
+
+
+def _task_shape(parser, argv):
+    """T-1231: `fm task <sub>` without an id means the active task; ac and step take their action on either side of
+    the id (and no action is add); drop, block and defer take --reason as well as a positional reason. The duel's
+    transcripts showed these costing Foreman turns: a lost id, `ac add T-1`, `drop --reason`."""
+    lead = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    if argv[lead:lead + 1] != ["task"] or len(argv) < lead + 2:
+        return argv
+    sub, rest = argv[lead + 1], list(argv[lead + 2:])
+    task = next((a for a in parser._actions if isinstance(a, argparse._SubParsersAction)), None)
+    tsp = task and task.choices.get("task")
+    tsub = tsp and next((a for a in tsp._actions if isinstance(a, argparse._SubParsersAction)), None)
+    sp = tsub and tsub.choices.get(sub)
+    pos = [a for a in sp._actions if not a.option_strings] if sp else []
+    if not pos or pos[0].dest != "id" or any(a in ("-h", "--help") for a in rest):
+        return argv
+    acts = pos[1].choices if len(pos) > 1 and pos[1].choices else None
+    if acts and len(rest) > 1 and rest[0] in acts and _TASK_ID.match(rest[1]):
+        rest[0], rest[1] = rest[1], rest[0]
+    if sub in ("drop", "block", "defer"):
+        for i, a in enumerate(rest):
+            if a == "--reason" and i + 1 < len(rest):
+                rest = rest[:i] + rest[i + 1:]
+                break
+            if a.startswith("--reason="):
+                rest[i] = a.split("=", 1)[1]
+                break
+    if not any(_TASK_ID.match(a) for a in rest):  # review: an id after an option is still the task named
+        try:
+            p = c.project_by_slug(argv[1]) if lead else c.find_project(os.getcwd(), create=False)
+            act = p and c.active_brief_fast(p, getattr(p, "lane", None))
+        except Exception:
+            act = None
+        if not act:
+            return argv  # argparse says the id is required
+        print(f"(task {act.id}, the active one)", file=sys.stderr)
+        rest = [act.id] + rest
+    if acts and "add" in acts and len(rest) > 1 and _TASK_ID.match(rest[0]) and rest[1] not in acts \
+            and " " in rest[1]:  # review: a one-word typo stays an error, not a new step
+        rest = [rest[0], "add"] + rest[1:]
+    return argv[:lead + 2] + rest
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
     if aliased:
         print(f"(ran `fm {aliased}`)", file=sys.stderr)
+    parser = build_parser()
+    argv = _task_shape(parser, argv)
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
-    parser = build_parser()
     if not argv and c.find_project(os.getcwd()):  # T-0917: bare fm in a project answers "what now?"
         main(["state", "--line"])
         print("fm help: every command")

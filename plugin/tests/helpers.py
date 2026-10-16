@@ -12,6 +12,7 @@ PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(PLUGIN, "lib")
 FM = os.path.join(PLUGIN, "bin", "fm")
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
+RELAY = "import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:4]).returncode)"
 if LIB not in sys.path:
     sys.path.insert(0, LIB)
 
@@ -94,19 +95,30 @@ class ForemanTestCase(unittest.TestCase):
             raise AssertionError(f"fm {' '.join(args)} exited {p.returncode}\nstdout:{p.stdout}\nstderr:{p.stderr}")
         return p
 
-    def fm_ask(self, tid, *cats, session="sess-1", why="needs it", env=None, check=True, pin=None):
+    def fm_ask(self, tid, *cats, session="sess-1", why="needs it", env=None, check=True, pin=None, flags=None):
         """fm ask the way a session runs it: PreToolUse sees the Bash command (trusted session id), then fm runs."""
         extra = ["--pin", pin] if pin else []
         cmd = f"fm ask {tid} {' '.join(cats + tuple(extra))} --why '{why}'"
-        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": session})
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": session}, flags=flags)
         return self.fm("ask", tid, *cats, *extra, "--why", why, env=env, check=check)
 
     def fm_json(self, *args, **kw):
         return json.loads(self.fm(*args, "--json", **kw).stdout)
 
-    def hook(self, event, payload, env=None, timeout=10):
+    def hook(self, event, payload, env=None, timeout=10, flags=None):
         e = dict(os.environ, FOREMAN_HOME=self.home)
         e.update(env or {})
         payload = dict({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": event}, **payload)
-        return subprocess.run([sys.executable, HOOK, event], input=json.dumps(payload), env=e,
+        cmd = [sys.executable, HOOK, event]
+        if flags is not None:  # T-1226: the hook asks which Claude Code runs it and how it was started; by default
+            cmd = [self.claude_stand_in(), "-c", RELAY, *cmd, *flags]  # this test's process, else a new stand-in
+        return subprocess.run(cmd, input=json.dumps(payload), env=e,
                               capture_output=True, text=True, timeout=timeout, cwd=payload["cwd"])
+
+    def claude_stand_in(self):
+        """A process named claude (python under that name) that runs the command after its -c code."""
+        path = os.path.join(self.tmp, "stand-in", "claude")
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.symlink(sys.executable, path)
+        return path

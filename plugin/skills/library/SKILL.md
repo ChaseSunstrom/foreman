@@ -1,6 +1,6 @@
 ---
 name: library
-description: Use when implementing, testing, reviewing or debugging in a specific language, framework, database, cloud service or tool. Stack cards give exact verify commands, test-first recipes, pitfalls and review checklists. Find them with fm lib.
+description: Use when implementing, testing, reviewing or debugging in a specific language, framework, database, cloud service or tool: stack cards (fm lib) give verify commands, test-first recipes and pitfalls.
 ---
 
 # Foreman: stack library

@@ -13,7 +13,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "__pycache__"}
+SOURCE_ONLY = {"build.py", "stats.py", "pages.py", "bench_safety.py", "__pycache__"}
 TYPES = ["FEATURE", "FIX", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH"]
 esc = html.escape
 
@@ -63,6 +63,38 @@ def hbars(title, note, items, unit="", series=1, budget=None):
     head = ["", "value"] + (["budget"] if budget else [])
     rows = [[k, v] + ([budget.get(k, "")] if budget else []) for k, v in items]
     return figure(title, note, "".join(out), table(head, rows))
+
+
+def pairs(title, note, rows, names=("With Foreman", "Claude Code"), unit=""):
+    """Two horizontal bars per row (series 1 and 2), each with its value at the tip: rows are (label, a, b)."""
+    rows = list(rows)
+    top = max([max(a, b) for _, a, b in rows] + [1e-9])
+    band, label_w, w = 52, 120, 640
+    plot = w - label_w - 80
+    h = band * len(rows) + 6
+    out = [f'<svg class="viz" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    for i, (k, a, b) in enumerate(rows):
+        y = 4 + i * band
+        out.append(f'<text class="lab" x="{label_w - 10}" y="{y + 26}" text-anchor="end">{esc(str(k))}</text>')
+        for j, (v, name) in enumerate(((a, names[0]), (b, names[1]))):
+            yy = y + 4 + j * 22
+            bw = max(2, plot * v / top)
+            out.append(f'<rect class="m s{j + 1}" x="{label_w}" y="{yy}" width="{bw:.1f}" height="18" rx="4">'
+                       f'<title>{esc(str(k))} · {esc(name)}: {fmt(v)}{unit}</title></rect>'
+                       f'<text class="val" x="{label_w + bw + 8:.1f}" y="{yy + 13}">{fmt(v)}{esc(unit)}</text>')
+    out.append("</svg>")
+    return figure(title, note, legend(list(names)) + "".join(out),
+                  table(["", names[0], names[1]], [[k, a, b] for k, a, b in rows]))
+
+
+def verdicts(rows, names=("Claude Code alone", "With Foreman")):
+    """A table of commands and what each setup does with them; the stamp carries the outcome, never colour alone."""
+    stamp = {"deny": '<span class="stamp stop">Stopped</span>', "saved": '<span class="stamp sig">Saved first</span>',
+             "allow": '<span class="stamp warn">Runs</span>', "run": '<span class="stamp warn">Runs</span>'}
+    body = "".join(f"<tr><td><code>{esc(r['cmd'])}</code><br><small>{esc(r.get('what', ''))}</small></td>"
+                   f"<td>{stamp['run']}</td><td>{stamp.get(r['decision'], esc(r['decision']))}</td></tr>" for r in rows)
+    return (f'<div class="verdicts"><table><thead><tr><th>Command</th><th>{esc(names[0])}</th><th>{esc(names[1])}</th>'
+            f'</tr></thead><tbody>{body}</tbody></table></div>')
 
 
 def columns(title, note, rows, keys, label_key="day", short=lambda s: s[5:]):
@@ -127,8 +159,8 @@ def line(title, note, rows, key, label_key):
     return figure(title, note, "".join(out), table([label_key, key], [[r[label_key], r[key]] for r in rows]))
 
 
-def tiles(pairs):
-    return '<div class="tiles">' + "".join(f'<div class="tile"><span>{esc(label)}</span>'
+def tiles(pairs, cls=""):
+    return f'<div class="tiles{" " + cls if cls else ""}">' + "".join(f'<div class="tile"><span>{esc(label)}</span>'
                                            f'<strong>{fmt(v) if isinstance(v, (int, float)) else esc(v)}</strong></div>'
                                            for label, v in pairs) + "</div>"
 
@@ -221,6 +253,10 @@ def build(out):
     import pages as P
     with open(os.path.join(HERE, "data", "stats.json"), encoding="utf-8") as f:
         stats = json.load(f)
+    bench_path = os.path.join(HERE, "data", "bench.json")
+    if os.path.isfile(bench_path):  # T-1222: the safety benchmark (site/bench_safety.py)
+        with open(bench_path, encoding="utf-8") as f:
+            stats.update(json.load(f))
     if os.path.isdir(out):
         shutil.rmtree(out)
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])

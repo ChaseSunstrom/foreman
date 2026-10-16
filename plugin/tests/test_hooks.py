@@ -3,10 +3,12 @@ import datetime
 import glob
 import json
 import os
+import subprocess
+import sys
 import time
 import unittest
 
-from helpers import ForemanTestCase, read_json, read_text
+from helpers import HOOK, RELAY, ForemanTestCase, read_json, read_text
 
 import fmcore as c
 
@@ -44,6 +46,9 @@ class HookCase(ForemanTestCase):
         data = parse(proc) or {}
         return (data.get("hookSpecificOutput") or {}).get("additionalContext", "")
 
+    def out_of(self, proc):
+        return (parse(proc) or {}).get("hookSpecificOutput") or {}
+
     def hooks_log(self):
         path = os.path.join(self.home, "state", "logs", "hooks.log")
         return read_text(path) if os.path.exists(path) else ""
@@ -56,6 +61,32 @@ class HookCase(ForemanTestCase):
 class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
+
+    def test_an_unattended_one_request_run_gets_the_layout_and_test_command_not_the_queue(self):
+        # T-1231: "queue is empty: FINAL VERIFY and REFLECT" told a one-request run nothing; the agent spent turns on ls
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
+        os.makedirs(os.path.join(self.repo, "kit"), exist_ok=True)
+        for f in ("kit/__init__.py", "kit/text.py", "tests/test_text.py"):
+            open(os.path.join(self.repo, f), "w").close()
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
+            "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertIn("python3 -m unittest discover -s tests", ctx)
+        self.assertIn("kit/", ctx)
+        self.assertNotIn("FINAL VERIFY", ctx)
+        ups = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "Task: Add kit.lru"}, env={
+            "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertNotIn("FINAL VERIFY", ups)
+
+    def test_an_unattended_run_is_told_to_end_with_its_checks(self):
+        # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
+            "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertIn("check you ran", ctx)
+        self.assertNotIn("check you ran", self.ctx_of(self.run_ss()), "an interactive session isn't told")
 
     def test_a_resumed_session_with_drive_and_full_autonomy_starts_its_own_turn(self):
         # T-0138: "you weren't reprompted when the session just continued"
@@ -342,6 +373,54 @@ class Approvals(HookCase):
         granted = [e for e in c.ledger_tail(self.project()) if e["event"] == "approval_granted"]
         self.assertEqual((len(granted), granted[0]["task"]), (1, tid))
 
+    def test_a_prompt_claude_sends_itself_never_answers_an_ask(self):
+        # T-1226: claude --resume <this session> -p yes, run from Claude's own Bash, was a yes in the asking session
+        self.fm("init")
+        tid = self.task()
+        self.ask(tid, "core")
+        for flags in (["-p"], ["--print"], ["--resume", "sess-1", "--output-format=stream-json"],
+                      ["--input-format", "stream-json"]):
+            self.hook("UserPromptSubmit", {"prompt": "yes"}, flags=flags)
+            self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), f"{flags}: not granted, still pending")
+        bash = os.path.join(self.tmp, "renamed", "bash")  # a claude renamed as a shell is still checked
+        os.makedirs(os.path.dirname(bash))
+        os.symlink(sys.executable, bash)
+        e = dict(os.environ, FOREMAN_HOME=self.home)
+        payload = json.dumps({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": "UserPromptSubmit",
+                              "prompt": "yes"})
+        for flags in (["-p"], ["-cp"]):
+            subprocess.run([bash, "-c", RELAY, sys.executable, HOOK, "UserPromptSubmit", *flags], input=payload, env=e,
+                           cwd=self.repo, capture_output=True, text=True, timeout=20)
+            self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), f"renamed {flags}")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.allow(tid), ["core"], "the person's own yes still grants")
+
+    def test_only_the_claude_code_that_asked_can_answer_in_chat(self):
+        # T-1226 review: a copy of claude renamed bash, under a pty, with a positional "yes" and no -p, ran as a child of
+        # the asking session; by name it looked like a wrapper. The answer must come from the very process that asked.
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "core", flags=[])  # asked from another Claude Code process
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), "a yes from another process grants nothing")
+        self.fm_ask(tid, "core")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.allow(tid), ["core"], "the asking process's own yes grants")
+
+    def test_a_scheduled_prompt_that_reads_as_a_yes_is_refused(self):
+        self.fm("init")
+        self.task()
+        for tool, ti in (("CronCreate", {"cron": "* * * * *", "prompt": "yes"}),
+                         ("ScheduleWakeup", {"delaySeconds": 60, "prompt": "Yes, go ahead", "reason": "r"}),
+                         ("RemoteTrigger", {"action": "run", "prompt": "ok"}),
+                         ("CronCreate", {"cron": "* * * * *", "prompt": "<pasted_content id='1'>x</pasted_content> yes"})):
+            out = self.out_of(self.hook("PreToolUse", {"tool_name": tool, "tool_input": ti}))
+            self.assertEqual(out.get("permissionDecision"), "deny", tool)
+            self.assertIn("fm ask", out.get("permissionDecisionReason", ""))
+        out = self.out_of(self.hook("PreToolUse", {"tool_name": "CronCreate",
+                                                   "tool_input": {"cron": "0 9 * * *", "prompt": "continue the queue"}}))
+        self.assertNotEqual(out.get("permissionDecision"), "deny")
+
     def test_other_replies_clear_without_granting(self):
         self.fm("init")
         tid = self.task()
@@ -419,6 +498,46 @@ class Approvals(HookCase):
         self.assertEqual((self.allow(tid), self.pending()), ([], []))
 
 
+class HookClaudeShape(unittest.TestCase):
+    """T-1233 review: the Claude Code process behind a hook is found by a fixed shape — at most one python layer (this
+    hook's own dispatcher, by absolute path) and then at most one system shell whose -c starts with the hook — never by
+    skipping whatever looks like a wrapper at any depth."""
+    HOOK = "/opt/plug/hooks/hook"
+
+    def find(self, procs):
+        import fmbus
+        import fmhooks
+        chain = [(pid, "s") for pid, *_ in procs]
+        table = {pid: (exe, argv) for pid, exe, argv in procs}
+        saved = (fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv)
+        fmbus._chain = lambda pid, depth: chain[:depth]
+        fmhooks._argv, fmhooks._exe = (lambda pid: table[pid][1]), (lambda pid: table[pid][0])
+        sys.argv = [self.HOOK, "UserPromptSubmit"]
+        try:
+            hc = fmhooks._hook_claude()
+        finally:
+            fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv = saved
+        return hc and hc[0]
+
+    def test_the_shapes_claude_code_launches_hooks_in(self):
+        sh = (2, "/usr/bin/bash", ["/bin/sh", "-c", f"{self.HOOK} UserPromptSubmit"])
+        cc = (3, "/usr/bin/claude", ["claude", "--continue"])
+        py = (1, "/usr/bin/python3.11", ["python3.11", self.HOOK, "UserPromptSubmit"])
+        self.assertEqual(self.find([cc]), 3)
+        self.assertEqual(self.find([sh, cc]), 3)
+        self.assertEqual(self.find([py, sh, cc]), 3)
+
+    def test_nothing_else_is_skipped(self):
+        cc = (9, "/usr/bin/claude", ["claude"])
+        sh = (2, "/usr/bin/bash", ["/bin/sh", "-c", f"{self.HOOK} UserPromptSubmit"])
+        disguised = (4, "/home/u/python3", ["/home/u/python3", "yes"])  # a copy of claude, "yes" a link to the hook
+        outer = (5, "/usr/bin/bash", ["bash", "-c", f"echo {self.HOOK}; /home/u/python3 yes"])
+        self.assertEqual(self.find([sh, disguised, outer, cc]), 4, "the nested claude is the hook's Claude Code")
+        self.assertEqual(self.find([disguised, cc]), 4, "a relative argv never counts as this hook")
+        self.assertEqual(self.find([sh, sh, cc]), 2, "one shell layer only")
+        self.assertEqual(self.find([outer, cc]), 5, "a shell whose -c doesn't start with the hook is no hook layer")
+
+
 class NoTaskGate(HookCase):
     """No edits in a Foreman project without an active task (T-0012): the harness enforces the loop."""
 
@@ -434,6 +553,144 @@ class NoTaskGate(HookCase):
         self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("no active task", out["permissionDecisionReason"])
         self.assertIn("--focus", out["permissionDecisionReason"])
+
+    def test_a_one_request_full_autonomy_session_gets_its_task_made_for_it(self):
+        # T-1231: in the duel every Foreman session spent two turns here (the refusal, then fm task new)
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: parse_duration rejects '1h 30m'\nDONE-WHEN: spaces between units "
+                                                 "parse"})
+        p = self.pre(os.path.join(self.repo, "app.py"))
+        out = parse(p)["hookSpecificOutput"]
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, out)
+        self.assertNotEqual(out.get("permissionDecision"), "deny", "the edit goes ahead once its task exists")
+        self.assertIn(act.id, out["additionalContext"])
+        self.assertIn("--commit", out["additionalContext"], "one call tests, closes and commits")
+        self.assertEqual((act.type, act.tier), ("FIX", "S"))
+        self.assertIn("spaces between units parse", act.section("Acceptance criteria"))
+
+    def first_task_session(self, passing):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
+        with open(os.path.join(self.repo, "tests", "test_x.py"), "w") as f:
+            f.write("import unittest\nclass X(unittest.TestCase):\n    def test_x(self):\n        self.assertTrue(%s)\n"
+                    % passing)
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tests"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        self.hook("UserPromptSubmit", {"prompt": "FEATURE: add x"})
+        self.pre(os.path.join(self.repo, "x.py"))  # the first edit makes the task
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("X = 1\n")
+        return c.active_brief(c.load_briefs(self.project()))
+
+    HEADLESS = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+
+    def test_the_task_foreman_made_closes_itself_at_stop_when_the_tests_pass(self):
+        # T-1231: the duel's last extra turn was the agent's own fm task finish
+        act = self.first_task_session("True")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS)
+        b = c.find_brief(self.project(), act.id)
+        self.assertEqual(b.status, "done", self.hooks_log()[-1500:])
+        self.assertIn("(audit self) `auto:", b.section("Verification evidence"))
+        log = subprocess.run(["git", "log", "--format=%s", "-1"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertIn(act.id, log, "committed")
+
+    def test_a_failing_suite_leaves_the_task_open_and_says_so_once(self):
+        act = self.first_task_session("False")
+        out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS))
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
+        self.assertEqual((out or {}).get("decision"), "block", "the agent hears its tests fail")
+        self.assertIn("python3 -m unittest", out.get("reason", ""))
+        again = parse(self.hook("Stop", {"stop_hook_active": True, "last_assistant_message": "Still failing."},
+                                env=self.HEADLESS))
+        self.assertNotIn("python3 -m unittest", (again or {}).get("reason", ""), "said once, not a loop")
+
+    def test_an_interactive_session_is_never_closed_or_committed_at_stop(self):
+        # review: an interactive user's half-done first request was closed and committed when the agent stopped to ask
+        act = self.first_task_session("True")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Should I touch config?"})
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
+
+    def test_a_paused_project_is_not_closed_at_stop(self):
+        act = self.first_task_session("True")
+        self.fm("pause")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS)
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
+
+    def test_a_write_refused_for_another_reason_makes_no_task(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: tidy the state"})
+        out = parse(self.pre(os.path.join(self.home, "state", "meta.json")))["hookSpecificOutput"]
+        self.assertEqual(out.get("permissionDecision"), "deny", "a direct state write stays refused")
+        self.assertIn("state", out["permissionDecisionReason"])
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())), "brief is the guard's last check")
+
+    def test_a_long_untagged_task_request_gets_its_task_made_too(self):
+        # T-1231: the neutral suite's prompts start "Task: Add kit.x …" and run past 200 words; the hard suite's
+        # lexer spec has a word that guesses L, which can't focus without a plan, so the shortcut fell back
+        self.fm("init")
+        self.fm("autonomy", "full")
+        spec = ("Task: Add kit.lru.LRUCache: a fixed-size cache\n\n" + "- a stated rule about the cache\n" * 80
+                + "The parser architecture is a rewrite of the whole tokenizer.\n")
+        self.hook("UserPromptSubmit", {"prompt": spec})
+        out = parse(self.pre(os.path.join(self.repo, "kit.py")))["hookSpecificOutput"]
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, out)
+        self.assertEqual((act.type, act.tier), ("FEATURE", "S"))
+        self.assertIn("LRUCache", act.title)
+
+    def test_a_plan_only_or_open_ended_request_keeps_the_plain_refusal(self):
+        for prompt in ("Make a plan for the cache, don't implement anything yet", "Fix everything"):
+            with self.subTest(prompt=prompt):
+                self.fm("init")
+                self.fm("autonomy", "full")
+                self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": prompt[:8].replace(" ", "-")})
+                self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "PLAN.md"),
+                                                                              "content": "x"},
+                                         "session_id": prompt[:8].replace(" ", "-")})
+                self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
+
+    def test_the_edit_that_loses_a_parallel_race_goes_ahead_too(self):
+        # review: the second of two parallel edits found the task made and was refused "no active task"
+        import fmhooks
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.task()
+        self.assertEqual(fmhooks._first_brief(self.project(), "sess-1"), "", "a task exists: re-check, don't refuse")
+
+    def test_an_unattended_request_needs_no_work_verb(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        env = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+        self.hook("UserPromptSubmit", {"prompt": "Task: Group thousands in invoice amounts: 1234567 shows as 12,345.67"},
+                  env=env)
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "inv.py"),
+                                                                      "content": "x"}}, env=env)
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act)
+        self.assertIn("Group thousands", act.title)
+
+    def test_a_request_with_two_items_or_no_work_keeps_the_plain_refusal(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: one thing\nFEATURE: another thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "which of the two is this edit for?")
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
+
+    def test_a_second_request_or_standard_autonomy_keeps_the_plain_refusal(self):
+        self.fm("init")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: one thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "standard autonomy")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FEATURE: another thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "two requests: which one is this edit for?")
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
 
     def test_active_task_scratch_memory_and_outside_paths_are_allowed(self):
         self.fm("init")
