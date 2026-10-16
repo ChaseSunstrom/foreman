@@ -187,7 +187,9 @@ class Duel(_Bench):
             f.write('{"name": "rival"}')
         res = json.loads(self.fm("bench", "duel", rival, "--json", env=self.env).stdout)
         dirs = [[a[i + 1] for i, x in enumerate(a) if x == "--plugin-dir"] for a in (s["args"] for s in self.sessions())]
-        self.assertEqual(dirs, [[c.PLUGIN_ROOT], [c.PLUGIN_ROOT, rival]])
+        snap = dirs[0][0]  # T-1231: a snapshot of this Foreman, not the live folder
+        self.assertIn("fm-bench-plugin-", snap)
+        self.assertEqual(dirs, [[snap], [snap, rival]])
         self.assertTrue(res["gate"]["lines"][0].startswith(res["without"]))
         for label in (res["without"], res["with"]):
             self.assertTrue(os.path.exists(os.path.join(c.find_project(self.repo).dir, "bench", "results",
@@ -229,7 +231,7 @@ class Versions(_Bench):
         res = json.loads(self.fm("bench", "versions", "HEAD", "--source", src, "--json", env=self.env).stdout)
         old, new = (s["args"][s["args"].index("--plugin-dir") + 1] for s in self.sessions())
         self.assertTrue(old.endswith(os.sep + "plugin") and "fm-bench-" in old, old)
-        self.assertEqual(new, c.PLUGIN_ROOT)
+        self.assertIn("fm-bench-plugin-", new, "this Foreman, as a snapshot")
         self.assertIn(rev[:10], res["old"])
         self.assertIn("→", res["gate"]["lines"][0])
         self.assertEqual(git(src, "worktree", "list").count("\n"), 0)  # the old version's worktree is gone

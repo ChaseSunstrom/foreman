@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- The stop-time close runs only in unattended runs, never while paused, and isn't retried after a timeout (T-1231 review). It reads the gates without building the map and prefers a test gate. When the tests fail, it tells the agent once with the failure, so the run fixes its work instead of ending on it.
+- `fm bench run`, `duel`, `versions`, `court` and `soak` run a snapshot of the plugin folder taken at start, so editing Foreman during a run can't change what its later sessions load (T-1231)
 - Foreman does its own bookkeeping in a one-request unattended run (T-1231):
   - At stop it closes and commits the S task it made (not a FIX, whose red→green proof stays the agent's) once the project's detected test command passes, within 20 s. The Stop hook's limit is now 30 s.
   - The session starts with the tracked layout and the test command instead of an empty queue's "FINAL VERIFY".

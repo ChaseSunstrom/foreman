@@ -52,6 +52,19 @@ def _safe_git(root, *args, timeout=120):
                   proc=True)
 
 
+@contextlib.contextmanager
+def _frozen(plugin):
+    """T-1231: a copy of the plugin folder for one bench command, so editing Foreman while a duel runs can't change
+    the code its later sessions load. Removed afterwards."""
+    tmp = tempfile.mkdtemp(prefix="fm-bench-plugin-")
+    try:
+        snap = os.path.join(tmp, "plugin")
+        shutil.copytree(plugin, snap, symlinks=True, ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "tests"))
+        yield snap
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 _GIT = threading.Lock()  # T-1231: cases run in parallel (--jobs) add and remove worktrees of one repo
 
 
@@ -861,7 +874,8 @@ def cmd_bench(args):
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,60}", label):
             raise fmcli.UsageError(f"label must be a plain name, got {label!r}")
         try:
-            res = run_arm(p, cases, plugin, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
+            with _frozen(plugin) as snap:
+                res = run_arm(p, cases, snap, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
         except ValueError as e:
             raise fmcli.UsageError(str(e))
         results = res["cases"]
@@ -922,7 +936,9 @@ def cmd_bench(args):
                          f"stranger: {len(found)} finding(s), {len(captured)} new self item(s)"
                          + "".join(f"\n  - {x}" for x in found) + (f"\n  captured: {', '.join(captured)}" if captured else ""))
     if args.bench_cmd in ("duel", "versions", "court", "soak"):
-        return _contest(p, args)
+        with _frozen(os.path.abspath(getattr(args, "plugin_dir", None) or c.PLUGIN_ROOT)) as snap:
+            args.plugin_dir = snap
+            return _contest(p, args)
     if args.bench_cmd == "gate":
         runs = []
         for label in (args.a, args.b):
