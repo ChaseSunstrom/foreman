@@ -4732,7 +4732,9 @@ def build_parser():
             "plus installed plugins' skills (suggest, search, show, list, check; inject on|off: the edit-time card; "
             "stats: which cards fired)")
     s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source",
-                                                                    "inject", "stats"])
+                                                                    "inject", "stats", "gaps", "draft", "admit"])
+    s.add_argument("--root", action="append", help="gaps: scan this project root (repeatable; default: all registered)")
+    s.add_argument("--into", help="admit: the library's cards folder (default: Foreman's own)")
     s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
     s.add_argument("--area", help="list: one area's cards")
     s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")
