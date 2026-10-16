@@ -5013,7 +5013,7 @@ def build_parser():
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
     s = add("rollback", lazy("fmrollback", "cmd_rollback"), help="restore the state as the snapshot taken at the last "
-                                                             "Foreman upgrade had it (T-1085)")
+                                                             "Foreman upgrade had it (T-1085)", allow_abbrev=False)
     s.add_argument("--list", action="store_true")
     s.add_argument("--snapshot", metavar="OLD", help=argparse.SUPPRESS)  # the upgrade hook's detached child
     s.add_argument("--to", metavar="NAME", help="a snapshot from --list (default: the newest upgrade snapshot)")

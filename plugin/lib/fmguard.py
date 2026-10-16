@@ -30,6 +30,12 @@ USER_ONLY_FM = {
     "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "
                           "may have revoked since", "fm rollback --yes"),  # T-1085
 }
+def _user_only_hit(word, arg):
+    """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
+    a = arg.split("=")[0] if word.startswith("--") else arg
+    return a == word or (word.startswith("--") and len(a) >= 3 and a.startswith("--") and word.startswith(a))
+
+
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -2438,7 +2444,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
-            if sub in USER_ONLY_FM and USER_ONLY_FM[sub][0] in rest:  # a flag before the word counts too
+            if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
                 word, why, typed = USER_ONLY_FM[sub]
                 found.append(("self-authorize", f"{why} (they can type ! {typed})"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
