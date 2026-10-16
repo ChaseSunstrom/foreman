@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Decision sunsets and a weekly decision digest (T-1084): `fm decide X --sunset YYYY-MM-DD` gives a decision an expiry that `fm tidy` warns about until a later `--revisited` or `--reverses` row settles it; `fm digest` lists every decision made without you that week (costly and outward ones once, under review), and `--json` carries them as `decided`.
 - Guard tests pin every rule site the mutation run found untested: eval of a download, `fm posture lite` / `pause off` / `approve-reads on` / `rule rm`, recursive rm with stdin targets, nesting depth, ufw, firewall-cmd, cryptsetup, dd and `git core.hooksPath`; dropping any system, rm-outside, self-authorize or pipe-shell site now fails a test (T-1120).
 - Tools forged from repeats (T-1070): `fm repeats --forge` drafts a script for each repeated command shape fm check doesn't cover and a SKILL.md for each repeated step (in state `research/`, never executable, secrets redacted, labelled as data), and captures one task per draft with a step and a criterion to adopt it; a re-run restores a deleted draft and files nothing new.
 - `fm bench guard --mutate --flip` flips one operator or constant inside the guard's check functions per mutant, the class the old `plugin/tests/mutate_guard.py` script covered; the script is gone (its copy skipped the test fixtures, so every mutant looked killed); run from a builder's worktree, `--mutate` now mutates that checkout's guard, not the main one's (T-1121).
