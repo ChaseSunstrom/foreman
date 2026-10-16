@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- A lane's pre-claim of its scope files is advisory: it no longer blocks another builder's edit in its own worktree (the merge settles overlaps); an explicit `fm lease take` still does (T-1138).
+- `fm lane rm` waits while the lane's last merge conflicted and its branch isn't merged (resolve and merge, or drop the task to abandon it); removing it then had lost the builder record and the resume (T-1136).
 - Pane speedrun splits: the task block shows each stage's time against the project's typical for its type and tier, green when under and red when over (T-1078).
 - `fm check --affected` names changed test files its command can't run (a `.tsx` test under a Python runner) instead of saying only "No tests linked" (T-1131).
 - A criterion whose check names a package script that doesn't exist (npm's or pnpm's "Missing script", yarn's "Command not found") stays editable, like a missing command or test module (T-1133).
