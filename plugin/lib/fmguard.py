@@ -2743,6 +2743,24 @@ def write_targets(cmd):
     return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
+def _checkout_files(base, rest):
+    """The files `git checkout` restores when it names only files (after `--`, or every word an existing path and
+    no commit), else [] (a branch, -b/-B/--orphan, `.`, a pathspec magic word or a word that is also a commit: the
+    whole tree). T-1195."""
+    if "--" in rest:
+        files = rest[rest.index("--") + 1:]
+    else:
+        if any(a.startswith("-") and a != "-" for a in rest):  # -b, -B, --orphan, --pathspec-from-file, -p ...
+            return []
+        files = rest
+        if not files or any(not os.path.exists(os.path.join(base, a))
+                            or _git(base, "rev-parse", "--verify", "-q", f"{a}^{{commit}}") for a in files):
+            return []
+    if any(f.startswith(":") or f.startswith("-") or os.path.normpath(f) == "." for f in files):
+        return []
+    return files
+
+
 def _write_targets(name, args):
     """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
     the guard can't see an archive's members, so the destination itself is what's checked."""
@@ -2791,6 +2809,8 @@ def _write_targets(name, args):
             read_only = True
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
+            if sub == "checkout" and not trees and (files := _checkout_files(base, rest)):
+                return [os.path.join(base, f) for f in files] + outs  # T-1195: named files, not the whole tree
             return ([os.path.join(base, t) for t in trees] or [base]) + outs
         return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):

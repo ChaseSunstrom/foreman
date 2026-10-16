@@ -1409,6 +1409,19 @@ class PluginChanges(GuardCase):
             ("tar -xzf dump.tgz -C {home}", "core"),  # ~/.claude/settings.json, Foreman and its state are under it
             (f"cp notes.txt {fh}", None),
             ("git -C {repo} checkout -b feature", None),
+            # T-1195: checkout of named files writes those files; a branch, -b, `.` or a path that's also a commit
+            # rewrites the whole tree
+            ("git -C {repo} checkout -- src/a.py", None),
+            ("git -C {repo} checkout HEAD -- src/a.py src/b.py", None),
+            ("git -C {repo} checkout -- .claude/settings.json", "core"),
+            ("git -C {repo} checkout HEAD~1 -- src/a.py .claude/settings.json", "core"),
+            (f"git -C {fh} checkout -- ':(top)plugin/lib/fmguard.py'", "core"),  # pathspec magic: whole tree
+            (f"git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            (f"git -C {fh} checkout -- docs/a.md .", "core"),
+            (f"git -C {fh} checkout -- .", "core"),
+            (f"git -C {fh} checkout feature", "core"),
+            (f"git -C {fh} checkout -B feature", "core"),
+            (f"git -C {fh} checkout .", "core"),
             # round-5 audits: credential files and the project's own Claude Code settings are roots too
             ("cp -r payload/. {home}/.docker/", "credentials"),
             ("tar -xf evil.tar -C {repo}/.claude", "core"),
