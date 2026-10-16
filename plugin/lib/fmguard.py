@@ -2422,8 +2422,22 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found.append(("system", "git with core.hooksPath set through the environment"))
         # T-0269/T-0270: a command git (or a program) will run on its own is checked as if typed; config it would load
         # from elsewhere is refused; a file a variable makes it write is a write target
-        for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
+        for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []) + _exec_options(
+                name, args):
             found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
+        script = _script_arg(name, args) if _SHELLS.match(name) and name != "node" or name in ("source", ".") else None
+        if name in ("source", "."):
+            script = next((a for a in args if a != "--"), None)
+        elif any(re.fullmatch(r"-[a-zA-Z]*n[a-zA-Z]*", a) and not name.startswith("python") for a in args):
+            script = None  # bash -n only checks the syntax
+        text = _script_text(script, cwd) if script else None  # T-0275: the file a shell or python is told to run
+        if text is not None:
+            if name.startswith("python"):
+                for spawned in _spawned_commands(text):  # only a command written out: a file's computed ones ("$_")
+                    if '"$_"' not in spawned:  # flag every demo script that builds a path (replay: 27 false denials)
+                        found += check_bash(spawned, ctx, depth + 1)
+            elif re.match(r"^((ba|z|da|k|fi|c|tc)?sh|source|\.)$", name):
+                found += check_bash(text, ctx, depth + 1)
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
         # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
         init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
@@ -2612,12 +2626,150 @@ def _assignments(argv):
     return [m.groups() for m in map(_ASSIGN_ANY.match, cand) if m]
 
 
+def _clip(s, n=60):
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def _opts_match(rx):
+    """A code-loading variable's check: its value is refused unread (None) when rx finds a loading option, else it is
+    harmless (False)."""
+    return lambda val: None if re.search(rx, val) else False
+
+
+# T-0275: variables that make the next program run code. A value that is a command or a script is read (the string
+# returned is checked as a command); one that names a binary or a module can't be read here: None refuses it.
+_CODE_VARS = {
+    "BASH_ENV": lambda v: f"source {shlex.quote(v)}", "ENV": lambda v: f"source {shlex.quote(v)}",
+    "PROMPT_COMMAND": lambda v: v, "LESSOPEN": lambda v: v.lstrip("|-") or False,
+    "LESSCLOSE": lambda v: v.lstrip("|-") or False,
+    "LD_PRELOAD": lambda v: None, "LD_AUDIT": lambda v: None,
+    "NODE_OPTIONS": _opts_match(r"(?:^|\s)(?:-r\b|--require\b|--import\b|--loader\b|--experimental-loader\b)"),
+    "PERL5OPT": _opts_match(r"(?:^|\s)-[Mm]"), "RUBYOPT": _opts_match(r"(?:^|\s)-r"),
+    **{k: _opts_match(r"-(?:javaagent|agentpath|agentlib|Xbootclasspath)")
+       for k in ("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS")},
+}
+
+
+def _quoted(*words):
+    return " ".join(shlex.quote(w) for w in words)
+
+
+def _ssh_options(args):
+    out = []
+    for o in _opt_values(args, "-o"):
+        m = re.match(r"\s*(\w+)\s*[=\s]\s*(.*)", o, re.S)  # Key=value and "Key value"
+        if m and m.group(1).lower() in ("proxycommand", "localcommand", "knownhostscommand") and m.group(2).strip():
+            out.append((f"ssh -o {m.group(1)}", m.group(2).strip().strip("'\"")))
+    for f in _opt_values(args, "-F"):
+        if f != "/dev/null":  # a config file may hold a ProxyCommand or LocalCommand
+            out.append(("ssh -F config file (it may set a ProxyCommand or LocalCommand)", None))
+    return out
+
+
+def _sed_code(args):
+    """What sed's `e` command and `s///e` flag run: the `e COMMAND` text, or None when it is computed from the input."""
+    if "--sandbox" in args:
+        return []
+    scripts = _opt_values(args, "-e", "--expression") or [a for a in args if not a.startswith("-")][:1]
+    out = []
+    for text in scripts:
+        for seg in re.split(r";|\n", text):
+            seg = re.sub(r"^\s*(?:\d+|\$|/[^/]*/)?(?:,(?:\d+|\$|/[^/]*/))?!?\s*", "", seg)
+            m = re.match(r"e(?:\s+(.*))?$", seg)
+            if m:
+                out.append(("sed e command", m.group(1) or None))
+            elif seg.startswith("s") and len(seg) > 1:
+                d = re.escape(seg[1])
+                if re.match(rf"s{d}(?:\\.|[^{d}\\])*{d}(?:\\.|[^{d}\\])*{d}\w*e", seg):
+                    out.append(("sed s///e runs its result as a command", None))
+    return out
+
+
+def _vim_code(args):
+    out = []
+    for a, b in zip(args, args[1:] + [""]):
+        cmd = b if a in ("-c", "--cmd") else a[1:] if a.startswith("+") and len(a) > 1 else None
+        if cmd is None:
+            continue
+        bangs = re.findall(r"(?:^|[\s:|])!\s*(\S.*)$", cmd)
+        out += [("vim !command", x) for x in bangs]
+        if not bangs and re.search(r"\b(?:system|py3?|python3?|lua|perl|ruby|terminal)\b", cmd):
+            out.append(("vim command that runs code", None))
+    return out
+
+
+def _exec_options(name, args):
+    """T-0275: [(why, shell code or None)] for the command string an option makes a program run (tar --to-command,
+    ssh -o ProxyCommand, rsync -e, zip -TT, less +!cmd, vim -c !cmd, sed e). None: refused, it can't be read here.
+    ponytail: long options are matched in full (tar takes unique prefixes); abbreviations slip by."""
+    out = []
+    if name in ("tar", "gtar", "bsdtar"):
+        for flag in ("--to-command", "--use-compress-program", "-I", "--info-script", "--new-volume-script", "-F"):
+            out += [(f"tar {flag}", v) for v in _opt_values(args, flag) if v.strip()]
+        out += [("tar --checkpoint-action exec", v[5:]) for v in _opt_values(args, "--checkpoint-action")
+                if v.startswith("exec=")]
+    elif name in ("ssh", "scp", "sftp"):
+        out += _ssh_options(args)
+    elif name == "rsync":
+        out += [("rsync -e", v) for v in _opt_values(args, "-e", "--rsh") if v.strip()]
+    elif name == "zip":
+        out += [("zip -TT", v) for v in _opt_values(args, "-TT", "--unzip-command") if v.strip()]
+    elif name == "less":
+        out += [("less +!", a[2:]) for a in args if a.startswith("+!")]
+    elif name in ("vim", "vi", "nvim", "view", "ex", "gvim"):
+        out += _vim_code(args)
+    elif name in ("sed", "gsed"):
+        out += _sed_code(args)
+    return out
+
+
+def _script_text(path, cwd, limit=1 << 18):
+    """The text of a script file a shell, source or python is told to run: None when it is computed, missing, not a
+    plain file or over `limit` bytes (ponytail: a larger script, or one a variable names, is not read)."""
+    if re.search(r"[$`*?\[]", path):
+        return None
+    p = os.path.join(cwd, os.path.expanduser(path))
+    try:
+        if not os.path.isfile(p) or os.path.getsize(p) > limit:
+            return None
+        with open(p, encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def _script_arg(name, args):
+    """The script file a shell or python names: the first word that isn't an option (or an option's value); None when
+    the code comes from -c, a module (-m) or stdin (-s)."""
+    py = name.startswith("python")
+    valued = {"-o", "+o", "-O", "+O", "--rcfile", "--init-file"} if not py else {"-W", "-X", "-Q"}
+    skip = False
+    for a in args:
+        if skip:
+            skip = False
+        elif a in valued:
+            skip = True
+        elif a == "--":
+            continue
+        elif a == "-" or re.match(r"-[a-zA-Z]*[cm]" if py else r"-[a-zA-Z]*[cs]", a):  # stdin, -c code, -m module
+            return None
+        elif a.startswith(("-", "+")):
+            continue
+        else:
+            return a
+    return None
+
+
 def _env_channels(argv, name):
     """[(why, code or None)] for variables a command sets that make git (or any program) run a command, or that point
     git at config, templates or programs from elsewhere (None: refused, it can't be read here)."""
     out = []
     for var, val in _assignments(argv):
-        if var in _GIT_EXEC_ENV and val.strip():
+        if var in _CODE_VARS and val.strip():  # T-0275
+            hit = _CODE_VARS[var](val)
+            if hit is not False:
+                out.append((f"{var}={_clip(val)} loads code into the next program", hit))
+        elif var in _GIT_EXEC_ENV and val.strip():
             out.append((f"{var} set to a command", val))
         elif var in _GIT_CONFIG_SOURCES and val not in ("", "/dev/null"):
             out.append((f"{var} points git at config, templates or programs from elsewhere", None))
