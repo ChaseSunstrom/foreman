@@ -1451,7 +1451,8 @@ export const register: Register = (on, options) => {
       key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
       start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
       status: w.stopped ? `stopped · fm lane resume ${w.task}`
-        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
+        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge`
+        : w.open ? 'working' : 'merged', // T-1152: a fresh builder's branch has nothing ahead yet
       statusColor: w.ahead && !w.stopped ? C.accent2 : C.warn,
     })
     const gantt: Gantt[] = recentSubs.map(s => {
