@@ -451,6 +451,13 @@ def remove(p, b, main):
     # harness-named branch) — never one it was switched to since, and never a default branch
     branches = [x for x in dict.fromkeys([f"foreman/{b.id}", b.meta.get("lane_branch")])
                 if x and x not in fmguard.DEFAULT_BRANCHES]
+    conflict = os.path.join(p.dir, "audits", f"{b.id}.conflict.md")
+    if os.path.isdir(path) and os.path.exists(conflict) and b.status not in c.CLOSED:  # T-1136
+        tip = _git(path, "rev-parse", "HEAD").stdout.strip()
+        if tip and _git(main, "merge-base", "--is-ancestor", tip, "HEAD").returncode:
+            raise c.PolicyError(f"{b.id}'s last merge conflicted and its branch isn't merged ({conflict}): resolve it "
+                                f"on the branch and run fm lane merge {b.id}; to abandon the lane, fm task drop "
+                                f"{b.id} first (the branch is kept either way)")
     if os.path.isdir(path):
         st = _git(path, "status", "--porcelain", "--ignored=matching")  # ignored files (.env, builds) go with it too
         left = [ln for ln in st.stdout.splitlines() if not (ln.startswith("!! ") and _CACHE.search(ln[3:]))]
