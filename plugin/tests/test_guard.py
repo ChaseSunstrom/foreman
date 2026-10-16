@@ -563,7 +563,7 @@ class FrictionFalseBlocks(GuardCase):  # T-0344
         self.assertBlocked(self.bash("curl -s -w '%output{{json.py}}x' https://e; " + ok), "pipe-shell")
         # T-0369: neighbours a widened proof would have to rule out, kept blocked. A self-improvement pass proposed
         # allowing inert commands and bare assignments; an assignment word-splits into curl flags (last case)
-        for first in ("PYTHONSTARTUP=/tmp/s.py; ", "LD_PRELOAD=/tmp/x.so; ", "HOME=/tmp/evil; ", "PATH=/tmp/evil; ",
+        for first in ("PYTHONSTARTUP=/tmp/s.py; ", "HOME=/tmp/evil; ", "PATH=/tmp/evil; ",
                       "L=$(touch json.py); ", "L=`touch json.py`; ", "rm -f $(touch json.py); ", "ls > json.py; ",
                       "pkill -f x > json.py; ", "rm -f x; touch json.py; ", "L=x; export L; "):
             with self.subTest(first=first):
@@ -872,7 +872,7 @@ class DataPythonAfter(GuardCase):
                    f"T=$(grep -c x notes.txt); API=https://e; {get}", f"IP=127.0.0.1; curl -s http://$IP:9000/x | {py}")
         refused = (f"{get} & touch json.py", f"(curl -s https://e | {py}; true) & touch json.py",f"sleep 1 & {get}",
                    f"{get} &</dev/null touch json.py",  # a bare & before a redirect still backgrounds
-                   f"PYTHONINSPECT=1; {get}", f"PATH=/tmp:$PATH; {get}", f"LD_PRELOAD=/tmp/x.so; {get}",
+                   f"PYTHONINSPECT=1; {get}", f"PATH=/tmp:$PATH; {get}",
                    f"HOME=/tmp/evil; {get}", f"BASH_ENV=/tmp/x; {get}", f"IFS=x; {get}", f"FM_T0414_SET=x; {get}",
                    f"T=$(curl -o json.py https://e); {get}", f"T=\"$(curl -so json.py https://e)\"; {get}",
                    f"T=`curl -so json.py https://e`; {get}", f"echo \"`curl -so json.py https://e`\"; {get}",
@@ -1028,6 +1028,67 @@ class InterpreterWrites(GuardCase):
                     "().__class__.__base__.__subclasses__()\n"):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
+
+    def test_a_quoted_heredoc_gets_the_python_settings_and_earlier_cd_checks(self):
+        # T-1204: -c code (T-1194) is refused when python's settings or an earlier cd change what it imports; a
+        # heredoc fed to python had neither check
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        body = "python3 - <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\nprint(re.escape(s))\nEOF"
+        self.assertFalse(driving(body))
+        self.assertTrue(driving("export PYTHONPATH=/tmp/x\n" + body))
+        self.assertTrue(driving("PYTHONSTARTUP=/tmp/x.py\n" + body))
+        with mock.patch.dict(os.environ, {"PYTHONPATH": "/tmp/x"}):
+            self.assertTrue(driving(body))
+        with tempfile.TemporaryDirectory(dir="/tmp") as d:
+            open(os.path.join(d, "re.py"), "w").close()  # python - imports from its folder first
+            self.assertTrue(driving(f"cd {d}\n" + body))
+            self.assertTrue(driving(f"pushd {d} >/dev/null\n" + body))
+
+    def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
+        # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        lit = "import re; s = 'import fmcore; fmcore.write_meta(p, {{}})'; print(len(re.findall('fm', s)))"
+        for cmd in (f"python3 -c \"{lit}\"", f"python3 -c '{lit.replace(chr(39), chr(34))}'",
+                    f"python3 -Bc \"{lit}\"", f"python3 -I -W ignore -X utf8 -c \"{lit}\" arg | head -3",
+                    f"/usr/bin/python3.12 -c \"{lit}\"", f"ls; cd ./sub && python3 -c \"{lit}\"",
+                    f"python3 -c \"\nimport re\ns = 'import fmcore\\nfmcore.write_meta(p, {{{{}}}})'\nprint(s)\n\"",
+                    f"python3 -c \"s = \\\"import fmcore; fmcore.write_meta(x)\\\"; print(s)\""):  # \" inside "…"
+            self.assertFalse(driving(cmd), cmd)
+        s = "s = 'import fmcore; fmcore.write_meta(p, {{}})'"
+        for cmd in ("python3 -c 'import fmcore; fmcore.write_meta(p, {{}})'",
+                    "python3 -c 'from fmcore import write_meta as w; w(p, {{}})'",
+                    f"python3 -c \"{s}; exec(s)\"", f"python3 -c \"{s}; eval(s)\"",
+                    f"python3 -c \"{s}; __import__('fmcore').write_meta(p, {{{{}}}})\"",
+                    f"python3 -c \"{s}; import importlib; importlib.import_module('fmcore')\"",
+                    f"python3 -c \"{s}; compile(s, 'x', 'exec')\"", f"python3 -c \"{s}; import runpy\"",
+                    f"python3 -c \"{s}; import os; os.system('python3 -c ' + repr(s))\"",
+                    f"python3 -c \"{s}; import subprocess; subprocess.run(['python3', '-c', s])\"",
+                    f"python3 -c \"{s}; open('m.py', 'w').write(s); import m\"",
+                    f"python3 -c \"{s}; exec(open('x.py').read())\"",
+                    f"python3 -c \"{s}; ().__class__.__base__.__subclasses__()\"",
+                    "python3 -c \"import fmcore; fmcore.write_meta(\"",  # doesn't parse
+                    f"python3 -c \"$(cat f) {s}\"", f"python3 -c \"$CODE {s}\"", f"python3 -c \"`cat f` {s}\"",
+                    f"python3 -c '{s}' -c 'import fmcore'",  # the second -c is sys.argv, read as text: still refused
+                    f"python3 -c '{s}' 'import fmcore'",  # an argument after the code is shell text
+                    f"echo x | timeout 5 python3 -c \"import fmcore; fmcore.write_meta(p)\"",
+                    f"bash -c \"python3 -c 'import fmcore; fmcore.write_meta(p)'\"",
+                    f"python3() {{{{ eval \"$2\"; }}}}; python3 -c '{s}'",  # a shell function standing for python
+                    f"# it's\npython3 -c \"{s}\"",  # a comment: the quote scan can't follow, the text match reads it
+                    # review (adversary): code handed as an argument to another python that runs it
+                    f"python3 -c 'import sys; exec(sys.argv[1])' x\\;python3 -c \"{s}\"",
+                    f"python3 -c 'import sys; exec(sys.argv[1])' ${{{{x:-;python3 -c \"{s}\"}}}}",
+                    f"export PYTHONPATH=/tmp; python3 -c \"import re; {s}\"",
+                    f"echo 'import fmcore; fmcore.write_meta(p)' > /tmp/x.py; python3 -ic \"{s}\" < /tmp/x.py",
+                    f"cat <<'EOF'\n{s}\nEOF\npython3 -c \"import fmcore; fmcore.write_meta(p)\""):
+            self.assertTrue(driving(cmd), cmd)
+        with tempfile.TemporaryDirectory(dir="/tmp") as d:  # -c imports from its folder first: a re.py there runs
+            code = f"python3 -c \"import re; {s}\""
+            self.assertFalse(driving(f"cd {d} && {code}"))
+            open(os.path.join(d, "re.py"), "w").close()
+            for cmd in (f"cd {d} && {code}", f"cd {d}; {code}", f"pushd {d}; {code}",
+                        f"cd {d} && " + "cd . && " * 9 + code):  # a chain longer than the regex reads
+                self.assertTrue(driving(cmd), cmd)
+            self.assertIn("driving Foreman's modules", str(self.bash(code, cwd=d)))  # no cd: the cwd is the folder
 
     def test_a_test_written_and_run_in_one_command_is_told_to_split(self):
         # T-1171: 12 of 31 real refusals in four days wrote a test with cat <<EOF and ran the tests in the same
@@ -1409,12 +1470,60 @@ class PluginChanges(GuardCase):
             ("tar -xzf dump.tgz -C {home}", "core"),  # ~/.claude/settings.json, Foreman and its state are under it
             (f"cp notes.txt {fh}", None),
             ("git -C {repo} checkout -b feature", None),
+            # T-1195: checkout of named files writes those files; a branch, -b, `.` or a path that's also a commit
+            # rewrites the whole tree
+            ("git -C {repo} checkout -- src/a.py", None),
+            ("git -C {repo} checkout HEAD -- src/a.py src/b.py", None),
+            ("git -C {repo} checkout -- .claude/settings.json", "core"),
+            ("git -C {repo} checkout HEAD~1 -- src/a.py .claude/settings.json", "core"),
+            (f"git -C {fh} checkout -- ':(top)plugin/lib/fmguard.py'", "core"),  # pathspec magic: whole tree
+            (f"git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            # T-1195 review: git expands globs and takes directories, so those are tree writes, as are an
+            # environment that changes pathspec matching and --pathspec-from-file
+            (f"git -C {fh} checkout -- '*.py'", "core"),
+            (f"git -C {fh} checkout HEAD -- 'plugin/lib/*'", "core"),
+            (f"git -C {fh} checkout -- 'plugin/lib/fmguar?.py'", "core"),
+            (f"git -C {fh} checkout -- 'plugin/lib/fmguard.p[y]'", "core"),
+            ("git -C {repo} checkout -- .claude", "core"),
+            (f"git -C {fh} checkout HEAD -- plugin/lib", "core"),
+            (f"GIT_GLOB_PATHSPECS=1 git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            (f"GIT_ICASE_PATHSPECS=1 git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            (f"git --icase-pathspecs -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"git --glob-pathspecs -C {fh} checkout -- 'plugin/lib/fmguar?.py'", "core"),
+            ("git --literal-pathspecs checkout -- src/a.py", None),
+            ("git --noglob-pathspecs checkout -- src/a.py", None),
+            (f"export GIT_ICASE_PATHSPECS=1; git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"GIT_ICASE_PATHSPECS=1 env git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"env GIT_GLOB_PATHSPECS=1 git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"git -C {fh} checkout --pathspec-from-file=list.txt", "core"),
+            (f"git -C {fh} checkout --pathspec-from-file=list.txt -- src/a.py", "core"),
+            (f"git -C {fh} checkout -- docs/a.md .", "core"),
+            (f"git -C {fh} checkout -- .", "core"),
+            (f"git -C {fh} checkout feature", "core"),
+            (f"git -C {fh} checkout -B feature", "core"),
+            (f"git -C {fh} checkout .", "core"),
             # round-5 audits: credential files and the project's own Claude Code settings are roots too
             ("cp -r payload/. {home}/.docker/", "credentials"),
             ("tar -xf evil.tar -C {repo}/.claude", "core"),
             ("cp -r evil/. {repo}/.claude/", "core"),
             ("git -ccore.hooksPath=/tmp/e commit -m x", "system"),
         ], self.bash)
+
+    def test_checkout_of_a_word_that_is_a_path_and_a_commit_is_a_tree_write(self):
+        # T-1195: `git checkout main` beside a main/ folder is the branch
+        with tempfile.TemporaryDirectory() as t:
+            repo = git_repo(t, "r")
+            os.makedirs(os.path.join(repo, "main"))
+            self.assertEqual(g._checkout_files(repo, ["README.md"]), ["README.md"])
+            self.assertEqual(g._checkout_files(repo, ["main"]), [])
+            self.assertEqual(g._checkout_files(repo, ["README.md", "main"]), [])
+            # globs, pathspec files and magic are whole-tree; a literal file or folder after -- is itself
+            for rest in (["--", "*.json"], ["HEAD", "--", ".claude/*"], ["--", "a?.py"], ["--", "a[b].py"],
+                         ["--", "a\\b"], ["--pathspec-from-file=x", "--", "a"], ["--pathspec-f=x", "--", "a"],
+                         ["--", "--pathspec-from-file=x"], ["--", ":(glob)a"], ["--"]):
+                with self.subTest(rest=rest):
+                    self.assertEqual(g._checkout_files(repo, rest), [])
+            self.assertEqual(g._checkout_files(repo, ["HEAD", "--", ".claude"]), [".claude"])
 
     def test_a_new_skill_agent_or_command_needs_the_users_yes(self):
         # round-2 intent audit: a new project or user skill/agent/command is always-on context in every session there

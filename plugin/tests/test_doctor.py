@@ -127,6 +127,21 @@ class Checks(unittest.TestCase):
         self.assertEqual(d.bench_runs("load 35.1 on 16 cores"), 1)
         self.assertEqual(d.bench_runs(None), 5)
 
+    def test_cpu_pressure_counts_as_busy_before_the_load_average_catches_up(self):
+        # T-1219: 16 CPU burners left the 1-minute load at 13.8 on 16 cores while the bench ran slow and doctor failed
+        from unittest import mock
+        psi = os.path.join(self.t, "cpu")
+        with open(psi, "w") as f:
+            f.write("some avg10=28.72 avg60=14.95 avg300=16.51 total=17932752381\n")
+        with mock.patch.object(d, "PSI_CPU", psi), mock.patch.object(d.os, "getloadavg", lambda: (3.0, 3.0, 3.0)):
+            self.assertIn("cpu pressure", d.busy() or "")
+            with open(psi, "w") as f:
+                f.write("some avg10=1.20 avg60=0.90 avg300=0.50 total=1\n")
+            self.assertIsNone(d.busy())
+        with mock.patch.object(d, "PSI_CPU", os.path.join(self.t, "absent")), \
+                mock.patch.object(d.os, "getloadavg", lambda: (40.0, 40.0, 40.0)):
+            self.assertIn("load", d.busy() or "")  # no PSI (macOS): the load average still decides
+
     def test_python_below_the_floor_fails(self):
         for v, want in [((3, 12, 3), "FAIL"), ((3, 13, 0), "FAIL"), ((3, 12, 7), "PASS"), ((3, 14, 7), "PASS")]:
             self.assertEqual(d.check_python(v).status, want, v)

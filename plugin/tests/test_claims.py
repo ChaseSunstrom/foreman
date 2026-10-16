@@ -43,6 +43,8 @@ class Claims(Base):
         self.fm("lease", "take", "c.py", env=B)
         r = self.fm("lease", "drop", env=A)
         self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Dropped 2 lease(s)", r.stdout)  # T-1205: not just "No leases held."
+        self.assertIn("Dropped 0 lease(s)", self.fm("lease", "drop", "z.py", env=A).stdout)
         held = self.fm("lease", "list").stdout
         self.assertNotIn("a.py", held)
         self.assertNotIn("b.py", held)

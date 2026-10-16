@@ -93,8 +93,20 @@ def check_hook_scripts(plugin=PLUGIN):
     return Result("hook scripts", "FAIL" if problems else "PASS", "; ".join(problems) or f"{len(cmds)} executables OK")
 
 
+PSI_CPU = "/proc/pressure/cpu"
+
+
 def busy():
-    """'load L on N cores' when the 1-minute load passes the core count, else None (T-0367)."""
+    """'cpu pressure P%' when tasks waited for a CPU at least 10% of the last 10 s (T-1219: the 1-minute load lags a
+    sudden burst, such as the test suite starting), else 'load L on N cores' when that passes the core count, else
+    None (T-0367)."""
+    try:
+        with open(PSI_CPU, encoding="ascii") as f:
+            some = float(f.readline().split("avg10=", 1)[1].split()[0])
+        if some >= 10:
+            return f"cpu pressure {some:.0f}%"
+    except (OSError, ValueError, IndexError):
+        pass
     try:
         load, cores = os.getloadavg()[0], os.cpu_count() or 1
     except (OSError, AttributeError):
@@ -1201,6 +1213,7 @@ def run_all(full=False, accept_supply=False):
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
+        load = load or busy()  # T-1219: a burst that began during the bench made its timings, not the hooks, slow
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]

@@ -64,6 +64,26 @@ class BoardVerbs(ForemanTestCase):
         self.assertIn(b, out)
         self.assertNotIn(a, out)
 
+    def test_round_close_lists_the_newest_20_and_counts_the_rest(self):
+        # T-1200: the first round of 1.2.34 printed 744 task lines into the release output
+        ids = []
+        for i in range(25):
+            self.fm("task", "new", f"Task {i}", "--type", "FIX", "--tier", "S")
+            b = c.load_briefs(self.p)[-1]
+            b.meta["status"] = "done"
+            c.save_brief(self.p, b)
+            ids.append(b.id)
+        self.write("a.py", "a\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "Batch (" + ", ".join(ids) + ")")
+        out = self.fm("round", "close").stdout
+        self.assertEqual([i for i in ids if i in out], ids[5:], "the newest 20")
+        self.assertIn("5 earlier", out)
+        self.write("b.py", "b\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "Again (" + ", ".join(ids) + ")")
+        self.assertEqual(json.loads(self.fm("round", "close", "--json").stdout)["tasks"], ids)
+
     def test_show_routes_an_id_to_task_show_a_path_to_why_and_words_to_recall(self):
         self.fm("task", "new", "Fix login timeout", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         self.assertEqual(self.fm("show", "T-0001").stdout, self.fm("task", "show", "T-0001").stdout)

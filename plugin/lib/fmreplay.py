@@ -102,6 +102,7 @@ def mine(days=7):
     import fmguard as g
     home = os.path.expanduser("~")
     root = os.path.realpath(g.project_root_for(os.getcwd(), home) or os.getcwd())  # None at $HOME or /
+    root = c.main_worktree(root) or root  # T-1203: a builder's linked worktree: the sessions are the main checkout's
     # Claude Code names the folder after the session's cwd (root, a subdirectory, a worktree under it; a long name gets a
     # hash suffix), so every folder starting with the root's name is a candidate and the calls' own cwd decides
     folder = os.path.join(fmclaude.config_dir(), "projects", re.sub(r"[^A-Za-z0-9]", "-", root))

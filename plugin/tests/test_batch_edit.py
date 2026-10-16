@@ -114,6 +114,11 @@ class BatchEdit(_Files):
         self.assertNotEqual(p.returncode, 0, "a typo'd second block refuses the batch, never skips")
         self.assertEqual(self.read("a.py"), "x = 10\ny = 20\n")
 
+    def test_block_with_empty_new_text_deletes(self):
+        # T-1213 (recorded as the README demo): === straight into >>> was counted as an incomplete block
+        self.fm("edit", input="@@ a.py\n<<<\ny = 2\n===\n>>>\n")
+        self.assertEqual(self.read("a.py"), "x = 1\n\n")
+
     def test_review_a_path_rule_blocks_as_for_an_edit(self):
         self.fm("rule", "add", "b\\.py$", "--on", "path", "--why", "frozen")
         p = self.edit([{"file": "b.py", "old": "x = 1", "new": "x = 5", "all": True}], check=False)
