@@ -16,6 +16,7 @@ import fmcore as c
 
 EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title",
             "confidence", "cost_cap", "predict_minutes", "predict_attempts"}
+CLEARABLE = {"confidence", "cost_cap", "predict_minutes", "predict_attempts"}  # T-1126: k= removes them
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -2195,6 +2196,11 @@ def task_set(p, args):
         k, v = kv.split("=", 1)
         if k not in EDITABLE:
             raise UsageError(f"can't set {k!r}; editable: {', '.join(sorted(EDITABLE))} (authorizations via --allow)")
+        if v == "" and k in CLEARABLE:  # T-1126: an empty value clears an optional field
+            if k.startswith("predict_") and need_brief(p, args.id).meta.get("plan0_at"):
+                raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
+            changes[k] = None
+            continue
         if k == "status" and v not in SETTABLE_STATUS:
             raise UsageError(f"status {v!r} not settable here (use fm task done/drop, or one of {sorted(SETTABLE_STATUS)})")
         if k == "type":
@@ -2215,7 +2221,11 @@ def task_set(p, args):
         if k == "cost_cap":  # T-1083: tokens, like fm cost; stored as the count
             import fmcost
             if (n := fmcost.parse_tokens(v)) is None:
-                raise UsageError("cost_cap is a token count: 200k, 2M or 150000")
+                raise UsageError("cost_cap is input-equivalent tokens, fm cost's unit: 200k, 2M or 150000 "
+                                 "(empty or 0 removes it)")
+            if n == 0:
+                changes[k] = None
+                continue
             v = str(n)
         if k in ("predict_minutes", "predict_attempts"):  # T-1061: a guess made before the work, never moved after
             cap = 10080 if k == "predict_minutes" else 20
@@ -2240,7 +2250,12 @@ def task_set(p, args):
         for k, v in changes.items():
             if k == "title":
                 b.preamble = f"# {c.plain(v)}\n"
+            elif v is None:
+                b.meta.pop(k, None)
             else:
+                if k == "cost_cap" and b.meta.get(k) and str(b.meta[k]) != v:  # T-1083 review: a raise is on record
+                    b.append_log(f"cost_cap {b.meta[k]} → {v}")
+                    c.log_event(p, "cost_cap_changed", task=b.id, data={"from": int(b.meta[k]), "to": int(v)})
                 b.meta[k] = v
         for cat in args.allow or []:
             allow = list(b.meta.get("allow") or [])
@@ -4739,6 +4754,7 @@ def build_parser():
     s.add_argument("--forecast", action="store_true", help="when the 5-hour and weekly usage windows fill at the "
                    "pace so far (T-0973)")
     s.add_argument("--task", metavar="ID", help="one task: spent, its cap and the forecast from similar tasks (T-1083)")
+    s.add_argument("--refresh-cache", action="store_true", help=argparse.SUPPRESS)  # the Stop hook's detached refresh
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
     s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "
