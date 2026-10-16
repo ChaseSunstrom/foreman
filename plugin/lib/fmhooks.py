@@ -4,6 +4,7 @@ Non-guard handlers fail open: any exception is logged to state/logs/hooks.log an
 The PreToolUse guard fails closed: any exception blocks the tool call (exit 2).
 Injected text is factual state, never instructions.
 """
+import collections
 import fnmatch
 import hashlib
 import json
@@ -380,6 +381,8 @@ def session_start(pl):
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
     if _headless():  # T-1228: an unattended run is judged by its final reply; nobody can ask it what it checked
+        if not sd["active"] and not sd["queue"]:  # T-1231: one request, nothing queued: the map, not the queue
+            out["additionalContext"] = f"Foreman project {p.slug}. " + (_layout_note(p) or "")
         out["additionalContext"] += ("\nUnattended run: end with a reply that names each check you ran and its "
                                      "result (✓/✗), and anything the request asked that you left undone.")
     if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
@@ -613,10 +616,50 @@ def _first_brief(p, sid):
     if r.returncode or not act:
         log_error("PreToolUse", f"first brief: {r.stderr.strip()[-300:]}")
         return None
+    c.log_event(p, "first_brief", task=act.id, session=sid)  # the Stop hook may close it (_close_first_brief)
+    close = (" When you stop, Foreman runs the project's tests and, if they pass, closes and commits this task "
+             "itself; no fm task finish needed." if act.tier == "S" and act.type != "FIX" else
+             " When the work is written, one call runs the tests, closes the task and commits: fm task finish --run "
+             "\"<the test command>\" --audit \"<how you checked it>\" --commit \"<message>\".")
     return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
-            f"{len(done)} criterion(s) from it; this edit goes ahead. When the work is written, one call runs the "
-            f"tests, closes the task and commits: fm task finish --run \"<the test command>\" --audit \"<how you "
-            f"checked it>\" --commit \"<message>\". Wrong size? fm task set {act.id} tier=S|M|L.")
+            f"{len(done)} criterion(s) from it; this edit goes ahead.{close} Wrong size? fm task set {act.id} "
+            f"tier=S|M|L.")
+
+
+def _layout_note(p):
+    """T-1231: the tracked layout (top folders with file counts) and the detected test command, in one line, so an
+    unattended run starts writing instead of listing folders. None when git can't list the files."""
+    import fmmap
+    r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3)
+    files = r.stdout.splitlines() if not r.returncode else []
+    if not files:
+        return None
+    tops = collections.Counter(f.split("/", 1)[0] + ("/" if "/" in f else "") for f in files)
+    gates = fmmap._gates(p.root, files, c.read_meta(p).get("checks") or [])
+    return (f"Layout ({len(files)} tracked files): " + ", ".join(f"{d} {n}" for d, n in tops.most_common(10))
+            + (f". Tests: {gates[0]}." if gates else "."))
+
+
+def _close_first_brief(p, act, sid):
+    """T-1231: at Stop, the S task this session's first edit made (not a FIX: its red→green proof stays the agent's)
+    closes itself when the project's detected test command passes: fm task finish runs it, records the audit and
+    commits, within 20 s. The duel's last extra turn was the agent's own fm task finish. True when it closed."""
+    if not act or act.tier != "S" or act.type == "FIX" or act.status != "active" or not sid:
+        return False
+    if not any(e.get("event") == "first_brief" and e.get("task") == act.id and e.get("session_id") == sid
+               for e in c.ledger_tail(p, 3000)):
+        return False
+    import fmmap
+    cmd = next(iter((fmmap.load(p) or {}).get("gates") or []), None)
+    if not cmd:
+        return False
+    r = subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd, "--audit",
+                        f"auto: Foreman closed the task it made for this session's one request at stop; {cmd} passed "
+                        f"after the last edit", "--commit", f"{act.title} ({act.id})"], cwd=p.root, capture_output=True, text=True,
+                       timeout=20, env=dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off"))
+    if r.returncode:
+        log_error("Stop", f"first brief close: {(r.stderr or r.stdout).strip()[-300:]}")
+    return not r.returncode
 
 
 _PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
@@ -855,7 +898,8 @@ def user_prompt_submit(pl):
     else:
         state.append("No active task" + (f"; {len(sd['queue'])} queued" if sd["queue"] else ""))
     try:
-        state.append("Next: " + c.next_for(p)[2])
+        if a or sd["queue"] or not _headless():  # T-1231: a one-request unattended run has no queue to finish
+            state.append("Next: " + c.next_for(p)[2])
     except Exception:
         log_error("UserPromptSubmit", _tb())
     if sd["inbox"]:
@@ -2573,8 +2617,15 @@ def stop(pl):
     if not p:
         return None
     briefs = c.load_briefs(p)
-    sd = c.state_dict(p, briefs)
     act = c.active_brief(briefs, p.lane)
+    if act and not pl.get("stop_hook_active"):
+        try:
+            if _close_first_brief(p, act, sid):
+                briefs = c.load_briefs(p)
+                act = c.active_brief(briefs, p.lane)
+        except Exception:  # (a timeout included) the task stays open and drive handles it as before
+            log_error("Stop", _tb())
+    sd = c.state_dict(p, briefs)
     seq = _title_seq(sd) + _progress_seq(sd)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         g = _read_gate(p)

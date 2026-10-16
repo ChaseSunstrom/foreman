@@ -62,6 +62,24 @@ class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
 
+    def test_an_unattended_one_request_run_gets_the_layout_and_test_command_not_the_queue(self):
+        # T-1231: "queue is empty: FINAL VERIFY and REFLECT" told a one-request run nothing; the agent spent turns on ls
+        self.fm("init")
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
+        os.makedirs(os.path.join(self.repo, "kit"), exist_ok=True)
+        for f in ("kit/__init__.py", "kit/text.py", "tests/test_text.py"):
+            open(os.path.join(self.repo, f), "w").close()
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
+            "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertIn("python3 -m unittest discover -s tests", ctx)
+        self.assertIn("kit/", ctx)
+        self.assertNotIn("FINAL VERIFY", ctx)
+        ups = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "Task: Add kit.lru"}, env={
+            "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertNotIn("FINAL VERIFY", ups)
+
     def test_an_unattended_run_is_told_to_end_with_its_checks(self):
         # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
         self.fm("init")
@@ -551,6 +569,36 @@ class NoTaskGate(HookCase):
         self.assertIn("--commit", out["additionalContext"], "one call tests, closes and commits")
         self.assertEqual((act.type, act.tier), ("FIX", "S"))
         self.assertIn("spaces between units parse", act.section("Acceptance criteria"))
+
+    def first_task_session(self, passing):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        os.makedirs(os.path.join(self.repo, "tests"), exist_ok=True)
+        with open(os.path.join(self.repo, "tests", "test_x.py"), "w") as f:
+            f.write("import unittest\nclass X(unittest.TestCase):\n    def test_x(self):\n        self.assertTrue(%s)\n"
+                    % passing)
+        for args in (["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "tests"]):
+            subprocess.run(["git", *args], cwd=self.repo, capture_output=True)
+        self.hook("UserPromptSubmit", {"prompt": "FEATURE: add x"})
+        self.pre(os.path.join(self.repo, "x.py"))  # the first edit makes the task
+        with open(os.path.join(self.repo, "x.py"), "w") as f:
+            f.write("X = 1\n")
+        return c.active_brief(c.load_briefs(self.project()))
+
+    def test_the_task_foreman_made_closes_itself_at_stop_when_the_tests_pass(self):
+        # T-1231: the duel's last extra turn was the agent's own fm task finish
+        act = self.first_task_session("True")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
+        b = c.find_brief(self.project(), act.id)
+        self.assertEqual(b.status, "done", self.hooks_log()[-1500:])
+        self.assertIn("(audit self) `auto:", b.section("Verification evidence"))
+        log = subprocess.run(["git", "log", "--format=%s", "-1"], cwd=self.repo, capture_output=True, text=True).stdout
+        self.assertIn(act.id, log, "committed")
+
+    def test_a_failing_suite_leaves_the_task_open(self):
+        act = self.first_task_session("False")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
 
     def test_a_write_refused_for_another_reason_makes_no_task(self):
         self.fm("init")

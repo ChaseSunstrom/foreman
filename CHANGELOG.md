@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- Foreman does its own bookkeeping in a one-request unattended run (T-1231):
+  - At stop it closes and commits the S task it made (not a FIX, whose red→green proof stays the agent's) once the project's detected test command passes, within 20 s. The Stop hook's limit is now 30 s.
+  - The session starts with the tracked layout and the test command instead of an empty queue's "FINAL VERIFY".
+  - Skill and agent descriptions are 40% shorter (every turn of every session carries them).
+  - On the neutral suite the agent's calls fell from 12 to 2 or 3, against 3 to 5 for Claude Code alone.
 - More turns cut, measured on the neutral suite (T-1231): Foreman went from 13 turns and $0.22 to 4 turns and $0.08 on the same task (Claude Code alone: 4 turns, $0.07).
   - In a one-request full-autonomy session the first edit makes its task and goes ahead, after the whole guard passes it with the task active; the note teaches the one-call close (`fm task finish --run … --audit … --commit …`).
   - A `Task: …` prompt counts as a work request.

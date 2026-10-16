@@ -1,6 +1,6 @@
 ---
 name: fm-recon
-description: Read-only Foreman recon. Maps a large or unfamiliar codebase area, researches library/API docs or the web, or audits dependencies/security, and returns a bounded, cited summary. Use only with a self-contained brief (question, scope paths, what to ignore, output format). Never edits anything.
+description: Read-only Foreman recon: maps an unfamiliar codebase area, researches docs or the web, or audits dependencies, and returns a bounded, cited summary. Needs a self-contained brief. Never edits anything.
 tools: Read, Grep, Glob, WebFetch, WebSearch
 model: sonnet
 color: cyan
