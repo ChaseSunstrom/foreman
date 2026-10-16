@@ -482,15 +482,41 @@ DEFECT_CLASSES = [
 ]
 
 
+_LENS_HEAD = re.compile(r"(?i)^#+\s*(?:lens:\s*)?(" + "|".join(c.AUDIT_LENSES) + r")\b")
+_FINDING = re.compile(r"(?i)^(?:[-*]|\d+[.)])\s*(CRITICAL|HIGH|MEDIUM|LOW)\s*[—–-]+\s*(\S+?)\s*[—–-]+\s*(.+)$")
+
+
+def reviewer_findings(msg, cap=30):
+    """T-1181: [(lens, severity, file, issue)] from a reviewer's message: '- SEVERITY — path:line — issue — …' lines
+    (bold and backticks tolerated) under '## lens: X' headings; lens 'self' before any heading."""
+    out, lens = [], "self"
+    for line in str(msg or "").splitlines():
+        line = line.strip().replace("`", "").replace("**", "")
+        h = _LENS_HEAD.match(line)
+        if h:
+            lens = h.group(1).lower()
+            continue
+        m = _FINDING.match(line)
+        if m and len(out) < cap:
+            out.append((lens, m.group(1).upper(), m.group(2)[:200], c.redact(m.group(3)).split(" — ")[0][:300]))
+    return out
+
+
 def defect_classes(p, days=30, top=5):
     """Lines for the defect classes reviewers confirmed in the last `days` days: class, count and one 100-char example."""
-    seen = {}
+    seen, rows, no = {}, {}, []
     for e in c.ledger_events(p, ["finding"], since=c.iso(time.time() - days * 86400)):
         d = e.get("data") or {}
         text = " ".join(str(d.get("text") or "").split())
-        if d.get("verdict") != "confirmed" or not text:
+        if not text:
             continue
-        low = text.lower()
+        if d.get("verdict") == "rejected":
+            no.append(text.lower())
+        elif d.get("verdict") in ("confirmed", "reported"):  # T-1181: a reported one counts until the main thread rejects it
+            rows[text.lower()] = text
+    for low, text in rows.items():
+        if any(r in low or low in r for r in no):
+            continue
         name = next((n for n, ks in DEFECT_CLASSES if any(k in low for k in ks)), "other")
         seen.setdefault(name, []).append(text)
     ranked = sorted(seen.items(), key=lambda kv: -len(kv[1]))[:top]
