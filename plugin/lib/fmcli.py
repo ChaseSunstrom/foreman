@@ -3050,16 +3050,22 @@ def cmd_check(args):
     import time
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
-    cached = None if args.fresh else _cached_pass(p, checks, tree)
+    skip = red_first_tests(p, act) if any("tests/run.py" in x for x in checks) else {}  # T-1101
+    env = {**os.environ, "FOREMAN_SKIP_TESTS": ",".join(sorted(skip))} if skip else None
+    left_out = _left_out(skip)
+    cached = None if args.fresh else _cached_pass(p, checks, tree, skip)
     if cached:  # the same gates already passed on this exact tree: rerunning them only costs time
         results, notes = [(cmd, 0, f"cached pass ({cached})", 0.0) for cmd in checks], {}
         if args.evidence:
             mutate(p, args.evidence, lambda b: b.add_evidence(
-                "fm check: " + "; ".join(checks), f"exit 0 · {len(checks)} passed on this tree ({cached})"[:600],
+                "fm check: " + "; ".join(checks),
+                f"exit 0 · {len(checks)} passed on this tree ({cached}){'; ' + left_out if left_out else ''}"[:600],
                 step=args.step, ac=args.ac, tree=tree, ran=True),
                 "evidence", {"step": args.step, "ac": args.ac, "cmd": "fm check", "result": "cached pass"})
-        out(args, {"results": [{"cmd": x, "exit": 0, "cached": cached} for x in checks], "failed": 0},
-            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)")
+        out(args, {"results": [{"cmd": x, "exit": 0, "cached": cached} for x in checks], "failed": 0,
+                   "skipped_tests": skip},
+            f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)"
+            + (f"\n! {left_out}" if left_out else ""))
         return 0
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
@@ -3071,9 +3077,9 @@ def cmd_check(args):
             continue
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
-        code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
+        code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
         if code and time.monotonic() - t0 <= 120:  # a slow gate isn't rerun: its failure costs enough already
-            code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
+            code2, output2 = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
             if not code2 and _flaky_count(p, cmd) >= 2:  # a racy bug passes half the time: not "flaky" forever
                 notes[cmd] = "flaky again (failed first in 3+ recent runs): treated as a failure; find the race"
             elif not code2:
@@ -3113,11 +3119,12 @@ def cmd_check(args):
         pass  # failure memory is a hint; the gate's verdict stands either way
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
-                                                                     **skipped.get(cmd, {})} for cmd, code, _, s in results]})
+                                                                     **skipped.get(cmd, {})} for cmd, code, _, s in results],
+                      **({"skip_tests": sorted(skip)} if skip else {})})
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         shown = [r for r in results if r[1]] or results
         result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
-                  f"exit 0 · {len(results)} passed: ") + "; ".join(
+                  f"exit 0 · {len(results)} passed: ") + (f"({left_out}) " if left_out else "") + "; ".join(
             f"{cmd} → {c.run_result(code, output)}" + (f" ({notes[cmd]})" if cmd in notes else "")
             for cmd, code, output, _ in shown)
         mutate(p, args.evidence, lambda b: b.add_evidence("fm check: " + "; ".join(checks), result[:600],
@@ -3128,11 +3135,12 @@ def cmd_check(args):
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
-    lines += [f"! {x}" for x in flaky]
+    lines += [f"! {x}" for x in flaky + ([left_out] if left_out else [])]
     if wrote:
         lines.append("! the gates changed the working tree: one of them writes files (a check should only read)")
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
-                           for cmd, code, _, s in results], "failed": failed, "wrote": wrote}, "\n".join(lines))
+                           for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "skipped_tests": skip},
+        "\n".join(lines))
     return 1 if failed else 0
 
 
@@ -3464,7 +3472,51 @@ def _paths_unchanged(p, cmd, globs, tree):
     return None
 
 
-def _cached_pass(p, checks, tree):
+def _run_py_names(cmd):
+    """(tests folder, the test module names) of a `…tests/run.py NAME…` command, or None for any other command."""
+    m = re.search(r"(\S*tests)/run\.py\b(.*)", cmd)
+    return (m.group(1), re.findall(r"(?:^|[\s/'\"])(test_\w+)", m.group(2))) if m else None
+
+
+def red_first_tests(p, act):
+    """T-1101: {module: task id} for the test files that are only another open task's red-first tests: its step-1
+    run of `tests/run.py NAME` failed, no run naming NAME passed since, the file is new (not at HEAD), and this task's
+    scope and evidence don't name it. fm check leaves them out of run.py (FOREMAN_SKIP_TESTS) and says so."""
+    cmd = lambda l: l.split("`", 2)[1] if l.count("`") >= 2 else ""  # noqa: E731
+    mine = " ".join((act.meta.get("scope") or []) + [cmd(l) for l in act.evidence()]) if act else ""
+    found = {}
+    for b in c.load_briefs(p):
+        if b.status not in c.OPEN or (act and b.id == act.id):
+            continue
+        red, green = {}, set()
+        for line in b.evidence():
+            hit = _run_py_names(cmd(line))
+            if hit and "` → ✗ exit" not in line:
+                green.update(hit[1])
+            elif hit and (m := c._EV_RE.match(line)) and m.groups() == ("step", "1"):
+                red.update({n: os.path.relpath(os.path.join(p.root, hit[0], n + ".py"), p.root) for n in hit[1]})
+        for n, path in red.items():
+            if n not in green and n not in mine and os.path.isfile(os.path.join(p.root, path)):
+                found.setdefault(n, (b.id, path))
+    if not found:
+        return {}
+    tracked = c._git(p.root, "ls-tree", "-r", "--name-only", "HEAD", "--", *{x for _, x in found.values()}, fail=None)
+    if tracked is None:  # no git, or no commit yet: no telling a new file from a shared one, so nothing is left out
+        return {}
+    tracked = set(tracked.splitlines())
+    return {n: tid for n, (tid, path) in found.items() if path not in tracked}
+
+
+def _left_out(skip):
+    """The line fm check prints for what red_first_tests left out."""
+    by = {}
+    for n, tid in sorted(skip.items()):
+        by.setdefault(tid, []).append(n)
+    return "; ".join(f"skipped {len(ns)} test file(s) that are only task {tid}'s red-first tests: {', '.join(ns)}"
+                     for tid, ns in by.items())
+
+
+def _cached_pass(p, checks, tree, skip=()):
     """When the newest full fm check run was on this exact tree, with these gates, and all passed: its time."""
     if not tree:
         return None
@@ -3473,6 +3525,7 @@ def _cached_pass(p, checks, tree):
             d = e.get("data") or {}
             rs = d.get("results") or []
             if d.get("tree") == tree and d.get("env") == c.env_id() and [r.get("cmd") for r in rs] == checks \
+                    and (d.get("skip_tests") or []) == sorted(skip) \
                     and not any(r.get("exit") for r in rs) and (c.age_days(e.get("ts")) or 0) < CACHE_DAYS:
                 return f"run at {str(e.get('ts', ''))[11:16]} UTC"
             return None
@@ -3527,14 +3580,19 @@ def affected(p):
 def _check_affected(p, args):
     """Only the tests linked (fm map) to files changed since the task started, with the project's template."""
     cmd, tests, changed = affected(p)
+    act = c.active_brief(c.load_briefs(p), p.lane)
     if cmd:
-        guard_stored(p, c.active_brief(c.load_briefs(p), p.lane), cmd)  # T-0901: the template is a stored command
+        guard_stored(p, act, cmd)  # T-0901: the template is a stored command
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
-    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None)
-    out(args, {"tests": tests, "exit": code, "changed": sorted(changed)}, f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → "
-        f"{c.run_result(code, output)}\n(the full gates still decide before commit and done: fm check)")
+    skip = red_first_tests(p, act) if "tests/run.py" in cmd else {}  # T-1101: as the full gates do
+    env = {**os.environ, "FOREMAN_SKIP_TESTS": ",".join(sorted(skip))} if skip else None
+    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
+    out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip},
+        f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
+        + (f"\n! {_left_out(skip)}" if skip else "")
+        + "\n(the full gates still decide before commit and done: fm check)")
     return 1 if code else 0
 
 

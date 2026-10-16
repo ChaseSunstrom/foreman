@@ -17,15 +17,23 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
+def skipped():
+    """T-1101: the modules FOREMAN_SKIP_TESTS names (fm check: another open task's red-first test files)."""
+    return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
+
+
 def classes(patterns, k):
     """Every test class id (module.Class) discover would run, biggest first so the long ones start early."""
     sys.path.insert(0, HERE)
-    counts = {}
+    counts, skip = {}, skipped()
 
     def walk(suite):
         for t in suite:
             if isinstance(t, unittest.TestSuite):
                 walk(t)
+            elif skip and (t.id().rsplit(".", 1)[-1] if type(t).__name__ == "_FailedTest"  # a module that won't import
+                           else type(t).__module__) in skip:
+                continue
             elif not k or any(x in t.id() for x in k):
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
@@ -70,6 +78,8 @@ def main():
         sys.stderr.write(f"\n==== {cid}\n{err}")
     total = sum(r[3] for r in results)
     slow = ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:3])
+    if skipped():
+        sys.stderr.write(f"\nleft out (FOREMAN_SKIP_TESTS): {', '.join(sorted(skipped()))}")
     sys.stderr.write(f"\nRan {total} tests in {time.time() - t0:.1f}s ({len(todo)} classes, {a.j} at a time; "
                      f"slowest: {slow})\n\n{'FAILED (' + str(len(failed)) + ' classes)' if failed else 'OK' if total else 'NO TESTS RAN'}\n")
     return 1 if failed or not total else 0
