@@ -214,6 +214,20 @@ class Site(unittest.TestCase):
             self.assertGreaterEqual(left, 0, label)
             self.assertLessEqual(x + (0 if anchor == "end" else len(label) * 6.5), 640, label)
 
+    def test_the_benchmarks_page_opens_with_why_use_foreman(self):
+        # T-1241: a reader saw equal pass rates and asked why anyone would use Foreman; the page answers first
+        import sys
+        sys.path.insert(0, os.path.join(self.ROOT, "site"))
+        try:
+            import pages
+        finally:
+            sys.path.pop(0)
+        bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
+        kind, title, body = bench["blocks"][0]
+        self.assertEqual((kind, title), ("text", "Why use Foreman"))
+        for words in ("24 dangerous", "both sides pass", "more", "not measured yet"):
+            self.assertIn(words, body)
+
     def test_the_site_builds_and_every_local_link_resolves(self):
         import subprocess
         import sys

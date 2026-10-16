@@ -315,6 +315,17 @@ PAGES = [
              "destroy work or leak secrets, and sixteen fully specified coding tasks graded by hidden tests, each run "
              "three times with Foreman and three times with Claude Code on its own.",
      "blocks": [
+         ("text", "Why use Foreman", "<p><strong>It stops what you'd regret.</strong> In bypass mode, out of 24 "
+          "dangerous commands (deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman "
+          "stopped 20 and saved a copy before the other 4. Claude Code on its own ran all 24. Foreman stopped none of "
+          "25 everyday commands.</p><p><strong>It leaves a record.</strong> Every task has a plan, the checks that "
+          "ran and their output, and a commit you can revert.</p><p><strong>What the quality runs show.</strong> On "
+          "small tasks where the request spells out every rule, both sides pass everything. There Foreman costs about "
+          "10% more with Sonnet and 29% more with Haiku, and takes about the same time, so for a short, fully "
+          "specified task you're watching, Claude Code alone is cheaper.</p><p><strong>What they can't show "
+          "yet.</strong> Long unattended work across many requests and context compactions, which is what Foreman "
+          "is built for, is not measured yet. That benchmark is being built and goes on this page whichever way it "
+          "falls.</p>"),
          ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
           "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
           "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
