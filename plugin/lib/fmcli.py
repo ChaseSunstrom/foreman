@@ -670,13 +670,17 @@ def cmd_task(args):
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
         own = {a.n for a in b.acceptance() if c.verify_of(a.text) and any(  # T-0900: proven by its own command
             ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
-        by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
+        # T-1159: one list: what finish was told it didn't check (waiver, claims) first, then criteria no command proved
+        by_hand = list(getattr(args, "not_verified", None) or []) + [
+            f"criterion {a.n}: " + c.fit(re.sub(r" — verify with `.*`$", "", a.text), 90)
+            for a in b.acceptance() if a.n not in own]
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
                    f"{b.id} done (verification: {grade} — {why})." + (
-            "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
+            f"\nNot verified ({len(by_hand)}; no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:5])
+            + (f"\n  … and {len(by_hand) - 5} more" if len(by_hand) > 5 else "")
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
             if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
@@ -971,6 +975,9 @@ def task_finish(p, args):
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
+    args.not_verified = ([f"affected tests skipped: {c.fit(args.waived_affected, 90)}"]  # T-1159
+                         if getattr(args, "waived_affected", None) else []) + [
+        f"claim ({t}): {c.fit(x, 90)}" for t, x, _ in claims if t != "checked"]
     rc = cmd_task(args)
     why = (getattr(args, "why_not_caught", None) or "").strip()
     caught = next((f for f in c.task_touches(p, b.id) if c.TESTISH.search(f)), None) if why else None
@@ -1030,6 +1037,7 @@ def _close_affected(p, b, runs, args):
         return
     waive = (getattr(args, "skip_affected", None) or "").strip()
     if waive:
+        args.waived_affected = c.plain(waive)  # T-1159: the close says it only when the waiver was really used
         mutate(p, b.id, lambda x: x.append_log(f"affected tests waived: {c.plain(waive)[:200]}"), "close_affected",
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return
