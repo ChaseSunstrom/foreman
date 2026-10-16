@@ -1605,6 +1605,26 @@ test('the pane fills the dock exactly: titled dividers, room above each, the his
   expect(crowded.rows.activity!).toBe(7) // the charts keep their size
 })
 
+test('spare rows go to more lanes and taller Today charts before History pads with blanks; History with nothing steps aside', () => {
+  const parts = (history: number): Part[] => [
+    { key: 'task', want: 6, cap: 20, bare: true },
+    { key: 'activity', want: 1, fixed: 4, grow: 2 },
+    { key: 'today', want: 1, fixed: 5, grow: 3 },
+    { key: 'queue', want: 2, cap: 12 },
+    { key: 'history', want: history, stretch: true },
+  ]
+  for (const rows of [30, 44, 60, 90]) {
+    const short = layout(rows, parts(3))
+    expect(drawn(parts(3), short)).toBe(rows)
+    if (rows >= 44) expect([short.rows.activity, short.rows.today]).toEqual([6, 8]) // the charts first
+    const none = layout(rows, parts(0))
+    expect(none.rows.history).toBe(0) // no title over nothing
+    expect(drawn(parts(0), none)).toBe(rows)
+  }
+  const full = layout(44, parts(40))
+  expect([full.rows.activity, full.rows.today]).toEqual([4, 5]) // a long History keeps them at their size
+})
+
 test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
   const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
   const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
