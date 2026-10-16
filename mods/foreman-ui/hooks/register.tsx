@@ -11,6 +11,9 @@ import {
   tokensWord,
   activityCells,
   bucketize,
+  cells,
+  churnCells,
+  laneCells,
   agentColor,
   TONE_COLOR,
   changedLines,
@@ -372,6 +375,9 @@ const motion: Motion = new Map()
 const MOTION_MS = 33
 let motionClock: { cancel: () => void } | null = null
 const frameAt = (ms: number) => ms / FRAME_MS // time in frames, fractional: what a comet takes
+// T-1000: the kinds of tool call the Live section's lanes chart, and their colours
+const KINDS = ['edit', 'run', 'read', 'agent', 'web'] as const
+const KIND_COLOR: Record<string, number> = { edit: C.edit, run: C.accent, read: C.accent2, agent: C.agent, web: C.web }
 // A step that just got done glows green and fades over FLASH_MS; the frame clock runs until it has
 const flashed = new Map<string, number>() // "T-0007:2" → when it was seen done
 const FLASH_MS = 2500
@@ -1107,7 +1113,7 @@ export const register: Register = (on, options) => {
   // fact shown once. Rasters that move are registered for the 30 fps blit while work is live.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
-    const { Box, Button, Input, Text } = ui
+    const { Box, Button, Input, Raster, Text } = ui
     const v = await read($, view)
     const err = await read($, error)
     if (!v?.project) {
@@ -1131,7 +1137,6 @@ export const register: Register = (on, options) => {
     const a = v.active
     const m = v.mode
     const W = Math.max(24, e.props.bodyColumns - 2) // inside the panel's padding
-    const L = layout(e.props.scroll?.bodyRows ?? 40)
     const dim = hex(C.dim)
     const soft = hex(mix(C.dim, C.track, 0.3))
     const touched = await read($, files)
@@ -1199,6 +1204,192 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
+
+    // T-1000: what each section holds comes first; the dock's rows are shared out from that (layout), so the panel fills
+    // the dock exactly with no blank rows, and the charts at the bottom stretch into whatever is left
+    const raster = (key: string, cols: number, cellsOf: string, twin: string, color: number) =>
+      term ? <Raster key={key} columns={cols} rows={1} cells={cellsOf} /> : <Text key={key} color={hex(color)}>{twin}</Text>
+
+    // ── the queue, then the inbox; a line to capture into it
+    const capture = captureBox($, e)
+    const queueRows: RenderElement[] = [
+      ...[...queue].sort((x, y) => Number(!!y.plan) - Number(!!x.plan)).map((q, i) => (
+        <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
+          <Box flexShrink={0}>
+            <Text color={hex(i === 0 ? C.accent2 : C.dim)}>{i === 0 ? '▶' : `${i + 1}.`}</Text>
+          </Box>
+          {chip(q)}
+          {meter(ui, e, `q-bar-${q.id}`, 6, q.steps_total ? (q.steps_done ?? 0) / q.steps_total : 0, C.ok, null)}
+          <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : i === 0 ? undefined : hex(mix(C.dim, 0xc8ccd4, 0.6))}>
+            {q.id} {q.title}
+            {q.waits ? `  (${q.waits})` : ''}
+          </Text>
+          {q.plan && (
+            <Button key={`approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
+          )}
+          {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
+            <Box key={`q-typ-${q.id}`} flexShrink={0}>
+              <Text color={dim}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
+            </Box>
+          )}
+        </Box>
+      )),
+      ...(capture ? [capture] : []), // after the plans waiting for a yes: a crowded dock cuts it first
+      ...inbox.map(it => (
+        <Box flexDirection="row" gap={1} key={`in-${it.id}`}>
+          <Text color={dim}>⚑</Text>
+          {chip(it)}
+          {/* its age as a bar: a week fills it, amber from then on */}
+          {meter(ui, e, `in-bar-${it.id}`, 4, Math.min(1, (it.age_days ?? 0) / 7), (it.age_days ?? 0) >= 7 ? C.warn : C.dim, null)}
+          <Text wrap="truncate-end">
+            {it.id} {it.title}
+          </Text>
+          {it.age_days !== undefined && (
+            // T-0228: the title gives way, never the age
+            <Box flexShrink={0} key={`in-age-${it.id}`}>
+              <Text color={dim}>{ago(it.age_days)}</Text>
+            </Box>
+          )}
+          <Button key={`start-${it.id}`} label="▸ start" plain dimColor
+            onPress={() => void $.prompt.submit({ text: `Plan and start ${it.id} (/foreman:intake).`, asUser: true })} />
+          <Button key={`drop-${it.id}`} label="✕ drop" plain dimColor
+            onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Foreman pane'], `${it.id} dropped`)} />
+        </Box>
+      )),
+      ...(inboxN > inbox.length ? [<Text key="in-more" color={dim}>{`… ${inboxN - inbox.length} more in the inbox`}</Text>] : []),
+    ]
+
+    // ── more: one line each, the most useful first, each with its picture
+    const one = (key: string, word: string, color: number, text: string, textColor: number = C.dim, pic: RenderElement | null = null) => (
+      <Box key={key} flexDirection="row" gap={1}>
+        <Box flexShrink={0}>
+          <Text weight="bold" color={hex(color)}>{word.padEnd(8)}</Text>
+        </Box>
+        {pic && <Box flexShrink={0}>{pic}</Box>}
+        <Text wrap="truncate-end" color={hex(textColor)}>{text}</Text>
+      </Box>
+    )
+    const fleet = v.fleet ?? []
+    const sk = v.skills // T-0939
+    const skillUses = Object.values(sk?.counts ?? {}).reduce((x, y) => x + y, 0)
+    const topSkills = Object.entries(sk?.counts ?? {}).sort((x, y) => y[1] - x[1]).slice(0, 6)
+    const b = v.budget
+    const bs = v.brainstorm
+    const SEG = [C.accent2, C.agent, C.edit, C.web, C.ok]
+    const runsTop = (b?.top ?? []).slice(0, 5)
+    const runsAll = Math.max(1, runsTop.reduce((n, t) => n + t.runs, 0))
+    const stacked = (w: number) => { // spend's features as one bar, each its share of the runs
+      const out: [string, number][] = []
+      runsTop.forEach((t, i) => { for (let k = Math.round((w * t.runs) / runsAll); k > 0 && out.length < w; k--) out.push(['━', SEG[i]!]) })
+      while (out.length < w) out.push(['━', C.track])
+      return cells(out)
+    }
+    const churnMax = Math.max(1, ...mine.map(t => t.add + t.del))
+    const added = mine.reduce((n, t) => n + t.add, 0)
+    const removed = mine.reduce((n, t) => n + t.del, 0)
+    const moreRows: RenderElement[] = [
+      // T-0711: every live session here, one steer for all; one session alone is this one, already above
+      ...(fleet.some(s => s.remote || s.error) || fleet.length > 1
+        ? [
+            ...fleet.slice(0, 4).map((s, i) =>
+              one(`more-fleet-${i}`, i ? '' : 'fleet', C.agent,
+                s.error ? `! ${s.error}` : `${s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)} ${s.project ?? '-'} ${s.task ?? 'idle'}${s.title ? ` ${s.title}` : ''}${s.mail ? ` ✉${s.mail}` : ''}`,
+                s.error ? C.warn : C.dim,
+                s.error ? null : (
+                  <Box flexDirection="row" gap={1}>
+                    {meter(ui, e, `fleet-ctx-${i}`, 8, Math.min(1, (s.context_pct ?? 0) / 100), (s.context_pct ?? 0) >= 60 ? C.warn : C.ok, null)}
+                    <Text color={dim}>{`${String(s.context_pct ?? '?').padStart(3)}%`}</Text>
+                  </Box>
+                ))),
+            ...(e.surface !== 'mobile'
+              ? [<Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />]
+              : []),
+          ]
+        : []),
+      ...(v.revisit ?? []).slice(0, 1).map(rv =>
+        one('more-revisit', 'revisit', C.warn, `◆ ${rv.decision} (${rv.why})${(v.revisit ?? []).length > 1 ? ` · ${(v.revisit ?? []).length - 1} more` : ''}`, C.warn)),
+      ...((v.vetoes ?? []).length
+        ? [one('more-vetoes', 'you said', C.accent, `✋ ${v.vetoes![0]}${v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}`)]
+        : []),
+      ...(mine.length
+        ? [one('more-files', 'files', C.edit, `${mine.length} this session · +${added} −${removed} · ${mine.slice(-3).reverse().map(t => shortPath(t.path.slice(base.length), 28)).join(', ')}`,
+            C.dim, raster('files-churn', 12, churnCells(added, removed, Math.max(churnMax, added + removed), 12), `+${added} −${removed}`, C.edit))]
+        : []),
+      ...(b && (b.subagent_tokens > 0 || b.top.length || b.halved || b.subagents_paused)
+        ? [one('more-spend', 'spend', C.accent2, [
+            `subagents ${tokensWord(b.subagent_tokens)}`,
+            ...runsTop.slice(0, 3).map(t => `${t.feature.replace(/^subagent:(foreman:)?/, '')} ${t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`}`),
+            ...(b.halved ? [`caps halved: ${b.halved}`] : []),
+            ...(b.subagents_paused ? [`waiting: ${b.subagents_paused}`] : []),
+          ].join(' · '), b.halved || b.subagents_paused ? C.warn : C.dim, runsTop.length ? raster('spend-stack', 12, stacked(12), '━'.repeat(12), C.accent2) : null)]
+        : []),
+      ...(sk && (sk.recent.length || sk.unread.length)
+        ? [one('more-skills', 'skills', C.agent, [
+            `${skillUses} use${skillUses === 1 ? '' : 's'} · 7d`,
+            ...(topSkills.length ? [topSkills.map(([n, k]) => `${n} ×${k}`).join(', ')] : []),
+            ...(sk.recent[0] ? [`last ${sk.recent[0].name} ${since(Math.max(0, clockNow - Date.parse(sk.recent[0].at)))}`] : []),
+            ...(sk.unread.length ? [`${sk.unread.length} cards unread: fm lib show ${sk.unread[0]}`] : []),
+          ].join(' · '), C.dim, topSkills.length ? bars(ui, e, 'skills-bars', topSkills.map(([, k]) => k), 1, C.agent, C.accent2) : null)]
+        : []),
+      ...(bs
+        ? [one('more-ideas', 'ideas', C.agent, bs.running
+            ? `${spin(fb + clockNow / 300)} ${bs.answers}/${bs.expected ?? '?'} answers · ${bs.count} ideas so far${bs.ideas.length ? ` · latest: ${bs.ideas.at(-1)}` : ''}`
+            : `${bs.count} ideas · ${bs.grounded ? 'grounded' : hoursAgo(bs.age_h ?? 0)} · fm research show ${bs.name}`,
+            C.dim, meter(ui, e, 'ideas-bar', 8, bs.running ? bs.answers / Math.max(1, bs.expected ?? bs.answers) : 1, bs.grounded ? C.ok : C.agent, null))]
+        : []),
+      ...(v.bench?.last
+        ? [one('more-bench', 'bench', C.agent, `${v.bench.last.passed}/${v.bench.last.total} passed · $${v.bench.last.cost_usd.toFixed(2)} · ${v.bench.last.label}${v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}`,
+            v.bench.last.passed === v.bench.last.total ? C.dim : C.warn,
+            meter(ui, e, 'bench-bar', 8, v.bench.last.passed / Math.max(1, v.bench.last.total), v.bench.last.passed === v.bench.last.total ? C.ok : C.warn, null))]
+        : []),
+      ...(v.bench?.verdicts ?? []).slice(0, 1).map((x, i) => one(`more-verdict-${i}`, '', C.dim, `${x.ok ? '✓' : '✗'} ${x.kind}: ${x.verdict ?? ''}`, x.ok ? C.dim : C.warn)),
+      ...(v.bench?.evolve ?? []).slice(0, 1).map((x, i) =>
+        one(`more-evolve-${i}`, '', C.dim, `${x.kept ? '✓ kept' : '✗ dropped'} ${shortPath(x.target ?? '', 34)} · ${x.why ?? ''}`)),
+      ...(v.research ?? []).slice(0, 1).map(r =>
+        one(`more-research-${r.name}`, 'research', C.accent2, `${(v.research ?? []).length > 1 ? `${(v.research ?? []).length} asks, newest ` : ''}${r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')} · ✓${r.verified} ✗${r.not_found} ?${r.unchecked}${(r.conflicts ?? 0) > 0 ? ` · ⟷${r.conflicts} conflicts` : ''}${(r.single ?? 0) > 0 ? ` · ${r.single} single-source` : ''}`,
+          r.not_found ? C.warn : C.dim,
+          meter(ui, e, 'research-bar', 8, r.verified / Math.max(1, r.verified + r.not_found + r.unchecked), r.not_found ? C.warn : C.ok, null))),
+    ]
+
+    // ── the task's parts, so its demand is known before the rows are shared out
+    const planQ = plans.find(q => q.id === shownPlan) ?? (a ? undefined : plans[0])
+    const left = a ? a.blockers.filter(x => !/^(step \d+ not done|acceptance criterion \d+ not checked)/.test(x)) : [] // the ○ marks say those
+    const extras: RenderElement[] = !a ? [] : [
+      // T-0711 the parts fm task split made; T-0228 the debugging ledger, the oracle, a batch; T-0261 runs that proved nothing
+      ...(a.children ?? []).map(k => (
+        <Box key={`kid-${k.id}`} flexDirection="row" gap={1}>
+          <Text color={k.status === 'done' ? dim : k.status === 'active' ? hex(C.accent) : undefined}>
+            {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'}
+          </Text>
+          {meter(ui, e, `kid-bar-${k.id}`, 6, k.steps_total ? (k.steps_done ?? 0) / k.steps_total : k.status === 'done' ? 1 : 0, C.ok, null)}
+          <Text wrap="truncate-end" color={k.status === 'done' ? dim : undefined}>part {k.id} {k.title}</Text>
+        </Box>
+      )),
+      ...(a.hypotheses ?? []).map(hy => (
+        <Text key={`hyp-${hy.n}`} color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)} wrap="truncate-end">
+          {hy.status === 'confirmed' ? '✓' : hy.status === 'ruled out' ? '✗' : '?'} H{hy.n}. {hy.text}
+        </Text>
+      )),
+      ...(a.oracle
+        ? [
+            <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
+              oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
+              {a.oracle.ambiguities.length ? ` · open: ${a.oracle.ambiguities[0]}` : ' · no open questions'}
+            </Text>,
+          ]
+        : []),
+      ...((a.batch ?? []).length ? [<Text key="fm-pane-batch" color={dim} wrap="truncate-end">batch of {(a.batch ?? []).join(', ')}</Text>] : []),
+      ...((a.inconclusive ?? 0) > 0
+        ? [<Text key="fm-pane-inconclusive" color={hex(C.warn)} wrap="truncate-end">≈ {a.inconclusive} inconclusive run{a.inconclusive === 1 ? '' : 's'}: a sharper check is next</Text>]
+        : []),
+      ...((a.unverified ?? []).length
+        ? [<Text key="fm-pane-unverified" color={dim} wrap="truncate-end">? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}</Text>]
+        : []),
+      ...(left.length ? [<Text key="fm-pane-blockers" color={dim} wrap="truncate-end">left before done: {left.join(' · ')}</Text>] : []),
+    ]
+    const planRows = planQ ? 1 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
+    const taskWant = planQ ? planRows : a ? (stageIdx >= 0 ? 2 : 0) + a.steps.length + a.criteria.length + extras.length : 0
+    const L = layout(e.props.scroll?.bodyRows ?? 40, { task: taskWant, queue: queueRows.length, more: moreRows.length })
 
     // ── header: who and how, the task or what's next, and Claude
     const modes: [string, number][] = m
@@ -1314,14 +1505,13 @@ export const register: Register = (on, options) => {
       return row(C.dim, '✓ nothing needs you')
     })()
 
-    // ── the task: its plan, rail, steps around the current one, what proves it; a plan waiting for a yes; or recent news
+    // ── the task: its rail, steps around the current one, what proves it; or a plan waiting for a yes
     const fit = <T,>(xs: T[], k: number, at: number) => {
       if (xs.length <= k) return xs
       const s = Math.max(0, Math.min(xs.length - k, at - 1)) // one done step stays in view above the current
       return xs.slice(s, s + k)
     }
-    const planQ = plans.find(q => q.id === shownPlan) ?? (a ? undefined : plans[0])
-    let task: { label: string; color: number; detail: string; body: RenderElement[]; tall?: number }
+    let task: { label: string; color: number; detail: string; body: RenderElement[]; tall?: number } = { label: 'Task', color: C.dim, detail: '', body: [] }
     if (planQ) {
       const p = planQ.plan
       task = {
@@ -1337,38 +1527,7 @@ export const register: Register = (on, options) => {
         ],
       }
     } else if (a) {
-      const railRows = stageIdx >= 0 && L.task >= 8 ? 2 : 0
-      const left = a.blockers.filter(x => !/^(step \d+ not done|acceptance criterion \d+ not checked)/.test(x)) // the ○ marks say those
-      const extras: RenderElement[] = [
-        // T-0711 the parts fm task split made; T-0228 the debugging ledger, the oracle, a batch; T-0261 runs that proved nothing
-        ...(a.children ?? []).map(k => (
-          <Text key={`kid-${k.id}`} color={k.status === 'done' ? dim : k.status === 'active' ? hex(C.accent) : undefined} wrap="truncate-end">
-            {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'} part {k.id} {k.title}
-            {k.steps_total ? `  ${k.steps_done}/${k.steps_total}` : ''}
-          </Text>
-        )),
-        ...(a.hypotheses ?? []).map(hy => (
-          <Text key={`hyp-${hy.n}`} color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)} wrap="truncate-end">
-            {hy.status === 'confirmed' ? '✓' : hy.status === 'ruled out' ? '✗' : '?'} H{hy.n}. {hy.text}
-          </Text>
-        )),
-        ...(a.oracle
-          ? [
-              <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
-                oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
-                {a.oracle.ambiguities.length ? ` · open: ${a.oracle.ambiguities[0]}` : ' · no open questions'}
-              </Text>,
-            ]
-          : []),
-        ...((a.batch ?? []).length ? [<Text key="fm-pane-batch" color={dim} wrap="truncate-end">batch of {(a.batch ?? []).join(', ')}</Text>] : []),
-        ...((a.inconclusive ?? 0) > 0
-          ? [<Text key="fm-pane-inconclusive" color={hex(C.warn)} wrap="truncate-end">≈ {a.inconclusive} inconclusive run{a.inconclusive === 1 ? '' : 's'}: a sharper check is next</Text>]
-          : []),
-        ...((a.unverified ?? []).length
-          ? [<Text key="fm-pane-unverified" color={dim} wrap="truncate-end">? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}</Text>]
-          : []),
-        ...(left.length ? [<Text key="fm-pane-blockers" color={dim} wrap="truncate-end">left before done: {left.join(' · ')}</Text>] : []),
-      ]
+      const railRows = stageIdx >= 0 && L.task >= Math.min(8, taskWant) ? 2 : 0
       const crit = a.criteria.map(c => (
         <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
           {c.checked ? '✓' : '○'} AC{c.n} {c.text}
@@ -1405,25 +1564,9 @@ export const register: Register = (on, options) => {
           ...extras,
         ],
       }
-    } else {
-      const recent = [...(v.recent ?? [])].reverse()
-      task = {
-        label: 'Recent',
-        color: C.dim,
-        detail: recent.length ? 'newest first' : 'nothing yet',
-        body: recent.map((line, i) => {
-          const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
-          return (
-            <Text key={`r-${i}`} color={hex(fade(Math.max(0, L.task - 1 - i), L.task, 0xc8ccd4))} wrap="truncate-end">
-              {time ? <Text color={dim}>{`${time} `}</Text> : null}
-              {rest}
-            </Text>
-          )
-        }),
-      }
     }
 
-    // ── live: tool calls, subagents and background shells, one row each
+    // ── live: tool calls, subagents and background shells, one row each; quiet rows draw the session's tool lanes
     const runningSubs = subs.filter(s => !s.done)
     const liveRows: RenderElement[] = [
       ...nowCalls.map(([id, x], i) => {
@@ -1487,221 +1630,114 @@ export const register: Register = (on, options) => {
     ]
     const nLive = nowCalls.filter(([, x]) => x.icon !== '⚠').length + runningSubs.length + bgShells.length
     const lastTick = ticks.at(-1)
-    if (!liveRows.length)
+    const spanMs = Math.ceil(Math.min(TIMELINE_MS, Math.max(60000, ticks.length ? clockNow - ticks[0]!.at : TIMELINE_MS)) / 60000) * 60000
+    const recentTicks = ticks.filter(t => clockNow - t.at <= spanMs)
+    const laneW = Math.max(8, W - 14)
+    const lanesBy = KINDS.map(k => ({ k, n: recentTicks.filter(t => t.lane === k).length })).sort((x, y) => y.n - x.n)
+    // T-1000: the rows no call holds show what the session has been doing, one lane per kind of call, busiest first
+    lanesBy.slice(0, Math.max(0, L.live - liveRows.length)).forEach(({ k, n }) => {
+      const slots = bucketize(recentTicks.filter(t => t.lane === k).map(t => t.at), clockNow, spanMs, laneW * 2)
+      if (blit && ft !== null) blit.set(`lane-r-${k}`, { columns: laneW, rows: 1, draw: t => laneCells([{ color: KIND_COLOR[k], slots }], laneW, t) })
       liveRows.push(
-        <Text key="live-idle" color={dim} wrap="truncate-end">
-          {lastTick ? `quiet · last tool call ${since(clockNow - lastTick.at)}` : 'quiet · no tool calls yet'}
-        </Text>,
+        <Box key={`lane-${k}`} flexDirection="row" gap={1}>
+          <Box flexShrink={0}>
+            <Text color={hex(n ? KIND_COLOR[k] : C.dim)}>{k.padEnd(5)}</Text>
+          </Box>
+          {n ? raster(`lane-r-${k}`, laneW, laneCells([{ color: KIND_COLOR[k], slots }], laneW, ft), sparkText(slots.filter((_, i) => i % 2 === 0), laneW), KIND_COLOR[k])
+            : raster(`lane-r-${k}`, laneW, cells(Array.from({ length: laneW }, () => ['┈', C.track] as const)), '┈'.repeat(laneW), C.track)}
+          <Text color={dim}>{String(n).padStart(3)}</Text>
+        </Box>,
       )
+    })
+    const liveDetail = nowCalls.length + subs.length + bgShells.length
+      ? `${nLive} running`
+      : `quiet · ${lastTick ? `last call ${since(clockNow - lastTick.at)}` : 'no calls yet'} · ${recentTicks.length} in ${spanMs / 60000}m`
 
-    // ── pulse: 14 days of closed tasks beside the gauges, and the session's tool calls
+    // ── pulse: 14 days of closes beside the gauges, then the newest news; it stretches to fill the dock
+    const P = L.pulse
     const leftW = days.length ? days.length * 2 - 1 : 0
     const gw = Math.max(6, Math.min(14, W - leftW - 2 - 8 - 20))
     const label7 = (s: string) => <Text color={dim}>{s.padEnd(7)}</Text>
     const ctxColor = cx ? (cx.percent >= CHECKPOINT_AT ? C.err : cx.percent >= 60 ? C.warn : C.ok) : C.dim
     const spendFrac = v.budget ? Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)) : null
-    const gauges = (
-      <Box key="pulse-gauges" flexDirection="column" flexGrow={1} flexShrink={1}>
-        <Box key="g-ctx" flexDirection="row" gap={1}>
-          {label7('context')}
-          {cx ? meter(ui, e, 'fm-pane-ctx', gw, cx.percent / 100, ctxColor, null) : null}
-          <Text wrap="truncate-end">{cx ? `${Math.round(cx.percent)}%` : '–'}</Text>
-        </Box>
-        <Box key="g-spend" flexDirection="row" gap={1}>
-          {label7('spend')}
-          {spendFrac !== null ? meter(ui, e, 'fm-pane-spend', gw, spendFrac, spendFrac >= 0.9 ? C.warn : C.accent2, null) : null}
-          <Text wrap="truncate-end" color={v.budget?.halved || v.budget?.subagents_paused ? hex(C.warn) : undefined}>
-            {v.budget ? `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)}` : '–'}
-          </Text>
-        </Box>
-        <Box key="g-hooks" flexDirection="row" gap={1}>
-          {label7('hooks')}
-          {(v.latency ?? []).length > 1 ? spark(ui, e, 'fm-latency', v.latency ?? [], gw) : null}
-          <Text wrap="truncate-end" color={hex(v.health?.hook_errors ? C.err : C.dim)}>
-            {v.health
-              ? `p95 ${v.health.hook_p95_ms ?? '–'} ms · ${v.health.guard_blocks} block${v.health.guard_blocks === 1 ? '' : 's'}${v.health.hook_errors ? ` · ${v.health.hook_errors} error${v.health.hook_errors === 1 ? '' : 's'}` : ''}`
-              : '–'}
-          </Text>
-        </Box>
-        <Box key="g-gates" flexDirection="row" gap={1}>
-          {label7('gates')}
-          <Text wrap="truncate-end">
-            {(checks?.results ?? []).map((r, i) => (
-              <Text key={`gate-${i}`} color={hex(r.exit ? C.err : r.note ? C.warn : C.ok)}>
-                ●
-              </Text>
-            ))}
-            <Text color={hex(failing ? C.err : C.dim)}>
-              {checks?.results.length
-                ? ` ${passed}/${checks.results.length} · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`
-                : 'none yet: fm check'}
+    const toolW = gw
+    const gaugeRows: RenderElement[] = [
+      <Box key="g-ctx" flexDirection="row" gap={1}>
+        {label7('context')}
+        {meter(ui, e, 'fm-pane-ctx', gw, cx ? cx.percent / 100 : 0, ctxColor, null)}
+        <Text wrap="truncate-end">{cx ? `${Math.round(cx.percent)}%` : '–'}</Text>
+      </Box>,
+      <Box key="g-spend" flexDirection="row" gap={1}>
+        {label7('spend')}
+        {meter(ui, e, 'fm-pane-spend', gw, spendFrac ?? 0, (spendFrac ?? 0) >= 0.9 ? C.warn : C.accent2, null)}
+        <Text wrap="truncate-end" color={v.budget?.halved || v.budget?.subagents_paused ? hex(C.warn) : undefined}>
+          {v.budget ? `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)}` : '–'}
+        </Text>
+      </Box>,
+      <Box key="g-hooks" flexDirection="row" gap={1}>
+        {label7('hooks')}
+        {spark(ui, e, 'fm-latency', (v.latency ?? []).length > 1 ? v.latency ?? [] : [0, 0], gw)}
+        <Text wrap="truncate-end" color={hex(v.health?.hook_errors ? C.err : C.dim)}>
+          {v.health
+            ? `p95 ${v.health.hook_p95_ms ?? '–'} ms · ${v.health.guard_blocks} block${v.health.guard_blocks === 1 ? '' : 's'}${v.health.hook_errors ? ` · ${v.health.hook_errors} error${v.health.hook_errors === 1 ? '' : 's'}` : ''}`
+            : '–'}
+        </Text>
+      </Box>,
+      <Box key="g-gates" flexDirection="row" gap={1}>
+        {label7('gates')}
+        <Text wrap="truncate-end">
+          {(checks?.results ?? []).map((r, i) => (
+            <Text key={`gate-${i}`} color={hex(r.exit ? C.err : r.note ? C.warn : C.ok)}>
+              ●
             </Text>
+          ))}
+          <Text color={hex(failing ? C.err : C.dim)}>
+            {checks?.results.length
+              ? ` ${passed}/${checks.results.length} · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`
+              : 'none yet: fm check'}
           </Text>
-        </Box>
-      </Box>
-    )
-    const spanMs = Math.ceil(Math.min(TIMELINE_MS, Math.max(60000, ticks.length ? clockNow - ticks[0]!.at : TIMELINE_MS)) / 60000) * 60000
-    const recentTicks = ticks.filter(t => clockNow - t.at <= spanMs)
-    const toolW = Math.max(8, W - 8 - 24)
-    const pulseRows: RenderElement[] = [
-      <Box key="pulse-top" flexDirection="row" gap={2} height={4} overflow="hidden">
+        </Text>
+      </Box>,
+      <Box key="pulse-tools" flexDirection="row" gap={1}>
+        {label7('tools')}
+        {spark(ui, e, 'fm-tools', bucketize(recentTicks.map(t => t.at), clockNow, spanMs, toolW), toolW)}
+        <Text color={dim} wrap="truncate-end">{`${recentTicks.length} call${recentTicks.length === 1 ? '' : 's'} · ${spanMs / 60000}m`}</Text>
+      </Box>,
+      ...[...(v.recent ?? [])].reverse().map((line, i, all) => {
+        const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
+        return (
+          <Text key={`r-${i}`} color={hex(fade(Math.max(0, all.length - 1 - i), all.length, 0xc8ccd4))} wrap="truncate-end">
+            {time ? <Text color={dim}>{`${time} `}</Text> : null}
+            {rest}
+          </Text>
+        )
+      }),
+    ]
+    const pulseRows: RenderElement[] = P > 0 ? [
+      <Box key="pulse-top" flexDirection="row" gap={2} height={P} overflow="hidden">
         {days.length > 0 && (
           <Box key="pulse-days" flexDirection="column" flexShrink={0}>
-            {bars(ui, e, 'done-days', days, 3, C.accent2, C.ok)}
+            {bars(ui, e, 'done-days', days, Math.max(1, P - 1), C.accent2, C.ok)}
             <Text color={dim} wrap="truncate-end">
               {`${v.today_done ?? 0} today · ${days.reduce((x, y) => x + y, 0)}/14d`.slice(0, Math.max(1, leftW))}
             </Text>
           </Box>
         )}
-        {gauges}
+        <Box key="pulse-gauges" flexDirection="column" flexGrow={1} flexShrink={1}>
+          {gaugeRows.slice(0, P)}
+        </Box>
       </Box>,
-    ]
-    if (L.pulse >= 5) // the tool-call sparkline only when the charts have their four rows besides
-      pulseRows.push(
-        <Box key="pulse-tools" flexDirection="row" gap={1}>
-          {label7('tools')}
-          {spark(ui, e, 'fm-tools', bucketize(recentTicks.map(t => t.at), clockNow, spanMs, toolW), toolW)}
-          <Text color={dim} wrap="truncate-end">{`${recentTicks.length} call${recentTicks.length === 1 ? '' : 's'} · ${spanMs / 60000}m`}</Text>
-        </Box>,
-      )
-
-    // ── the queue, then the inbox; a line to capture into it
-    const capture = captureBox($, e)
-    const queueRows: RenderElement[] = [
-      ...(capture ? [capture] : []),
-      ...queue.map((q, i) => (
-        <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
-          <Box flexShrink={0}>
-            <Text color={hex(i === 0 ? C.accent2 : C.dim)}>{i === 0 ? '▶' : `${i + 1}.`}</Text>
-          </Box>
-          {chip(q)}
-          {q.steps_total ? meter(ui, e, `q-bar-${q.id}`, 6, (q.steps_done ?? 0) / q.steps_total, C.ok, null) : null}
-          <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : i === 0 ? undefined : hex(mix(C.dim, 0xc8ccd4, 0.6))}>
-            {q.id} {q.title}
-            {q.waits ? `  (${q.waits})` : ''}
-          </Text>
-          {q.plan && (
-            <Button key={`approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
-          )}
-          {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
-            <Box key={`q-typ-${q.id}`} flexShrink={0}>
-              <Text color={dim}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
-            </Box>
-          )}
-        </Box>
-      )),
-      ...inbox.map(it => (
-        <Box flexDirection="row" gap={1} key={`in-${it.id}`}>
-          <Text color={dim}>⚑</Text>
-          {chip(it)}
-          <Text wrap="truncate-end">
-            {it.id} {it.title}
-          </Text>
-          {it.age_days !== undefined && (
-            // T-0228: the title gives way, never the age
-            <Box flexShrink={0} key={`in-age-${it.id}`}>
-              <Text color={dim}>{ago(it.age_days)}</Text>
-            </Box>
-          )}
-          <Button key={`start-${it.id}`} label="▸ start" plain dimColor
-            onPress={() => void $.prompt.submit({ text: `Plan and start ${it.id} (/foreman:intake).`, asUser: true })} />
-          <Button key={`drop-${it.id}`} label="✕ drop" plain dimColor
-            onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Foreman pane'], `${it.id} dropped`)} />
-        </Box>
-      )),
-      ...(inboxN > inbox.length ? [<Text key="in-more" color={dim}>{`… ${inboxN - inbox.length} more in the inbox`}</Text>] : []),
-    ]
-    const spare = L.queue - queueRows.length - 1
-    if (a && spare >= 2 && (v.recent ?? []).length)
-      queueRows.push(
-        <Text key="q-recent" wrap="truncate-end">
-          <Text color={soft}>recent </Text>
-          <Text color={hex(C.track)}>{'─'.repeat(Math.max(0, W - 7))}</Text>
-        </Text>,
-        ...[...(v.recent ?? [])].reverse().slice(0, spare).map((line, i) => (
-          <Text key={`q-r-${i}`} color={hex(fade(Math.max(0, spare - 1 - i), spare, 0xa0a4ac))} wrap="truncate-end">
-            {line}
-          </Text>
-        )),
-      )
-
-    // ── more: one line each, the most useful first, as many as the room holds
-    const one = (key: string, word: string, color: number, text: string, textColor: number = C.dim) => (
-      <Box key={key} flexDirection="row">
-        <Text wrap="truncate-end">
-          <Text weight="bold" color={hex(color)}>{word.padEnd(9)}</Text>
-          <Text color={hex(textColor)}>{text}</Text>
-        </Text>
-      </Box>
-    )
-    const fleet = v.fleet ?? []
-    const sk = v.skills // T-0939
-    const skillUses = Object.values(sk?.counts ?? {}).reduce((x, y) => x + y, 0)
-    const topSkills = Object.entries(sk?.counts ?? {}).sort((x, y) => y[1] - x[1]).slice(0, 4)
-    const b = v.budget
-    const bs = v.brainstorm
-    const moreRows: RenderElement[] = [
-      // T-0711: every live session here, one steer for all; one session alone is this one, already above
-      ...(fleet.some(s => s.remote || s.error) || fleet.length > 1
-        ? [
-            one('more-fleet', 'fleet', C.agent, fleet
-              .map(s => s.error ? `! ${s.error}` : `${s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)} ${s.project ?? '-'} ${s.task ?? 'idle'} ${s.context_pct ?? '?'}%${s.mail ? ` ✉${s.mail}` : ''}`)
-              .join(' · ')),
-            ...(e.surface !== 'mobile'
-              ? [<Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />]
-              : []),
-          ]
-        : []),
-      ...(v.revisit ?? []).slice(0, 1).map(rv =>
-        one('more-revisit', 'revisit', C.warn, `${rv.decision} (${rv.why})${(v.revisit ?? []).length > 1 ? ` · ${(v.revisit ?? []).length - 1} more` : ''}`, C.warn)),
-      ...((v.vetoes ?? []).length
-        ? [one('more-vetoes', 'you said', C.accent, `${v.vetoes![0]}${v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}`)]
-        : []),
-      ...(mine.length
-        ? [one('more-files', 'files', C.edit, `${mine.length} this session · +${mine.reduce((n, t) => n + t.add, 0)} −${mine.reduce((n, t) => n + t.del, 0)} · ${mine.slice(-3).reverse().map(t => shortPath(t.path.slice(base.length), 28)).join(', ')}`)]
-        : []),
-      ...(b && (b.subagent_tokens > 0 || b.top.length || b.halved || b.subagents_paused)
-        ? [one('more-spend', 'spend', C.accent2, [
-            `subagents ${tokensWord(b.subagent_tokens)}`,
-            ...b.top.slice(0, 3).map(t => `${t.feature} ${t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`}`),
-            ...(b.halved ? [`caps halved: ${b.halved}`] : []),
-            ...(b.subagents_paused ? [`waiting: ${b.subagents_paused}`] : []),
-          ].join(' · '), b.halved || b.subagents_paused ? C.warn : C.dim)]
-        : []),
-      ...(sk && (sk.recent.length || sk.unread.length)
-        ? [one('more-skills', 'skills', C.agent, [
-            `${skillUses} use${skillUses === 1 ? '' : 's'} · 7d`,
-            ...(sk.recent[0] ? [`last ${sk.recent[0].name} ${since(Math.max(0, clockNow - Date.parse(sk.recent[0].at)))}`] : []),
-            ...(topSkills.length ? [`top ${topSkills.map(([n, k]) => `${n} ×${k}`).join(', ')}`] : []),
-            ...(sk.unread.length ? [`${sk.unread.length} cards unread: fm lib show ${sk.unread[0]}`] : []),
-          ].join(' · '))]
-        : []),
-      ...(bs
-        ? [one('more-ideas', 'ideas', C.agent, bs.running
-            ? `${spin(fb + clockNow / 300)} ${bs.answers}/${bs.expected ?? '?'} answers · ${bs.count} ideas so far${bs.ideas.length ? ` · latest: ${bs.ideas.at(-1)}` : ''}`
-            : `${bs.count} ideas · ${bs.grounded ? 'grounded' : hoursAgo(bs.age_h ?? 0)} · fm research show ${bs.name}`)]
-        : []),
-      ...(v.bench?.last
-        ? [one('more-bench', 'bench', C.agent, `${v.bench.last.passed}/${v.bench.last.total} passed · $${v.bench.last.cost_usd.toFixed(2)} · ${v.bench.last.label}${v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}`,
-            v.bench.last.passed === v.bench.last.total ? C.dim : C.warn)]
-        : []),
-      ...(v.bench?.verdicts ?? []).slice(0, 1).map((x, i) => one(`more-verdict-${i}`, '', C.dim, `${x.ok ? '✓' : '✗'} ${x.kind}: ${x.verdict ?? ''}`, x.ok ? C.dim : C.warn)),
-      ...(v.bench?.evolve ?? []).slice(0, 1).map((x, i) =>
-        one(`more-evolve-${i}`, '', C.dim, `${x.kept ? '✓ kept' : '✗ dropped'} ${shortPath(x.target ?? '', 34)} · ${x.why ?? ''}`)),
-      ...(v.research ?? []).slice(0, 1).map(r =>
-        one(`more-research-${r.name}`, 'research', C.accent2, `${(v.research ?? []).length > 1 ? `${(v.research ?? []).length} asks, newest ` : ''}${r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')} · ✓${r.verified} ✗${r.not_found} ?${r.unchecked}${(r.conflicts ?? 0) > 0 ? ` · ⟷${r.conflicts} conflicts` : ''}${(r.single ?? 0) > 0 ? ` · ${r.single} single-source` : ''}`,
-          r.not_found ? C.warn : C.dim)),
-    ]
+    ] : []
 
     return (
       <Box flexDirection="column" key="fm-pane" paddingX={1}>
         {header}
         {attention}
         {section('task', L.task, task.label, task.color, task.detail, task.body, task.tall ?? 0)}
-        {section('live', L.live, 'Live', nLive ? C.accent : C.dim, nowCalls.length + subs.length + bgShells.length ? `${nLive} running` : 'quiet', liveRows)}
-        {section('pulse', L.pulse, 'Pulse', C.accent2, '', pulseRows, 3)}
+        {section('live', L.live, 'Live', nLive ? C.accent : C.dim, liveDetail, liveRows)}
         {section('queue', L.queue, 'Queue', C.accent2, `${queue.length} queued · ${inboxN} in inbox`, queueRows)}
-        {section('more', L.also, 'More', C.dim, '', moreRows.length ? moreRows : [<Text key="more-none" color={dim}>nothing else to show</Text>])}
+        {section('more', L.also, 'More', C.dim, '', moreRows)}
+        {section('pulse', L.pulse, 'Pulse', C.accent2, '', pulseRows, Math.max(0, P - 1))}
         <Box flexDirection="row" gap={2} key="fm-pane-controls" height={1} overflow="hidden" flexShrink={0}>
           <Button key="next" label="next" hotkey="n" plain onPress={() => void $.prompt.submit({ text: '/foreman:next', asUser: true })} />
           <Button key="drive" label={m?.drive ? 'turn drive off' : 'turn drive on'} hotkey="d" plain

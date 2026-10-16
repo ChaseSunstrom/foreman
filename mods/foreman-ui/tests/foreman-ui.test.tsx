@@ -381,7 +381,7 @@ test('the skills line: uses this week, the last one with its age, top uses, unre
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await ui.find({ key: 'more-skills' })).toBeDefined()
   const missing: string[] = []
-  for (const text of [/4 uses · 7d/, /last python .*ago/, /top foreman:brainstorm ×3, python ×1/, /2 cards unread/])
+  for (const text of [/4 uses · 7d/, /last python .*ago/, /foreman:brainstorm ×3, python ×1/, /2 cards unread/])
     if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
   expect(missing).toEqual([])
   await ui.unmount()
@@ -408,7 +408,7 @@ test('the pane is one panel of sections, no boxes inside; a waiting plan shows w
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...PANE })
-    for (const key of ['fm-pane-head', 'fm-pane-attention', 'task', 'live', 'pulse', 'queue', 'more', 'fm-pane-controls'])
+    for (const key of ['fm-pane-head', 'fm-pane-attention', 'task', 'live', 'queue', 'pulse', 'fm-pane-controls'])
       expect(await ui.find({ key })).toBeDefined()
     expect((await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle)).toEqual([]) // one panel: the dock's frame
     expect(await ui.find({ type: 'Text', text: /▸ 2\. raise the timeout/ })).toBeDefined()
@@ -553,8 +553,11 @@ test('the pane: a fleet line with a remote session, one steer for all, and the p
   const { calls } = world(on, [{ ...CALM, fleet, active: { ...CALM.active!, children } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'more-fleet' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /sess-abc demo-1a2b3c T-0007 31% ✉1 · JARVIS jarvis-d7aeca T-0341 38%/ })).toBeDefined()
+  expect(await ui.find({ key: 'more-fleet-0' })).toBeDefined() // a row per session
+  expect(await ui.find({ type: 'Text', text: /sess-abc demo-1a2b3c T-0007 Login times out ✉1/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /JARVIS jarvis-d7aeca T-0341 Calendar tools/ })).toBeDefined()
+  const ctx = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
+  expect(ctx).toEqual(expect.arrayContaining(['fleet-ctx-0', 'fleet-ctx-1'])) // each session's context as a meter
   expect(await ui.find({ type: 'Text', text: /part T-0012 Login times out — part 1: auth\.py/ })).toBeDefined()
   await ui.input({ key: 'steer', text: 'freeze the public API' })
   expect(calls).toContainEqual(['fm', 'conductor', 'steer', 'freeze the public API'])
@@ -1386,12 +1389,15 @@ test('the pane reads top-down in fixed sections: head, attention, task, live, pu
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   const drawn = JSON.stringify(await ui.drawn())
   const at = (key: string) => drawn.indexOf(`"${key}"`)
-  const order = ['fm-pane-head', 'fm-pane-attention', 'task', 'live', 'pulse', 'queue', 'more', 'fm-pane-controls']
+  const order = ['fm-pane-head', 'fm-pane-attention', 'task', 'live', 'queue', 'pulse', 'fm-pane-controls']
   expect(order.map(at).every(i => i >= 0)).toBe(true)
   expect([...order.map(at)].sort((x, y) => x - y)).toEqual(order.map(at))
-  const l = layout(60)
-  for (const [key, rows] of [['task', l.task], ['live', l.live], ['pulse', l.pulse], ['queue', l.queue], ['more', l.also]] as const)
-    expect((await ui.find({ key: `${key}-body` }))?.props.height).toBe(rows)
+  let rows = 5 // head 3, attention, controls
+  for (const key of ['task', 'live', 'queue', 'more', 'pulse']) {
+    const h = (await ui.find({ key: `${key}-body` }))?.props.height as number | undefined
+    if (h) rows += h + 1
+  }
+  expect(rows).toBe(60) // T-1000: the whole dock, no more, no less
   const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
   expect(rasters).toEqual(expect.arrayContaining(['stage-rail', 'fm-pane-bar', 'done-days', 'fm-latency', 'fm-tools']))
   expect(await ui.find({ type: 'Text', text: /⚠ needs you: T-0007 core — edit the guard/ })).toBeDefined() // above the plan
@@ -1399,12 +1405,10 @@ test('the pane reads top-down in fixed sections: head, attention, task, live, pu
   expect(await ui.find({ type: 'Text', text: /3 today · 6\/14d/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /↳ pytest -q/ })).toBeDefined() // an unproved criterion names its check
   expect(await ui.find({ type: 'Text', text: /left before done/ })).toBeUndefined() // step 2's ▸ already says it
-  expect(await ui.find({ key: 'more-fleet' })).toBeUndefined() // one session alone is this one
+  expect(await ui.find({ key: 'more-fleet-0' })).toBeUndefined() // one session alone is this one
   await ui.unmount()
   const short = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(32) }) // about a 40-row terminal's dock
-  expect(layout(32).pulse).toBe(4)
   expect((await short.findAll({ type: 'Raster' })).some(r => r.key === 'done-days')).toBe(true) // the charts, not '… 2 more'
-  expect(await short.find({ key: 'pulse-tools' })).toBeUndefined()
   await short.unmount()
 })
 
@@ -1428,19 +1432,19 @@ test('a running call shows in Live with a moving bar; the pulse charts the sessi
   await ui.unmount()
   const after = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await after.find({ type: 'Text', text: 'run the tests' })).toBeUndefined() // it finished
-  expect(await after.find({ type: 'Text', text: /quiet · last tool call/ })).toBeDefined()
+  expect(await after.find({ type: 'Text', text: /quiet · last call .* · 3 in 1m/ })).toBeDefined()
+  expect((await after.findAll({ type: 'Raster' })).some(r => r.key === 'lane-r-run')).toBe(true) // quiet rows draw the lanes
   expect((await after.find({ key: 'live-body' }))?.props.height).toBe(before) // nothing moved
   await after.unmount()
 })
 
-test('a quiet project: nothing active, recent news in the task section, an empty queue with the capture box (T-0909)', async ($, on) => {
+test('a quiet project: nothing active, the news under the gauges, an empty queue with the capture box (T-0909)', async ($, on) => {
   world(on, [{ ...VIEW, active: null, queue: [], inbox: [], inbox_total: 0 }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await ui.find({ type: 'Text', text: /0 queued · 0 in inbox/ })).toBeDefined()
   expect(await ui.find({ key: 'capture' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Nothing active/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /Recent newest first/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /13:12 ⚑ T-0011 captured/ })).toBeDefined()
   await ui.unmount()
 })
@@ -1554,25 +1558,29 @@ test('a close takes the attention row for a moment: done with grade, proof and t
   await ui.unmount()
 })
 
-test('the pane is one panel of fixed sections sized from the dock, never from what they hold (T-0989)', () => {
+test('the pane fills the dock exactly: sections take what they hold, the charts take the rest (T-1000)', () => {
   const used = (l: ReturnType<typeof layout>) =>
     5 + [l.task, l.live, l.pulse, l.queue, l.also].reduce((n, x) => n + (x > 0 ? x + 1 : 0), 0) // header, attention, controls; a label each
-  for (let rows = 8; rows <= 120; rows++) {
-    const l = layout(rows)
-    expect(used(l)).toBeLessThanOrEqual(rows)
-    if (rows >= 14) expect(rows - used(l)).toBeLessThanOrEqual(2) // the room is used, not left blank
-    expect(layout(rows)).toEqual(l) // pure: the same rows always give the same sections
-  }
-  const big = layout(50)
-  expect(big.pulse).toBeGreaterThan(3) // the charts and the extras get room when there is room
-  expect(big.also).toBeGreaterThan(0)
-  expect(big.task).toBeGreaterThan(big.live)
-  expect(layout(30).also).toBe(0) // a short dock gives up the extras before the task or the queue
+  for (let rows = 14; rows <= 120; rows++)
+    for (const want of [{ task: 0, queue: 1, more: 0 }, { task: 9, queue: 4, more: 3 }, { task: 40, queue: 30, more: 12 }]) {
+      const l = layout(rows, want)
+      expect(used(l)).toBe(rows) // no more, no less
+      expect(l.task).toBeLessThanOrEqual(want.task) // no blank rows inside a section
+      expect(l.queue).toBeLessThanOrEqual(want.queue)
+      expect(l.also).toBeLessThanOrEqual(want.more)
+      if (rows >= 26) expect(l.pulse).toBeGreaterThanOrEqual(4)
+      expect(layout(rows, want)).toEqual(l) // pure
+    }
+  const big = layout(50, { task: 9, queue: 4, more: 3 })
+  expect([big.task, big.queue, big.also]).toEqual([9, 4, 3]) // room for all of it
+  expect(big.pulse).toBeGreaterThan(10) // the charts stretch into the rest
+  const crowded = layout(40, { task: 40, queue: 30, more: 12 })
+  expect(crowded.task).toBeGreaterThan(crowded.queue) // caps share a crowded dock; the task first
 })
 
 test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
   const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
-  const steps = Array.from({ length: 12 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
+  const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
   const { calls } = world(on, [{
     ...VIEW,
     approvals: [{ task: 'T-0007', allow: ['core'], why: 'edit the guard' }], // the attention row is taken
@@ -1581,11 +1589,11 @@ test('review (T-0989): every waiting plan keeps an approve button, hidden steps 
     signals: [{ level: 'amber', text: 'usage ahead of pace' }],
   }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(32) })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(40) })
   for (const id of ['T-0009', 'T-0010']) expect(await ui.find({ key: `approve-${id}` })).toBeDefined()
   await ui.press({ key: 'approve-T-0010' })
   expect(calls).toContainEqual(['fm', 'task', 'set', 'T-0010', 'approved=true'])
-  expect(await ui.find({ type: 'Text', text: /\d+ more not shown/ })).toBeDefined() // 12 steps in a short Task section
+  expect(await ui.find({ type: 'Text', text: /\d+ more not shown/ })).toBeDefined() // 20 steps in a capped Task section
   await ui.unmount()
 })
 
