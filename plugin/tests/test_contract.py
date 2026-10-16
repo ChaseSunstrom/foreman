@@ -1,5 +1,6 @@
 """fm contract (T-1158): an unattended run's time and spend bounds; past either, the drive stops and a receipt says why."""
 import json
+import os
 import time
 
 from test_hooks import HookCase, parse
@@ -57,6 +58,34 @@ class Contract(HookCase):
         r = self.fm("contract", "receipt").stdout
         self.assertIn("1 task(s) closed: T-9999", r)
         self.assertIn("bound that ended it: spend", r)
+
+    def seed(self, **costs):
+        import fmcost
+        path = fmcost._cache_path(self.project())
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            json.dump({"size": 0, "ts": time.time(), "costs": costs}, f)
+
+    def test_token_bound_counts_what_this_projects_sessions_used_since_it_began(self):
+        self.seed(**{"T-1": 500})
+        self.fm("contract", "--tokens", "2k")
+        p = self.project()
+        self.assertIsNone(con.over(p))
+        self.seed(**{"T-1": 1700})  # 1200 more
+        self.assertIsNone(con.over(p))
+        self.seed(**{"T-1": 1700, "T-2": 900})  # 2100 more
+        self.assertEqual(con.over(p), "tokens")
+        self.assertNotEqual((parse(self.stop()) or {}).get("decision"), "block")
+        r = self.fm("contract", "receipt").stdout
+        self.assertIn("2k tokens", r)
+        self.assertIn("bound that ended it: tokens", r)
+        self.assertIn("--tokens takes", self.fm("contract", "--tokens", "lots", check=False).stderr)
+
+    def test_another_projects_spend_is_not_counted(self):
+        self.fm("contract", "--usd", "1")
+        bud.record("run", 5, project="elsewhere")
+        bud.record("run", 5)
+        self.assertIsNone(con.over(self.project()))
 
     def test_off_ends_it(self):
         self.fm("contract", "--usd", "0.1")

@@ -5430,7 +5430,9 @@ def build_parser():
             help="bound an unattended run by time and spend: the drive, the loop and fm run stop there, with a receipt (T-1158)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "off", "receipt"])
     s.add_argument("--until", help="stop at HH:MM local time (today, or tomorrow if past)")
-    s.add_argument("--usd", type=float, help="stop once this much has been spent since the contract began")
+    s.add_argument("--usd", type=float, help="stop after this much USD since the contract began: counts headless runs "
+                   "(fm run, the subagent ledger), not an interactive session")
+    s.add_argument("--tokens", help="stop after this many tokens (500k, 2M) used by this project's sessions since it began")
 
     s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")

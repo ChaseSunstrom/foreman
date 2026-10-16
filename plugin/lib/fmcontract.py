@@ -28,27 +28,45 @@ def _iso(t):
 def spent(p, since, upto=None):
     lo, hi = _iso(since), _iso(upto) if upto else "9"
     return sum(e.get("usd") or 0 for e in fmbudget.ledger(days=3650)
-               if e.get("project") in (p.slug, None) and lo <= str(e.get("ts", "")) <= hi)
+               if e.get("project") == p.slug and lo <= str(e.get("ts", "")) <= hi)
+
+
+def tokens(p, refresh=False):
+    """This project's session tokens in the cached cost figures (None: no cache yet). Never computed inline: the Stop hook
+    has 5 s, so a stale cache is refreshed in a detached child."""
+    import fmcost
+    costs = fmcost.cached_costs(p, compute=False, refresh=refresh)
+    return None if costs is None else sum(costs.values())
+
+
+def used(p, k, refresh=False):
+    now = tokens(p, refresh)
+    return None if now is None else max(0, now - (k.get("tokens0") or 0))
 
 
 def over(p, now=None):
-    """'time' or 'spend' once a bound is reached (frozen at the first time it is seen), else None; no contract: None."""
+    """'time', 'spend' or 'tokens' once a bound is reached (frozen at the first time it is seen), else None; no contract: None."""
     k = c.read_meta(p).get("contract")
     if not k:
         return None
     if k.get("ended"):
         return k["ended"]
     now = time.time() if now is None else now
-    why = ("time" if k.get("until") and now >= k["until"]
-           else "spend" if k.get("usd") is not None and spent(p, k["started"]) >= k["usd"] else None)
+    why, tok = ("time" if k.get("until") and now >= k["until"]
+                else "spend" if k.get("usd") is not None and spent(p, k["started"]) >= k["usd"] else None), None
+    if not why and k.get("tokens") is not None:
+        tok = used(p, k, refresh=True)
+        why = "tokens" if tok is not None and tok >= k["tokens"] else None
     if why:
-        c.update_meta(p, contract={**k, "ended": why, "ended_at": now})
+        c.update_meta(p, contract={**k, "ended": why, "ended_at": now,
+                                   "tokens_used": tok if tok is not None else used(p, k)})
     return why
 
 
 def receipt(p):
+    import fmcost
     over(p)  # notice a bound reached since anyone last looked
-    k =c.read_meta(p).get("contract")
+    k = c.read_meta(p).get("contract")
     if not k:
         return "no contract"
     end = k.get("ended_at")
@@ -57,6 +75,8 @@ def receipt(p):
             and str(e.get("ts", "")) >= since and (not end or str(e["ts"]) <= _iso(end))]
     return (f"contract receipt: {len(done)} task(s) closed" + (": " + ", ".join(done) if done else "")
             + f" · spend ${spent(p, k['started'], end):.2f}" + (f" of ${k['usd']:g}" if k.get("usd") is not None else "")
+            + (f" · {fmcost._human(tok)} tokens" + (f" of {fmcost._human(k['tokens'])}" if k.get("tokens") is not None else "")
+               if (tok := k['tokens_used'] if end else used(p, k)) is not None else "")
             + f" · bound that ended it: {k.get('ended') or 'none yet'}")
 
 
@@ -80,17 +100,27 @@ def cmd_contract(args):
         return fmcli.out(args, {"contract": None}, f"{p.slug}: contract off.")
     if args.action == "receipt":
         return fmcli.out(args, {"receipt": receipt(p)}, receipt(p))
-    if args.until or args.usd is not None:
+    if args.until or args.usd is not None or args.tokens:
+        import fmcost
         if args.usd is not None and not args.usd >= 0:
             raise fmcli.UsageError("--usd must be a number >= 0")
+        cap = fmcost.parse_tokens(args.tokens) if args.tokens else None
+        if args.tokens and cap is None:
+            raise fmcli.UsageError(f"--tokens takes a count like 500k or 2M, got {args.tokens!r}")
         now = time.time()
-        k = {"started": now, "usd": args.usd, "until": parse_until(args.until, now) if args.until else None}
+        try:  # the starting total is measured here, in the CLI, where computing it is fine
+            base = sum(fmcost.cached_costs(p).values()) if cap is not None else None
+        except Exception:
+            base = 0
+        k = {"started": now, "usd": args.usd, "tokens": cap, "tokens0": base,
+             "until": parse_until(args.until, now) if args.until else None}
         c.update_meta(p, contract=k)
     k = c.read_meta(p).get("contract")
     if not k:
         return fmcli.out(args, {"contract": None}, f"{p.slug}: no contract (fm contract --until HH:MM --usd N).")
     why = over(p)
     bits = ([f"until {time.strftime('%a %H:%M', time.localtime(k['until']))}"] if k.get("until") else []) \
-        + ([f"${k['usd']:g}"] if k.get("usd") is not None else [])
+        + ([f"${k['usd']:g}"] if k.get("usd") is not None else []) \
+        + ([f"{k['tokens']:g} tokens"] if k.get("tokens") is not None else [])
     fmcli.out(args, {"contract": k, "over": why}, f"{p.slug}: contract {' and '.join(bits)}"
               + (f" — ended by the {why} bound" if why else ", holding") + ".")
