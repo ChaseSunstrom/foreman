@@ -4355,20 +4355,10 @@ def _all_parsers(parser):
     return out
 
 
-# T-0094: fm help's tiers, everyday first; every command is in exactly one (test_help holds that)
-HELP_TIERS = [
-    ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
-                   "ask decide"),
-    ("Finding your way", "help demo show recall fix explain edit sub surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
-                         "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
-                         "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget risk sync share notify compact-output complete wiring "
-                             "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
-    ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay backtest bench evolve trial"),
-    ("Running elsewhere", "lane page serve run session claude agents night draft scout orders mcp ui projects sweep machine watch "
-                          "bus lease conductor"),
-    ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
-]
+# T-0094/T-1144: fm help's tiers, everyday first; every command is in exactly one (test_help holds that).
+# Filled by build_parser from each add(..., tier=(title, order)): tiers by their lowest order, commands by order
+# then registration; a new command declares its own and edits nothing here.
+HELP_TIERS = []
 
 
 def cmd_help(args):
@@ -4441,29 +4431,33 @@ def build_parser():
     ap.add_argument("-p", "--project", help="project slug (default: from cwd, then $FOREMAN_PROJECT)")
     sp = ap.add_subparsers(dest="cmd", required=True, metavar="<command>")
 
-    def add(name, fn, **kw):
+    tiered = []  # T-1144: (order, title, name): each command's fm help tier, declared where it is registered
+
+    def add(name, fn, *, tier, **kw):
+        tiered.append((tier[1], tier[0], name))
         s = sp.add_parser(name, **kw)
         s.set_defaults(fn=fn)
         s.add_argument("--json", action="store_true", help="machine-readable output")
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
 
-    s = add("help", cmd_help, help="every command, in tiers: the everyday ones first")
+    s = add("help", cmd_help, tier=("Finding your way", 200), help="every command, in tiers: the everyday ones first")
     s.add_argument("--all", action="store_true", help="the same: every command (fm --help: the everyday ones)")
-    s = add("init", cmd_init, help="register a project")
+    s = add("init", cmd_init, tier=("Project and settings", 650), help="register a project")
     s.add_argument("path", nargs="?")
     s.add_argument("--sensitive", action="store_true")
 
-    s = add("state", cmd_state, help="print STATE (also fm status: the word /foreman:status uses, T-0393)",
+    s = add("state", cmd_state, tier=("Every task", 150), help="print STATE (also fm status: the word /foreman:status uses, T-0393)",
             aliases=["status"])
+    tiered.append((160, "Every task", "status"))
     s.add_argument("--brief", action="store_true")
     s.add_argument("--line", action="store_true")
 
-    s = add("intake", cmd_intake, help="parse an intake block into captured briefs")
+    s = add("intake", cmd_intake, tier=("Every task", 40), help="parse an intake block into captured briefs")
     s.add_argument("text", nargs="?")
     s.add_argument("--file")
 
-    s = add("capture", cmd_capture, help="capture a request to the inbox")
+    s = add("capture", cmd_capture, tier=("Every task", 20), help="capture a request to the inbox")
     s.add_argument("text", nargs="?")
     s.add_argument("--from-file", metavar="PATH", help="attach a log, transcript or screenshot (- : a paste on stdin): "
                                                        "its path and an excerpt; the request may be left out")
@@ -4475,7 +4469,7 @@ def build_parser():
     s.add_argument("--urgent", action="store_true")
     s.add_argument("--self", dest="self_", action="store_true", help="capture into Foreman's own project (self-improvement)")
 
-    s = add("ask", cmd_ask, help="ask the user to authorize guard categories for a task; their next message decides")
+    s = add("ask", cmd_ask, tier=("Every task", 180), help="ask the user to authorize guard categories for a task; their next message decides")
     s.add_argument("id")
     s.add_argument("categories", nargs="+")
     s.add_argument("--why", default="")
@@ -4483,13 +4477,13 @@ def build_parser():
     s.add_argument("--standing", action="store_true",
                    help="core only: the yes covers every later task in this project until fm standing off")
 
-    s = add("trust", cmd_trust, help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
+    s = add("trust", cmd_trust, tier=("Project and settings", 740), help="whether Claude may edit the guard and Claude Code settings (on: /fm-trust, typed)")
     s.add_argument("state", nargs="?", choices=["off"])
 
-    s = add("standing", cmd_standing, help="the project's standing yeses (fm ask … core --standing); off revokes them")
+    s = add("standing", cmd_standing, tier=("Project and settings", 750), help="the project's standing yeses (fm ask … core --standing); off revokes them")
     s.add_argument("state", nargs="?", choices=["off"])
 
-    s = add("decide", cmd_decide, help="record a decision in decisions.md")
+    s = add("decide", cmd_decide, tier=("Every task", 190), help="record a decision in decisions.md")
     s.add_argument("decision", nargs="?")
     s.add_argument("--why", default="")
     s.add_argument("--rejected", default="")
@@ -4517,7 +4511,7 @@ def build_parser():
                                                        "only those) (T-0958)")
     s.add_argument("-n", type=int, default=30)
 
-    s = add("research", cmd_research, help="save a research/recon summary into the project's research/")
+    s = add("research", cmd_research, tier=("Finding your way", 440), help="save a research/recon summary into the project's research/")
     rsp = s.add_subparsers(dest="research_cmd", required=True)
     r = rsp.add_parser("add")
     r.add_argument("name")
@@ -4549,7 +4543,7 @@ def build_parser():
     r.add_argument("--json", action="store_true")
     r.add_argument("-p", "--project", default=argparse.SUPPRESS)
 
-    s = add("task", cmd_task, help="task operations")
+    s = add("task", cmd_task, tier=("Every task", 60), help="task operations")
     tsp = s.add_subparsers(dest="task_cmd", required=True)
 
     def tadd(name):
@@ -4724,11 +4718,11 @@ def build_parser():
     t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450); \"when PATH changes\": "
                                    "once that file changes (T-0958)")
 
-    s = add("map", lazy("fmmap", "cmd_map"), help="project map: gates, layout, entry points, hot files, test links")
+    s = add("map", lazy("fmmap", "cmd_map"), tier=("Finding your way", 370), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
     s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
     s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
-    s = add("lib", lazy("fmlib", "cmd_lib"), help="stack library: cards per language, framework, service and tool, "
+    s = add("lib", lazy("fmlib", "cmd_lib"), tier=("Finding your way", 380), help="stack library: cards per language, framework, service and tool, "
             "plus installed plugins' skills (suggest, search, show, list, check; inject on|off: the edit-time card; "
             "stats: which cards fired)")
     s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source",
@@ -4742,19 +4736,19 @@ def build_parser():
     s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
-    s = add("scout", lazy("fmscout", "cmd_scout"), help="find work nobody asked for yet: a newer Claude Code, stack cards "
+    s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
     s.add_argument("--dry", action="store_true", help="list what it would capture; capture nothing")
-    s = add("impact", lazy("fmmap", "cmd_impact"), help="likely tests and dependents of a path")
+    s = add("impact", lazy("fmmap", "cmd_impact"), tier=("Finding your way", 360), help="likely tests and dependents of a path")
     s.add_argument("path")
-    s = add("share", lazy("fmrecall", "cmd_share"), help="opt in: share this project's lessons and recall other projects' "
+    s = add("share", lazy("fmrecall", "cmd_share"), tier=("Project and settings", 800), help="opt in: share this project's lessons and recall other projects' "
                                                          "(paths, URLs, emails, file names, task ids and the project "
                                                          "name are removed; other names in the prose are not)")
     s.add_argument("state", nargs="?", choices=["on", "off"])
-    s = add("digest", lazy("fmcost", "cmd_digest"), help="the week in one screen: tasks, grades, lessons, decisions, cost")
+    s = add("digest", lazy("fmcost", "cmd_digest"), tier=("Reports", 970), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
-    s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), help="what became of finished tasks: reverted, fixed later "
+    s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
@@ -4765,18 +4759,18 @@ def build_parser():
                       ("graveyard", "lost and dropped tasks"),
                       ("seen", "survival of tasks the user corrected mid-task against the rest")):  # T-1060
         s.add_argument("--" + flag, action="store_true", help=why)
-    s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), help="prove no ledger line was edited or removed: "
+    s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), tier=("Project and settings", 880), help="prove no ledger line was edited or removed: "
                                                                          "each carries the hash of the one before (T-1065)")
     s.add_argument("--head", help="also prove this head (a finish receipt's) is still in the chain: the tail wasn't cut")
-    s = add("outbound", lazy("fmledger", "cmd_outbound"), help="every outbound request a task's sessions made: "
+    s = add("outbound", lazy("fmledger", "cmd_outbound"), tier=("Project and settings", 890), help="every outbound request a task's sessions made: "
                                                               "WebFetch/WebSearch/MCP/curl hosts (T-1086)")
     s.add_argument("id", nargs="?", help="task (default: the focused one)")
-    s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
+    s = add("evals", lazy("fmcost", "cmd_evals"), tier=("Reports", 1060), help="turn a blocked or failed task into a plugin eval case; inbox: "
                                                         "what could become one (T-0734)")
     s.add_argument("action", choices=["add", "inbox"])
     s.add_argument("id", nargs="?")
     s.add_argument("--out", help="folder for the case (default: the project's state evals/)")
-    s = add("bus", lazy("fmbus", "cmd_bus"), help="messages between sessions on this machine: send to one or all, read "
+    s = add("bus", lazy("fmbus", "cmd_bus"), tier=("Running elsewhere", 1290), help="messages between sessions on this machine: send to one or all, read "
                                                   "yours (T-0708)")
     s.add_argument("action", choices=["send", "read", "watch"],
                    help="watch: the plugin monitor's stream of this session's new mail (T-0777)")
@@ -4784,24 +4778,24 @@ def build_parser():
     s.add_argument("--type", default="note", choices=["note", "steer", "stop"])
     s.add_argument("--wake", action="store_true",
                    help="wake an idle session: its watcher prints the mail, else one line typed into its tmux pane")
-    s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
+    s = add("lease", lazy("fmbus", "cmd_lease"), tier=("Running elsewhere", 1300), help="function-level edit leases between sessions (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
     s.add_argument("target", nargs="*", help="FILE[::SYMBOL]...")
     s.add_argument("--minutes", type=float, default=20)
     s.add_argument("--warn", action="store_true", help="take a claim that overlaps another session's, with a warning")
-    s = add("conductor", lazy("fmbus", "cmd_conductor"), help="live sessions with their task, context, mail and leases; "
+    s = add("conductor", lazy("fmbus", "cmd_conductor"), tier=("Running elsewhere", 1310), help="live sessions with their task, context, mail and leases; "
                                                               "steer them all (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "steer", "remote", "refresh"])
     s.add_argument("words", nargs="*")
     s.add_argument("--wake", action="store_true")
-    s = add("spec", lazy("fmchange", "cmd_spec"), help="a one-line wish as a red unittest: a tool-less child's "
+    s = add("spec", lazy("fmchange", "cmd_spec"), tier=("Finding your way", 630), help="a one-line wish as a red unittest: a tool-less child's "
                                                         "assertions, only safe ones kept (T-0713)")
     s.add_argument("wish")
     s.add_argument("--module", required=True, help="the Python module the wish is about")
     s.add_argument("--out", help="the test file (default: tests/test_spec_<wish>.py)")
     s.add_argument("--model", default="haiku")
     s.add_argument("--timeout", type=int, default=180)
-    s = add("rewrite", lazy("fmchange", "cmd_rewrite"), help="one rename rule across the repo; residual sites named; "
+    s = add("rewrite", lazy("fmchange", "cmd_rewrite"), tier=("Finding your way", 640), help="one rename rule across the repo; residual sites named; "
                                                               "--convert clears them with a cheap child (T-0713)")
     s.add_argument("old")
     s.add_argument("new")
@@ -4810,11 +4804,11 @@ def build_parser():
     s.add_argument("--convert", action="store_true", help="with --apply: rewrite the residual lines with a cheap child")
     s.add_argument("--model", default="haiku")
     s.add_argument("--timeout", type=int, default=180)
-    s = add("bisect", cmd_bisect, help="the first commit where a check started failing, and its files (T-0612)")
+    s = add("bisect", cmd_bisect, tier=("Finding your way", 600), help="the first commit where a check started failing, and its files (T-0612)")
     s.add_argument("--run", required=True, metavar="CMD")
     s.add_argument("--good", metavar="REF", help="a commit where it passed (default: the active task's start)")
     s.add_argument("--timeout", type=int, default=120, help="seconds per run")
-    s = add("fix", lazy("fmfixes", "cmd_fix"), help="known fixes: what got past an obstacle, offered the next time any "
+    s = add("fix", lazy("fmfixes", "cmd_fix"), tier=("Finding your way", 240), help="known fixes: what got past an obstacle, offered the next time any "
                                                      "session meets it (list, add, rm)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "trust"])
     s.add_argument("text", nargs="?", help="add: the error text; rm/trust: the number fm fix list shows (trust: adopt "
@@ -4822,29 +4816,29 @@ def build_parser():
     s.add_argument("--do", help="add: what gets past it")
     s.add_argument("--run", help="add: the command that does")
 
-    s = add("dream", lazy("fmrecall", "cmd_dream"), help="the day's repeated failures as tripwire candidates with their "
+    s = add("dream", lazy("fmrecall", "cmd_dream"), tier=("Reports", 1010), help="the day's repeated failures as tripwire candidates with their "
                                                           "counterfactual (T-0665)")
     s.add_argument("--day", help="YYYY-MM-DD (default: today)")
-    s = add("graph", lazy("fmgraph", "cmd_graph"), help="the work graph: blast radius of a change, a task's ranked "
+    s = add("graph", lazy("fmgraph", "cmd_graph"), tier=("Finding your way", 620), help="the work graph: blast radius of a change, a task's ranked "
                                                         "read-set, as of any moment (T-0707)")
     s.add_argument("action", choices=["blast", "pack", "build"])
     s.add_argument("words", nargs="*")
     s.add_argument("--as-of", help="only what was known by this ISO time (backtests)")
     s.add_argument("--top", type=int, default=15)
-    s = add("suspects", lazy("fmdebug", "cmd_suspects"), help="files ranked for a failure: stack, task change, test "
+    s = add("suspects", lazy("fmdebug", "cmd_suspects"), tier=("Finding your way", 580), help="files ranked for a failure: stack, task change, test "
                                                                "links, recency (T-0706)")
     s.add_argument("file", nargs="?", help="the failing run's output (default: stdin)")
     s.add_argument("--top", type=int, default=5)
-    s = add("whyred", lazy("fmdebug", "cmd_whyred"), help="the minimal hunks of this task's change that turn a command "
+    s = add("whyred", lazy("fmdebug", "cmd_whyred"), tier=("Finding your way", 590), help="the minimal hunks of this task's change that turn a command "
                                                            "red (delta debugging, T-0706)")
     s.add_argument("cmd")
     s.add_argument("--timeout", type=int, default=300)
-    s = add("record", lazy("fmdebug", "cmd_record"), help="rerun a Python command and show the locals where its "
+    s = add("record", lazy("fmdebug", "cmd_record"), tier=("Finding your way", 610), help="rerun a Python command and show the locals where its "
                                                            "exceptions unwound (T-0706)")
     s.add_argument("cmd")
     s.add_argument("--top", type=int, default=4)
     s.add_argument("--timeout", type=int, default=600)
-    s = add("cost", lazy("fmcost", "cmd_cost"), help="tokens by task, session and tool, from the transcripts")
+    s = add("cost", lazy("fmcost", "cmd_cost"), tier=("Reports", 990), help="tokens by task, session and tool, from the transcripts")
     s.add_argument("--days", type=float, default=7)
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s.add_argument("--forecast", action="store_true", help="when the 5-hour and weekly usage windows fill at the "
@@ -4853,39 +4847,39 @@ def build_parser():
     s.add_argument("--refresh-cache", action="store_true", help=argparse.SUPPRESS)  # the Stop hook's detached refresh
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
-    s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "
+    s = add("burden", lazy("fmcost", "cmd_burden"), tier=("Reports", 1000), help="Foreman's own cost on real sessions per version: bookkeeping "
                                                           "turns, refusals, injected context (T-0712)")
     s.add_argument("--days", type=float, default=14)
     s.add_argument("--by-verb", action="store_true", help="the fm verbs no session called in the window (T-0959)")
-    s = add("usage", lazy("fmcost", "cmd_usage"), help="skills, playbooks and fm commands used (and never used)")
+    s = add("usage", lazy("fmcost", "cmd_usage"), tier=("Reports", 1020), help="skills, playbooks and fm commands used (and never used)")
     s.add_argument("--days", type=float, default=30)
     s.add_argument("--prune", action="store_true",
                    help="fm commands no session ran in the window, in any project (T-0468; nothing is removed)")
     s.add_argument("--agents", action="store_true", help="a scorecard per agent type: spawns, tokens, lanes kept (T-0647)")
     s.add_argument("--lesions", action="store_true", help="what each fm evolve --drop ablation found (T-0664)")
-    s = add("at", cmd_at, help="run a command as of a task's start or a commit, in a throwaway worktree")
+    s = add("at", cmd_at, tier=("Finding your way", 340), help="run a command as of a task's start or a commit, in a throwaway worktree")
     s.add_argument("target", help="a task id (its start) or a commit, branch or tag")
     s.add_argument("--timeout", type=float, default=600)
     s.add_argument("words", nargs=argparse.REMAINDER)
-    s = add("complete", cmd_complete, help="tab completion: candidates for the words typed so far; --shell bash|zsh "
+    s = add("complete", cmd_complete, tier=("Project and settings", 830), help="tab completion: candidates for the words typed so far; --shell bash|zsh "
                                            "prints the hook to source")
     s.add_argument("--shell", choices=["bash", "zsh"])
     s.add_argument("words", nargs="*")
-    s = add("quiet", cmd_quiet, help="run a noisy command: one line on success, the tail on failure")
+    s = add("quiet", cmd_quiet, tier=("Finding your way", 410), help="run a noisy command: one line on success, the tail on failure")
     s.add_argument("--tail", type=int, default=40)
     s.add_argument("--timeout", type=float, default=1800)
     s.add_argument("words", nargs=argparse.REMAINDER)
-    s = add("gates", cmd_gates, help="what fm task done will require for a type and tier (default: the active task)")
+    s = add("gates", cmd_gates, tier=("Every task", 100), help="what fm task done will require for a type and tier (default: the active task)")
     s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
-    s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief, with its proof "
+    s = add("pr", lazy("fmcost", "cmd_pr"), tier=("Finding your way", 500), help="a pull-request description from a task's brief, with its proof "
                                                   "(red→green, lens verdicts, assumptions, bench replays; printed only); "
                                                   "fm pr threads ID: review comments to steps; fm pr train: merge in order")
     s.add_argument("id", help="a task id, or threads / train")
     s.add_argument("more", nargs="*", help="threads: the task id")
     s.add_argument("--pr", type=int, help="threads: the PR number (default: the PR of branch foreman/ID)")
     s.add_argument("--task", help="train: the task whose publish grant covers the merges (default: the active one)")
-    s = add("second", lazy("fmsecond", "cmd_second"),
+    s = add("second", lazy("fmsecond", "cmd_second"), tier=("Finding your way", 430),
             help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
     s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
     s.add_argument("id", nargs="?", help="plan, debate: the task")
@@ -4897,7 +4891,7 @@ def build_parser():
     s.add_argument("--role", choices=["pre-mortem", "naive", "prosecutor", "defender", "devil"],
                    help="plan: read it from a stress-test stance, saved as its own Plan review section (T-0604)")
     s.add_argument("--timeout", type=float, default=300)
-    s = add("relate", lazy("fmrelate", "cmd_relate"),
+    s = add("relate", lazy("fmrelate", "cmd_relate"), tier=("Every task", 140),
             help="order and group the queue and inbox by which open tasks build on others: ids they mention, and a "
                  "tool-less child's reading (runs on its own once a day when 3+ tasks are new); --clear undoes")
     s.add_argument("--clear", action="store_true", help="drop every inferred dependency and group, and turn the "
@@ -4908,7 +4902,7 @@ def build_parser():
     s.add_argument("--if-due", action="store_true", help="only once a day, when 3+ open tasks are new since the last run")
     s.add_argument("--model", default="haiku", help="the child's model (default haiku)")
     s.add_argument("--timeout", type=float, default=300)
-    s = add("mcp", lazy("fmmcp", "cmd_mcp"), help="serve Foreman's state, next action, recall, research, briefs, stack "
+    s = add("mcp", lazy("fmmcp", "cmd_mcp"), tier=("Running elsewhere", 1230), help="serve Foreman's state, next action, recall, research, briefs, stack "
                                                  "library and instruments as read-only MCP tools over stdio; new: "
                                                  "scaffold a tested MCP server wrapping any CLI; register: the "
                                                  "harness's add line (T-0946)")
@@ -4918,16 +4912,16 @@ def build_parser():
     s.add_argument("--sub", metavar="a,b", help="new: the subcommands a caller may pick (an enum)")
     s.add_argument("--dir", help="new: the folder to write (default: ./NAME)")
     s.add_argument("--force", action="store_true", help="new: write into a folder that isn't empty")
-    add("wiring", lazy("fmdoctor", "cmd_wiring"), help="one screen of what is wired: version, hooks, flags, standing "
+    add("wiring", lazy("fmdoctor", "cmd_wiring"), tier=("Project and settings", 840), help="one screen of what is wired: version, hooks, flags, standing "
                                                         "yeses, trust, pause, budget, plugins (T-0469)")
-    s = add("orders", lazy("fmorders", "cmd_orders"), help="standing orders: requests that capture themselves on a "
+    s = add("orders", lazy("fmorders", "cmd_orders"), tier=("Running elsewhere", 1220), help="standing orders: requests that capture themselves on a "
                                                              "schedule or when a file changes (T-0452)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "run"])
     s.add_argument("text", nargs="*", help="add: what to capture · rm: N")
     s.add_argument("--every", help="add: a period, e.g. 30m, 6h, 1d, 1w")
     s.add_argument("--on-change", dest="on_change", help="add: a file in the project; captures when its content changes")
     s.add_argument("--type", help="add: the captured task's type (default FEATURE)")
-    s = add("night", lazy("fmnight", "cmd_night"),
+    s = add("night", lazy("fmnight", "cmd_night"), tier=("Running elsewhere", 1190),
             help="budgeted background work while you're away (landscape when due, the daily second read, the court); "
                  "refused at high usage; fm digest reports it")
     s.add_argument("--dry-run", action="store_true", help="list tonight's jobs and estimates; run nothing")
@@ -4936,11 +4930,11 @@ def build_parser():
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")
-    s = add("draft", lazy("fmdraft", "cmd_draft"),
+    s = add("draft", lazy("fmdraft", "cmd_draft"), tier=("Running elsewhere", 1200),
             help="draft the top queued S task with a headless claude in a throwaway worktree (branch draft/T-x); "
                  "swept when the queue's top changes; never merged")
     s.add_argument("--status", action="store_true", help="sweep a stale draft and say what is waiting; draft nothing")
-    s = add("landscape", lazy("fmoutside", "cmd_landscape"),
+    s = add("landscape", lazy("fmoutside", "cmd_landscape"), tier=("Finding your way", 470),
             help="research what people want from coding-agent harnesses now: what's new since the last scan, what "
                  "Foreman lacks")
     s.add_argument("--if-due", action="store_true", help="only when the last scan is 30+ days old")
@@ -4948,7 +4942,7 @@ def build_parser():
     s.add_argument("--model", default="sonnet")
     s.add_argument("--no-verify", action="store_true", help="don't fetch the cited pages")
     s.add_argument("--timeout", type=int, default=600)
-    s = add("deps", lazy("fmoutside", "cmd_deps"),
+    s = add("deps", lazy("fmoutside", "cmd_deps"), tier=("Finding your way", 480),
             help="dependencies a major version behind their registry's latest, with the migration question to research")
     s.add_argument("words", nargs="*", help='"check <install command>": age, typosquat and registry look at the '
                                             "packages an npm/pip/cargo install names (T-1049)")
@@ -4958,32 +4952,32 @@ def build_parser():
                                                         "the names used, read locally, no network (T-0594)")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=600)
-    s = add("tour", lazy("fmmap", "cmd_tour"), help="a task's (or, --since REF, a range's) changed files in reading "
+    s = add("tour", lazy("fmmap", "cmd_tour"), tier=("Finding your way", 390), help="a task's (or, --since REF, a range's) changed files in reading "
                                                    "order with sizes and a review-risk verdict: what to review first")
     s.add_argument("id", nargs="?")
     s.add_argument("--since", metavar="REF", help="everything since REF's merge base with HEAD, uncommitted included")
-    s = add("export", lazy("fmcost", "cmd_export"),
+    s = add("export", lazy("fmcost", "cmd_export"), tier=("Finding your way", 510),
             help="AGENTS.md for other harnesses: working rules, corrections, map, lessons, decisions, playbooks")
     s.add_argument("what", choices=["agents", "cursor", "gemini"])
     s.add_argument("--out", metavar="PATH",
                    help="where to write it (default: AGENTS.md, .cursor/rules/foreman.mdc or GEMINI.md at the project root)")
     s.add_argument("--force", action="store_true", help="replace a file fm export didn't write")
-    s = add("why", lazy("fmmap", "cmd_why"), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
+    s = add("why", lazy("fmmap", "cmd_why"), tier=("Finding your way", 310), help="the commits and Foreman tasks behind FILE[:LINE], with their lessons")
     s.add_argument("target")
-    add("snapshots", cmd_snapshots, help="uncommitted work Foreman saved before a command discarded it, and how to "
+    add("snapshots", cmd_snapshots, tier=("Finding your way", 320), help="uncommitted work Foreman saved before a command discarded it, and how to "
                                          "bring it back")
-    s = add("oops", cmd_oops, help="the newest work snapshot and its restore command; --apply restores it (T-0960)")
+    s = add("oops", cmd_oops, tier=("Finding your way", 330), help="the newest work snapshot and its restore command; --apply restores it (T-0960)")
     s.add_argument("--apply", action="store_true", help="restore it (the files as they are now are saved first)")
-    s = add("show", cmd_show, help="a task id → task show, FILE[:LINE] → why, other words → recall (T-0960)")
+    s = add("show", cmd_show, tier=("Finding your way", 220), help="a task id → task show, FILE[:LINE] → why, other words → recall (T-0960)")
     s.add_argument("words", nargs="+")
-    s = add("round", cmd_round, help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
+    s = add("round", cmd_round, tier=("Project and settings", 960), help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
     s.add_argument("action", choices=["close"])
-    add("release-check", lazy("fmdemo", "cmd_release_check"),
+    add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
-    s = add("secrets", lazy("fmsecrets", "cmd_secrets"), help="credentials in the working tree, Claude config and "
+    s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
                                                              "(--history) git history, by place and kind, never printed")
     s.add_argument("--history", action="store_true", help="also every commit on every branch")
-    s = add("replay", lazy("fmreplay", "cmd_replay"), help="the guard on the real shell commands of recent sessions: what "
+    s = add("replay", lazy("fmreplay", "cmd_replay"), tier=("Reports", 1070), help="the guard on the real shell commands of recent sessions: what "
                                                            "it now blocks or lets through compared with the accepted run")
     s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
     s.add_argument("--accept", action="store_true", help="take this run's verdicts as the baseline")
@@ -4991,24 +4985,25 @@ def build_parser():
     s.add_argument("--cwd", metavar="DIR", help="with --cmd: the folder it would run in (default: here)")
     s.add_argument("--candidate", metavar="REF|FILE", help="score another guard (a git ref of Foreman's repo, or a "
                                                           "fmguard.py file) against the working one (T-0712)")
-    s = add("backtest", lazy("fmbacktest", "cmd_backtest"), help="where a changed rule, known fix or card would have "
+    s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
                                                                  "fired on recent real sessions, read-only (T-1058)")
     s.add_argument("--rule", metavar="REGEX", help="calls (command, path, pattern) the regex matches")
     s.add_argument("--fix", metavar="SIG", help="failed calls whose output contains this error signature")
     s.add_argument("--card", metavar="NAME", help="calls that mention this library card by name")
     s.add_argument("--days", type=int, default=14, help="how far back the session logs are read (default 14)")
-    s = add("outline", lazy("fmmap", "cmd_outline"), help="a file's definitions with line ranges (read a range, not all)")
+    s = add("outline", lazy("fmmap", "cmd_outline"), tier=("Finding your way", 350), help="a file's definitions with line ranges (read a range, not all)")
     s.add_argument("path")
     import fminstr  # T-0701: the instruments, their help and arguments come from one registry
-    add("instruments", lazy("fminstr", "cmd_instruments"),
+    add("instruments", lazy("fminstr", "cmd_instruments"), tier=("Finding your way", 520),
         help="the zero-token instruments: typed tools with input schemas and line caps (sym, fail, logs, data, trace)")
     for name in fminstr.TOOLS:
-        fminstr.arguments(add(name, lazy("fminstr", "cmd_" + name), help=fminstr.TOOLS[name][1]), name)
+        fminstr.arguments(add(name, lazy("fminstr", "cmd_" + name), tier=("Finding your way", 530),
+                              help=fminstr.TOOLS[name][1]), name)
 
-    s = add("vetoes", cmd_vetoes, help="what the user said never to do, checked before matching commands and edits")
+    s = add("vetoes", cmd_vetoes, tier=("Finding your way", 290), help="what the user said never to do, checked before matching commands and edits")
     s.add_argument("action", nargs="?", choices=["list", "rm"], default="list")
     s.add_argument("n", nargs="?", type=int)
-    s = add("rule", cmd_rule, help="the user's regex rules on Bash commands or edited paths that warn or block")
+    s = add("rule", cmd_rule, tier=("Finding your way", 300), help="the user's regex rules on Bash commands or edited paths that warn or block")
     s.add_argument("action", nargs="?", choices=["list", "add", "rm"], default="list")
     s.add_argument("arg", nargs="?", help="add: the pattern (a Python regex, searched for); rm: N from fm rule list")
     s.add_argument("--on", choices=["bash", "path"], default="bash", help="a Bash command, or an edited file's path")
@@ -5019,12 +5014,12 @@ def build_parser():
     s.add_argument("--from-veto", type=int, metavar="N", help="the rule from veto N (fm vetoes): its key words")
     s.add_argument("--moves", metavar="METRIC", help="the ledger metric this should lower (e.g. corrections): a trial fm digest grades")
     s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
-    s = add("trial", lazy("fmtrials", "cmd_trial"), help="self-changes registered with --moves, graded once due (T-1059)")
-    s = add("surprise", cmd_surprise, help="log where the model of the code was wrong: \"<expected> → <observed>\"")
+    s = add("trial", lazy("fmtrials", "cmd_trial"), tier=("Reports", 1110), help="self-changes registered with --moves, graded once due (T-1059)")
+    s = add("surprise", cmd_surprise, tier=("Finding your way", 280), help="log where the model of the code was wrong: \"<expected> → <observed>\"")
     s.add_argument("text", nargs="+")
     s.add_argument("--task", help="the task it came up in (default: the active one)")
 
-    s = add("recall", lazy("fmrecall", "cmd_recall"), help="related past work: briefs, decisions, research")
+    s = add("recall", lazy("fmrecall", "cmd_recall"), tier=("Finding your way", 230), help="related past work: briefs, decisions, research")
     s.add_argument("text", nargs="*")
     s.add_argument("--task", help="recall for this task's title, request and scope")
     s.add_argument("-n", type=int, default=4)
@@ -5048,77 +5043,77 @@ def build_parser():
                                                          "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
                                                      "BM25), each passage citing its task ids")
-    s = add("explain", lazy("fmrecall", "cmd_explain"), help="why Foreman did it: the rule, inputs and ledger events "
+    s = add("explain", lazy("fmrecall", "cmd_explain"), tier=("Finding your way", 250), help="why Foreman did it: the rule, inputs and ledger events "
                                                              "behind the last guard block or drive/Stop decision")
     s.add_argument("what", nargs="?", choices=["block", "drive"], help="only guard blocks, or only drive/Stop decisions")
 
-    s = add("focus", cmd_focus, help="make a task the single active task")
+    s = add("focus", cmd_focus, tier=("Every task", 70), help="make a task the single active task")
     s.add_argument("id")
 
-    s = add("checkpoint", cmd_checkpoint, help="flush the resume point into the brief and STATE")
+    s = add("checkpoint", cmd_checkpoint, tier=("Every task", 110), help="flush the resume point into the brief and STATE")
     s.add_argument("--note")
     s.add_argument("--auto", action="store_true")
 
-    s = add("clauses", lazy("fmrecall", "cmd_clauses"), help="split a multi-part request into clauses and match each to "
+    s = add("clauses", lazy("fmrecall", "cmd_clauses"), tier=("Every task", 30), help="split a multi-part request into clauses and match each to "
                                                               "a task; fm next names the unaccounted ones (T-0595)")
     s.add_argument("text", nargs="*", help="the user's message (or, with --note, why the clause needs no task)")
     s.add_argument("--note", type=int, metavar="N", help="mark unaccounted clause N as handled (answered, or no task)")
     s.add_argument("--show", action="store_true", help="the unaccounted clauses of the last request")
-    s = add("resume", cmd_resume, help="print the resume point, and re-run the last green check for drift")
+    s = add("resume", cmd_resume, tier=("Every task", 120), help="print the resume point, and re-run the last green check for drift")
     s.add_argument("--no-check", action="store_true", help="don't re-run the last green check (T-0649)")
 
-    s = add("queue", cmd_queue, help="ordered queue")
+    s = add("queue", cmd_queue, tier=("Every task", 130), help="ordered queue")
     s.add_argument("--replan", action="store_true")
     s.add_argument("--preview", action="store_true", help="usual time per item here, and what each will need from you")
 
-    s = add("log", cmd_log, help="append a ledger event")
+    s = add("log", cmd_log, tier=("Every task", 170), help="append a ledger event")
     s.add_argument("event")
     s.add_argument("data", nargs="?")
     s.add_argument("--task")
 
-    s = add("sensitive", cmd_sensitive, help="mark a repo sensitive (manual permission mode there); suggest: the "
+    s = add("sensitive", cmd_sensitive, tier=("Project and settings", 730), help="mark a repo sensitive (manual permission mode there); suggest: the "
                                              "signals that it is, nothing set")
     s.add_argument("state", choices=["on", "off", "suggest"])
     s.add_argument("path", nargs="?")
 
-    s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
+    s = add("drive", cmd_drive, tier=("Project and settings", 690), help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
 
-    s = add("edit", lazy("fmedit", "cmd_edit"), help="a batch of exact replacements across files from stdin (JSON or "
+    s = add("edit", lazy("fmedit", "cmd_edit"), tier=("Finding your way", 260), help="a batch of exact replacements across files from stdin (JSON or "
             "@@ file / <<< old / === new / >>> blocks), all or none, inside the task's scope (T-1089)")
     s.add_argument("--dry-run", action="store_true", help="say what would change; write nothing")
     s.add_argument("--file", help="read the batch from this file instead of stdin (a builder writes it with Write)")
-    s = add("sub", lazy("fmedit", "cmd_sub"), help="a regex codemod: per-file counts first, --apply writes (T-1089)")
+    s = add("sub", lazy("fmedit", "cmd_sub"), tier=("Finding your way", 270), help="a regex codemod: per-file counts first, --apply writes (T-1089)")
     s.add_argument("pattern")
     s.add_argument("repl", help="the replacement (re.sub syntax: \\g<1> for a group)")
     s.add_argument("--glob", action="append", help="files to search, relative to the project (repeatable; ** works)")
     s.add_argument("--apply", action="store_true", help="write the changes (inside the task's scope)")
     s.add_argument("--max", type=int, default=50, help="refuse to write more files than this")
 
-    s = add("loop", lazy("fmloop", "cmd_loop"), help="the forever loop (T-1057): on, an empty queue starts the next "
+    s = add("loop", lazy("fmloop", "cmd_loop"), tier=("Project and settings", 700), help="the forever loop (T-1057): on, an empty queue starts the next "
             "improvement round (review, brainstorm past every earlier run, queue, build) until two dry rounds")
     s.add_argument("action", nargs="?", choices=["status", "on", "off", "round", "yield"])
     s.add_argument("n", nargs="?", type=int, help="yield: how many grounded ideas this round queued")
 
-    s = add("posture", cmd_posture, help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
+    s = add("posture", cmd_posture, tier=("Project and settings", 710), help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])
 
-    s = add("approve-reads", cmd_approve_reads, help="on: Foreman answers Claude Code's permission dialog for commands "
+    s = add("approve-reads", cmd_approve_reads, tier=("Project and settings", 760), help="on: Foreman answers Claude Code's permission dialog for commands "
                                                        "that only read (yours to turn on; T-0974)")
     s.add_argument("state", nargs="?", choices=["on", "off"])
 
-    s = add("pause", cmd_pause, help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
+    s = add("pause", cmd_pause, tier=("Project and settings", 720), help="stop everything Foreman runs unattended, in every project (fm pause off lifts it)")
     s.add_argument("state", nargs="?", choices=["on", "off"], default="on")
 
-    add("next", cmd_next, help="the one next required action (derived from the briefs)")
+    add("next", cmd_next, tier=("Every task", 10), help="the one next required action (derived from the briefs)")
 
-    s = add("sentinel", cmd_sentinel, help="re-run the checks recent finished tasks passed; report what fails now")
+    s = add("sentinel", cmd_sentinel, tier=("Internal (hooks and installer)", 1320), help="re-run the checks recent finished tasks passed; report what fails now")
     s.add_argument("--last", type=int, default=10, help="finished tasks to cover")
     s.add_argument("--max", type=int, default=20, help="commands to run at most")
     s.add_argument("--timeout", type=float, default=120)
     s.add_argument("--bisect", action="store_true", help="find the commit that broke each failing check (git bisect in "
                                                         "a throwaway worktree) and capture it as a FIX (T-0458)")
-    s = add("check", cmd_check, help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
+    s = add("check", cmd_check, tier=("Every task", 80), help="run the project's gate commands together (tests, lint…); exit 1 on any failure")
     s.add_argument("action", nargs="?", default="run", choices=["run", "add", "rm", "list", "paths", "affected",
                                                                           "ambient", "onwrite"])
     s.add_argument("words", nargs="*", help="add: the command; rm: its number (fm check list); paths: its number, then "
@@ -5140,7 +5135,7 @@ def build_parser():
     g.add_argument("--step", type=int)
     g.add_argument("--ac", type=int)
 
-    s = add("friction", lazy("fmfriction", "cmd_friction"),
+    s = add("friction", lazy("fmfriction", "cmd_friction"), tier=("Reports", 1040),
             help="Foreman's own friction since the last self-improvement pass: a digest, or a brief for one subagent")
     g = s.add_mutually_exclusive_group()
     g.add_argument("--brief", action="store_true", help="write a self-contained brief for one read-only subagent")
@@ -5150,7 +5145,7 @@ def build_parser():
     g.add_argument("--minutes", action="store_true", help="minutes lost in the last week, by kind (T-0959)")
     s.add_argument("--why", help="--reject: why it's a dead end")
 
-    s = add("repeats", lazy("fmrepeats", "cmd_repeats"),
+    s = add("repeats", lazy("fmrepeats", "cmd_repeats"), tier=("Reports", 1030),
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
@@ -5159,12 +5154,12 @@ def build_parser():
     s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
                                                         "the same order (T-0734; adopting it is asked first)")
 
-    s = add("sync", lazy("fmsync", "cmd_sync"),
+    s = add("sync", lazy("fmsync", "cmd_sync"), tier=("Project and settings", 790),
             help="opt-in mirror of this project's briefs, decisions and research in the repo (.foreman/)")
     s.add_argument("action", nargs="?", default="status", choices=["status", "on", "off", "import", "export"])
     s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
-    s = add("audit", cmd_audit, help="prep audits: freeze the task's diff and write one review brief for one reviewer")
+    s = add("audit", cmd_audit, tier=("Finding your way", 420), help="prep audits: freeze the task's diff and write one review brief for one reviewer")
     s.add_argument("action", choices=["prep", "scan"], help="prep ID: review brief for a task; scan: mechanical "
                                                              "pre-audit of any diff (--base, default: the main branch)")
     s.add_argument("id", nargs="?")
@@ -5178,23 +5173,23 @@ def build_parser():
     s.add_argument("--note", action="append", default=[], help="focus for every lens brief: this round's change, "
                                                                "threat model, what to ignore (repeatable)")
 
-    s = add("autonomy", cmd_autonomy, help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
+    s = add("autonomy", cmd_autonomy, tier=("Project and settings", 680), help="standard (asks for L plans, ? items, approvals) or full (never asks mid-run)")
     s.add_argument("level", nargs="?", choices=["standard", "full"])
 
-    s = add("tidy", lazy("fmtidy", "cmd_tidy"), help="hygiene (dry-run by default)")
+    s = add("tidy", lazy("fmtidy", "cmd_tidy"), tier=("Project and settings", 940), help="hygiene (dry-run by default)")
     s.add_argument("--apply", action="store_true")
     s.add_argument("--all", action="store_true")
     s.add_argument("--lanes-only", action="store_true", help="only worktrees and branches of closed tasks (what fm night runs)")
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
-    s = add("rollback", lazy("fmrollback", "cmd_rollback"), help="restore the state as the snapshot taken at the last "
+    s = add("rollback", lazy("fmrollback", "cmd_rollback"), tier=("Project and settings", 950), help="restore the state as the snapshot taken at the last "
                                                              "Foreman upgrade had it (T-1085)", allow_abbrev=False)
     s.add_argument("--list", action="store_true")
     s.add_argument("--snapshot", metavar="OLD", help=argparse.SUPPRESS)  # the upgrade hook's detached child
     s.add_argument("--to", metavar="NAME", help="a snapshot from --list (default: the newest upgrade snapshot)")
     s.add_argument("--yes", action="store_true")
 
-    s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
+    s = add("doctor", lazy("fmdoctor", "cmd_doctor"), tier=("Project and settings", 870), help="self-check")
     s.add_argument("--full", action="store_true")
     s.add_argument("-v", "--verbose", action="store_true", help="list the passing checks too")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
@@ -5202,22 +5197,22 @@ def build_parser():
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
 
-    s = add("sweep", lazy("fmeco", "cmd_sweep"), help="ask every other project about a fix: where a pattern is (or what "
+    s = add("sweep", lazy("fmeco", "cmd_sweep"), tier=("Running elsewhere", 1260), help="ask every other project about a fix: where a pattern is (or what "
                                                        "recall relates), a brief in its inbox; edits nothing there")
     s.add_argument("fix", help="the fix, as the brief's first line")
     s.add_argument("--grep", metavar="TEXT", help="the sibling pattern (a fixed string, git grep in each project)")
     s.add_argument("--type", default="FIX")
     s.add_argument("--dry-run", action="store_true", help="say where it would ask; capture nothing")
-    s = add("adopt", lazy("fmeco", "cmd_adopt"), help="take in an existing repo: map, gates (a flake rerun), secrets, "
+    s = add("adopt", lazy("fmeco", "cmd_adopt"), tier=("Project and settings", 660), help="take in an existing repo: map, gates (a flake rerun), secrets, "
                                                        "dependencies once; a baseline note and CLEAN/RESEARCH work queued")
     s.add_argument("--history", action="store_true", help="only mine git history (reverts, fix: commits) into a lesson "
                                                           "note and known fixes")
-    s = add("inbox", lazy("fmeco", "cmd_inbox"), help="captured requests waiting; fm inbox gh reads the repo's open "
+    s = add("inbox", lazy("fmeco", "cmd_inbox"), tier=("Project and settings", 670), help="captured requests waiting; fm inbox gh reads the repo's open "
                                                        "issues (read-only) into briefs, their text kept as untrusted data")
     s.add_argument("source", nargs="?", choices=["gh"], help="a tracker to capture from; none lists the inbox")
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
-    s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), help="after a push, poll the branch's latest CI run through gh; a "
+    s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), tier=("Project and settings", 930), help="after a push, poll the branch's latest CI run through gh; a "
                                                            "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
                                                            "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
     s.add_argument("--branch", help="default: the branch gh finds here")
@@ -5225,19 +5220,19 @@ def build_parser():
     s.add_argument("--max-retries", type=int, default=3)
     s.add_argument("--interval", type=float, default=30, help="seconds between polls")
     s.add_argument("--max-polls", type=int, default=120)
-    s = add("risk", lazy("fmrisk", "cmd_risk"), help="today's risk budget: destructive guard blocks, failed closes and "
+    s = add("risk", lazy("fmrisk", "cmd_risk"), tier=("Project and settings", 780), help="today's risk budget: destructive guard blocks, failed closes and "
                                                       "reverts spend points; past the cap autonomy steps down a notch")
     s.add_argument("action", nargs="?", choices=["show", "set"], default="show")
     s.add_argument("--day", type=float, help="set: the daily cap in points (the user's to set)")
     s.add_argument("--because", help="set: why (logged)")
-    s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
+    s = add("canary", lazy("fmeco", "cmd_canary"), tier=("Project and settings", 920), help="Claude Code's version against the last seen; on a change the "
                                                          "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
     s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")
-    s = add("machine", lazy("fmeco", "cmd_machine"), help="this machine's identity: a stable id and a name (shown in "
+    s = add("machine", lazy("fmeco", "cmd_machine"), tier=("Running elsewhere", 1270), help="this machine's identity: a stable id and a name (shown in "
                                                            "fm projects and, once named, in brief logs fm sync carries)")
     s.add_argument("--name", help="name this machine")
 
-    s = add("bench", lazy("fmbench", "cmd_bench"), help="Foreman's benchmark from finished tasks: build cases, replay "
+    s = add("bench", lazy("fmbench", "cmd_bench"), tier=("Reports", 1090), help="Foreman's benchmark from finished tasks: build cases, replay "
                                                          "them with a candidate plugin, compare runs (T-0212)")
     bsp = s.add_subparsers(dest="bench_cmd", required=True)
     b = bsp.add_parser("seed-review", help="bench a reviewer on planted one-line bugs (T-0646)")
@@ -5344,14 +5339,14 @@ def build_parser():
         if name == "court":
             b.add_argument("--label", help="name for these results (default: court-<time>)")
 
-    s = add("batch", cmd_batch, help="work several not-yet-started requests as one task: one plan, gate run, review and "
+    s = add("batch", cmd_batch, tier=("Every task", 50), help="work several not-yet-started requests as one task: one plan, gate run, review and "
                                      "commit; each closes done in it (T-0257)")
     s.add_argument("ids", nargs="*")
     s.add_argument("--title")
     s.add_argument("--suggest", action="store_true", help="list related items worth one batch each (T-0670)")
     s.add_argument("--apply", action="store_true", help="with --suggest: make those batches")
 
-    s = add("budget", lazy("fmbudget", "cmd_budget"), help="spend on child runs and subagents today, and the caps that "
+    s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")
     s.add_argument("action", nargs="?", default="show", choices=["show", "set"])
     s.add_argument("--day", type=float, help="set: USD per day for everything fm spawns")
@@ -5359,7 +5354,7 @@ def build_parser():
     s.add_argument("--because", help="set: why a cap goes up (recorded as a costly decision)")
     s.add_argument("--days", type=int, default=1, help="show: spend over this many days")
 
-    s = add("evolve", lazy("fmevolve", "cmd_evolve"), help="one bench-gated generation: revise (or --drop) one Foreman "
+    s = add("evolve", lazy("fmevolve", "cmd_evolve"), tier=("Reports", 1100), help="one bench-gated generation: revise (or --drop) one Foreman "
                                                             "instruction file on an evolve branch, bench both, gate (T-0224)")
     s.add_argument("--target", required=True, help="the file to revise, relative to the repo (e.g. plugin/skills/x/SKILL.md)")
     s.add_argument("--drop", action="store_true", help="empty the file instead (ablation)")
@@ -5376,27 +5371,27 @@ def build_parser():
     s.add_argument("--moves", metavar="METRIC", help="the ledger metric a kept change should lower: a trial fm digest grades (T-1059)")
     s.add_argument("--by", type=int, default=30, metavar="DAYS", help="days until the trial is graded (default 30)")
 
-    s = add("oracle", lazy("fmideas", "cmd_oracle"), help="behaviour examples and ambiguities from the task's spec alone, "
+    s = add("oracle", lazy("fmideas", "cmd_oracle"), tier=("Finding your way", 490), help="behaviour examples and ambiguities from the task's spec alone, "
                                                            "before the code is read (T-0226)")
     s.add_argument("id")
     s.add_argument("--model", default="sonnet")
     s.add_argument("--timeout", type=int, default=300)
 
-    s = add("mission", lazy("fmmission", "cmd_mission"), help="the mission and brainstorm seeds for an open-ended "
+    s = add("mission", lazy("fmmission", "cmd_mission"), tier=("Finding your way", 450), help="the mission and brainstorm seeds for an open-ended "
                                                                "request, composed from the project (T-0375)")
     s.add_argument("--request", help="the user's words, verbatim")
-    s = add("demo", lazy("fmdemo", "cmd_demo"), help="see Foreman work on a seeded bug in a throwaway repo, with no "
+    s = add("demo", lazy("fmdemo", "cmd_demo"), tier=("Finding your way", 210), help="see Foreman work on a seeded bug in a throwaway repo, with no "
                                                       "model calls and nothing left behind (T-0870)")
     s.add_argument("--pace", type=float, default=0, metavar="SECONDS",
                    help="pause per stage and type the commands out, for watching or recording (try 1)")
-    s = add("smoke", lazy("fmsmoke", "cmd_smoke"), help="check the product the way its user uses it: the web UI in a "
+    s = add("smoke", lazy("fmsmoke", "cmd_smoke"), tier=("Every task", 90), help="check the product the way its user uses it: the web UI in a "
                                                          "headless browser at desktop and phone width (T-0417)")
     s.add_argument("action", nargs="?", choices=["run", "set"], default="run")
     s.add_argument("words", nargs="*", help="set: web <url> | http <url> | cmd \"<command>\"")
     s.add_argument("--expect", help="set cmd: a regex its output must match")
     s.add_argument("--status", type=int, default=200, help="set http: the status it must return")
     s.add_argument("--json-key", dest="json_key", help="set http: a key its JSON body must have")
-    s = add("ideas", lazy("fmideas", "cmd_ideas"), help="tool-less brainstorm children, one per lens, in parallel")
+    s = add("ideas", lazy("fmideas", "cmd_ideas"), tier=("Finding your way", 460), help="tool-less brainstorm children, one per lens, in parallel")
     s.add_argument("--pack", required=True, help="context pack file (- for stdin)")
     s.add_argument("--lens", action="append", help="repeatable; default: user value, unspoken needs, delight, reliability, "
                                                     "simplicity, bold bets")
@@ -5409,7 +5404,7 @@ def build_parser():
     s.add_argument("--crossbreed", action="store_true", help="one more child: the top ideas combined (T-0628)")
     s.add_argument("--timeout", type=int, default=300)
 
-    s = add("page", lazy("fmpage", "cmd_page"),
+    s = add("page", lazy("fmpage", "cmd_page"), tier=("Running elsewhere", 1130),
             help="now (active task, queue, counts) and optionally a research catalogue as one HTML page for a claude.ai "
                  "Artifact; prints the publish line and how to read the Build/Veto picks back (T-0786)")
     s.add_argument("--catalogue", metavar="NAME", help="research/NAME.json or research/NAME/catalogue.json: clusters")
@@ -5417,13 +5412,13 @@ def build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
-    s = add("serve", lazy("fmserve", "cmd_serve"),
+    s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--all", action="store_true", help="with stop: every fm serve unit")
 
-    s = add("taste", lazy("fmideas", "cmd_taste"), help="what your choices say you want: kept, dropped (and why), "
+    s = add("taste", lazy("fmideas", "cmd_taste"), tier=("Reports", 1050), help="what your choices say you want: kept, dropped (and why), "
                                                          "steered, corrected, vetoes to propose; brainstorms use it")
     s.add_argument("action", nargs="?", choices=["adopt", "decline", "compile"],
                    help="the user's yes or no to the proposed vetoes (all, or N); compile N: a proposal as a rule (T-1063)")
@@ -5432,7 +5427,7 @@ def build_parser():
     s.add_argument("--block", action="store_true", help="compile N as a block rule, not a warn: the user's to type (T-1063)")
     s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
                                                             "agent's (T-0655)")
-    s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
+    s = add("lane", lazy("fmlanes", "cmd_lane"), tier=("Running elsewhere", 1120), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
                                                        "resume <id>: take back a stopped builder's work")
@@ -5445,7 +5440,7 @@ def build_parser():
                                                      "files would go (T-1028); the reason is logged")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
-    s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "
+    s = add("session", lazy("fmsession", "cmd_session"), tier=("Running elsewhere", 1160), help="agent sessions on this device (claude, codex, gemini, "
                                                                 "opencode), detached: start MESSAGE, list, tail ID, "
                                                                 "send ID MESSAGE, stop ID, rm ID, agents")
     s.add_argument("action", nargs="?", default="list",
@@ -5460,12 +5455,12 @@ def build_parser():
     s.add_argument("--from", dest="from_line", type=int, default=0, help="tail: start at this event line")
     s.add_argument("--follow", action="store_true", help="tail: keep printing new events; list: a new list whenever a session changes")
     s.add_argument("--interval", type=float, default=0.3, help="tail --follow: seconds between checks")
-    s = add("agents", lazy("fmagents", "cmd_agents"), help="Foreman's guard, context, MCP server and rules in Codex, "
+    s = add("agents", lazy("fmagents", "cmd_agents"), tier=("Running elsewhere", 1180), help="Foreman's guard, context, MCP server and rules in Codex, "
                                                              "Gemini CLI and opencode: list, install AGENT, uninstall "
                                                              "AGENT")
     s.add_argument("action", choices=["list", "install", "uninstall"])
     s.add_argument("agent", nargs="?", choices=["codex", "gemini", "opencode"])
-    s = add("claude", lazy("fmclaude", "cmd_claude"), help="every Claude Code session on this device (terminal, remote, "
+    s = add("claude", lazy("fmclaude", "cmd_claude"), tier=("Running elsewhere", 1170), help="every Claude Code session on this device (terminal, remote, "
                                                              "headless): list, show ID, agents ID, image ID REF, files "
                                                              "ID, file ID PATH, send ID MESSAGE")
     s.add_argument("action", choices=["list", "show", "agents", "image", "files", "file", "send"])
@@ -5477,7 +5472,7 @@ def build_parser():
     s.add_argument("--follow", action="store_true", help="list/show: keep printing as sessions change")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s.add_argument("--model", help="send: the model for the continuation")
-    s = add("run", lazy("fmserve", "cmd_run"), help="work the queue in fresh claude -p sessions, one task each")
+    s = add("run", lazy("fmserve", "cmd_run"), tier=("Running elsewhere", 1150), help="work the queue in fresh claude -p sessions, one task each")
     s.add_argument("--max", type=int, default=10, help="tasks to finish before stopping")
     s.add_argument("--parallel", type=int, default=1, help="independent S/M tasks with disjoint scopes at once, each in "
                                                            "its own lane, merged back when gated and clean (max 3)")
@@ -5499,49 +5494,53 @@ def build_parser():
     s.add_argument("--no-sandbox", action="store_true", help="run sessions without Claude Code's sandbox")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
-    s = add("sandbox", lazy("fmserve", "cmd_sandbox"), help="fm run's sandbox as a project setting: on, off, allow "
+    s = add("sandbox", lazy("fmserve", "cmd_sandbox"), tier=("Project and settings", 900), help="fm run's sandbox as a project setting: on, off, allow "
                                                            "DOMAIN, show (T-1086)")
     s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show"])
     s.add_argument("domains", nargs="*")
-    s = add("notify", lazy("fmserve", "cmd_notify"), help="command fm run uses to tell you a task finished or blocked")
+    s = add("notify", lazy("fmserve", "cmd_notify"), tier=("Project and settings", 810), help="command fm run uses to tell you a task finished or blocked")
     s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Foreman \"$1\"")
     s.add_argument("--off", action="store_true")
     s.add_argument("--test", action="store_true")
 
-    s = add("plugins", lazy("fmplugins", "cmd_plugins"),
+    s = add("plugins", lazy("fmplugins", "cmd_plugins"), tier=("Project and settings", 850),
             help="find plugins in the known marketplaces, check enabled ones for conflicts, install after approval")
     s.add_argument("action", choices=["find", "check", "install", "enable", "disable", "add-marketplace", "forget"])
     s.add_argument("words", nargs="*", help="find: what you need; check: one plugin id (default: all enabled); "
                                             "install/enable: one id (either installs it if missing, else enables "
                                             "it); add-marketplace: owner/repo, git URL or path; forget: an id to keep")
 
-    s = add("docs", lazy("fmdocs", "cmd_docs"), help="report markdown that drifted from the repo")
+    s = add("docs", lazy("fmdocs", "cmd_docs"), tier=("Project and settings", 860), help="report markdown that drifted from the repo")
     s.add_argument("path", nargs="?")
     s.add_argument("--strict", action="store_true", help="exit 1 when anything drifted")
 
-    s = add("ui", lazy("fmwatch", "cmd_ui"), help="view model for UI surfaces (the foreman-ui mod): --json")
+    s = add("ui", lazy("fmwatch", "cmd_ui"), tier=("Running elsewhere", 1240), help="view model for UI surfaces (the foreman-ui mod): --json")
     s.add_argument("--follow", action="store_true", help="print a new view line whenever the project changes")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
     s.add_argument("--demo", action="store_true", help="print a canned view (every key a real one has) as JSON")
-    s = add("projects", lazy("fmwatch", "cmd_projects"), help="every Foreman project on this device (the desktop "
+    s = add("projects", lazy("fmwatch", "cmd_projects"), tier=("Running elsewhere", 1250), help="every Foreman project on this device (the desktop "
                                                                 "app's list): --json, --follow, --next")
     s.add_argument("--follow", action="store_true", help="print a new list whenever a project changes")
     s.add_argument("--next", action="store_true", help="one ranked list of every project's next action")
     s.add_argument("--interval", type=float, default=0.5, help="--follow: seconds between checks")
-    s = add("watch", lazy("fmwatch", "cmd_watch"), help="live dashboard")
+    s = add("watch", lazy("fmwatch", "cmd_watch"), tier=("Running elsewhere", 1280), help="live dashboard")
     s.add_argument("--once", action="store_true")
     s.add_argument("--interval", type=float, default=1.0)
 
-    s = add("install-user", lazy("fmsetup", "cmd_install"), help="wire Foreman into ~/.claude (used by install.sh)")
+    s = add("install-user", lazy("fmsetup", "cmd_install"), tier=("Internal (hooks and installer)", 1330), help="wire Foreman into ~/.claude (used by install.sh)")
     s.add_argument("--dry-run", action="store_true")
     s.add_argument("--record-disabled", action="append", metavar="PLUGIN_ID",
                    help="record a plugin Foreman disabled (listed by uninstall.sh for re-enabling)")
-    s = add("compact-output", lazy("fmsetup", "cmd_compact_output"),
+    s = add("compact-output", lazy("fmsetup", "cmd_compact_output"), tier=("Project and settings", 820),
             help="shorten big Bash outputs for the model (head, failure lines, tail; full text in a file)")
     s.add_argument("state", nargs="?", choices=["on", "off", "shadow", "status"],
                    help="shadow: record what it would cut (fm compact-output shows the total), never shorten")
-    s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), help="undo install-user from the manifest")
+    s = add("uninstall-user", lazy("fmsetup", "cmd_uninstall"), tier=("Internal (hooks and installer)", 1340), help="undo install-user from the manifest")
     s.add_argument("--dry-run", action="store_true")
+    by_title = {}
+    for _, title, name in sorted(tiered, key=lambda t: t[0]):  # stable: ties keep registration order
+        by_title.setdefault(title, []).append(name)
+    HELP_TIERS[:] = [(t, " ".join(n)) for t, n in by_title.items()]
     return ap
 
 
