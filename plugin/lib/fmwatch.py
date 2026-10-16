@@ -247,7 +247,16 @@ _SPLIT_MARKS = (("planning", "task_new"), ("executing", "task_plan"), ("verifyin
 
 def _stage_secs(evs, end):
     """{stage: seconds} for one task's ledger events: each stage runs from its mark to the next mark that came later
-    (a stage whose mark is missing or out of order is skipped); the last runs to `end`."""
+    (a stage whose mark is missing or out of order is skipped); the last runs to `end`. T-1137: recorded stage events
+    win when the task has any (a stage can recur, so its times add up); older tasks fall back to the proxies."""
+    moves = sorted((c.parse_ts(e.get("ts")), (e.get("data") or {}).get("to")) for e in evs if e.get("event") == "stage")
+    if moves:
+        out = {}
+        for i, (t, st) in enumerate(moves):
+            if t and st in dict(_SPLIT_MARKS):
+                nxt = moves[i + 1][0] if i + 1 < len(moves) else end
+                out[st] = out.get(st, 0) + max(0, round((nxt - t).total_seconds()))
+        return out
     first = {}
     for e in evs:
         t = c.parse_ts(e.get("ts"))
