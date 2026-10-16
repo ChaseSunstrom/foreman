@@ -2432,10 +2432,13 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         bare_init = init and not lost and not git_env and all(a in ("-q", "--quiet") for a in args[1:]) and all(
             os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
             r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
-        for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
+        # T-1195: an environment that changes how git reads pathspecs makes a named-file checkout a tree write
+        targs = args + ["--pathspec-from-file"] if name == "git" and any(
+            a.startswith(("GIT_GLOB_PATHSPECS=", "GIT_ICASE_PATHSPECS=")) for a in c.argv) else args
+        for target in c.redirs + ([] if bare_init else _write_targets(name, targs)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
-        for target in [] if bare_init else _tree_targets(name, args) + git_env:
+        for target in [] if bare_init else _tree_targets(name, targs) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
                                                              else "") + ")" +  # refusal names fm lane merge
@@ -2748,6 +2751,8 @@ def _checkout_files(base, rest):
     no commit), else [] (a branch, -b/-B/--orphan, `.`, a pathspec magic word or a word that is also a commit: the
     whole tree). T-1195."""
     if "--" in rest:
+        if any(a.startswith("--p") for a in rest[:rest.index("--")]):  # --pathspec-from-file, or a prefix of it
+            return []
         files = rest[rest.index("--") + 1:]
     else:
         if any(a.startswith("-") and a != "-" for a in rest):  # -b, -B, --orphan, --pathspec-from-file, -p ...
@@ -2756,7 +2761,10 @@ def _checkout_files(base, rest):
         if not files or any(not os.path.exists(os.path.join(base, a))
                             or _git(base, "rev-parse", "--verify", "-q", f"{a}^{{commit}}") for a in files):
             return []
-    if any(f.startswith(":") or f.startswith("-") or os.path.normpath(f) == "." for f in files):
+    # git expands globs in a pathspec (and GIT_GLOB_PATHSPECS / GIT_ICASE_PATHSPECS change how), so a word with a
+    # glob character names files the guard can't list
+    if any(f.startswith(":") or f.startswith("-") or os.path.normpath(f) == "." or re.search(r"[*?\[\\]", f)
+           for f in files):
         return []
     return files
 
