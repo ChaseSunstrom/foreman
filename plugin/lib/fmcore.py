@@ -879,9 +879,37 @@ def global_events(since):
                 yield e
 
 
+_TAIL_MEMO = {}  # T-1082: path -> ((inode, size, mtime_ns), [record or None per line]): one read per unchanged file
+TAIL_MEMO_MAX, TAIL_MEMO_FILES = 20000, 8
+
+
 def tail_jsonl(path, n=200):
     """The last n records of a JSONL file; reads backwards in growing chunks, so n is honoured however long the
-    lines are."""
+    lines are. T-1082: a process asking again of an unchanged file gets the lines it already parsed (fresh top-level
+    copies), so fm ui's five ledger reads are one."""
+    try:
+        st = os.stat(path)
+    except FileNotFoundError:
+        return []
+    except OSError:
+        st = None
+    key = (st.st_ino, st.st_size, st.st_mtime_ns) if st else None
+    hit = _TAIL_MEMO.get(path)
+    if key and hit and hit[0] == key and (hit[2] or len(hit[1]) >= n):
+        # ponytail: top-level copies only; a caller that mutated an event's nested data would leak it into later reads
+        return [dict(e) if isinstance(e, dict) else e for e in hit[1][-n:] if e is not None]
+    rows = _tail_rows(path, n)
+    if key and n <= TAIL_MEMO_MAX:
+        _TAIL_MEMO.pop(path, None)
+        while len(_TAIL_MEMO) >= TAIL_MEMO_FILES:
+            _TAIL_MEMO.pop(next(iter(_TAIL_MEMO)))
+        _TAIL_MEMO[path] = (key, rows, len(rows) < n)  # fewer lines than asked: the whole file
+        return [dict(e) if isinstance(e, dict) else e for e in rows if e is not None]
+    return [e for e in rows if e is not None]  # not kept: nobody else holds these
+
+
+def _tail_rows(path, n):
+    """[record or None for an unreadable line] for the last n lines."""
     try:
         with open(path, "rb") as f:
             f.seek(0, os.SEEK_END)
@@ -900,9 +928,10 @@ def tail_jsonl(path, n=200):
     out = []
     for line in lines[-n:]:
         try:
-            out.append(json.loads(line))
+            e = json.loads(line)
         except ValueError:
-            continue
+            e = None
+        out.append(e)
     return out
 
 
@@ -977,10 +1006,17 @@ class Brief:
     def __init__(self, meta, fm_lines, preamble, sections, path=None):
         self.meta = meta
         self._fm_lines = fm_lines                    # [(key, raw_line)]
-        self._orig = {k: v for k, v in meta.items()}
+        self._orig = {k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # T-1082 review:
+                      for k, v in meta.items()}  # an in-place list edit must still differ from the original
         self.preamble = preamble                     # text between frontmatter and first "## " (title)
         self.sections = sections                     # [[heading, body_text]]
         self.path = path
+
+    def copy(self):
+        """T-1082: an independent brief (the memo hands these out): its own meta, lines and sections."""
+        return Brief({k: (list(v) if isinstance(v, list) else dict(v) if isinstance(v, dict) else v)  # str, bool,
+                      for k, v in self.meta.items()},  # or a list of str: all _parse_value makes
+                     list(self._fm_lines), self.preamble, [list(x) for x in self.sections], self.path)
 
     # --- parse / render
     @classmethod
@@ -1482,12 +1518,36 @@ def brief_paths(p, include_archive=False):
     return paths
 
 
+_BRIEF_MEMO = {}  # T-1082: path -> ((inode, mtime_ns, size), Brief): one parse per unchanged file per process
+BRIEF_MEMO_MAX = 5000  # a long-lived process (fm serve, the MCP server) starts over past this
+
+
+def _read_brief(path):
+    """A brief from its file, parsed once per process while the file is unchanged; every caller gets its own copy."""
+    st = os.stat(path)
+    key = (st.st_ino, st.st_mtime_ns, st.st_size)
+    hit = _BRIEF_MEMO.get(path)
+    if hit and hit[0] == key:
+        return hit[1].copy()
+    with open(path, encoding="utf-8") as f:
+        b = Brief.parse(f.read(), path)
+    if time.time() - st.st_mtime > 2:  # just written: a same-size rewrite in the same clock tick could pass for it
+        if len(_BRIEF_MEMO) > BRIEF_MEMO_MAX:
+            _BRIEF_MEMO.clear()
+        _BRIEF_MEMO[path] = (key, b.copy())
+    return b
+
+
 def load_briefs(p, include_archive=False, errors=None):
-    out = []
-    for path in brief_paths(p, include_archive):
+    out, paths = [], brief_paths(p, include_archive)
+    tdir = os.path.join(p.dir, "tasks") + os.sep  # a brief moved or deleted since: forgotten
+    if _BRIEF_MEMO:
+        listed = set(paths)
+        for gone in [k for k in _BRIEF_MEMO if k.startswith(tdir) and k not in listed]:
+            _BRIEF_MEMO.pop(gone, None)
+    for path in paths:
         try:
-            with open(path, encoding="utf-8") as f:
-                out.append(Brief.parse(f.read(), path))
+            out.append(_read_brief(path))
         except (OSError, ValueError) as e:
             if errors is not None:
                 errors.append((path, str(e)))
@@ -1499,8 +1559,7 @@ def find_brief(p, tid):
     for path in brief_paths(p):
         m = _BRIEF_FILE.match(os.path.basename(path))
         if m and m.group(1) == tid:
-            with open(path, encoding="utf-8") as f:
-                return Brief.parse(f.read(), path)
+            return _read_brief(path)
     return None
 
 
