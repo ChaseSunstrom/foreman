@@ -1505,11 +1505,14 @@ def _interpreter_writes(cmd, ctx):
     if not _INTERP.search(_mask_fm(_drop_data_heredocs(cmd), ctx)):
         return []
     if _drives_fm(_drop_data_heredocs(cmd, only=lambda line: _writes_unrun_source(line, cmd, ctx)), ctx.cwd):
-        # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`
+        # T-0740: 9 repeats in a day; T-0934: `cd DIR; python3 - <<EOF` is refused only because of the `;`. T-1171: 12
+        # of 31 refusals in four days wrote a test with cat <<EOF and ran the tests in the same command
         return [("core", "interpreter code driving Foreman's modules (use the fm CLI; to edit a Foreman source file "
                          "whose text names its modules, use the Edit or Write tool"
-                         + ("; chain the cd with && instead of ;, or pass the path)" if re.search(r"\bcd\s+[^\n;&|]+;", cmd)
-                            else ")"))]
+                         + ("; chain the cd with && instead of ;, or pass the path" if re.search(r"\bcd\s+[^\n;&|]+;", cmd)
+                            else "")
+                         + ("; write the file in one command and run it in the next: the write alone is data"
+                            if re.search(r"\b(?:cat\s*>>?|tee\b)[^\n]*<<", cmd) else "") + ")")]
     code = _interp_code(cmd)
     # T-0150/T-0155: a backtick runs code unless every interpreter here treats it as text (markdown in a Python heredoc)
     ticks = "`" in code and any(not _TEXT_TICKS.match(m.group(1)) for m in _INTERP.finditer(cmd))

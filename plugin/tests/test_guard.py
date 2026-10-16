@@ -1029,6 +1029,21 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_a_test_written_and_run_in_one_command_is_told_to_split(self):
+        # T-1171: 12 of 31 real refusals in four days wrote a test with cat <<EOF and ran the tests in the same
+        # command; each half alone passes, so the refusal says to split instead of only naming the Edit tool
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        body = "import fmcore\nfmcore.write_meta(p, {{}})\n"  # bash() formats the command: {{}} is {}
+        both = f"cat >> tests/test_x.py <<'EOF'\n{body}EOF\npython3 plugin/tests/run.py test_x"
+        self.assertIn("write the file in one command and run it in the next", str(self.bash(both)))
+        for half in (f"cat >> tests/test_x.py <<'EOF'\n{body}EOF", "python3 plugin/tests/run.py test_x",
+                     f"tee -a notes/x.py <<'E' >/dev/null\n{body}E"):
+            self.assertFalse(driving(half), half)
+        for cmd in (f"cat > x.py <<'EOF'\n{body}EOF\npython3 x.py", f"cat > x.py <<'EOF'\n{body}EOF\nenv python3 x.py",
+                    f"cat x.py - <<'EOF' | python3\n{body}EOF", f"python3 - <<'EOF'\n{body}EOF"):
+            self.assertTrue(driving(cmd), cmd)  # still refused: the split is the only way through
+        self.assertNotIn("in the next", str(self.bash(f"python3 - <<'EOF'\n{body}EOF")), "no file written: no hint")
+
     def test_a_literal_cd_chain_picks_the_folder_python_writes_in(self):
         # T-0774: 'cd <scratchpad> && python3 - <<EOF open("clusters.py","w")' was refused as a write in the Foreman
         # home: every folder the command names counted, though python only runs after the cd succeeded
