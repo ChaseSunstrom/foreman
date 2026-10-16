@@ -22,7 +22,6 @@ GAP_S = 1800
 CACHE_S = 12 * 3600
 SOURCES_STALE_S = 7 * 86400
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
-_DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
 SLOW_GAP_S = 6 * 3600  # the drain asks for the slow probes at most this often
 
 Finding = collections.namedtuple("Finding", "key title type tier why")
@@ -68,23 +67,12 @@ def probe_claude_code(p, ctx):
 def probe_lib_gaps(p, ctx):
     """Dependencies used in the user's projects that no card's dep: signal covers and no earlier finding named, most
     used first. Cards live in Foreman's own repo, so without named roots it runs there only."""
-    import fnmatch
     import fmlib
     if not ctx.get("roots") and os.path.realpath(p.root or "") != os.path.realpath(os.path.dirname(c.PLUGIN_ROOT)):
         return []
     roots = ctx.get("roots") or [x.root for x, _ in c.all_projects() if x.root and os.path.isdir(x.root)]
     asked = {d for k in c.read_meta(p).get("scout_keys") or {} if k.startswith("libgap:") for d in k[7:].split(",")}
-    pats = {fmlib._norm(s[4:]) for card in fmlib.cards() for s in card.get("detect") or [] if s.startswith("dep:")}
-    exact, globs = {x for x in pats if "*" not in x}, [x for x in pats if "*" in x]
-    seen = collections.Counter()
-    for root in roots[:30]:
-        try:
-            deps = fmlib.signals(root)["deps"]
-        except Exception:  # an unreadable project is skipped, not the probe
-            continue
-        twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
-        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
-                    and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
+    seen = fmlib.uncovered_deps(roots, asked)
     top = [d for d, _ in sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))[:8]]
     if not top:
         return []
