@@ -136,16 +136,17 @@ def _sensitive(p):
         return True  # unsure: keep it to the project
 
 
-def add(p, rec):
+def add(p, rec, trust=True):
     """Keep a fix this machine learned or was taught: in the project's store (if any) and, unless the project is
     sensitive, this machine's; either way it is trusted here."""
     rec = {k: v for k, v in rec.items() if v}
     rec.setdefault("at", c.now()[:10])
     paths = stores(p)
-    if _sensitive(p):
+    if _sensitive(p) or not trust:  # untrusted (repo content): the project's store only, a hint until fm fix trust
         paths = paths[:1]
     fresh = any([_append(path, rec) for path in paths])
-    _trust(_fid(rec))
+    if trust:
+        _trust(_fid(rec))
     return fresh
 
 
