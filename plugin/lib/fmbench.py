@@ -264,7 +264,7 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
             if pr.returncode and not res:
                 error = f"exit {pr.returncode}: {(se or so).strip()[-160:]}"
         except subprocess.TimeoutExpired:
-            os.killpg(pr.pid, 9)
+            c.kill_group(pr)  # T-1094: a child that exited first no longer crashes the bench
             pr.communicate()
             error = f"timed out after {timeout} min"
     except OSError as e:
@@ -781,6 +781,9 @@ def _contest(p, args):
 
 def cmd_bench(args):
     import fmcli
+    if args.bench_cmd == "guard":
+        import fmreplay
+        return fmreplay.cmd_guard(args)
     if args.bench_cmd not in ("build", "list", "show", "compare", "models", "hygiene", "scorecard"):
         c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)

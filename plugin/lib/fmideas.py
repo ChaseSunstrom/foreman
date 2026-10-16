@@ -8,10 +8,13 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import signal
 import subprocess
 import sys
 import tempfile
 import time
+from collections import Counter
 
 import fmbudget
 import fmcore as c
@@ -90,6 +93,103 @@ def _child_env():
     return dict(os.environ, FOREMAN_NO_BACKGROUND="1")  # a child never starts Foreman's own background reviews
 
 
+def _registry(pid=""):
+    return os.path.join(c.state_dir(), "children", str(pid))
+
+
+def _starttime(pid):
+    """When the pid started, in clock ticks since boot (/proc/<pid>/stat field 22): with the pid, one process ever."""
+    with open(f"/proc/{pid}/stat") as f:
+        return f.read().rsplit(")", 1)[1].split()[19]  # after the name, which may hold spaces and parentheses
+
+
+def _popen(argv, timeout, **kw):
+    """T-1044: a child in its own process group, so a timeout kills its grandchildren too, registered in
+    state/children/<pid> (its start time, when, its timeout) so a SessionStart sweeps it if this run dies first."""
+    pr = subprocess.Popen(argv, start_new_session=True, **kw)
+    try:
+        c.write_atomic(_registry(pr.pid), f"{_starttime(pr.pid)} {time.time():.0f} {timeout:.0f}")
+    except (OSError, IndexError):  # no /proc (macOS) or no state folder: unregistered, still reaped on a timeout
+        pass
+    return pr
+
+
+def _forget(pr):
+    try:
+        os.remove(_registry(pr.pid))
+    except OSError:
+        pass
+
+
+def _reap(pr):
+    """T-1044: the child's whole process group killed (never only the leader: a grandchild holding the pipes hung the
+    runner and outlived it), its pipes drained, its registry entry gone."""
+    if pr.returncode is None:  # once it's been waited for, its pid may be another process's by now
+        c.kill_group(pr)
+    try:
+        pr.communicate(timeout=5)
+    except subprocess.TimeoutExpired:  # a grandchild that left the group (setsid) holds the pipes: not ours to wait on
+        pr.wait()
+    _forget(pr)
+
+
+def _strays(pgid, start):
+    """T-1044: a dead leader's group still has a member it started: a process in the session and group the leader made
+    (start_new_session: both ids are its pid), started no earlier than it. Linux never reuses a pid while a group holds
+    it; only a later session leader that took the pid could make such a group, and a sweep can't tell that one apart."""
+    try:
+        os.killpg(pgid, 0)  # no such group (the usual case: the helper finished) costs one call, not a /proc scan (~30 ms)
+    except OSError:
+        return False
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    st = f.read().rsplit(")", 1)[1].split()
+            except OSError:
+                continue
+            if st[2] == st[3] == str(pgid) and int(st[19]) >= start:
+                return True
+    return False
+
+
+def sweep_orphans(max_age=1800):
+    """T-1044: the helpers a dead run left behind, killed with their process groups: the count. An entry older than
+    max_age (or its own timeout) whose pid is still the same process (its start time) running a helper (its command
+    line) is killed, and so is the group of a leader that's gone while a member it started holds the group (_strays);
+    a reused or foreign pid, or an empty group, only loses its entry; a fresh one is left to its run."""
+    try:
+        names = os.listdir(_registry())
+    except OSError:
+        return 0
+    n = 0
+    for name in names:
+        if name.startswith("."):  # a write_atomic temp file mid-write
+            continue
+        path = _registry(name)
+        try:
+            with open(path) as f:
+                start, at, timeout = f.read().split()
+            if time.time() - float(at) < max(max_age, float(timeout) + 60):
+                continue  # its run may still be waiting on it
+            pid = int(name)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    ours = b"--no-session-persistence" in f.read().split(b"\0") and _starttime(pid) == start
+            except FileNotFoundError:  # the leader is gone
+                ours = _strays(pid, int(start))
+            if ours:
+                os.killpg(pid, signal.SIGKILL)
+                n += 1
+        except (OSError, ValueError, IndexError):  # gone, garbled or not ours to kill: the entry goes
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return n
+
+
 def run_child(feature, system, prompt, model, timeout, project=None, detail="", fallback=0.05):
     """T-0295: one tool-less child, budget-checked, run in a scratch folder and recorded: its text. ValueError when
     it can't run, fails or says nothing."""
@@ -99,14 +199,22 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
         raise ValueError(str(e))
     with _child_cwd(feature) as cwd:
         try:
-            r = subprocess.run(child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout, env=_child_env())
-        except (OSError, subprocess.TimeoutExpired) as e:
+            pr = _popen(child_cmd(model, system), timeout, cwd=cwd, text=True, stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_child_env())
+        except OSError as e:
             raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
-    text, usd = fmbudget.result(r.stdout)
+        try:
+            so, se = pr.communicate(prompt, timeout=timeout)
+        except BaseException as e:  # a timeout or ^C: the whole group goes (subprocess.run killed only the leader)
+            _reap(pr)
+            if isinstance(e, subprocess.TimeoutExpired):
+                raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+            raise
+        _forget(pr)
+    text, usd = fmbudget.result(so)
     fmbudget.record(feature, usd, project=project, detail=detail)
-    if r.returncode or not (text or "").strip():
-        raise ValueError(f"nothing came back (exit {r.returncode}: {_tail(r.stderr or r.stdout, 160)})")
+    if pr.returncode or not (text or "").strip():
+        raise ValueError(f"nothing came back (exit {pr.returncode}: {_tail(se or so, 160)})")
     return text
 
 
@@ -115,38 +223,40 @@ def run_children(jobs, timeout, feature):
     [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
     stopped)."""
     with _child_cwd(feature) as cwd:
-        procs = []
+        procs, started = [], False
         try:
             for argv, stdin, detail in jobs:
-                pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, env=_child_env())
+                pr = _popen(argv, timeout, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=_child_env())
                 procs.append((pr, detail))
                 try:
                     pr.stdin.write(stdin)
                     pr.stdin.close()
                 finally:
                     pr.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
-        except OSError as e:
-            for pr, _ in procs:
-                pr.kill()
-                pr.communicate()
-            raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
-        deadline, out = time.time() + timeout, []
-        for pr, detail in procs:
-            try:
-                so, se = pr.communicate(timeout=max(1, deadline - time.time()))
-                text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
-                fmbudget.record(feature, usd, detail=detail)
-                why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
-                # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged by the error
-                out.append((text, None) if pr.returncode == 0 and text.strip() else
-                           (text, why) if text.strip() else (None, why))  # both set: partial
-            except subprocess.TimeoutExpired:
-                pr.kill()
-                pr.communicate()
-                fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
-                                else "timed out: cost unknown")
-                out.append((None, f"timed out after {timeout}s"))
+            started, deadline, out = True, time.time() + timeout, []
+            for pr, detail in procs:
+                try:
+                    so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                    _forget(pr)
+                    text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
+                    fmbudget.record(feature, usd, detail=detail)
+                    why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
+                    # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged
+                    out.append((text, None) if pr.returncode == 0 and text.strip() else
+                               (text, why) if text.strip() else (None, why))  # both set: partial
+                except subprocess.TimeoutExpired:
+                    _reap(pr)
+                    fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
+                                    else "timed out: cost unknown")
+                    out.append((None, f"timed out after {timeout}s"))
+        except BaseException as e:  # T-1044: a child that can't start, or ^C: every group still running goes (each has
+            for pr, _ in procs:  # its own session, so the terminal's ^C no longer reaches them)
+                if pr.returncode is None:
+                    _reap(pr)
+            if isinstance(e, OSError) and not started:
+                raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
+            raise
     return out
 
 
@@ -176,7 +286,7 @@ def user_voice(p, n=20):
 HOUSEKEEPING = re.compile(r"(?i)\s*(folded into|done in|fixed (inline )?in|duplicate|merged into|superseded|covered by)\b")
 
 
-def taste(p, n=8):
+def taste(p, n=8, ledger=None):
     """T-0112: what the user's choices say about their taste: their requests that were finished (kept), work dropped
     and the reason given, and their steers and corrections, newest last (briefs, archive included, and the ledger)."""
     briefs = sorted(c.load_briefs(p, include_archive=True), key=lambda b: b.meta.get("created") or "")
@@ -185,7 +295,7 @@ def taste(p, n=8):
     def why(b):
         return next((fit(ln.split("dropped:", 1)[1], 160) for ln in reversed(b.section("Log").splitlines())
                      if "dropped:" in ln), "")
-    ledger = c.ledger_tail(p, 3000)
+    ledger = _ledger(p, ledger)
     notes = [str((e.get("data") or {}).get("text") or "") for e in ledger if e.get("event") == "note"]
     return {"kept": [{"id": b.id, "type": b.type, "title": fit(b.title, 90)} for b in briefs
                      if b.status == "done" and b.meta.get("source") == "user"][-n:],
@@ -231,23 +341,130 @@ def _key_words(text):
                               if w not in c._VETO_STOP and w not in _STEER_STOP))
 
 
-def proposals(p):
+_TYPES = (("safety", "force|delete|secret|push|destroy|rm|reset"), ("scope", "only|also|outside|just|scope"),
+          ("style", "format|name|naming|comment|lint|style|camelcase|snake"))
+
+
+def classify(text):
+    """T-1063: what a steer's shape words are about: safety, scope, style, else a wrong approach (whole words, no model)."""
+    return next((k for k, rx in _TYPES if re.search(rf"(?i)\b(?:{rx})s?\b", text or "")), "wrong approach")
+
+
+# a word the steer names as a command: anchored to the command, not to prose that says the word
+_TOKENS = {"push": r"\bgit\s+(?:-\S+\s+)*push\b", "commit": r"\bgit\s+(?:-\S+\s+)*commit\b",
+           "reset": r"\bgit\s+(?:-\S+\s+)*reset\b", "rebase": r"\bgit\s+(?:-\S+\s+)*rebase\b",
+           "force": r"(?:\s--force(?:-with-lease)?\b|\s-f\b)", "rm": r"(?:^|[;&|]\s*)rm\b"}
+
+
+def _pattern(words):
+    return "(?i)^" + "".join(rf"(?=[\s\S]*{_TOKENS.get(x) or rf'(?<![\w-]){re.escape(x)}\b'})" for x in words)
+
+
+def compile_rule(p, x, block=False):
+    """T-1063: the rule a proposal compiles to: a warn on bash (a block only on the user's --block); two shape words at
+    least, so one common word never makes a rule."""
+    if len(x["words"]) < 2:
+        raise ValueError(f"'{' '.join(x['words'])}' is one word: too loose to compile; fm taste adopt makes a veto instead")
+    return c.add_rule(p, _pattern(x["words"]), "bash", "block" if block else "warn", f"{x['type']} steer: {x['said']}")
+
+
+def _stem(w):
+    # ponytail: -s/-es/-ing/-ed only ("mocks", "mocking" → "mock", "branches" → "branch"); a real stemmer if clusters miss
+    s = re.sub(r"(?:ing|ed|(?:(?<=ss)|(?<=[xz])|(?<=[cs]h))es|(?<![su])s)$", "", w)
+    return s if len(s) >= 3 else w
+
+
+def _covered(p):
+    """Stemmed word sets a recorded veto or a declined proposal covers (T-1042: steer words are kept unstemmed, a
+    correction cluster's stemmed, so both sides compare as stems)."""
+    return [{_stem(w) for w in ws} for ws in [v["words"] for v in c.vetoes(p)] + (c.read_meta(p).get("taste_declined") or [])]
+
+
+def _ledger(p, ledger):
+    return c.ledger_tail(p, 3000) if ledger is None else ledger
+
+
+def proposals(p, ledger=None):
     """[{words, count, said}]: key words shared by TASTE_REPEATS or more steers that say no, as vetoes to propose; none
     a recorded veto or a declined proposal already covers (its words a subset of the shape)."""
-    notes = [str((e.get("data") or {}).get("text") or "") for e in c.ledger_tail(p, 3000) if e.get("event") == "note"]
+    notes = [str((e.get("data") or {}).get("text") or "") for e in _ledger(p, ledger) if e.get("event") == "note"]
     sets = [(s, _key_words(s)) for s in (t[len("steer:"):].strip() for t in notes if t.startswith("steer:")) if _NO.search(s)]
-    covered = [set(v["words"]) for v in c.vetoes(p)] + [set(w) for w in c.read_meta(p).get("taste_declined") or []]
+    covered = _covered(p)
     out, seen = [], set()
     for w in dict.fromkeys(x for _, ws in sets for x in ws):
         group = [(s, ws) for s, ws in sets if w in ws]
         shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
         standing = any(c.STANDING_STEER.search(x) for x, _ in group)  # T-0601: said as a rule, once is enough
         if (len(group) < TASTE_REPEATS and not standing) or tuple(sorted(shape)) in seen \
-                or any(h <= set(shape) for h in covered):
+                or any(h <= {_stem(x) for x in shape} for h in covered) \
+                or any(r["pattern"] == _pattern(shape) for r in c.rules(p)):  # T-1063: compiled already
             continue
         seen.add(tuple(sorted(shape)))
-        out.append({"words": shape, "count": len(group), "said": c.fit(c.plain(group[-1][0]), 160)})
+        said = c.fit(c.plain(group[-1][0]), 160)
+        out.append({"words": shape, "count": len(group), "said": said, "type": classify(" ".join(shape))})
     return out
+
+
+CORRECTION_REPEATS = 2
+_CORRECTION_STOP = {"nope", "wrong", "said", "meant", "why", "did", "what", "didn", "doesn", "wasn", "isn", "don", "won",
+                    "can", "already", "think", "would", "because"}  # how a correction is said, not what it's about
+
+
+def correction_clusters(p, ledger=None):
+    """T-1042: [{words, count, said, suggest}]: key words (stemmed) shared by CORRECTION_REPEATS or more of the user's
+    corrections, each one the user rarely says otherwise (in at most a tenth of their prompts), with a ready fm rule
+    add line; none a recorded veto, a rule or a declined proposal already covers."""
+    ledger = _ledger(p, ledger)
+    stems = lambda t: list(dict.fromkeys(s for s in (_stem(w) for w in _key_words(t) if w not in _CORRECTION_STOP)
+                                         if s not in c._VETO_STOP))
+    sets = [(t, stems(t)) for t in (str((e.get("data") or {}).get("text") or "") for e in ledger
+                                     if e.get("event") == "correction")]
+    prompts = [stems(str((e.get("data") or {}).get("text") or "")) for e in ledger if e.get("event") == "prompt"]
+    df, covered = Counter(x for ps in prompts for x in ps), _covered(p)
+    out, seen = [], set()
+    for w in dict.fromkeys(x for _, ws in sets for x in ws):
+        group = [(s, ws) for s, ws in sets if w in ws]
+        shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)
+                 and df[x] <= max(len(group), len(prompts) // 10)][:3]  # a word they say all the time ties nothing
+        if len(group) < CORRECTION_REPEATS or not shape or tuple(sorted(shape)) in seen \
+                or any(h <= set(shape) for h in covered) \
+                or any(c.rule_hits(p, on, " ".join(shape)) for on in ("bash", "path")):
+            continue
+        seen.add(tuple(sorted(shape)))
+        said = c.fit(c.plain(group[-1][0]), 160)
+        pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(x)})" for x in shape)  # as fm rule add --from-veto
+        out.append({"words": shape, "count": len(group), "said": said, "type": classify(" ".join(shape)),
+                    "suggest": f"fm rule add {shlex.quote(pattern)} --warn --why {shlex.quote(said)}"})
+    return out
+
+
+def norm_ask(q):
+    return re.sub(r"[\W_]+", " ", q.lower()).strip()
+
+
+def ask_key(q, options):
+    return norm_ask(q) + "|" + "|".join(sorted(norm_ask(o) for o in options or []))
+
+
+def precedent(p, q, options=None):
+    """T-1064: (answer, n) when at least 2 earlier user answers (--answer is the user's alone: the guard) to this ask
+    (same normalized question and options) agree and none differ, the answer is one of the options, and the proxy's
+    own record is good; else None. The record: two overruled proxies, or over 20% once 3 exist, stops it."""
+    key, answers, proxied, overruled = ask_key(q, options), [], 0, 0
+    if not norm_ask(q):
+        return None
+    kinds = ("ask_answered", "proxy_answer", "proxy_overruled")
+    for e in c.ledger_events(p, kinds, since=c.iso(time.time() - 180 * 86400)):
+        d = e.get("data") or {}
+        if e.get("event") == "ask_answered" and d.get("q") == key:
+            answers.append(d.get("a"))
+        proxied += e.get("event") == "proxy_answer"
+        overruled += e.get("event") == "proxy_overruled"
+    if len(answers) < 2 or len(set(answers)) != 1 or (options and answers[0] not in options):
+        return None
+    if overruled >= 2 or (proxied >= 3 and overruled / proxied > 0.2):
+        return None
+    return answers[0], len(answers)
 
 
 def taste_default(p, options):
@@ -297,24 +514,41 @@ def cmd_taste(args):
                          ("Your rework of an agent's change (taste to learn from):\n" + "\n".join(
                              f"  {f} after {t}: {s} ({h})" for f, t, s, h in rows[-args.n * 2:])) if rows else
                          "No commit of yours reworked an agent's file within two weeks of it.")
-    props = proposals(p)
+    ledger = c.ledger_tail(p, 3000)
+    props, corr = proposals(p, ledger), correction_clusters(p, ledger)
     if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
-        pick = props if args.which is None else props[args.which - 1:args.which] if args.which > 0 else []
+        # T-1042: a bare adopt or decline takes the steer proposals; a correction cluster only by its N (numbered on)
+        pick = props if args.which is None else (props + corr)[args.which - 1:args.which] if args.which > 0 else []
+        if args.action == "compile" and not args.which:  # T-1063: one rule, named; never every proposal at once
+            raise fmcli.UsageError("fm taste compile N: name the proposal (fm taste lists them)")
+        if args.block and (args.action != "compile" or any("suggest" in x for x in pick)):
+            raise fmcli.UsageError("--block is for fm taste compile N on a steer proposal; a correction compiles to a warn")
         if not pick:
-            raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " "))
-        if args.action == "adopt":
+            raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " ")
+                                   + (" (a correction is taken by its number)" if corr and args.which is None else ""))
+        if args.action == "compile":  # T-1063: the steer's type decides the rule; the proposal is then covered by it
+            try:
+                compile_rule(p, pick[0], args.block)
+            except ValueError as e:
+                raise fmcli.UsageError(str(e))
+            n = len(c.rules(p))
+            kind = "block" if args.block else "warn"
+            done = f"{kind} rule {n} added (fm rule rm {n} is yours to run)"
+        elif args.action == "adopt":
             for x in pick:
-                c.add_veto(p, f"{x['said']} (steered {x['count']} times)", words=x["words"])
+                how = "corrected" if "suggest" in x else "steered"
+                c.add_veto(p, f"{x['said']} ({how} {x['count']} times)", words=x["words"])
         else:
             with c.lock(p.dir):
                 meta = c.read_meta(p)
                 meta["taste_declined"] = ((meta.get("taste_declined") or []) + [x["words"] for x in pick])[-c.VETOES_KEEP:]
                 c.write_meta(p, meta)
-        c.log_event(p, f"taste_{args.action}", data={"words": [x["words"] for x in pick]}, session=c.session_id())
+        c.log_event(p, "steer_compiled" if args.action == "compile" else f"taste_{args.action}",
+                    data={"words": [x["words"] for x in pick]}, session=c.session_id())
         return fmcli.out(args, {"action": args.action, "proposals": pick},
-                         f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
+                         done if args.action == "compile" else f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
                          + "; ".join(f"never {' '.join(x['words'])}" for x in pick) + ".")
-    t = dict(taste(p, args.n), proposed=props)
+    t = dict(taste(p, args.n, ledger), proposed=props, corrections=corr)
     lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]
     for head, rows in (("Dropped", [f"{d['id']} {d['title']}" + (f" — {d['why']}" if d["why"] else "") for d in t["dropped"]]),
                        ("Steered", t["steered"]), ("Corrected", t["corrected"])):
@@ -329,6 +563,12 @@ def cmd_taste(args):
                   for i, x in enumerate(props, 1)]
         lines += ["Ask the user once (one AskUserQuestion, adopt first): yes → fm taste adopt (all) or fm taste adopt N; "
                   "no → fm taste decline N."]
+    if corr:  # T-1042
+        lines += ["Corrections met twice (a rule to propose):"]
+        lines += [f"  {i}. {' '.join(x['words'])} — corrected {x['count']} times, last: {x['said']}\n     {x['suggest']}"
+                  for i, x in enumerate(corr, len(props) + 1)]
+        lines += ["Ask the user once (one AskUserQuestion, the rule first): yes → run its fm rule add line; "
+                  "no → fm taste decline N."]
     fmcli.out(args, t, "\n".join(lines))
 
 
@@ -342,6 +582,21 @@ _WORD = re.compile(r"[a-z0-9]{3,}")
 
 def _words(title):
     return {w[:5] for w in _WORD.findall(title.lower())}
+
+
+IDEA_SECTIONS = re.compile(r"(?m)^## (?:Round \d+|Deepened: .*|Cross-bred)\s*$")
+
+
+def seen_titles(text):
+    """T-1056: the idea titles of an ideas.md, read only from its idea sections (Round, Deepened, Cross-bred): the
+    per-lens, coverage and kill bullets below them are tallies, not ideas."""
+    out, on = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            on = bool(IDEA_SECTIONS.match(line))
+        elif on and line.startswith("- "):
+            out.append(NEAR.sub("", line[2:]).strip())
+    return out
 
 
 def _is_new(title, seen):
@@ -433,7 +688,7 @@ def cmd_ideas(args):
             pack += "\n\n## Past lessons (provocations for the oblique lens)\n" + "\n".join(
                 f"- {c.fit(c.plain(x), 200)}" for x in lessons)
     deepen = max(0, getattr(args, "deepen", 0) or 0)
-    pace = fmbudget.degrade() if deepen else None
+    pace = fmbudget.degrade(p) if deepen else None
     if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
         print(f"fm: usage ahead of pace ({pace}): --deepen dropped (0 rounds, optional work); the lenses still run",
               file=sys.stderr)
@@ -456,7 +711,7 @@ def cmd_ideas(args):
     for path in args.seen or []:  # earlier brainstorms' ideas.md: don't repeat them, go past them (recursion)
         try:
             with open(path, encoding="utf-8") as f:
-                old = [NEAR.sub("", m.group(1)).strip() for m in re.finditer(r"(?m)^- (?!\w[\w ]*: \d+$)(.+)$", f.read())]
+                old = seen_titles(f.read())
         except OSError as e:
             raise fmcli.UsageError(f"can't read --seen {path}: {e.strerror}")
         for t in old:
@@ -514,6 +769,8 @@ def cmd_ideas(args):
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
         f.write("# Ideas by round (deduplicated titles; details in the lens files; \"near T-…\" names a finished task "
                 "that shares most of an idea's words)\n"
+                + f"Ideas: {len(titles) - known} distinct (the bullets under Round, Deepened and Cross-bred; the tallies "
+                  f"below are counts, not ideas)\n"
                 + "".join(f"\n## Round {i}\n" + "".join(map(item, ts)) for i, ts in enumerate(by_round, 1))
                 + "".join(f"\n## Deepened: {cat}\n" + "".join(map(item, ts)) for cat, ts in deepened.items())
                 + "".join(f"\n## Cross-bred\n" + "".join(map(item, bred)) for _ in [0] if bred)

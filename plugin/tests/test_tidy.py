@@ -160,8 +160,9 @@ class Apply(TidyCase):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")
         old = {"ts": "2026-01-15T00:00:00Z", "session_id": None, "project": self.p.slug, "task": None,
                "event": "note", "data": {"pad": "y" * 300}}
-        with open(ledger, "a") as f:
-            f.write((json.dumps(old) + "\n") * 4000)
+        live = read_text(ledger)
+        with open(ledger, "w") as f:  # past months before this month's lines, as a ledger lands (T-1099)
+            f.write((json.dumps(old) + "\n") * 4000 + live)
         self.assertIn("roll_ledger", self.kinds(self.tidy()))
         self.tidy("--apply")
         monthly = read_text(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"))
@@ -175,6 +176,153 @@ class Apply(TidyCase):
         os.makedirs(other)
         self.fm("init", other)
         self.assertEqual(len(self.tidy("--all")["projects"]), 2)
+
+
+class StalePlans(TidyCase):
+    # T-1077: a queued brief whose scope file changed (or went, or whose dependency was dropped) since it was planned
+    def plan(self, title, *args):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *args).stdout
+        tid = re.search(r"T-\d{4}", out).group(0)
+        age(self.p, tid, 1)  # planned a day ago: what changes from now on came after it
+        return tid
+
+    def write(self, rel, epoch=None, root=None):
+        path = os.path.join(root or self.repo, rel)
+        with open(path, "a") as f:
+            f.write("x\n")
+        if epoch:
+            os.utime(path, (epoch, epoch))
+
+    def commit(self, *paths, days=0):
+        import subprocess
+        t = f"@{int(time.time() - days * 86400)} +0000"
+        env = dict(os.environ, GIT_AUTHOR_DATE=t, GIT_COMMITTER_DATE=t)
+        subprocess.run(["git", "-C", self.repo, "add", "-A", "--", *paths], check=True, env=env)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "x"], check=True, env=env)
+
+    def stale(self, cwd=None):
+        out = self.fm("tidy", "--json", cwd=cwd, env={"HOME": self.fake_home}).stdout
+        return [f["detail"] for f in json.loads(out)["findings"] if f["kind"] == "stale_plan"]
+
+    def test_an_untracked_scope_file_newer_than_the_plan_flags_a_replan_until_a_log_line_says_it_was_reread(self):
+        tid = self.plan("change a", "--scope", "a.py")
+        self.assertEqual(c.find_brief(self.p, tid).status, "planned")
+        self.write("a.py", time.time() - 2 * 86400)
+        self.assertEqual(self.stale(), [], "a scope file older than the plan is fine")
+        self.write("a.py", time.time() - 60)
+        self.assertTrue(any(tid in d and "a.py changed since it was planned" in d for d in self.stale()), self.stale())
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("stale_plan", text)
+        self.assertIn(f'fm task log {tid} "plan re-read: ', text, "the fix is a command someone can run")
+        self.assertIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+        self.assertIn("Plans to re-plan", self.fm("digest").stdout)
+        self.fm("task", "log", tid, "plan re-read: still valid")
+        self.assertEqual(self.stale(), [], "the log line bumps updated, so the item clears")
+        age(self.p, tid, 1, status="done")
+        self.assertEqual(self.stale(), [], "only queued plans")
+        self.assertNotIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+
+    def test_a_tracked_file_counts_by_its_commit_not_its_checkout_mtime_and_a_lane_sees_the_main_checkout(self):
+        import subprocess
+        self.write("b.py")
+        self.commit("b.py", days=2)
+        tid = self.plan("change b", "--scope", "b.py")
+        os.utime(os.path.join(self.repo, "b.py"))  # what a fresh clone or a checkout leaves: mtime now
+        self.assertEqual(self.stale(), [], "a clean file committed before the plan isn't stale, whatever its mtime")
+        lane = os.path.join(self.tmp, "lane")
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-q", "-b", "lane", lane], check=True)
+        self.write("b.py", root=lane)  # the lane's own uncommitted edit, its files all with checkout mtimes
+        self.assertEqual(self.stale(cwd=lane), [], "run from a lane, the main checkout is what the plan is against")
+        self.write("b.py")
+        self.commit("b.py")
+        for cwd in (None, lane):
+            self.assertTrue(any(tid in d and "b.py changed since it was planned" in d for d in self.stale(cwd)), cwd)
+
+    def test_a_scope_file_gone_or_a_dependency_dropped_flags_it_but_a_file_still_to_create_doesnt(self):
+        self.write("b.py")
+        self.write("d.py")
+        self.commit("b.py", "d.py", days=2)
+        gone = self.plan("change b", "--scope", "b.py")
+        deleted = self.plan("change d", "--scope", "d.py")
+        new = self.plan("create c", "--scope", "c.py", "--scope", "src/**/*.py")
+        dep = self.plan("dependency")
+        after = self.plan("after it", "--depends", dep)
+        self.assertEqual(self.stale(), [])
+        os.remove(os.path.join(self.repo, "b.py"))  # tracked in HEAD, absent
+        os.remove(os.path.join(self.repo, "d.py"))
+        self.commit("d.py")  # deleted in a commit after the plan
+        self.fm("task", "drop", dep, "not needed")
+        found = self.stale()
+        self.assertTrue(any(gone in d and "b.py is gone" in d for d in found), found)
+        self.assertTrue(any(deleted in d and "d.py is gone" in d for d in found), found)
+        self.assertTrue(any(after in d and f"{dep} was dropped" in d for d in found), found)
+        self.assertFalse(any(new in d for d in found), "a scope file the plan creates isn't missing")
+
+
+class DeferredTriage(TidyCase):
+    # T-1048: each deferred brief gets drop / do / ask proposed; nothing is applied
+    def defer(self, title, days, revisit=None, scope=None):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *(["--scope", scope] if scope else [])).stdout
+        tid = re.search(r"T-\d{4}", out).group(0)
+        age(self.p, tid, days, status="deferred")
+        if revisit:
+            b = c.find_brief(self.p, tid)
+            b.meta["revisit"] = revisit
+            c.save_brief(self.p, b, touch=False)
+        return tid
+
+    def verdicts(self):
+        return {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+
+    def touch(self, rel, commit=False):
+        import subprocess
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write("x\n")
+        if commit:
+            subprocess.run(["git", "-C", self.repo, "add", rel], check=True)
+            subprocess.run(["git", "-C", self.repo, "commit", "-qm", rel], check=True)
+
+    def test_edge_cases(self):
+        self.touch("live.py")
+        self.touch("src_a.py")
+        new = self.defer("creates a file", 120, scope="plugin/lib/fmnew.py")  # never existed: the plan creates it
+        noscope = self.defer("no scope", 120)
+        future = self.defer("future", 120, revisit="2999-01-01", scope="nothere.py")
+        glob = self.defer("glob", 120, scope="src_*.py")  # matches something: live
+        deadglob = self.defer("dead glob", 120, scope="zzz_*.py")  # matches nothing, never did
+        edge89 = self.defer("89", 89)
+        edge91 = self.defer("91", 91)
+        self.touch("w.py", commit=True)
+        os.remove(os.path.join(self.repo, "w.py"))
+        gone = self.defer("was tracked", 120, scope="w.py")
+        changed = self.defer("file changed", 5, revisit="when live.py changes @" + "0" * 8)
+        same = self.defer("file same", 5, revisit="when live.py changes @" + c.file_digest(os.path.join(self.repo, "live.py")))
+        self.assertEqual(self.verdicts(), {new: "ask", noscope: "drop", future: "ask", glob: "ask", deadglob: "ask",
+                                           edge89: "ask", edge91: "drop", gone: "drop", changed: "do", same: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertEqual(text.count("propose ask"), 0, "asks collapse into one line")
+        self.assertRegex(text, r"\d+ deferred briefs to decide: T-")
+        d = self.fm("digest").stdout
+        self.assertLess(d.index(f"Deferred: {changed} → do"), d.index("→ drop"), "do first, then drop, then ask")
+        self.assertIn("more: fm tidy", d)
+
+    def test_old_with_a_dead_scope_is_drop_a_due_one_is_do_and_the_rest_ask_and_nothing_changes(self):
+        with open(os.path.join(self.repo, "live.py"), "w") as f:
+            f.write("x\n")
+        self.touch("gone.py", commit=True)
+        os.remove(os.path.join(self.repo, "gone.py"))
+        dead = self.defer("dead", 120, scope="gone.py")
+        due = self.defer("due", 10, revisit="2020-01-01")
+        rest = self.defer("rest", 50, scope="live.py")
+        young = self.defer("young", 1, scope="live.py")  # nobody touched live.py, but nothing says it is ready
+        got = {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+        self.assertEqual(got, {dead: "drop", due: "do", rest: "ask", young: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("deferred_triage", text)
+        self.assertIn(f'fm task drop {dead} "', text)
+        self.assertIn(f"Deferred: {dead} → drop", self.fm("digest").stdout)
+        for t in (dead, due, rest, young):
+            self.assertEqual(c.find_brief(self.p, t).status, "deferred")
 
 
 class TidyStateBackup(TidyCase):
@@ -202,3 +350,202 @@ class TidyStateBackup(TidyCase):
         self.assertEqual(len(left), 5)
         self.assertNotIn("20200101T000000Z.tar.gz", left)
         self.assertTrue(all(n.endswith(".tar.gz") for n in left))
+
+
+class TidyHygiene(TidyCase):
+    # T-1072: fixes unused for 60 days (or losing) are listed and retired on --apply; unused cards are only listed
+    def seed_fixes(self):
+        import fmfixes
+        self.fm("fix", "add", "stale-sig: boom", "--do", "run the old thing")
+        self.fm("fix", "add", "fresh-sig: bang", "--do", "run the new thing")
+        self.fm("fix", "add", "losing-sig: nope", "--do", "run the wrong thing")
+        ids = {f["sig"]: f["id"] for f in fmfixes.known(self.p)}
+        stamp = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {ids["stale-sig: boom"]: {"worked": 1, "last": stamp(time.time() - 90 * 86400)},
+                                 ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())},
+                                 ids["losing-sig: nope"]: {"misses": 3, "last": stamp(time.time())}}}, f)
+
+    def sigs(self):
+        return sorted(f["sig"] for f in self.fm_json("fix", "list"))
+
+    def test_stale_by_age_is_listed_never_deleted_and_a_losing_fix_is_removed_with_a_copy(self):
+        self.seed_fixes()
+        found = {f["kind"] + ":" + f["detail"] for f in self.tidy()["findings"] if f["kind"] in ("stale_fix", "losing_fix")}
+        self.assertEqual(len(found), 2, found)
+        self.assertTrue(any("stale-sig" in d for d in found) and any("losing-sig" in d for d in found))
+        self.assertEqual(len(self.sigs()), 3)  # a dry run changes nothing
+        self.tidy("--apply")
+        self.assertEqual(self.sigs(), ["fresh-sig: bang", "stale-sig: boom"])
+        kept = read_text(os.path.join(self.p.dir, "archive", "fixes-removed.md"))
+        self.assertIn("losing-sig: nope", kept)
+        self.assertRegex(kept, r"\d{4}-\d\d-\d\d")
+
+    def test_quiet_rules_and_ignored_hints_are_listed_not_removed(self):
+        # T-1115: a rule no call matched in 60 days, and hints shown again and again without use, are retire candidates
+        self.fm("rule", "add", "dropdb", "--why", "never drop the database")
+        self.fm("rule", "add", "npm publish", "--why", "releases go through CI", "--warn")
+        path = os.path.join(self.p.dir, "rules.json")
+        with open(path) as f:
+            rules = json.load(f)
+        old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 90 * 86400))
+        for r in rules:
+            r["at"] = old
+        with open(path, "w") as f:
+            json.dump(rules, f)
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish --dry-run"}})
+        with open(os.path.join(self.p.dir, "hints.json"), "w") as f:
+            json.dump({"ignored": {"batch": 9, "skills": 1}}, f)
+        found = {f["kind"]: f["detail"] for f in self.tidy("--apply")["findings"]}
+        self.assertIn("dropdb", found.get("quiet_rule", ""))
+        self.assertNotIn("npm publish", found.get("quiet_rule", ""))  # it matched a call just now
+        self.assertIn("batch", found.get("ignored_hint", ""))
+        self.assertNotIn("skills", found.get("ignored_hint", ""))
+        self.assertEqual(len(self.fm_json("rule", "list")), 2, "only the user removes a rule")
+
+    def test_a_fix_synced_from_the_repo_is_not_touched(self):
+        import fmfixes
+        rec = {"sig": "synced-sig: x", "do": "do it"}
+        with open(os.path.join(self.p.dir, "fixes.md"), "w") as f:
+            f.write(fmfixes._line(rec))
+        fid = fmfixes._fid(rec)
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {fid: {"misses": 5}}}, f)
+        found = [x for x in self.tidy("--apply")["findings"] if "synced-sig" in x["detail"]]
+        self.assertTrue(found and "shared" in found[0]["detail"])
+        self.assertEqual(self.sigs(), ["synced-sig: x"])
+
+    def test_unused_cards_are_those_the_map_picked_for_this_project(self):
+        def unused():
+            return [x for x in self.tidy()["findings"] if x["kind"] == "unused_card"]
+        self.assertEqual(unused(), [])  # no map, no claim
+        with open(os.path.join(self.p.dir, "map.json"), "w") as f:
+            json.dump({"lib_cards": [{"name": "alpha", "detect": []}, {"name": "beta", "detect": []}]}, f)
+        found = unused()
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["detail"].startswith("2 of 2"), found[0]["detail"])
+        c.log_event(self.p, "enforce", data={"kind": "card_injected", "card": "alpha"})
+        found = unused()
+        self.assertTrue(found[0]["detail"].startswith("1 of 2") and "beta" in found[0]["detail"]
+                        and "alpha" not in found[0]["detail"], found[0]["detail"])
+        self.tidy("--apply")  # listed only
+
+
+class DecisionSunset(TidyCase):
+    # T-1084: a decision can expire; the digest lists the week's decisions, not only costly ones
+    def test_a_past_sunset_is_expired_in_tidy_and_the_digest_lists_every_decision(self):
+        bad = self.fm("decide", "x", "--sunset", "2020-13-45", check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.fm("decide", "use the old cache", "--why", "temporary", "--sunset", "2020-01-01")
+        self.fm("decide", "use sqlite for state", "--why", "simple")
+        self.assertIn("sunset", self.fm("tidy", env={"HOME": self.fake_home}).stdout)
+        d = self.fm("digest").stdout
+        self.assertIn("Decided without you:", d)
+        self.assertIn("use sqlite for state", d)
+        self.assertIn("use sqlite for state", " ".join(self.fm_json("digest")["decided"]))
+
+    def test_a_later_row_settles_the_sunset_and_bad_or_misplaced_flags_are_refused(self):
+        for bad in ("20200101", "2020-W01-1"):
+            self.assertNotEqual(self.fm("decide", "x", "--sunset", bad, check=False).returncode, 0, bad)
+        for extra in (["--list"], ["--digest"], ["--ask", "q?", "--default", "a"]):
+            self.assertNotEqual(self.fm("decide", "x", "--sunset", "2030-01-01", *extra, check=False).returncode, 0, extra)
+        self.assertNotEqual(self.fm("decide", "--sunset", "2030-01-01", check=False).returncode, 0)
+        r = self.fm("decide", "use the old cache", "--sunset", "2020-01-01")
+        self.assertIn("already expired", r.stdout)
+        self.assertIn("sunset", self.fm("tidy", env={"HOME": self.fake_home}).stdout)
+        self.fm("decide", "keep the old cache for now", "--revisited", "old cache")
+        self.assertNotIn("sunset", self.fm("tidy", env={"HOME": self.fake_home}).stdout)
+
+    def test_a_costly_decision_is_listed_once_in_the_digest(self):
+        self.fm("decide", "ship without review", "--kind", "costly")
+        self.assertEqual(self.fm("digest").stdout.count("ship without review"), 1)
+
+
+class Rollback(TidyCase):
+    def test_an_upgrade_snapshots_the_state_and_rollback_restores_a_deleted_brief(self):
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        with open(os.path.join(c.state_dir(), "seen-version"), "w") as f:
+            f.write("0.1")
+        self.hook("SessionStart", {"source": "startup"})
+        names = os.listdir(os.path.join(c.state_dir(), "snapshots"))
+        self.assertEqual(len(names), 1)
+        self.assertTrue(names[0].startswith("0.1-"))
+        self.assertIn(names[0], self.fm("rollback", "--list").stdout)
+        brief = c.brief_paths(self.p)[0]
+        self.assertTrue(os.path.exists(brief))
+        os.remove(brief)
+        r = self.fm("rollback", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--yes", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(brief))
+        self.fm("decide", "after the snapshot")
+        self.fm("rollback", "--yes")
+        self.assertTrue(os.path.exists(brief))
+        self.assertIn("rollback", read_text(os.path.join(self.p.dir, "ledger.jsonl")))
+        self.assertIn("after the snapshot", read_text(os.path.join(self.p.dir, "ledger.jsonl")))  # never restored
+        self.fm("verify-ledger")
+        listing = json.loads(self.fm("rollback", "--list", "--json").stdout)
+        self.assertEqual(sorted(x["pre_rollback"] for x in listing), [False, True])
+
+    def snap(self):
+        with open(os.path.join(c.state_dir(), "seen-version"), "w") as f:
+            f.write("0.1")
+        self.hook("SessionStart", {"source": "startup"})
+
+    def test_consent_revoked_since_the_snapshot_stays_revoked(self):
+        meta = c.read_meta(self.p)
+        meta["standing"] = {"core": {"at": "2026-01-01T00:00:00Z", "why": "t"}}
+        c.write_meta(self.p, meta)
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        self.snap()
+        self.fm("standing", "off")
+        self.fm("rollback", "--yes")
+        self.assertNotIn("standing", c.read_meta(self.p))
+
+    def test_a_brief_archived_since_does_not_come_back(self):
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        self.snap()
+        brief = c.brief_paths(self.p)[0]
+        arch = os.path.join(self.p.dir, "archive", "2026-10")
+        os.makedirs(arch)
+        os.replace(brief, os.path.join(arch, os.path.basename(brief)))
+        self.fm("rollback", "--yes")
+        self.assertEqual(c.brief_paths(self.p), [])
+
+    def test_an_abbreviated_yes_is_an_error(self):
+        self.snap()
+        self.assertNotEqual(self.fm("rollback", "--ye", check=False).returncode, 0)
+        self.assertEqual(self.fm("rollback", "--list", check=False).returncode, 0)
+
+    def test_a_tampered_snapshot_is_refused(self):
+        self.snap()
+        d = os.path.join(c.state_dir(), "snapshots")
+        path = os.path.join(d, os.listdir(d)[0])
+        with open(path, "wb") as f:
+            f.write(b"not a tarball")
+        r = self.fm("rollback", "--yes", check=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+class UnblockedByGit(TidyCase):
+    def test_a_fresh_mtime_is_no_change_but_a_commit_is(self):
+        # T-1106: a fresh clone or a builder's worktree gave every file a new mtime, so every blocked task read
+        # "changed since it was blocked"
+        import subprocess
+        import time
+        import fmtidy
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 1\n")
+        subprocess.run(["git", "-C", self.repo, "add", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "a"], check=True)
+        tid = self.fm_json("task", "new", "Wait", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")["id"]
+        self.fm("task", "block", tid, "waiting on a.py to settle")
+        time.sleep(1.1)
+        later = time.time() + 30
+        os.utime(os.path.join(self.repo, "a.py"), (later, later))  # what a clone does
+        b = c.find_brief(self.p, tid)
+        self.assertIsNone(fmtidy.unblocked(self.p, b, {}))
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 2\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "a changed"], check=True)
+        self.assertIn("a.py changed", fmtidy.unblocked(self.p, c.find_brief(self.p, tid), {}) or "")

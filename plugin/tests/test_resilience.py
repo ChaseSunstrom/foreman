@@ -98,13 +98,13 @@ class ViewsRepair(ForemanTestCase):
 
 
 class Mutation(ForemanTestCase):
-    SCRIPT = os.path.join(PLUGIN, "tests", "mutate_guard.py")
-
-    def test_mutants_are_listed_and_one_is_judged(self):
-        listed = subprocess.run([sys.executable, self.SCRIPT, "--list", "--max", "5"], capture_output=True, text=True)
-        self.assertEqual(listed.returncode, 0, listed.stderr)
-        self.assertGreaterEqual(len([x for x in listed.stdout.splitlines() if "fmguard.py:" in x]), 1)
-        ran = subprocess.run([sys.executable, self.SCRIPT, "--max", "1", "--seed", "3"], capture_output=True, text=True,
-                             timeout=600)
-        self.assertEqual(ran.returncode, 0, ran.stderr)
-        self.assertRegex(ran.stdout, r"(killed|survived)")
+    def test_the_real_guard_has_flip_and_drop_sites(self):
+        # T-0496's script became fm bench guard --mutate --flip (T-1121); judging is tested on fixtures (test_replay)
+        import fmguard
+        import fmmutate
+        with open(os.path.join(PLUGIN, "lib", "fmguard.py"), encoding="utf-8") as f:
+            src = f.read()
+        flips = fmmutate.flips(src)
+        self.assertGreater(len(flips), 50)
+        self.assertTrue(all(m["src"] != src for m in flips[:20]))
+        self.assertGreater(len(fmmutate.mutants(src, fmguard.CATEGORIES)), 30)

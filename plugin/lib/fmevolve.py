@@ -181,6 +181,9 @@ def cmd_evolve(args):
         c.log_event(p, "evolve", data=dict({k: res.get(k) for k in ("kept", "branch", "target", "why")},
                                            model=fmnight.current_model(p)),  # T-0734: lesions per model
                     session=fmcli.session())
+    if args.moves and res["kept"]:  # T-1059
+        import fmtrials
+        fmtrials.add(p, f"evolve {res.get('target', args.target)}", args.moves, args.by)
     text = [f"evolve {res.get('target', args.target)}: {res['why']}"] + [f"  {x}" for x in res["gate"]]
     if res["kept"]:
         text.append(f"kept on {res['branch']} ({res['worktree']}): " + ("better" if res["improved"] else

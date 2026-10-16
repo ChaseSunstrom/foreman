@@ -61,6 +61,110 @@ class Outcomes(Base):
         self.assertEqual(data["tasks"][held]["fate"], "held")
 
 
+class Survival(Base):
+    """T-1060 (wild C1): each close graded by a 30-day window: survived, lost (and why, when), settling (days left);
+    a settle event per grade, the digest's line, the pane's history, and the reports that read the grades."""
+    def created(self, tid, days):
+        b = c.find_brief(self.p, tid)
+        old = c.iso(time.time() - days * 86400)
+        with open(b.path, encoding="utf-8") as f:
+            text = f.read()
+        with open(b.path, "w", encoding="utf-8") as f:
+            f.write(re.sub(r"(?m)^created: .*$", f"created: {old}", text))
+
+    def setup_five(self):
+        ok = self.done("Old and fine")
+        self.age(ok, 40)
+        late = self.done("Old, fixed late")
+        self.age(late, 40)
+        self.fm("capture", f"Late fix for {late}", "--type", "FIX", "--tier", "S")  # 40 days on: outside the window
+        early = self.done("Old, fixed early")
+        self.age(early, 40)
+        self.fm("capture", f"Crash after {early}", "--type", "FIX", "--tier", "S")
+        self.created(c.load_briefs(self.p)[-1].id, 35)  # 5 days after its close: inside
+        fresh = self.done("Recent and fine")
+        gone = self.done("Recent then reverted")
+        self.commit(f"Recent then reverted ({gone})")
+        self.git("revert", "--no-edit", "HEAD")
+        return ok, late, early, fresh, gone
+
+    def test_the_window_grades_each_close(self):
+        ok, late, early, fresh, gone = self.setup_five()
+        t = json.loads(self.fm("outcomes", "--json").stdout)["tasks"]
+        self.assertEqual(t[ok]["survival"], "survived")
+        self.assertEqual(t[late]["survival"], "survived")  # a fix 40 days on is a fate, not a loss in the window
+        self.assertEqual(t[late]["fate"], "fixed later")
+        self.assertEqual(t[early]["survival"], "lost")
+        self.assertEqual(t[gone]["survival"], "lost")
+        self.assertEqual(t[fresh]["survival"], "settling")
+        self.assertGreater(t[fresh]["days_left"], 25)
+        out = self.fm("outcomes").stdout
+        self.assertIn("Survival (30 days): 2 survived, 2 lost, 1 settling", out)
+        self.assertIn("days since a lost task: 0", out)
+
+    def test_settling_logs_one_grade_per_task_and_shows_in_digest_and_history(self):
+        ok, late, early, fresh, gone = self.setup_five()
+        self.assertIn("4 graded", self.fm("outcomes", "--settle").stdout)
+        self.assertIn("0 graded", self.fm("outcomes", "--settle").stdout)  # once per task
+        graded = [e for e in c.ledger_tail(self.p, 2000) if e.get("event") == "outcome"]
+        self.assertEqual(sorted(e["task"] for e in graded), sorted([ok, late, early, gone]))
+        self.assertIn("Survival (30 days)", self.fm("digest").stdout)
+        hist = self.fm_json("ui")["history"]
+        self.assertTrue(any(h["text"] in ("survived 30 days", "lost") for h in hist), hist[-6:])
+
+    def test_grades_read_the_archived_ledger_and_smoke_is_no_loss(self):
+        # review: corrections and earlier grades rolled into archive/ledger-YYYY-MM.jsonl still count; a failing smoke
+        # run (it covers the whole UI) never marks a task lost
+        ok, late, early, fresh, gone = self.setup_five()
+        c.log_event(self.p, "correction", task=ok, data={"text": "no, that broke the parser"})
+        c.log_event(self.p, "smoke", data={"defects": 2})
+        live = os.path.join(self.p.dir, "ledger.jsonl")
+        os.makedirs(os.path.join(self.p.dir, "archive"), exist_ok=True)
+        with open(live) as f:
+            lines = f.readlines()
+        for e in map(json.loads, lines[-2:]):  # backdate them into the window, then roll them out
+            e["ts"] = c.iso(time.time() - 38 * 86400)
+            with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "a") as f:
+                f.write(json.dumps(e) + "\n")
+        with open(live, "w") as f:
+            f.writelines(lines[:-2])
+        t = json.loads(self.fm("outcomes", "--json").stdout)["tasks"]
+        self.assertEqual(t[ok]["survival"], "lost")
+        self.assertEqual(t[ok]["lost_by"], "corrected")
+        self.assertEqual(t[fresh]["survival"], "settling", "smoke is no loss")
+        self.assertIn("4 graded", self.fm("outcomes", "--settle").stdout)
+        with open(live) as f:
+            settled = [ln for ln in f if '"outcome"' in ln]
+        with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "a") as f:
+            f.writelines(settled)
+        with open(live) as f:
+            rest = [ln for ln in f if '"outcome"' not in ln]
+        with open(live, "w") as f:
+            f.writelines(rest)
+        self.assertIn("0 graded", self.fm("outcomes", "--settle").stdout, "a rolled grade still counts as settled")
+
+    def test_history_shows_only_losses(self):
+        self.setup_five()
+        self.fm("outcomes", "--settle")
+        texts = [h["text"] for h in self.fm_json("ui")["history"]]
+        self.assertIn("lost", texts)
+        self.assertNotIn("survived 30 days", texts)
+
+    def test_empty_claims_say_so(self):
+        self.assertIn("nothing graded yet", self.fm("outcomes", "--claims").stdout)
+
+    def test_reports_read_the_grades(self):
+        ok, late, early, fresh, gone = self.setup_five()
+        self.fm("task", "drop", self.fm_json("task", "new", "Abandoned", "--type", "FEATURE", "--tier", "S")["id"], "no")
+        self.assertIn("Survival by close grade", self.fm("outcomes", "--claims").stdout)
+        regret = self.fm("outcomes", "--regret").stdout
+        self.assertIn(early, regret)
+        grave = self.fm("outcomes", "--graveyard").stdout
+        self.assertIn(gone, grave)
+        self.assertIn("Abandoned", grave)
+        self.assertIn("corrected during the task", self.fm("outcomes", "--seen").stdout)
+
+
 class Lessons(Base):
     def test_lessons_get_ids_shown_counts_and_flags(self):
         a = self.done("Quote shell paths in the deploy script", "FEATURE", "true", "--lesson", "quote every path")
@@ -136,8 +240,8 @@ class Reopen(Base):
         self.fm("task", "new", "Waits on a person", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         self.fm("task", "block", "T-0004", "needs the owner's phone")
         self.fm("task", "drop", "T-0001", "done elsewhere")
-        later = time.time() + 5
-        os.utime(os.path.join(self.repo, "lib", "shim.py"), (later, later))
+        time.sleep(1.1)
+        self.commit("shim fixed upstream", "lib/shim.py", "X = 2\n")  # T-1106: a real change, not a new mtime
         self.assertRegex(self.fm("next").stdout, r"2 blocked task\(s\) waited on changed.*fm tidy --apply")
         self.fm("tidy", "--apply")
         self.assertEqual(c.find_brief(self.p, "T-0002").status, "planned")

@@ -120,3 +120,97 @@ class SelfDocsModules(Base):
         with open(os.path.join(home, "MASTER.md"), "w") as f:
             f.write("fmcore does things.\n")
         self.assertEqual(fmdoctor.missing_modules(home), ["fmnew"])
+
+
+class CalibrationLedger(Base):
+    """T-1061: closes that keep missing their plan slow the project to approval for M."""
+
+    def close(self, miss):
+        import fmoutcomes
+        fmoutcomes.record_close(self.p, dict(outside=9 if miss else 0))
+
+    def test_a_directory_scope_covers_its_subtree_and_the_start_scope_is_what_counts(self):
+        import fmoutcomes
+        t = self.new("Dir", "FEATURE", "S", "--scope", "src/")
+        self.fm("task", "step", t, "add", "x")
+        self.fm("focus", t)
+        b = c.find_brief(self.p, t)
+        self.assertEqual(b.meta["plan0_scope"], ["src/"])
+        self.fm("task", "set", t, "scope=src/,lib/")  # widening later doesn't move the yardstick
+        self.assertEqual(c.find_brief(self.p, t).meta["plan0_scope"], ["src/"])
+        scope = type("B", (), {"meta": {"scope": b.meta["plan0_scope"]}})
+        self.assertEqual(c.scope_drift(scope, ["src/a/b.py", "src/c.py", "lib/x.py"]), ["lib/x.py"])
+        self.assertFalse(fmoutcomes.missed(dict(outside=2)))
+        self.assertTrue(fmoutcomes.missed(dict(outside=3)))
+
+    def test_predictions_are_bounded_and_fixed_once_work_starts(self):
+        t = self.new("P")
+        for bad in ("0", "10081", "x", "²"):
+            self.assertNotEqual(self.fm("task", "set", t, f"predict_minutes={bad}", check=False).returncode, 0)
+        self.assertNotEqual(self.fm("task", "set", t, "predict_attempts=21", check=False).returncode, 0)
+        self.fm("task", "set", t, "predict_minutes=30")
+        self.fm("focus", t)
+        self.assertNotEqual(self.fm("task", "set", t, "predict_minutes=300", check=False).returncode, 0)
+
+    def test_an_overnight_gap_is_not_work_time(self):
+        import fmoutcomes
+        h = 3600
+        self.assertEqual(fmoutcomes.active_minutes([0, 600, 600 + 10 * h, 600 + 10 * h + 300]), 15)
+
+    def test_garbage_verdicts_are_skipped_and_the_gap_says_to_ask_the_user(self):
+        import fmoutcomes
+        c.update_meta(self.p, plan_verdicts=["x", [1], None, ["bad", True, 1], [c.now(), True]])
+        self.assertEqual(fmoutcomes.plan_window(self.p), [True])
+        c.update_meta(self.p, plan_verdicts="junk")
+        self.assertFalse(fmoutcomes.misses(self.p))
+        m = self.new("M work", "FEATURE", "M")
+        self.assertIn("ask", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
+
+    def test_old_verdicts_are_ignored(self):
+        import fmoutcomes
+        for _ in range(5):
+            self.close(1)
+        self.assertTrue(fmoutcomes.misses(self.p))
+        old = "2020-01-01T00:00:00Z"
+        c.update_meta(self.p, plan_verdicts=[[old, True]] * 5)
+        self.assertFalse(fmoutcomes.misses(self.p))
+
+    def test_slow_blocks_fm_run_and_names_the_way_out(self):
+        import fmserve
+        m = self.new("M work", "FEATURE", "M")
+        for _ in range(5):
+            self.close(1)
+        self.assertIsNone(fmserve._next_runnable(self.p, set(), set()))
+        self.assertIn("fm task set", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
+        self.assertIn("slow", self.fm("autonomy").stdout)
+
+    def test_misses_after_three_of_five_and_not_after_one(self):
+        import fmoutcomes
+        for miss in (1, 0, 1, 0, 1):
+            self.close(miss)
+        self.assertTrue(fmoutcomes.misses(self.p))
+        for _ in range(3):
+            self.close(0)
+        self.assertFalse(fmoutcomes.misses(self.p))  # the last five hold 1 miss
+        self.assertFalse(fmoutcomes.missed(dict(planned=1, changed=9)))  # a count of scope entries is no longer a signal
+
+    def test_minutes_and_attempts_predictions_count(self):
+        import fmoutcomes
+        self.assertTrue(fmoutcomes.missed(dict(predict_minutes=10, minutes=25)))
+        self.assertTrue(fmoutcomes.missed(dict(predict_attempts=1, attempts=2)))
+        self.assertFalse(fmoutcomes.missed(dict(predict_minutes=10, minutes=15, predict_attempts=2, attempts=2)))
+
+    def test_slow_gates_m_not_s_and_the_digest_says_so(self):
+        m, s = self.new("M work", "FEATURE", "M"), self.new("S work")
+        for _ in range(5):
+            self.close(1)
+        a = c.effective_autonomy(self.p)
+        self.assertEqual(a, "slow")
+        self.assertTrue(c.needs_approval(c.find_brief(self.p, m), a))
+        self.assertFalse(c.needs_approval(c.find_brief(self.p, s), a))
+        self.assertFalse(c.needs_approval(c.find_brief(self.p, m), "full"))
+        self.assertIn("Plan calibration: 5 of the last 5", self.fm("digest").stdout)
+        self.assertIn("slows to approval for M", self.fm("digest").stdout)
+        for _ in range(3):
+            self.close(0)
+        self.assertEqual(c.effective_autonomy(self.p), "standard")

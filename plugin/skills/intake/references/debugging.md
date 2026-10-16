@@ -151,7 +151,7 @@ You MUST complete each phase before proceeding to the next.
    - Don't fix multiple things at once
 
 3. **Verify Before Continuing**
-   - Record the result: `fm task hypo ID mark N ruled-out|confirmed --run "<probe>"`
+   - Record the result: `fm task hypo ID mark N ruled-out|confirmed --run "<probe>" --why "<what the probe showed>"`; `fm task hypo ID ruled` lists what this task and earlier tasks on the same scope already refuted
    - Did it work? Yes → Phase 4
    - Didn't work? Form NEW hypothesis
    - DON'T add more fixes on top
@@ -159,7 +159,7 @@ You MUST complete each phase before proceeding to the next.
 4. **When You Don't Know**
    - Say "I don't understand X"
    - Don't pretend to know
-   - Get fresh eyes: `foreman:fm-debugger` with the exact failure, the hypotheses ruled out, and the suspect files; its hypotheses come back as `fm task hypo` lines
+   - Get fresh eyes: `foreman:fm-debugger` with the exact failure, the suspect files and the path `fm task hypo ID ruled --write` prints (the hypotheses ruled out, which it reads first); its hypotheses come back as `fm task hypo` lines
    - Research more
 
 ### Phase 4: Implementation

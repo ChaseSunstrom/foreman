@@ -16,6 +16,32 @@ CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "cre
               "git-destructive", "pipe-shell", "publish", "confirm", "confine", "brief"]
 # confine (T-0234): a builder writes in its worktree only; brief (T-0308): no edits without a task — start one
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
+# fm subcommands that undo or grant what only the user decides: sub -> (the word that makes it so, why, what they type).
+# One table, so the next one isn't forgotten.
+USER_ONLY_FM = {
+    "posture": ("lite", "fm posture lite turns Foreman's hooks off but the guard's: the user decides that",
+                "fm posture lite"),  # T-0963
+    "pause": ("off", "fm pause off is the user's to run: they paused everything Foreman runs unattended, so only they "
+                     "lift it", "fm pause off"),  # T-0591
+    "approve-reads": ("on", "fm approve-reads on lets Foreman answer Claude Code's permission dialogs for reads: the "
+                            "user turns it on", "fm approve-reads on"),  # T-0974
+    "rule": ("rm", "fm rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
+             "fm rule rm N"),  # T-0971; `add rm` is a rare miss
+    "taste": ("--block", "fm taste compile N --block makes a rule that stops a command outright, and only the user lifts it "
+                         "(fm rule rm): they decide what blocks", "fm taste compile N --block"),  # T-1063
+    "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "
+                          "may have revoked since", "fm rollback --yes"),  # T-1085
+    "decide": ("--answer", "fm decide ANSWER --answer N records the user's answer to an ask, and answers become "
+                           "precedent for proxy answers: only the user records them", "fm decide ANSWER --answer N"),  # T-1064
+    "risk": ("set", "fm risk set moves the daily risk budget that slows Claude's autonomy: the brake is the user's to "
+                    "move", "fm risk set --day N --because \"<why>\""),  # T-1080
+}
+def _user_only_hit(word, arg):
+    """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
+    a = arg.split("=")[0] if word.startswith("--") else arg
+    return a == word or (word.startswith("--") and len(a) >= 3 and a.startswith("--") and word.startswith(a))
+
+
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -137,7 +163,11 @@ def _hint(detail, cat=""):
 
 
 def message(block, ctx):
-    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "", block.category)
+    detail = block.detail if isinstance(block.detail, str) else ""
+    where = ""  # T-1125: a shell left inside state/ by an earlier cd turns a relative path into a state write
+    if detail.endswith("(written from interpreter code)") and _under(ctx.cwd or "", os.path.join(ctx.foreman_home, "state")):
+        where = f" The shell is in {ctx.cwd}, so a relative path lands there: use an absolute path or cd out first."
+    return _message(block, ctx) + where + _hint(detail, block.category)
 
 
 def _message(block, ctx):
@@ -308,7 +338,12 @@ def _runs_later(p, ctx):
     home = ctx.home
     return (any(p == os.path.join(home, f) for f in _SHELL_RC) or any(_under(p, os.path.join(home, d))
                                                                       for d in _LATER_DIRS)
-            or "/.git/hooks/" in p)
+            or "/.git/hooks/" in p or _GIT_CONFIG_FILE.search(p) is not None
+            or p in (os.path.join(home, ".gitconfig"), os.path.join(home, ".config", "git", "config")))
+
+
+# T-1107: a git config file can set core.hooksPath, a `!` alias or a filter driver, as `git config` can (_git_config_code)
+_GIT_CONFIG_FILE = re.compile(r"/\.git/(?:worktrees/[^/]+/)?config(?:\.worktree)?$", re.I)  # I: macOS folds case
 
 
 def _protected_roots(ctx):
@@ -396,6 +431,7 @@ class Cmd:
         self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
         self.depth = depth  # T-0414: the ( it sits inside, unclosed: a subshell, $( ) or <( ) (negative: a stray ))
         self.feeds = []  # T-0589: ("<<", delimiter) and ("<<<", word): what it reads on stdin
+        self.stdin = None  # T-1129: the file a < (or <>) redirect gives it
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -751,8 +787,10 @@ def _drop_data_heredocs(cmd, only=None):
         out.append(line)
         seen.append(line)
         for quote, delim in starts:
-            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line) \
-                and (only is None or only(line))
+            # T-1141: fm edit reads its heredoc as edit blocks it applies through the guard's own Edit check, never runs it
+            data = bool(quote) and not re.search(r"[|`;&]|\$\(", line) and (
+                line.split()[:2] == ["fm", "edit"]
+                or line.split()[:1] in (["cat"], ["tee"]) and (only is None or only(line)))
             while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
                     out.append(lines[i])
@@ -838,6 +876,8 @@ def _split(tokens):
                 continue
             if t in ("<<", "<<<"):
                 cur.feeds.append((t, nxt))
+            elif t in ("<", "<>"):
+                cur.stdin = nxt
             if nxt and (t.startswith(">") or t in ("&>", "&>>", "<>")):
                 cur.redirs.append(nxt)
             i += 2
@@ -884,9 +924,7 @@ def _strip_wrappers(argv):
             while i < len(argv) and (argv[i].startswith("-") or "=" in argv[i]):
                 i += 2 if argv[i] in ("-u", "-C", "--unset", "--chdir") else 1
         elif base == "xargs":
-            i += 1
-            while i < len(argv) and argv[i].startswith("-"):
-                i += 2 if argv[i] in ("-n", "-I", "-L", "-P", "-d", "-s", "-E", "-a") else 1
+            i += 1 + _xargs_opts(argv[i + 1:])[0]
         elif base in ("npx", "bunx"):
             i += 1
             while i < len(argv) and argv[i].startswith("-"):
@@ -894,6 +932,27 @@ def _strip_wrappers(argv):
         else:
             break
     return argv[i:], any(os.path.basename(a) == "xargs" for a in argv[:i])
+
+
+def _xargs_opts(words):
+    """T-1123: (words xargs's options take, whether one changes how stdin splits or is replaced), read as getopt does:
+    a cluster's value options (n s P L E I a d, and the old e i l) swallow the rest of the cluster or the next word."""
+    i, odd = 0, False
+    while i < len(words) and words[i].startswith("-") and words[i] != "-":
+        w = words[i]
+        i += 1
+        if w == "--":
+            break
+        if w.startswith("--"):
+            odd = odd or bool(re.match(r"--(?:arg-file|delimiter|replace|null|max-lines|eof)", w))
+            i += 1 if w in ("--max-args", "--max-procs", "--max-chars", "--arg-file", "--delimiter", "--eof") else 0
+            continue
+        odd = odd or any(ch in "adEeIiLl0" for ch in w[1:])  # any such letter, even inside a value: doubt is unknown
+        for k, ch in enumerate(w[1:], 1):
+            if ch in "nsPLEIad":
+                i += 1 if k == len(w) - 1 else 0
+                break
+    return i, odd
 
 
 def _positionals(args):
@@ -910,6 +969,7 @@ def _name(argv):
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
 _FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
+_PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?(?:echo|printf))\s[^`)]*?)\s*(?:\)|`)")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -2264,6 +2324,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
+        xodd = via_xargs and any(_xargs_opts(c.argv[j + 1:])[1] for j, x in enumerate(c.argv[:len(c.argv) - len(argv)])
+                                 if os.path.basename(x) == "xargs")  # T-1123
         if not c.piped:
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
@@ -2315,6 +2377,19 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             joined = " ".join(args)
             for text in _readings(joined, {**lits, **known}):  # T-0587: q='rm -rf'; eval "$q ~"
                 found += check_bash(text, ctx, depth + 1)
+            for m in _PRINTED_SUBST.finditer(joined):  # T-1123: eval "$(printf 'rm -rf ~')" runs the printed text
+                try:
+                    w = shlex.split(m.group(2))
+                except ValueError:
+                    w = []
+                cmdname, w = (w[0], w[1:]) if w else ("", [])
+                if cmdname == "echo":
+                    w = [a for a in w if a != "-n"]
+                if w and (cmdname == "echo" and not any(a.startswith("-") for a in w[:1] if a != "--") or
+                          cmdname == "printf" and not re.search(r"[%\\]", w[0])):
+                    found += check_bash(" ".join(w), ctx, depth + 1)
+                else:  # flags, escapes, a format, a wrapped or pathed echo: the text isn't what is written
+                    found.append(("rm-outside", "eval of computed text"))
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
@@ -2384,19 +2459,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
-            if sub == "posture" and "lite" in rest:  # review: a flag before the word (--json lite) counts too  # T-0963 review: lowering the hooks is the user's call
-                found.append(("self-authorize", "fm posture lite turns Foreman's hooks off but the guard's: the user "
-                                                "decides that (they can type ! fm posture lite)"))
-            if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
-                found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
-                                                "runs unattended, so only they lift it (they can type ! fm pause off)"))
-            if sub == "approve-reads" and "on" in rest:  # T-0974: it answers Claude Code's dialogs for the user
-                found.append(("self-authorize", "fm approve-reads on lets Foreman answer Claude Code's permission "
-                                                "dialogs for reads: the user turns it on (they can type ! fm "
-                                                "approve-reads on)"))
-            if sub == "rule" and "rm" in rest:  # T-0971: a flag before the word counts too; `add rm` is a rare miss
-                found.append(("self-authorize", "fm rule rm is the user's to run: their rule stops what they said to "
-                                                "stop, so only they lift it (they can type ! fm rule rm N)"))
+            if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
+                word, why, typed = USER_ONLY_FM[sub]
+                found.append(("self-authorize", f"{why} (they can type ! {typed})"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
@@ -2418,7 +2483,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for nm in names:
             if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
                 continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
-            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
+            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx,
+                               xodd)
             found += _check_git(nm, args, cwd, ctx)
             found += _check_system(nm, args)
             found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
@@ -2753,7 +2819,7 @@ def _rm_target_violation(tok, cwd, ctx, root_ok=False):
     return path
 
 
-def _check_rm(name, args, via_xargs, chain, cwd, ctx):
+def _check_rm(name, args, via_xargs, chain, cwd, ctx, xodd=False):
     out = []
     if name == "rm":
         opts, targets, seen_dd = [], [], False
@@ -2767,16 +2833,30 @@ def _check_rm(name, args, via_xargs, chain, cwd, ctx):
         recursive = any(o in ("-r", "-R") or (not o.startswith("--") and re.search(r"[rR]", o))  # T-0668: getopt takes
                         or (o.startswith("--") and len(o) > 2 and "recursive".startswith(o[2:].split("=")[0]))  # --rec
                         for o in opts)
-        if recursive:
-            if not targets:
-                upstream = next((x for x in reversed(chain) if _name(x.argv) == "find"), None)
-                targets = _find_paths(_strip_wrappers(upstream.argv)[0][1:]) if (via_xargs and upstream) else []
-                if not targets:
-                    out.append(("rm-outside", "recursive rm with targets from stdin"))
-            for t in targets:
-                v = _rm_target_violation(t, cwd, ctx)
+        out_t = list(targets)
+        unknown = False
+        if via_xargs:  # T-1123: xargs appends what stdin holds, split on whitespace, to rm's own operands
+            up = chain[-1] if chain else None  # only the command feeding xargs directly says what it gets
+            uname = _name(up.argv) if up else ""
+            rest = _strip_wrappers(up.argv)[0][1:] if up else []
+            if xodd or not up:
+                unknown = True
+            elif uname == "find":
+                out_t += _find_paths(rest)
+            elif (_strip_wrappers(up.argv)[0][0] == "echo" and all(re.fullmatch(r"[^\s\\*?\[\]{}\"'`$%<>&;|()-][^\s\\*?\[\]{}\"'`$%<>&;|()]*", x) for x in rest)):
+                out_t += rest  # plain `echo word…`: no flags, nothing xargs or echo rewrites
+            else:
+                unknown = True
+        elif recursive and not targets:
+            unknown = True
+        if unknown and (recursive or via_xargs):
+            out.append(("rm-outside", f"{'recursive ' if recursive else ''}rm with targets from stdin"))
+        if recursive or via_xargs:
+            kind = "recursive delete" if recursive else "delete"
+            for t in out_t:
+                v = _rm_target_violation(t, cwd, ctx, root_ok=not recursive)
                 if v:
-                    out.append(("rm-outside", f"recursive delete of {v}"))
+                    out.append(("rm-outside", f"{kind} of {v}"))
     elif name == "find":
         deleting = "-delete" in args or any(a in ("-exec", "-execdir", "-ok") and i + 1 < len(args)
                                             and os.path.basename(args[i + 1]) in ("rm", "shred") for i, a in enumerate(args))

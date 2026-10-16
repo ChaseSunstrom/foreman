@@ -111,8 +111,13 @@ def known(p, st=None):
     return out
 
 
+def _clean(rec):
+    """What is stored: redacted, `-->` (it would end the comment the record lives in) rewritten, capped; ids come from this."""
+    return {k: c.redact(str(v)).replace("-->", "- ->")[:400] for k, v in rec.items() if k not in ("id", "store") and v}
+
+
 def _line(rec):
-    rec = {k: c.redact(str(v)).replace("-->", "- ->")[:400] for k, v in rec.items() if k not in ("id", "store") and v}
+    rec = _clean(rec)
     return f"- `{rec['sig'].replace('`', "'")}` → {rec['do']} <!-- fix {json.dumps(rec, ensure_ascii=False)} -->\n"
 
 
@@ -136,16 +141,18 @@ def _sensitive(p):
         return True  # unsure: keep it to the project
 
 
-def add(p, rec):
+def add(p, rec, trust=True):
     """Keep a fix this machine learned or was taught: in the project's store (if any) and, unless the project is
     sensitive, this machine's; either way it is trusted here."""
     rec = {k: v for k, v in rec.items() if v}
     rec.setdefault("at", c.now()[:10])
+    rec = _clean(rec)  # so the id computed here is the id read back
     paths = stores(p)
-    if _sensitive(p):
+    if _sensitive(p) or not trust:  # untrusted (repo content): the project's store only, a hint until fm fix trust
         paths = paths[:1]
     fresh = any([_append(path, rec) for path in paths])
-    _trust(_fid(rec))
+    if trust:
+        _trust(_fid(rec))
     return fresh
 
 
@@ -238,6 +245,15 @@ def _bump(fid=None, sig=None, **counts):
         return st
 
 
+def learned(p, since):
+    """T-1045: {fixes_new, worked, missed} since an ISO time: fixes recorded then, and the worked/misses counts of the
+    fixes used then. ponytail: the stats keep totals and a last-used time, so a fix used in the window counts all its history."""
+    st = _load(_stats_path())
+    used = [x for x in (st.get("fixes") or {}).values() if str(x.get("last", ""))[:19] >= since]
+    return {"fixes_new": sum(str(r.get("at", "")) >= since[:10] for r in known(p, st)),
+            "worked": sum(x.get("worked", 0) for x in used), "missed": sum(x.get("misses", 0) for x in used)}
+
+
 def _losing(st, fid):
     x = (st.get("fixes") or {}).get(fid) or {}
     return x.get("misses", 0) >= x.get("worked", 0) + 2
@@ -250,6 +266,7 @@ def best(p, sig, st=None):
     fixes = [f for f in known(p, st) if not _losing(st, f["id"])]
     exact = [f for f in fixes if f["sig"] == sig]
     inside = [f for f in fixes if f["trusted"] and len(f["sig"]) >= 12 and f["sig"] in sig]  # a repo's: exact only
+    exact.sort(key=lambda f: not f["trusted"])  # stable: a learned fix before a repo's hint, this project's first within each
     return (exact or inside or [None])[0]
 
 

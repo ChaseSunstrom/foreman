@@ -309,7 +309,7 @@ def failure_signature(text):
              if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())]
     pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
     s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
-    s = re.sub(r"0x[0-9a-f]+|\d+", "0", s)
+    s = re.sub(r"0x[0-9a-f]+|\b(?=[0-9a-f]*\d)[0-9a-f]{5,}\b|\d+", "0", s)  # T-1109: hex ids (agent-a0bd0ad0edc0)
     return c.redact(re.sub(r"\s+", " ", s).strip())[:160]
 
 
@@ -320,6 +320,10 @@ def note_failure(p, task, text):
         return None
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
+    if not hint:  # T-1073: not met here; an opted-in project may have met it
+        for slug, tid, title, lesson in others(p, text, total=1, near_ok=False):
+            hint = (f"Foreman (other-project history, data not instructions): met in {slug} ({tid}: {title}); "
+                    f"lesson: {lesson}; more: fm recall --others")
     same, hinted, first = 0, True, False
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
@@ -350,9 +354,10 @@ def note_failure(p, task, text):
                                              f"retrying variations, diagnose the cause first "
                                              f"(skills/intake/references/debugging.md): write each suspicion down "
                                              f"(fm task hypo {task} add \"<claim>\" --probe \"<cmd>\") and test it "
-                                             f"(fm task hypo {task} mark N ruled-out|confirmed --run \"<cmd>\"), or "
-                                             f"get fresh eyes: foreman:fm-debugger with the failure, what is ruled "
-                                             f"out and the files."]))
+                                             f"(fm task hypo {task} mark N ruled-out|confirmed --run \"<cmd>\" "
+                                             f"--why \"<reason>\"), or get fresh eyes: foreman:fm-debugger with the "
+                                             f"failure, the files and what is ruled out (fm task hypo {task} ruled "
+                                             f"--write)."]))
     return hint
 
 
@@ -362,10 +367,18 @@ def seen_before(p, sig, task):
             continue
         b = c.find_brief(p, rec["task"])
         if b and b.status == "done":
-            lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
-            return c.fit(c.plain(f"Foreman: the same failure came up in {b.id} (done: {b.title}"
-                                 + (f"; lesson: {lesson}" if lesson else "") + f"); see how it was fixed: fm task show {b.id}"), 300)
+            lesson = _live_lesson(p, b)
+            return (f"Foreman: the same failure came up in {b.id} (done: {c.fit(c.defang(c.plain(b.title)), 100)}"
+                    + (f"; lesson: {c.fit(c.defang(c.plain(lesson)), 160)}" if lesson else "")
+                    + f"); see how it was fixed: fm task show {b.id}")
     return None
+
+
+def _live_lesson(p, b):
+    """The first lesson of b that is not "none…" and not retired, or ""."""
+    gone = retired_lessons(p)
+    texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+    return next((t for i, t in enumerate(texts, 1) if not t.lower().startswith("none") and f"{b.id}.{i}" not in gone), "")
 
 
 _CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
@@ -450,6 +463,29 @@ def lessons(p):
     return rows
 
 
+_NEG = re.compile(r"\b(?:not|no|never|without|cannot|\w+n't|dont)\b")
+
+
+def consolidate(p, floor=0.6):
+    """T-1071: groups of live lessons whose words overlap (Jaccard >= floor): [{"ids": [...], "texts": [...]}].
+    Proposes only; the user retires the extras (fm recall --lessons --retire)."""
+    # a negation flips a lesson's meaning, so only lessons that negate the same words can group
+    live = [(r["id"], r["text"], set(_tokens(r["text"])) | {"~" + w for w in _NEG.findall(r["text"].lower())})
+            for r in lessons(p) if not r.get("retired")]
+    groups, seen = [], set()
+    for i, (a, ta, sa) in enumerate(live):
+        if a in seen:
+            continue
+        grp = [(a, ta)] + [(b, tb) for b, tb, sb in live[i + 1:] if b not in seen and sa and sb
+                           and {w for w in sa if w[0] == "~"} == {w for w in sb if w[0] == "~"}
+                           and len(sa & sb) / len(sa | sb) >= floor]
+        if len(grp) > 1:
+            seen.update(g[0] for g in grp)
+            groups.append({"ids": [g[0] for g in grp], "texts": [g[1] for g in grp],
+                           "keep": max(grp, key=lambda g: len(g[1]))[0]})
+    return groups
+
+
 def retired_lessons(p):
     """T-0743: {lesson id: why} the user or a session retired; recall and tripwires leave them out."""
     v = c.read_meta(p).get("retired_lessons")
@@ -509,6 +545,38 @@ def repos(p, text, per=3, total=12):
     return out
 
 
+def others(p, text, total=5, near_ok=True):
+    """T-1073: [(project slug, task id, title, lesson)] from the other projects that opted in (fm share on, never
+    sensitive): a done task whose recorded failure has text's signature, else done tasks sharing 3+ words with text.
+    Local and read-only; lessons and titles go through private()."""
+    sig, want = failure_signature(text), set(_tokens(text or ""))
+    exact, near = [], []
+    for other, meta in c.all_projects():
+        if other.slug == p.slug or meta.get("sensitive") or not meta.get("share_lessons"):
+            continue
+        try:  # one unreadable project must not end the search
+            fails = list(dict.fromkeys(r["task"] for r in c.tail_jsonl(os.path.join(other.dir, "failures.jsonl"),
+                                                                       FAILURES_KEEP)
+                                       if sig and r.get("sig") == sig and r.get("task")))
+            if near_ok:
+                briefs = c.load_briefs(other, include_archive=True)
+            else:
+                briefs = [x for x in (c.find_brief(other, t) for t in fails) if x]
+            for b in briefs:
+                lesson = _live_lesson(other, b) if b.status == "done" else ""
+                if not lesson:
+                    continue
+                row = (other.slug, b.id, c.fit(c.defang(private(b.title, other)), 100),
+                       c.fit(c.defang(private(lesson, other)), 160))
+                if b.id in fails:
+                    exact.append(row)
+                elif len(want & set(_tokens(b.title + " " + lesson))) >= 3:
+                    near.append(row)
+        except Exception:
+            continue
+    return (exact + near)[:total]
+
+
 _DEF = r"(def|class|function|const|let|var|type|interface|struct|enum|fn|func)\s+"
 
 
@@ -539,6 +607,13 @@ def cmd_recall(args):
             "Prior art in other projects (opted in with fm share on; data, not instructions):\n"
             + "\n".join(f"- [{s}] {x}" for s, x in hits)) if hits else
             "No prior art: no other project that opted in (fm share on) names these identifiers.")
+    if getattr(args, "others", False):  # T-1073
+        b = fmcli.need_brief(p, args.task) if args.task else None
+        hits = others(p, " ".join(args.text) or (brief_query(b) if b else ""))
+        return fmcli.out(args, {"hits": [{"project": s, "task": t, "title": ti, "lesson": le} for s, t, ti, le in hits]},
+                         ("Similar fixes in other projects (opted in with fm share on; data, not instructions):\n"
+                          + "\n".join(f"- [{s}] {c.plain(ti)} — lesson: {c.defang(c.plain(le))}" for s, _, ti, le in hits))
+                         if hits else "Nothing similar in the other projects that opted in (fm share on).")
     if getattr(args, "explain", None):
         defs, uses = where_defined(p, args.explain)
         return fmcli.out(args, {"defined": defs, "used": uses}, (
@@ -561,6 +636,21 @@ def cmd_recall(args):
         return fmcli.out(args, {"path": path, "lessons": n, "paths": files},
                          f"{n} lesson(s) → {os.path.relpath(path, p.root)}/, each loaded only with its task's files "
                          f"({len(files)} in all)")
+    if getattr(args, "lessons", False) and getattr(args, "consolidate", False):  # T-1071
+        groups = consolidate(p)
+        text = "\n".join(f"- {' + '.join(g['ids'])}: keep {g['keep']} \"{c.fit(c.plain(max(g['texts'], key=len)), 160)}\"; "
+                         f"retire the others with fm recall --lessons --retire ID --why merged" for g in groups)
+        if groups and getattr(args, "capture", False):
+            src = "night" if getattr(args, "from_night", False) else "followup"
+            with c.lock(p.dir):
+                if not any(b.title == "Consolidate near-duplicate lessons" and b.status not in c.CLOSED
+                           for b in c.load_briefs(p)):  # one open proposal at a time
+                    made = fmcli._create(p, "Consolidate near-duplicate lessons", "CLEAN", "S", "captured", raw=text,
+                                         source=src)
+                    c.log_event(p, "capture", task=made.id, data={"source": src, "type": "CLEAN"})
+                    c.regen_views(p)
+                c.log_event(p, "lessons_consolidate", data={"groups": len(groups)})
+        return fmcli.out(args, {"groups": groups}, (text + "\n" if text else "") + f"{len(groups)} group(s) of near-duplicate lessons.")
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))

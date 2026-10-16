@@ -1,5 +1,6 @@
 """fm cost / fm usage (T-0064, T-0056): where the tokens went — per session, per task and per tool — read from Claude
 Code's own transcripts, and which Foreman skills, playbooks and commands actually get used. Read-only; stdlib only."""
+import bisect
 import collections
 import datetime
 import json
@@ -40,37 +41,58 @@ def _human(n):
     return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 1e3 else f"{n:.0f}"
 
 
-def scan(folder, since):
-    """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
-    repeats on each of its content blocks: counted once per message id."""
-    msgs, tools, names = {}, collections.Counter(), {}
+_TS = re.compile(r'"timestamp":\s*"([^"]{19})')
+
+
+def _entries(folder, since):
+    """(file path, entry) for each transcript line on or after the cutoff. T-1116: a file not written since the
+    cutoff is skipped unopened, and a line is parsed only when one of its timestamps reaches the cutoff (the newest
+    counts: a nested older one can't hide the entry's own)."""
+    try:
+        cut = datetime.datetime.strptime(since[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp()
+    except ValueError:
+        cut = 0
     for dirpath, _, files in os.walk(folder):
         for n in files:
-            if not n.endswith(".jsonl"):
-                continue
+            path = os.path.join(dirpath, n)
             try:
-                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
+                if not n.endswith(".jsonl") or os.path.getmtime(path) < cut:
+                    continue
+                with open(path, encoding="utf-8", errors="replace") as f:
                     for line in f:
+                        stamps = _TS.findall(line)
+                        if stamps and max(stamps) < since[:19]:
+                            continue
                         try:
                             e = json.loads(line)
                         except ValueError:
                             continue
-                        ts = str(e.get("timestamp") or "")
-                        m = e.get("message") if isinstance(e, dict) else None
-                        if not isinstance(m, dict) or ts[:19] < since:
-                            continue
-                        content = m.get("content") if isinstance(m.get("content"), list) else []
-                        for x in content:
-                            if not isinstance(x, dict):
-                                continue
-                            if x.get("type") == "tool_use":
-                                names[x.get("id")] = x.get("name") or "?"
-                            elif x.get("type") == "tool_result":
-                                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
-                        if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
-                            msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
+                        if isinstance(e, dict):
+                            yield path, e
             except OSError:
                 continue
+
+
+def scan(folder, since):
+    """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
+    repeats on each of its content blocks: counted once per message id."""
+    msgs, tools, names = {}, collections.Counter(), {}
+    for path, e in _entries(folder, since):
+        n = os.path.basename(path)
+        ts = str(e.get("timestamp") or "")
+        m = e.get("message")
+        if not isinstance(m, dict) or ts[:19] < since:
+            continue
+        content = m.get("content") if isinstance(m.get("content"), list) else []
+        for x in content:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "tool_use":
+                names[x.get("id")] = x.get("name") or "?"
+            elif x.get("type") == "tool_result":
+                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
+        if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
+            msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
     return list(msgs.values()), tools
 
 
@@ -101,53 +123,42 @@ def timing(folder, since):
     stretch between two entries goes to what ended it: a tool result to its tool, a reply to the model; a prompt ends
     time spent waiting on the person, and a gap over IDLE_S is time away: neither counts."""
     model, tools, shell = 0.0, collections.Counter(), collections.Counter()
-    for dirpath, _, files in os.walk(folder):
-        for n in files:
-            if not n.endswith(".jsonl"):
-                continue
-            rows = []
-            try:
-                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        try:
-                            e = json.loads(line)
-                            ts = str(e.get("timestamp") or "")
-                            t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-                        except (ValueError, AttributeError):
-                            continue
-                        if ts[:19] >= since:
-                            rows.append((t, e))
-            except OSError:
-                continue
-            names, cmds, prev = {}, {}, None
-            for t, e in sorted(rows, key=lambda r: r[0]):
-                m = e.get("message") if isinstance(e.get("message"), dict) else {}
-                content = [x for x in (m.get("content") if isinstance(m.get("content"), list) else []) if isinstance(x, dict)]
-                for x in content:
-                    if x.get("type") == "tool_use":
-                        names[x.get("id")] = x.get("name") or "?"
-                        cmds[x.get("id")] = (x.get("input") or {}).get("command") if isinstance(x.get("input"), dict) else None
-                results = [x for x in content if x.get("type") == "tool_result"]
-                if prev is not None and 0 < t - prev <= IDLE_S:
-                    if e.get("type") == "assistant":
-                        model += t - prev
-                    for x in results:
-                        name, share = names.get(x.get("tool_use_id"), "?"), (t - prev) / len(results)
-                        tools[name] += share
-                        if name == "Bash":
-                            shell[_program(cmds.get(x.get("tool_use_id")))] += share
-                prev = t
+    by_file = collections.defaultdict(list)
+    for path, e in _entries(folder, since):
+        ts = str(e.get("timestamp") or "")
+        try:
+            t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        if ts[:19] >= since:
+            by_file[path].append((t, e))
+    for rows in by_file.values():
+        names, cmds, prev = {}, {}, None
+        for t, e in sorted(rows, key=lambda r: r[0]):
+            m = e.get("message") if isinstance(e.get("message"), dict) else {}
+            content = [x for x in (m.get("content") if isinstance(m.get("content"), list) else []) if isinstance(x, dict)]
+            for x in content:
+                if x.get("type") == "tool_use":
+                    names[x.get("id")] = x.get("name") or "?"
+                    cmds[x.get("id")] = (x.get("input") or {}).get("command") if isinstance(x.get("input"), dict) else None
+            results = [x for x in content if x.get("type") == "tool_result"]
+            if prev is not None and 0 < t - prev <= IDLE_S:
+                if e.get("type") == "assistant":
+                    model += t - prev
+                for x in results:
+                    name, share = names.get(x.get("tool_use_id"), "?"), (t - prev) / len(results)
+                    tools[name] += share
+                    if name == "Bash":
+                        shell[_program(cmds.get(x.get("tool_use_id")))] += share
+            prev = t
     return model, tools, shell
 
 
 def _task_at(timeline, ts):
-    """The task of the newest ledger event at or before ts (events carry the task they were recorded for)."""
-    task = None
-    for t, tid in timeline:
-        if t > ts:
-            break
-        task = tid
-    return task
+    """The task of the newest ledger event at or before ts (events carry the task they were recorded for); timeline is
+    sorted by time. T-1116: a bisect, not a scan per turn."""
+    i = bisect.bisect_right(timeline, ts, key=lambda r: r[0])
+    return timeline[i - 1][1] if i else None
 
 
 def _forecast(args, fmcli):
@@ -164,9 +175,228 @@ def _forecast(args, fmcli):
                      "each turn once Claude Code reports rate limits)")
 
 
+UNEXPLAINED_GAP_S = 1800  # a turn this far from every ledger event of its session has no Foreman work around it (T-1079)
+UNEXPLAINED_MIN_PCT = 20  # flag only when at least this share of the spend…
+UNEXPLAINED_MIN_TOKENS = 100000  # …and this many input-equivalent tokens nothing in Foreman accounts for
+
+
+def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
+    """Spend no ledger event explains: a session with none, or a turn over `gap` seconds from each of its session's.
+    Returns {tokens, share (%), sessions}."""
+    import bisect
+    times = collections.defaultdict(list)
+    for e in events:
+        if e.get("session_id") and (t := _epoch(str(e.get("ts", "")))) is not None:
+            times[e["session_id"]].append(t)
+    for v in times.values():
+        v.sort()
+    total = lost = 0.0
+    sessions = collections.Counter()
+    for ts, sid, usage in msgs:
+        w = sum((usage.get(k) or 0) * wt for k, wt in WEIGHTS.items())
+        t, near = _epoch(ts), times.get(sid)
+        if t is None:  # no usable time: neither explained nor not, and left out of the total
+            continue
+        total += w
+        if near:
+            i = bisect.bisect_left(near, t)
+            if any(abs(near[j] - t) <= gap for j in (i - 1, i) if 0 <= j < len(near)):
+                continue
+        lost += w
+        sessions[sid] += w
+    return {"tokens": round(lost), "share": round(100 * lost / total, 1) if total else 0.0,
+            "sessions": [s for s, _ in sessions.most_common()]}
+
+
+def unexplained_spend(p, msgs, days):
+    """unexplained() over every ledger event (archived months too) from the window's start less the gap."""
+    since = _since(days + UNEXPLAINED_GAP_S / 86400)
+    return unexplained(msgs, c.ledger_events(p, since=since))
+
+
+def unexplained_line(u):
+    if u["share"] >= UNEXPLAINED_MIN_PCT and u["tokens"] >= UNEXPLAINED_MIN_TOKENS:
+        return (f"Unexplained spend: {u['share']:.0f}% (≈ {_human(u['tokens'])} tokens) in {len(u['sessions'])} session(s) "
+                f"with no Foreman activity within {UNEXPLAINED_GAP_S // 60} min; top: {u['sessions'][0][:8]}")
+    return ""
+
+
+def _timelines(p, days):
+    """T-1083 review: (per session id, all): a turn goes to the task its own session was on; the shared line only
+    for a session with no event of its own (sessions running side by side otherwise bill each other's tasks)."""
+    by, every = collections.defaultdict(list), []
+    for e in c.ledger_events(p, since=_since(days + 2)):
+        if e.get("task"):
+            row = (str(e.get("ts", ""))[:19], e["task"])
+            every.append(row)
+            if e.get("session_id"):
+                by[e["session_id"]].append(row)
+    key = lambda r: r[0]  # noqa: E731
+    return {k: sorted(v, key=key) for k, v in by.items()}, sorted(every, key=key)
+
+
+def _task_for(lines, sid, ts):
+    by, every = lines
+    return _task_at(by.get(sid) or every, ts)
+
+
+def task_costs(p, days):
+    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums)."""
+    folder = transcripts_dir(p.root)
+    if not os.path.isdir(folder):
+        return collections.Counter()
+    lines, out = _timelines(p, days), collections.Counter()
+    for ts, sid, usage in scan(folder, _since(days))[0]:
+        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+    return out
+
+
+def parse_tokens(v):
+    """'200k', '2M' or '150000' as a count; None when it isn't one."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmM]?)", str(v).strip())
+    return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+
+def forecast_task(p, b, costs=None, days=90):
+    """T-1083: (median cost, how many) of finished tasks of b's type and tier (two or more), else None."""
+    costs = task_costs(p, days) if costs is None else costs
+    xs = [costs[x.id] for x in c.load_briefs(p) if x.status == "done" and x.id != b.id and x.type == b.type
+          and x.tier == b.tier and costs.get(x.id)]
+    return (round(statistics.median(xs)), len(xs)) if len(xs) >= 2 else None
+
+
+CACHE_GROWTH = 1_000_000  # bytes of new transcript before the cached figures are stale…
+CACHE_AGE_S = 300  # …or this long
+
+
+def _cache_path(p):
+    # T-1083 review: not in sessions/, where fm watch and the rate-limit readers take any *.json for a session snapshot
+    return os.path.join(c.state_dir(), "cache", f"cost-{p.slug}.json")
+
+
+def _read_cache(p):
+    try:
+        with open(_cache_path(p)) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        return None
+    ok = isinstance(old, dict) and isinstance(old.get("size"), int) and isinstance(old.get("ts"), (int, float)) \
+        and isinstance(old.get("costs"), dict)
+    return old if ok else None  # the wrong shape is no cache: rewritten on the next compute
+
+
+def _transcripts_size(p):
+    return sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(transcripts_dir(p.root)) for n in ns
+               if n.endswith(".jsonl"))
+
+
+def _fresh(old, size):
+    return bool(old) and abs(size - old["size"]) <= CACHE_GROWTH and time.time() - old["ts"] < CACHE_AGE_S
+
+
+def cached_costs(p, compute=True, refresh=False):
+    """task_costs(p, 90) kept in state/cache, keyed by the transcripts' total size: redone only when they changed by
+    over ~1 MB or the figures are 5 min old. compute=False: the cache as it is (None when there is none); with
+    refresh, a stale cache is redone in a detached `fm cost --refresh-cache` (the Stop hook has 5 s: never inline)."""
+    old = _read_cache(p)
+    if not compute:
+        if refresh and not _fresh(old, _transcripts_size(p)):
+            _refresh_detached(p)
+            old = _read_cache(p) if os.environ.get("FOREMAN_NO_BACKGROUND") else old  # inline then: read it back
+        return collections.Counter(old["costs"]) if old else None
+    size = _transcripts_size(p)
+    if _fresh(old, size):
+        return collections.Counter(old["costs"])
+    costs = task_costs(p, 90)
+    try:
+        c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+    except OSError:
+        pass  # a cache: never worth failing for
+    return costs
+
+
+def _refresh_detached(p):
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):  # tests: inline, so the figure is there for the next call
+        cached_costs(p)
+        return
+    import subprocess
+    try:
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "cost", "--refresh-cache"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
+
+
+def check_cap(p, b, costs=None, held=False):
+    """T-1127: whether b's cost cap is hit. The first time, cap_hit=<the cap> goes on the brief, so every dispatcher
+    (c.waits_on_user: the drive, fm run, fm next, lanes) holds the task until its cost_cap changes. held: the caller
+    already holds the project lock (the Stop hook does)."""
+    cap = parse_tokens(b.meta.get("cost_cap"))
+    if not cap:
+        return False
+    if str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):
+        return True
+    costs = cached_costs(p, compute=False, refresh=True) if costs is None else costs
+    spent = (costs or {}).get(b.id, 0)
+    if spent < cap:
+        return False
+    import contextlib
+    with (contextlib.nullcontext() if held else c.lock(p.dir)):
+        x = c.find_brief(p, b.id)
+        if x is not None:
+            x.meta["cap_hit"] = x.meta["cost_cap"]
+            x.append_log(f"cost cap hit: {_human(spent)} of {_human(cap)}")
+            c.save_brief(p, x)
+    c.log_event(p, "cost_cap_hit", task=b.id, data={"spent": spent, "cap": cap})
+    b.meta["cap_hit"] = b.meta["cost_cap"]
+    return True
+
+
+def cost_line(p, b):
+    """T-1083: 'Cost: forecast ≈ N (median of K FEATURE M), cap C, spent S' for a brief's readers; '' with neither a
+    forecast nor a cap. Only a task with a cap pays for fresh figures; the rest read the cache, or say nothing."""
+    cap = parse_tokens(b.meta.get("cost_cap"))
+    try:
+        costs = cached_costs(p, compute=bool(cap))
+        fc = forecast_task(p, b, costs) if costs else None
+    except Exception:  # a report: never stops the command it rides on
+        return ""
+    if not cap and not fc:
+        return ""
+    return "Cost: " + ", ".join(filter(None, [
+        f"forecast ≈ {_human(fc[0])} (median of {fc[1]} {b.type} {b.tier}{', rough' if fc[1] < 5 else ''})" if fc else "",
+        f"cap {_human(cap)}" if cap else "", f"spent {_human(costs.get(b.id, 0))}" if costs else ""]))
+
+
+def _task(args, p, fmcli):
+    b = fmcli.need_brief(p, args.task)
+    costs = task_costs(p, 90)
+    spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
+    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
+            + (f", forecast {_human(fc[0])} (median of {fc[1]} finished {b.type} {b.tier} tasks)" if fc
+               else ", no forecast (needs two finished tasks of the same type and tier)"))
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "refresh_cache", False):  # T-1083 review: the Stop hook's detached refresh
+        old = _read_cache(p)
+        if old and time.time() - old["ts"] < 60:  # another refresh just ran
+            return 0
+        try:
+            c.write_atomic(_cache_path(p), json.dumps({**(old or {"costs": {}}), "size": (old or {}).get("size", 0),
+                                                       "ts": time.time()}))  # claim it: no second scan meanwhile
+        except OSError:
+            pass
+        os.makedirs(os.path.dirname(_cache_path(p)), exist_ok=True)
+        size, costs = _transcripts_size(p), task_costs(p, 90)
+        c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+        return 0
+    if getattr(args, "task", None):
+        return _task(args, p, fmcli)
     if getattr(args, "by_model", False):
         return _by_model(p, args, fmcli)
     if getattr(args, "forecast", False):
@@ -178,14 +408,14 @@ def cmd_cost(args):
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
-    timeline = sorted((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_tail(p, 20000) if e.get("task"))
+    lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
     for ts, sid, usage in msgs:
         w = 0.0
         for k, weight in WEIGHTS.items():
             v = usage.get(k) or 0
             totals[k] += v
             w += v * weight
-        by_task[_task_at(timeline, ts[:19]) or "(no task)"] += w
+        by_task[_task_for(lines, sid, ts[:19]) or "(no task)"] += w
         by_session[sid] += w
     if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
         return fmcli.out(args, {"days": args.days, "messages": 0},
@@ -200,7 +430,10 @@ def cmd_cost(args):
     base = sorted(first.values())[len(first) // 2] if first else 0
     model_s, tool_s, shell_s = timing(folder, _since(args.days))
     active = model_s + sum(tool_s.values())
+    unex = unexplained_spend(p, msgs, args.days)
+    unex_line = unexplained_line(unex)
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
+            "unexplained": unex,
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
             "time": {"active_s": round(active), "model_s": round(model_s),
@@ -215,6 +448,7 @@ def cmd_cost(args):
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
             + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
+            + ("\n" + unex_line if unex_line else "")
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
             + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
@@ -295,13 +529,17 @@ def _week(p, days):
             if b.status == "done" and str(b.meta.get("updated", ""))[:19] >= since]
     lessons = [(b.id, x.lstrip("- ").strip()) for b in done for x in b.section("Lessons").splitlines()[:1]
                if x.strip() and not x.lstrip("- ").lower().startswith("none")]
+    review = [l for l in week_decisions(p, days) if re.search(r"\| \[(costly|outward)\]", l)]
+    return done, lessons, review
+
+
+def week_decisions(p, days):
+    """T-1084: every decisions.md row since the cutoff (the digest's "Decided without you")."""
     try:
         with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8") as f:
-            review = [l.strip() for l in f if l.startswith("| 2") and l[2:12] >= since[:10]
-                      and re.search(r"\| \[(costly|outward)\]", l)]
+            return [l.strip() for l in f if l.startswith("| 2") and l[2:12] >= _since(days)[:10]]
     except OSError:
-        review = []
-    return done, lessons, review
+        return []
 
 
 def weekly_line(p):
@@ -348,11 +586,16 @@ def cmd_digest(args):
     grades = collections.Counter(grade(b) for b in done)
     fails = collections.Counter(r.get("sig") for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
                                 if str(r.get("at", ""))[:19] >= since and r.get("sig"))
-    blocked = [b for b in c.load_briefs(p) if b.status == "blocked"]
-    tokens = None
+    briefs = c.load_briefs(p)
+    blocked = [b for b in briefs if b.status == "blocked"]
+    import fmtidy
+    stale = fmtidy.stale_plans(p, briefs)  # T-1077: queued plans whose files or premises moved since planning
+    triage = fmtidy.triage_deferred(p, briefs)  # T-1048
+    tokens, unex = None, ""
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
         tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
+        unex = unexplained_line(unexplained_spend(p, msgs, args.days))
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
@@ -368,24 +611,59 @@ def cmd_digest(args):
             and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
     lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
               f"the paths they planned (median; T-0644)"] if grew else []
-    lines += fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-0641, T-0619
+    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs) + fmoutcomes.plan_lines(p)  # T-1060, T-0641, T-0619, T-1061
+    raised = [e for e in c.ledger_events(p, ("cost_cap_changed",), since=since)  # T-1083 review: caps raised
+              if (e.get("data") or {}).get("to", 0) > (e.get("data") or {}).get("from", 0)]
+    lines += ["Cost caps raised: " + ", ".join(f"{e.get('task')} {_human(e['data']['from'])} → {_human(e['data']['to'])}"
+                                               for e in raised[-6:])] if raised else []
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
+    decided = week_decisions(p, args.days)
+    plain = [x for x in decided if x not in review]  # costly/outward rows are listed once, under review below
+    lines += [f"Decided without you: {len(decided)} ({len(review)} to review below)"] + [f"- {c.fit(x, 160)}" for x in plain[-6:]] \
+        if decided else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
+    import fmtrials
+    lines += fmtrials.lines(p)  # T-1059
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
+    triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
+    lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
+    lines += [f"Deferred: +{len(triage) - 6} more: fm tidy"] if len(triage) > 6 else []
+    lines += [f"Plans to re-plan ({len(stale)}): " + ", ".join(f"{t} ({why})" for t, why in list(stale.items())[:5])
+              ] if stale else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
         if any(n > 1 for n in fails.values()) else []
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
+    lines += [unex] if unex else []
     nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"
                                                         for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
+        + (f"; closed {', '.join((e.get('data') or {}).get('closed'))}" if (e.get("data") or {}).get("closed") else "")  # T-1046
         for e in nights[-5:]] if nights else []
-    fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review,
-                     "blocked": [b.id for b in blocked], "failures": dict(fails.most_common(5)), "tokens": tokens},
+    learn = learned(p, args.days, len(done))
+    lines += [learn["line"]]
+    fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
+                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
+
+
+def learned(p, days, closed):
+    """T-1045: what Foreman learned in the window, for the digest and the pane's idle line: fixes new/worked/missed,
+    rules proposed from corrections, and interventions (corrections plus guard blocks) per closed task."""
+    import fmfixes, fmideas
+    since = _since(days)
+    d = fmfixes.learned(p, since)
+    n = len(c.ledger_events(p, ("correction",), since=since)) \
+        + sum(1 for e in c.global_events(since) if e.get("kind") == "guard_block" and e.get("project") == p.slug)
+    d.update(rules=len(fmideas.correction_clusters(p)), interventions=n,
+             interventions_per_task=round(n / closed, 1) if closed else None)
+    d["line"] = (f"Learned: {d['fixes_new']} new fix(es), {d['worked']} worked, {d['missed']} missed · "
+                 f"{d['rules']} rule(s) to propose" + (f" · {d['interventions_per_task']:g} interventions per closed task"
+                                                     if closed else f" · {n} interventions, no closed task"))
+    return d
 
 
 def cmd_evals(args):
@@ -491,6 +769,9 @@ def cmd_pr(args):
     was verified and reviewed, the lesson. Printed only: opening the PR stays an outward action behind the user's yes."""
     import fmcli
     p = fmcli.resolve(args)
+    if args.id in ("threads", "train"):  # T-1087
+        import fmpr
+        return getattr(fmpr, args.id)(p, args)
     b = fmcli.need_brief(p, args.id)
     why = (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip()
            or b.title)
@@ -540,17 +821,28 @@ This repo's work is tracked by Foreman. With its `fm` CLI on PATH (`fm --help`):
 Without `fm`: say what "done" means before starting, run the checks below and show their real output before claiming done, change only what the task needs, and never commit, push or delete without asking."""
 
 
-def agents_md(p):
+EXPORTS = {"agents": "AGENTS.md", "gemini": "GEMINI.md", "cursor": os.path.join(".cursor", "rules", "foreman.mdc")}
+CURSOR_HEAD = "---\ndescription: How work is done in this repo (Foreman): rules, corrections, fixes, lessons\nalwaysApply: true\n---\n"
+
+
+def agents_md(p, target="agents"):
     """T-0246: AGENTS.md for other harnesses — the working rules, the user's corrections, the map, lessons, decisions
     and the playbook index — redacted, each section bounded, the whole under AGENTS_CAP."""
     import fmmap
     import fmrecall
-    parts = ["# AGENTS.md", AGENTS_MARK, "", AGENTS_RULES]
+    mark = AGENTS_MARK.replace("fm export agents", f"fm export {target}")
+    parts = ["# " + os.path.basename(EXPORTS[target]), mark, "", AGENTS_RULES]
     private = bool(c.read_meta(p).get("sensitive"))  # a sensitive project shares no one's words: rules, map, playbooks
     said = [] if private else [c.fit(c.defang(c.plain(str((e.get("data") or {}).get("text") or ""))), 200)
                                for e in c.ledger_tail(p, 3000) if e.get("event") == "correction"][-10:]
     if said:
         parts += ["", "## What the user has corrected (their words; follow them)"] + [f"- {x}" for x in said if x]
+    import fmfixes
+    fixes = [] if private else [f for f in fmfixes.known(p) if f["trusted"]][:15]  # a repo-only fix is a suggestion
+    if fixes:
+        parts += ["", "## Known fixes (obstacles met and got past here; try these first)"] + [
+            f"- `{c.fit(c.defang(c.plain(f['sig'])), 120).replace('`', chr(39))}` -> {c.fit(c.defang(c.plain(f['do'])), 200)}"
+            for f in fixes]
     try:
         parts += ["", "## Project map", fmmap.render(fmmap.load(p))]
     except Exception:  # no git, an unreadable tree: the rest still helps
@@ -584,7 +876,7 @@ def agents_md(p):
             books.append(f"- {c.plain(title)}: {os.path.relpath(path, c.PLUGIN_ROOT)} in the Foreman plugin")
     if books:
         parts += ["", "## Playbooks (read the one that fits before a stage)"] + books[:60]
-    text = c.redact("\n".join(parts)) + "\n"
+    text = (CURSOR_HEAD if target == "cursor" else "") + c.redact("\n".join(parts)) + "\n"
     raw = text.encode()
     return text if len(raw) <= AGENTS_CAP else raw[:AGENTS_CAP - 64].decode(errors="ignore") + "\n… (cut at 32 KiB)\n"
 
@@ -592,7 +884,7 @@ def agents_md(p):
 def cmd_export(args):
     import fmcli
     p = fmcli.resolve(args)
-    path = os.path.abspath(args.out or os.path.join(p.root, "AGENTS.md"))
+    path = os.path.abspath(args.out or os.path.join(p.root, EXPORTS[args.what]))
     root, parent = os.path.realpath(p.root), os.path.realpath(os.path.dirname(path))
     if os.path.commonpath([root, parent]) != root:  # T-0288: the guard can't see fm's own writes; nor does fm leave
         raise fmcli.UsageError(f"{path}: fm export writes inside the project ({p.root}) only; copy the file yourself")
@@ -602,7 +894,7 @@ def cmd_export(args):
         if os.path.islink(path):
             raise PermissionError("a symlink")  # review: the link would silently become a file
         with open(path, encoding="utf-8", errors="replace") as f:
-            ours = AGENTS_MARK in f.read(1000)
+            ours = AGENTS_MARK[:30] in f.read(1000)  # "<!-- generated by Foreman (fm export": any target's
     except FileNotFoundError:
         ours = True
     except OSError as e:
@@ -612,8 +904,9 @@ def cmd_export(args):
     if not ours and not args.force:
         raise fmcli.UsageError(f"{path} wasn't written by fm export; keep it, or replace it with --force "
                                f"(or write elsewhere with --out PATH)")
-    text = agents_md(p)
+    text = agents_md(p, args.what)
     try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, text)
     except OSError as e:
         raise fmcli.UsageError(f"{path}: {e.strerror or e}")

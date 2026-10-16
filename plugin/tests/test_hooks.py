@@ -960,6 +960,25 @@ class PreToolUse(HookCase):
         self.assertIn("deny", p.stdout)
         self.assertNotIn("deny", self.pre("ArtifactData", {"action": "list", "url": "u"}).stdout, "reads still pass")
 
+    def test_a_bare_stdin_reader_is_refused_before_it_hangs(self):
+        # T-1129: two builders' 'cat > /tmp/x' and 'cat > /dev/null' read the tool's stdin, which never closes
+        self.fm("init")
+        self.task()
+        for bad in ("cat > /tmp/x 2>/dev/null; python3 - <<'EOF'\nprint(1)\nEOF", "cat > /dev/null; grep -n x f.py",
+                    "python3 -", "python3 -I", "bash", "sh -s", "tee out.txt", "cd plugin && cat -"):
+            with self.subTest(cmd=bad):
+                p = self.pre("Bash", {"command": bad})
+                self.assertEqual(p.returncode, 2, p.stdout)
+                self.assertIn("stdin", p.stdout)
+        for ok in ("cat f.txt", "cat > f.txt <<'EOF'\nx\nEOF", "echo x | cat", "cat < f.txt", "python3 - <<'EOF'\n1\nEOF",
+                   "python3 -c 'print(1)'", "python3 -m json.tool f.json", "python3 x.py", "bash -c 'ls'", "bash run.sh",
+                   "git log | tee log.txt", "cat <<< hi", "while read -r l; do cat; done < f.txt", "{ cat; } < f.txt",
+                   "find . -name x | xargs cat", "timeout 5 python3 - <<'EOF'\n1\nEOF", "env A=1 bash -c 'x'",
+                   "python3 --version; which claude", "bash --version", "python3 -V"):
+            with self.subTest(cmd=ok):
+                self.assertEqual(self.pre("Bash", {"command": ok}).returncode, 0, ok)
+        self.assertEqual(self.pre("Bash", {"command": "cat", "run_in_background": True}).returncode, 0)
+
     def test_foreground_wait_loops_are_refused(self):
         # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
         # `until grep -q "^exit" e2e.log; do sleep 20; done` held the session in the foreground for 10 minutes
@@ -1413,6 +1432,17 @@ class Stop(HookCase):
         self.assertIn(f"Foreman drive: {tid}", parse(p)["reason"])
         self.assertIn(f"Next: {tid} step 1/2", parse(p)["reason"])
 
+    def test_drive_does_not_push_an_unapproved_m_task_while_plans_keep_missing(self):
+        # T-1061: under "slow" fm focus refuses the M task, so the drive pushing it spun the model
+        self.fm("init")
+        self.task(tier="M", focus=False)
+        self.assertEqual(self.decision(self.stop("Continuing.")), "block")
+        import fmoutcomes
+        p = c.find_project(self.repo)
+        for _ in range(5):
+            fmoutcomes.record_close(p, {"outside": 9})
+        self.assertIsNone(self.decision(self.stop("Continuing.")))
+
     def test_drive_allows_stop_when_asking_the_user(self):
         self.fm("init")
         self.task()
@@ -1490,6 +1520,27 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "The suite is still running.",
                                "session_id": "sess-1"}, env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli"})
         self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
+
+    def test_an_updated_claude_refreshes_the_cached_version(self):
+        # T-1109: the version was cached for a day, so right after `claude update` Foreman still saw the old one
+        self.fm("init")
+        os.makedirs(os.path.join(self.home, "state"), exist_ok=True)
+        cached = os.path.join(self.home, "state", "claude-version")
+        with open(cached, "w") as f:
+            f.write("2.1.200\n")
+        os.utime(cached, (time.time() - 3600, time.time() - 3600))
+        bin_dir = os.path.join(self.home, "bin")
+        os.makedirs(bin_dir)
+        with open(os.path.join(bin_dir, "claude"), "w") as f:
+            f.write("#!/bin/sh\necho '2.1.295 (Claude Code)'\n")
+        os.chmod(os.path.join(bin_dir, "claude"), 0o755)
+        self.hook("SubagentStart", {"agent_id": "a1", "agent_type": "foreman:fm-reviewer"})
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "The suite is still running.",
+                               "session_id": "sess-1"},
+                      env={"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "PATH": bin_dir + os.pathsep + os.environ["PATH"]})
+        self.assertNotIn("headless", (parse(p) or {}).get("reason", ""))
+        with open(cached) as f:
+            self.assertEqual(f.read().strip(), "2.1.295")
 
     def test_push_once_when_the_user_is_needed(self):
         # T-0778: Foreman's only alert was a desktop terminal sequence; PushNotification also reaches the phone and

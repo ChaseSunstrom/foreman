@@ -17,9 +17,13 @@ export const C = {
   del: 0xe0a3a3,
   track: 0x30363f,
   white: 0xffffff,
-} as const
+}
 
-export const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
+// T-1081: the colourblind-safe pair (Okabe-Ito blue and orange); rows that mean an error also carry a glyph
+export const PALETTES = { default: { ok: 0x87d787, err: 0xff6b6b }, cb: { ok: 0x56b4e9, err: 0xe69f00 } }
+export const setPalette = (name: string) => void Object.assign(C, name === 'cb' ? PALETTES.cb : PALETTES.default)
+
+export const hex= (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
 const TYPE_COLOR: Record<string, number> = {
   FIX: C.err,
@@ -29,7 +33,7 @@ const TYPE_COLOR: Record<string, number> = {
   SECURITY: C.edit,
   RESEARCH: 0xafafff,
 }
-export const typeColor = (type: string) => hex(TYPE_COLOR[type] ?? C.dim)
+export const typeColor = (type: string) => hex(type === 'FIX' ? C.err : TYPE_COLOR[type] ?? C.dim) // C.err follows the palette (T-1081)
 
 export function mix(a: number, b: number, t: number): number {
   const k = Math.max(0, Math.min(1, t))
@@ -574,6 +578,16 @@ const ESC_SEQ =
  * or be refused); tabs as two spaces */
 export const clean = (t: string) =>
   t.replace(ESC_SEQ, '').replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+
+/** T-1090: a node's narration line in the live tree: the first thing a model step said, one line, markdown marks
+ * dropped, at most 200 characters ('' when it said nothing) */
+export function narration(text: string): string {
+  // review: only markdown's own marks (bold, code ticks, a heading's #s, a quote's >, a list bullet), never a name's _ or #
+  const line = text.split('\n').map(l => clean(l).replace(/\*\*|`/g, '').replace(/^\s*(?:#+|>+)\s*/, '')
+    .replace(/^\s*(?:[-•*]|\d+\.)\s+/, '').trim())
+    .find(Boolean) ?? ''
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line
+}
 
 export function tone(line: string): Tone {
   if (/\b0 (?:errors?|fail(?:s|ed|ures?)?)\b/i.test(line)) return 'ok' // ' 0 fail' read as a failure (live render)
