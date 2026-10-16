@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Every self-change can be a pre-registered trial: `fm rule add` and `fm evolve` take `--moves METRIC --by DAYS`, and `fm digest` (and `fm trial`) grades due trials on before and after ledger rates, proposing a revert when the metric didn't move (T-1059).
 - `fm backtest --rule/--fix/--card`: how often a changed rule, known fix or card would have fired on recent real sessions, and how many of those calls errored (read-only) (T-1058).
 - `fm pr threads ID` turns a PR's unresolved review comments into task steps (quoted as data, once each); `fm pr train` merges approved, green, non-draft PRs in order, re-testing each head and pinning the merge to the tested commit, stopping at the first red (a publish grant spent per run) (T-1087).
 - The mod's T-1090 review test streams the long line only on the session's own turn: 1,178 ms → 104 ms, so it no longer times out under load (T-1132).
