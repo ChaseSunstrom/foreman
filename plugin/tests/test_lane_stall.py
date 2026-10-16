@@ -13,7 +13,7 @@ import fmcore as c
 
 
 class LaneStall(ForemanTestCase):
-    ENV = {"FM_STALL_MIN": "0.05"}  # 3 s
+    ENV = {"FM_STALL_MIN": "0.05", "FM_STALL_CACHE_S": "0"}  # 3 s
 
     def builder(self, live=True):
         tid = json.loads(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true",
@@ -48,6 +48,36 @@ class LaneStall(ForemanTestCase):
         self.assertIn(tid, nxt[nxt.index("stalled"):])
         os.utime(self.wip)  # a fresh edit
         self.assertIsNone(self.lane_row().get("stalled_min"))
+
+    def test_a_returned_builder_with_commits_and_a_clean_worktree_is_not_stalled(self):
+        self.builder()
+        subprocess.run(["git", "-C", self.path, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.path, "commit", "-qm", "work"], check=True)
+        time.sleep(4)
+        row = self.lane_row()
+        self.assertIn("stalled_min", row)
+        self.assertIsNone(row["stalled_min"])
+        self.assertNotIn("stalled", self.fm("next", env=self.ENV).stdout)
+
+    def test_a_merged_lane_is_not_stalled(self):
+        tid = self.builder()
+        c.log_event(c.find_project(self.repo), "lane_merge", task=tid)
+        time.sleep(0.1)
+        self.assertIsNone(self.lane_row()["stalled_min"])
+
+    def test_the_result_is_cached_and_a_bad_threshold_means_the_default(self):
+        import fmlanes
+        self.builder()
+        p = c.find_project(self.repo)
+        os.environ["FM_STALL_MIN"] = "0"
+        self.addCleanup(os.environ.pop, "FM_STALL_MIN", None)
+        self.assertEqual(fmlanes.stalled(p), {})  # 0 is the default 15 min, not "always"
+        os.environ["FM_STALL_MIN"] = "0.0001"
+        time.sleep(1)
+        self.assertEqual(fmlanes.stalled(p), {}, "cached: the 60 s old answer stands")
+        os.environ["FM_STALL_CACHE_S"] = "0"
+        self.addCleanup(os.environ.pop, "FM_STALL_CACHE_S", None)
+        self.assertEqual(len(fmlanes.stalled(p)), 1)
 
     def test_a_stopped_lane_keeps_its_own_label(self):
         tid = self.builder(live=False)
