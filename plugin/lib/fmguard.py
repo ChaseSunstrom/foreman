@@ -1361,18 +1361,66 @@ def _run_dir(starter, cwd):
     return d
 
 
+# the cd chain is bounded (unbounded, each separator rescans the chain: quadratic); a longer chain is matched from a
+# later link, and the cd before it makes the run folder unknown in _drives_fm
+_PY_C = re.compile(r"(?:^|(?<=[\n;&|(]))[ \t]*((?:cd\s+[\w./~@+:=,-]+\s*&&\s*){0,8}(?:/[\w./-]*/)?python[0-9.]*\s+"
+                   r"(?:-(?:[bBdEIOPqsSuvV]+|[WX]\s*[\w.:=-]+)\s+)*-[bBdEIOPqsSuvV]*c\s+)"  # not -i: stdin runs after
+                   r"""('[^']*'|"(?:[^"\\$`]|\\[\s\S])*")(?=\s|$|[;&|)])""")
+_CD = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b")
+
+
+def _python_c_units(shell):
+    """T-1194: (the code of each `python -c CODE` that starts a command at shell top level, CODE one literal word with
+    no expansion, after a chain of plain `cd DIR &&`; the shell with those words emptied; their starters). Nothing
+    when the quote scan could part from bash's: a heredoc, $'…', a comment, an unclosed quote, a shell function or
+    alias that could stand for python, ${…} (a ; in it is a word's text), python's own settings (what its imports load)."""
+    if "<<" in shell or "$'" in shell or "${" in shell or "PYTHON" in shell or any(
+            os.environ.get(k) for k in _PY_PATH_VARS) or re.search(
+            r"\balias\b|\bfunction\b|python[0-9.]*\s*\(\s*\)", shell):
+        return [], shell, []
+    top, q, esc = [], None, False  # top[i]: shell[i] is outside every quote and escape (_quote_at, in one pass)
+    for ch in shell:
+        top.append(q is None and not esc)
+        if esc:
+            esc = False
+        elif ch == "\\" and q != "'":
+            esc = True
+        elif q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+    if q or esc or any(ch == "#" and top[i] and (i == 0 or shell[i - 1] in " \t\n;&|(") for i, ch in enumerate(shell)):
+        return [], shell, []
+    units, starters, out, last = [], [], [], 0
+    for m in _PY_C.finditer(shell):
+        if not (top[m.start()] and (m.start() == 0 or top[m.start() - 1])):  # x\;python3 is one word, not a command
+            continue
+        word = m.group(2)[1:-1]
+        units.append(word if m.group(2)[0] == "'" else
+                     re.sub(r'\\(\n|[$`"\\])', lambda e: "" if e.group(1) == "\n" else e.group(1), word))
+        starters.append(m.group(1))
+        out.append(shell[last:m.start(2)] + "''")
+        last = m.end()
+    return units, "".join(out) + shell[last:], starters
+
+
 def _drives_fm(cmd, cwd=None):
     """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
-    python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
-    of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
-    that doesn't parse, and dynamic code (exec, eval, getattr, importlib…). It only relaxes what it can prove."""
+    python, and (T-1194) literal `python -c` code, are parsed: text that merely mentions `import fm…` (an edit script's
+    strings) isn't an import. The text match of before decides for everything else: fm import text outside those
+    (data heredocs, the shell, -c code it can't read), code that doesn't parse, and dynamic code (exec, eval, getattr,
+    importlib…). It only relaxes what it can prove."""
     if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
         return False
     units, rest, starters = _python_units(cmd)
-    if _FM_INTERNALS.search("\n".join(rest + starters)):
+    c_units, shell, c_starters = _python_c_units("\n".join(rest))
+    if _FM_INTERNALS.search("\n".join([shell] + starters)):
         return True
+    # -c imports from the folder it runs in: a cd anywhere but in its own `cd DIR &&` chain makes that folder unknown
+    moved = len(_CD.findall("\n".join([shell] + starters))) > sum(len(_CD.findall(s)) for s in c_starters)
+    runs = [_run_dir(s, cwd) for s in starters] + [None if moved else _run_dir(s, cwd) for s in c_starters]
     import ast
-    for code, starter in zip(units, starters):
+    for code, run in zip(units + c_units, runs):
         if not _FM_INTERNALS.search(code):
             continue
         try:
@@ -1386,7 +1434,7 @@ def _drives_fm(cmd, cwd=None):
         if names & _DYNAMIC or any(x.startswith("__") for x in names) or \
                 any(m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm") for m in modules):
             return True  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
-        run = _run_dir(starter, cwd)  # review (T-0286): python - imports from its folder first — a json.py there runs
+        # review (T-0286): python - (and -c) imports from its folder first — a json.py there runs
         if modules and (run is None or any(os.path.exists(os.path.join(run, m.split(".")[0] + x))
                                            for m in modules for x in (".py", ""))):
             return True
