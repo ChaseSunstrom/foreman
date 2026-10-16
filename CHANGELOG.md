@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A stack card's "what to avoid" note is injected once per session; a later task in the same session gets one line pointing at `fm lib show NAME` instead of the whole note again (the changelogs card had been injected 28 times, about 18k characters, in one session) (T-1193).
 - `fm release` runs the canary last, after the push and round close, with up to four project sentinels at once; it never fails a release, so it no longer holds the push (1.2.34's canary took over 3 minutes per project, one at a time, across 12 projects) (T-1199).
 
 ## 1.2.34 — 2026-10-16
