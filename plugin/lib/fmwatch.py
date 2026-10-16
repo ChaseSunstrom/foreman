@@ -377,6 +377,35 @@ def _ledger_lines(b):
             "inconclusive": len(b.inconclusive()), "unverified": [c.plain(x)[:200] for x in b.unverified()][:5]}
 
 
+def _worktrees(p, briefs):
+    """T-1023: the git worktrees beside the main checkout, for the pane's Agents graph: the branch, the task whose lane
+    it is, the Claude Code subagent it was made for (its branch is worktree-agent-<id>), its age and the commits it
+    holds that HEAD doesn't."""
+    import re
+    root = c.git_root(p.root)
+    if not root:
+        return []
+    lanes = {os.path.realpath(b.meta["lane"]): b.id for b in briefs if b.meta.get("lane")}
+    out = []
+    for block in c._git(root, "worktree", "list", "--porcelain").strip().split("\n\n")[1:]:
+        f = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+        path, branch = f.get("worktree"), (f.get("branch") or "").removeprefix("refs/heads/")
+        if not path:
+            continue
+        try:  # the .git file a worktree gets once, when it's made
+            age = int(time.time() - os.stat(os.path.join(path, ".git")).st_mtime)
+        except OSError:
+            age = None
+        m = re.fullmatch(r"worktree-agent-([0-9a-f]+)", branch)
+        out.append({"path": path, "branch": branch, "task": lanes.get(os.path.realpath(path)),
+                    "agent": m.group(1) if m else None, "age_s": age, "ahead": None})
+    out = sorted(out, key=lambda w: w["age_s"] if w["age_s"] is not None else 1 << 40)[:12]  # newest first, then capped
+    for w in out:  # one git call each, only for those listed; a detached one's merge state stays unknown (None)
+        n = c._git(root, "rev-list", "--count", f"HEAD..refs/heads/{w['branch']}").strip() if w["branch"] else ""
+        w["ahead"] = int(n) if n.isdigit() else None
+    return out
+
+
 def view(p):
     """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
     surface to render, built from gather() so it shows what fm watch shows."""
@@ -452,6 +481,7 @@ def view(p):
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
+        "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],

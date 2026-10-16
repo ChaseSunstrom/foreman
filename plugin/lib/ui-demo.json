@@ -25,6 +25,7 @@
  "signals": [], "fleet": [], "today_done": 1, "done_days": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1],
  "trust_file": "~/.claude/foreman/state/trust.json", "resume_after_reload": null,
  "typical": {"FIX/S": 12, "FEATURE/M": 45}, "brainstorm": null, "budget": null, "bench": null, "research": [],
+ "worktrees": [{"path": "/tmp/demo/.claude/worktrees/agent-a1b2c3d4", "branch": "worktree-agent-a1b2c3d4", "task": "T-0043", "agent": "a1b2c3d4", "age_s": 240, "ahead": 1}],
  "vetoes": [], "revisit": [], "recent": ["  10:15  ✓ T-0042 step 1: pytest tests/test_auth.py"],
  "skills": {"recent": [], "counts": {}, "suggested": [], "unread": []},
  "health": {"hook_p95_ms": 60, "guard_blocks": 0, "hook_errors": 0, "paused_hooks": []},
