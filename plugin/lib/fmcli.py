@@ -2935,16 +2935,27 @@ def _decide_ask(p, args):
     if autonomy == "full":
         _write_decision(p, f"{q} → {answer}", f"full autonomy: the default ({why})", rejected, task=args.task)
         return out(args, dict(data, answer=answer, applied=True), f"Decided (full autonomy): {q} → {answer} ({why}).")
+    import fmideas
+    prec = fmideas.precedent(p, q, options)  # T-1064: the user's own earlier answers stand in, labelled, and can be overruled
+    if prec:
+        answer, why = prec[0], f"Proxy answer (from {prec[1]} earlier answers)"
+        data = dict(data, default=answer, why=why)
     with c.lock(p.dir):
         meta = c.read_meta(p)
         d = meta.get("ask_digest") or {"asks": []}
         if not c.parse_ts(d.get("deadline")):
             d["deadline"] = c.iso(time.time() + DIGEST_HOURS * 3600)
         n = max((a.get("n", 0) for a in d["asks"]), default=0) + 1
-        d["asks"].append(dict(data, n=n, task=args.task, at=c.now()))
+        d["asks"].append(dict(data, n=n, task=args.task, at=c.now(), **({"proxy": True} if prec else {})))
         meta["ask_digest"] = d
         c.write_meta(p, meta)
         c.log_event(p, "ask_queued", task=args.task, data={"n": n, "q": q, "default": answer}, session=session())
+        if prec:
+            _write_decision(p, f"{q} → {answer}", why, rejected, task=args.task, locked=True)
+            c.log_event(p, "proxy_answer", task=args.task, data={"n": n, "q": q, "a": answer}, session=session())
+    if prec:
+        return out(args, dict(data, answer=answer, proxy=True, queued=n, deadline=d["deadline"]),
+                   f"{why}: {q} → {answer}. It stays in the digest as ask {n}; the user's answer there overrules it.")
     return out(args, dict(data, queued=n, deadline=d["deadline"]),
                f"Ask {n} waits in the digest ({len(d['asks'])}; unanswered, each takes its default at {d['deadline']}). "
                f"Keep working; before you end the turn put the digest to the user (fm decide --digest).")
@@ -2963,6 +2974,8 @@ def _apply_due_asks(p):
         if not c.digest_due(d):
             return []
         for a in d["asks"]:  # rows first: a crash between the two repeats a row rather than losing an ask
+            if a.get("proxy"):
+                continue  # its row was written when it was proxied
             _write_decision(p, f"{a['q']} → {a['default']}", f"ask digest deadline passed unanswered: the default "
                             f"({a.get('why')})", ", ".join(o for o in a.get("options") or [] if o != a["default"]),
                             task=a.get("task"), locked=True)
@@ -2997,6 +3010,11 @@ def _answer(p, args):
         _write_decision(p, f"{a['q']} → {args.decision}", args.why or "the user's answer (ask digest)",
                         args.rejected or ", ".join(o for o in a.get("options") or [] if o != args.decision),
                         task=a.get("task") or args.task, locked=True)
+        import fmideas
+        c.log_event(p, "ask_answered", task=a.get("task"), data={"q": fmideas.ask_key(a["q"], a.get("options")), "a": args.decision},
+                    session=session())
+        if a.get("proxy") and a.get("default") != args.decision:
+            c.log_event(p, "proxy_overruled", task=a.get("task"), data={"n": args.answer, "q": a["q"]}, session=session())
         d["asks"].remove(a)
         if not d["asks"]:
             meta.pop("ask_digest")

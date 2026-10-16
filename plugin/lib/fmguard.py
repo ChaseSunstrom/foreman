@@ -31,6 +31,8 @@ USER_ONLY_FM = {
                          "(fm rule rm): they decide what blocks", "fm taste compile N --block"),  # T-1063
     "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "
                           "may have revoked since", "fm rollback --yes"),  # T-1085
+    "decide": ("--answer", "fm decide ANSWER --answer N records the user's answer to an ask, and answers become "
+                           "precedent for proxy answers: only the user records them", "fm decide ANSWER --answer N"),  # T-1064
 }
 def _user_only_hit(word, arg):
     """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
