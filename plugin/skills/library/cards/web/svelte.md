@@ -3,7 +3,7 @@ name: svelte
 title: Svelte
 area: web
 tags: [svelte, javascript, typescript, ui, runes, components]
-detect: [dep:svelte, ext:.svelte]
+detect: [dep:svelte, dep:@sveltejs/vite-plugin-svelte, dep:svelte-check, ext:.svelte]
 related: [sveltekit, vitest, testing-library, playwright, tailwind]
 ---
 Svelte 5 components with runes (`$state`, `$derived`, `$effect`, `$props`) and compile-time reactivity.
