@@ -63,7 +63,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { agentOut, agentRow, bars, editChanges, editRow, mascotTree, meter, miniRail, rail, shellRow, spark } from './rows'
+import { agentOut, agentRow, bars, editChanges, editRow, mascotTree, meter, miniRail, ownsResult, rail, sectionHead, shellRow, spark, toolRow } from './rows'
 import type { Motion } from './rows'
 
 // Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -700,6 +700,7 @@ export const register: Register = (on, options) => {
     const { Box } = $.ui.resolve(e)
     if (e.props.tool === 'Bash') return <Box key="fm-shell-result" />
     if (!e.props.isErrored && agentOut(e.props.tool, e.props.output)) return <Box key="fm-agent-result" /> // T-0148
+    if (ownsResult(e.props.tool, !!e.props.isErrored, e.props.output)) return <Box key="fm-done-result" /> // T-1031: in the row
     if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
     return <Box key="fm-edit-shown" />
   })
@@ -724,15 +725,15 @@ export const register: Register = (on, options) => {
       const more = readSummary(e.props.tool, e.props.output)
       return (
         <Box flexDirection="row" gap={1} key="fm-read">
-          <Text color={hex(mix(face.color, C.dim, 0.4))}>{face.icon}</Text>
-          <Text color={hex(C.dim)}>{face.verb.replace(/ing\b/, '')}</Text>
-          <Text wrap="truncate-start">{face.target}</Text>
-          {more ? <Text color={hex(C.dim)}>· {more}</Text> : null}
+          <Text color={hex(face.color)}>{face.icon}</Text>
+          <Text weight="bold" color={hex(mix(face.color, C.muted, 0.5))}>{face.verb.replace(/ing\b/, '')}</Text>
+          <Text wrap="truncate-start" color={hex(0xd0d5dd)}>{face.target}</Text>
+          {more ? <Text color={hex(C.muted)}>· {more}</Text> : null}
         </Box>
       )
     }
     const done = !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted
-    const edited = done ? editRow($.ui.resolve(e), e) ?? agentRow($.ui.resolve(e), e) : null
+    const edited = done ? editRow($.ui.resolve(e), e) ?? agentRow($.ui.resolve(e), e) ?? toolRow($.ui.resolve(e), e) : null
     if (edited) return edited
     if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
     const f = await read($, frame)
@@ -747,27 +748,15 @@ export const register: Register = (on, options) => {
     const ideasRun = e.props.tool === 'Bash' && /^ideas\b/.test(fmCommand((e.props.input as { command?: unknown } | null)?.command) ?? '')
     const bs = ideasRun ? (await read($, view))?.brainstorm : null
 
-    // T-0179 steer ('the command changes … I want in panels too'): a command, an edit or an agent is a panel from the
-    // start, its border pulsing while it runs; reads and searches stay one quiet line
-    const boxed = /^(Bash|Edit|MultiEdit|Write|NotebookEdit|Task|Agent)$/.test(e.props.tool)
-    const row = (
-      <Box flexDirection="row" gap={1} key="fm-tool"
-        {...(boxed ? { borderStyle: 'round', borderColor: hex(pulse(face.color, f)), paddingX: 1, width: '100%' } : {})}>
-        <Text color={hex(face.color)}>{spin(f)}</Text>
-        <Text weight="bold" color={hex(face.color)}>
-          {face.icon} {face.verb}
-        </Text>
-        <Text wrap="truncate-end">{face.target.slice(0, Math.max(10, width - 48))}</Text>
-        {face.delta && <Text color={hex(C.edit)}>{face.delta}</Text>}
-        {agent && (
-          <Text dimColor wrap="truncate-end">
-            {agent.tools} tools · {agent.last.slice(0, 40)}
-          </Text>
-        )}
-        {meter($.ui.resolve(e), e, 'fm-tool-bar', 12, null, face.color, f)}
-        <Text dimColor>{elapsed(ms)}</Text>
-      </Box>
-    )
+    // T-1031 ('make the full chat UI match the panel look'): a running call is a section head like the pane's, a comet
+    // running along its rule; its facts on the right
+    const { head } = sectionHead($.ui.resolve(e), e, {
+      key: 'fm-tool', color: face.color, mark: spin(f), label: `${face.icon} ${face.verb}`,
+      subject: face.target.slice(0, Math.max(10, width - 48)), frame: f, width,
+      meta: [...(face.delta ? [{ text: face.delta, color: C.edit }, { text: ' · ' }] : []),
+        ...(agent ? [{ text: `${agent.tools} tools · ${agent.last.slice(0, 30)} · ` }] : []), { text: elapsed(ms) }],
+    })
+    const row = <Box key="fm-tool" flexDirection="column" width="100%" marginTop={1}>{head}</Box>
     if (!bs?.running) return row
     return (
       <Box flexDirection="column" key="fm-tool-ideas">
@@ -800,12 +789,10 @@ export const register: Register = (on, options) => {
         !/[\u0000-\u0008\u000b-\u001f\u007f]/.test(e.props.text)) {
       const { Box, Text } = $.ui.resolve(e)
       return (
-        <Box flexDirection="row" borderStyle="round" borderColor={hex(C.accent2)} paddingX={1} width="100%" key="fm-user">
-          <Text weight="bold" color={hex(C.accent2)}>
-            {'❯ '}
-          </Text>
-          <Box flexDirection="column" flexShrink={1}>
-            <Text wrap="wrap">{e.props.text}</Text>
+        <Box flexDirection="column" width="100%" marginTop={1} key="fm-user">
+          {sectionHead($.ui.resolve(e), e, { key: 'fm-user', color: C.accent2, label: '❯ You' }).head}
+          <Box flexDirection="column" paddingLeft={2}>
+            <Text wrap="wrap" color={hex(0xe6e9ef)}>{e.props.text}</Text>
           </Box>
         </Box>
       )
@@ -867,19 +854,15 @@ export const register: Register = (on, options) => {
     const live = turns.size > 0 && e.props.isFirstOfReply && text === newestReply
     const f = live ? await read($, frame) : 0
     const blocks = replyBlocks(text)
-    // T-0179: each message is a panel ('can we have each message … look like a panel'): quiet grey, the closing report
-    // (Foreman's Changed:/✓/✗/Next: lines) in the accent, pulsing while the reply is live
-    const report = blocks.some(b => b.kind !== 'md' && b.kind !== 'gap')
-    const border = live ? pulse(C.accent, f) : report ? C.accent : C.dim
+    // T-1031: a reply is a section like the pane's: its first block opens with the mark, a bold label and a rule in the
+    // accent (a comet along it while the reply is live); the blocks under it
     const { Box, Text, Markdown } = $.ui.resolve(e)
     return (
-      <Box flexDirection="row" borderStyle="round" borderColor={hex(border)} paddingX={1} width="100%" key="fm-reply">
-        {e.props.isFirstOfReply && (
-          <Box key="fm-reply-mark">
-            <Text color={hex(C.accent)}>{`${live ? spin(f) : '●'} `}</Text>
-          </Box>
-        )}
-        <Box flexDirection="column" flexShrink={1}>
+      <Box flexDirection="column" width="100%" marginTop={e.props.isFirstOfReply ? 1 : 0} key="fm-reply">
+        {e.props.isFirstOfReply &&
+          sectionHead($.ui.resolve(e), e, { key: 'fm-reply', color: C.accent, mark: live ? spin(f) : '●', markKey: 'fm-reply-mark',
+            label: 'Claude', frame: live ? f : null }).head}
+        <Box flexDirection="column" flexShrink={1} paddingLeft={2}>
           {blocks.map((b, i) =>
             b.kind === 'gap' ? (
               <Box key={`gap-${i}`}>

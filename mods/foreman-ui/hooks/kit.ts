@@ -621,6 +621,54 @@ export function changedLines(hunks: unknown): { n: number; sign: '+' | '-'; text
   return out
 }
 
+export type DiffRow = { kind: 'hunk' } | { kind: 'ctx'; n: number; text: string } | { kind: '+' | '-'; n: number; text: string; mid?: [number, number] }
+
+/** T-1031: a patch as rows to draw: `context` lines either side of each change, a break where lines are skipped, and
+ * for a changed line (a run of removals followed by as many additions) the whole words that differ, as `mid`. */
+export function diffRows(hunks: unknown, context = 1): DiffRow[] {
+  const out: DiffRow[] = []
+  const tidy = (t: string) => clean(t).slice(0, 240)
+  for (const h of Array.isArray(hunks) ? (hunks as { oldStart?: unknown; newStart?: unknown; lines?: unknown }[]) : []) {
+    let o = typeof h?.oldStart === 'number' ? h.oldStart : 1
+    let n = typeof h?.newStart === 'number' ? h.newStart : 1
+    const rows: DiffRow[] = []
+    for (const l of Array.isArray(h?.lines) ? h.lines : []) {
+      if (typeof l !== 'string' || l.startsWith('\\')) continue // '\ No newline at end of file'
+      if (l.startsWith('-')) rows.push({ kind: '-', n: o++, text: tidy(l.slice(1)) })
+      else if (l.startsWith('+')) rows.push({ kind: '+', n: n++, text: tidy(l.slice(1)) })
+      else rows.push({ kind: 'ctx', n: (o++, n++), text: tidy(l.slice(1)) })
+    }
+    const near = (i: number) => rows.slice(Math.max(0, i - context), i + context + 1).some(r => r.kind !== 'ctx')
+    let last = -1
+    rows.forEach((r, i) => {
+      if (r.kind === 'ctx' && !near(i)) return
+      if ((last >= 0 ? last < i - 1 : out.length > 0) && out.at(-1)?.kind !== 'hunk') out.push({ kind: 'hunk' })
+      out.push(r)
+      last = i
+    })
+  }
+  for (let i = 0; i < out.length; ) { // pair a run of k removals with the k additions after it
+    let k = 0
+    while (out[i + k]?.kind === '-') k++
+    let m = 0
+    while (out[i + k + m]?.kind === '+') m++
+    if (k && k === m)
+      for (let j = 0; j < k; j++) {
+        const a = out[i + j] as { text: string; mid?: [number, number] }
+        const b = out[i + k + j] as { text: string; mid?: [number, number] }
+        let p = 0
+        while (p < a.text.length && p < b.text.length && a.text[p] === b.text[p]) p++
+        let s = 0
+        while (s < a.text.length - p && s < b.text.length - p && a.text[a.text.length - 1 - s] === b.text[b.text.length - 1 - s]) s++
+        while (p > 0 && /\w/.test(a.text[p - 1]!)) p-- // whole words
+        while (s > 0 && /\w/.test(a.text[a.text.length - s]!)) s--
+        if (p + s >= 3) (a.mid = [p, a.text.length - s]), (b.mid = [p, b.text.length - s])
+      }
+    i += Math.max(1, k + m)
+  }
+  return out
+}
+
 /** T-0143: one part of a Foreman report line in a reply (Changed:, ✓/✗, ⚑ Captured, ◆ Decided, Next:, ⚠ Needs you) */
 export type ReplyPart = { text: string; color?: number; bold?: boolean }
 export type ReplyBlock = { kind: 'md'; text: string } | { kind: 'line'; parts: ReplyPart[] } | { kind: 'gap' }
