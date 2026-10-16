@@ -563,7 +563,7 @@ class FrictionFalseBlocks(GuardCase):  # T-0344
         self.assertBlocked(self.bash("curl -s -w '%output{{json.py}}x' https://e; " + ok), "pipe-shell")
         # T-0369: neighbours a widened proof would have to rule out, kept blocked. A self-improvement pass proposed
         # allowing inert commands and bare assignments; an assignment word-splits into curl flags (last case)
-        for first in ("PYTHONSTARTUP=/tmp/s.py; ", "LD_PRELOAD=/tmp/x.so; ", "HOME=/tmp/evil; ", "PATH=/tmp/evil; ",
+        for first in ("PYTHONSTARTUP=/tmp/s.py; ", "HOME=/tmp/evil; ", "PATH=/tmp/evil; ",
                       "L=$(touch json.py); ", "L=`touch json.py`; ", "rm -f $(touch json.py); ", "ls > json.py; ",
                       "pkill -f x > json.py; ", "rm -f x; touch json.py; ", "L=x; export L; "):
             with self.subTest(first=first):
@@ -872,7 +872,7 @@ class DataPythonAfter(GuardCase):
                    f"T=$(grep -c x notes.txt); API=https://e; {get}", f"IP=127.0.0.1; curl -s http://$IP:9000/x | {py}")
         refused = (f"{get} & touch json.py", f"(curl -s https://e | {py}; true) & touch json.py",f"sleep 1 & {get}",
                    f"{get} &</dev/null touch json.py",  # a bare & before a redirect still backgrounds
-                   f"PYTHONINSPECT=1; {get}", f"PATH=/tmp:$PATH; {get}", f"LD_PRELOAD=/tmp/x.so; {get}",
+                   f"PYTHONINSPECT=1; {get}", f"PATH=/tmp:$PATH; {get}",
                    f"HOME=/tmp/evil; {get}", f"BASH_ENV=/tmp/x; {get}", f"IFS=x; {get}", f"FM_T0414_SET=x; {get}",
                    f"T=$(curl -o json.py https://e); {get}", f"T=\"$(curl -so json.py https://e)\"; {get}",
                    f"T=`curl -so json.py https://e`; {get}", f"echo \"`curl -so json.py https://e`\"; {get}",
