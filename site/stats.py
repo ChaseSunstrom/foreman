@@ -152,15 +152,26 @@ def duel(state):
     with open(bare_path, encoding="utf-8") as f:
         bare = json.load(f)
     pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
+                      "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
                       "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error"))}
     b = {x["id"]: x for x in bare.get("cases", [])}
-    cases = [{"case": x["id"], "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", []) if x["id"] in b]
+    try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
+        with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
+            titles = {x["id"]: x.get("title") or "" for x in json.load(f)}
+    except (OSError, ValueError, TypeError, KeyError):
+        titles = {}
+    name = lambda cid: (re.findall(r"\bkit\.(\w+)", titles.get(cid, "")) or [cid])[0]
+    cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
+             if x["id"] in b]
     return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--state")
+    ap.add_argument("--duel", action="append", metavar="NAME=DIR",
+                    help="a Foreman project state folder whose newest duel to show, named (repeatable); default: this "
+                         "repo's, as the quality duel")
     ap.add_argument("--no-bench", action="store_true", help="keep the hook timings already in stats.json")
     a = ap.parse_args()
     state = a.state or state_dir()
@@ -172,7 +183,9 @@ def main():
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
              "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
-             "duel": duel(state) or old.get("duel")}
+             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(x.partition("=")[2]))
+                                                     for x in (a.duel or [f"quality={state}"])) if d]
+             or old.get("duels") or []}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=1)
