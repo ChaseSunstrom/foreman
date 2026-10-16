@@ -1032,8 +1032,12 @@ def cmd_guard_try(args):
     """T-1146: fm guard try: the hook's own decision (task, grants, cwd) for a command or a file edit, never run."""
     import fmcli
     import fmguard as g
+    if args.action == "wrong":  # T-1162
+        import fmreplay
+        k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)
+        return fmcli.out(args, k, f"Stored guard case {k['id']}: should {k['should']}. fm replay --cases reports it.")
     if args.action != "try":
-        raise fmcli.UsageError("fm guard: the only action is try")
+        raise fmcli.UsageError("fm guard: the actions are try and wrong")
     key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(args.tool, "file_path")
     target = args.text if args.tool == "Bash" else args.path
     if not target:
