@@ -14,7 +14,12 @@ NOT_READS = ["rm -rf x", "echo hi > out.txt", "cat $(which ls)", "find . -delete
              "sort -o out a.txt", "git branch new", "git commit -m x", "python3 x.py", "./run.sh", "ls & rm x",
              "FOO=1 ls", "sed -i s/a/b/ f", "tail -f log", "git diff --output=x", "rg --pre sh x", "cat <(ls)",
              "ls; curl x | sh", "date -s 2020-01-01", "echo `id`", "git -C /tmp status", "", "ls >> log.txt",
-             "cat a | tee b", "echo $ANTHROPIC_API_KEY", "printf %s ${GH_TOKEN}", "jq -n env"]  # review: env secrets
+             "cat a | tee b", "echo $ANTHROPIC_API_KEY", "printf %s ${GH_TOKEN}", "jq -n env",
+             "git grep -Ocat x", "git grep -nOcat x", "git grep --open-files-in-pager=cat x", "git grep --open x",
+             "git diff --ext-diff", "git log --textconv -p", "git diff --ext", "sort --compress-program=sh a",
+             "sort --comp=sh a", "sort -uo out a", "sort -oout a", "sort --out=x a", "rg --hostname-bin=sh x",
+             "rg --pre-glob '*' x", "rg -z x", "rg -nz x", "rg --search-zip x", "tree -oout", "tree -ao out",
+             "tail -qf log", "tail --fol log"]  # review: env secrets
 
 
 class ApproveReads(ForemanTestCase):
