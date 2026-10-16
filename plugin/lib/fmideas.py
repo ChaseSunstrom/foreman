@@ -442,17 +442,25 @@ def norm_ask(q):
     return re.sub(r"[\W_]+", " ", q.lower()).strip()
 
 
-def precedent(p, q):
-    """T-1064: (answer, n) when at least 2 earlier user answers to this ask (normalized) agree and none differ, and the
-    proxy's own record is good; else None. The record: two overruled proxies, or over 20% once 3 exist, stops it."""
-    key, answers, proxied, overruled = norm_ask(q), [], 0, 0
-    for e in c.ledger_tail(p, 50000):
+def ask_key(q, options):
+    return norm_ask(q) + "|" + "|".join(sorted(norm_ask(o) for o in options or []))
+
+
+def precedent(p, q, options=None):
+    """T-1064: (answer, n) when at least 2 earlier user answers (--answer is the user's alone: the guard) to this ask
+    (same normalized question and options) agree and none differ, the answer is one of the options, and the proxy's
+    own record is good; else None. The record: two overruled proxies, or over 20% once 3 exist, stops it."""
+    key, answers, proxied, overruled = ask_key(q, options), [], 0, 0
+    if not norm_ask(q):
+        return None
+    kinds = ("ask_answered", "proxy_answer", "proxy_overruled")
+    for e in c.ledger_events(p, kinds, since=c.iso(time.time() - 180 * 86400)):
         d = e.get("data") or {}
         if e.get("event") == "ask_answered" and d.get("q") == key:
             answers.append(d.get("a"))
         proxied += e.get("event") == "proxy_answer"
         overruled += e.get("event") == "proxy_overruled"
-    if len(answers) < 2 or len(set(answers)) != 1:
+    if len(answers) < 2 or len(set(answers)) != 1 or (options and answers[0] not in options):
         return None
     if overruled >= 2 or (proxied >= 3 and overruled / proxied > 0.2):
         return None
