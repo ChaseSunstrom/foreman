@@ -373,7 +373,14 @@ def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
-        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) else [])
+        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) or (
+            not getattr(args, "no_sandbox", False) and _sandbox_available()) else [])
+
+
+def _sandbox_available():
+    """T-1086: the host has a sandbox Claude Code can use (bubblewrap on Linux, sandbox-exec on macOS): fm run uses it
+    unless --no-sandbox."""
+    return bool(shutil.which("bwrap") or shutil.which("sandbox-exec"))
 
 
 def _sandbox(p):

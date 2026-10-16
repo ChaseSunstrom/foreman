@@ -79,3 +79,20 @@ def cmd_verify_ledger(args):
                 f"each is unproven): " + ", ".join(r["gaps"][:10])
     fmcli.out(args, r, text)
     return 1 if r["broken"] or lost else 0
+
+
+def cmd_outbound(args):
+    """T-1086: fm outbound [ID]: the requests a task's sessions made to the outside (hosts, queries, MCP tools), counted."""
+    import collections
+    import fmcli
+    p = fmcli.resolve(args)
+    act = c.active_brief(c.load_briefs(p), p.lane)
+    tid = args.id or (act.id if act else None)
+    if not tid:
+        raise fmcli.UsageError("fm outbound needs a task id (no task is focused)")
+    n = collections.Counter((e["data"].get("tool"), e["data"].get("target")) for e in c.ledger_events(p, ["outbound"])
+                            if e.get("task") == tid)
+    rows = [{"tool": t, "target": g, "count": k} for (t, g), k in n.most_common()]
+    text = f"{tid}: " + (f"{sum(n.values())} outbound request(s)\n" + "\n".join(
+        f"  {r['count']:>3}  {r['tool']}  {r['target']}" for r in rows) if rows else "no outbound requests logged")
+    return fmcli.out(args, {"id": tid, "outbound": rows}, text)
