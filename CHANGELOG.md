@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard reads a heredoc fed to `fm edit` as data, like one fed to `cat`: an edit block that names Foreman's modules is no longer refused as interpreter code just because the same command also runs python3 (T-1141).
 - Hooks find the active task without parsing every brief (only briefs whose frontmatter says active or verifying are parsed): the PreToolUse hook on this repo went from a 135 ms median to 72 ms (T-1140).
 - `fm lib gaps | draft | admit`: list dependencies no card covers, stage a card, and admit it into the library only after the card lint and an untrusted-text check pass, never outside the cards folder (T-1037).
 - Racing builders: `fm lane race T` has two builders work an S/M task under their own ids, `--score` compares them (criteria passing, lines changed), and `fm lane pick W` merges the winner and drops the other, keeping its branch (T-1069).
