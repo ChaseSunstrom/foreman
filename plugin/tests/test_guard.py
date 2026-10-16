@@ -1029,6 +1029,21 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_a_quoted_heredoc_gets_the_python_settings_and_earlier_cd_checks(self):
+        # T-1204: -c code (T-1194) is refused when python's settings or an earlier cd change what it imports; a
+        # heredoc fed to python had neither check
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        body = "python3 - <<'EOF'\nimport re\ns = 'import fmcore; fmcore.write_meta(p, {{}})'\nprint(re.escape(s))\nEOF"
+        self.assertFalse(driving(body))
+        self.assertTrue(driving("export PYTHONPATH=/tmp/x\n" + body))
+        self.assertTrue(driving("PYTHONSTARTUP=/tmp/x.py\n" + body))
+        with mock.patch.dict(os.environ, {"PYTHONPATH": "/tmp/x"}):
+            self.assertTrue(driving(body))
+        with tempfile.TemporaryDirectory(dir="/tmp") as d:
+            open(os.path.join(d, "re.py"), "w").close()  # python - imports from its folder first
+            self.assertTrue(driving(f"cd {d}\n" + body))
+            self.assertTrue(driving(f"pushd {d} >/dev/null\n" + body))
+
     def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
         # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
         driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")

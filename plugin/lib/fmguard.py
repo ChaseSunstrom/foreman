@@ -1416,9 +1416,14 @@ def _drives_fm(cmd, cwd=None):
     c_units, shell, c_starters = _python_c_units("\n".join(rest))
     if _FM_INTERNALS.search("\n".join([shell] + starters)):
         return True
-    # -c imports from the folder it runs in: a cd anywhere but in its own `cd DIR &&` chain makes that folder unknown
-    moved = len(_CD.findall("\n".join([shell] + starters))) > sum(len(_CD.findall(s)) for s in c_starters)
-    runs = [_run_dir(s, cwd) for s in starters] + [None if moved else _run_dir(s, cwd) for s in c_starters]
+    # T-1204: python's own settings (PYTHONPATH loads sitecustomize, PYTHONSTARTUP…), set in the command or inherited,
+    # change what any of its code runs, as _python_c_units already refuses for -c
+    if (units or c_units) and ("PYTHON" in "\n".join([shell] + starters) or any(os.environ.get(k) for k in _PY_PATH_VARS)):
+        return True
+    # python - and -c import from the folder they run in: a cd anywhere but in their own `cd DIR &&` chain (an earlier
+    # line, a `;`) makes that folder unknown (T-1204: heredocs too)
+    moved = len(_CD.findall("\n".join([shell] + starters))) > sum(len(_CD.findall(s)) for s in starters + c_starters)
+    runs = [None if moved else _run_dir(s, cwd) for s in starters + c_starters]
     import ast
     for code, run in zip(units + c_units, runs):
         if not _FM_INTERNALS.search(code):
