@@ -30,7 +30,7 @@ class DirtyAtFocus(ForemanTestCase):
         return self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Do it", *extra)
 
     def committed(self):
-        return self.git("show", "--name-only", "--format=").split()
+        return self.git("show", "--name-only", "--format=").splitlines()
 
     def test_dirty_file_is_named_and_left_out(self):
         r = self.finish()
@@ -46,11 +46,35 @@ class DirtyAtFocus(ForemanTestCase):
     def test_old_brief_without_a_snapshot_commits_both(self):
         import fmcore as c
         p = c.find_project(self.repo, create=False)
-        b = c.find_brief(p, "T-0001")
-        b.meta.pop("dirty_at_focus", None)
-        c.save_brief(p, b)
+        os.remove(os.path.join(p.dir, "audits", "T-0001.dirty.json"))
         self.finish()
         self.assertEqual(sorted(self.committed()), ["clean.py", "mine.py"])
+
+    def test_a_file_an_earlier_task_edited_is_not_the_users(self):
+        # task A leaves CHANGELOG uncommitted; B edits it and commits it
+        path = os.path.join(self.repo, "CHANGELOG.md")
+        self.write("CHANGELOG.md", "a\n")  # T-0001 edits it through the tool the hooks watch
+        self.hook("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path}, "tool_response": {}})
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true")
+        self.fm("task", "new", "B", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.write("CHANGELOG.md", "a\nb\n")
+        self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "B")
+        self.assertIn("CHANGELOG.md", self.committed())
+
+    def test_odd_paths_and_with_spellings(self):
+        for n in ("a, b.txt", "x #y.txt"):
+            self.write(n, "0\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "odd")
+        self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true")
+        for n in ("a, b.txt", "x #y.txt"):
+            self.write(n, "1\n")
+        self.fm("task", "new", "O", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        for n in ("a, b.txt", "x #y.txt"):
+            self.write(n, "2\n")
+        self.fm("task", "finish", "T-0002", "--audit", "self", "--run", "true", "--commit", "O",
+                "--with", "./a, b.txt", "--with", os.path.join(self.repo, "x #y.txt"))
+        self.assertEqual(sorted(self.committed()), ["a, b.txt", "x #y.txt"])
 
 
 if __name__ == "__main__":
