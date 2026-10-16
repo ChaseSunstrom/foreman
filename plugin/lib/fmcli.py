@@ -4864,6 +4864,8 @@ def build_parser():
     s.add_argument("--timeout", type=int, default=600)
     s = add("deps", lazy("fmoutside", "cmd_deps"),
             help="dependencies a major version behind their registry's latest, with the migration question to research")
+    s.add_argument("words", nargs="*", help='"check <install command>": age, typosquat and registry look at the '
+                                            "packages an npm/pip/cargo install names (T-1049)")
     s.add_argument("--research", type=int, nargs="?", const=3, default=0, metavar="N",
                    help="research the first N migrations now (default 3; each budget-checked)")
     s.add_argument("--calls", action="store_true", help="each dependency's installed version and import sites with "

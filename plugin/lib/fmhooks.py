@@ -1167,7 +1167,7 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        note = " ".join(filter(None, [saved, warn, _fix_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        note = " ".join(filter(None, [saved, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
@@ -1185,6 +1185,19 @@ def _fix_note(pl, p):
     try:
         import fmfixes
         return fmfixes.pre_note(p, pl.get("session_id"), (pl.get("tool_input") or {}).get("command"))
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
+def _dep_note(pl, p):
+    """T-1049: a Bash install of a new package gets a typosquat, registry and age note; fails open, never blocks."""
+    cmd = (pl.get("tool_input") or {}).get("command")
+    if pl.get("tool_name") != "Bash" or not p or not cmd:
+        return None
+    try:
+        import fmdeps
+        return fmdeps.note(p, cmd)
     except Exception:
         log_error("PreToolUse", _tb())
         return None
