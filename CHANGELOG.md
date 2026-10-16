@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- CI: the guard scan's CPU-time bounds allow GitHub's slower runners (0.11 s there against 0.08), and each failing test gets its own public annotation instead of one per class (T-1248)
 - In an unattended run, a FEATURE task's test-first note says to write and run the failing test, without recording it with fm task evidence: the long sessions spent up to 12 calls a run on that. A FIX still records its red run, for the red-to-green proof (T-1231)
 
 ## 1.2.39 — 2026-10-16
