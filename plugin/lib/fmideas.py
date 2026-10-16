@@ -122,18 +122,43 @@ def _forget(pr):
 def _reap(pr):
     """T-1044: the child's whole process group killed (never only the leader: a grandchild holding the pipes hung the
     runner and outlived it), its pipes drained, its registry entry gone."""
+    if pr.returncode is None:  # once it's been waited for, its pid may be another process's by now
+        try:
+            os.killpg(pr.pid, signal.SIGKILL)
+        except OSError:
+            pass
     try:
-        os.killpg(pr.pid, signal.SIGKILL)  # not yet waited for, so the pid (the group's id) is still ours
-    except OSError:
-        pass
-    pr.communicate()
+        pr.communicate(timeout=5)
+    except subprocess.TimeoutExpired:  # a grandchild that left the group (setsid) holds the pipes: not ours to wait on
+        pr.wait()
     _forget(pr)
+
+
+def _strays(pgid, start):
+    """T-1044: a dead leader's group still has a member it started: a process in the session and group the leader made
+    (start_new_session: both ids are its pid), started no earlier than it. Linux never reuses a pid while a group holds
+    it; only a later session leader that took the pid could make such a group, and a sweep can't tell that one apart."""
+    try:
+        os.killpg(pgid, 0)  # no such group (the usual case: the helper finished) costs one call, not a /proc scan (~30 ms)
+    except OSError:
+        return False
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    st = f.read().rsplit(")", 1)[1].split()
+            except OSError:
+                continue
+            if st[2] == st[3] == str(pgid) and int(st[19]) >= start:
+                return True
+    return False
 
 
 def sweep_orphans(max_age=1800):
     """T-1044: the helpers a dead run left behind, killed with their process groups: the count. An entry older than
     max_age (or its own timeout) whose pid is still the same process (its start time) running a helper (its command
-    line) is killed; a dead, reused or foreign pid only loses its entry; a fresh one is left to its run."""
+    line) is killed, and so is the group of a leader that's gone while a member it started holds the group (_strays);
+    a reused or foreign pid, or an empty group, only loses its entry; a fresh one is left to its run."""
     try:
         names = os.listdir(_registry())
     except OSError:
@@ -148,10 +173,14 @@ def sweep_orphans(max_age=1800):
                 start, at, timeout = f.read().split()
             if time.time() - float(at) < max(max_age, float(timeout) + 60):
                 continue  # its run may still be waiting on it
-            with open(f"/proc/{int(name)}/cmdline", "rb") as f:
-                helper = b"--no-session-persistence" in f.read().split(b"\0")
-            if helper and _starttime(int(name)) == start:
-                os.killpg(int(name), signal.SIGKILL)
+            pid = int(name)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    ours = b"--no-session-persistence" in f.read().split(b"\0") and _starttime(pid) == start
+            except FileNotFoundError:  # the leader is gone
+                ours = _strays(pid, int(start))
+            if ours:
+                os.killpg(pid, signal.SIGKILL)
                 n += 1
         except (OSError, ValueError, IndexError):  # gone, garbled or not ours to kill: the entry goes
             pass
@@ -195,7 +224,7 @@ def run_children(jobs, timeout, feature):
     [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
     stopped)."""
     with _child_cwd(feature) as cwd:
-        procs = []
+        procs, started = [], False
         try:
             for argv, stdin, detail in jobs:
                 pr = _popen(argv, timeout, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -206,26 +235,29 @@ def run_children(jobs, timeout, feature):
                     pr.stdin.close()
                 finally:
                     pr.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
-        except OSError as e:
-            for pr, _ in procs:
-                _reap(pr)
-            raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
-        deadline, out = time.time() + timeout, []
-        for pr, detail in procs:
-            try:
-                so, se = pr.communicate(timeout=max(1, deadline - time.time()))
-                _forget(pr)
-                text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
-                fmbudget.record(feature, usd, detail=detail)
-                why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
-                # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged by the error
-                out.append((text, None) if pr.returncode == 0 and text.strip() else
-                           (text, why) if text.strip() else (None, why))  # both set: partial
-            except subprocess.TimeoutExpired:
-                _reap(pr)
-                fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
-                                else "timed out: cost unknown")
-                out.append((None, f"timed out after {timeout}s"))
+            started, deadline, out = True, time.time() + timeout, []
+            for pr, detail in procs:
+                try:
+                    so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                    _forget(pr)
+                    text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
+                    fmbudget.record(feature, usd, detail=detail)
+                    why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
+                    # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged
+                    out.append((text, None) if pr.returncode == 0 and text.strip() else
+                               (text, why) if text.strip() else (None, why))  # both set: partial
+                except subprocess.TimeoutExpired:
+                    _reap(pr)
+                    fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
+                                    else "timed out: cost unknown")
+                    out.append((None, f"timed out after {timeout}s"))
+        except BaseException as e:  # T-1044: a child that can't start, or ^C: every group still running goes (each has
+            for pr, _ in procs:  # its own session, so the terminal's ^C no longer reaches them)
+                if pr.returncode is None:
+                    _reap(pr)
+            if isinstance(e, OSError) and not started:
+                raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
+            raise
     return out
 
 

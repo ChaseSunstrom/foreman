@@ -10,8 +10,17 @@ from unittest import mock
 from helpers import ForemanTestCase
 
 # a helper that starts a grandchild, says where it is, and waits on it (the grandchild off the pipes, so a runner that
-# kills only the leader still returns, and the test fails instead of hanging for the sleep)
-STUB = '#!/bin/sh\nsleep 300 </dev/null >/dev/null 2>&1 &\necho $! > "$STUB_PIDFILE"\nwait\n'
+# kills only the leader still returns, and the test fails instead of hanging for the sleep). Its mode ($STUB_MODE, else
+# its first argument): fast answers at once; orphan leaves without waiting; escape's grandchild leaves the group
+# (setsid) holding the pipes.
+STUB = r'''#!/bin/sh
+mode=${STUB_MODE:-$1}
+if [ "$mode" = fast ]; then cat >/dev/null; echo '{"result": "ok", "total_cost_usd": 0.01}'; exit 0; fi
+if [ "$mode" = escape ]; then setsid sleep 20 & echo $! >> "$STUB_PIDFILE"; wait; exit; fi
+sleep 300 </dev/null >/dev/null 2>&1 &
+echo $! >> "$STUB_PIDFILE"
+[ "$mode" = orphan ] || wait
+'''
 
 
 def gone(pid, wait=5):
@@ -48,21 +57,37 @@ class _Stubbed(ForemanTestCase):
         self.fm("init")
         self.reg = os.path.join(c.state_dir(), "children")
 
-    def grandchild_reaped(self):
-        """The stub's grandchild exited; one that didn't is killed here, so a failing test leaves no sleep behind."""
-        for _ in range(100):
+    def tearDown(self):
+        for pid in self.pids():  # a failed test's grandchildren (a pid reused since is no sleep of ours)
             try:
-                with open(self.pidfile) as f:
-                    pid = int(f.read())
-                break
-            except (OSError, ValueError):
-                time.sleep(0.05)
-        else:
-            self.fail("the stub never started its grandchild")
-        if gone(pid):
-            return True
-        os.kill(pid, signal.SIGKILL)
-        return False
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    if f.read().split(b"\0")[0] == b"sleep":
+                        os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+        super().tearDown()
+
+    def pids(self):
+        try:
+            with open(self.pidfile) as f:
+                return [int(x) for x in f.read().split()]
+        except (OSError, ValueError):
+            return []
+
+    def grandchildren(self, n=1):
+        """The stub's grandchildren, once n have started."""
+        for _ in range(100):
+            if len(self.pids()) >= n:
+                return self.pids()
+            time.sleep(0.05)
+        self.fail(f"the stub never started {n} grandchildren")
+
+    def grandchild_reaped(self, n=1):
+        """Every grandchild exited; one that didn't is killed here, so a failing test leaves no sleep behind."""
+        alive = [pid for pid in self.grandchildren(n) if not gone(pid)]
+        for pid in alive:
+            os.kill(pid, signal.SIGKILL)
+        return not alive
 
     def entries(self):
         return sorted(os.listdir(self.reg)) if os.path.isdir(self.reg) else []
@@ -83,11 +108,39 @@ class Timeout(_Stubbed):
         self.assertEqual(self.entries(), [])
 
     def test_a_child_that_finishes_leaves_no_entry(self):
-        with open(self.stub, "w") as f:
-            f.write('#!/bin/sh\ncat >/dev/null\necho \'{"result": "ok", "total_cost_usd": 0.01}\'\n')
-        self.assertEqual(self.fmideas.run_child("ideas", "sys", "a prompt", "haiku", 30), "ok")
-        self.assertEqual(self.fmideas.run_children([([self.stub, "-p"], "a prompt", "lens")], 30, "ideas"),
-                         [("ok", None)])
+        with mock.patch.dict(os.environ, {"STUB_MODE": "fast"}):
+            self.assertEqual(self.fmideas.run_child("ideas", "sys", "a prompt", "haiku", 30), "ok")
+            self.assertEqual(self.fmideas.run_children([([self.stub, "-p"], "a prompt", "lens")], 30, "ideas"),
+                             [("ok", None)])
+        self.assertEqual(self.entries(), [])
+
+    def test_an_interrupt_kills_every_unfinished_group(self):
+        prs, calls, popen, communicate = [], [], self.fmideas._popen, subprocess.Popen.communicate
+
+        def record(*a, **kw):
+            prs.append(popen(*a, **kw))
+            return prs[-1]
+
+        def interrupted(pr, *a, **kw):
+            calls.append(pr)
+            if len(calls) == 2:  # ^C while waiting on the second child, both sleepers up
+                self.grandchildren(2)
+                raise KeyboardInterrupt
+            return communicate(pr, *a, **kw)
+        jobs = [([self.stub, mode], "a prompt", mode) for mode in ("fast", "slow", "slow")]
+        with mock.patch.object(self.fmideas, "_popen", record), \
+                mock.patch.object(subprocess.Popen, "communicate", interrupted), \
+                self.assertRaises(KeyboardInterrupt):
+            self.fmideas.run_children(jobs, 30, "ideas")
+        self.assertTrue(self.grandchild_reaped(2), "a grandchild outlived the interrupt")
+        self.assertEqual([pr.returncode for pr in prs], [0, -signal.SIGKILL, -signal.SIGKILL])
+        self.assertEqual(self.entries(), [])
+
+    def test_a_grandchild_that_left_the_group_cannot_hang_the_reap(self):
+        t0 = time.time()
+        with mock.patch.dict(os.environ, {"STUB_MODE": "escape"}), self.assertRaises(ValueError):
+            self.fmideas.run_child("ideas", "sys", "a prompt", "haiku", 1)
+        self.assertLess(time.time() - t0, 15, "the reap waited on the escaped grandchild's pipes")  # tearDown kills it
         self.assertEqual(self.entries(), [])
 
 
@@ -117,13 +170,18 @@ class Sweep(_Stubbed):
 
     def test_a_stale_helper_is_killed_with_its_group(self):
         pr = self.helper()
-        for _ in range(100):  # the stub has started its grandchild
-            if os.path.exists(self.pidfile):
-                break
-            time.sleep(0.05)
+        self.grandchildren()  # the stub has started its grandchild
         self.assertEqual(self.fmideas.sweep_orphans(), 1)
         self.assertEqual(pr.wait(5), -signal.SIGKILL)
         self.assertTrue(self.grandchild_reaped())
+        self.assertEqual(self.entries(), [])
+
+    def test_a_dead_leaders_group_is_killed(self):
+        pr = self.helper([self.stub, "orphan", "--no-session-persistence"])
+        self.grandchildren()
+        pr.wait()  # the leader is gone; its grandchild still holds the group (and so the pid)
+        self.assertEqual(self.fmideas.sweep_orphans(), 1)
+        self.assertTrue(self.grandchild_reaped(), "the dead leader's group outlived the sweep")
         self.assertEqual(self.entries(), [])
 
     def test_a_reused_pid_a_stranger_and_a_fresh_helper_are_left_alone(self):
@@ -138,7 +196,7 @@ class Sweep(_Stubbed):
     def test_garbage_and_no_registry_are_harmless(self):
         self.assertEqual(self.fmideas.sweep_orphans(), 0)  # no folder yet
         os.makedirs(self.reg, exist_ok=True)
-        for name, body in (("notapid", "1 2 3"), ("999999999", "garbled")):
+        for name, body in (("notapid", "1 2 3"), ("999999999", "garbled"), ("999999998", "1 0 1")):  # last: dead
             with open(os.path.join(self.reg, name), "w") as f:
                 f.write(body)
         self.assertEqual(self.fmideas.sweep_orphans(), 0)
@@ -146,22 +204,29 @@ class Sweep(_Stubbed):
 
 
 class Hook(_Stubbed):
-    def session_start(self, background):
+    def session_start(self, background, **sweep):
+        """The hook's output, the sweep it called, and the orphans_reaped events in the ledger."""
         import fmhooks
         with mock.patch.dict(os.environ, {"FOREMAN_NO_BACKGROUND": background}), \
                 mock.patch("subprocess.Popen"), \
-                mock.patch.object(self.fmideas, "sweep_orphans", side_effect=RuntimeError("sweep boom")) as sweep:
+                mock.patch.object(self.fmideas, "sweep_orphans", **sweep) as called:
             out = fmhooks.session_start({"source": "compact", "session_id": "s-1", "cwd": self.repo})
-        return out, sweep
+        events = self.c.ledger_tail(self.c.find_project(self.repo))
+        return out, called, [e["data"] for e in events if e["event"] == "orphans_reaped"]
 
     def test_session_start_sweeps_and_survives_a_sweep_error(self):
-        out, sweep = self.session_start("")
+        out, sweep, reaped = self.session_start("", side_effect=RuntimeError("sweep boom"))
         sweep.assert_called_once()
         self.assertIn("additionalContext", out["hookSpecificOutput"])
+        self.assertEqual(reaped, [])
         with open(os.path.join(self.c.state_dir(), "logs", "hooks.log")) as f:
             self.assertIn("sweep boom", f.read())
 
+    def test_session_start_records_what_it_reaped(self):
+        self.assertEqual(self.session_start("", return_value=2)[2], [{"count": 2}])
+        self.assertEqual(self.session_start("", return_value=0)[2], [{"count": 2}], "none reaped: no event")
+
     def test_a_background_free_child_never_sweeps(self):
-        out, sweep = self.session_start("1")
+        out, sweep, _ = self.session_start("1", return_value=0)
         sweep.assert_not_called()
         self.assertIn("additionalContext", out["hookSpecificOutput"])
