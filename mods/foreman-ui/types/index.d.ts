@@ -77,9 +77,11 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
   worktrees?: FmWorktree[] | null // T-1023: git worktrees beside the main checkout
+  history?: FmHistory[] | null // T-1026: what happened, structured, newest last
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
   bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
   research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
@@ -90,6 +92,7 @@ export type FmView = {
   resume_after_reload?: { session: string; at: string; task?: string } | null
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
+export type FmHistory = { time: string; mark: string; task: string | null; text: string; title: string | null } // T-1026
 // A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
 // T-1023: a git worktree: its branch, the task whose lane it is, the subagent it was made for (worktree-agent-<id>), its
 // age and the commits it holds that HEAD doesn't

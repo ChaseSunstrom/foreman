@@ -76,7 +76,7 @@ def gather(p):
 
 def _recent(e):
     """One line for a ledger event worth seeing (evidence, audits, captures, decisions, approvals, done)."""
-    d, t, ts = e.get("data") or {}, e.get("task") or "", (e.get("ts") or "")[11:16]
+    d, t, ts = e.get("data") or {}, e.get("task") or "", str(e.get("ts") or "")[11:16]  # T-1026 review: a bad ts
     kind = e.get("event")
     if kind == "evidence":
         what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
@@ -100,6 +100,37 @@ def _recent(e):
     else:
         return None
     return f"  {ts}  {text}"
+
+
+def _history(events, by_id, n=60):
+    """T-1026: the pane's History, structured: when, a mark, the task, a short event and the task's title, newest last."""
+    out = []
+    for e in events:
+        d, t, kind = e.get("data") or {}, e.get("task") or "", e.get("event")
+        if kind == "evidence":
+            what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
+            red, odd = str(d.get("result", "")).lstrip().startswith("✗"), d.get("inconclusive")
+            mark, text = ("≈", f"{what} inconclusive") if odd else ("✗", f"{what} failed") if red else ("✓", f"{what} passed")
+        elif kind == "surprise":
+            mark, text = "!", "surprise: " + c.fit(c.plain(str(d.get("text", ""))), 80)
+        elif kind == "audit":
+            mark, text = "◇", f"audit {d.get('lens')}"
+        elif kind in ("capture", "intake"):
+            mark, text = "⚑", "captured" if t else "intake"
+        elif kind == "decision":
+            mark, text = "◆", c.fit(c.plain(str(d.get("decision", ""))), 120)
+        elif kind == "approval_requested":
+            mark, text = "?", "asked: " + "+".join(d.get("allow") or [])
+        elif kind in ("approval_granted", "approval_declined"):
+            mark, text = ("✔", "granted") if kind == "approval_granted" else ("✖", "declined")
+        elif kind == "task_done":
+            mark, text = "■", "done"
+        else:
+            continue
+        b = by_id.get(t)
+        out.append({"time": str(e.get("ts") or "")[11:16], "mark": mark, "task": t or None, "text": text,
+                    "title": c.plain(b.title)[:120] if b else None})
+    return out[-n:]
 
 
 def _pct(vals, q):
@@ -466,6 +497,7 @@ def view(p):
         "next": c.plain(c.next_for(p, briefs)[2]),
         "queue": [item(s) for s in sd["queue"]][:20],
         "inbox": [item(s) for s in sd["inbox"]][:10], "inbox_total": len(sd["inbox"]),
+        "blocked_total": len(sd["blocked"]),  # T-1026: the pane's work bar
         "approvals": [{"task": a.get("task"), "allow": list(a.get("allow") or []), "why": c.plain(a.get("why") or "")}
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "closed": [{"id": b.id, "status": b.status, "title": c.plain(b.title)[:120],  # T-0473: the close-out card
@@ -489,6 +521,7 @@ def view(p):
         "revisit": _guarded(lambda: [{"date": dt, "decision": c.plain(x)[:200], "why": c.plain(w)}  # T-0247
                                      for dt, x, w in c.fired_decisions(p)]) or [],
         "recent": d["recent"],
+        "history": _guarded(lambda: _history(events, by_id)) or [],  # T-1026
         "skills": _guarded(lambda: _skills(p))
         or {"recent": [], "counts": {}, "suggested": [], "unread": []},  # T-0939
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),

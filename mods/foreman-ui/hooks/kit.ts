@@ -12,6 +12,7 @@ export const C = {
   web: 0x87d7af,
   skill: 0xf5a3c7,
   dim: 0x6c7686,
+  muted: 0x9aa3b0, // T-1026: secondary text that still reads; dim is for the least of it
   add: 0xa8d5a2, // diff text: softer than ok/err, which stay on the +/- signs (T-0143: 'weird in contrast')
   del: 0xe0a3a3,
   track: 0x30363f,
@@ -71,6 +72,41 @@ export function progressCells(width: number, fraction: number, from: number, to:
   for (let i = 0; i < width; i++) {
     const base = i < done ? mix(from, to, width > 1 ? i / (width - 1) : 1) : C.track
     out.push(['━', frame === null ? base : mix(base, C.white, glow(i, width, frame) * (i < done ? 0.55 : 0.35))])
+  }
+  return cells(out)
+}
+
+/** T-1026: parts of a whole side by side, a share of `width` each: any part above zero keeps a cell, the biggest
+ * absorbs the rounding; nothing at all, the bare track. */
+export function stackCells(parts: readonly { n: number; color: number }[], width: number): string {
+  const total = parts.reduce((s, p) => s + Math.max(0, p.n), 0)
+  let cum = 0 // cumulative edges, so the rounding never piles up on one part
+  const w = parts.map(p => {
+    const from = Math.round((cum / Math.max(1, total)) * width)
+    cum += Math.max(0, p.n)
+    return Math.round((cum / Math.max(1, total)) * width) - from
+  })
+  parts.forEach((p, i) => {
+    if (p.n > 0 && !w[i]) (w[i] = 1), (w[w.indexOf(Math.max(...w))]! -= 1)
+  })
+  const out: [string, number][] = parts.flatMap((p, i) => Array.from({ length: Math.max(0, w[i]!) }, (): [string, number] => ['━', p.color]))
+  while (out.length < width) out.push(['━', C.track])
+  return cells(out.slice(0, width))
+}
+
+/** T-1026: a task's steps as one bar, a segment each with a gap between when there's room: done ones green, the
+ * current one in the accent (a comet sweeps it while `frame`), the ones left on the track. */
+export function stepCells(steps: readonly { done: boolean; current: boolean }[], width: number, frame: number | null): string {
+  const n = Math.max(1, steps.length)
+  const gaps = width / n >= 3
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) {
+    const k = Math.floor((i * n) / width)
+    const s = steps[k]
+    if (gaps && k < n - 1 && Math.floor(((i + 1) * n) / width) !== k) out.push([' ', C.track])
+    else if (s?.done) out.push(['━', C.ok])
+    else if (s?.current) out.push(['━', frame === null ? C.accent : mix(C.accent, C.white, glow(i, width, frame) * 0.5)])
+    else out.push(['━', C.track])
   }
   return cells(out)
 }
@@ -204,6 +240,13 @@ export function laneCells(lanes: readonly { color: number; slots: readonly numbe
       out.push([String.fromCharCode(0x2800 + bits), color])
     }
   }
+  return cells(out)
+}
+
+/** T-1026: a section divider: a line in the section's colour fading into the track, so sections read apart. */
+export function ruleCells(width: number, color: number): string {
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) out.push(['─', mix(mix(C.track, color, 0.85), C.track, width > 1 ? i / (width - 1) : 0)])
   return cells(out)
 }
 
