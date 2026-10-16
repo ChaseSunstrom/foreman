@@ -928,7 +928,8 @@ def task_finish(p, args):
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
     gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b)
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
+        + _file_map_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -1220,6 +1221,24 @@ def _self_docs_gaps(p, b):
         return []
     res = fmdoctor.check_self_docs()
     return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
+
+
+def _file_map_gaps(p, b):
+    """T-1179: a close that adds a plugin/<entry> MASTER.md's file map doesn't list is refused, not left for release-check."""
+    import fmdoctor
+    import fmmap
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    master = os.path.join(p.root, "MASTER.md")
+    if not base or not os.path.exists(master):
+        return []
+    entries = {"/".join(f.split("/")[:2]) for f in fmmap.changed(p.root, base) if f.startswith("plugin/")}
+    if not entries:
+        return []
+    res = fmdoctor.check_file_map(p.root, master)
+    tag = "on disk but not in the map: "
+    missing = next((x[len(tag):].split(", ") for x in res.detail.split("; ") if x.startswith(tag)), [])
+    new = sorted(entries & set(missing))
+    return [f"file map: add a MASTER.md File map row for {', '.join(new)}"] if new else []
 
 
 DIRTY_CAP = 500
