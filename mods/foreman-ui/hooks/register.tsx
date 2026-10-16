@@ -1425,7 +1425,8 @@ export const register: Register = (on, options) => {
     const railWant = a && stageIdx >= 0 ? 3 : 0 // the rail, its labels, a blank row
     const planRows = planQ ? 2 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
     const stepBar = !planQ && a && a.steps.length ? 1 : 0 // T-1026: done and left, a segment a step
-    const taskWant = 2 + stepBar + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : v.learned && !live ? 1 : 0)
+    const splitRow = !planQ && a?.splits?.length ? 1 : 0 // T-1078: speedrun splits, one compact row
+    const taskWant = 2 + stepBar + splitRow + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : v.learned && !live ? 1 : 0)
 
     // ── activity: one lane per kind of call, fixed in order so nothing jumps; fewer lanes on a short dock
     const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
@@ -1678,8 +1679,19 @@ export const register: Register = (on, options) => {
           </Box>,
         )
       }
-      const rows = R.task! - 2 - stepBar
-      const railRows = railWant && rows >= Math.min(6, taskWant - 2 - stepBar) ? 3 : 0
+      if (splitRow)
+        push(0,
+          <Box key="task-splits" flexDirection="row" gap={1} height={1} overflow="hidden">
+            {a.splits!.map(s => (
+              <Text key={`split-${s.stage}`} wrap="truncate-end"
+                color={hex(s.sign === 'over' ? C.err : s.sign === 'under' ? C.ok : C.dim)}>
+                {`${s.stage} ${elapsed(s.secs * 1000)}${s.delta == null ? '' : ` ${s.delta < 0 ? '−' : '+'}${elapsed(Math.abs(s.delta) * 1000)}`}`}
+              </Text>
+            ))}
+          </Box>,
+        )
+      const rows = R.task! - 2 - stepBar - splitRow
+      const railRows = railWant && rows >= Math.min(6, taskWant - 2 - stepBar - splitRow) ? 3 : 0
       const room = Math.max(1, rows - railRows)
       // every step and note when they fit; else a window round the current step and a row to count the rest
       const nSteps = a.steps.length + extras.length <= room ? a.steps.length : Math.max(1, Math.min(a.steps.length, room - extras.length - 1))
