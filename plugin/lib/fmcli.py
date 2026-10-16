@@ -5017,6 +5017,8 @@ def build_parser():
     s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume"])
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
+    s.add_argument("--force", metavar="REASON", help="resume: although the builder isn't known to be stopped or ignored "
+                                                     "files would go (T-1028); the reason is logged")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
     s = add("session", lazy("fmsession", "cmd_session"), help="agent sessions on this device (claude, codex, gemini, "

@@ -6,6 +6,7 @@ holder. The conductor: live sessions, their mail and leases, and one steer for a
 import json
 import os
 import re
+import socket
 import subprocess
 import time
 
@@ -186,11 +187,30 @@ def claude_pid():
     return None
 
 
+def host_id():
+    """T-1028: this machine and PID namespace; a pid means nothing from another one."""
+    try:
+        ns = os.readlink("/proc/self/ns/pid")
+    except OSError:
+        ns = ""
+    return f"{socket.gethostname()}|{ns}"
+
+
 def claude_proc():
-    """T-1028: {pid, start} of the session's Claude Code, to tell later whether it ended; None if not under one."""
+    """T-1028: "host|ns|pid|start" of the session's Claude Code, to tell later whether it ended; None if not under one."""
     pid = claude_pid()
     info = pid and _proc(pid)
-    return {"pid": pid, "start": info[1]} if info else None
+    return f"{host_id()}|{pid}|{info[1]}" if info else None
+
+
+def proc_state(rec):
+    """T-1028: "alive", "stopped", "unknown" (recorded on another host or PID namespace) or None (no record)."""
+    host, ns, pid, start = (str(rec or "").split("|", 3) + ["", "", "", ""])[:4]
+    if not pid.isdecimal():
+        return None
+    if f"{host}|{ns}" != host_id():
+        return "unknown"
+    return "alive" if proc_alive(int(pid), start) else "stopped"
 
 
 def proc_alive(pid, start):
