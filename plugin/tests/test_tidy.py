@@ -459,3 +459,69 @@ class DecisionSunset(TidyCase):
     def test_a_costly_decision_is_listed_once_in_the_digest(self):
         self.fm("decide", "ship without review", "--kind", "costly")
         self.assertEqual(self.fm("digest").stdout.count("ship without review"), 1)
+
+
+class Rollback(TidyCase):
+    def test_an_upgrade_snapshots_the_state_and_rollback_restores_a_deleted_brief(self):
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        with open(os.path.join(c.state_dir(), "seen-version"), "w") as f:
+            f.write("0.1")
+        self.hook("SessionStart", {"source": "startup"})
+        names = os.listdir(os.path.join(c.state_dir(), "snapshots"))
+        self.assertEqual(len(names), 1)
+        self.assertTrue(names[0].startswith("0.1-"))
+        self.assertIn(names[0], self.fm("rollback", "--list").stdout)
+        brief = c.brief_paths(self.p)[0]
+        self.assertTrue(os.path.exists(brief))
+        os.remove(brief)
+        r = self.fm("rollback", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--yes", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(brief))
+        self.fm("decide", "after the snapshot")
+        self.fm("rollback", "--yes")
+        self.assertTrue(os.path.exists(brief))
+        self.assertIn("rollback", read_text(os.path.join(self.p.dir, "ledger.jsonl")))
+        self.assertIn("after the snapshot", read_text(os.path.join(self.p.dir, "ledger.jsonl")))  # never restored
+        self.fm("verify-ledger")
+        listing = json.loads(self.fm("rollback", "--list", "--json").stdout)
+        self.assertEqual(sorted(x["pre_rollback"] for x in listing), [False, True])
+
+    def snap(self):
+        with open(os.path.join(c.state_dir(), "seen-version"), "w") as f:
+            f.write("0.1")
+        self.hook("SessionStart", {"source": "startup"})
+
+    def test_consent_revoked_since_the_snapshot_stays_revoked(self):
+        meta = c.read_meta(self.p)
+        meta["standing"] = {"core": {"at": "2026-01-01T00:00:00Z", "why": "t"}}
+        c.write_meta(self.p, meta)
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        self.snap()
+        self.fm("standing", "off")
+        self.fm("rollback", "--yes")
+        self.assertNotIn("standing", c.read_meta(self.p))
+
+    def test_a_brief_archived_since_does_not_come_back(self):
+        self.fm("task", "new", "keep me", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        self.snap()
+        brief = c.brief_paths(self.p)[0]
+        arch = os.path.join(self.p.dir, "archive", "2026-10")
+        os.makedirs(arch)
+        os.replace(brief, os.path.join(arch, os.path.basename(brief)))
+        self.fm("rollback", "--yes")
+        self.assertEqual(c.brief_paths(self.p), [])
+
+    def test_an_abbreviated_yes_is_an_error(self):
+        self.snap()
+        self.assertNotEqual(self.fm("rollback", "--ye", check=False).returncode, 0)
+        self.assertEqual(self.fm("rollback", "--list", check=False).returncode, 0)
+
+    def test_a_tampered_snapshot_is_refused(self):
+        self.snap()
+        d = os.path.join(c.state_dir(), "snapshots")
+        path = os.path.join(d, os.listdir(d)[0])
+        with open(path, "wb") as f:
+            f.write(b"not a tarball")
+        r = self.fm("rollback", "--yes", check=False)
+        self.assertNotEqual(r.returncode, 0)
