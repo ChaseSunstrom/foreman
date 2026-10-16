@@ -7,8 +7,9 @@ import unittest
 
 from helpers import ForemanTestCase
 
-REFUSAL = ("Foreman guard: blocked state-direct: {p} is Foreman state. Change it through fm (fm task …, fm capture, "
-           "fm checkpoint).")
+# as a real transcript holds it (T-1187 review: the fixture lacked the hook-error prefix, so real refusals were missed)
+REFUSAL = ("PreToolUse:Bash hook error: Foreman guard: blocked state-direct: {p} is Foreman state. Change it through "
+           "fm (fm task …, fm capture, fm checkpoint).")
 
 
 class GuardMine(ForemanTestCase):

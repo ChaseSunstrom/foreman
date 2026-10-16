@@ -17,7 +17,8 @@ SHOW = 10  # changed commands listed per kind
 
 
 def _logs(days):
-    root = os.path.join(os.path.expanduser("~"), ".claude", "projects")
+    import fmclaude  # review (T-1187): CLAUDE_CONFIG_DIR like the rest of fm, not a hardcoded ~/.claude
+    root = os.path.join(fmclaude.config_dir(), "projects")
     since = time.time() - days * 86400
     files = [f for f in glob.glob(os.path.join(root, "**", "*.jsonl"), recursive=True) if os.path.getmtime(f) >= since]
     return sorted(files, key=os.path.getmtime, reverse=True)
@@ -80,7 +81,8 @@ def events(days=DAYS):
             yield calls[i]
 
 
-_REFUSAL = re.compile(r"Foreman guard: blocked ([\w-]+): ([^.]*)")
+# a refusal as Claude Code records it: the hook error prefix ("PreToolUse:Bash hook error: "), then the guard's text
+_REFUSAL = re.compile(r"(?:[\w:]+ hook error: )?Foreman guard: blocked ([\w-]+): ([^.]*)")
 MINE_CAP = 500  # refusals read, newest files first
 MINE_SHOW = 5  # examples per rule in the text report
 
