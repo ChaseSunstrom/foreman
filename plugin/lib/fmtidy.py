@@ -121,6 +121,57 @@ def unblocked(p, b, status):
     return None
 
 
+def _git_facts(root, since):
+    """T-1077: the paths in HEAD, the ones changed since HEAD, and when each path last changed on the first-parent
+    line since `since` (a merged lane's change at its merge), in three git calls; all empty outside git."""
+    head = set(c._git(root, "ls-tree", "-rz", "--name-only", "HEAD", timeout=30).split("\0")) - {""}
+    dirty = set(c._git(root, "diff", "-z", "--name-only", "HEAD", timeout=30).split("\0")) - {""}
+    log, ct = {}, 0
+    for line in c._git(root, "log", "--first-parent", "--diff-merges=first-parent", "--no-renames", "--name-only",
+                       f"--since=@{int(since) - 2}", "--format=%x01%ct", timeout=30).splitlines():
+        if line.startswith("\x01"):
+            ct = int(line[1:])
+        elif line:
+            log.setdefault(line, ct)  # newest first
+    return head, dirty, log
+
+
+def stale_plans(p, briefs):
+    """T-1077: {id: why} for each queued (planned) brief that needs a re-plan: a dependency was dropped, a scope path
+    changed after the brief was last edited, or a scope path that existed is gone (one that never existed is a file the
+    plan creates). Seen from the main checkout, as git has it: a tracked file by when its change landed, so a fresh
+    clone's or a lane's checkout mtimes mean nothing; an uncommitted or untracked one by its mtime.
+    ponytail: a fast-forwarded commit counts at the time it was made, not when it landed."""
+    status = {b.id: b.status for b in briefs}
+    planned = [b for b in briefs if b.status == "planned"]
+    ats = {b.id: t.timestamp() + 1 for b in planned if (t := c.parse_ts(b.meta.get("updated")))}
+    root = os.path.realpath(c.main_view(p).root)
+    if any(b.meta.get("scope") for b in planned if b.id in ats):
+        head, dirty, log = _git_facts(root, min(ats.values()))
+    out = {}
+    for b in planned:
+        dropped = next((d for d in b.meta.get("depends_on") or [] if status.get(d) == "dropped"), None)
+        if dropped:
+            out[b.id] = f"its dependency {dropped} was dropped"
+            continue
+        at = ats.get(b.id)
+        for s in b.meta.get("scope") or [] if at else []:
+            path = os.path.realpath(os.path.join(root, s))
+            if re.search(r"[*?\[]", s) or not path.startswith(root + os.sep):
+                continue
+            rel = os.path.relpath(path, root)
+            landed = max((t for f, t in log.items() if f == rel or f.startswith(rel + "/")), default=0)
+            if not os.path.exists(path):
+                if rel in head or landed > at:
+                    out[b.id] = f"{s} is gone"
+                    break
+            elif landed > at or (os.path.isfile(path) and (rel in dirty or rel not in head)
+                                 and os.path.getmtime(path) > at):
+                out[b.id] = f"{s} changed since it was planned"
+                break
+    return out
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -152,6 +203,9 @@ def check_project(p, apply, actions):
     for a, d in dangling:
         out.append(finding(slug, "dangling_dep", "warn", f"{a} depends on unknown {d}", f"fm task set {a} depends_on=…"))
     status = {b.id: b.status for b in briefs}
+    for tid, why in stale_plans(p, briefs).items():
+        out.append(finding(slug, "stale_plan", "warn", f"{tid} re-plan: {why}", f're-read its Steps against the code, '
+                           f'fix what no longer holds, then fm task log {tid} "plan re-read: <what changed, or still valid>"'))
     for b in briefs:
         why = unblocked(p, b, status) if b.status == "blocked" else None
         if why:

@@ -177,6 +177,87 @@ class Apply(TidyCase):
         self.assertEqual(len(self.tidy("--all")["projects"]), 2)
 
 
+class StalePlans(TidyCase):
+    # T-1077: a queued brief whose scope file changed (or went, or whose dependency was dropped) since it was planned
+    def plan(self, title, *args):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *args).stdout
+        tid = re.search(r"T-\d{4}", out).group(0)
+        age(self.p, tid, 1)  # planned a day ago: what changes from now on came after it
+        return tid
+
+    def write(self, rel, epoch=None, root=None):
+        path = os.path.join(root or self.repo, rel)
+        with open(path, "a") as f:
+            f.write("x\n")
+        if epoch:
+            os.utime(path, (epoch, epoch))
+
+    def commit(self, *paths, days=0):
+        import subprocess
+        t = f"@{int(time.time() - days * 86400)} +0000"
+        env = dict(os.environ, GIT_AUTHOR_DATE=t, GIT_COMMITTER_DATE=t)
+        subprocess.run(["git", "-C", self.repo, "add", "-A", "--", *paths], check=True, env=env)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "x"], check=True, env=env)
+
+    def stale(self, cwd=None):
+        out = self.fm("tidy", "--json", cwd=cwd, env={"HOME": self.fake_home}).stdout
+        return [f["detail"] for f in json.loads(out)["findings"] if f["kind"] == "stale_plan"]
+
+    def test_an_untracked_scope_file_newer_than_the_plan_flags_a_replan_until_a_log_line_says_it_was_reread(self):
+        tid = self.plan("change a", "--scope", "a.py")
+        self.assertEqual(c.find_brief(self.p, tid).status, "planned")
+        self.write("a.py", time.time() - 2 * 86400)
+        self.assertEqual(self.stale(), [], "a scope file older than the plan is fine")
+        self.write("a.py", time.time() - 60)
+        self.assertTrue(any(tid in d and "a.py changed since it was planned" in d for d in self.stale()), self.stale())
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("stale_plan", text)
+        self.assertIn(f'fm task log {tid} "plan re-read: ', text, "the fix is a command someone can run")
+        self.assertIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+        self.assertIn("Plans to re-plan", self.fm("digest").stdout)
+        self.fm("task", "log", tid, "plan re-read: still valid")
+        self.assertEqual(self.stale(), [], "the log line bumps updated, so the item clears")
+        age(self.p, tid, 1, status="done")
+        self.assertEqual(self.stale(), [], "only queued plans")
+        self.assertNotIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+
+    def test_a_tracked_file_counts_by_its_commit_not_its_checkout_mtime_and_a_lane_sees_the_main_checkout(self):
+        import subprocess
+        self.write("b.py")
+        self.commit("b.py", days=2)
+        tid = self.plan("change b", "--scope", "b.py")
+        os.utime(os.path.join(self.repo, "b.py"))  # what a fresh clone or a checkout leaves: mtime now
+        self.assertEqual(self.stale(), [], "a clean file committed before the plan isn't stale, whatever its mtime")
+        lane = os.path.join(self.tmp, "lane")
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-q", "-b", "lane", lane], check=True)
+        self.write("b.py", root=lane)  # the lane's own uncommitted edit, its files all with checkout mtimes
+        self.assertEqual(self.stale(cwd=lane), [], "run from a lane, the main checkout is what the plan is against")
+        self.write("b.py")
+        self.commit("b.py")
+        for cwd in (None, lane):
+            self.assertTrue(any(tid in d and "b.py changed since it was planned" in d for d in self.stale(cwd)), cwd)
+
+    def test_a_scope_file_gone_or_a_dependency_dropped_flags_it_but_a_file_still_to_create_doesnt(self):
+        self.write("b.py")
+        self.write("d.py")
+        self.commit("b.py", "d.py", days=2)
+        gone = self.plan("change b", "--scope", "b.py")
+        deleted = self.plan("change d", "--scope", "d.py")
+        new = self.plan("create c", "--scope", "c.py", "--scope", "src/**/*.py")
+        dep = self.plan("dependency")
+        after = self.plan("after it", "--depends", dep)
+        self.assertEqual(self.stale(), [])
+        os.remove(os.path.join(self.repo, "b.py"))  # tracked in HEAD, absent
+        os.remove(os.path.join(self.repo, "d.py"))
+        self.commit("d.py")  # deleted in a commit after the plan
+        self.fm("task", "drop", dep, "not needed")
+        found = self.stale()
+        self.assertTrue(any(gone in d and "b.py is gone" in d for d in found), found)
+        self.assertTrue(any(deleted in d and "d.py is gone" in d for d in found), found)
+        self.assertTrue(any(after in d and f"{dep} was dropped" in d for d in found), found)
+        self.assertFalse(any(new in d for d in found), "a scope file the plan creates isn't missing")
+
+
 class TidyStateBackup(TidyCase):
     # T-0922: the briefs and the ledger are the record; tidy --apply keeps dated copies of them, the newest five
     def test_apply_keeps_dated_backups_of_the_record_and_only_five(self):
