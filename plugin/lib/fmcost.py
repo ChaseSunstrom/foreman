@@ -221,9 +221,23 @@ def unexplained_line(u):
     return ""
 
 
-def _timeline(p, days):
-    return sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(days + 2))
-                   if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
+def _timelines(p, days):
+    """T-1083 review: (per session id, all): a turn goes to the task its own session was on; the shared line only
+    for a session with no event of its own (sessions running side by side otherwise bill each other's tasks)."""
+    by, every = collections.defaultdict(list), []
+    for e in c.ledger_events(p, since=_since(days + 2)):
+        if e.get("task"):
+            row = (str(e.get("ts", ""))[:19], e["task"])
+            every.append(row)
+            if e.get("session_id"):
+                by[e["session_id"]].append(row)
+    key = lambda r: r[0]  # noqa: E731
+    return {k: sorted(v, key=key) for k, v in by.items()}, sorted(every, key=key)
+
+
+def _task_for(lines, sid, ts):
+    by, every = lines
+    return _task_at(by.get(sid) or every, ts)
 
 
 def task_costs(p, days):
@@ -231,9 +245,9 @@ def task_costs(p, days):
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         return collections.Counter()
-    timeline, out = _timeline(p, days), collections.Counter()
-    for ts, _sid, usage in scan(folder, _since(days))[0]:
-        out[_task_at(timeline, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+    lines, out = _timelines(p, days), collections.Counter()
+    for ts, sid, usage in scan(folder, _since(days))[0]:
+        out[_task_for(lines, sid, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
     return out
 
 
@@ -255,27 +269,63 @@ CACHE_GROWTH = 1_000_000  # bytes of new transcript before the cached figures ar
 CACHE_AGE_S = 300  # …or this long
 
 
-def cached_costs(p, compute=True):
-    """task_costs(p, 90) kept in the session dir, keyed by the transcripts' total size: redone only when they grew
-    over ~1 MB or the figures are 5 min old. compute=False: the cache as it is (None when there is none)."""
-    path = os.path.join(c.state_dir(), "sessions", f"cost-{p.slug}.json")
+def _cache_path(p):
+    # T-1083 review: not in sessions/, where fm watch and the rate-limit readers take any *.json for a session snapshot
+    return os.path.join(c.state_dir(), "cache", f"cost-{p.slug}.json")
+
+
+def _read_cache(p):
     try:
-        with open(path) as f:
+        with open(_cache_path(p)) as f:
             old = json.load(f)
     except (OSError, ValueError):
-        old = None
-    if not compute:
-        return collections.Counter(old["costs"]) if old else None
-    size = sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(transcripts_dir(p.root)) for n in ns
+        return None
+    ok = isinstance(old, dict) and isinstance(old.get("size"), int) and isinstance(old.get("ts"), (int, float)) \
+        and isinstance(old.get("costs"), dict)
+    return old if ok else None  # the wrong shape is no cache: rewritten on the next compute
+
+
+def _transcripts_size(p):
+    return sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(transcripts_dir(p.root)) for n in ns
                if n.endswith(".jsonl"))
-    if old and size - old["size"] <= CACHE_GROWTH and time.time() - old["ts"] < CACHE_AGE_S:
+
+
+def _fresh(old, size):
+    return bool(old) and abs(size - old["size"]) <= CACHE_GROWTH and time.time() - old["ts"] < CACHE_AGE_S
+
+
+def cached_costs(p, compute=True, refresh=False):
+    """task_costs(p, 90) kept in state/cache, keyed by the transcripts' total size: redone only when they changed by
+    over ~1 MB or the figures are 5 min old. compute=False: the cache as it is (None when there is none); with
+    refresh, a stale cache is redone in a detached `fm cost --refresh-cache` (the Stop hook has 5 s: never inline)."""
+    old = _read_cache(p)
+    if not compute:
+        if refresh and not _fresh(old, _transcripts_size(p)):
+            _refresh_detached(p)
+            old = _read_cache(p) if os.environ.get("FOREMAN_NO_BACKGROUND") else old  # inline then: read it back
+        return collections.Counter(old["costs"]) if old else None
+    size = _transcripts_size(p)
+    if _fresh(old, size):
         return collections.Counter(old["costs"])
     costs = task_costs(p, 90)
     try:
-        c.write_atomic(path, json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+        c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
     except OSError:
         pass  # a cache: never worth failing for
     return costs
+
+
+def _refresh_detached(p):
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):  # tests: inline, so the figure is there for the next call
+        cached_costs(p)
+        return
+    import subprocess
+    try:
+        subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "cost", "--refresh-cache"], cwd=p.root,
+                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except OSError:
+        pass
 
 
 def cost_line(p, b):
@@ -290,7 +340,7 @@ def cost_line(p, b):
     if not cap and not fc:
         return ""
     return "Cost: " + ", ".join(filter(None, [
-        f"forecast ≈ {_human(fc[0])} (median of {fc[1]} {b.type} {b.tier})" if fc else "",
+        f"forecast ≈ {_human(fc[0])} (median of {fc[1]} {b.type} {b.tier}{', rough' if fc[1] < 5 else ''})" if fc else "",
         f"cap {_human(cap)}" if cap else "", f"spent {_human(costs.get(b.id, 0))}" if costs else ""]))
 
 
@@ -307,6 +357,19 @@ def _task(args, p, fmcli):
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "refresh_cache", False):  # T-1083 review: the Stop hook's detached refresh
+        old = _read_cache(p)
+        if old and time.time() - old["ts"] < 60:  # another refresh just ran
+            return 0
+        try:
+            c.write_atomic(_cache_path(p), json.dumps({**(old or {"costs": {}}), "size": (old or {}).get("size", 0),
+                                                       "ts": time.time()}))  # claim it: no second scan meanwhile
+        except OSError:
+            pass
+        os.makedirs(os.path.dirname(_cache_path(p)), exist_ok=True)
+        size, costs = _transcripts_size(p), task_costs(p, 90)
+        c.write_atomic(_cache_path(p), json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+        return 0
     if getattr(args, "task", None):
         return _task(args, p, fmcli)
     if getattr(args, "by_model", False):
@@ -320,14 +383,14 @@ def cmd_cost(args):
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
-    timeline = _timeline(p, args.days)
+    lines = _timelines(p, args.days)  # T-1083 review: each turn to its own session's task
     for ts, sid, usage in msgs:
         w = 0.0
         for k, weight in WEIGHTS.items():
             v = usage.get(k) or 0
             totals[k] += v
             w += v * weight
-        by_task[_task_at(timeline, ts[:19]) or "(no task)"] += w
+        by_task[_task_for(lines, sid, ts[:19]) or "(no task)"] += w
         by_session[sid] += w
     if not msgs:  # R3 canary: transcripts are Claude Code's internal format and may change under us
         return fmcli.out(args, {"days": args.days, "messages": 0},
@@ -523,7 +586,11 @@ def cmd_digest(args):
             and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
     lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
               f"the paths they planned (median; T-0644)"] if grew else []
-    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-1060, T-0641, T-0619
+    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs) + fmoutcomes.plan_lines(p)  # T-1060, T-0641, T-0619, T-1061
+    raised = [e for e in c.ledger_events(p, ("cost_cap_changed",), since=since)  # T-1083 review: caps raised
+              if (e.get("data") or {}).get("to", 0) > (e.get("data") or {}).get("from", 0)]
+    lines += ["Cost caps raised: " + ", ".join(f"{e.get('task')} {_human(e['data']['from'])} → {_human(e['data']['to'])}"
+                                               for e in raised[-6:])] if raised else []
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
