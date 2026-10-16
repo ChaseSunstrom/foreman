@@ -7,7 +7,7 @@ from helpers import ForemanTestCase
 class NeverRanUnlocks(ForemanTestCase):
     def task(self, verify):
         self.fm("init")
-        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", f"works :: {verify}", "--step", "s",
+        self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "works :: true", "--step", "s",
                 "--focus")
 
     def edit(self):

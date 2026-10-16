@@ -3189,6 +3189,44 @@ _LIVE = re.compile(r"(?:\w+=\S*\s+)*(aws|gcloud|az|kubectl|psql|mysql|mongosh|re
                    r"|(?<=helm)(?=\s+(?:install|upgrade|uninstall|rollback)\b)|(?<=pulumi)(?=\s+(?:up|destroy|refresh)\b))")
 
 
+def _missing_target(words, cwd, root):
+    """T-1145: a static look at what a verify names: a python/bash script file, the test modules a python test runner
+    (`run.py NAMES`, `-m unittest NAMES`) is given, or the npm script. None when it exists or isn't a runner known."""
+    def test_files():
+        found = set()
+        for d, dirs, files in os.walk(root):
+            dirs[:] = [x for x in dirs if x not in (".git", "node_modules", ".venv", "venv", "__pycache__")]
+            found.update(f[:-3] for f in files if f.startswith("test") and f.endswith(".py"))
+        return found
+
+    def modules(names):
+        have = None
+        for n in names:
+            comp = next((x for x in n.split(".") if re.fullmatch(r"test_\w*", x)), None)
+            have = test_files() if have is None and comp else have
+            if comp and comp not in have:
+                return f"no test module {comp} (no {comp}.py in the repo)"
+
+    exe, args = os.path.basename(words[0]), [w for w in words[1:]]
+    if re.fullmatch(r"python[0-9.]*", exe) and args and args[:2] == ["-m", "unittest"]:
+        return modules([a for a in args[2:] if not a.startswith("-")])
+    if (re.fullmatch(r"python[0-9.]*", exe) or exe in ("bash", "sh")) and args and not args[0].startswith("-"):
+        if not os.path.isfile(os.path.join(cwd, args[0])):
+            return f"{args[0]} doesn't exist (from {cwd})"
+        if args[0].endswith("run.py"):
+            return modules([a for a in args[1:] if not a.startswith("-")])
+    if exe == "npm" and args and not any(a.startswith("-") for a in args) and os.path.isfile(
+            os.path.join(cwd, "package.json")):
+        script = args[1] if args[0] == "run" and len(args) > 1 else args[0] if args[0] == "test" else None
+        try:
+            with open(os.path.join(cwd, "package.json"), encoding="utf-8") as f:
+                scripts = json.load(f).get("scripts") or {}
+        except (OSError, ValueError, AttributeError):
+            return None
+        if script and script not in scripts:
+            return f"package.json in {cwd} has no npm script {script}"
+
+
 def unrunnable(cmd, root):
     """T-0765: why a verify command can't run at all, or None: `python -m MOD` whose module that python can't import
     there, or `fm …` words fm's own parser rejects. Literal `cd DIR` links move where later parts run; anything this
@@ -3208,6 +3246,8 @@ def unrunnable(cmd, root):
             continue
         if words[0] == "cd" and len(words) == 2:
             cwd = os.path.normpath(os.path.join(cwd, os.path.expanduser(words[1])))
+        elif (why := _missing_target(words, cwd, root)):  # T-1145
+            return why
         elif re.fullmatch(r"python[0-9.]*", words[0]) and "-m" in words[:-1] and shutil.which(words[0]):
             mod = words[words.index("-m") + 1].split(".")[0]
             r = subprocess.run([words[0], "-c", "import importlib.util,sys; sys.exit(not importlib.util.find_spec("
