@@ -9,6 +9,7 @@
 - A stopped fm-reviewer's findings are logged as `finding` events (lens, severity, file, verdict reported) without a hand-typed `fm task finding`, and the defect classes in builder briefs count them until rejected (T-1181).
 - `fm doctor --fix` applies only the findings that already have a safe repair (stale status views, empty git objects, fallback state), rechecks them, and lists every finding it left for a person (T-1184).
 - `fm audit run ID` runs the audit lenses as headless read-only `claude -p` reviewers over the frozen `fm audit prep` brief, bounded by `fm budget` and `fm contract`, and records each lens verdict and its findings, so the drive and `fm run` can audit without a person (T-1186).
+- `fm edit` applies every `<<< === >>>` block under an `@@ file` header (a second one was dropped silently), and refuses a batch whose `<<<` count doesn't match its complete blocks (T-1191).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
