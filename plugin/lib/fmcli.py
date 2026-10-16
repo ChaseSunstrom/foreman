@@ -4222,7 +4222,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
-                             "plugins docs doctor verify-ledger outbound sandbox release-check canary tidy round"),
+                             "plugins docs doctor verify-ledger outbound sandbox release-check canary tidy rollback round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
@@ -5011,6 +5011,13 @@ def build_parser():
     s.add_argument("--apply", action="store_true")
     s.add_argument("--all", action="store_true")
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
+
+    s = add("rollback", lazy("fmrollback", "cmd_rollback"), help="restore the state as the snapshot taken at the last "
+                                                             "Foreman upgrade had it (T-1085)", allow_abbrev=False)
+    s.add_argument("--list", action="store_true")
+    s.add_argument("--snapshot", metavar="OLD", help=argparse.SUPPRESS)  # the upgrade hook's detached child
+    s.add_argument("--to", metavar="NAME", help="a snapshot from --list (default: the newest upgrade snapshot)")
+    s.add_argument("--yes", action="store_true")
 
     s = add("doctor", lazy("fmdoctor", "cmd_doctor"), help="self-check")
     s.add_argument("--full", action="store_true")
