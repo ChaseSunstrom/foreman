@@ -426,6 +426,18 @@ def _drop_racy_pyc(root):
                 continue
 
 
+def kill_group(proc):
+    """T-1094: kill a child started with start_new_session and everything it started (its process group); the leader
+    alone when the group is gone or isn't ours to signal. Never raises: the child may have exited first."""
+    try:
+        os.killpg(proc.pid, 9)
+    except OSError:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+
+
 def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     if root and os.path.isdir(root):
@@ -441,10 +453,7 @@ def run_command(root, cmd, timeout=600, env=None):
         out, _ = pr.communicate(timeout=timeout)
         return judged(pr.returncode, redact(out))
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(pr.pid, 9)
-        except OSError:
-            pr.kill()
+        kill_group(pr)
         try:
             out, _ = pr.communicate(timeout=10)
         except subprocess.TimeoutExpired:  # a grandchild kept the pipe open after leaving the group

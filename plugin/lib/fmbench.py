@@ -264,7 +264,7 @@ def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep
             if pr.returncode and not res:
                 error = f"exit {pr.returncode}: {(se or so).strip()[-160:]}"
         except subprocess.TimeoutExpired:
-            os.killpg(pr.pid, 9)
+            c.kill_group(pr)  # T-1094: a child that exited first no longer crashes the bench
             pr.communicate()
             error = f"timed out after {timeout} min"
     except OSError as e:

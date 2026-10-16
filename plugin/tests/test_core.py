@@ -742,6 +742,22 @@ class RunCommand(unittest.TestCase):
             code, out = c.run_command(d, "python3 -m unittest test_x 2>&1 | tail -3")
             self.assertEqual(code, 1, out)
 
+    def test_kill_group_takes_the_children_and_never_raises(self):
+        # T-1094: fmbench's own killpg had no except, so a child that exited first crashed the bench
+        import subprocess
+        import time
+        pr = subprocess.Popen(["sh", "-c", "sleep 30 & echo $!; wait"], stdout=subprocess.PIPE, text=True,
+                              start_new_session=True)
+        child = int(pr.stdout.readline())
+        c.kill_group(pr)
+        pr.wait(timeout=5)
+        time.sleep(0.2)
+        self.assertFalse(os.path.exists(f"/proc/{child}") and "Z" not in open(f"/proc/{child}/stat").read().split()[2])
+        c.kill_group(pr)  # already gone: no exception
+        done = subprocess.Popen(["true"], start_new_session=True)
+        done.wait()
+        c.kill_group(done)
+
     def test_a_run_never_inherits_the_test_skip_list(self):
         # T-1114: an exported FOREMAN_SKIP_TESTS would make an evidence run of run.py leave modules out silently
         from unittest import mock
