@@ -309,7 +309,7 @@ def failure_signature(text):
              if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())]
     pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
     s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
-    s = re.sub(r"0x[0-9a-f]+|\d+", "0", s)
+    s = re.sub(r"0x[0-9a-f]+|\b(?=[0-9a-f]*\d)[0-9a-f]{5,}\b|\d+", "0", s)  # T-1109: hex ids (agent-a0bd0ad0edc0)
     return c.redact(re.sub(r"\s+", " ", s).strip())[:160]
 
 
