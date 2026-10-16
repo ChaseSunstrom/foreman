@@ -25,11 +25,8 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble the site
-        run: |
-          mkdir -p _site/demo
-          cp -r site/. _site/
-          cp demo/live.mp4 demo/demo.svg _site/demo/
+      - name: Build the site
+        run: python3 site/build.py _site  # site/ plus demo/live.mp4 and demo/demo.svg, and the feature pages
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
