@@ -1427,7 +1427,7 @@ def task_prove_hunks(p, b, args):
                         skipped.append(f"{f} {at}: not applied ({why})")
                         continue
                 touch(os.path.join(wt, f))
-                code, _ = c.run_command(wt, args.run, args.timeout)
+                code, _ = c.run_command(wt, args.run, min(args.timeout, getattr(args, "deadline", float("inf")) - time.time()))
                 if not restore(wt, f):
                     skipped.append(f"{f}: the scratch tree couldn't be restored; stopped")
                     break
