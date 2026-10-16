@@ -1482,11 +1482,11 @@ def fm_calls(cmd):
 # T-0974: programs that only read, each with the flags that would make it write, run something or never end. A command
 # passes read_only() only when every part is one of these without those flags.
 _READS = {
-    "ls": (), "cat": (), "head": (), "tail": ("-f", "-F", "--follow"), "wc": (), "pwd": (), "which": (), "file": (),
-    "stat": (), "du": (), "df": (), "tree": ("-o",), "grep": (), "egrep": (), "fgrep": (),
+    "ls": (), "cat": (), "head": (), "tail": ("-f", "-F", "--follow"), "wc": (), "pwd": (), "which": (), "file": ("-C", "--compile"),
+    "stat": (), "du": (), "df": (), "tree": ("-o", "-R"), "grep": (), "egrep": (), "fgrep": (),
     "rg": ("--pre", "--pre-glob", "--hostname-bin", "-z", "--search-zip"),
     "sort": ("-o", "--output", "--compress-program"), "uniq": (), "cut": (), "nl": (), "diff": (), "cmp": (), "realpath": (),
-    "basename": (), "dirname": (), "echo": (), "printf": (), "true": (), "date": ("-s", "--set"), "tr": (),
+    "file": ("-C", "--compile"), "basename": (), "dirname": (), "echo": (), "printf": (), "true": (), "date": ("-s", "--set"), "tr": (),
     "column": (), "find": ("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
                                      "-fprintf", "-fls"),
 }
@@ -1498,9 +1498,9 @@ def _bad_flag(args, bad):
     """True when an argument is one of the bad flags: a long option counts when it abbreviates one (GNU and git accept
     --comp=), a single-dash cluster when it holds a bad short letter anywhere (-uo, -oFILE, -nOcat); a bad flag with a
     longer single-dash name (find -exec) matches exactly."""
-    for a in args:
+    for a in args:  # past a '--' too: it ends getopt's options, not find's expression (find -- . -delete)
         if a == "--":
-            break
+            continue
         if a.startswith("--"):
             if any(b.startswith("--") and b.startswith(a.partition("=")[0]) for b in bad):
                 return True
@@ -1530,6 +1530,8 @@ def read_only(cmd):
             continue
         bad = _READS.get(argv[0])
         if bad is None or _bad_flag(argv[1:], bad):
+            return False
+        if argv[0] == "uniq" and len([a for a in argv[1:] if not a.startswith("-")]) > 1:  # uniq IN OUT writes OUT
             return False
     return bool(parts)
 
@@ -2942,7 +2944,7 @@ def _fm_words(rest):
 
 
 def _fm_stored(sub, rest, fm_args):
-    """T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
+    r"""T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
     (`--ac "x :: CMD"`, `--verify`, `fm task ac … "x :: CMD"`, an Acceptance criteria text's `verify with \`CMD\``,
     an intake `DONE-WHEN: x :: CMD`), `fm task assume --check`, `--same`, `--stack-check`, `fm check add`/`affected`
     ({tests} and {names} read as one word), `fm smoke set cmd`, `fm notify` ($1 read as NOTIFY_PROBE), and the CMD of

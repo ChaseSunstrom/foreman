@@ -19,7 +19,10 @@ NOT_READS = ["rm -rf x", "echo hi > out.txt", "cat $(which ls)", "find . -delete
              "git diff --ext-diff", "git log --textconv -p", "git diff --ext", "sort --compress-program=sh a",
              "sort --comp=sh a", "sort -uo out a", "sort -oout a", "sort --out=x a", "rg --hostname-bin=sh x",
              "rg --pre-glob '*' x", "rg -z x", "rg -nz x", "rg --search-zip x", "tree -oout", "tree -ao out",
-             "tail -qf log", "tail --fol log"]  # review: env secrets
+             "tail -qf log", "tail --fol log",
+             # review (T-1005): '--' ends options for getopt but not for find's expression; programs that write
+             "find -- . -delete", "find . -- -exec rm {} ;", "uniq a.txt b.txt", "uniq -c in out", "file -C -m magic",
+             "file --compile -m magic", "tree -R -H http://x ."]  # review: env secrets
 
 
 class ApproveReads(ForemanTestCase):
