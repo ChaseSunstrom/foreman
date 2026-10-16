@@ -1,7 +1,8 @@
 """T-0705 (Frontier 05, first slice): ambient verification. After an edit, the affected tests (fm check --affected's
 selection) run in a detached process, out of the model's turns. Only a flip reaches the model — passing tests that now
-fail, or failing ones that pass again — as one note on its next tool call; a passing run is the current step's
-evidence. Opt-in per project (fm check ambient on); skipped on a strained host; nothing leaves the machine."""
+fail, or failing ones that pass again — as one note on its next tool call; a pass never closes a step (T-0994: that
+closed steps mid-work), its note names the evidence line for when the step is done. Opt-in per project (fm check
+ambient on); skipped on a strained host; nothing leaves the machine."""
 import json
 import os
 import re
@@ -107,23 +108,20 @@ def _record(p, cmd, tests, code, output):
     result = c.run_result(code, c.redact(output))
     c.write_atomic(last, json.dumps({"cmd": cmd, "tests": tests, "exit": code, "ts": c.now()}))
     names = ", ".join(os.path.basename(t) for t in tests[:6]) + (" …" if len(tests) > 6 else "")
+    act = c.active_brief(c.load_briefs(p), p.lane)
+    cur = act.current_step() if act else None
     if code and (prev is None or not prev):
         text = (f"Ambient tests: ✗ the affected tests now fail after your last edit ({names}): {c.fit(cmd, 160)} → "
                 f"{c.fit(result, 300)}")
     elif not code and prev:
-        text = f"Ambient tests: ✓ the affected tests pass again ({names})."
+        # T-0994: a pass is no proof the step is done (recorded as evidence, it closed steps mid-work); when it is:
+        text = f"Ambient tests: ✓ the affected tests pass again ({names})." + (
+            f" When step {cur.n} is done: fm task evidence {act.id} --step {cur.n} --run \"{c.fit(cmd, 160)}\"."
+            if cur and not RED_STEP.search(cur.text) else "")
     else:
         text = None
     if text:
         c.write_atomic(os.path.join(d, "note.json"), json.dumps({"text": text, "ts": c.now()}))
-    act = c.active_brief(c.load_briefs(p), p.lane)
-    cur = act.current_step() if act and not code else None
-    if cur and not act.has_evidence(step=cur.n) and not RED_STEP.search(cur.text):
-        with c.lock(p.dir):
-            b = c.find_brief(p, act.id)
-            b.add_evidence(cmd, result, step=cur.n, tree=c.worktree_id(p.root), ran=True)
-            c.save_brief(p, b)
-            c.log_event(p, "evidence", task=b.id, data={"step": cur.n, "cmd": cmd[:200], "auto": "ambient"})
     c.log_event(p, "ambient_run", task=act.id if act else None, data={"tests": len(tests), "exit": code,
                                                                        "flip": bool(text)})
 
