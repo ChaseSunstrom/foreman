@@ -87,6 +87,49 @@ class Contract(HookCase):
         bud.record("run", 5)
         self.assertIsNone(con.over(self.project()))
 
+    def test_the_stop_hook_that_first_sees_the_bound_freezes_it_without_waiting_on_its_own_lock(self):
+        self.fm("contract", "--until", "23:59")
+        p = self.project()
+        c.update_meta(p, contract={**c.read_meta(p)["contract"], "until": time.time() - 5})
+        t0 = time.time()
+        r = self.stop()
+        self.assertLess(time.time() - t0, 4, "over() relocked the project inside the Stop hook's own lock")
+        self.assertNotEqual((parse(r) or {}).get("decision"), "block")
+        self.assertEqual(c.read_meta(p)["contract"]["ended"], "time")
+
+    def test_a_new_session_clears_an_ended_contract_and_the_receipt_stays_readable(self):
+        self.fm("contract", "--usd", "0.1")
+        p = self.project()
+        bud.record("run", 0.5, project=p.slug)
+        self.assertNotEqual((parse(self.stop()) or {}).get("decision"), "block")
+        self.hook("SessionStart", {"source": "compact", "session_id": "s1"})
+        self.assertIn("contract", c.read_meta(p), "a compaction is the same session")
+        self.hook("SessionStart", {"source": "startup", "session_id": "s2"})
+        self.assertNotIn("contract", c.read_meta(p))
+        self.assertIn("bound that ended it: spend", self.fm("contract", "receipt").stdout)
+        self.assertEqual((parse(self.stop()) or {}).get("decision"), "block")
+
+    def test_an_ended_contract_turns_off_the_loops_next_round_in_fm_next(self):
+        self.fm("task", "drop", self.tid, "not needed")
+        self.fm("loop", "on")
+        self.assertIn("forever loop", self.fm("next").stdout)
+        self.fm("contract", "--usd", "0")
+        self.assertNotIn("forever loop", self.fm("next").stdout)
+
+    def test_the_cost_refresh_child_is_spawned_at_most_once_a_minute(self):
+        import subprocess
+        import fmcost
+        calls = []
+        real, subprocess.Popen = subprocess.Popen, lambda *a, **k: calls.append(a)
+        try:
+            os.environ.pop("FOREMAN_NO_BACKGROUND")
+            fmcost._refresh_detached(self.project())
+            fmcost._refresh_detached(self.project())
+        finally:
+            subprocess.Popen = real
+            os.environ["FOREMAN_NO_BACKGROUND"] = "1"
+        self.assertEqual(len(calls), 1)
+
     def test_off_ends_it(self):
         self.fm("contract", "--usd", "0.1")
         self.assertIn("contract", self.fm("contract").stdout)

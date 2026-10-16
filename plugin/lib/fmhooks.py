@@ -335,6 +335,12 @@ def session_start(pl):
             if week:
                 other_note = " ".join(x for x in (other_note, week) if x)
         import fmeco  # T-0463, T-0574: the Foreman this project runs, on which machine (fm projects, fm doctor)
+        if pl.get("source") in ("startup", "clear"):  # T-1158: a new session after an ended contract runs free
+            try:
+                import fmcontract
+                fmcontract.clear_ended(p, meta)
+            except Exception:
+                log_error("SessionStart", _tb())
         meta.update(session={"id": sid, "seen": c.now()}, last_active=c.now(), sensitive=c.detect_sensitive(p.root),
                     foreman=fmeco.stamp())
         c.write_meta(p, meta)
@@ -2651,7 +2657,7 @@ def _drive(p, sd, briefs, pl, g):
         return None
     try:
         import fmcontract  # T-1158: a spent time or USD bound ends the drive and the forever loop
-        if fmcontract.over(p):
+        if fmcontract.over(p, held=True):  # _drive runs under stop's project lock
             return None
     except Exception:  # fails open like the cost cap: an unreadable contract never traps the drive
         pass

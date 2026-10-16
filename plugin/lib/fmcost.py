@@ -320,6 +320,17 @@ def _refresh_detached(p):
         cached_costs(p)
         return
     import subprocess
+    stamp = _cache_path(p) + ".spawned"  # T-1158: one detached refresh a minute, not one per Stop hook
+    try:
+        if time.time() - os.path.getmtime(stamp) < 60:
+            return
+    except OSError:
+        pass
+    try:
+        os.makedirs(os.path.dirname(stamp), exist_ok=True)
+        open(stamp, "w").close()
+    except OSError:
+        pass
     try:
         subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "cost", "--refresh-cache"], cwd=p.root,
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
