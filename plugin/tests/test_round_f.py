@@ -42,7 +42,13 @@ class RoundF(ForemanTestCase):
                 "tree": tree, "env": c.env_id(), "results": [{"cmd": "true", "exit": 0, "s": 0.1}]}}) + "\n")
         self.assertNotIn("cached", self.fm("check").stdout, "a pass from long ago isn't reused")
         self.fm("check", "add", "date > stamp.txt")
-        self.assertIn("the gates changed the working tree", self.fm("check").stdout)
+        out = self.fm("check").stdout
+        self.assertIn("changed during the gates: stamp.txt", out)  # T-1149: named, and honest that it may be the session's
+        self.assertIn("your own edit", out)
+
+    def test_a_check_that_changes_nothing_warns_of_nothing(self):
+        self.fm("check", "add", "true")
+        self.assertNotIn("changed during the gates", self.fm("check").stdout)
 
     def test_why_traces_a_line_to_its_task(self):
         self.fm("task", "new", "handle empty carts", "--type", "FIX", "--tier", "S")
