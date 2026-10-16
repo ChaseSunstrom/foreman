@@ -132,6 +132,14 @@ def snapshot(c, data, p):
             "lines_added": cost.get("total_lines_added"), "lines_removed": cost.get("total_lines_removed"),
             "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio"),
             "tmux_pane": os.environ.get("TMUX_PANE")}  # T-0708: fm bus send --wake types into it
+    try:  # T-1003: live() drops the snapshot once this process is gone, whatever happened to the by-pid records
+        import fmbus
+        pid = fmbus.claude_pid()
+        info = fmbus._proc(pid) if pid else None
+        if info:
+            snap["claude_pid"], snap["claude_start"] = pid, info[1]
+    except Exception:  # never fail the line
+        pass
     c.write_atomic(os.path.join(c.state_dir(), "sessions", f"{sid}.json"), json.dumps(snap) + "\n")
 
 

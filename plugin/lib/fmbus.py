@@ -293,9 +293,19 @@ def live():
     for n in os.listdir(d) if os.path.isdir(d) else []:
         if n.endswith(".json"):
             s = _snapshot(n[:-5])
-            if s and str(s.get("ts", "")) >= cut and s.get("session_id") not in gone:
+            if s and str(s.get("ts", "")) >= cut and s.get("session_id") not in gone and _owner_alive(s):
                 out.append(s)
     return sorted(out, key=lambda s: str(s.get("ts")), reverse=True)
+
+
+def _owner_alive(s):
+    """T-1003: the claude pid the statusline recorded in the snapshot still runs with the same start (older snapshots
+    carry none: alive)."""
+    pid = s.get("claude_pid")
+    if not isinstance(pid, int):
+        return True
+    info = _proc(pid)
+    return bool(info) and info[1] == s.get("claude_start")
 
 
 def _gone():
