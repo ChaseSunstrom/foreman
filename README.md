@@ -142,7 +142,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 **Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
-**Stays light.** Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's Pulse section shows it live (about 20 ms here).
+**Stays light.** Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
 
 **Improves itself.** `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), `fm burden --by-verb` lists the verbs nobody calls, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
@@ -169,7 +169,6 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **Your project's own timings.** Sizes read as words (`FIX · small`, `· medium`, `· large`) and carry this project's history:
 - The band shows how long you've been on the task and what that type and size usually takes (`12m on it · usually ~25m`). That is the median from first focus to done, once three such tasks have closed.
-- Queue rows show their usual time, and the gates card shows what a full run costs.
 - The band shows the whole queue (done today, queued, in the inbox, what's next), so it never looks nearly finished while work waits.
 
 **Prompts and background work.**
@@ -179,14 +178,14 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **The mascot.** The pane's top-right corner has Claude Code's own Claude from the welcome screen. Its `mascot` setting picks blue, orange, purple, green or off. It dances while Claude works, blinks while idle and cheers when a task closes, with a mini Claude in its own color beside it for each running subagent.
 
-**The dashboard.** `/fm` (or `[f]`) opens one panel beside the chat that fills the dock exactly, no more and no less: each section takes the rows it holds (capped, so none starves the rest), Live keeps a fixed height, and the Pulse charts at the bottom stretch into whatever is left, so there are no blank gaps and only the bottom chart changes height as lists grow. What doesn't fit is counted (`… 3 more`), never cut silently. Every row carries a picture: bars, meters, lanes or dots. Top to bottom:
-- the head: project and mode, the task (type, size, id, title), its step bar with time on it against the usual, and the mascot;
-- one attention row, the most urgent thing first: a paused Foreman hook, a yes Foreman is waiting for, a plan waiting for approval (✓ approve, or *show* to read it in the Task section), a task that just closed (a green sweep, grade, proof and time, for six seconds), failing gates, what closed since your last message; otherwise *nothing needs you*;
-- **Task**: the stage rail from plan to close, the steps around the current one (one glows green as it gets done), the done-when criteria with the check that proves each, and what else is left before done. With nothing active it shows a plan waiting for your yes, or the newest news;
-- **Live**: every tool call, subagent and background shell running this moment, one row each, with moving bars (a question waiting on you reads as waiting, not running); rows nothing runs in show the session's tool calls as lanes by kind (edit, run, read, agent, web), busiest first;
-- **Pulse**, last and as tall as the room left: tasks closed per day for 14 days as bars as tall as the section, beside the context, spend, hooks (latency sparkline, guard blocks), gates (a dot per gate) and tool-call gauges, then the newest news;
-- **Queue**: plans waiting for your yes first (each with ✓ approve), the queue with step bars and usual times, a capture box (Enter runs `fm capture` without interrupting Claude), the inbox with an age bar and Start/Drop;
-- **More**, one line each while there is room, each with its picture: other sessions with a context meter each and one steer for all, a decision due for revisiting, what you told Foreman never to do, files touched this session (a +/− bar), spend by feature (one stacked bar), skills and stack cards used this week (a bar per skill), the last brainstorm, bench and research (pass meters);
+**The dashboard.** `/fm` (or `[f]`) opens one panel beside the chat that fills the dock exactly, no more and no less. Each section sits under a titled divider (with a blank row above it on a tall dock), says only what it must, and draws its numbers as pictures. Activity and Today keep a fixed height, the lists take the rows they hold, and History takes what's left, so nothing jumps as work comes and goes. Top to bottom:
+- the head: project, mode and the mascot, with the one thing that needs you under them, most urgent first: a paused Foreman hook, a question waiting for your answer, a yes Foreman is waiting for, a plan waiting for approval (✓ approve, or *show* to read it in the task block), a task that just closed (a green sweep, grade, proof and time, for six seconds), failing gates, halved spend caps, a decision due for another look, what closed since your last message; otherwise *nothing needs you*;
+- the task: type, id and size, criteria proved and time on it against the usual, the title, the stage rail from plan to close, and the steps around the current one (one glows green as it gets done). With nothing active: what's next and how many closed today, or a plan waiting for your yes;
+- **Activity**: one braille lane per kind of tool call (edit, run, read, agent, skill, web) plotting the session's calls over the last 30 minutes; at the end of each lane, what runs there now (a subagent gone quiet gets a stop button, a brainstorm its newest idea, a background shell its command) or the count and the last thing it touched;
+- **Up next**: plans waiting for your yes (each with ✓ approve), the queue, the inbox with Start and Drop, and a capture box (Enter runs `fm capture` without interrupting Claude);
+- **Sessions**, when there are others: each with its context and task, and one steer for all;
+- **History**: what happened, newest first, one short line each (`T-0012 step 2 passed`, `T-0012 audit edge`, `T-0012 done`);
+- **Closed per day** for 14 days beside **Today**: four tanks for context, spend against the day's cap, hook latency and gates passed, each with its value over it;
 - Next, Drive, Autonomy, Mute and Refresh.
 
 With the panel open the band above the prompt steps aside (the prompt hint still says when Foreman needs you). The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`. Toasts mark finished steps and tasks, needed yeses (with a soft chime) and guard refusals. The mod only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.

@@ -71,7 +71,7 @@ def gather(p):
             "tools": [e for e in mine if e.get("kind") in ("tool", "tool_fail")][-12:],
             "subagents": list(running.values())[-5:], "guard": [e for e in mine if e.get("kind") == "guard_block"][-5:],
             "session": _latest_session(p.slug),
-            "recent": [line for line in map(_recent, ledger) if line][-8:]}
+            "recent": [line for line in map(_recent, ledger) if line][-24:]}  # T-1002: the pane's History fills
 
 
 def _recent(e):
@@ -125,7 +125,7 @@ def render(d, width=100):
     if sd.get("asks"):
         out.append("Waiting on you: reply yes = " + "; ".join(f"{'+'.join(x['allow'])} for {x['task']}"
                                                                 for x in sd["asks"]))
-    out += ["", "Recent:"] + (d["recent"] or ["  (nothing yet)"])
+    out += ["", "Recent:"] + (d["recent"][-8:] or ["  (nothing yet)"])
     out += ["", "Tool timeline:"]
     for e in d["tools"]:
         ms = f"{e['ms']}ms" if e.get("ms") is not None else "-"

@@ -94,13 +94,13 @@ export function miniRail(ui: UI, e: ResolveInput, n: number, current: number, f:
 }
 
 /** Column bars, `rows` tall (Raster), or a sparkline elsewhere. */
-export function bars(ui: UI, e: ResolveInput, key: string, values: readonly number[], rows: number, from: number, to: number) {
+export function bars(ui: UI, e: ResolveInput, key: string, values: readonly number[], rows: number, from: number, to: number, bw = 1) {
   if (e.surface !== 'terminal') {
     const { Text } = ui
     return <Text key={key} color={hex(to)}>{sparkText(values, values.length)}</Text>
   }
   const { Raster } = ui
-  return <Raster key={key} columns={values.length * 2 - 1} rows={rows} cells={barCells(values, rows, from, to)} />
+  return <Raster key={key} columns={values.length * (bw + 1) - 1} rows={rows} cells={barCells(values, rows, from, to, bw)} />
 }
 
 /** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */

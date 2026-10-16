@@ -33,9 +33,9 @@ export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '',
 
 // T-0909: what the pane charts live. Every tool call's lane and start (the swim lanes, the last hour), and each call
 // still running with how it reads (the "now" card); neither needs to survive a reload.
-export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'web'
-export const ticks: { at: number; lane: Lane }[] = []
+export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'skill' | 'web'
+export const ticks: { at: number; lane: Lane; what?: string }[] = []
 export const running = new Map<string, { icon: string; verb: string; target: string; color: number; at: number; agent: boolean }>()
 export const laneOf = (icon: string): Lane =>
-  icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' || icon === '✦' ? 'agent' : icon === '◍' || icon === '⬡' ? 'web' : 'read'
+  icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' ? 'agent' : icon === '✦' ? 'skill' : icon === '◍' || icon === '⬡' ? 'web' : 'read'
 export const TIMELINE_MS = 30 * 60 * 1000 // the lanes' window
