@@ -1,7 +1,11 @@
 """T-0275: commands that run a hidden command (exec options, code-loading variables, script files) are read like
 bash -c; a payload the guard can't read is refused, a harmless look-alike passes."""
+import json
 import os
-from test_guard import GuardCase
+from unittest import mock
+
+from test_guard import GuardCase, g
+from test_hooks import HookCase
 
 
 class ExecVectors(GuardCase):
@@ -250,3 +254,71 @@ class Review(GuardCase):
     def test_executable_with_a_shebang_is_read(self):
         self.run_table([(self.p("bad-x.sh"), "rm-outside"), (self.p("ok-x.sh"), None),
                         (f"{self.p('ok-x.sh')} --flag", None)], self.bash)
+
+
+class ScriptCache(GuardCase):
+    """T-0275: the hook runs before every Bash call, so a script's verdict is cached by (path, size, mtime) and one
+    read has a time budget."""
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.d = os.path.join(os.path.dirname(cls.home), "scripts3")
+        os.makedirs(cls.d, exist_ok=True)
+
+    def script(self, name, text):
+        p = os.path.join(self.d, name)
+        with open(p, "w") as f:
+            f.write(text)
+        return p
+
+    def test_a_cached_second_run_does_not_read_the_file(self):
+        p = self.script("c1.sh", "echo hi\nrm -rf ~\n")
+        with mock.patch.object(g, "_script_text", wraps=g._script_text) as reads:
+            first = self.bash(f"bash {p}")
+            second = self.bash(f"bash {p}")
+            self.assertEqual(reads.call_count, 1)
+        self.assertBlocked(first, "rm-outside")
+        self.assertBlocked(second, "rm-outside")
+        self.script("c1.sh", "echo hi\nls\n\n")  # a changed file is read again
+        with mock.patch.object(g, "_script_text", wraps=g._script_text) as reads:
+            self.assertIsNone(self.bash(f"bash {p}"))
+            self.assertEqual(reads.call_count, 1)
+
+    def test_the_cache_keeps_200_entries_and_drops_gone_files(self):
+        gone = self.script("gone.sh", "ls\n")
+        self.bash(f"bash {gone}")
+        os.remove(gone)
+        for i in range(205):
+            self.bash(f"bash {self.script(f'n{i}.sh', f'echo {i}')}")
+        with open(g._script_cache_path(self.ctx())) as f:
+            entries = json.load(f)
+        self.assertLessEqual(len(entries), 200)
+        self.assertFalse(any(e["p"] == gone for e in entries.values()))
+
+    def test_past_the_budget_the_script_is_allowed_unread_and_noted(self):
+        p = self.script("slow.sh", "echo hi\n" * 4000)
+        with mock.patch.dict(os.environ, {"FM_GUARD_SCRIPT_BUDGET": "0.000001"}):
+            g.take_unread()
+            self.assertIsNone(self.bash(f"bash {p}"))
+            unread = g.take_unread()
+        self.assertEqual([u[0] for u in unread], [p])
+        self.assertIn("budget", unread[0][1])
+        with mock.patch.dict(os.environ, {"FM_GUARD_SCRIPT_BUDGET": "5"}):  # the unread verdict is cached with its note
+            self.assertIsNone(self.bash(f"bash {p}"))
+            self.assertEqual([u[0] for u in g.take_unread()], [p])
+
+
+class ScriptHook(HookCase):
+    def test_the_hook_notes_and_logs_an_unread_script(self):
+        self.task()
+        p = os.path.join(self.tmp, "slow.sh")
+        with open(p, "w") as f:
+            f.write("echo hi\n" * 4000)
+        r = self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": f"bash {p}"}},
+                      env={"FM_GUARD_SCRIPT_BUDGET": "0.000001"})
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("too long", self.ctx_of(r))
+        with open(os.path.join(self.project().dir, "ledger.jsonl")) as f:
+            evs = [json.loads(x) for x in f]
+        hit = [e for e in evs if e["event"] == "guard_unread"]
+        self.assertEqual(hit[0]["data"]["path"], p)
