@@ -3195,7 +3195,8 @@ def _missing_target(words, cwd, root):
     def test_files():
         found = set()
         for d, dirs, files in os.walk(root):
-            dirs[:] = [x for x in dirs if x not in (".git", "node_modules", ".venv", "venv", "__pycache__")]
+            dirs[:] = [x for x in dirs if x not in (".git", "node_modules", ".venv", "venv", "__pycache__", "worktrees")]
+            # worktrees: builders' checkouts under .claude/ hold tests this tree doesn't have
             found.update(f[:-3] for f in files if f.startswith("test") and f.endswith(".py"))
         return found
 
