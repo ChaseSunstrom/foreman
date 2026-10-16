@@ -532,10 +532,7 @@ def _watch(proc, cwd, deadline, stall_s):
 
 
 def _stop(proc, signal):
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except OSError:
-        proc.kill()
+    c.kill_group(proc)
     proc.wait()
 
 
