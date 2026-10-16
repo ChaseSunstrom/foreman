@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- In an unattended run, a FEATURE task's test-first note says to write and run the failing test, without recording it with fm task evidence: the long sessions spent up to 12 calls a run on that. A FIX still records its red run, for the red-to-green proof (T-1231)
 
 ## 1.2.39 — 2026-10-16
 - Benchmarks page: one long Haiku session of eight requests compacting at 40,000 tokens. Foreman passed every hidden test in all 3 runs (4, 4 and 2 compactions); Claude Code on its own in 1 of 3 (89, 64 and 105 of 105), its misses written after its first compaction. Foreman cost about 60% more ($0.09 against $0.06). In a marathon, Foreman went on through seven compactions and fixed three things nobody asked for. "Why use Foreman" now says so (T-1242)
