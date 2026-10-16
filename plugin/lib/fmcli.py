@@ -4953,6 +4953,8 @@ def build_parser():
             help="commands and procedures this project keeps repeating, and what project tool each could become")
     s.add_argument("action", nargs="?", default="list", choices=["list", "dismiss"])
     s.add_argument("words", nargs="*", help="dismiss: the shape or step as fm repeats prints it")
+    s.add_argument("--forge", action="store_true", help="draft a script or skill for each repeat in research/ and "
+                                                        "capture a task to adopt it (T-1070)")
     s.add_argument("--draft", action="store_true", help="write a playbook draft from steps 3+ finished tasks took in "
                                                         "the same order (T-0734; adopting it is asked first)")
 
