@@ -788,3 +788,21 @@ class NativeClaude(unittest.TestCase):
             self.assertEqual(c.claude_path(env)["PATH"], other + ":" + empty, "one on PATH already wins")
             os.remove(exe)
             self.assertEqual(c.claude_path({"HOME": home, "PATH": empty})["PATH"], empty)
+
+
+class ActiveFast(ForemanTestCase):
+    def test_the_fast_active_brief_matches_the_full_scan(self):
+        # T-1140: PreToolUse parsed every brief (1,069 here) to find the active one, half of each hook call
+        self.fm("init")
+        p = c.find_project(self.repo)
+        for i in range(5):
+            self.fm("task", "new", f"t{i}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.assertIsNone(c.active_brief_fast(p))
+        self.fm("focus", "T-0003")
+        self.assertEqual(c.active_brief_fast(p).id, c.active_brief(c.load_briefs(p)).id)
+        b = c.find_brief(p, "T-0004")
+        b.meta.update(status="verifying", lane="/elsewhere")  # another lane's active task
+        c.save_brief(p, b)
+        self.assertEqual(c.active_brief_fast(p).id, "T-0003")
+        self.assertEqual(c.active_brief_fast(p, "/elsewhere").id, "T-0004")
+        self.assertIsNone(c.active_brief_fast(p, "/nowhere"))

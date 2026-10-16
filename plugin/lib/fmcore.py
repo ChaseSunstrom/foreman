@@ -2773,6 +2773,28 @@ def active_brief(briefs, lane=None):
     return next((b for b in briefs if b.status in ("active", "verifying") and b.meta.get("lane") == lane), None)
 
 
+_ACTIVE_LINE = re.compile(rb"^status:[ \t]*(?:active|verifying)[ \t]*\r?$", re.M)
+
+
+def active_brief_fast(p, lane=None):
+    """T-1140: active_brief(load_briefs(p), lane) without parsing every brief (half of each PreToolUse call at 1,069
+    briefs): only a brief whose frontmatter says active or verifying is parsed."""
+    hits = []
+    for path in brief_paths(p):
+        try:
+            with open(path, "rb") as f:
+                head = f.read(4096)
+                end = head.find(b"\n---", 3)
+                if end < 0:  # a frontmatter longer than 4 KB: read it whole
+                    head += f.read()
+                    end = head.find(b"\n---", 3)
+            if _ACTIVE_LINE.search(head[:end] if end > 0 else head):
+                hits.append(_read_brief(path))
+        except (OSError, ValueError):
+            continue
+    return active_brief(hits, lane)
+
+
 def held_elsewhere(b, lane=None):
     """T-0134: the task belongs to another lane (given to it, or active there), or, seen from a lane, is active in
     the main checkout: this side's next, queue and focus leave it alone."""
