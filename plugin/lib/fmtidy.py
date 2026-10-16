@@ -239,6 +239,7 @@ def check_project(p, apply, actions):
     out += _prune_snapshots(p, apply, actions)
     out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
+    out += _hygiene(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
                                os.path.join(p.root, ".claude", "rules"), PROJECT_MD_MAX)
@@ -248,6 +249,63 @@ def check_project(p, apply, actions):
         c.update_meta(p, last_tidy=c.now())
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
+    return out
+
+
+HINT_STALE_DAYS = 60
+
+
+def _hygiene(p, apply, actions):
+    """T-1072: a known fix that keeps missing is removed on --apply (its line copied to archive/fixes-removed.md first);
+    one unused for 60 days is only listed (a quarterly fix is still a fix), and so is one synced from the repo (fmsync
+    would put it back). Of the cards the map picked for this project, those no edit used in 60 days are listed once
+    (a shipped card file is never retired). Lessons keep no fire record."""
+    import fmfixes
+    slug, out, st = p.slug, [], fmfixes._load(fmfixes._stats_path())
+    for f in fmfixes.known(p, st):
+        x = (st.get("fixes") or {}).get(f["id"]) or {}
+        age = c.age_days(x.get("last"))  # no record at all: unknown age, kept
+        losing = fmfixes._losing(st, f["id"])
+        if not (losing or (age and age > HINT_STALE_DAYS)):
+            continue
+        synced = f["store"] == "project" and not f["trusted"]
+        what = "keeps missing" if losing else f"unused {int(age)}d"
+        out.append(finding(slug, "losing_fix" if losing else "stale_fix", "warn",
+                           f"known fix `{f['sig'][:60]}` ({what}{'; shared: change it in the repo file' if synced else ''})",
+                           "fm tidy --apply retires it" if losing and not synced else
+                           "listed only: fm fix rm <n> if it no longer applies", auto=losing and not synced))
+        if apply and losing and not synced:
+            line = fmfixes._line({k: v for k, v in f.items() if k != "trusted"})
+            if fmfixes.remove(p, f["id"]):
+                d = os.path.join(p.dir, "archive")
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "fixes-removed.md"), "a", encoding="utf-8") as fh:
+                    fh.write(f"<!-- removed {c.now()[:10]} -->\n{line}")
+                actions.append(("losing_fix", f["id"]))
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as fh:
+            rows = json.load(fh).get("lib_cards")
+    except (OSError, ValueError, AttributeError):
+        rows = None
+    mine = {x["name"] for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str)} if isinstance(rows, list) else set()
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - HINT_STALE_DAYS * 86400))
+    used = {(e.get("data") or {}).get("card") for e in c.ledger_events(p, ("enforce",), since=since)
+            if (e.get("data") or {}).get("kind") == "card_injected"}
+    hit = c.rule_last_hits(p)  # T-1115: rules no call matched in the window, older than it (the user removes them)
+    quiet = [f"{n} `{c.fit(r['pattern'], 40)}`" for n, r in enumerate(c.rules(p), 1)
+             if str(r.get("at") or "") < since and str(hit.get(r["pattern"]) or "") < since]
+    if quiet:
+        out.append(finding(slug, "quiet_rule", "info", f"rule(s) no call matched in {HINT_STALE_DAYS} days: "
+                           + ", ".join(quiet[:8]), "listed only: the user removes a rule (fm rule rm N) if it's obsolete"))
+    ignored = sorted(c.hints_quiet(p))
+    if ignored:
+        out.append(finding(slug, "ignored_hint", "info", f"hints shown {c.QUIET_AFTER}+ times running without use: "
+                           + ", ".join(ignored), "listed only: Next already shortens them to the bare command"))
+    names = sorted(mine - used)
+    if names:  # info, not warn: a clean project shouldn't read as needing action
+        out.append(finding(slug, "unused_card", "info", f"{len(names)} of {len(mine)} cards picked for this project reached no "
+                           f"edit here in {HINT_STALE_DAYS} days: {', '.join(names[:8])}",
+                           "listed only: cards ship with the plugin (fm lib stats shows use)"))
     return out
 
 
