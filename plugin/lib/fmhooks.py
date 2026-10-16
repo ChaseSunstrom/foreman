@@ -1151,6 +1151,15 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    unread = []  # T-0275: scripts the guard allowed unread (over its time budget): logged, and noted below
+    try:
+        unread = getattr(guard, "take_unread", lambda: [])()
+        for path, why in unread:
+            if p:
+                c.log_event(p, "guard_unread", task=act.id if act else None, data={"path": path, "reason": why},
+                            session=pl.get("session_id"))
+    except Exception:
+        log_error("PreToolUse", _tb())
     try:
         hits = _rule_hits(pl, p)
         if hits:
@@ -1205,7 +1214,9 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        note = " ".join(filter(None, [saved, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        slow = " ".join(f"Foreman: the script {path} was too long for the guard to check in time, so it ran unread."
+                        for path, _ in unread[:2])
+        note = " ".join(filter(None, [saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
