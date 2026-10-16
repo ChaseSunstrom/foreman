@@ -89,7 +89,7 @@ def build(p):
     return {"version": VERSION, "head": _git(root, "rev-parse", "HEAD").strip(), "gates": _gates(root, files, c.read_meta(p).get("checks") or []),
             "layout": layout.most_common(12), "entry": [f for f in files if _ENTRY.search(f)][:8],
             "hot": [f for f, _ in churn.most_common(HOT)], "tests": links, "files": len(files),
-            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "lib": [x["name"] for x in lib],
+            "ci": _ci(root, files), "pairs": _co_change(root, set(files)), "fixy": _fixy(root, set(files)), "lib": [x["name"] for x in lib],
             "lib_cards": lib, "lib_stamp": _cards_stamp()}
 
 
@@ -145,7 +145,21 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
-VERSION = 8  # bump when build() changes, so older maps are rebuilt
+_FIXY = re.compile(r"\b(fix|revert|bug|hotfix)", re.I)
+
+
+def _fixy(root, files):
+    """Hotspots (wild C18): files in 3+ commits of the last 180 days whose subject says fix, revert or bug."""
+    n, cur = collections.Counter(), False
+    for line in _git(root, "log", "--since=180.days", "--name-only", "--format=%x00%s").splitlines():
+        if line.startswith("\0"):
+            cur = bool(_FIXY.search(line[1:]))
+        elif cur and line in files:
+            n[line] += 1
+    return sorted(f for f, k in n.items() if k >= 3)
+
+
+VERSION = 9 # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
@@ -558,6 +572,8 @@ def pre_audit(root, diff, files, m=None):
             missing = [b for b in m["pairs"].get(f, []) if b not in changed]
             if missing:
                 found.append(f"{f} usually changes with {', '.join(missing)} (git history); check it needs no edit")
+    found += [f"hotspot: {f} keeps getting fixed after edits (git history); read its edges twice"
+              for f in files if f in (m or {}).get("fixy", ())][:5]
     found += [f"generated or vendored file edited: {f} (change its source or generator instead)" for f in files
               if is_generated(os.path.join(root, f))][:5]
     risky = c.sensitive(files, diff)

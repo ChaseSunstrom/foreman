@@ -53,6 +53,17 @@ class Map(ForemanTestCase):
         self.fm("map")
         self.assertNotEqual(json.load(open(path))["head"], built)
 
+    def test_files_fixed_again_and_again_are_hotspots_in_the_map_and_focus(self):
+        for name, n in (("fixy.py", 3), ("calm.py", 1)):
+            for i in range(n):
+                with open(os.path.join(self.repo, name), "a") as f:
+                    f.write(f"# {i}\n")
+                self.commit(f"fix: {name} again {i}")
+        self.assertEqual(json.loads(self.fm("map", "--json").stdout)["fixy"], ["fixy.py"])
+        tid = json.loads(self.fm("task", "new", "Touch fixy", "--type", "FIX", "--tier", "S", "--scope", "fixy.py",
+                                 "--ac", "ok", "--step", "do", "--json").stdout)["id"]
+        self.assertIn("Hotspot: fixy.py", self.fm("focus", tid).stdout)
+
     def test_focus_names_the_likely_tests_for_the_scope(self):
         tid = json.loads(self.fm("task", "new", "Speed up parse", "--type", "PERF", "--tier", "S", "--scope",
                                  "src/parser.py", "--ac", "faster", "--step", "do", "--json").stdout)["id"]
