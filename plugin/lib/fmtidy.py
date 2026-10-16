@@ -5,6 +5,7 @@ archiving a copy) and logs them; everything needing judgment (stale inbox items,
 oversize memory, contradictions) is reported for a decision. Nothing is deleted without an archive copy,
 except derived caches (old statusline snapshots).
 """
+import fcntl
 import json
 import os
 import re
@@ -304,24 +305,48 @@ def _roll_ledger(p, apply, actions):
     out = [finding(p.slug, "roll_ledger", "action", f"ledger.jsonl is {size // 1024} KB",
                    "move past months to archive/ledger-YYYY-MM.jsonl", auto=True)]
     if apply:
-        month = c.now()[:7]
-        with c.lock(p.dir):
-            keep, rolled = [], {}
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        m = json.loads(line).get("ts", month)[:7]
-                    except ValueError:
-                        m = month
-                    (rolled.setdefault(m, []) if m < month else keep).append(line)
+        month, rolled = c.now()[:7], {}
+        # T-1099: bytes, under the ledger's own flock (log_event's), rewritten in place: write_atomic would swap the
+        # inode, and a writer waiting on the old one would append to the unlinked file. ponytail: an older Foreman's
+        # log_event never flocks, so its line can land mid-roll (lost) or between a writer's tail read and its write
+        # (a false break in fm verify-ledger); closing that needs every writer upgraded.
+        with open(path, "r+b") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            lines = f.readlines()
+            run = ([os.path.basename(a)[7:14] for a in c.ledger_files(p)[:-1]] or [None])[-1]
+            months = []
+            for line in lines:  # months never fall, so the archives read in chain order and the rolled lines are a prefix
+                m = _ledger_month(line, month)
+                run = max(run, m) if run and m else run or m  # no ts, or a future one: the line before's month
+                months.append(run)
+            first = next((m for m in months if m), month)  # leading lines with no ts go with the first that has one
+            months = [m or first for m in months]
+            cut = sum(m < month for m in months)
+            for line, m in zip(lines[:cut], months):
+                rolled.setdefault(m, []).append(line if line.endswith(b"\n") else line + b"\n")
             os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
-            for m, lines in rolled.items():
-                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "a", encoding="utf-8") as f:
-                    f.writelines(lines)
-            c.write_atomic(path, "".join(keep))
+            for m, chunk in rolled.items():
+                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "ab") as a:
+                    a.writelines(chunk)
+                    a.flush()
+                    os.fsync(a.fileno())  # archived for good before the live file lets them go
+            if cut:
+                f.seek(0)
+                f.write(b"".join(lines[cut:]))
+                f.truncate()
         c.log_event(p, "ledger_rolled", data={m: len(v) for m, v in rolled.items()})
         actions.append(("roll_ledger", ",".join(sorted(rolled))))
     return out
+
+
+def _ledger_month(line, month):
+    """A ledger line's YYYY-MM, None when its ts is missing, unparseable or past `month` (a clock that ran ahead)."""
+    try:
+        ts = json.loads(line.decode("utf-8", "replace")).get("ts")
+    except (ValueError, AttributeError):
+        return None
+    m = ts[:7] if isinstance(ts, str) and re.match(r"\d{4}-\d\d", ts) else None
+    return m if m and m <= month else None
 
 
 def _check_memory(p, apply, actions):
