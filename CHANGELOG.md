@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Foreman keeps the suite green itself (T-1117): a close runs the tests linked to what the task changed (one rerun for a flake) and refuses a new failure (one already red in another task's last full run, or an environment failure, is noted instead; `--skip-affected WHY` waives it on the record); a red full-gate run captures one urgent baseline FIX naming the failing tests, and a green run names it as green again; after a close, the full gates run in the background (one at a time, and a run that outlives the close's tree captures nothing) when the last full run is older than 3 closes or an hour. A change that broke another module's test (T-1089 → test_builder) had gone unnoticed for a dozen closes.
 - `fm cost` runs in half the time (7.6 s → 3.8 s on 559 MB of transcripts): turns are matched to tasks by bisect, transcript files and lines wholly before the window are skipped before parsing, and task attribution reads the archived ledger months (T-1116).
 - `fm cost` and `fm digest` flag unexplained spend (T-1079): tokens from sessions with no Foreman activity, or turns more than 30 minutes from any, once they reach 20% and 100k tokens, with the top session named; the archived ledger months count.
 - `fm tidy` also lists the user's rules that no call matched in 60 days (each hit's time is now recorded) and the hints shown six or more times running without use; both are listed only, since only the user removes a rule (T-1115).
