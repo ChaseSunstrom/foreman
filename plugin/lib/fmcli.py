@@ -5163,8 +5163,10 @@ def build_parser():
     s.add_argument("--repo", metavar="OWNER/REPO", help="default: the repo gh finds here")
     s.add_argument("--limit", type=int, default=30)
     s = add("ci-watch", lazy("fmci", "cmd_ci_watch"), help="after a push, poll the branch's latest CI run through gh; a "
-                                                           "failure's log tail becomes a FIX brief (data), up to --max-retries")
+                                                           "failure's log tail becomes a FIX brief (data), up to --max-retries; it can run "
+                                                           "max-polls x interval: use run_in_background, or let fm next or a Monitor wake you")
     s.add_argument("--branch", help="default: the branch gh finds here")
+    s.add_argument("--commit", metavar="SHA", help="the commit to watch (default: git HEAD, followed as fixes are pushed)")
     s.add_argument("--max-retries", type=int, default=3)
     s.add_argument("--interval", type=float, default=30, help="seconds between polls")
     s.add_argument("--max-polls", type=int, default=120)
