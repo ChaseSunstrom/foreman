@@ -108,17 +108,17 @@ def _duel(s, name):
                     f" Its {what} was within 3% of Claude Code's.")
 
     def cell(x):
-        mark = "✓ passed" if x["pass"] else "✗ failed"
+        mark = "✓" if x["pass"] else "✗"
         if x.get("score") is not None:
-            return f"{mark} (judge {x['score']} of 5)"
-        return f"{mark} ({x['passed']} of {x['runs']} runs)" if x.get("runs", 1) > 1 else f"{mark} (hidden tests)"
+            return f"{mark} judge {x['score']} of 5"
+        return f"{mark} {x['passed']} of {x['runs']} runs" if x.get("runs", 1) > 1 else f"{mark} hidden tests"
     rows = "".join(f"<tr><td>{c['case']}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>" for c in cs)
     table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
              f'</thead><tbody>{rows}</tbody></table></div>')
     return (head + f"<p><strong>{verdict}</strong></p>" + table
             + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
             + pairs("Time per task", "Seconds from the first prompt to the session ending.",
-                    [(c["case"], c["foreman"]["seconds"], c["bare"]["seconds"]) for c in cs], unit=" s"))
+                    [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
@@ -315,6 +315,17 @@ PAGES = [
              "destroy work or leak secrets, and sixteen fully specified coding tasks graded by hidden tests, each run "
              "three times with Foreman and three times with Claude Code on its own.",
      "blocks": [
+         ("text", "Why use Foreman", "<p><strong>It stops what you'd regret.</strong> In bypass mode, out of 24 "
+          "dangerous commands (deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman "
+          "stopped 20 and saved a copy before the other 4. Claude Code on its own ran all 24. Foreman stopped none of "
+          "25 everyday commands.</p><p><strong>It leaves a record.</strong> Every task has a plan, the checks that "
+          "ran and their output, and a commit you can revert.</p><p><strong>What the quality runs show.</strong> On "
+          "small tasks where the request spells out every rule, both sides pass everything. There Foreman costs about "
+          "10% more with Sonnet and 29% more with Haiku, and takes about the same time, so for a short, fully "
+          "specified task you're watching, Claude Code alone is cheaper.</p><p><strong>What they can't show "
+          "yet.</strong> Long unattended work across many requests and context compactions, which is what Foreman "
+          "is built for, is not measured yet. That benchmark is being built and goes on this page whichever way it "
+          "falls.</p>"),
          ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
           "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
           "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
