@@ -2802,6 +2802,37 @@ def cmd_ask(args):
         f"message decides: a reply starting with yes grants it, anything else cancels it.")
 
 
+# ponytail: words, not meaning; a block whose reason names none of these isn't listed (fm task list shows all blocks)
+_USER_BLOCK = re.compile(r"(?i)\b(user|you|your|log ?in|secret|credential|password|approv\w*|permission|grant|sign ?in|token)\b")
+
+
+def cmd_todo(args):
+    """T-1157: what only the user can do now, each with what to type; built from the stores, so a resolved entry is gone."""
+    p = resolve(args)
+    todo = []
+    for a in c.read_meta(p).get("pending_approvals") or []:
+        if isinstance(a, dict):
+            cats = ", ".join(a.get("allow") or [])
+            todo.append({"kind": "ask", "task": a.get("task"), "text": f"{cats}: {a.get('why') or 'no reason given'}",
+                         "command": f"reply \"yes\" to Claude's question (grants {cats} for {a.get('task')}); anything else cancels"})
+    for b in c.load_briefs(p):
+        if b.status == "blocked":
+            why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines())
+                        if "blocked:" in l), "")
+            if _USER_BLOCK.search(why):
+                todo.append({"kind": "block", "task": b.id, "text": why,
+                             "command": f"do it, then fm task set {b.id} status=planned"})
+    path = os.path.join(p.dir, "decisions.md")
+    for l in (open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else []):
+        if l.startswith("| 2") and not l.endswith("← reversed later"):
+            r = _decision_row(l)
+            if r["kind"]:
+                todo.append({"kind": "decision", "task": None, "text": f"[{r['kind']}] {r['text']}",
+                             "command": "fm decide --review, then fm decide \"<new>\" --reverses \"<it>\" to undo"})
+    out(args, {"todo": todo}, "\n".join(f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}\n    → {e['command']}"
+                                        for e in todo) or "Nothing waits on you.")
+
+
 def cmd_trust(args):
     """T-0120: whether Claude may edit the guard and Claude Code settings. Only the foreman-ui mod's /fm-trust on,
     typed by the user (its command.run checks the origin), turns it on, by writing the trust record into Foreman state
@@ -4490,6 +4521,7 @@ def build_parser():
     s = add("standing", cmd_standing, tier=("Project and settings", 750), help="the project's standing yeses (fm ask … core --standing); off revokes them")
     s.add_argument("state", nargs="?", choices=["off"])
 
+    add("todo", cmd_todo, tier=("Finding your way", 306), help="what only the user can do now (asks, user blocks, costly or outward decisions), each with what to type")
     s = add("decide", cmd_decide, tier=("Every task", 190), help="record a decision in decisions.md")
     s.add_argument("decision", nargs="?")
     s.add_argument("--why", default="")
