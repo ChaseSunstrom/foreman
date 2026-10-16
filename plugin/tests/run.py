@@ -42,6 +42,21 @@ def classes(patterns, k):
     return sorted(counts, key=lambda c: -counts[c])
 
 
+def annotations(cid, err):
+    """T-1248: one GitHub ::error line per failing test (its title, the line that failed and the exception); output
+    with no FAIL:/ERROR: blocks (an import error) keeps its last four lines."""
+    out = []
+    for name, block in re.findall(r"(?m)^(?:FAIL|ERROR): (\w+) \([^)]*\)\n-+\n(.*?)(?=\n=+\n|\n-+\nRan |\Z)", err, re.S):
+        lines = [x.strip() for x in block.splitlines() if x.strip()]
+        code = [x for x in lines if not x.startswith(("Traceback", "File ")) and lines.index(x) < len(lines) - 1]
+        body = ([code[-1]] if code else []) + lines[-1:]
+        out.append(f"::error title={cid}.{name}::" + "%0A".join(body).replace("::", ": :"))
+    if not out:
+        tail = [x.strip() for x in err.splitlines() if x.strip() and not set(x.strip()) <= set("-=~^")][-4:]
+        out.append(f"::error title={cid}::" + "%0A".join(tail).replace("::", ": :"))
+    return out
+
+
 def run_one(cid, k):
     t0 = time.time()
     extra = [a for x in k for a in ("-k", x)]
@@ -77,8 +92,7 @@ def main():
     for cid, _, err, _, _ in failed:
         sys.stderr.write(f"\n==== {cid}\n{err}")
         if os.environ.get("GITHUB_ACTIONS"):  # T-1223: a run's log needs a login; its annotations are public
-            tail = [x.strip() for x in err.splitlines() if x.strip() and not set(x.strip()) <= set("-=~^")][-4:]
-            print(f"::error title={cid}::" + "%0A".join(tail).replace("::", ": :"), flush=True)
+            print("\n".join(annotations(cid, err)), flush=True)
     total = sum(r[3] for r in results)
     slow = ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:3])
     if skipped():
