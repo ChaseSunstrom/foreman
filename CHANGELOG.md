@@ -10,6 +10,11 @@
 - `fm doctor --fix` applies only the findings that already have a safe repair (stale status views, empty git objects, fallback state), rechecks them, and lists every finding it left for a person (T-1184).
 - `fm audit run ID` runs the audit lenses as headless read-only `claude -p` reviewers over the frozen `fm audit prep` brief, bounded by `fm budget` and `fm contract`, and records each lens verdict and its findings, so the drive and `fm run` can audit without a person (T-1186).
 - `fm edit` applies every `<<< === >>>` block under an `@@ file` header (a second one was dropped silently), and refuses a batch whose `<<<` count doesn't match its complete blocks (T-1191).
+- The verify check no longer reads a flag's value as a test module (`run.py -k test_some_case` gave "test_some_case.py doesn't exist yet") (T-1190).
+- `fm task block` and `fm task defer` take `--until "installed NAME"` or `--until "exists PATH"` (structured conditions, never a shell command), and `fm next` and `fm tidy` re-offer the task once it holds (T-1183).
+- The `fm replay` gate also checks the labelled guard cases and fails on a drifted or broken one, so any task touching the guard meets them at its gates (T-1182).
+- The hook bench runs `bash src/build.sh` on a ~37 KB real-shaped script, rewritten before every run so each is a cold read, with a 300 ms budget (T-1192).
+- `fm guard mine [--days N]` lists this project's real guard refusals from its Claude Code transcripts, each with its full command, today's verdict and what the session did next, grouped by rule: the input a guard-friction fix needs (T-1187).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).

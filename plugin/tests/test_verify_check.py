@@ -38,7 +38,9 @@ class VerifyCheck(ForemanTestCase):
 
     def test_real_cd_and_unknown_pass(self):
         for verify in ("python3 tests/run.py test_real", "python3 -m unittest tests.test_real", "python3 tools/ok.py",
-                       "cd web && npm test", "cd web && npm run lint", "cargo test nothing_x", "python3 -c 'pass'"):
+                       "cd web && npm test", "cd web && npm run lint", "cargo test nothing_x", "python3 -c 'pass'",
+                       "python3 tests/run.py -k test_some_case_name",  # T-1190: -k takes a test-name pattern
+                       "python3 -m unittest -k test_some_case_name tests.test_real"):
             with self.subTest(verify=verify):
                 self.setUp()
                 self.put("tests/run.py")

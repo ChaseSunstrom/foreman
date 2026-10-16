@@ -5,6 +5,7 @@ archiving a copy) and logs them; everything needing judgment (stale inbox items,
 oversize memory, contradictions) is reported for a decision. Nothing is deleted without an archive copy,
 except derived caches (old statusline snapshots).
 """
+import datetime
 import fcntl
 import glob
 import json
@@ -110,6 +111,9 @@ def unblocked(p, b, status):
     deps = b.meta.get("depends_on") or []
     if deps and all(status.get(d) in c.CLOSED for d in deps):
         return "its dependencies are closed"
+    rv = b.meta.get("revisit")  # T-1183: --until installed NAME / exists PATH / a date / a changed file
+    if rv and c.deferral_due(p.root, rv, datetime.date.today().isoformat()):
+        return f"its --until condition holds ({rv.split(' @')[0]})"
     last = re.findall(r"(?m)^- (\S+) blocked: (.*)$", b.section("Log"))
     at = c.parse_ts(last[-1][0]) if last else None
     if not at:
