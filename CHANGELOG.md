@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Pane speedrun splits: the task block shows each stage's time against the project's typical for its type and tier, green when under and red when over (T-1078).
 - `fm check --affected` names changed test files its command can't run (a `.tsx` test under a Python runner) instead of saying only "No tests linked" (T-1131).
 - A criterion whose check names a package script that doesn't exist (npm's or pnpm's "Missing script", yarn's "Command not found") stays editable, like a missing command or test module (T-1133).
 - A bare `fm lease drop` releases every lease this session holds in the project (builders ran it bare, as their brief says, and got only usage) (T-1134).
