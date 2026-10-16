@@ -29,7 +29,13 @@ export const starts = new Map<string, number>() // tool_use_id → when it start
 export const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 
 /** userConfig and the session's folder, set by register (rows read them). */
-export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '', motion: 'full' as 'full' | 'calm' | 'off' }
+export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '', motion: 'full' as 'full' | 'calm' | 'off',
+  chat: 'tree' as 'tree' | 'full' }
+/** T-1040: in the tree chat a finished call shows this much: a passing command's output only when it is this short,
+ * this many changed lines of a diff */
+export const TINY_OUT = 2
+export const DIFF_TREE = 4
+export const diffCap = (tree: boolean) => (tree ? DIFF_TREE : DIFF_LINES) // the caller passes treeOn(e): terminal only
 
 // T-0909: what the pane charts live. Every tool call's lane and start (the swim lanes, the last hour), and each call
 // still running with how it reads (the "now" card); neither needs to survive a reload.

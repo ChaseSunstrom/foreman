@@ -2,7 +2,7 @@ import type { EngineInterface, RenderElement, ResolveInput } from 'claude-code'
 import type { LiveAgent } from '../types'
 import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, ganttCells, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { DiffRow, LabelRun } from './kit'
-import { DIFF_LINES, OUT_LINES, TREE_MS, cfg, took } from './state'
+import { OUT_LINES, TINY_OUT, TREE_MS, cfg, diffCap, took } from './state'
 import type { FeedItem, ToolUseRender } from './state'
 
 // T-0130: the transcript's Foreman rows and the small drawings the band and pane share; pure but for the
@@ -56,7 +56,7 @@ const LIGHT = 0xd0d5dd // body text that reads, as in the pane
 export function sectionHead(ui: UI, e: ResolveInput, o: { key: string; color: number; label: string; mark?: string;
   markColor?: number; markKey?: string; subject?: string; meta?: Part[]; frame?: number | null; width?: number }): { head: RenderElement; rest: string } {
   const { Box, Raster, Text } = ui
-  const width = Math.max(30, (o.width ?? e.viewport?.columns ?? 100) - 2)
+  const width = Math.max(30, (o.width ?? (e.viewport?.columns ?? 100) - (treeOn(e) ? TREE_INDENT : 0)) - 2) // T-1040: beside the gutter
   const metaLen = (o.meta ?? []).reduce((n, p) => n + p.text.length, 0)
   const room = width - (o.mark ? 2 : 0) - o.label.length - 1 - (metaLen ? metaLen + 1 : 0)
   const fits = !!o.subject && o.subject.length <= room - 8
@@ -79,6 +79,48 @@ export function sectionHead(ui: UI, e: ResolveInput, o: { key: string; color: nu
   )
   return { head, rest: !o.subject || fits ? '' : o.subject }
 }
+
+// T-1040: the chat as a tree. The engine draws each row on its own and owns their order, so every row of a turn draws its
+// own piece: the prompt is the root with the rail starting under it; a row hangs on ├─ with the rail beside the rest of
+// it; a later block of the same row (a reply's next part, the engine's result block) is rail only; the turn's closing
+// line is └─. The rail is a column of │ placed over the gutter (position absolute, top to bottom), so it is exactly as
+// tall as the row however its text wraps. No width on a Box around the row: the engine refuses its own rows under one.
+export const TREE_INDENT = 3
+export const TREE_LINE = mix(C.track, C.muted, 0.35) // the band tree's line colour
+const RAIL = Array.from({ length: 400 }, () => '│').join('\n') // ponytail: a row taller than 400 lines loses its rail below that
+
+export const treeOn = (e: { surface?: string }) => cfg.chat !== 'full' && e.surface === 'terminal' // elsewhere the surface lays rows out
+
+export function railBox(ui: UI, key: string, top: number) {
+  const { Box, Text } = ui
+  return (
+    <Box key={key} position="absolute" left={0} top={top} bottom={0} width={1} overflow="hidden">
+      <Text color={hex(TREE_LINE)}>{RAIL}</Text>
+    </Box>
+  )
+}
+
+/** One row of a turn's tree. `at`: head (├─, the default), body (rail only: a later part of the row above), tip (└─,
+ * the turn's last line). `gap`: a rail line above it in place of the blank line that parts sections. The chat setting
+ * full: the row as it is. */
+export function branch(ui: UI, e: ResolveInput, key: string, row: RenderElement, o: { at?: 'head' | 'body' | 'tip'; gap?: boolean } = {}): RenderElement {
+  if (!treeOn(e)) return row
+  const { Box, Text } = ui
+  const at = o.at ?? 'head'
+  return (
+    <Box key={key} flexDirection="column">
+      {o.gap ? <Text key={`${key}-gap`} color={hex(TREE_LINE)}>│</Text> : null}
+      <Box key={`${key}-row`} flexDirection="row">
+        <Box flexShrink={0} width={TREE_INDENT}>{at === 'body' ? null : <Text color={hex(TREE_LINE)}>{at === 'tip' ? '└─ ' : '├─ '}</Text>}</Box>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>{row}</Box>
+        {at === 'tip' ? null : railBox(ui, 'fm-rail', at === 'body' ? 0 : 1)}
+      </Box>
+    </Box>
+  )
+}
+
+/** The space above a section row: none in the tree (branch draws a rail line there), a blank line in full */
+export const gapTop = (e: { surface?: string }) => (treeOn(e) ? 0 : 1)
 
 /** T-1031: a body line under a section head: a quiet guide, then the text */
 export function bodyLine(ui: UI, key: string, text: string, color: number = C.muted, guide = '│') {
@@ -252,9 +294,14 @@ export function shellRow(ui: UI, e: ToolUseRender) {
   const input = (e.props.input ?? {}) as { command?: unknown; description?: unknown }
   const lines = String(input.command ?? '').split('\n').map(clean)
   const desc = typeof input.description === 'string' ? clean(input.description).trim() : ''
-  const shown = desc ? lines.slice(0, 3) : lines.slice(1, 3) // without a description the first line is the title
+  // T-1040: in the tree one line of the command, cut at the edge, and a count of the rest: what ran stays in view (a
+  // description must not stand in for a chained command: the T-0095 review), in a line, not a block
+  const cap = treeOn(e) ? 1 : 3
+  const shown = desc ? lines.slice(0, cap) : lines.slice(1, treeOn(e) ? 2 : 3) // without a description the first line is the title
+  const unseen = lines.length - (desc ? 0 : 1) - shown.length
   const bad = !!e.props.isErrored // the exit status decides, not words in the output
-  const s = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
+  const all = typeof e.props.output === 'string' ? outputSummary(e.props.output, '', OUT_LINES, bad) : outputSummary(o.stdout, o.stderr, OUT_LINES, bad)
+  const s = treeOn(e) && !bad && all.total > TINY_OUT ? { ...all, lines: [], more: 0 } : all // T-1040: a pass folds its output
   const ms = took.get(e.props.tool_use_id)
   const bg = typeof o.backgroundTaskId === 'string'
   const stopped = e.props.isInterrupted || o.interrupted
@@ -262,7 +309,7 @@ export function shellRow(ui: UI, e: ToolUseRender) {
   const meta = [ms !== undefined ? elapsed(ms) : '', bg ? 'in the background' : s.total ? `${s.total} line${s.total === 1 ? '' : 's'}` : ''].filter(Boolean)
   const files = Array.isArray(o.bashEditDiff?.hunks) ? (o.bashEditDiff.hunks as { path?: unknown; hunks?: unknown }[]) : []
   const unshown = [o.bashEditDiff?.skippedLarge, o.bashEditDiff?.restricted].reduce<number>((n, x) => n + (Array.isArray(x) ? x.length : 0), 0)
-  let budget = DIFF_LINES
+  let budget = diffCap(treeOn(e))
   const commit = o.gitOperation?.commit
   const color = bad ? C.err : stopped ? C.warn : C.accent2
   const { head, rest } = sectionHead(ui, e, {
@@ -271,18 +318,18 @@ export function shellRow(ui: UI, e: ToolUseRender) {
     meta: meta.length ? [{ text: meta.join(' · ') }] : [],
   })
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} key="fm-shell">
+    <Box flexDirection="column" width="100%" marginTop={gapTop(e)} key="fm-shell">
       {head}
-      {rest ? <Text key="fm-shell-title" wrap="wrap" color={hex(0xd0d5dd)}>{`  ${rest}`}</Text> : null}
+      {rest ? <Text key="fm-shell-title" wrap={treeOn(e) ? 'truncate-end' : 'wrap'} color={hex(0xd0d5dd)}>{`  ${rest}`}</Text> : null}
       {shown.map((line, i) => (
         <Box flexDirection="row" key={`fm-shell-cmd-${i}`}>
           <Text color={hex(C.track)}>{'  ┆ '}</Text>
-          <Text wrap="wrap" color={hex(mix(C.accent, C.dim, 0.45))}>
+          <Text wrap={cap === 1 ? 'truncate-end' : 'wrap'} color={hex(mix(C.accent, C.dim, 0.45))}>
             {line}
           </Text>
         </Box>
       ))}
-      {lines.length > 3 && <Text color={hex(C.dim)}>{`  ┆ ${more(lines.length - 3, 'command line')}`}</Text>}
+      {unseen > 0 && <Text color={hex(C.dim)}>{`  ┆ ${more(unseen, 'command line')}`}</Text>}
       {s.lines.map((l, i) => (
         <Text key={`o-${i}`} color={hex(l.tone === 'plain' ? C.muted : TONE_COLOR[l.tone])} wrap="truncate-end">
           <Text color={hex(C.track)}>{'  │ '}</Text>
@@ -350,7 +397,7 @@ export function editRow(ui: UI, e: ToolUseRender) {
   const { changed, created } = c
   const add = changed.filter(l => l.sign === '+').length
   const del = changed.length - add
-  const take = takeChanges(c.rows, DIFF_LINES)
+  const take = takeChanges(c.rows, diffCap(treeOn(e)))
   const face = toolFace(e.props.tool, e.props.input, cfg.root)
   const { Box, Text } = ui
   const { head, rest } = sectionHead(ui, e, {
@@ -360,7 +407,7 @@ export function editRow(ui: UI, e: ToolUseRender) {
       ...(created ? [{ text: ' · new file' }] : []), ...(c.userModified ? [{ text: ' · you changed it' }] : [])],
   })
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} key="fm-edit">
+    <Box flexDirection="column" width="100%" marginTop={gapTop(e)} key="fm-edit">
       {head}
       {rest ? <Text key="fm-edit-path" wrap="truncate-start" color={hex(0xd0d5dd)}>{`  ${rest}`}</Text> : null}
       {diffLines(ui, e, take.rows, 'd')}
@@ -396,7 +443,7 @@ export function agentRow(ui: UI, e: ToolUseRender) {
     subject: clean(String(input.description ?? '')), meta: [{ text: meta }],
   })
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} key="fm-agent">
+    <Box flexDirection="column" width="100%" marginTop={gapTop(e)} key="fm-agent">
       {head}
       {rest ? <Text key="fm-agent-desc" wrap="wrap" color={hex(0xd0d5dd)}>{`  ${rest}`}</Text> : null}
       {!bg && first ? bodyLine(ui, 'fm-agent-first', first.slice(0, 200)) : null}
@@ -464,7 +511,7 @@ export function toolRow(ui: UI, e: ToolUseRender) {
     meta: ms !== undefined ? [{ text: elapsed(ms) }] : [],
   })
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} key="fm-done">
+    <Box flexDirection="column" width="100%" marginTop={gapTop(e)} key="fm-done">
       {head}
       {rest ? <Text key="fm-done-subject" wrap="wrap" color={hex(0xd0d5dd)}>{`  ${rest}`}</Text> : null}
       {all.map((l, i) => bodyLine(ui, `fm-done-${i}`, l.slice(0, 240)))}
@@ -495,7 +542,7 @@ export function findingsRow(ui: UI, e: ToolUseRender) {
   })
   const W = 9
   return (
-    <Box flexDirection="column" width="100%" marginTop={1} key="fm-review">
+    <Box flexDirection="column" width="100%" marginTop={gapTop(e)} key="fm-review">
       {head}
       {fs.slice(0, 8).map((f, i) => {
         const [word, color] = outcome(f) ?? [String(f.verdict ?? 'found').toLowerCase(), f.verdict === 'CONFIRMED' ? C.err : C.warn]

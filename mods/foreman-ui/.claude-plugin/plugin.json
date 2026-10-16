@@ -1,6 +1,6 @@
 {
   "name": "foreman-ui",
-  "version": "0.15.1",
+  "version": "0.16.0",
   "description": "Foreman inside Claude Code: one docked panel that fits the screen, a band above the prompt when it's closed, toasts and one-press approve/next/drive/inbox actions.",
   "author": {
     "name": "ChaseSunstrom"
@@ -42,6 +42,16 @@
         "off"
       ],
       "default": "full"
+    },
+    "chat": {
+      "type": "string",
+      "title": "Chat",
+      "description": "tree: each turn reads as one tree (your prompt the root, every call a branch, finished calls compact: a passing command's output folded, diffs four lines, failures in full). full: the long rows, every command and its output.",
+      "options": [
+        "tree",
+        "full"
+      ],
+      "default": "tree"
     }
   }
 }

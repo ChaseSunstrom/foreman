@@ -64,7 +64,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { agentOut, agentRow, bars, editChanges, editRow, liveTree, mascotTree, meter, miniRail, ownsResult, rail, sectionHead, shellRow, spark, toolRow } from './rows'
+import { TREE_INDENT, agentOut, agentRow, bars, branch, editChanges, editRow, gapTop, liveTree, mascotTree, meter, miniRail, ownsResult, rail, railBox, sectionHead, shellRow, spark, toolRow, treeOn } from './rows'
 import type { Motion } from './rows'
 
 // Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -533,6 +533,7 @@ export const register: Register = (on, options) => {
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
   // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
   cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
+  cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
@@ -680,7 +681,9 @@ export const register: Register = (on, options) => {
   // T-0137: Claude Code folds commands into one "Running 1 shell command…" line, which hid the live row; a group
   // holding a shell command unfolds, so each command is its own row here. Reads and searches stay folded.
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
-    if (e.props.isExpanded || !e.props.calls.some(x => x.tool === 'Bash')) return next(e)
+    // T-1040: a folded group is one branch of the turn's tree; an unfolded one is the rows it unfolds into
+    if (e.props.isExpanded) return next(e)
+    if (!e.props.calls.some(x => x.tool === 'Bash')) return branch($.ui.resolve(e), e, 'fm-group', await next(e), { at: 'body' })
     return next({ ...e, props: { ...e.props, isExpanded: true } })
   })
 
@@ -711,41 +714,41 @@ export const register: Register = (on, options) => {
     if (e.props.tool === 'Bash') return <Box key="fm-shell-result" />
     if (!e.props.isErrored && agentOut(e.props.tool, e.props.output)) return <Box key="fm-agent-result" /> // T-0148
     if (ownsResult(e.props.tool, !!e.props.isErrored, e.props.output)) return <Box key="fm-done-result" /> // T-1031: in the row
-    if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return next(e)
+    if (e.props.isErrored || !editChanges(e.props.tool, e.props.output)) return branch($.ui.resolve(e), e, 'fm-result', await next(e), { at: 'body' }) // T-1040
     return <Box key="fm-edit-shown" />
   })
   on('ui.render', { component: 'ToolUse' }, async ($, e, next) => {
+    // T-1040: each call hangs on the turn's tree; a one-line call sits tight, a section gets a rail line above it
+    const tree = (r: RenderElement, gap = true) => branch($.ui.resolve(e), e, 'fm-branch', r, { gap })
     const sub = e.props.tool === 'Bash' ? fmCommand((e.props.input as { command?: unknown } | null)?.command) : null
     if (sub && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
       const { Box, Text } = $.ui.resolve(e)
-      return (
+      return tree(
         <Box flexDirection="row" gap={1} key="fm-quiet">
           <Text color={hex(C.dim)}>⚙ fm {sub}</Text>
           <Text color={hex(mix(C.dim, C.ok, 0.6))} wrap="truncate-end">
             ✓ {lastLine(e.props.output)}
           </Text>
-        </Box>
-      )
+        </Box>, false)
     }
-    if (e.props.tool === 'Bash' && !e.props.isRunning) return shellRow($.ui.resolve(e), e)
+    if (e.props.tool === 'Bash' && !e.props.isRunning) return tree(shellRow($.ui.resolve(e), e))
     const quiet = ['Read', 'WebFetch', 'WebSearch', 'Grep', 'Glob'].includes(e.props.tool)
     if (quiet && !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted) {
       const face = toolFace(e.props.tool, e.props.input, cfg.root)
       const { Box, Text } = $.ui.resolve(e)
       const more = readSummary(e.props.tool, e.props.output)
-      return (
+      return tree(
         <Box flexDirection="row" gap={1} key="fm-read">
           <Text color={hex(face.color)}>{face.icon}</Text>
           <Text weight="bold" color={hex(mix(face.color, C.muted, 0.5))}>{face.verb.replace(/ing\b/, '')}</Text>
           <Text wrap="truncate-start" color={hex(0xd0d5dd)}>{face.target}</Text>
           {more ? <Text color={hex(C.muted)}>· {more}</Text> : null}
-        </Box>
-      )
+        </Box>, false)
     }
     const done = !e.props.isRunning && !e.props.isErrored && !e.props.isInterrupted
     const edited = done ? editRow($.ui.resolve(e), e) ?? agentRow($.ui.resolve(e), e) ?? toolRow($.ui.resolve(e), e) : null
-    if (edited) return edited
-    if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return next(e)
+    if (edited) return tree(edited)
+    if (!e.props.isRunning || e.props.isErrored || e.props.isInterrupted) return branch($.ui.resolve(e), e, 'fm-branch', await next(e), { at: 'body' }) // an engine row opens with its own blank line: the rail runs past it, no ├─ on the blank
     const f = await read($, frame)
     const face = toolFace(e.props.tool, e.props.input, cfg.root)
     const since = starts.get(e.props.tool_use_id)
@@ -753,7 +756,7 @@ export const register: Register = (on, options) => {
     const agentId = agentOf.get(e.props.tool_use_id)
     const agent = agentId ? (await read($, agents)).find(a => a.id === agentId) : undefined
     const { Box, Text } = $.ui.resolve(e)
-    const width = Math.max(30, e.viewport?.columns ?? 100)
+    const width = Math.max(30, (e.viewport?.columns ?? 100) - (treeOn(e) ? TREE_INDENT : 0)) // T-1040: beside the gutter
     // T-0124: a brainstorm running inside this call shows its progress right here in the chat
     const ideasRun = e.props.tool === 'Bash' && /^ideas\b/.test(fmCommand((e.props.input as { command?: unknown } | null)?.command) ?? '')
     const bs = ideasRun ? (await read($, view))?.brainstorm : null
@@ -766,16 +769,15 @@ export const register: Register = (on, options) => {
       meta: [...(face.delta ? [{ text: face.delta, color: C.edit }, { text: ' · ' }] : []),
         ...(agent ? [{ text: `${agent.tools} tools · ${agent.last.slice(0, 30)} · ` }] : []), { text: elapsed(ms) }],
     })
-    const row = <Box key="fm-tool" flexDirection="column" width="100%" marginTop={1}>{head}</Box>
-    if (!bs?.running) return row
-    return (
+    const row = <Box key="fm-tool" flexDirection="column" width="100%" marginTop={gapTop(e)}>{head}</Box>
+    if (!bs?.running) return tree(row)
+    return tree(
       <Box flexDirection="column" key="fm-tool-ideas">
         {row}
         <Text color={hex(C.agent)} wrap="truncate-end">
           {'  '}✦ {bs.answers}/{bs.expected ?? '?'} answers · {bs.count} ideas so far{bs.ideas.length ? ` · ${bs.ideas.at(-1)}` : ''}
         </Text>
-      </Box>
-    )
+      </Box>)
   })
 
   // A background task's notification: one Foreman line (ctrl+o still shows the engine's full row).
@@ -800,9 +802,13 @@ export const register: Register = (on, options) => {
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="column" width="100%" marginTop={1} key="fm-user">
-          {sectionHead($.ui.resolve(e), e, { key: 'fm-user', color: C.accent2, label: '❯ You' }).head}
-          <Box flexDirection="column" paddingLeft={2}>
-            <Text wrap="wrap" color={hex(0xe6e9ef)}>{e.props.text}</Text>
+          {sectionHead($.ui.resolve(e), e, { key: 'fm-user', color: C.accent2, label: '❯ You', width: e.viewport?.columns ?? 100 }).head}
+          <Box key="fm-user-body" flexDirection="row" width="100%">
+            <Box flexShrink={0} width={treeOn(e) ? TREE_INDENT : 2} />
+            <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+              <Text wrap="wrap" color={hex(0xe6e9ef)}>{e.props.text}</Text>
+            </Box>
+            {treeOn(e) ? railBox($.ui.resolve(e), 'fm-user-rail', 0) : null /* T-1040: the turn's tree starts here */}
           </Box>
         </Box>
       )
@@ -859,7 +865,9 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     const text = e.props.text
     // a Markdown element takes ≤10000 characters, tab and newline its only controls: beyond that the engine's own draws
-    if (e.surface !== 'terminal' || text.length > 9000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(text)) return next(e)
+    const at = e.props.isFirstOfReply ? { gap: true } : { at: 'body' as const } // T-1040: a reply is a branch of the turn
+    if (e.surface !== 'terminal') return next(e)
+    if (text.length > 9000 || /[\u0000-\u0008\u000b-\u001f\u007f]/.test(text)) return branch($.ui.resolve(e), e, 'fm-reply-branch', await next(e), { at: 'body' })
     if (turns.size && e.props.isFirstOfReply && !seenReplies.has(text)) {
       if (seenReplies.size > 400) seenReplies.clear()
       seenReplies.add(text)
@@ -871,8 +879,8 @@ export const register: Register = (on, options) => {
     // T-1031: a reply is a section like the pane's: its first block opens with the mark, a bold label and a rule in the
     // accent (a comet along it while the reply is live); the blocks under it
     const { Box, Text, Markdown } = $.ui.resolve(e)
-    return (
-      <Box flexDirection="column" width="100%" marginTop={e.props.isFirstOfReply ? 1 : 0} key="fm-reply">
+    return branch($.ui.resolve(e), e, 'fm-reply-branch',
+      <Box flexDirection="column" width="100%" marginTop={e.props.isFirstOfReply ? gapTop(e) : 0} key="fm-reply">
         {e.props.isFirstOfReply &&
           sectionHead($.ui.resolve(e), e, { key: 'fm-reply', color: C.accent, mark: live ? spin(f) : '●', markKey: 'fm-reply-mark',
             label: 'Claude', frame: live ? f : null }).head}
@@ -895,21 +903,20 @@ export const register: Register = (on, options) => {
             ),
           )}
         </Box>
-      </Box>
-    )
+      </Box>, at)
   })
 
-  // The line closing a turn says what the turn did.
+  // The line closing a turn says what the turn did; T-1040: the tip of the turn's tree.
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     const s = (await read($, summaries)).find(x => x.durationMs === e.props.durationMs)
-    if (!s || !s.tools) return next(e)
+    // T-1040 live: the engine's own line lays out under the tip, not beside it; in the tree a turn without tools gets ours
+    if ((!s || !s.tools) && !treeOn(e)) return next(e)
     const { Box, Text } = $.ui.resolve(e)
-    return (
+    return branch($.ui.resolve(e), e, 'fm-turn-tip',
       <Box flexDirection="row" gap={1} key="fm-turn">
         <Text dimColor>✻ worked {elapsed(e.props.durationMs)}</Text>
-        <Text color={hex(C.dim)}>· {summaryText(s)}</Text>
-      </Box>
-    )
+        {s?.tools ? <Text color={hex(C.dim)}>· {summaryText(s)}</Text> : null}
+      </Box>, { at: 'tip' })
   })
 
   // The footer: a pointer when something waits on the person (the band says the autonomy in words).
