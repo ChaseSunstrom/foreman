@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.2.36 — 2026-10-16
+- The site has a page for every feature (planning, proof, the guard, permissions, review, builder lanes, drive and headless, stack cards, the panel, speed, learning, tools, Foreman Code, releases), each with charts drawn from Foreman's own record of building itself: tasks closed per day by type, task sizes, guard refusals by rule, review findings by lens, hook time against budgets, tests per release. `site/build.py` renders them from `site/pages.py` and `site/data/stats.json` (made by `site/stats.py` from Foreman's state: counts only), and the Pages workflow runs it (T-1220).
+
 ## 1.2.35 — 2026-10-16
 - `fm doctor` treats a machine with CPU pressure of 10% or more (`/proc/pressure/cpu`) as busy, and checks again after its hook bench. Its hook-latency check no longer fails when a burst (such as the test suite) starts before the 1-minute load average catches up; it says the timings weren't measured instead. This was the release-check test that kept failing inside the full suite (T-1219).
 - The README demo and the site's poster are re-recorded in true color: Claude Code drops to 256 colours inside tmux unless `CLAUDE_CODE_TMUX_TRUECOLOR` is set, so the recording harness's every colour had been rounded to the 256 palette and the pane's tinted chart wells showed as neutral gray blocks. The new recording is a real fix to Foreman (T-1213) (T-1209).
