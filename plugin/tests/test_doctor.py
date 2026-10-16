@@ -121,6 +121,18 @@ class Checks(unittest.TestCase):
     def test_self_docs_match_the_code(self):
         self.assertEqual(d.check_self_docs().status, "PASS", d.check_self_docs().detail)
 
+    def test_self_docs_hold_fm_help_to_every_command_once(self):
+        # T-1011: T-0974 added fm approve-reads with no help tier; only the full suite's test_help noticed, after commit
+        import fmcli
+        from unittest import mock
+        tiers = [(t, " ".join(w for w in n.split() if w != "approve-reads") + (" status teleport" if i == 0 else ""))
+                 for i, (t, n) in enumerate(fmcli.HELP_TIERS)]
+        with mock.patch.object(fmcli, "HELP_TIERS", tiers):
+            r = d.check_self_docs()
+        self.assertEqual(r.status, "FAIL")
+        for needle in ("fm help's tiers lack approve-reads", "list status twice", "teleport isn't an fm command"):
+            self.assertIn(needle, r.detail)
+
     def test_self_docs_flags_drift(self):
         home = os.path.join(self.t, "fh")
         self.write("fh/MASTER.md", "CLI: `fm state|queue`\nSkills: intake. Prose that says doctor and docs doesn't count.\n")
