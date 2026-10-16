@@ -185,9 +185,16 @@ class Checks(unittest.TestCase):
         # T-1011: T-0974 added fm approve-reads with no help tier; only the full suite's test_help noticed, after commit
         import fmcli
         from unittest import mock
+        fmcli.build_parser()
         tiers = [(t, " ".join(w for w in n.split() if w != "approve-reads") + (" status teleport" if i == 0 else ""))
                  for i, (t, n) in enumerate(fmcli.HELP_TIERS)]
-        with mock.patch.object(fmcli, "HELP_TIERS", tiers):
+        real = fmcli.build_parser  # build_parser refills HELP_TIERS: put the broken ones back after it
+
+        def broken():
+            parser = real()
+            fmcli.HELP_TIERS[:] = tiers
+            return parser
+        with mock.patch.object(fmcli, "build_parser", broken):
             r = d.check_self_docs()
         self.assertEqual(r.status, "FAIL")
         for needle in ("fm help's tiers lack approve-reads", "list status twice", "teleport isn't an fm command"):
