@@ -7,6 +7,8 @@ import unittest
 
 from helpers import ForemanTestCase
 
+import fmguard as g
+
 
 class Replay(ForemanTestCase):
     def setUp(self):
@@ -59,7 +61,7 @@ class Replay(ForemanTestCase):
         self.assertEqual(data["caught"], ["rm-outside"])
         self.assertNotIn("rm-outside", data["untested"])
         self.assertIn("git-destructive", data["untested"])
-        self.assertEqual(len(data["caught"]) + len(data["untested"]), 14)
+        self.assertEqual(len(data["caught"]) + len(data["untested"]), len(g.CATEGORIES))
 
     def test_mutation_names_the_rule_no_test_catches(self):
         import fmmutate
@@ -79,6 +81,47 @@ class Replay(ForemanTestCase):
         # negating blue's guard changes what check(1) returns, which the red test notices: both weakened mutants die
         res = fmmutate.run(weaken=True, **kw)
         self.assertEqual((res["killed"], res["survived"]), (2, []), res)
+
+    def test_mutation_sees_every_rule_shape_and_reports_the_unmutated(self):
+        import fmmutate
+        src = (
+            "def f(x, found, cats):\n"
+            "    found.append(('a', 'x'))\n"            # 2
+            "    cats.append('b')\n"                    # 3
+            "    found += [('c', 'x')]\n"               # 4
+            "    found += [(cat, 'x') for cat in x]\n"  # 5
+            "    found.extend([('d', 'x')])\n"          # 6
+            "    if x:\n"
+            "        return [('e', 'x')]\n"             # 8
+            "    if x > 1:\n"
+            "        return 'f'\n"                      # 10
+            "    return Block('g', 'x')\n")             # 11
+        ms = fmmutate.mutants(src, list("abcdefgz"))
+        self.assertEqual([(m["line"], m["category"]) for m in ms],
+                         [(2, "a"), (3, "b"), (4, "c"), (5, "*"), (6, "d"), (8, "e"), (10, "f"), (11, "g")])
+        self.assertIn("return []", ms[5]["src"])  # a dropped list return stays a list
+        d = os.path.join(self.tmp, "shapes")
+        os.makedirs(d)
+        with open(os.path.join(d, "m.py"), "w") as f:
+            f.write(src)
+        res = fmmutate.run(os.path.join(d, "m.py"), "s/m.py", d, "s", ["true"], list("abcdefgz"))
+        self.assertEqual(res["not_mutated"], ["z"])
+
+    def test_mutation_kills_a_hung_suite_and_refuses_a_failing_baseline(self):
+        import fmmutate
+        d = os.path.join(self.tmp, "hang")
+        os.makedirs(d)
+        with open(os.path.join(d, "m.py"), "w") as f:
+            f.write("def f(found):\n    found.append(('a', 'x'))\n")
+        with open(os.path.join(d, "t.py"), "w") as f:  # passes on the intact module, hangs once the rule is gone
+            f.write("import time, m\nl = []\nm.f(l)\nif not l:\n    time.sleep(60)\n")
+        t0 = __import__("time").monotonic()
+        res = fmmutate.run(os.path.join(d, "m.py"), "h/m.py", d, "h", [__import__("sys").executable, "h/t.py"], ["a"],
+                           timeout=2)
+        self.assertEqual((res["killed"], res["survived"]), (1, []))
+        self.assertLess(__import__("time").monotonic() - t0, 30)
+        with self.assertRaisesRegex(ValueError, "boom"):
+            fmmutate.run(os.path.join(d, "m.py"), "h/m.py", d, "h", ["sh", "-c", "echo boom; exit 1"], ["a"])
 
 
 if __name__ == "__main__":
