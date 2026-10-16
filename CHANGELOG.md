@@ -13,6 +13,7 @@
 - The verify check no longer reads a flag's value as a test module (`run.py -k test_some_case` gave "test_some_case.py doesn't exist yet") (T-1190).
 - `fm task block` and `fm task defer` take `--until "installed NAME"` or `--until "exists PATH"` (structured conditions, never a shell command), and `fm next` and `fm tidy` re-offer the task once it holds (T-1183).
 - The `fm replay` gate also checks the labelled guard cases and fails on a drifted or broken one, so any task touching the guard meets them at its gates (T-1182).
+- The hook bench runs `bash src/build.sh` on a ~37 KB real-shaped script, rewritten before every run so each is a cold read, with a 300 ms budget (T-1192).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
