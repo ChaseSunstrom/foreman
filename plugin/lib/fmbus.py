@@ -453,8 +453,7 @@ def after_edit(pl, p, path):
     with c.lock(_dir()):
         data = _leases()
         for n in names:
-            data[f"{p.slug}:{rel}::{n}"] = {"session": sid, "task": act.id if act else None, "project": p.slug,
-                                           "file": rel, "symbol": n, "until": time.time() + LEASE_S}
+            _claim(data, p, sid, act.id if act else None, rel, n, LEASE_S)
         _write_leases(data)
 
 
