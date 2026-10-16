@@ -22,7 +22,7 @@ GAP_S = 1800
 CACHE_S = 12 * 3600
 SOURCES_STALE_S = 7 * 86400
 _VERSION = re.compile(r"^\d+\.\d+\.\d+$")
-_DEP = re.compile(r"[a-z0-9@][\w@./-]{2,60}")  # a manifest key is data: anything else never reaches a brief
+_DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
 SLOW_GAP_S = 6 * 3600  # the drain asks for the slow probes at most this often
 
 Finding = collections.namedtuple("Finding", "key title type tier why")
@@ -82,7 +82,8 @@ def probe_lib_gaps(p, ctx):
             deps = fmlib.signals(root)["deps"]
         except Exception:  # an unreadable project is skipped, not the probe
             continue
-        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked
+        twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
+        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
                     and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
     top = [d for d, _ in sorted(seen.items(), key=lambda kv: (-kv[1], kv[0]))[:8]]
     if not top:
