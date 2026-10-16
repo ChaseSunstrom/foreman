@@ -5133,12 +5133,14 @@ def build_parser():
     s.add_argument("action", choices=["close"])
     s = add("release", cmd_release, tier=("Project and settings", 905), help="release Foreman as named steps with a checkpoint after each: "
             "check, bump, changelog, commit, release-check, canary, --push, round close (T-1188)")
-    s.add_argument("version", help="MAJOR.MINOR.PATCH")
+    s.add_argument("version", nargs="?", help="MAJOR.MINOR.PATCH")
+    s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
+    s.add_argument("--abandon", action="store_true", help="forget an unfinished release's checkpoints")
     s.add_argument("--ui", metavar="VERSION", help="foreman-ui's new version (required when mods/foreman-ui changed since the last release)")
     s.add_argument("--push", action="store_true", help="merge into origin's main and push; needs the active task's publish grant")
     s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
     s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
-    s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (tests)")
+    s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
