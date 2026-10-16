@@ -1243,7 +1243,8 @@ def _dep_note(pl, p):
 
 def _card_note(pl, p, act):
     """T-0949: the first edit of a file the map's stack cards cover gets that card's Avoid section, once per card per
-    task. The ledger event is the memory (it outlives the session) and is written before the note goes out, so a lost
+    session (T-1193: a later task in the same session gets one pointer line instead, once per card per task). The
+    ledger event is the memory (it outlives the session) and is written before the note goes out, so a lost
     output loses the note rather than repeating it; two edits at once may both inject it. Off with FOREMAN_NO_CARDS=1
     or fm lib inject off; any failure here injects nothing and never blocks the edit."""
     if not p or not act or pl.get("tool_name") not in FILE_TOOLS or os.environ.get("FOREMAN_NO_CARDS", "") not in ("", "0"):
