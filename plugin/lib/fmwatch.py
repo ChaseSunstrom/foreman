@@ -279,6 +279,27 @@ def brainstorm(p):
             "age_h": age_h}
 
 
+LEARNED_TTL_S = 120
+
+
+def _learned_line(p):
+    """T-1045: what Foreman learned this week, the pane's idle line. A week's ledger and briefs cost ~0.45 s to count and
+    every pane poll is a new process (no in-process memo helps), so the line is kept in the project's state for
+    LEARNED_TTL_S: a count that is two minutes old is the same news."""
+    path = os.path.join(p.dir, "learned-line.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            hit = json.load(f)
+        if time.time() - hit["at"] < LEARNED_TTL_S:
+            return hit["line"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    import fmcost
+    line = fmcost.learned(p, 7, len(fmcost._week(p, 7)[0]))["line"]
+    c.write_atomic(path, json.dumps({"at": time.time(), "line": line}))
+    return line
+
+
 def _guarded(fn):
     """A pane section that fails is left out, never the whole view (the mod renders what it gets)."""
     try:
@@ -514,8 +535,7 @@ def view(p):
         "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
-        # T-1045: what Foreman learned this week, the idle line. ponytail: recomputed each poll, cache if it shows in profiles
-        "learned": _guarded(lambda: (lambda m: m.learned(p, 7, len(m._week(p, 7)[0]))["line"])(__import__("fmcost"))),
+        "learned": _guarded(lambda: _learned_line(p)),  # T-1045
         "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
