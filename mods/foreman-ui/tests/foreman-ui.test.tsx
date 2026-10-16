@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -65,8 +65,9 @@ const tall = (bodyRows: number) => ({ ...PANE, props: { ...PANE.props, scroll: {
 const decode = (b64: string) => {
   const bin = atob(b64)
   const view = new DataView(new Uint8Array([...bin].map(c => c.charCodeAt(0))).buffer)
-  const out: { ch: string; fg: number }[] = []
-  for (let i = 0; i < bin.length; i += 12) out.push({ ch: String.fromCodePoint(view.getUint32(i, true)), fg: view.getUint32(i + 4, true) })
+  const out: { ch: string; fg: number; bg: number }[] = []
+  for (let i = 0; i < bin.length; i += 12)
+    out.push({ ch: String.fromCodePoint(view.getUint32(i, true)), fg: view.getUint32(i + 4, true), bg: view.getUint32(i + 8, true) })
   return out
 }
 
@@ -196,6 +197,23 @@ test('kit: swim lanes rise with how busy each slot was; quiet slots are a faint 
   expect(lanes[1]!.ch).toBe('⣀') // nothing ran: the floor
   expect(lanes[3]!.ch).toBe(String.fromCharCode(0x2800 | 0x40 | 0x04 | 0x80 | 0x20)) // 2 of 4 both sides
   expect(lanes[0]!.fg).not.toBe(lanes[2]!.fg) // the busier slot is brighter
+})
+
+test('kit: a Gantt row is blank outside its run, a tinted bar inside, with dots where its calls landed (T-1023)', () => {
+  const row = { start: 25_000, end: 75_000, marks: [30_000, 30_500, 60_000], color: C.agent }
+  const cells = decode(ganttCells(row, 0, 100_000, 10, 100_000, null))
+  const plain = 0x01000000 // the terminal's own background
+  expect(cells.length).toBe(10)
+  expect(cells.slice(0, 2).every(x => x.ch === ' ' && x.bg === plain)).toBe(true) // before it started
+  expect(cells.slice(8).every(x => x.ch === ' ' && x.bg === plain)).toBe(true) // after it ended
+  expect(cells.slice(2, 8).every(x => x.bg !== plain)).toBe(true) // the bar
+  expect(cells[3]!.ch).not.toBe(' ') // two calls at 30 s
+  expect(cells[6]!.ch).not.toBe(' ') // one at 60 s
+  expect(cells[5]!.ch).toBe(' ') // inside the bar, no call
+  const fresh = decode(ganttCells({ ...row, start: 100_000, end: null, marks: [] }, 0, 100_000, 10, 100_000, null))
+  expect(fresh[9]!.bg).not.toBe(plain) // review (T-1023): a bar that starts now still shows
+  const running = decode(ganttCells({ ...row, end: null }, 0, 100_000, 10, 100_000, null))
+  expect(running.slice(8).every(x => x.bg !== plain)).toBe(true) // a running bar reaches now
 })
 
 test('kit: day bars grow in eighths with a floor for zero; the eta bar marks the usual time and goes amber past it (T-0909)', () => {
@@ -1221,7 +1239,7 @@ test('the pane: nothing stale, nothing cut without saying so, controls that read
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /Reading/ })).toBeUndefined() // a finished agent's last action is stale
   expect(await pane.find({ type: 'Text', text: /Cache gate results/ })).toBeUndefined() // a finished brainstorm stays in fm
-  expect(await pane.find({ type: 'Text', text: /map the parser/ })).toBeUndefined() // a finished subagent leaves the agent lane
+  expect(await pane.find({ key: 'gantt-ag1' })).toBeDefined() // a finished subagent stays on the Agents graph for the window
   expect(await pane.find({ type: 'Text', text: /… \d+ more/ })).toBeDefined() // 17 in the inbox: what doesn't fit is counted
   expect(await pane.find({ type: 'Button', text: 'turn drive off' })).toBeDefined()
   expect(await pane.find({ type: 'Button', text: 'switch to standard' })).toBeDefined()
@@ -1397,7 +1415,7 @@ test('the pane reads top-down: head with the attention row, task, Activity, Up n
   expect([...order.map(at)].sort((x, y) => x - y)).toEqual(order.map(at))
   let rows = 4 + (await ui.find({ key: 'task' }))?.props.height as number // head 3 (attention its third row), controls
   for (const key of ['head', 'controls']) if (await ui.find({ key: `gap-${key}` })) rows += 1
-  for (const key of ['activity', 'queue', 'sessions', 'history', 'today']) {
+  for (const key of ['activity', 'agents', 'queue', 'sessions', 'history', 'today']) {
     const h = (await ui.find({ key: `${key}-body` }))?.props.height as number | undefined
     if (h) rows += h + 1 + ((await ui.find({ key: `gap-${key}` })) ? 1 : 0) // its rows, its titled divider, the gap above
   }
@@ -1645,6 +1663,64 @@ test('on a phone the pane draws every section in text at 36 columns, no wider th
   expect(await ui.find({ key: 'steer' })).toBeUndefined()
   const drawn = (await ui.findAll({ type: 'Text' })).map(t => t.props.children).filter((x): x is string => typeof x === 'string')
   expect(drawn.filter(x => x.length > 34 && /^[\s─⣀▁▂▃▄▅▆▇█]+$/.test(x))).toEqual([]) // rules and charts fit the screen
+  await ui.unmount()
+})
+
+test('Agents: a Gantt row per subagent (its worktree joined), per lone worktree and per brainstorm; none, no section (T-1023)', async ($, on) => {
+  const worktrees = [
+    { path: '/repo/.claude/worktrees/agent-ag1', branch: 'worktree-agent-ag1', task: 'T-0012', agent: 'ag1', age_s: 60, ahead: 2 },
+    { path: '/repo/.claude/worktrees/old', branch: 'old-lane', task: null, agent: null, age_s: 9000, ahead: 0 },
+  ]
+  const brainstorm = { name: 'brainstorm-x', running: true, answers: 3, expected: 12, count: 41, ideas: ['A mascot'] }
+  const { clock } = world(on, [{ ...CALM, worktrees, brainstorm }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000) // the poll records when the answers came in
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag1' } as never)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'agents' })).toBeDefined()
+  const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
+  expect(rasters).toEqual(expect.arrayContaining(['gantt-ag1', 'gantt-tree-old-lane', 'gantt-ideas']))
+  expect(rasters).not.toContain('gantt-tree-worktree-agent-ag1') // joined to its agent's row
+  for (const text of [/⎇ T-0012/, /old-lane/, /nothing to merge/, 'ideas: A mascot', '3/12', /2 running, 2 worktrees/])
+    expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  await ui.unmount()
+})
+
+test('review (T-1023): finished agents age out at render, rank above lone worktrees; unknown merge state says so', async ($, on) => {
+  const worktrees = [{ path: '/repo/.claude/worktrees/d', branch: '', task: null, agent: null, age_s: 30, ahead: null }]
+  const { clock } = world(on, [{ ...CALM, worktrees }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag1' } as never)
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't9', reason: 'answer', agentId: 'ag1' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const keys = (await ui.findAll({ type: 'Raster' })).map(r => r.key).filter(k => String(k).startsWith('gantt-'))
+  expect(keys).toEqual(['gantt-ag1', 'gantt-tree-/repo/.claude/worktrees/d']) // the finished agent first
+  expect(await ui.find({ type: 'Text', text: /detached/ })).toBeDefined() // not 'nothing to merge'
+  expect(await ui.find({ type: 'Text', text: /nothing to merge/ })).toBeUndefined()
+  await ui.unmount()
+  await clock.advance(31 * 60 * 1000)
+  const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await later.find({ key: 'gantt-ag1' })).toBeUndefined() // out of the window, nothing else spawned since
+  await later.unmount()
+})
+
+test('review (T-1023): on a 40-column dock a quiet subagent keeps its stop button', async ($, on) => {
+  const { clock } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag2' } as never)
+  await clock.advance(11 * 60 * 1000)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  const bar = (await ui.findAll({ type: 'Raster' })).find(r => r.key === 'gantt-ag2')!
+  expect(1 + 1 + (bar.props.columns as number) + 1 + 6 + 1 + 6).toBeLessThanOrEqual(38) // glyph, bar, a name, the button
+  expect(await ui.find({ type: 'Text', text: /^quiet 11m 00s {2}Explore/ })).toBeDefined() // the time gives way with the name
+  await ui.unmount()
+})
+
+test('Agents: nothing running, recent or left in a worktree, no section (T-1023)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'agents' })).toBeUndefined()
   await ui.unmount()
 })
 

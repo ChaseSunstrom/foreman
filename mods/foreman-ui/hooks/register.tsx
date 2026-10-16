@@ -23,6 +23,7 @@ import {
   clawd,
   elapsed,
   fade,
+  ganttCells,
   heat,
   hex,
   humanNext,
@@ -251,6 +252,15 @@ async function refresh($: EngineInterface): Promise<boolean> {
       happyUntil = (await $.clock.now()) + 6000
       $.clock.after(500, () => void freshen($)) // outside this dispatch
     }
+    const bs = next.brainstorm // T-1023: when each answer came in, for the Agents graph
+    if (bs && (bs.running || (ideas?.name === bs.name && ideas.end === undefined))) {
+      const t = await $.clock.now()
+      if (bs.running && ideas?.name !== bs.name) ideas = { name: bs.name, at: t, answers: [] }
+      if (ideas) {
+        while (ideas.answers.length < bs.answers) ideas.answers.push(t)
+        if (!bs.running) ideas.end = t
+      }
+    }
     await update($, view, () => next)
     await update($, error, () => null)
     lastFull = await $.clock.now()
@@ -388,6 +398,7 @@ let flashUntil = 0
 // T-0913: the task that just closed, shown for CLOSING_MS at the top of the pane: grade, proof, time against the usual
 type Closing = { id: string; title: string; grade?: string | null; lenses?: string[]; proved: number | null; minutes: number | null; usual?: number; at: number }
 let closing: Closing | null = null
+let ideas: { name: string; at: number; answers: number[]; end?: number } | null = null // T-1023: the brainstorm's answers over time
 const CLOSING_MS = 6000
 const SWEEP_MS = 900
 
@@ -446,7 +457,7 @@ async function noteSubagent($: EngineInterface, agentId: string, last: string) {
   const known = (await read($, agents)).find(a => a.id === agentId)
   const lastAt = await $.clock.now()
   if (known) {
-    await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, tools: a.tools + 1, last, lastAt } : a)))
+    await update($, agents, list => list.map(a => (a.id === agentId ? { ...a, tools: a.tools + 1, last, lastAt, calls: [...(a.calls ?? []), lastAt].slice(-300) } : a)))
     return
   }
   const info = (await $.agent.list()).find(a => a.id === agentId)
@@ -456,13 +467,15 @@ async function noteSubagent($: EngineInterface, agentId: string, last: string) {
     id: agentId,
     type: info?.type ?? 'subagent',
     description: info?.description ?? '',
-    startedAt: lastAt,
+    startedAt: (call && starts.get(call[0])) ?? lastAt, // from its Agent call, when that is known
     lastAt,
     tools: 1,
     last,
     done: false,
+    calls: [lastAt],
   }
-  await update($, agents, list => [...list.filter(a => !a.done).concat(list.filter(a => a.done).slice(-3)), fresh])
+  // T-1023: finished ones stay for the Agents graph's window
+  await update($, agents, list => [...list.filter(a => !a.done), ...list.filter(a => a.done && lastAt - (a.lastAt ?? a.startedAt) < TIMELINE_MS).slice(-8), fresh])
 }
 
 // Background shells: a Bash call that came back with a task id (run_in_background, ctrl+b, or its timeout) is running
@@ -1313,10 +1326,46 @@ export const register: Register = (on, options) => {
     const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
     const axis = H >= 30 ? 1 : 0
     const T = H >= 44 ? 6 : H >= 32 ? 5 : 4 // the Today charts' rows
+    // ── agents: this session's subagents (running, and finished within the window), the git worktrees beside the
+    // checkout (a builder's joins its agent's row) and a brainstorm: one Gantt row each (T-1023)
+    const trees = v.worktrees ?? []
+    const bsNow = v.brainstorm
+    type Gantt = { key: string; glyph: string; color: number; start: number; end: number | null; marks: number[]; name: string;
+      status: string; statusColor: number; live: boolean; stop?: string; dim?: boolean }
+    const recentSubs = subs.filter(s => !s.done || clockNow - (s.lastAt ?? s.startedAt) < TIMELINE_MS) // the window, at every draw
+    const gantt: Gantt[] = recentSubs.map(s => {
+      const quiet = s.done ? 0 : clockNow - (s.lastAt ?? s.startedAt)
+      const tree = trees.find(w => w.agent === s.id)
+      return {
+        key: s.id, glyph: '◆', color: quiet >= QUIET_MS ? C.warn : agentColor(s.id), start: s.startedAt, live: !s.done,
+        end: s.done ? (s.lastAt ?? s.startedAt) : null, marks: s.calls ?? [],
+        name: `${s.type}${tree ? ` ⎇ ${tree.task ?? tree.branch}` : ''}${s.description ? `  ${s.description}` : ''}`,
+        status: s.done ? `✓ ${s.tools} call${s.tools === 1 ? '' : 's'}` : quiet >= QUIET_MS ? `quiet ${elapsed(quiet)}` : elapsed(clockNow - s.startedAt),
+        statusColor: quiet >= QUIET_MS ? C.warn : C.dim, stop: !s.done && quiet >= STOP_MS ? s.id : undefined,
+      }
+    })
+    const seenIdeas = ideas && bsNow && ideas.name === bsNow.name ? ideas : null
+    if (bsNow && (bsNow.running || (seenIdeas && clockNow - (seenIdeas.end ?? clockNow) < TIMELINE_MS)))
+      gantt.push({
+        key: 'ideas', glyph: '✦', color: C.skill, start: seenIdeas?.at ?? clockNow, end: bsNow.running ? null : seenIdeas?.end ?? clockNow,
+        marks: seenIdeas?.answers ?? [], live: bsNow.running, statusColor: C.dim,
+        name: `ideas${bsNow.ideas.length ? `: ${bsNow.ideas.at(-1)}` : ''}`,
+        status: bsNow.running ? `${bsNow.answers}/${bsNow.expected ?? '?'}` : `✓ ${bsNow.count} ideas`,
+      })
+    for (const w of trees.filter(w => !recentSubs.some(s => s.id === w.agent)))
+      gantt.push({
+        key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
+        start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
+        status: w.ahead === null ? (w.branch ? 'merge state unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'nothing to merge',
+        statusColor: w.ahead ? C.accent2 : C.warn,
+      })
+    const rank = (g: Gantt) => (g.live ? 0 : g.glyph === '⎇' ? 2 : 1) // running, then finished, then lone worktrees
+    gantt.sort((x, y) => rank(x) - rank(y) || x.start - y.start)
     const L = layout(H, [
       { key: 'task', want: taskWant, cap: Math.max(4, Math.round(H * 0.4)), min: Math.min(taskWant, 4), bare: true },
       { key: 'activity', want: 1, fixed: nLanes + axis, grow: KINDS.length - nLanes }, // spare rows: every lane
       { key: 'today', want: 1, fixed: T, grow: Math.max(0, 8 - T) }, // then taller charts
+      { key: 'agents', want: gantt.length, cap: Math.max(2, Math.round(H * 0.15)) },
       { key: 'queue', want: queueRows.length, cap: Math.max(3, Math.round(H * 0.2)), min: plans.length + 2 }, // every plan's approve
       { key: 'sessions', want: sessionRows.length, cap: 5 },
       { key: 'history', want: historyRows.length, stretch: true },
@@ -1531,21 +1580,11 @@ export const register: Register = (on, options) => {
     const LBL = 6
     const RW = Math.max(12, Math.min(34, Math.floor(W * 0.4))) // the count, then what runs there now or ran last
     const laneW = Math.max(8, W - LBL - RW - 1)
-    const runningSubs = subs.filter(s => !s.done)
-    const bs = v.brainstorm
     type Now = { key: string; text: string; time: string; color: number; stop?: string }
     const nowIn: Record<string, Now[]> = {}
     const put = (k: string, x: Now) => void (nowIn[k] ??= []).push(x)
     nowCalls.filter(([, x]) => x.icon !== '⚠').forEach(([id, x]) =>
       put(laneOf(x.icon), { key: id, text: x.target || x.verb, time: elapsed(clockNow - x.at), color: x.color }))
-    runningSubs.forEach(s => {
-      const quiet = clockNow - (s.lastAt ?? s.startedAt)
-      put('agent', {
-        key: s.id, text: `${s.type}${s.description ? `: ${s.description}` : ''}`, color: quiet >= QUIET_MS ? C.warn : agentColor(s.id),
-        time: quiet >= QUIET_MS ? `quiet ${elapsed(quiet)}` : elapsed(clockNow - s.startedAt), stop: quiet >= STOP_MS ? s.id : undefined,
-      })
-    })
-    if (bs?.running) put('agent', { key: 'ideas', text: `ideas${bs.ideas.length ? `: ${bs.ideas.at(-1)}` : ''}`, time: `${bs.answers}/${bs.expected ?? '?'}`, color: C.agent })
     bgShells.forEach(x => put('run', { key: x.id, text: `◷ ${x.command}`, time: elapsed(clockNow - x.startedAt), color: C.accent2 }))
     const nLive = Object.values(nowIn).reduce((n, xs) => n + xs.length, 0)
     const counts = Object.fromEntries(KINDS.map(k => [k, recentTicks.filter(t => t.lane === k).length])) as Record<string, number>
@@ -1587,6 +1626,32 @@ export const register: Register = (on, options) => {
         <Text color={soft}>{`${spanMs / 60000}m ago`.padEnd(Math.max(1, laneW - 3))}now</Text>
       </Box>
     )
+    const gLive = gantt.filter(g => g.live).length
+    const gStarts = gantt.filter(g => g.glyph !== '⎇').map(g => g.start) // a worktree's age doesn't stretch the axis
+    const earliest = gStarts.length ? Math.min(...gStarts) : clockNow - TIMELINE_MS
+    const gSpan = Math.ceil(Math.min(60, Math.max(2, (clockNow - earliest) / 60000))) * 60000 // its own axis, 2 to 60 min
+    const gw = Math.max(8, Math.floor(W * 0.48)) // the bars; the name and status take the rest
+    const agentRows: RenderElement[] = gantt.map(g => (
+      <Box key={`agent-row-${g.key}`} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}>
+          <Text color={hex(g.color)}>{g.live && moving ? spin((f ?? 0) + g.start) : g.glyph}</Text>
+        </Box>
+        {term && (
+          <Box flexShrink={0}>
+            <Raster key={`gantt-${g.key}`} columns={gw} rows={1} cells={ganttCells(g, clockNow - gSpan, gSpan, gw, clockNow, g.live ? ft : null)} />
+          </Box>
+        )}
+        {g.stop // a narrow dock keeps the button: the time goes into the name, which gives way first
+          ? [
+              <Text key="gantt-name" wrap="truncate-end" color={hex(C.warn)}>{`${g.status}  ${g.name}`}</Text>,
+              <Button key={`stop-${g.stop}`} label="■ stop" plain onPress={() => void stopAgent($, g.stop!)} />,
+            ]
+          : [
+              <Text key="gantt-name" wrap="truncate-end" color={hex(mix(g.color, 0xc8ccd4, g.dim ? 0.3 : 0.55))}>{g.name}</Text>,
+              <Box key="gantt-status" flexShrink={0}><Text color={hex(g.statusColor)}>{g.status}</Text></Box>,
+            ]}
+      </Box>
+    ))
     const activityRight = nLive
       ? `${nLive} running`
       : lastTick ? `${recentTicks.length} calls, last ${since(clockNow - lastTick.at)}` : 'no calls yet'
@@ -1675,6 +1740,9 @@ export const register: Register = (on, options) => {
     }
     const SECTIONS: { key: string; title: RenderElement; rows: RenderElement[]; tall?: number; log?: boolean }[] = [
       { key: 'activity', title: titleRow('activity', 'Activity', nLive ? C.accent : C.dim, activityRight), rows: [...laneRows, ...(axis ? [axisRow] : [])] },
+      { key: 'agents', title: titleRow('agents', 'Agents', gLive ? C.agent : C.dim,
+          [gLive ? `${gLive} running` : '', trees.length ? `${trees.length} worktree${trees.length === 1 ? '' : 's'}` : '', `${gSpan / 60000}m`].filter(Boolean).join(', ')),
+        rows: agentRows },
       { key: 'queue', title: titleRow('queue', 'Up next', C.accent2, inboxN ? `${queue.length} queued, ${inboxN} in the inbox` : `${queue.length} queued`), rows: queueRows },
       { key: 'sessions', title: titleRow('sessions', 'Sessions', C.agent, `${fleet.filter(s => !s.error).length} live`), rows: sessionRows },
       { key: 'history', title: titleRow('history', 'History', C.dim, ''), rows: historyRows, log: true },

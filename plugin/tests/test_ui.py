@@ -162,6 +162,32 @@ class UiView(ForemanTestCase):
         v = json.loads(self.fm("ui", "--json").stdout)
         self.assertEqual({k: v["closed"][0][k] for k in ("id", "status")}, {"id": "T-0003", "status": "dropped"})
 
+    def test_the_view_lists_worktrees_with_their_agent_task_and_unmerged_commits(self):
+        # T-1023: the pane's Agents graph joins a builder's worktree to its subagent (Claude Code names the branch
+        # worktree-agent-<id>) and shows a lone or stale one
+        import subprocess
+        git = lambda *a, cwd=self.repo: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a],  # noqa: E731
+                                                       cwd=cwd, check=True, capture_output=True)
+        git("commit", "--allow-empty", "-qm", "base")
+        tree = os.path.join(self.tmp, "wt-agent")
+        git("worktree", "add", "-q", "-b", "worktree-agent-a1b2c3d4", tree)
+        git("commit", "--allow-empty", "-qm", "work", cwd=tree)
+        import fmcore as c
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, "T-0001")
+        b.meta["lane"] = tree  # what fm lane new records
+        c.save_brief(p, b)
+        w = json.loads(self.fm("ui", "--json").stdout)["worktrees"]
+        self.assertEqual([(x["branch"], x["agent"], x["task"], x["ahead"]) for x in w],
+                         [("worktree-agent-a1b2c3d4", "a1b2c3d4", "T-0001", 1)])
+        self.assertIsInstance(w[0]["age_s"], int)
+        # review (T-1023): a detached worktree's merge state is unknown, not 'nothing to merge'; the newest come first
+        loose = os.path.join(self.tmp, "wt-detached")
+        git("worktree", "add", "-q", "--detach", loose)
+        os.utime(os.path.join(tree, ".git"), (1, 1))  # made long ago
+        w = json.loads(self.fm("ui", "--json").stdout)["worktrees"]
+        self.assertEqual([(x["branch"], x["ahead"]) for x in w], [("", None), ("worktree-agent-a1b2c3d4", 1)])
+
     def test_outside_a_project_the_view_is_empty_not_an_error(self):
         elsewhere = os.path.join(self.tmp, "plain")
         os.makedirs(elsewhere)

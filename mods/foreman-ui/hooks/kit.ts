@@ -207,6 +207,39 @@ export function laneCells(lanes: readonly { color: number; slots: readonly numbe
   return cells(out)
 }
 
+/** T-1023: one row of the Agents Gantt, `width` cells over [t0, t0 + span]: plain before the run started and after it
+ * ended, a bar tinted in its colour between (to `now` while it runs), with braille dots where its tool calls (or a
+ * brainstorm's answers) landed, two time slots a cell; a running bar's newest cell glows while `frame`. */
+export function ganttCells(row: { start: number; end: number | null; marks: readonly number[]; color: number; dim?: boolean },
+  t0: number, span: number, width: number, now: number, frame: number | null): string {
+  const slots = width * 2
+  const at = (t: number) => Math.floor(((t - t0) / Math.max(1, span)) * slots)
+  const from = Math.min(slots - 1, Math.max(0, at(row.start))) // a run that starts now still shows
+  const to = Math.min(slots - 1, at(row.end ?? now))
+  const counts = Array(slots).fill(0) as number[]
+  for (const m of row.marks) {
+    const k = Math.min(slots - 1, at(m))
+    if (k >= 0) counts[k]! += 1
+  }
+  const max = Math.max(1, ...counts)
+  const rise = (n: number) => (n > 0 ? Math.max(1, Math.min(4, Math.ceil((4 * n) / max))) : 0)
+  const bar = mix(0x22262d, row.color, row.dim ? 0.16 : 0.3)
+  const out: [string, number, number][] = []
+  for (let i = 0; i < width; i++) {
+    if (2 * i + 1 < from || 2 * i > to) {
+      out.push([' ', C.track, DEFAULT_BG])
+      continue
+    }
+    const l = rise(counts[2 * i] ?? 0)
+    const r = rise(counts[2 * i + 1] ?? 0)
+    const bits = DOTS_L.slice(0, l).reduce((b, x) => b | x, 0) | DOTS_R.slice(0, r).reduce((b, x) => b | x, 0)
+    const glow = frame !== null && row.end === null && i === Math.floor(to / 2)
+    const fg = glow ? mix(row.color, C.white, 0.2 + 0.25 * ((Math.sin(frame / 2) + 1) / 2)) : row.color
+    out.push([bits ? String.fromCharCode(0x2800 + bits) : glow ? '▏' : ' ', fg, glow ? mix(bar, row.color, 0.35) : bar])
+  }
+  return cells(out)
+}
+
 /** Column bars `rows` tall in eighth blocks, `bw` columns per value with a gap between, coloured from→to by height; a
  * zero shows as a dim floor. The newest (last) value is the brightest. */
 export function barCells(values: readonly number[], rows: number, from: number, to: number, bw = 1): string {
