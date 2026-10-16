@@ -1540,7 +1540,9 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
     def test_system_check_directly(self):  # other rules (git config, rm/dd) block these first, so call _check_system
         for name, args, why in [("git", ["-c", "core.hooksPath=/x", "status"], "hooks from another folder"),
                                 ("git", ["config", "core.hooksPath", "/x"], "hooks that run on every git command"),
-                                ("dd", ["if=x", "of=/dev/sda"], "dd onto a device")]:
+                                ("dd", ["if=x", "of=/dev/sda"], "dd onto a device"),
+                                ("firewall-cmd", ["--add-port=22/tcp"], "firewall-cmd change"),
+                                ("cryptsetup", ["luksFormat", "/dev/sdb"], "cryptsetup luksFormat")]:
             with self.subTest(name=name, args=args):
                 self.assertEqual([(c, d) for c, d in g._check_system(name, args)][0][0], "system")
                 self.assertIn(why, g._check_system(name, args)[0][1])
