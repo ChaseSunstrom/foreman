@@ -22,8 +22,10 @@ def _gh(p, *argv):
     return r.stdout
 
 
-def _head(p):
-    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=p.root, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+def _head(p, rev="HEAD"):
+    """The full sha of rev (gh reports full shas, so a short --commit is resolved here)."""
+    r = subprocess.run(["git", "rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}"], cwd=p.root,
+                       capture_output=True, text=True, stdin=subprocess.DEVNULL)
     return r.stdout.strip()
 
 
@@ -72,6 +74,10 @@ def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
 
 def cmd_ci_watch(args):
     import fmcli
-    code, msg = watch(fmcli.resolve(args), args.branch, args.max_retries, args.interval, args.max_polls, commit=args.commit)
+    p = fmcli.resolve(args)
+    commit = _head(p, args.commit) if args.commit else None
+    if args.commit and not commit:
+        raise fmcli.UsageError(f"--commit {args.commit}: not a commit in this repo")
+    code, msg = watch(p, args.branch, args.max_retries, args.interval, args.max_polls, commit=commit)
     print(msg)
     return code
