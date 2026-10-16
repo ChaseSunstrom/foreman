@@ -1524,6 +1524,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("cryptsetup luksFormat /dev/sdb", "system", "cryptsetup luksFormat"),
             ("fm approve-reads on", "self-authorize", "approve-reads on"),
             ("fm rule rm 3", "self-authorize", "fm rule rm"),
+            ("fm rollback --yes", "self-authorize", "fm rollback --yes is the user's to run"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
