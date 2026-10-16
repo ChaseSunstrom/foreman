@@ -145,7 +145,7 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
-VERSION = 7  # bump when build() changes, so older maps are rebuilt
+VERSION = 8  # bump when build() changes, so older maps are rebuilt
 
 
 def load(p, rebuild=False):
