@@ -2,7 +2,6 @@
 track record that follows (T-0641): per type and tier, how many closed on their first fm task finish and how many held.
 Everything is derived on demand from git, the briefs and the ledger, so there is nothing extra to keep in sync."""
 import collections
-import json
 import os
 import re
 import subprocess
@@ -61,7 +60,7 @@ def outcomes(p):
             later[next(iter(named))].append(f.id)
             when[next(iter(named))].append((_ts(f.meta.get("created")), f"fixed by {f.id}"))
     corrected = collections.defaultdict(list)  # T-0602: the user corrected it after it closed
-    events = _events(p, ("correction", "smoke"))  # T-1060 review: the archived months too
+    events = c.ledger_events(p, ("correction", "smoke"))  # T-1060 review: the archived months too
     for e in events:
         t = e.get("task")
         if e.get("event") == "correction" and t in closed and str(e.get("ts") or "") > closed[t]:
@@ -82,26 +81,6 @@ def outcomes(p):
                    or smoked.get(b.id, []),
                    "type": b.type, "tier": b.tier, **_survival(closed[b.id], when.get(b.id, []))}
             for b in briefs if b.id in closed}
-
-
-def _events(p, kinds):
-    """Every ledger event of these kinds, the archived months (fm tidy rolls them) then the live file, oldest first."""
-    marks = [f'"{k}"'.encode() for k in kinds]
-    out = []
-    for path in c.ledger_files(p):
-        try:
-            with open(path, "rb") as f:
-                for raw in f:
-                    if any(m in raw for m in marks):
-                        try:
-                            e = json.loads(raw)
-                        except (ValueError, RecursionError):
-                            continue
-                        if isinstance(e, dict) and e.get("event") in kinds:
-                            out.append(e)
-        except OSError:
-            continue
-    return out
 
 
 def _ts(s):
@@ -202,7 +181,7 @@ def cmd_outcomes(args):
 
 def _settle(p, outs):
     """One `outcome` ledger event per task whose window has closed (survived or lost), once per task."""
-    done = {e.get("task") for e in _events(p, ("outcome",))}
+    done = {e.get("task") for e in c.ledger_events(p, ("outcome",))}
     new = [(t, o) for t, o in sorted(outs.items()) if o.get("survival") in ("survived", "lost") and t not in done]
     for t, o in new:
         c.log_event(p, "outcome", task=t, data={k: o[k] for k in ("survival", "lost_at", "lost_by", "fate") if k in o})
@@ -255,7 +234,7 @@ def _graveyard(p, outs):
 def _seen(p, outs):
     """Did a correction during the task (the user steering it) make it more or less likely to survive?"""
     graded = _graded(p, outs)
-    during = {e.get("task") for e in _events(p, ("correction",)) if e.get("task") in graded
+    during = {e.get("task") for e in c.ledger_events(p, ("correction",)) if e.get("task") in graded
               and str(e.get("ts") or "") <= str(done_at(graded[e["task"]]) or "")}
     rows = {k: [t for t in graded if (t in during) == k] for k in (True, False)}
     lines = [f"- {'corrected during the task' if k else 'not corrected'}: "

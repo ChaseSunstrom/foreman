@@ -175,6 +175,10 @@ class FailureMemory(ForemanTestCase):
         self.assertIn("PyYAML", ctx)
         self.assertEqual(fmrecall.failure_signature(self.ERR.format(n=1, f="a")),
                          fmrecall.failure_signature(self.ERR.format(n=99, f="b")))
+        # T-1109: worktree and agent ids are hex; one failure in two builders' worktrees is one signature
+        self.assertEqual(fmrecall.failure_signature("FAIL in agent-a0bd0ad0edc0/x.py: KeyError 'col' at worktree-agent-a0bd0"),
+                         fmrecall.failure_signature("FAIL in agent-f81c2e9b44aa/x.py: KeyError 'col' at worktree-agent-f81c2"))
+        self.assertIn("decade", fmrecall.failure_signature("Error: decade value missing"))  # no digit: a word, kept
         other = self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "make"},
                                                  "error": "Exit code 2\nmake: *** No rule to make target 'all'"})
         self.assertEqual(other.stdout.strip(), "")
