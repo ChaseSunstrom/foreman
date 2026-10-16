@@ -238,6 +238,9 @@ def check_project(p, apply, actions):
     for tid, why in stale_plans(p, briefs).items():
         out.append(finding(slug, "stale_plan", "warn", f"{tid} re-plan: {why}", f're-read its Steps against the code, '
                            f'fix what no longer holds, then fm task log {tid} "plan re-read: <what changed, or still valid>"'))
+    for date, decision, sunset in c.expired_decisions(p):  # T-1084
+        out.append(finding(slug, "decision_expired", "warn", f"decision of {date} hit its sunset {sunset}: {c.fit(decision, 80)}",
+                           'keep it (fm decide "<it again>" --revisited WORDS) or undo it (--reverses WORDS)'))
     asks = []
     for tid, verdict, why in triage_deferred(p, briefs):
         if verdict == "ask":
