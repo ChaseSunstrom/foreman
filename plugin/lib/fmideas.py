@@ -218,11 +218,12 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
     return text
 
 
-def run_children(jobs, timeout, feature):
+def run_children(jobs, timeout, feature, cwd=None):
     """T-0295: [(argv, stdin, detail)] run in parallel in one scratch folder under one deadline, each recorded:
     [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
-    stopped)."""
-    with _child_cwd(feature) as cwd:
+    stopped). cwd: run there instead (T-1186: reviewers read the project)."""
+    import contextlib
+    with (contextlib.nullcontext(cwd) if cwd else _child_cwd(feature)) as cwd:
         procs, started = [], False
         try:
             for argv, stdin, detail in jobs:

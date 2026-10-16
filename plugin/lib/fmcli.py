@@ -706,6 +706,8 @@ def cmd_task(args):
             until = getattr(args, "until", None)
             if until:  # T-0450: fm next names it again from then
                 b.meta["revisit"] = until
+            else:
+                b.meta.pop("revisit", None)  # T-1183: an old condition must not reopen this block at once
             b.append_log((f"{status}: {reason}" if reason else status) + (f" (revisit {until})" if until else ""))
         until = getattr(args, "until", None)
         if until and until.startswith("when "):  # T-0958: the file's hash kept, so fm next can tell a change
@@ -714,8 +716,14 @@ def cmd_task(args):
             except ValueError as e:
                 raise UsageError(str(e).replace("--revisit", "--until"))
             args.until = until
+        elif until and until.split(" ", 1)[0] in ("installed", "exists"):  # T-1183: structured, never a command
+            args.until = c.until_condition(p.root, until)
+            if not args.until:
+                raise UsageError("--until \"installed NAME\" takes a plain program name; \"exists PATH\" a path inside "
+                                 "the project or your home folder")
         elif until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
-            raise UsageError("--until takes a date, YYYY-MM-DD, or \"when PATH changes\"")
+            raise UsageError("--until takes a date, YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or "
+                             "\"exists PATH\"")
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
@@ -928,7 +936,8 @@ def task_finish(p, args):
     missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
                for kind, n, cmd in todo if cmd is None]
     gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b)
+             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
+        + _file_map_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
     if args.run and args.run not in [cmd for _, _, cmd in todo]:  # T-0742: --run is the close's final check, always
@@ -1220,6 +1229,24 @@ def _self_docs_gaps(p, b):
         return []
     res = fmdoctor.check_self_docs()
     return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
+
+
+def _file_map_gaps(p, b):
+    """T-1179: a close that adds a plugin/<entry> MASTER.md's file map doesn't list is refused, not left for release-check."""
+    import fmdoctor
+    import fmmap
+    base = c.task_base(p.root, b) if c.git_root(p.root) else None
+    master = os.path.join(p.root, "MASTER.md")
+    if not base or not os.path.exists(master):
+        return []
+    entries = {"/".join(f.split("/")[:2]) for f in fmmap.changed(p.root, base) if f.startswith("plugin/")}
+    if not entries:
+        return []
+    res = fmdoctor.check_file_map(p.root, master)
+    tag = "on disk but not in the map: "
+    missing = next((x[len(tag):].split(", ") for x in res.detail.split("; ") if x.startswith(tag)), [])
+    new = sorted(entries & set(missing))
+    return [f"file map: add a MASTER.md File map row for {', '.join(new)}"] if new else []
 
 
 DIRTY_CAP = 500
@@ -3472,6 +3499,8 @@ def cmd_check(args):
             f"✓ all {len(checks)} gates passed on this exact tree already ({cached}); cached (fm check --fresh reruns)"
             + (f"\n! {left_out}" if left_out else ""))
         return 0
+    if args.evidence:  # T-1176: the drive reads this (a dead pid = stale) so it doesn't offer or leave the task meanwhile
+        c.update_meta(p, gates_running={"task": args.evidence, "pid": os.getpid(), "at": c.now()})
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
@@ -3508,6 +3537,8 @@ def cmd_check(args):
     wrote = bool(tree) and after != tree  # R2: a check should only read; one of these wrote (formatter, codegen…)
     wrote_paths = c._git(p.root, "diff", "--name-only", tree, after, timeout=10).split() if wrote and after else []  # T-1149
     tree = after or tree
+    if args.evidence:  # T-1176: the gates are done; the task is no longer "in progress" for the drive
+        c.update_meta(p, gates_running=None)
     failed = sum(1 for _, code, _, _ in results if code)
     if failed:
         c.hints_reset(p)  # T-0250: a quieted hint gets its detail back when a gate fails
@@ -3759,6 +3790,12 @@ def cmd_round(args):
     lines = [f"Tagged HEAD {tag}: {len(done)} task(s) closed since {prev or 'the first commit'}."]
     lines += [f"  {b.id} {c.fit(b.title, 90)}" for b in done]
     return out(args, {"tag": tag, "since": prev, "tasks": [b.id for b in done]}, "\n".join(lines))
+
+
+def cmd_release(args):
+    """T-1188: fm release VERSION, release.py's ritual as checkpointed steps (fmrelease.py)."""
+    import fmrelease
+    return fmrelease.run(resolve(args), args)
 
 
 def cmd_show(args):
@@ -4199,6 +4236,11 @@ def cmd_audit(args):
     p = resolve(args)
     if args.action == "scan":
         return _audit_scan(p, args)
+    if args.action == "run":  # T-1186
+        if not args.id:
+            raise UsageError("fm audit run needs a task id")
+        import fmauditrun
+        return fmauditrun.run(p, args)
     if not args.id:
         raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
@@ -4828,6 +4870,8 @@ def build_parser():
     t = tadd("block")
     t.add_argument("id")
     t.add_argument("reason")
+    t.add_argument("--until", help="YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or \"exists PATH\": fm next "
+                                   "names it again once that holds (T-1183)")
     t = tadd("drop")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
@@ -4836,7 +4880,7 @@ def build_parser():
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
     t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450); \"when PATH changes\": "
-                                   "once that file changes (T-0958)")
+                                   "once that file changes (T-0958); \"installed NAME\" / \"exists PATH\" (T-1183)")
 
     s = add("map", lazy("fmmap", "cmd_map"), tier=("Finding your way", 370), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
@@ -5097,6 +5141,16 @@ def build_parser():
     s.add_argument("words", nargs="+")
     s = add("round", cmd_round, tier=("Project and settings", 960), help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
     s.add_argument("action", choices=["close"])
+    s = add("release", cmd_release, tier=("Project and settings", 905), help="release Foreman as named steps with a checkpoint after each: "
+            "check, bump, changelog, commit, release-check, canary, --push, round close (T-1188)")
+    s.add_argument("version", nargs="?", help="MAJOR.MINOR.PATCH")
+    s.add_argument("--remote", metavar="URL", help="push to this remote instead of origin")
+    s.add_argument("--abandon", action="store_true", help="forget an unfinished release's checkpoints")
+    s.add_argument("--ui", metavar="VERSION", help="foreman-ui's new version (required when mods/foreman-ui changed since the last release)")
+    s.add_argument("--push", action="store_true", help="merge into origin's main and push; needs the active task's publish grant")
+    s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
+    s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
+    s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
@@ -5114,13 +5168,15 @@ def build_parser():
                                                           "fmguard.py file) against the working one (T-0712)")
     s = add("guard", lazy("fmhooks", "cmd_guard_try"), tier=("Finding your way", 305), help="guard try \"CMD\" [--cwd DIR]: the real guard's "
                                                            "verdict for a command or --tool Edit --path P, as this session would get it; never run (T-1146)")
-    s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162)")
+    s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162) | "
+                                  "mine [--days N]: this project's real refusals, each labelled by what the session did next (T-1187)")
     s.add_argument("text", nargs="?", help="the command to ask about")
     s.add_argument("--should", choices=["allow", "block"], help="with wrong: the verdict the guard should give")
     s.add_argument("--why", default="", help="with wrong: what went wrong")
     s.add_argument("--cwd", metavar="DIR", help="the folder it would run in (default: here)")
     s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit"], help="the tool (default Bash)")
     s.add_argument("--path", metavar="P", help="with --tool Edit/Write: the file")
+    s.add_argument("--days", type=int, default=7, help="with mine: how far back the transcripts are read (default 7)")
     s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
                                                                  "fired on recent real sessions, read-only (T-1058)")
     s.add_argument("--rule", metavar="REGEX", help="calls (command, path, pattern) the regex matches")
@@ -5298,8 +5354,11 @@ def build_parser():
     s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
     s = add("audit", cmd_audit, tier=("Finding your way", 420), help="prep audits: freeze the task's diff and write one review brief for one reviewer")
-    s.add_argument("action", choices=["prep", "scan"], help="prep ID: review brief for a task; scan: mechanical "
-                                                             "pre-audit of any diff (--base, default: the main branch)")
+    s.add_argument("action", choices=["prep", "scan", "run"], help="prep ID: review brief for a task; scan: mechanical "
+                                                                    "pre-audit of any diff (--base, default: the main branch); "
+                                                                    "run ID: headless reviewers, one per lens (T-1186)")
+    s.add_argument("--model", default="sonnet", help="run: the reviewers' model")
+    s.add_argument("--timeout", type=int, default=900, help="run: seconds the reviewers get")
     s.add_argument("id", nargs="?")
     s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
     s.add_argument("--forge", action="store_true", help="prep: a brief asking for a change that keeps each check "
@@ -5332,6 +5391,8 @@ def build_parser():
     s.add_argument("-v", "--verbose", action="store_true", help="list the passing checks too")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
+    s.add_argument("--fix", action="store_true", help="apply only the findings with a safe repair (views, empty git "
+                   "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
 
@@ -5714,8 +5775,28 @@ def _options_first(parser, argv):
     return argv[:k + 1] + head[first:] + head[:first] + argv[k + 1 + len(head):]
 
 
+# T-1180: what builders and small models guess, run as what they meant (one quiet note says which); first match wins
+ALIASES = [(("task", "list"), ["queue"]), (("task", "ls"), ["queue"]), (("task", "all"), ["queue"]),
+           (("tasks",), ["queue"]), (("list",), ["queue"]), (("ls",), ["queue"]),
+           (("task", "get"), ["task", "show"]), (("task", "view"), ["task", "show"]),
+           (("task", "info"), ["task", "show"]), (("task", "cat"), ["task", "show"]),
+           (("lane", "ls"), ["lane", "list"]), (("inbox", "list"), ["inbox"]), (("inbox", "ls"), ["inbox"])]
+
+
+def _alias(argv):
+    """argv with a guessed command replaced by the real one, and the real one's words (None when nothing matched)."""
+    lead = 2 if argv[:1] in (["-p"], ["--project"]) else 0  # fm -p PROJECT task list
+    for guess, real in ALIASES:
+        if tuple(argv[lead:lead + len(guess)]) == guess:
+            return argv[:lead] + real + argv[lead + len(guess):], " ".join(real)
+    return argv, None
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    argv, aliased = _alias(list(argv))
+    if aliased:
+        print(f"(ran `fm {aliased}`)", file=sys.stderr)
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     parser = build_parser()
@@ -5737,6 +5818,12 @@ def main(argv=None):
         return 3
     except (UsageError, KeyError) as e:
         print(f"fm: {e.args[0] if e.args else e}", file=sys.stderr)
+        return 1
+    except (FileNotFoundError, IsADirectoryError, PermissionError) as e:
+        if not any(a == e.filename or a.endswith(f"={e.filename}") for a in argv):  # T-1189: only a file named on
+            # the command line (--file X or --file=X) is the caller's mistake; any other is a real error
+            raise
+        print(f"fm: can't read {e.filename}: {e.strerror.lower()}", file=sys.stderr)
         return 1
     except ValueError as e:
         print(f"fm: state looks corrupt: {e} (run fm doctor)", file=sys.stderr)

@@ -17,7 +17,25 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PLUGIN = os.path.dirname(HERE)
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
 FM = os.path.join(PLUGIN, "bin", "fm")
-BUDGET_MS = {"default": 150, "MessageDisplay": 100}
+BUDGET_MS = {"default": 150, "MessageDisplay": 100, "PreToolUse:Bash:script": 300}
+# T-1192: a real-shaped build script (functions, case, quoting, substitutions, a heredoc) the guard reads when a command
+# runs it (T-0275); repeated to ~40 KB and rewritten before every run, so each run is a cold read, not a cached one
+SCRIPT_BLOCK = r'''
+build_{n}() {{
+  local target="${{1:-all}}" out="$BUILD_DIR/{n}"
+  case "$target" in
+    all|"") echo "building {n} into $out" ;;
+    clean) rm -rf "$out" ;;
+    *) printf 'unknown target: %s\n' "$target" >&2; return 1 ;;
+  esac
+  mkdir -p "$out" && cp -r "src/mod{n}" "$out/" 2>/dev/null || true
+  for f in $(ls "$out" 2>/dev/null); do [ -f "$out/$f" ] && sha256sum "$out/$f" >> "$out/SUMS"; done
+  cat > "$out/meta.json" <<EOF
+{{"name": "mod{n}", "built": "$(date -u +%FT%TZ)", "target": "$target"}}
+EOF
+  VERSION="$(git describe --tags 2>/dev/null || echo 0.0.{n})" && export VERSION
+}}
+'''
 
 
 def load_per_core():
@@ -51,7 +69,15 @@ def _scratch_project(tmp):
     for i in range(10):
         fm("task", "new", f"queued {i}", "--type", "CLEAN", "--tier", "S")
         fm("capture", f"idea {i}")
+    _write_script(repo, 0)
     return repo, env
+
+
+def _write_script(repo, run):
+    """The build script, new bytes each run (a comment carries the run number), so the guard reads it cold."""
+    with open(os.path.join(repo, "src", "build.sh"), "w") as f:
+        f.write(f"#!/bin/bash\n# run {run}\nset -euo pipefail\nBUILD_DIR=${{BUILD_DIR:-build}}\n"
+                + "".join(SCRIPT_BLOCK.format(n=n) for n in range(64)) + 'build_0 "$@"\n')
 
 
 def run_bench(runs=30):
@@ -66,7 +92,9 @@ def run_bench(runs=30):
             body = json.dumps(dict({"session_id": "bench", "cwd": repo, "hook_event_name": event},
                                    **json.loads(json.dumps(payload).replace("{cwd}", repo))))
             times, cpus, codes = [], [], set()
-            for _ in range(runs):
+            for i in range(runs):
+                if name.endswith(":script"):
+                    _write_script(repo, i)
                 t0, r0 = time.perf_counter(), resource.getrusage(resource.RUSAGE_CHILDREN)
                 p = subprocess.run([HOOK, event], input=body, capture_output=True, text=True, env=env, cwd=repo)
                 r1 = resource.getrusage(resource.RUSAGE_CHILDREN)
@@ -75,7 +103,7 @@ def run_bench(runs=30):
                 codes.add(p.returncode)
             times.sort()
             cpus.sort()
-            budget = BUDGET_MS.get(event, BUDGET_MS["default"])
+            budget = BUDGET_MS.get(name, BUDGET_MS.get(event, BUDGET_MS["default"]))
             at = min(len(times) - 1, int(len(times) * 0.95))
             p95, cpu95, load = times[at], cpus[at], load_per_core()
             results[name] = {"p50": round(statistics.median(times), 1), "p95": round(p95, 1), "cpu_p95": round(cpu95, 1),

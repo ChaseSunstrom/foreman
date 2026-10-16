@@ -101,6 +101,19 @@ class BatchEdit(_Files):
         self.assertIn("block", p.stdout + p.stderr)
         self.assertEqual(self.read("a.py"), "x = 1\ny = 2\n")
 
+    def test_blocks_under_one_header_all_apply(self):
+        # T-1191: the second <<< === >>> block under one @@ header was skipped silently and the first applied
+        spec = "@@ a.py\n<<<\nx = 1\n===\nx = 10\n>>>\n<<<\ny = 2\n===\ny = 20\n>>>\n"
+        out = self.fm("edit", input=spec).stdout
+        self.assertEqual(self.read("a.py"), "x = 10\ny = 20\n")
+        self.assertIn("2 replacements", out)
+        p = self.fm("edit", input="<<<\nx = 10\n===\nx = 1\n>>>\n", check=False)  # no file named at all
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(self.read("a.py"), "x = 10\ny = 20\n")
+        p = self.fm("edit", input="@@ a.py\n<<<\nx = 10\n===\nx = 1\n>>>\n<<<\ny = 20\n==\ny = 2\n>>>\n", check=False)
+        self.assertNotEqual(p.returncode, 0, "a typo'd second block refuses the batch, never skips")
+        self.assertEqual(self.read("a.py"), "x = 10\ny = 20\n")
+
     def test_review_a_path_rule_blocks_as_for_an_edit(self):
         self.fm("rule", "add", "b\\.py$", "--on", "path", "--why", "frozen")
         p = self.edit([{"file": "b.py", "old": "x = 1", "new": "x = 5", "all": True}], check=False)

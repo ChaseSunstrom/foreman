@@ -63,7 +63,8 @@ class ForemanTestCase(unittest.TestCase):
         os.makedirs(self.home)
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
                                                      "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND",
-                                                     "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT", "FOREMAN_DRIVE_TASK")}
+                                                     "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT", "FOREMAN_DRIVE_TASK",
+                                                     "FOREMAN_GUARD_CASES")}
         os.environ["FOREMAN_HOME"] = self.home
         os.environ["FOREMAN_NO_BACKGROUND"] = "1"  # a detached child writing into a test's folder races its cleanup
         # T-1004: a suite run from a one-off or headless session (the UI harness) sees what a working session sees
@@ -71,6 +72,8 @@ class ForemanTestCase(unittest.TestCase):
                   "FOREMAN_DRIVE_TASK"):
             os.environ.pop(k, None)
         os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")  # a state fallback never reaches the real one
+        # T-1197: a temp repo has no plugin/, so fm guard wrong fell back to the real checkout's corpus
+        os.environ["FOREMAN_GUARD_CASES"] = os.path.join(self.tmp, "guard_cases.jsonl")
         self.repo = git_repo(self.tmp)
 
     def tearDown(self):

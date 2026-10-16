@@ -20,7 +20,7 @@ import tempfile
 
 import fmcore as c
 
-BLOCK = re.compile(r"^@@ (.+?)(?: (all))?\n<<<\n(.*?)\n===\n(.*?)\n>>>$", re.S | re.M)
+BLOCK = re.compile(r"^(?:@@ (.+?)(?: (all))?\n)?<<<\n(.*?)\n===\n(.*?)\n>>>$", re.S | re.M)
 
 
 def parse_spec(text):
@@ -34,12 +34,18 @@ def parse_spec(text):
                 raise ValueError(f"entry {i + 1}: needs file, old and new as text")
             out.append((x["file"], x["old"], x["new"], bool(x.get("all"))))
         return out
-    out = [(m.group(1).strip(), m.group(3), m.group(4), bool(m.group(2))) for m in BLOCK.finditer(t)]
+    out, head = [], None
+    for m in BLOCK.finditer(t):  # T-1191: blocks after an @@ header belong to it until the next header
+        if m.group(1):
+            head = (m.group(1).strip(), bool(m.group(2)))
+        if head is None:
+            raise ValueError("a <<< block comes before any @@ file header: name the file first")
+        out.append((head[0], m.group(3), m.group(4), head[1]))
     if not out:
         raise ValueError("no edits: give JSON ([{\"file\", \"old\", \"new\"}]) or @@ file / <<< old / === new / >>> blocks")
-    heads = len(re.findall(r"(?m)^@@ ", t))
-    if heads != len(out):  # review: a block with a typo was skipped and the rest applied
-        raise ValueError(f"{heads} @@ headers but {len(out)} complete block(s): every block needs <<<, === and >>> on lines "
+    opened = len(re.findall(r"(?m)^<<<$", t))
+    if opened != len(out):  # review: a block with a typo was skipped and the rest applied
+        raise ValueError(f"{opened} <<< block(s) but {len(out)} complete: every block needs <<<, === and >>> on lines "
                          "of their own (an old text with a line that is exactly === goes in the JSON form)")
     return out
 
