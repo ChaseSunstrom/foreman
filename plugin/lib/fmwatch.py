@@ -37,6 +37,8 @@ def _latest_session(project):
                 snap = json.load(f)
         except (OSError, ValueError):
             continue
+        if not isinstance(snap, dict):  # T-1097: a side file (sid.outlined-<agent>.json is a list), not a snapshot
+            continue
         if snap.get("project") in (project, None):
             return snap
     return None

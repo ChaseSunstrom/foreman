@@ -123,9 +123,10 @@ def wake(sid):
 def _snapshot(sid):
     try:
         with open(os.path.join(c.state_dir(), "sessions", f"{_sid(sid)}.json")) as f:
-            return json.load(f)
+            s = json.load(f)
     except (OSError, ValueError):
         return None
+    return s if isinstance(s, dict) else None  # T-1097: side files share the folder (sid.outlined-<agent>.json)
 
 
 def _proc(pid):
