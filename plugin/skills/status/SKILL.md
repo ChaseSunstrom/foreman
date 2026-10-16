@@ -1,6 +1,6 @@
 ---
 name: status
-description: Use when the user asks where things stand (STATUS, "what's going on", "what's left", /foreman:status). Shows Foreman status for this project in at most 25 lines — active task and step, queue, inbox, blocked items, pending approvals, autonomy, hygiene.
+description: Use when the user asks where things stand (STATUS, "what's left", /foreman:status): Foreman's status for this project in at most 25 lines.
 ---
 
 # Foreman: status

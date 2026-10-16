@@ -136,7 +136,7 @@
             "args": [
               "Stop"
             ],
-            "timeout": 5
+            "timeout": 30
           }
         ]
       }

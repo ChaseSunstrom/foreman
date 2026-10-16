@@ -1,6 +1,6 @@
 ---
 name: next
-description: Use when the current Foreman task is finished, blocked or dropped, when the Stop hook reports queued Foreman work, or when the user says next / continue / what's next. Closes out the task, triages the inbox, re-plans between phase groups, picks the next task from the canonical queue and starts it; when the queue is empty runs FINAL VERIFY and REFLECT.
+description: Use when the current Foreman task is finished, blocked or dropped, the Stop hook reports queued work, or the user says next or continue: closes it out, triages the inbox and starts the next task (FINAL VERIFY and REFLECT when the queue is empty).
 ---
 
 # Foreman: next
