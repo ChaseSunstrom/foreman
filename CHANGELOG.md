@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A refused interpreter write made from a shell left inside `state/` says so ("The shell is in …, so a relative path lands there"); the reported false positive was a real state write from a stale cwd (T-1125).
 - A criterion whose check ran no tests at all (a mistyped test module: unittest's or pytest's "no tests ran" in the run's last lines) stays editable with `fm task ac ID edit`, like a missing command or file already did (T-1128).
 - Install commands are checked before they run (`npm`/`pip`/`uv`/`poetry`/`pipx`/`yarn`/`cargo`/`go`): a name one edit away from a popular package, or (when the network is allowed) first published in the last 30 days, gets a note; `fm deps check "<cmd>"` runs it by hand. Lookups share a 1.2 s budget, skip popular, scoped and private-registry names, and are off under `FOREMAN_NO_NET=1` or a sensitive repo (T-1049).
 - A command copied from a web page or MCP result asks before it runs (once per line per session); headless or in full autonomy it is denied with a way forward, every time (T-1053).
