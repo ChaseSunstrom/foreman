@@ -5,9 +5,9 @@
 **The discipline layer for Claude Code.** Foreman makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until it's done or needs you, while a guard hook stops the commands you'd never want run in bypass mode.
 
 <p align="center">
-  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman fix in a copy of this repo: it plans the task, writes the failing test, makes it pass, is held to a red-then-green proof before the close, then closes and commits; the Foreman pane shows the stage rail, what is running now, the plan, skills used, live charts of the session's tool calls and the activity feed">
+  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman feature in a copy of this repo: it plans the task, writes the test first, makes it pass, is held to a red-then-green proof before the close, then closes and commits; the Foreman pane beside it shows the stage rail and steps, the Activity lanes filling with each tool call, the done strip at the close, History, and the closes-per-day and Today charts">
 </p>
-<p align="center"><sub>A real session, recorded in a copy of this repo: one typed request (make <code>fm audit prep</code> tell reviewers to read long diffs in parts), the rest is Claude working through Foreman, about 7 minutes, sped up where the model thinks. Its commit is in Foreman now. <a href="demo/live.mp4">MP4</a>.</sub></p>
+<p align="center"><sub>A real session, recorded in a copy of this repo: one typed request (<code>fm task finish --why-not-caught</code> skips its follow-up when the task already changed a test), the rest is Claude working through Foreman, about 5 minutes, sped up where the model thinks. Its change is in Foreman now (T-1009). <a href="demo/live.mp4">MP4</a>.</sub></p>
 
 ## Why
 
