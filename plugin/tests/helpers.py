@@ -12,6 +12,7 @@ PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 LIB = os.path.join(PLUGIN, "lib")
 FM = os.path.join(PLUGIN, "bin", "fm")
 HOOK = os.path.join(PLUGIN, "hooks", "hook")
+RELAY = "import subprocess, sys; sys.exit(subprocess.run(sys.argv[1:4]).returncode)"
 if LIB not in sys.path:
     sys.path.insert(0, LIB)
 
@@ -104,9 +105,20 @@ class ForemanTestCase(unittest.TestCase):
     def fm_json(self, *args, **kw):
         return json.loads(self.fm(*args, "--json", **kw).stdout)
 
-    def hook(self, event, payload, env=None, timeout=10):
+    def hook(self, event, payload, env=None, timeout=10, flags=()):
         e = dict(os.environ, FOREMAN_HOME=self.home)
         e.update(env or {})
         payload = dict({"session_id": "sess-1", "cwd": self.repo, "hook_event_name": event}, **payload)
-        return subprocess.run([sys.executable, HOOK, event], input=json.dumps(payload), env=e,
+        cmd = [sys.executable, HOOK, event]
+        if event == "UserPromptSubmit":  # T-1226: the hook asks how its Claude Code was started; here a stand-in
+            cmd = [self.claude_stand_in(), "-c", RELAY, *cmd, *flags]  # started with `flags` (none: typed at it)
+        return subprocess.run(cmd, input=json.dumps(payload), env=e,
                               capture_output=True, text=True, timeout=timeout, cwd=payload["cwd"])
+
+    def claude_stand_in(self):
+        """A process named claude (python under that name) that runs the command after its -c code."""
+        path = os.path.join(self.tmp, "stand-in", "claude")
+        if not os.path.exists(path):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.symlink(sys.executable, path)
+        return path

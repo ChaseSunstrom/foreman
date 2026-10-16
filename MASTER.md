@@ -151,7 +151,7 @@ flowchart TD
 | Why things were decided | `decisions.md` | on demand |
 | Durable learnings and gotchas | native auto memory (`MEMORY.md` + topic files) | startup window, then on demand |
 | History | `ledger.jsonl` | never wholesale; via `fm` |
-| Pending consent | `meta.json` `pending_approvals` (written by `fm ask`, decided only by your next prompt) | reported by the prompt hook |
+| Pending consent | `meta.json` `pending_approvals` (written by `fm ask`, decided only by your next prompt typed at an interactive Claude Code; T-1226: a prompt from a `-p`/`--print`/stream-json/SDK process, or a CronCreate/ScheduleWakeup/RemoteTrigger prompt starting with a yes, never decides it) | reported by the prompt hook |
 | In-session checklist | the brief's Steps (built-in task tools are off on current models; the TaskCompleted gate is ready if enabled) | via `fm resume` |
 | Knowledge graph | none installed | — |
 

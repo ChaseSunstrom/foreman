@@ -573,6 +573,36 @@ def _pin_hashes(pins):
     return {x: fmplugins.content_hash(x) for x in pins}
 
 
+_PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
+_WRAPPER = re.compile(r"(sh|bash|dash|zsh|env|hook|python[\d.]*)")
+
+
+def _argv(pid):
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            return f.read().decode(errors="replace").split("\0")
+    except OSError:
+        if os.path.isdir("/proc"):
+            return []
+    r = subprocess.run(["ps", "-o", "args=", "-p", str(pid)], capture_output=True, text=True, timeout=5)  # no procfs
+    return r.stdout.split()
+
+
+def _sent_by_program():
+    """T-1226: True when the Claude Code running this hook took its prompt from argv or a stream (-p, --print,
+    stream-json, the SDK) rather than from a person at its prompt: claude --resume <this session> -p yes, run from
+    Claude's own Bash, was a yes in the asking session. That Claude Code is the hook's nearest ancestor that isn't a
+    shell or python, whatever its name."""
+    import fmbus
+    for pid, _ in fmbus._chain(os.getppid(), 12):
+        if any(a in _PROGRAM_FLAGS or re.fullmatch(r"-[A-Za-oq-z]*p[A-Za-z]*", a)
+               or a.startswith(tuple(f + "=" for f in _PROGRAM_FLAGS[1:])) for a in _argv(pid)[1:]):
+            return True  # a shell or python on the way is checked too: a claude renamed bash is still a claude
+        if not _WRAPPER.fullmatch(fmbus._comm(pid)):
+            return False
+    return False
+
+
 def _resolve_approvals(p, meta, sid, text, hashes=None):
     """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session.
 
@@ -659,10 +689,15 @@ def user_prompt_submit(pl):
     except Exception:
         log_error("UserPromptSubmit", _tb())
     try:
+        program = _sent_by_program()
+    except Exception:  # unknown: no approval from this prompt (the permission dialog still grants)
+        log_error("UserPromptSubmit", _tb())
+        program = True
+    try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
-            approvals = _resolve_approvals(p, meta, sid, text, hashes)
+            approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes)
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
@@ -1010,6 +1045,7 @@ def _committed(name):
 
 
 OUTWARD = {"PushNotification", "Artifact", "ArtifactData", "ArtifactComments", "SendMessage", "RemoteTrigger"}
+SCHEDULERS = {"CronCreate", "ScheduleWakeup", "RemoteTrigger"}  # their prompt later arrives as if typed
 OUTWARD_MCP = "mcp__claude_ai_Claude_Docs__"
 _READS = {"get", "list", "query", "profiles", "read", "open", "quickstart", "guide", "export"}
 
@@ -1123,6 +1159,14 @@ def _pre_tool_use(raw):
             if d:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                                          "permissionDecisionReason": d}}))
+            return 0
+        ti = pl.get("tool_input") if isinstance(pl.get("tool_input"), dict) else {}
+        # T-1226: a scheduled prompt later arrives as if typed, so a yes in it would answer a pending fm ask
+        if tool in SCHEDULERS and _YES.match(_PASTED.sub("", str(ti.get("prompt") or "")).strip()):
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": (
+                "Foreman: a scheduled prompt that starts with a yes could answer a pending fm ask in the user's place. "
+                "Word it as an instruction (for example 'continue the queue').")}}))
             return 0
         if tool in OUTWARD or tool.startswith(OUTWARD_MCP):  # T-0784: content leaving the machine
             try:
