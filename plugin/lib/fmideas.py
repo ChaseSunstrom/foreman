@@ -438,6 +438,27 @@ def correction_clusters(p, ledger=None):
     return out
 
 
+def norm_ask(q):
+    return re.sub(r"[\W_]+", " ", q.lower()).strip()
+
+
+def precedent(p, q):
+    """T-1064: (answer, n) when at least 2 earlier user answers to this ask (normalized) agree and none differ, and the
+    proxy's own record is good; else None. The record: two overruled proxies, or over 20% once 3 exist, stops it."""
+    key, answers, proxied, overruled = norm_ask(q), [], 0, 0
+    for e in c.ledger_tail(p, 50000):
+        d = e.get("data") or {}
+        if e.get("event") == "ask_answered" and d.get("q") == key:
+            answers.append(d.get("a"))
+        proxied += e.get("event") == "proxy_answer"
+        overruled += e.get("event") == "proxy_overruled"
+    if len(answers) < 2 or len(set(answers)) != 1:
+        return None
+    if overruled >= 2 or (proxied >= 3 and overruled / proxied > 0.2):
+        return None
+    return answers[0], len(answers)
+
+
 def taste_default(p, options):
     """(option, why): the option the user's record favours — none a recorded veto covers (unless every one is), then the
     most key words shared with their finished requests and their steers that aren't a no; a tie keeps the caller's order."""
