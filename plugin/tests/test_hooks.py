@@ -629,10 +629,12 @@ class NoTaskGate(HookCase):
         self.assertIsNone(c.active_brief(c.load_briefs(self.project())), "brief is the guard's last check")
 
     def test_a_long_untagged_task_request_gets_its_task_made_too(self):
-        # T-1231: the neutral suite's prompts start "Task: Add kit.x …" and run past 200 words
+        # T-1231: the neutral suite's prompts start "Task: Add kit.x …" and run past 200 words; the hard suite's
+        # lexer spec has a word that guesses L, which can't focus without a plan, so the shortcut fell back
         self.fm("init")
         self.fm("autonomy", "full")
-        spec = "Task: Add kit.lru.LRUCache: a fixed-size cache\n\n" + "- a stated rule about the cache\n" * 80
+        spec = ("Task: Add kit.lru.LRUCache: a fixed-size cache\n\n" + "- a stated rule about the cache\n" * 80
+                + "The parser architecture is a rewrite of the whole tokenizer.\n")
         self.hook("UserPromptSubmit", {"prompt": spec})
         out = parse(self.pre(os.path.join(self.repo, "kit.py")))["hookSpecificOutput"]
         act = c.active_brief(c.load_briefs(self.project()))
@@ -658,6 +660,18 @@ class NoTaskGate(HookCase):
         self.fm("autonomy", "full")
         self.task()
         self.assertEqual(fmhooks._first_brief(self.project(), "sess-1"), "", "a task exists: re-check, don't refuse")
+
+    def test_an_unattended_request_needs_no_work_verb(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        env = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+        self.hook("UserPromptSubmit", {"prompt": "Task: Group thousands in invoice amounts: 1234567 shows as 12,345.67"},
+                  env=env)
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "inv.py"),
+                                                                      "content": "x"}}, env=env)
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act)
+        self.assertIn("Group thousands", act.title)
 
     def test_a_request_with_two_items_or_no_work_keeps_the_plain_refusal(self):
         self.fm("init")

@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- A one-request unattended run's first task is S (M for SECURITY), not a size guessed from words in a long spec. An L guess had sent a lexer task into the full plan-and-audit flow (25 turns, 272 s). The run's one request is its work whatever its first word (T-1231)
+- A bench replay doesn't scout for new work once its request is done; that was overhead the judge also marked down (T-1229)
 - A harder round of the neutral benchmark: `bench/spec-suite/make.py --suite hard DIR` builds `ledger`, an invoicing package whose modules share helpers, with eight tasks graded by the whole test suite. Four are tasks whose obvious edit to a shared helper breaks another module's existing tests unless the spec's "Keep:" rules are followed; four have dense edge-case specs (text wrapping, INI, interval arithmetic, a tokenizer). `--check` proves each fail-to-pass and that each task's recorded naive variant fails (T-1237)
 - Bench grading restores the reference commit's whole test folders, not only the hidden test files, so an arm that edits or guts an existing test to make its change pass is graded by the real one (T-1231)
 - The stop-time close runs only in unattended runs, never while paused, and isn't retried after a timeout (T-1231 review). It reads the gates without building the map and prefers a test gate. When the tests fail, it tells the agent once with the failure, so the run fixes its work instead of ending on it.
