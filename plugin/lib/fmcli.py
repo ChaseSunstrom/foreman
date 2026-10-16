@@ -4755,6 +4755,7 @@ def build_parser():
     s.add_argument("state", nargs="?", choices=["on", "off"])
     s = add("digest", lazy("fmcost", "cmd_digest"), tier=("Reports", 970), help="the week in one screen: tasks, grades, lessons, decisions, cost")
     s.add_argument("--days", type=float, default=7)
+    s = add("away", lazy("fmaway", "cmd_away"), tier=("Reports", 975), help="what closed, blocked, was asked or was reverted since you last spoke (T-1155)")
     s = add("outcomes", lazy("fmoutcomes", "cmd_outcomes"), tier=("Reports", 980), help="what became of finished tasks: reverted, fixed later "
                                                                  "by a task naming them, or held; track record (T-0616)")
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
