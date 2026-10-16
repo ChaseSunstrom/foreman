@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm lease drop` says how many leases it released ("Dropped 2 lease(s).") before listing what's left, so a "No leases held." after a drop no longer reads as if nothing had been taken (T-1205).
+- The guard's note for a script it couldn't parse in time says a literal scan of it found nothing to refuse, not that it ran unread (T-1202).
 - `fm round close` lists the newest 20 tasks closed in the round and counts the rest (`--json` still lists every one); the first round of 1.2.34 had printed 744 lines into the release output (T-1200).
 - A builder's brief names the main checkout's path as the one place never to cd into, write or point `git -C` at, and says its worktree is the folder it starts in and that fm verbs run there act on its lane (builders had hit Claude Code's "isolated in the worktree" refusal 31 times by leaving it) (T-1196).
 - Guard: `git checkout -- FILE`, `git checkout REV -- FILE` and `git checkout FILE` are judged as writes to those files, not the whole tree. A branch, `-b`, `.`, a glob or pathspec-magic word, `--pathspec-from-file`, `--icase-pathspecs`/`--glob-pathspecs` and `GIT_ICASE_PATHSPECS`/`GIT_GLOB_PATHSPECS` still count as tree writes (T-1195).
