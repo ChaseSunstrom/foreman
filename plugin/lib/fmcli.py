@@ -706,6 +706,8 @@ def cmd_task(args):
             until = getattr(args, "until", None)
             if until:  # T-0450: fm next names it again from then
                 b.meta["revisit"] = until
+            else:
+                b.meta.pop("revisit", None)  # T-1183: an old condition must not reopen this block at once
             b.append_log((f"{status}: {reason}" if reason else status) + (f" (revisit {until})" if until else ""))
         until = getattr(args, "until", None)
         if until and until.startswith("when "):  # T-0958: the file's hash kept, so fm next can tell a change
@@ -714,8 +716,14 @@ def cmd_task(args):
             except ValueError as e:
                 raise UsageError(str(e).replace("--revisit", "--until"))
             args.until = until
+        elif until and until.split(" ", 1)[0] in ("installed", "exists"):  # T-1183: structured, never a command
+            args.until = c.until_condition(p.root, until)
+            if not args.until:
+                raise UsageError("--until \"installed NAME\" takes a plain program name; \"exists PATH\" a path inside "
+                                 "the project or your home folder")
         elif until and not re.fullmatch(r"\d{4}-\d\d-\d\d", until):
-            raise UsageError("--until takes a date, YYYY-MM-DD, or \"when PATH changes\"")
+            raise UsageError("--until takes a date, YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or "
+                             "\"exists PATH\"")
         cur = need_brief(p, args.id)
         if cur.status in c.CLOSED and status not in c.TRANSITIONS[cur.status]:  # T-0679 chaos test: dropped → blocked
             raise c.PolicyError(f"{cur.id} is {cur.status}: reopen it first (fm task set {cur.id} status=planned)")
@@ -4856,6 +4864,8 @@ def build_parser():
     t = tadd("block")
     t.add_argument("id")
     t.add_argument("reason")
+    t.add_argument("--until", help="YYYY-MM-DD, \"when PATH changes\", \"installed NAME\" or \"exists PATH\": fm next "
+                                   "names it again once that holds (T-1183)")
     t = tadd("drop")
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
@@ -4864,7 +4874,7 @@ def build_parser():
     t.add_argument("id")
     t.add_argument("reason", nargs="?")
     t.add_argument("--until", help="YYYY-MM-DD: fm next names it again from that day (T-0450); \"when PATH changes\": "
-                                   "once that file changes (T-0958)")
+                                   "once that file changes (T-0958); \"installed NAME\" / \"exists PATH\" (T-1183)")
 
     s = add("map", lazy("fmmap", "cmd_map"), tier=("Finding your way", 370), help="project map: gates, layout, entry points, hot files, test links")
     s.add_argument("--rebuild", action="store_true", help="rebuild even though HEAD hasn't moved")
