@@ -2161,3 +2161,14 @@ test('off the terminal no tree is drawn and nothing is compacted (T-1040 review)
   expect(await edit.find({ type: 'Text', text: /^line 6$/ })).toBeDefined() // the full row's eight changed lines
   await edit.unmount()
 })
+
+test('the forever loop shows its round in the pane head and the band (T-1057)', async ($, on) => {
+  world(on, [{ ...VIEW, loop: { on: true, round: 2, dry: 1 } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /∞ round 2 · 1 dry/ })).toBeDefined()
+  await pane.unmount()
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
+  expect(await ui.find({ type: 'Text', text: /∞ round 2/ })).toBeDefined()
+  await ui.unmount()
+})
