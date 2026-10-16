@@ -265,7 +265,7 @@ def _fingerprint(b):
 def _next_runnable(p, skip, told, fit=False):
     briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: never another lane's task
     meta = c.read_meta(p)
-    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
+    pending, autonomy = c.pending_tasks(meta), c.effective_autonomy(p, meta)  # T-1061
     act = c.active_brief(briefs, p.lane)
     queue = c.order_queue(briefs)[0]
     if fit:  # T-0732: small first, so more finish before a limit; a task waiting on an open one keeps waiting
@@ -351,7 +351,7 @@ def _batch(p, head, skip, n):
     are pairwise disjoint, nothing unfinished they depend on, nothing waiting on the user. One task: run as before."""
     briefs = c.lane_view(c.load_briefs(p), p.lane)
     by_id, meta = {b.id: b for b in c.load_briefs(p)}, c.read_meta(p)
-    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
+    pending, autonomy = c.pending_tasks(meta), c.effective_autonomy(p, meta)
 
     def free(b):
         return (b.tier in ("S", "M") and b.status == "planned" and b.meta.get("scope") and b.id not in skip
