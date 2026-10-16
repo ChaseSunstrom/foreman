@@ -2052,6 +2052,8 @@ def waits_on_user(b, pending, autonomy="standard"):
     """Why a task can't be worked without the user (drive and fm run both skip it), else None."""
     if b.id in pending:
         return "pending approval"
+    if b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):  # T-1127: fmcost.check_cap
+        return "cost cap hit"
     return "plan approval" if needs_approval(b, autonomy) else None
 
 
@@ -2638,6 +2640,9 @@ def next_for(p, briefs=None):
     if b is not None and b.tier == "L" and b.status == "planned" and not b.meta.get("approved") \
             and not b.section("Plan review").strip():  # T-0662: L plans get a second read before approval
         action += f" · before approving it: fm second plan {b.id} (another model reads the plan; protocols.json)"
+    if b is not None and b.meta.get("cost_cap") and str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):  # T-1127
+        action = (f"{b.id}: its cost cap was hit (fm cost --task {b.id}): fm checkpoint and tell the user; they raise "
+                  f"it (fm task set {b.id} cost_cap=…) or close it · then: " + action)
     rung = stuck_rung(b) if b is not None and b.status == "active" else None
     if rung:  # T-0611: the escalation ladder, from this step's failed runs and open hypotheses
         action += f" · {rung}"
