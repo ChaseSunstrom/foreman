@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.38 — 2026-10-16
 - Benchmarks page opens with "Why use Foreman": the measured safety result, the record each task leaves, what the quality runs show (both sides pass; Foreman costs about 10% more on Sonnet) and what they can't show yet (T-1241)
 - Benchmarks page: chart labels sit above their bars at full width, so a long task name can't run outside its card; table cells read "✓ 3 of 3 runs"; times are whole seconds; the per-task charts' text is larger on phones (T-1239)
 
