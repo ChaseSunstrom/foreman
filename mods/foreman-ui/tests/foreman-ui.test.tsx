@@ -1724,6 +1724,32 @@ test('the tree is sticky: one height all turn with a blank row under it, time ba
   await back.unmount()
 })
 
+test('a new session starts the band tree at its own height, not the last session\'s (T-1041)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  panes.shown = true
+  let pads = 0
+  const rows = async () => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+    const n = ((await ui.find({ key: 'fm-band-tree' }))!.children as unknown[]).length
+    pads = (await ui.findAll({ type: 'Text' })).filter(t => String(t.key).startsWith('tree-pad-')).length
+    await ui.unmount()
+    return n
+  }
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'first look' })
+  const small = await rows()
+  for (let i = 0; i < 4; i++) await $.tool.call({ tool: 'Read', file_path: `/repo/x${i}.py`, agentId: `ag${i}` } as never)
+  const tall = await rows()
+  expect(tall).toBeGreaterThan(small)
+  for (let i = 0; i < 4; i++) await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: `a${i}`, reason: 'answer', agentId: `ag${i}` })
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // t1 never completed
+  await $.turn.start({ text: 'again', turnId: 't2' })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'first look' })
+  expect(await rows()).toBeLessThan(tall)
+  expect(pads).toBeLessThanOrEqual(small - 3) // only the minimum height's padding; none kept from the tall tree
+})
+
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
   const doneTwo = { ...VIEW, active: { ...VIEW.active!, steps: VIEW.active!.steps.map(s => ({ ...s, done: true, current: false })) } }
   const { clock } = world(on, [VIEW, doneTwo])
