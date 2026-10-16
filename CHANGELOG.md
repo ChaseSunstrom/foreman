@@ -11,6 +11,7 @@
 - `fm guard try "CMD"` (or `--tool Edit --path P`) prints the guard's real decision for this session (task, grants, cwd) without running anything, so a false block can be checked before a retry (T-1146).
 - `fm loop round` run again during a round shows that round's brief instead of counting it dry and starting the next one; `fm loop round --next` (what `fm next` says once the round's work has drained) ends it (T-1153).
 - A mistyped `fm` command prints the nearest match and points at `fm help` instead of listing all ~170 commands (T-1170).
+- The band reads "step 2/3" (the step being worked) beside that step's text instead of "1/3", and drops the "→" line when it only repeats that step (T-1154).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).

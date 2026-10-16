@@ -294,9 +294,9 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
     expect(await ui.find({ type: 'Text', text: 'FIX' })).toBeDefined() // T-0122: the type is a coloured word
     expect(await ui.find({ type: 'Text', text: 'medium' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Login times out/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'step 2/2' })).toBeDefined() // T-1154: the current step's number
     expect(await ui.find({ type: 'Text', text: /raise the timeout/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeUndefined() // the head says it already
     expect(await ui.find({ type: 'Text', text: 'standard' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /\bq\d|\bin\d/ })).toBeUndefined() // no letter codes
     // the stage rail in small (T-0909), the step bar and today's queue bar
@@ -1001,6 +1001,9 @@ test('the look: coloured words not highlighted blocks, quiet controls, the human
   expect(await narrow.find({ type: 'Text', text: 'FIX' })).toBeDefined()
   expect(await narrow.find({ type: 'Text', text: 'today' })).toBeUndefined() // the side details drop, nothing wraps
   expect(await narrow.find({ type: 'Text', text: 'context' })).toBeUndefined()
+  // T-1154: the step's own number beside its text ('1/2' read as step 1), and no '→' line saying the same step again
+  expect(await narrow.find({ type: 'Text', text: 'step 2/2' })).toBeDefined()
+  expect(await narrow.find({ type: 'Text', text: /→ T-0007 step/ })).toBeUndefined()
   await narrow.unmount()
 })
 
