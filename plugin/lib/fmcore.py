@@ -497,6 +497,9 @@ def never_ran(cmd, code, output):
         return None
     if code == 127:
         return "command not found"
+    tail = "\n".join([l for l in (output or "").splitlines() if l.strip()][-3:])
+    if re.search(r"NO TESTS RAN|\bno tests ran\b|^Ran 0 tests\b", tail, re.M):  # T-1128: the run's own last word
+        return "no tests ran"
     for pat in (r"No module named '([\w.]+)'", r"can't open file '([^']+)'", r"([^\s:'\"]+): No such file or directory",
                 r"file or directory not found: (\S+)", r"No such file or directory: '([^']+)'"):
         for m in re.finditer(pat, output or ""):
