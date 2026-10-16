@@ -35,6 +35,8 @@ class RunModels(ServeCase):
         self.assertNotIn("--settings", read_text(os.path.join(self.tmp, "argv")))
         os.remove(os.path.join(self.tmp, "argv"))
         self.fm("task", "new", "y", "--type", "FIX", "--tier", "S", "--ac", "a", "--step", "s")  # x made no progress
+        for tool in ("bwrap", "socat"):  # T-1227: CI runners have no working bubblewrap; fm run would refuse first
+            self.stub(tool, "exit 0\n")
         self.fm("run", "--max", "1", "--sandbox", env=self.env(), check=False)
         argv = json.loads(read_text(os.path.join(self.tmp, "argv")).splitlines()[0])
         box = json.loads(argv[argv.index("--settings") + 1])["sandbox"]

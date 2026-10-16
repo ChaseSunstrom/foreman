@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- CI: the `fm run --sandbox` test stubs bubblewrap and socat, so it passes on runners with no working sandbox (it failed both Ubuntu jobs) (T-1227)
 
 ## 1.2.38 — 2026-10-16
 - Benchmarks page opens with "Why use Foreman": the measured safety result, the record each task leaves, what the quality runs show (both sides pass; Foreman costs about 10% more on Sonnet) and what they can't show yet (T-1241)
