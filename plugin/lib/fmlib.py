@@ -10,6 +10,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import tomllib
 
@@ -149,6 +150,43 @@ def lint(root=CARDS):
     for x in parsed.values():
         notes += [f"{x['name']}: related {r!r} has no card" for r in x.get("related") or [] if r not in names]
     return problems, notes
+
+
+_DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
+
+
+def uncovered_deps(roots, asked=()):
+    """T-1037: dependency -> number of roots using it, for those no card's dep: signal covers (and not in asked)."""
+    pats = {_norm(s[4:]) for card in cards() for s in card.get("detect") or [] if s.startswith("dep:")}
+    exact, globs = {x for x in pats if "*" not in x}, [x for x in pats if "*" in x]
+    seen = collections.Counter()
+    for root in list(roots)[:30]:
+        try:
+            deps = signals(root)["deps"]
+        except Exception:  # an unreadable project is skipped, not the scan
+            continue
+        twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
+        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
+                    and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
+    return seen
+
+
+# T-1037: text from a dependency's README or docs is data; a card that tells the agent to run web commands or switch
+# checks off never joins the library.
+_UNTRUSTED = re.compile(
+    r"(curl|wget|iwr|Invoke-WebRequest)\b[^\n]*\|\s*(sudo\s+)?(ba|z)?sh\b"
+    r"|\b(ignore|disregard|forget)\b[^\n]{0,30}\b(previous|prior|above|earlier|all)\b[^\n]{0,20}\binstructions?\b"
+    r"|--no-verify\b|--no-gpg-sign\b|\b(disable|skip|turn off|bypass)\b[^\n]{0,20}\b(tests?|checks?|lint\w*|hooks?|guards?|verification)\b"
+    r"|\bchmod\s+-R?\s*777\b|\bsudo\s+rm\b", re.I)
+
+
+def admit_problems(path):
+    """lint_card's problems for a staged card, plus any instruction-like text from outside."""
+    found = lint_card(path)
+    with open(path, encoding="utf-8") as f:
+        found += [f"untrusted text: {m.group(0)[:60]!r} (a card never tells the agent to run web commands or switch "
+                  f"checks off)" for m in _UNTRUSTED.finditer(f.read())]
+    return found
 
 
 def lint_card(path):
@@ -807,6 +845,7 @@ def _log_use(args, names):
 def cmd_lib(args):
     import fmcli
     words = " ".join(args.words or [])
+    DRAFTS = os.path.join(c.state_dir(), "lib-drafts")  # T-1037: staged cards, not yet in the library
     if args.action == "source":
         return cmd_source(args)
     if args.action == "stats":  # T-1036: which cards reach Claude, from the ledger's card_injected events
@@ -838,6 +877,42 @@ def cmd_lib(args):
             not p or c.read_meta(p).get("lib_inject") is not False
         return print(f"Edit-time stack cards: {'on' if on else 'off'} (the first edit of a file a card covers gets its "
                      f"Avoid section, once per card per task; FOREMAN_NO_CARDS=1 turns it off for one session).")
+    if args.action == "gaps":  # T-1037: dependencies no card covers, across registered projects (or --root)
+        roots = args.root or [x.root for x, _ in c.all_projects() if x.root and os.path.isdir(x.root)]
+        rows = [{"dep": d, "projects": n} for d, n in sorted(uncovered_deps(roots).items(), key=lambda kv: (-kv[1], kv[0]))]
+        return fmcli.out(args, rows, "\n".join(f"{r['projects']:>3}  {r['dep']}" for r in rows[:50])
+                         + f"\n{len(rows)} uncovered dependencies (fm lib draft NAME --area AREA stages a card)"
+                         if rows else "Every dependency in these projects has a card.")
+    if args.action == "draft":  # stage a skeleton under the state folder; fill it from the package's real docs
+        if not words or not args.area or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", words) or \
+                not re.fullmatch(r"[a-z0-9-]+", args.area):
+            raise fmcli.UsageError("fm lib draft NAME --area AREA (NAME kebab-case)")
+        path = os.path.join(DRAFTS, args.area, words + ".md")
+        if os.path.exists(path):
+            raise fmcli.UsageError(f"{path} is already staged")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        body = "".join(f"\n## {s}\n- TODO\n" for s in SECTIONS)
+        c.write_atomic(path, f"---\nname: {words}\ntitle: {words}\narea: {args.area}\ntags: [{args.area}]\n"
+                             f"detect: [dep:{words}]\nrelated: []\n---\nTODO one sentence.\n{body}")
+        return print(f"Staged {path}: fill it from the package's own docs to the spec in plugin/skills/library/SKILL.md, "
+                     f"then fm lib admit {words}")
+    if args.action == "admit":  # lint a staged card; move it into the library only if it is clean
+        if not words:
+            raise fmcli.UsageError("fm lib admit needs a staged card's path or name")
+        path = words if os.path.isfile(words) else next(iter(glob.glob(os.path.join(DRAFTS, "*", words + ".md"))), "")
+        if not path:
+            raise fmcli.UsageError(f"no staged card {words!r} (fm lib draft stages one)")
+        path, into = os.path.abspath(path), args.into or CARDS
+        problems = admit_problems(path)
+        dest = os.path.join(into, os.path.basename(os.path.dirname(path)), os.path.basename(path))
+        if os.path.exists(dest) or glob.glob(os.path.join(into, "*", os.path.basename(path))):
+            problems.append(f"{os.path.basename(path)}: the library already has a card with that name")
+        if problems:
+            print("\n".join(problems) + "\nNot admitted; the draft stays staged.")
+            raise SystemExit(1)
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        shutil.move(path, dest)
+        return print(f"Admitted {os.path.relpath(dest, into)}.")
     if args.action == "check":
         problems, notes = lint()
         n = len(cards())
