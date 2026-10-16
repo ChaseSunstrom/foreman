@@ -3157,8 +3157,20 @@ def verify_of(criterion_text):
     return m.group(1) if m else None
 
 
-_SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|token|passw|credential|session|login|oauth|jwt|permission|acl|"
-                             r"sandbox|guard|sudo|security|keyring|signing)")
+_SENSITIVE_PATH = re.compile(r"(?i)(auth|crypt|secret|passw|credential|oauth|jwt|sandbox|guard|sudo|keyring|csrf|"
+                             r"xss|saniti[sz])")
+# T-1231: these only at the end of a word of the path (usertoken.py, APIToken.ts) or before a service-like suffix
+# (sessionmanager.go); kit/tokenbucket.py, tokenizer.py and oracle.py aren't auth code
+_SENSITIVE_WORD = re.compile(r"(?i)^[a-z0-9]*(tokens?|sessions?|logins?|signin|permissions?|acls?|security|signing|"
+                             r"signers?|cookies?)$")
+_SENSITIVE_RUNON = re.compile(r"(?i)^(tokens?|sessions?|logins?|permissions?|acls?)(manager|store|handler|service|"
+                              r"provider|helper|middleware|util|utils|cache)s?$")
+
+
+def _sensitive_path(f):
+    words = [w for w in re.split(r"[^A-Za-z0-9]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", f) if w]
+    return bool(_SENSITIVE_PATH.search(f)) or any(_SENSITIVE_WORD.match(w) or _SENSITIVE_RUNON.match(w)
+                                                  for w in words)
 _SENSITIVE_CODE = re.compile(r"(pickle\.loads?\(|yaml\.load\(|marshal\.loads?\(|\beval\(|\bexec\(|shell=True|"
                              r"os\.system\(|verify=False|innerHTML|dangerouslySetInnerHTML|\bmd5\(|\bsha1\(|"
                              r"deseriali[sz]e|"
@@ -3178,7 +3190,7 @@ _MANIFEST = re.compile(r"(^|/)(package(-lock)?\.json|yarn\.lock|pnpm-lock\.yaml|
 def sensitive(files, diff=""):
     """Why a change needs the adversary lens whatever its tier (T-0049): auth, crypto, secrets, exec or
     deserialization in the paths it touched or the lines it added. [] when none."""
-    why = [f for f in files if _SENSITIVE_PATH.search(f) or _MANIFEST.search(f)][:5]
+    why = [f for f in files if _sensitive_path(f) or _MANIFEST.search(f)][:5]
     blocks = re.split(r"(?m)^(?=diff --git )", diff)
     if any(b.startswith("diff --git ") for b in blocks):  # docs that name a pattern aren't code (T-0287); all else is
         blocks = [b for b in blocks if not re.search(r"(?i)\.(md|markdown|rst|txt|adoc)$", (

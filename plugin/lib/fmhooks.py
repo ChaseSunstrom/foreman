@@ -581,25 +581,30 @@ def _first_brief(p, sid):
     task: a brief from that request (its tag's type, a guessed tier, its DONE-WHEN lines as criteria), focused. The
     duel's Foreman sessions each spent two turns on the refusal and fm task new. Returns the note for the agent, or
     None. Review: one request with one item that reads as work; parallel edits make one task (a lock)."""
-    if not sid or c.effective_autonomy(p) != "full" or c.active_brief_fast(p, getattr(p, "lane", None)):
+    if not sid or c.effective_autonomy(p) != "full":
         return None
-    mine = [e for e in c.ledger_tail(p, 400) if e.get("session_id") == sid]
+    if c.active_brief_fast(p, getattr(p, "lane", None)):
+        return ""  # review: a parallel edit's hook made it a moment ago; the caller re-runs the guard with it
+    mine = [e for e in c.ledger_tail(p, 3000) if e.get("session_id") == sid]
     asks = [str((e.get("data") or {}).get("text") or "") for e in mine if e.get("event") == "prompt"]
     if len(asks) != 1 or not asks[0].strip() or any(e.get("event") in ("task_new", "focus") for e in mine):
         return None
     r = c.parse_intake(asks[0])
-    if len(r.items) > 1 or not r.items and not c.is_work_request(asks[0]):
+    head = re.sub(r"(?i)^\s*task:\s*", "", asks[0]).strip()  # a bench or scripted prompt's "Task: <request>"
+    first_line = head.splitlines()[0] if head else ""
+    if len(r.items) > 1 or c.is_plan_only(asks[0]) or c.is_open_ended(first_line) or \
+            not r.items and not c._WORK_VERB.match(first_line):  # review: a plan-only or open-ended ask isn't S work
         return None
     first = r.items[0] if r.items else None
     type_ = first.type if first else "FEATURE"
-    title = c.fit(c.plain((first.text if first else asks[0]).strip().splitlines()[0]), 90)
+    title = c.fit(c.plain((first.text if first else head).strip().splitlines()[0]), 90)
     done = (r.done_when or (first.own.get("done_when") if first else None) or ["the request is done as asked"])[:6]
     tier = "L" if c.guess_tier(type_, asks[0]) == "L" else "M" if type_ == "SECURITY" else "S"  # S: the cheap close
     import fcntl
     with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         if c.active_brief_fast(p, getattr(p, "lane", None)):
-            return None  # a parallel edit's hook made it a moment ago: its own note said so
+            return ""  # a parallel edit's hook made it a moment ago: its own note said so
         cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
                "--step", "do what the request asks", "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
         r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
@@ -609,9 +614,9 @@ def _first_brief(p, sid):
         log_error("PreToolUse", f"first brief: {r.stderr.strip()[-300:]}")
         return None
     return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
-            f"{len(done)} criterion(s) from it. Retry the edit. To finish: fm task finish --audit \"<how>\" "
-            f"--run \"<the test command>\" (criteria without a check of their own use --run). Wrong size? "
-            f"fm task set {act.id} tier=S|M|L.")
+            f"{len(done)} criterion(s) from it; this edit goes ahead. When the work is written, one call runs the "
+            f"tests, closes the task and commits: fm task finish --run \"<the test command>\" --audit \"<how you "
+            f"checked it>\" --commit \"<message>\". Wrong size? fm task set {act.id} tier=S|M|L.")
 
 
 _PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
@@ -1283,15 +1288,18 @@ def _pre_tool_use(raw):
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
+    made = None
     if block and block.category == "brief" and p:
         try:
             made = _first_brief(p, pl.get("session_id"))
+            if made is not None:  # the whole guard again, with the task active: the edit goes ahead if nothing stops it
+                ctx, p, act, found, block = _guard_decision(pl, guard)
         except Exception:
             log_error("PreToolUse", _tb())
-            made = None
-        if made:  # refused once more, so the retry meets the whole guard with the task active
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                                     "permissionDecisionReason": made}}))
+                                                     "permissionDecisionReason": (
+                "Foreman: making this session's task failed partway, so a task may exist now: check fm status, then "
+                "retry the edit (or start one: fm task new … --focus).")}}))
             return 0
     if block:
         reason = guard.message(block, ctx)
@@ -1391,7 +1399,7 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        note = " ".join(filter(None, [saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        note = " ".join(filter(None, [made, saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
