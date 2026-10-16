@@ -2511,9 +2511,35 @@ def revisit_tag(root, trigger):
     return f"[revisit: when {os.path.relpath(path, top)} changes @{file_digest(path)}]"
 
 
+_UNTIL_NAME = re.compile(r"[\w.+-]{1,64}")
+
+
+def _until_path(root, rel):
+    """The real path of an `exists` condition when it is inside the project or the home folder, else None."""
+    if not rel or len(rel) > 300 or any(ord(ch) < 32 for ch in rel):
+        return None
+    path = os.path.realpath(os.path.join(root, os.path.expanduser(rel)))
+    return path if any(path.startswith(os.path.realpath(t) + os.sep) for t in (root, os.path.expanduser("~"))) else None
+
+
+def until_condition(root, text):
+    """T-1183: `installed NAME` | `exists PATH` as stored in the brief, or None when text is neither (never a command)."""
+    m = re.fullmatch(r"(installed|exists) (.+)", text.strip())
+    if not m or (m.group(1) == "installed" and not _UNTIL_NAME.fullmatch(m.group(2))):
+        return None
+    if m.group(1) == "exists":
+        path = _until_path(root, m.group(2))
+        return f"exists {m.group(2)}" if path else None
+    return f"installed {m.group(2)}"
+
+
 def deferral_due(root, revisit, today):
-    """T-0450 a date that came; T-0958 "when PATH changes @hash" (fm task defer --until): the file changed or is gone.
-    A path outside the project is never read."""
+    """T-0450 a date that came; T-0958 "when PATH changes @hash" (fm task defer --until): the file changed or is gone;
+    T-1183 `installed NAME` on PATH, `exists PATH` present. A path outside the project is never read."""
+    cond = until_condition(root, revisit) if revisit else None
+    if cond:
+        kind, arg = cond.split(" ", 1)
+        return bool(shutil.which(arg)) if kind == "installed" else os.path.exists(_until_path(root, arg) or "")
     m = _REVISIT_TAG.fullmatch(f"[revisit: {revisit}]") if revisit else None
     if not m or m.group(1):
         return str(revisit or "9999") <= today
