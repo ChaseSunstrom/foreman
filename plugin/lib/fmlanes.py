@@ -8,6 +8,7 @@ import functools
 import io
 import os
 import re
+import time
 
 import fmcore as c
 
@@ -42,6 +43,13 @@ def cmd_lane(args):
                          + ("; ".join(f"{b.id} {b.status} {c.fit(b.title, 50)}" for b in tasks) or "no task")
                          + (f" — fm lane rm {tasks[0].id} frees it" if gone and tasks else "")
                          + (f" — ANDON: {c.fit(rows[-1]['andon'], 120)}" if andon else ""))
+        idle = stalled(p, briefs)
+        for i, r in enumerate(rows):
+            tid = r["tasks"][0]["id"] if r["tasks"] else None
+            r["stalled_min"] = round(idle[tid]) if tid in idle else None
+            if r["stalled_min"] is not None:
+                lines[i] += (f" — STALLED {r['stalled_min']} min: no edit, commit or event; stop the agent, then "
+                             f"fm lane resume {tid} --force \"hung\"")
         listed = {r["path"] for r in rows}
         for b in briefs:  # review: a task whose lane folder is gone is still held; say how to free it
             if b.meta.get("lane") and b.meta["lane"] not in listed and b.status not in c.CLOSED:
@@ -162,6 +170,72 @@ def stopped(p, briefs=None):
     return [b.id for b in (c.load_briefs(p) if briefs is None else briefs)
             if b.meta.get("builder_proc") and b.meta.get("lane") and b.status not in c.CLOSED
             and fmbus.proc_state(b.meta["builder_proc"]) == "stopped"]
+
+
+def stalled(p, briefs=None):
+    """T-1156: {task id: minutes} for live builders whose lane shows no file change (tracked or untracked, not ignored), no
+    commit and no ledger event for FM_STALL_MIN minutes (default 15): a hang, not slow work."""
+    import json
+
+    try:
+        limit = float(os.environ.get("FM_STALL_MIN") or 15)
+    except ValueError:
+        limit = 15
+    limit = limit if limit > 0 else 15
+    try:
+        ttl = float(os.environ.get("FM_STALL_CACHE_S") or 60)
+    except ValueError:
+        ttl = 60
+    cache = os.path.join(p.dir, "stalled.json")  # fm next runs every turn: don't re-stat the lanes each time
+    try:
+        if briefs is None and ttl > 0 and time.time() - os.stat(cache).st_mtime < ttl:
+            with open(cache) as f:
+                return json.load(f)
+    except (OSError, ValueError):
+        pass
+    out = _stalled(p, briefs, limit)
+    if briefs is None:
+        try:
+            c.write_atomic(cache, json.dumps(out))
+        except OSError:
+            pass
+    return out
+
+
+def _stalled(p, briefs, limit):
+    import fmbus
+    git = functools.partial(_git, timeout=10)
+    main = c.main_worktree(p.root) or p.root
+    base = git(main, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() or "HEAD"
+    now, out, events = time.time(), {}, None
+    for b in (c.load_briefs(p) if briefs is None else briefs):
+        path = b.meta.get("lane")
+        if (not b.meta.get("builder_proc") or not path or b.status in c.CLOSED or not os.path.isdir(path)
+                or fmbus.proc_state(b.meta["builder_proc"]) != "alive"):
+            continue
+        # builder_proc is the main session's, alive after the builder returns: a returned builder (commits ahead, clean
+        # tree) or a merged lane waits on review, it isn't hung
+        events = c.ledger_tail(p, 500) if events is None else events
+        mine = [e for e in events if e.get("task") == b.id]
+        if mine and mine[-1].get("event") in ("lane_merge", "hollow_return"):
+            continue
+        ahead = git(path, "rev-list", "--count", "HEAD", "--not", base).stdout.strip()
+        if ahead not in ("", "0") and not git(path, "status", "--porcelain").stdout.strip():
+            continue
+        newest = 0.0
+        files = git(path, "ls-files", "-co", "--exclude-standard").stdout.splitlines()
+        for f in files[:20000]:  # ponytail: a lane past 20000 files is judged on these
+            try:
+                newest = max(newest, os.stat(os.path.join(path, f)).st_mtime)
+            except OSError:
+                pass
+        newest = max(newest, float(git(path, "log", "-1", "--format=%ct").stdout.strip() or 0))
+        for e in mine:
+            if t := c.parse_ts(e.get("ts")):
+                newest = max(newest, t.timestamp())
+        if (idle := (now - newest) / 60) >= limit:
+            out[b.id] = idle
+    return out
 
 
 def _ignored(path):
