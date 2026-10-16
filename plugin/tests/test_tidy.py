@@ -512,6 +512,11 @@ class Rollback(TidyCase):
         self.fm("rollback", "--yes")
         self.assertEqual(c.brief_paths(self.p), [])
 
+    def test_an_abbreviated_yes_is_an_error(self):
+        self.snap()
+        self.assertNotEqual(self.fm("rollback", "--ye", check=False).returncode, 0)
+        self.assertEqual(self.fm("rollback", "--list", check=False).returncode, 0)
+
     def test_a_tampered_snapshot_is_refused(self):
         self.snap()
         d = os.path.join(c.state_dir(), "snapshots")
