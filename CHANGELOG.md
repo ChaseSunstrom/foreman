@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.39 — 2026-10-16
 - Benchmarks page: one long Haiku session of eight requests compacting at 40,000 tokens. Foreman passed every hidden test in all 3 runs (4, 4 and 2 compactions); Claude Code on its own in 1 of 3 (89, 64 and 105 of 105), its misses written after its first compaction. Foreman cost about 60% more ($0.09 against $0.06). In a marathon, Foreman went on through seven compactions and fixed three things nobody asked for. "Why use Foreman" now says so (T-1242)
 - Site review fixes (T-1220): the duel table escapes task names; `site/build.py` refuses to wipe the repo, `site/`, the home folder or `/`; `site/stats.py --duel NAME=…` keeps the other saved duels; line charts no longer fill a wedge under the line, and an empty one says so; wrapped inline code keeps its padding
 - Long sessions in the bench (T-1242): `fm bench build --commits R --verify CMD --together` makes one case asking for a range's requests at once, graded by all their hidden tests; `fm bench duel --compact-at TOKENS` makes both arms compact early, as a long session does, and counts the compactions; results count the hidden tests passing. `--marathon N` lets Foreman's arm keep going after the asked work: N passes of finding and doing work nobody asked for, test first, until its dollar cap; each pass looks a different way (inputs its tests miss, docs against code, vague errors, untested functions, duplicated logic). Results count each request's failing hidden tests, and rules written above the first `## Request` go with every request
