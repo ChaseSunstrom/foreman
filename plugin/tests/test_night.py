@@ -122,7 +122,10 @@ class Night(ForemanTestCase):
         self.fm("task", "new", "Small", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         p = c.find_project(self.repo)
 
+        seen = []
+
         def fake(argv, **kw):  # fm run closing T-0001
+            seen.append(argv)
             c.log_event(p, "task_done", task="T-0001", data={})
             return mock.Mock(returncode=0, stdout="finished 1", stderr="")
         args = argparse.Namespace(only=["queue"], max_usd=5.0, dry_run=False, json=True, print_timer=False, project=None)
@@ -133,6 +136,7 @@ class Night(ForemanTestCase):
                 fmnight.cmd_night(args)
         finally:
             os.chdir(cwd)
+        self.assertEqual(seen[0][seen[0].index("--max-usd") + 1], "5.0000")  # the night's remaining budget
         night = [e for e in c.ledger_tail(p, 50) if e.get("event") == "night"][-1]
         self.assertEqual(night["data"]["closed"], ["T-0001"])
         self.assertIn("closed T-0001", self.fm("digest").stdout)
