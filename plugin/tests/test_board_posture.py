@@ -6,7 +6,7 @@ import shlex
 import subprocess
 import sys
 
-from helpers import ForemanTestCase, read_json
+from helpers import ForemanTestCase, read_json, read_text
 import test_bench_family as tbf
 
 import fmcore as c
@@ -117,3 +117,23 @@ class BoardPostureBench(tbf._Bench):
         self.assertIn("hooks/hook", hooks[0]["hooks"][0]["command"], "the bare arm keeps the guard (bypass mode)")
         self.assertIn("none", res["with"])
         self.assertIn("verdict", res)
+
+    def test_a_duel_skips_court_cases_and_runs_each_case_n_times_in_parallel(self):
+        # T-1231: court cases test what Foreman learned from this user's state; a fresh duel has none, so both arms
+        # failed them and the duel's first run read as noise
+        self.fm("bench", "build", env=self.env)
+        path = os.path.join(c.find_project(self.repo).dir, "bench", "cases.json")
+        cases = json.loads(read_text(path))
+        court = dict(cases[0], id="R-T-0001-abcdef", type="COURT", judge=True, rubric=["honours a steer"])
+        with open(path, "w") as f:
+            json.dump(cases + [court], f)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--runs", "2", "--jobs", "2", "--max", "9",
+                                 "--json", env=self.env).stdout)
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual(len(tasks), len(cases) * 2 * 2, "every non-court case, both arms, twice")
+        arm = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "bench", "results", res["with"] + ".json")))
+        self.assertEqual([x["id"] for x in arm["cases"]], [x["id"] for x in cases], "case order kept")
+        self.assertEqual(arm["cases"][0]["runs"], 2)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--ids", court["id"], "--json", env=self.env).stdout)
+        arm = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "bench", "results", res["with"] + ".json")))
+        self.assertEqual([x["id"] for x in arm["cases"]], [court["id"]], "named, a court case runs")

@@ -15,6 +15,7 @@ import shutil
 import string
 import subprocess
 import tempfile
+import threading
 import time
 from collections import Counter, defaultdict
 
@@ -502,6 +503,18 @@ def never_ran(cmd, code, output):
         return "no tests ran"
     if re.search(r"Missing script:|ERR_PNPM_NO_SCRIPT|^error Command \"[^\"]+\" not found", output or "", re.M):
         return "no such script"  # T-1133: npm, pnpm, yarn: the package has no script by that name
+    # T-1231: the test module the command names couldn't import a module that is in the repo (run outside the
+    # suite's path): the check never ran. Review: not when the module is missing from the repo or a name in it is
+    # (the change broke it), not on a SyntaxError, and not when any other test failed in the same run.
+    out = output or ""
+    m = re.search(r"Failed to import test module: ([\w.]+)|ImportError while importing test module '([^']+)'", out)
+    missing = re.findall(r"ModuleNotFoundError: No module named '([\w.]+)'", out)
+    real = [x for x in re.findall(r"^(?:FAIL|ERROR): .*$|^FAILED \S+::.*$", out, re.M) if "_FailedTest" not in x]
+    if m and missing and not real and not re.search(r"\b(SyntaxError|cannot import name)\b", out) \
+            and all(_in_repo(x) for x in missing):
+        name = m.group(1) or m.group(2)
+        if name in cmd or os.path.basename(name) in cmd or name.replace(".", "/") in cmd:
+            return f"the test module {c_short(name)} couldn't import"
     for pat in (r"No module named '([\w.]+)'", r"can't open file '([^']+)'", r"([^\s:'\"]+): No such file or directory",
                 r"file or directory not found: (\S+)", r"No such file or directory: '([^']+)'"):
         for m in re.finditer(pat, output or ""):
@@ -509,6 +522,16 @@ def never_ran(cmd, code, output):
             if name and (name in cmd or os.path.basename(name) in cmd or name.replace(".", "/") in cmd):
                 return f"no {c_short(name)}"
     return None
+
+
+def _in_repo(module):
+    """Whether a top-level module of this name is a file or package somewhere in the repo here."""
+    top, root = module.split(".")[0], git_root(os.getcwd()) or os.getcwd()
+    for d, dirs, files in os.walk(root):
+        dirs[:] = [x for x in dirs if x not in (".git", "node_modules", ".venv", "venv", "__pycache__", "dist", "build")]
+        if f"{top}.py" in files or top in dirs and os.path.exists(os.path.join(d, top, "__init__.py")):
+            return True
+    return False
 
 
 def c_short(name):
@@ -893,6 +916,7 @@ def global_events(since):
                 yield e
 
 
+_TAIL_LOCK = threading.Lock()  # T-1231 review: fm bench --jobs reads ledgers from several threads
 _TAIL_MEMO = {}  # T-1082: path -> ((inode, size, mtime_ns), [record or None per line]): one read per unchanged file
 TAIL_MEMO_MAX, TAIL_MEMO_FILES = 20000, 8
 
@@ -914,10 +938,11 @@ def tail_jsonl(path, n=200):
         return [dict(e) if isinstance(e, dict) else e for e in hit[1][-n:] if e is not None]
     rows = _tail_rows(path, n)
     if key and n <= TAIL_MEMO_MAX:
-        _TAIL_MEMO.pop(path, None)
-        while len(_TAIL_MEMO) >= TAIL_MEMO_FILES:
-            _TAIL_MEMO.pop(next(iter(_TAIL_MEMO)))
-        _TAIL_MEMO[path] = (key, rows, len(rows) < n)  # fewer lines than asked: the whole file
+        with _TAIL_LOCK:
+            _TAIL_MEMO.pop(path, None)
+            while len(_TAIL_MEMO) >= TAIL_MEMO_FILES:
+                _TAIL_MEMO.pop(next(iter(_TAIL_MEMO)))
+            _TAIL_MEMO[path] = (key, rows, len(rows) < n)  # fewer lines than asked: the whole file
         return [dict(e) if isinstance(e, dict) else e for e in rows if e is not None]
     return [e for e in rows if e is not None]  # not kept: nobody else holds these
 
