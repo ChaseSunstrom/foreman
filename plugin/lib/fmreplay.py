@@ -50,6 +50,35 @@ def corpus(days=DAYS, cap=MAX):
     return out
 
 
+def events(days=DAYS):
+    """T-1058: every tool call in recent session logs as {session, text (what it did), result (its output), errored}."""
+    for path in _logs(days):
+        calls, order = {}, []
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    content = (entry.get("message") or {}).get("content") if isinstance(entry, dict) else None
+                    for b in content if isinstance(content, list) else []:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get("type") == "tool_use" and isinstance(b.get("input"), dict):
+                            text = " ".join(str(v) for v in b["input"].values())
+                            calls[b.get("id")] = {"session": path, "text": text, "result": "", "errored": False}
+                            order.append(b.get("id"))
+                        elif b.get("type") == "tool_result" and b.get("tool_use_id") in calls:
+                            r = b.get("content")
+                            calls[b["tool_use_id"]].update(
+                                result=r if isinstance(r, str) else json.dumps(r), errored=bool(b.get("is_error")))
+        except OSError:
+            continue
+        for i in order:
+            yield calls[i]
+
+
 def _key(cmd, cwd):
     return hashlib.sha256(f"{cwd}\0{cmd}".encode("utf-8", "replace")).hexdigest()[:20]
 
