@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A website for GitHub Pages (`site/`): the recorded session, the eight stations every request walks, what Foreman holds Claude to, the guard refusing real commands, proof before done, builder lanes, install with copy buttons, light and dark. `.github/workflows/pages.yml` deploys it with the demo video on pushes to main once Pages is set to deploy from GitHub Actions (T-1206).
 - Guard: python fed a quoted heredoc gets the checks `python -c` code has. Python settings (PYTHONPATH, PYTHONSTARTUP…) set in the command or inherited, and a `cd` outside its own `cd DIR &&` chain, keep it refused when it names Foreman's modules (T-1204).
 - Guard: `python -c` code that names Foreman's modules only in its strings is parsed like a quoted heredoc and no longer refused as driving Foreman; real imports, dynamic code, code it can't read as one literal word, and a run folder it can't check stay refused (T-1194).
 - `fm lease drop` says how many leases it released ("Dropped 2 lease(s).") before listing what's left, so a "No leases held." after a drop no longer reads as if nothing had been taken (T-1205).
