@@ -1784,6 +1784,9 @@ def _test_first_note(pl, p, act):
         base = c.task_base(p.root, act)
         if not base or any(c.TESTISH.search(f) and c.CODE.search(f) for f in fmmap.changed(p.root, base)):
             return None
+        if act.type == "FEATURE" and _headless():  # T-1231: an unattended FEATURE needs the test, not a recorded red
+            return (f"Foreman: test first: {act.id} has no changed test yet; write the failing test and run it before "
+                    f"this edit.")
         return (f"Foreman: test first: {act.id} has no failing run and no changed test yet; write the failing test "
                 f"and record it (fm task evidence {act.id} --step N --run \"<test cmd>\") before this edit.")
     except Exception:
