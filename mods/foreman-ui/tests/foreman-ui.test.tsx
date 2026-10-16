@@ -1635,6 +1635,19 @@ test('a task block with rows to spare (a new project, no History yet) lists what
   await ui.unmount()
 })
 
+test('on a phone the pane draws every section in text at 36 columns, no wider than the screen (T-1017)', async ($, on) => {
+  world(on, [{ ...VIEW, done_days: [0, 1, 0, 2, 0, 0, 0, 0, 3, 0, 0, 1, 0, 2], today_done: 2 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'mobile', ...PANE, props: { ...PANE.props, bodyColumns: 36 } })
+  for (const key of ['fm-pane-head', 'task', 'activity', 'queue', 'today', 'fm-pane-controls']) expect(await ui.find({ key })).toBeDefined()
+  expect(await ui.findAll({ type: 'Raster' })).toEqual([])
+  expect(await ui.find({ key: 'steer' })).toBeUndefined()
+  const drawn = (await ui.findAll({ type: 'Text' })).map(t => t.props.children).filter((x): x is string => typeof x === 'string')
+  expect(drawn.filter(x => x.length > 34 && /^[\s─⣀▁▂▃▄▅▆▇█]+$/.test(x))).toEqual([]) // rules and charts fit the screen
+  await ui.unmount()
+})
+
 test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
   const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
   const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
