@@ -341,6 +341,33 @@ def _key_words(text):
                               if w not in c._VETO_STOP and w not in _STEER_STOP))
 
 
+_TYPES = (("safety", "force|delete|secret|push|destroy|rm|reset"), ("scope", "only|also|outside|just|scope"),
+          ("style", "format|name|naming|comment|lint|style|camelcase|snake"))
+
+
+def classify(text):
+    """T-1063: what a steer's shape words are about: safety, scope, style, else a wrong approach (whole words, no model)."""
+    return next((k for k, rx in _TYPES if re.search(rf"(?i)\b(?:{rx})s?\b", text or "")), "wrong approach")
+
+
+# a word the steer names as a command: anchored to the command, not to prose that says the word
+_TOKENS = {"push": r"\bgit\s+(?:-\S+\s+)*push\b", "commit": r"\bgit\s+(?:-\S+\s+)*commit\b",
+           "reset": r"\bgit\s+(?:-\S+\s+)*reset\b", "rebase": r"\bgit\s+(?:-\S+\s+)*rebase\b",
+           "force": r"(?:\s--force(?:-with-lease)?\b|\s-f\b)", "rm": r"(?:^|[;&|]\s*)rm\b"}
+
+
+def _pattern(words):
+    return "(?i)^" + "".join(rf"(?=[\s\S]*{_TOKENS.get(x) or rf'(?<![\w-]){re.escape(x)}\b'})" for x in words)
+
+
+def compile_rule(p, x, block=False):
+    """T-1063: the rule a proposal compiles to: a warn on bash (a block only on the user's --block); two shape words at
+    least, so one common word never makes a rule."""
+    if len(x["words"]) < 2:
+        raise ValueError(f"'{' '.join(x['words'])}' is one word: too loose to compile; fm taste adopt makes a veto instead")
+    return c.add_rule(p, _pattern(x["words"]), "bash", "block" if block else "warn", f"{x['type']} steer: {x['said']}")
+
+
 def _stem(w):
     # ponytail: -s/-es/-ing/-ed only ("mocks", "mocking" → "mock", "branches" → "branch"); a real stemmer if clusters miss
     s = re.sub(r"(?:ing|ed|(?:(?<=ss)|(?<=[xz])|(?<=[cs]h))es|(?<![su])s)$", "", w)
@@ -369,10 +396,12 @@ def proposals(p, ledger=None):
         shape = [x for x in group[-1][1] if all(x in ws for _, ws in group)][:3]
         standing = any(c.STANDING_STEER.search(x) for x, _ in group)  # T-0601: said as a rule, once is enough
         if (len(group) < TASTE_REPEATS and not standing) or tuple(sorted(shape)) in seen \
-                or any(h <= {_stem(x) for x in shape} for h in covered):
+                or any(h <= {_stem(x) for x in shape} for h in covered) \
+                or any(r["pattern"] == _pattern(shape) for r in c.rules(p)):  # T-1063: compiled already
             continue
         seen.add(tuple(sorted(shape)))
-        out.append({"words": shape, "count": len(group), "said": c.fit(c.plain(group[-1][0]), 160)})
+        said = c.fit(c.plain(group[-1][0]), 160)
+        out.append({"words": shape, "count": len(group), "said": said, "type": classify(" ".join(shape))})
     return out
 
 
@@ -404,7 +433,7 @@ def correction_clusters(p, ledger=None):
         seen.add(tuple(sorted(shape)))
         said = c.fit(c.plain(group[-1][0]), 160)
         pattern = "(?i)^" + "".join(rf"(?=[\s\S]*\b{re.escape(x)})" for x in shape)  # as fm rule add --from-veto
-        out.append({"words": shape, "count": len(group), "said": said,
+        out.append({"words": shape, "count": len(group), "said": said, "type": classify(" ".join(shape)),
                     "suggest": f"fm rule add {shlex.quote(pattern)} --warn --why {shlex.quote(said)}"})
     return out
 
@@ -461,10 +490,22 @@ def cmd_taste(args):
     if args.action:  # the user's one yes (or no), asked through AskUserQuestion: vetoes only add caution
         # T-1042: a bare adopt or decline takes the steer proposals; a correction cluster only by its N (numbered on)
         pick = props if args.which is None else (props + corr)[args.which - 1:args.which] if args.which > 0 else []
+        if args.action == "compile" and not args.which:  # T-1063: one rule, named; never every proposal at once
+            raise fmcli.UsageError("fm taste compile N: name the proposal (fm taste lists them)")
+        if args.block and (args.action != "compile" or any("suggest" in x for x in pick)):
+            raise fmcli.UsageError("--block is for fm taste compile N on a steer proposal; a correction compiles to a warn")
         if not pick:
             raise fmcli.UsageError(f"no proposal {args.which or ''} to {args.action}; fm taste lists them".replace("  ", " ")
                                    + (" (a correction is taken by its number)" if corr and args.which is None else ""))
-        if args.action == "adopt":
+        if args.action == "compile":  # T-1063: the steer's type decides the rule; the proposal is then covered by it
+            try:
+                compile_rule(p, pick[0], args.block)
+            except ValueError as e:
+                raise fmcli.UsageError(str(e))
+            n = len(c.rules(p))
+            kind = "block" if args.block else "warn"
+            done = f"{kind} rule {n} added (fm rule rm {n} is yours to run)"
+        elif args.action == "adopt":
             for x in pick:
                 how = "corrected" if "suggest" in x else "steered"
                 c.add_veto(p, f"{x['said']} ({how} {x['count']} times)", words=x["words"])
@@ -473,9 +514,10 @@ def cmd_taste(args):
                 meta = c.read_meta(p)
                 meta["taste_declined"] = ((meta.get("taste_declined") or []) + [x["words"] for x in pick])[-c.VETOES_KEEP:]
                 c.write_meta(p, meta)
-        c.log_event(p, f"taste_{args.action}", data={"words": [x["words"] for x in pick]}, session=c.session_id())
+        c.log_event(p, "steer_compiled" if args.action == "compile" else f"taste_{args.action}",
+                    data={"words": [x["words"] for x in pick]}, session=c.session_id())
         return fmcli.out(args, {"action": args.action, "proposals": pick},
-                         f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
+                         done if args.action == "compile" else f"{'Adopted' if args.action == 'adopt' else 'Declined'}: "
                          + "; ".join(f"never {' '.join(x['words'])}" for x in pick) + ".")
     t = dict(taste(p, args.n, ledger), proposed=props, corrections=corr)
     lines = ["Kept (your requests, finished): " + ("; ".join(f"{k['id']} {k['title']}" for k in t["kept"]) or "none yet")]

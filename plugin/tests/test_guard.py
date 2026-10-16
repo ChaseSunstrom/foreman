@@ -1528,6 +1528,8 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm rollback --y", "self-authorize", "fm rollback --yes is the user's to run"),
             ("fm rollback --ye", "self-authorize", "fm rollback --yes is the user's to run"),
             ("fm rollback --yes=1", "self-authorize", "fm rollback --yes is the user's to run"),
+            ("fm taste compile 1 --block", "self-authorize", "they can type ! fm taste compile N --block"),  # T-1063
+            ("fm taste compile --bl 1", "self-authorize", "fm taste compile N --block"),
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):
@@ -1536,7 +1538,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertIn(why, str(r.detail))
 
     def test_near_misses_stay_allowed(self):
-        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm rollback --list", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
+        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm rollback --list", "fm taste compile 1", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
                     "cryptsetup --version", "git config core.hooksPath", "git config --get core.hooksPath"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))
