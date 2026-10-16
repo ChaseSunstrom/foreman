@@ -241,6 +241,55 @@ def typical(events):
     return {k: round(statistics.median(v)) for k, v in groups.items() if len(v) >= 3}
 
 
+_SPLIT_MARKS = (("planning", "task_new"), ("executing", "task_plan"), ("verifying", "ac_check"), ("auditing", "audit"),
+                ("closing", "finish"))  # T-1078: the ledger event that starts each stage (stages themselves aren't stored)
+
+
+def _stage_secs(evs, end):
+    """{stage: seconds} for one task's ledger events: each stage runs from its mark to the next mark that came later
+    (a stage whose mark is missing or out of order is skipped); the last runs to `end`."""
+    first = {}
+    for e in evs:
+        t = c.parse_ts(e.get("ts"))
+        if t and (e.get("event") not in first or t < first[e["event"]]):
+            first[e["event"]] = t
+    marks, last = [], None
+    for st, ev in _SPLIT_MARKS:
+        if ev in first and (last is None or first[ev] > last):
+            marks.append((st, first[ev]))
+            last = first[ev]
+    return {st: max(0, round(((marks[i + 1][1] if i + 1 < len(marks) else end) - t).total_seconds()))
+            for i, (st, t) in enumerate(marks)}
+
+
+def splits(events, act):
+    """T-1078: the active task's seconds in each stage so far against the median for closed tasks of its type and tier
+    (3+ samples per stage); sign is "over"/"under"/"even" with a typical, else None."""
+    import datetime
+    import statistics
+    by, kind = {}, {}
+    for e in events:
+        if e.get("task"):
+            by.setdefault(e["task"], []).append(e)
+            if e.get("event") == "task_new":
+                d = e.get("data") or {}
+                kind[e["task"]] = f"{d.get('type')}/{d.get('tier')}"
+    want = f"{act.type}/{act.tier}"
+    samples = {}
+    for t, evs in by.items():
+        done = [x for x in evs if x.get("event") == "task_done"]
+        if t != act.id and kind.get(t) == want and done:
+            for st, s in _stage_secs(evs, max(c.parse_ts(x.get("ts")) for x in done)).items():
+                samples.setdefault(st, []).append(s)
+    out = []
+    for st, s in _stage_secs(by.get(act.id, []), datetime.datetime.now(datetime.timezone.utc)).items():
+        v = samples.get(st, [])
+        typ = round(statistics.median(v)) if len(v) >= 3 else None
+        out.append({"stage": st, "secs": s, "typical": typ, "delta": None if typ is None else s - typ,
+                    "sign": None if typ is None else "over" if s > typ * 1.1 else "under" if s < typ * 0.9 else "even"})
+    return out
+
+
 def brainstorm(p):
     """The newest brainstorm (T-0124): while fm ideas runs, how many lens answers are in and the ideas so far; after,
     how many ideas and the first ones. None when the project has none. A run that never wrote ideas.md and started
@@ -487,6 +536,7 @@ def view(p):
     if active:
         focused = next((e.get("ts") for e in events if e.get("event") == "focus" and e.get("task") == act.id), None)
         active["on_task_s"] = round((c.age_days(focused) or 0) * 86400) if focused else None
+        active["splits"] = splits(events, act)
         active["children"] = [{"id": k.id, "title": c.plain(k.title)[:120], "status": k.status,  # T-0711: the tree
                                "steps_done": sum(s.done for s in k.steps()), "steps_total": len(k.steps())}
                               for k in briefs if k.meta.get("parent") == act.id]
