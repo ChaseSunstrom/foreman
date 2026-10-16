@@ -293,9 +293,18 @@ def session_start(pl):
             fmbus.record_pid(sid)
         except Exception:
             log_error("SessionStart", _tb())
+    reaped = 0
+    if not os.environ.get("FOREMAN_NO_BACKGROUND"):  # T-1044: the claude -p helpers a dead run left behind
+        try:
+            import fmideas
+            reaped = fmideas.sweep_orphans()
+        except Exception:  # a sweep that fails must never cost the session its start
+            log_error("SessionStart", _tb())
     p = c.find_project(_cwd(pl), create=True)
     if not p:
         return None
+    if reaped:
+        c.log_event(p, "orphans_reaped", data={"count": reaped}, session=sid)
     if _oneoff():
         return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ONEOFF_NOTE}}
     env_file = os.environ.get("CLAUDE_ENV_FILE")

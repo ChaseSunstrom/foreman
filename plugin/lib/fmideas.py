@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -90,6 +91,106 @@ def _child_env():
     return dict(os.environ, FOREMAN_NO_BACKGROUND="1")  # a child never starts Foreman's own background reviews
 
 
+def _registry(pid=""):
+    return os.path.join(c.state_dir(), "children", str(pid))
+
+
+def _starttime(pid):
+    """When the pid started, in clock ticks since boot (/proc/<pid>/stat field 22): with the pid, one process ever."""
+    with open(f"/proc/{pid}/stat") as f:
+        return f.read().rsplit(")", 1)[1].split()[19]  # after the name, which may hold spaces and parentheses
+
+
+def _popen(argv, timeout, **kw):
+    """T-1044: a child in its own process group, so a timeout kills its grandchildren too, registered in
+    state/children/<pid> (its start time, when, its timeout) so a SessionStart sweeps it if this run dies first."""
+    pr = subprocess.Popen(argv, start_new_session=True, **kw)
+    try:
+        c.write_atomic(_registry(pr.pid), f"{_starttime(pr.pid)} {time.time():.0f} {timeout:.0f}")
+    except (OSError, IndexError):  # no /proc (macOS) or no state folder: unregistered, still reaped on a timeout
+        pass
+    return pr
+
+
+def _forget(pr):
+    try:
+        os.remove(_registry(pr.pid))
+    except OSError:
+        pass
+
+
+def _reap(pr):
+    """T-1044: the child's whole process group killed (never only the leader: a grandchild holding the pipes hung the
+    runner and outlived it), its pipes drained, its registry entry gone."""
+    if pr.returncode is None:  # once it's been waited for, its pid may be another process's by now
+        try:
+            os.killpg(pr.pid, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        pr.communicate(timeout=5)
+    except subprocess.TimeoutExpired:  # a grandchild that left the group (setsid) holds the pipes: not ours to wait on
+        pr.wait()
+    _forget(pr)
+
+
+def _strays(pgid, start):
+    """T-1044: a dead leader's group still has a member it started: a process in the session and group the leader made
+    (start_new_session: both ids are its pid), started no earlier than it. Linux never reuses a pid while a group holds
+    it; only a later session leader that took the pid could make such a group, and a sweep can't tell that one apart."""
+    try:
+        os.killpg(pgid, 0)  # no such group (the usual case: the helper finished) costs one call, not a /proc scan (~30 ms)
+    except OSError:
+        return False
+    for d in os.listdir("/proc"):
+        if d.isdigit():
+            try:
+                with open(f"/proc/{d}/stat") as f:
+                    st = f.read().rsplit(")", 1)[1].split()
+            except OSError:
+                continue
+            if st[2] == st[3] == str(pgid) and int(st[19]) >= start:
+                return True
+    return False
+
+
+def sweep_orphans(max_age=1800):
+    """T-1044: the helpers a dead run left behind, killed with their process groups: the count. An entry older than
+    max_age (or its own timeout) whose pid is still the same process (its start time) running a helper (its command
+    line) is killed, and so is the group of a leader that's gone while a member it started holds the group (_strays);
+    a reused or foreign pid, or an empty group, only loses its entry; a fresh one is left to its run."""
+    try:
+        names = os.listdir(_registry())
+    except OSError:
+        return 0
+    n = 0
+    for name in names:
+        if name.startswith("."):  # a write_atomic temp file mid-write
+            continue
+        path = _registry(name)
+        try:
+            with open(path) as f:
+                start, at, timeout = f.read().split()
+            if time.time() - float(at) < max(max_age, float(timeout) + 60):
+                continue  # its run may still be waiting on it
+            pid = int(name)
+            try:
+                with open(f"/proc/{pid}/cmdline", "rb") as f:
+                    ours = b"--no-session-persistence" in f.read().split(b"\0") and _starttime(pid) == start
+            except FileNotFoundError:  # the leader is gone
+                ours = _strays(pid, int(start))
+            if ours:
+                os.killpg(pid, signal.SIGKILL)
+                n += 1
+        except (OSError, ValueError, IndexError):  # gone, garbled or not ours to kill: the entry goes
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return n
+
+
 def run_child(feature, system, prompt, model, timeout, project=None, detail="", fallback=0.05):
     """T-0295: one tool-less child, budget-checked, run in a scratch folder and recorded: its text. ValueError when
     it can't run, fails or says nothing."""
@@ -99,14 +200,22 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
         raise ValueError(str(e))
     with _child_cwd(feature) as cwd:
         try:
-            r = subprocess.run(child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout, env=_child_env())
-        except (OSError, subprocess.TimeoutExpired) as e:
+            pr = _popen(child_cmd(model, system), timeout, cwd=cwd, text=True, stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_child_env())
+        except OSError as e:
             raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
-    text, usd = fmbudget.result(r.stdout)
+        try:
+            so, se = pr.communicate(prompt, timeout=timeout)
+        except BaseException as e:  # a timeout or ^C: the whole group goes (subprocess.run killed only the leader)
+            _reap(pr)
+            if isinstance(e, subprocess.TimeoutExpired):
+                raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+            raise
+        _forget(pr)
+    text, usd = fmbudget.result(so)
     fmbudget.record(feature, usd, project=project, detail=detail)
-    if r.returncode or not (text or "").strip():
-        raise ValueError(f"nothing came back (exit {r.returncode}: {_tail(r.stderr or r.stdout, 160)})")
+    if pr.returncode or not (text or "").strip():
+        raise ValueError(f"nothing came back (exit {pr.returncode}: {_tail(se or so, 160)})")
     return text
 
 
@@ -115,38 +224,40 @@ def run_children(jobs, timeout, feature):
     [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
     stopped)."""
     with _child_cwd(feature) as cwd:
-        procs = []
+        procs, started = [], False
         try:
             for argv, stdin, detail in jobs:
-                pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, env=_child_env())
+                pr = _popen(argv, timeout, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=_child_env())
                 procs.append((pr, detail))
                 try:
                     pr.stdin.write(stdin)
                     pr.stdin.close()
                 finally:
                     pr.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
-        except OSError as e:
-            for pr, _ in procs:
-                pr.kill()
-                pr.communicate()
-            raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
-        deadline, out = time.time() + timeout, []
-        for pr, detail in procs:
-            try:
-                so, se = pr.communicate(timeout=max(1, deadline - time.time()))
-                text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
-                fmbudget.record(feature, usd, detail=detail)
-                why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
-                # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged by the error
-                out.append((text, None) if pr.returncode == 0 and text.strip() else
-                           (text, why) if text.strip() else (None, why))  # both set: partial
-            except subprocess.TimeoutExpired:
-                pr.kill()
-                pr.communicate()
-                fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
-                                else "timed out: cost unknown")
-                out.append((None, f"timed out after {timeout}s"))
+            started, deadline, out = True, time.time() + timeout, []
+            for pr, detail in procs:
+                try:
+                    so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                    _forget(pr)
+                    text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
+                    fmbudget.record(feature, usd, detail=detail)
+                    why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
+                    # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged
+                    out.append((text, None) if pr.returncode == 0 and text.strip() else
+                               (text, why) if text.strip() else (None, why))  # both set: partial
+                except subprocess.TimeoutExpired:
+                    _reap(pr)
+                    fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
+                                    else "timed out: cost unknown")
+                    out.append((None, f"timed out after {timeout}s"))
+        except BaseException as e:  # T-1044: a child that can't start, or ^C: every group still running goes (each has
+            for pr, _ in procs:  # its own session, so the terminal's ^C no longer reaches them)
+                if pr.returncode is None:
+                    _reap(pr)
+            if isinstance(e, OSError) and not started:
+                raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
+            raise
     return out
 
 
