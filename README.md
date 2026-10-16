@@ -120,7 +120,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Foreman's state, with no hooks, filters, submodules or symlinks, and nothing run. `fm lib source defaults` adds six vetted ones (wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea): about 870 skills and agents, searchable next to the cards at no context cost.
 
 **Verifies.**
-- `fm check` runs the project's gates and reuses a pass on an identical tree.
+- `fm check` runs the project's gates and reuses a pass on an identical tree. A new test file that is only another open task's red-first test is left out and named, so one task's deliberate red doesn't block another's close.
 - `fm task evidence --run` records a command's real exit code and output.
 - Test first at edit time: in a fix or feature task that has changed no test and recorded no failing run, the first edit of a source file brings one line saying to write and run the failing test first. Once per task, never a block.
 - `fm task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
