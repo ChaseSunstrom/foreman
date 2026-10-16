@@ -1,10 +1,14 @@
 """Dependency-install check (T-1049): a package named in an npm/pip/cargo install that is new to the project gets a
-typosquat, registry and age look before the command runs. Notes only: a wrong guess never blocks work, and the age
-lookup fails open ("age unknown"), is skipped in sensitive projects and under FOREMAN_NO_NET=1."""
+typosquat, registry and age look before the command runs. Notes only: a wrong guess never blocks work (the hook has a
+5 s limit, so all lookups share one ~1.2 s budget). The age lookup fails open ("age unknown") and is skipped in
+sensitive projects, under FOREMAN_NO_NET=1 (the off switch: no registry is contacted at all), for popular and
+@scoped names, and wherever a registry is configured (.npmrc, pip.conf, PIP_*INDEX_URL, cargo [registries]/[source])."""
 import json
 import os
 import re
 import shlex
+import socket
+import threading
 import time
 import urllib.request
 from datetime import datetime, timezone
@@ -12,7 +16,8 @@ from datetime import datetime, timezone
 import fmcore as c
 
 YOUNG_DAYS = 14
-MAX_FETCH = 3  # packages looked up per command; each lookup is at most 2 s
+MAX_FETCH = 2  # packages looked up per command
+BUDGET = 1.2  # seconds, all lookups together
 TOP = {
     "npm": "react lodash express axios chalk commander debug moment request typescript webpack eslint prettier jest "
            "vue next underscore async uuid dotenv jquery bluebird yargs rxjs tslib semver mkdirp glob minimist "
@@ -20,15 +25,25 @@ TOP = {
     "pypi": "requests numpy pandas flask django pytest boto3 urllib3 setuptools pyyaml scipy pillow click jinja2 "
             "cryptography sqlalchemy matplotlib certifi idna six pydantic fastapi httpx aiohttp redis tqdm black "
             "rich colorama".split(),
-    "cargo": "serde serde_json tokio rand clap regex anyhow thiserror reqwest log syn quote itertools chrono "
-             "lazy_static once_cell futures tracing bytes hyper".split(),
+    "crates": "serde serde_json tokio rand clap regex anyhow thiserror reqwest log syn quote itertools chrono "
+              "lazy_static once_cell futures tracing bytes hyper".split(),
 }
+LEGIT = {"boto", "pyaml"}  # real packages one edit from a popular one
 _NPM = {"npm", "pnpm", "yarn", "bun"}
-_VERBS = {"npm": {"install", "i", "add"}, "pypi": {"install"}, "cargo": {"add", "install"}}
-_REG_FLAGS = ("--registry", "--index-url", "--extra-index-url", "-i", "--index", "--find-links", "-f", "--git", "--path")
-_VALUE_FLAGS = set(_REG_FLAGS) | {"-r", "--requirement", "-e", "--editable", "-c", "--constraint", "--target", "-t",
-                                  "--prefix", "--tag", "-w", "--workspace", "--features", "-F", "--package", "-p",
-                                  "--rev", "--branch", "--root", "--version", "--vers"}
+_VERBS = {"npm": {"install", "i", "add"}, "pypi": {"install", "add"}, "crates": {"add", "install"}}
+# per ecosystem: flags that take a value, and the ones that name a non-registry source
+_VALUE = {"npm": {"--registry", "--prefix", "--tag", "-w", "--workspace", "--omit", "--include", "--cache",
+                  "--userconfig", "--loglevel", "--save-prefix", "--cwd", "--dir", "-C", "--filter"},
+          "pypi": {"--index-url", "-i", "--extra-index-url", "-f", "--find-links", "-r", "--requirement", "-e",
+                   "--editable", "-c", "--constraint", "-t", "--target", "--trusted-host", "--prefix", "--root",
+                   "--python", "--platform", "--only-binary", "--no-binary", "--proxy", "--cert", "--src", "--group",
+                   "--index", "--default-index", "--python-version", "--implementation", "--abi", "-p", "--python-version"},
+          "crates": {"--git", "--path", "--registry", "--index", "--rev", "--branch", "--tag", "--features", "-F",
+                     "--package", "-p", "--root", "--version", "--vers", "--bin", "--example", "--profile", "--target",
+                     "--target-dir", "-j", "--jobs", "--manifest-path", "--rename", "--color"}}
+_CUSTOM = {"npm": {"--registry"},
+           "pypi": {"--index-url", "-i", "--extra-index-url", "-f", "--find-links", "--index", "--default-index"},
+           "crates": {"--git", "--path", "--registry", "--index"}}
 
 
 def lev1(a, b):
@@ -43,25 +58,28 @@ def lev1(a, b):
 
 
 def _eco(words):
-    """(ecosystem, index after the verb) for an install-looking command, else None."""
+    """(ecosystem, index of the first argument after the verb) for an install-looking command, else None."""
     if not words:
         return None
-    prog = os.path.basename(words[0])
-    rest = words[1:]
+    prog, rest = os.path.basename(words[0]), words[1:]
     if prog in _NPM:
-        eco = "npm"
-    elif prog == "cargo":
-        eco = "cargo"
-    elif re.fullmatch(r"pip[0-9.]*", prog):
-        eco = "pypi"
-    elif prog in ("python", "python3") and rest[:2] == ["-m", "pip"]:
-        eco, rest = "pypi", rest[2:]
-        return (eco, len(words) - len(rest) + 1) if rest[:1] == ["install"] else None
-    elif prog == "uv" and rest[:2] == ["pip", "install"]:
-        return "pypi", 3
-    else:
-        return None
-    return (eco, 2) if rest[:1] and rest[0] in _VERBS[eco] else None
+        i = 2 if rest[:1] == ["global"] else 1  # yarn global add
+        return ("npm", i + 1) if rest[i - 1:i] and rest[i - 1] in _VERBS["npm"] else None
+    if prog == "cargo":
+        return ("crates", 2) if rest[:1] and rest[0] in _VERBS["crates"] else None
+    if re.fullmatch(r"pip[0-9.]*", prog):
+        return ("pypi", 2) if rest[:1] == ["install"] else None
+    if re.fullmatch(r"python[0-9.]*", prog) and rest[:2] == ["-m", "pip"]:
+        return ("pypi", 4) if rest[2:3] == ["install"] else None
+    if prog == "uv":
+        if rest[:2] == ["pip", "install"]:
+            return "pypi", 3
+        return ("pypi", 2) if rest[:1] == ["add"] else None
+    if prog == "poetry":
+        return ("pypi", 2) if rest[:1] == ["add"] else None
+    if prog == "pipx":
+        return ("pypi", 2) if rest[:1] == ["install"] else None
+    return None
 
 
 def _name(eco, spec):
@@ -74,7 +92,7 @@ def _name(eco, spec):
     return m.group(0).lower() if m else None
 
 
-def parse_install(cmd):
+def parse_install(cmd, _depth=0):
     """[{eco, name, spec, registry}] for each package a command installs; registry is the custom-source reason or ''."""
     out = []
     for seg in re.split(r"&&|\|\||[;|\n]", cmd or ""):
@@ -84,6 +102,9 @@ def parse_install(cmd):
             continue
         while words and re.fullmatch(r"\w+=\S*|sudo|env|command", words[0]):
             words = words[1:]
+        if _depth < 2 and len(words) > 2 and os.path.basename(words[0]) in ("bash", "sh", "zsh") and words[1] == "-c":
+            out += parse_install(words[2], _depth + 1)
+            continue
         hit = _eco(words)
         if not hit:
             continue
@@ -94,10 +115,10 @@ def parse_install(cmd):
                 skip = False
                 continue
             flag = w.split("=", 1)[0]
-            if flag in _REG_FLAGS and flag not in ("-r",):
+            if flag in _CUSTOM[eco]:
                 custom = custom or f"custom source {flag}"
             if w.startswith("-"):
-                skip = flag in _VALUE_FLAGS and "=" not in w
+                skip = flag in _VALUE[eco] and "=" not in w
             else:
                 specs.append(w)
         for s in specs:
@@ -118,17 +139,51 @@ def manifest_names(p):
         return set()
 
 
-def fetch_created(eco, name):
-    """ISO creation time of a package from its registry, or None; raises on network failure (caller fails open)."""
-    url = {"npm": f"https://registry.npmjs.org/{name}", "pypi": f"https://pypi.org/pypi/{name}/json",
-           "cargo": f"https://crates.io/api/v1/crates/{name}"}[eco]
-    req = urllib.request.Request(url, headers={"User-Agent": "foreman-deps-check", "Accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=2) as r:
-        d = json.load(r)
+def _grep(paths, pat):
+    for f in paths:
+        try:
+            with open(os.path.expanduser(f), encoding="utf-8", errors="replace") as fh:
+                if re.search(pat, fh.read(), re.M):
+                    return True
+        except OSError:
+            pass
+    return False
+
+
+def configured_registry(p, eco):
+    """True when this project or machine points the ecosystem at a registry of its own: the name would leak to it, and
+    the public one wouldn't know it."""
+    r = p.root
     if eco == "npm":
-        return (d.get("time") or {}).get("created")
-    if eco == "cargo":
-        return (d.get("crate") or {}).get("created_at")
+        return _grep([f"{r}/.npmrc", "~/.npmrc", f"{r}/.yarnrc.yml", "~/.yarnrc"], r"registry")
+    if eco == "pypi":
+        return bool(os.environ.get("PIP_INDEX_URL") or os.environ.get("PIP_EXTRA_INDEX_URL")) or _grep(
+            [f"{r}/pip.conf", "~/.config/pip/pip.conf", "~/.pip/pip.conf", "/etc/pip.conf", f"{r}/uv.toml",
+             "~/.config/uv/uv.toml"], r"index")
+    return _grep([f"{r}/.cargo/config.toml", f"{r}/.cargo/config", "~/.cargo/config.toml", "~/.cargo/config"],
+                 r"^\s*\[(registries|source)")
+
+
+def _get(url, accept="application/json"):
+    import fmresearch  # its redirect handler re-checks every hop as public https
+    req = urllib.request.Request(url, headers={"User-Agent": "foreman-deps-check", "Accept": accept})
+    with urllib.request.build_opener(fmresearch._Redirect).open(req, timeout=BUDGET) as r:
+        return json.loads(r.read(2_000_000))
+
+
+def fetch_created(eco, name):
+    """ISO creation time of a package from its public registry, or None; raises on network failure (caller fails open).
+    Runs in a worker thread, so the socket default timeout is set here (DNS ignores urlopen's)."""
+    socket.setdefaulttimeout(BUDGET)
+    if eco == "npm":
+        # the abbreviated document is small and has "modified": older than the window means the package is too
+        small = _get(f"https://registry.npmjs.org/{name}", "application/vnd.npm.install-v1+json")
+        if small.get("modified") and _days(small["modified"]) >= YOUNG_DAYS:
+            return small["modified"]
+        return (_get(f"https://registry.npmjs.org/{name}").get("time") or {}).get("created")
+    if eco == "crates":
+        return (_get(f"https://crates.io/api/v1/crates/{name}").get("crate") or {}).get("created_at")
+    d = _get(f"https://pypi.org/pypi/{name}/json")
     ups = [f["upload_time_iso_8601"] for fs in (d.get("releases") or {}).values() for f in fs
            if f.get("upload_time_iso_8601")]
     return min(ups) if ups else None
@@ -139,6 +194,21 @@ def _days(iso):
     if t.tzinfo is None:
         t = t.replace(tzinfo=timezone.utc)
     return (datetime.now(timezone.utc) - t).days
+
+
+def _timed(fetch, eco, name, deadline):
+    """fetch(eco, name) in a worker thread abandoned at the deadline; None when it ran out, failed or found nothing."""
+    box = []
+
+    def run():
+        try:
+            box.append(fetch(eco, name))
+        except Exception:
+            pass  # age unknown: fails open
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    t.join(max(0.0, deadline - time.monotonic()))
+    return box[0] if box else None
 
 
 def check(p, cmd, fetch=None):
@@ -153,6 +223,7 @@ def check(p, cmd, fetch=None):
     except Exception:
         net = False
     fetch = fetch or fetch_created
+    deadline = time.monotonic() + BUDGET
     found, looked = [], 0
     for k in pkgs:
         eco, n = k["eco"], k["name"]
@@ -164,18 +235,19 @@ def check(p, cmd, fetch=None):
         if k["registry"]:
             found.append({"kind": "registry", "package": n, "why": k["registry"]})
         known = set(TOP[eco]) | {m for e, m in have if e == eco}
-        if n not in known and len(n) > 3:
+        if n not in known and n not in LEGIT and len(n) > 3:
             near = sorted(m for m in known if len(m) > 3 and lev1(n, m))
             if near:
                 found.append({"kind": "typosquat", "package": n, "why": f"{n} is one edit from {near[0]}"})
-        if net and not k["registry"] and looked < MAX_FETCH:
+        if (net and not k["registry"] and looked < MAX_FETCH and n not in TOP[eco] and not n.startswith("@")
+                and time.monotonic() < deadline and not configured_registry(p, eco)):
             looked += 1
+            created = _timed(fetch, eco, n, deadline)
             try:
-                created = fetch(eco, n)
                 if created and _days(created) < YOUNG_DAYS:
                     found.append({"kind": "age", "package": n, "why": f"{n} was first published {_days(created)} days ago"})
-            except Exception:
-                pass  # age unknown: fails open
+            except (ValueError, TypeError):
+                pass
     return found
 
 
