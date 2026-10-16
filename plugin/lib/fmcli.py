@@ -4187,7 +4187,7 @@ HELP_TIERS = [
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
-                             "plugins docs doctor verify-ledger release-check canary tidy round"),
+                             "plugins docs doctor verify-ledger outbound sandbox release-check canary tidy round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
@@ -4586,6 +4586,9 @@ def build_parser():
     s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), help="prove no ledger line was edited or removed: "
                                                                          "each carries the hash of the one before (T-1065)")
     s.add_argument("--head", help="also prove this head (a finish receipt's) is still in the chain: the tail wasn't cut")
+    s = add("outbound", lazy("fmledger", "cmd_outbound"), help="every outbound request a task's sessions made: "
+                                                              "WebFetch/WebSearch/MCP/curl hosts (T-1086)")
+    s.add_argument("id", nargs="?", help="task (default: the focused one)")
     s = add("evals", lazy("fmcost", "cmd_evals"), help="turn a blocked or failed task into a plugin eval case; inbox: "
                                                         "what could become one (T-0734)")
     s.add_argument("action", choices=["add", "inbox"])
@@ -5232,9 +5235,14 @@ def build_parser():
     s.add_argument("--permission-mode", choices=c.PERMISSION_MODES)
     s.add_argument("--sandbox", action="store_true", help="each session under Claude Code's sandbox: Bash writes only "
                                                           "its checkout, fm's state and the git dir; no sandbox, no "
-                                                          "session (T-0975)")
+                                                          "session (T-0975); or fm sandbox on")
+    s.add_argument("--no-sandbox", action="store_true", help="run sessions without Claude Code's sandbox")
     s.add_argument("--models", help="model per tier, e.g. S=sonnet,M=sonnet,L=opus (default: Claude Code's)")
     s.add_argument("--save", action="store_true", help="keep --models for later runs")
+    s = add("sandbox", lazy("fmserve", "cmd_sandbox"), help="fm run's sandbox as a project setting: on, off, allow "
+                                                           "DOMAIN, show (T-1086)")
+    s.add_argument("action", nargs="?", default="show", choices=["on", "off", "allow", "show"])
+    s.add_argument("domains", nargs="*")
     s = add("notify", lazy("fmserve", "cmd_notify"), help="command fm run uses to tell you a task finished or blocked")
     s.add_argument("command", nargs="*", help="gets the message as $1, e.g. notify-send Foreman \"$1\"")
     s.add_argument("--off", action="store_true")

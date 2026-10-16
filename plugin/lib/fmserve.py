@@ -9,6 +9,7 @@ fm run works the queue in fresh `claude -p` sessions, one task per session (driv
 FOREMAN_DRIVE_TASK), so a long queue never runs in one ever-growing context.
 """
 import fcntl
+import functools
 import glob
 import json
 import os
@@ -373,16 +374,85 @@ def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
-        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) else [])
+        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if _sandbox_wanted(p, args) and _sandbox_available()
+        else [])
+
+
+def _sandbox_wanted(p, args):
+    """T-1086: the sandbox is opt-in: fm run --sandbox, or fm sandbox on (a project setting, so fm night keeps it);
+    --no-sandbox turns the setting off for one run."""
+    return not getattr(args, "no_sandbox", False) and bool(
+        getattr(args, "sandbox", False) or (c.read_meta(p).get("sandbox") or {}).get("on"))
+
+
+@functools.cache
+def _sandbox_available():
+    """T-1086: the host can run Claude Code's sandbox: bubblewrap that really starts (a bwrap on PATH is not enough:
+    flatpak ships one, and user namespaces may be off) plus socat, or sandbox-exec on macOS. Probed once."""
+    if shutil.which("sandbox-exec"):
+        return True
+    if not (shutil.which("bwrap") and shutil.which("socat")):
+        return False
+    try:
+        return subprocess.run(["bwrap", "--unshare-user", "--ro-bind", "/", "/", "true"], capture_output=True,
+                              timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+_REGISTRIES = (("package.json", ("registry.npmjs.org",)),
+               ("pyproject.toml", ("pypi.org", "files.pythonhosted.org")),
+               ("requirements.txt", ("pypi.org", "files.pythonhosted.org")),
+               ("Cargo.toml", ("crates.io", "index.crates.io", "static.crates.io")),
+               ("go.mod", ("proxy.golang.org", "sum.golang.org")))
+
+
+def _sandbox_domains(p):
+    """The domains a sandboxed session may reach: the project's list (fm sandbox allow), else the git remote's host and
+    the package registries for the languages the project holds."""
+    meta = c.read_meta(p).get("sandbox") or {}
+    if meta.get("allow"):
+        return list(meta["allow"])
+    out = []
+    url = c._git(p.root, "remote", "get-url", "origin").strip()
+    m = re.search(r"://(?:[^/@]*@)?([^/:]+)|@([^:/]+):", url)
+    if m:
+        out.append(m.group(1) or m.group(2))
+    for f, hosts in _REGISTRIES:
+        if os.path.exists(os.path.join(p.root, f)):
+            out += [h for h in hosts if h not in out]
+    return out
 
 
 def _sandbox(p):
-    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only its checkout plus what fm needs (its
-    state; the git dir, where a lane's commits land), and no unsandboxed fallback, so a host without bubblewrap fails
-    the session instead of running it open."""
+    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only the checkout, the cache dirs, fm's
+    state and the git dir (where a lane's commits land), and reaches only the allowed domains. No unsandboxed
+    fallback (fm run refuses first when the host has no working sandbox)."""
     git_dir = c._git(p.root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    home = os.path.expanduser("~")
     return {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-            "filesystem": {"allowWrite": [c.state_dir()] + ([git_dir] if git_dir else [])}}
+            "network": {"allowedDomains": _sandbox_domains(p)},
+            "filesystem": {"allowWrite": [p.root, c.state_dir(), os.path.join(home, ".cache"), os.path.join(home, ".npm")]
+                           + ([git_dir] if git_dir else [])}}
+
+
+def cmd_sandbox(args):
+    """fm sandbox [on|off|allow DOMAIN…|show]: fm run's sandbox as a project setting (T-1086)."""
+    import fmcli
+    p = fmcli.resolve(args)
+    s = dict(c.read_meta(p).get("sandbox") or {})
+    if args.action in ("on", "off"):
+        s["on"] = args.action == "on"
+    elif args.action == "allow":
+        if not args.domains:
+            raise fmcli.UsageError("fm sandbox allow needs a domain")
+        s["allow"] = sorted(set(s.get("allow") or _sandbox_domains(p)) | set(args.domains))
+    if args.action != "show":
+        c.update_meta(p, sandbox=s)
+    on = s.get("on", False)
+    fmcli.out(args, {"on": on, "domains": _sandbox_domains(p), "available": _sandbox_available()},
+              f"fm run sandbox: {'on' if on else 'off'} ({', '.join(_sandbox_domains(p)) or 'no network'}); this host "
+              f"{'can' if _sandbox_available() else 'cannot'} run it")
 
 
 def _run_lanes(p, batch, args, models, log):
@@ -645,8 +715,15 @@ def _inhibit():
 
 def cmd_run(args):
     import fmcli
+    if args.sandbox and args.no_sandbox:
+        raise fmcli.UsageError("--sandbox and --no-sandbox contradict each other: pick one")
     _inhibit()
     p = fmcli.resolve(args)
+    if _sandbox_wanted(p, args):  # T-1086: no working sandbox means no run, never a silently open one
+        if not _sandbox_available():
+            raise c.PolicyError("the sandbox is on but this host can't run it (needs bubblewrap that starts, plus "
+                                "socat; or sandbox-exec): fm sandbox off, or fm run --no-sandbox")
+        print(f"sandbox: on ({', '.join(_sandbox_domains(p)) or 'no network'})")
     if c.read_meta(p).get("serve"):
         raise c.PolicyError(f"fm serve is running Remote Control for {p.slug}; a second writer would collide. Send "
                             f"work to that session, or fm serve stop first")
