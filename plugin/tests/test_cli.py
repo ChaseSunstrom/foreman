@@ -639,6 +639,24 @@ class Checks(ForemanTestCase):
         self.assertIn("web/pane.test.tsx", out)
         self.assertIn("can't run", out)
 
+    def test_each_test_extension_gets_its_own_runner(self):
+        # T-1135: a Python default plus `--for .tsx`: a changed .py and .tsx test run both commands, once each
+        import fmcli
+        self.fm("init")
+        self.fm("check", "affected", "echo py {names}")
+        before = fmcli.affected(c.find_project(self.repo, create=False))
+        self.fm("check", "affected", "--for", ".tsx", "echo tsx")
+        os.makedirs(os.path.join(self.repo, "web"), exist_ok=True)
+        for n in ("test_a.py", "pane.test.tsx"):
+            with open(os.path.join(self.repo, "web", n), "w") as f:
+                f.write("x\n")
+        cmd, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
+        self.assertEqual(cmd, "echo py test_a && echo tsx")
+        self.assertEqual(sorted(tests), ["web/pane.test.tsx", "web/test_a.py"])
+        out = self.fm("check", "--affected", check=False).stdout
+        self.assertNotIn("can't run", out)
+        self.assertEqual(before[0], None)
+
     def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
         # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
         self.fm("init")
