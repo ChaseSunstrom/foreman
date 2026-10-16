@@ -3904,7 +3904,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo show recall explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo show recall fix explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
@@ -4333,6 +4333,14 @@ def build_parser():
     s.add_argument("--run", required=True, metavar="CMD")
     s.add_argument("--good", metavar="REF", help="a commit where it passed (default: the active task's start)")
     s.add_argument("--timeout", type=int, default=120, help="seconds per run")
+    s = add("fix", lazy("fmfixes", "cmd_fix"), help="known fixes: what got past an obstacle, offered the next time any "
+                                                     "session meets it (list, add, rm)")
+    s.add_argument("action", nargs="?", default="list", choices=["list", "add", "rm", "trust"])
+    s.add_argument("text", nargs="?", help="add: the error text; rm/trust: the number fm fix list shows (trust: adopt "
+                                          "a fix that came with the repo, so it is offered as one, not as a hint)")
+    s.add_argument("--do", help="add: what gets past it")
+    s.add_argument("--run", help="add: the command that does")
+
     s = add("dream", lazy("fmrecall", "cmd_dream"), help="the day's repeated failures as tripwire candidates with their "
                                                           "counterfactual (T-0665)")
     s.add_argument("--day", help="YYYY-MM-DD (default: today)")

@@ -1139,7 +1139,7 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        note = " ".join(filter(None, [saved, warn, _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        note = " ".join(filter(None, [saved, warn, _fix_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
@@ -1148,6 +1148,18 @@ def _pre_tool_use(raw):
     except Exception:
         log_error("PreToolUse", _tb())
     return 0
+
+
+def _fix_note(pl, p):
+    """T-1032: a command that failed before here, about to run again: what worked instead (once a session)."""
+    if pl.get("tool_name") != "Bash":
+        return None
+    try:
+        import fmfixes
+        return fmfixes.pre_note(p, pl.get("session_id"), (pl.get("tool_input") or {}).get("command"))
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
 
 
 def _card_note(pl, p, act):
@@ -1801,6 +1813,15 @@ def post_tool_use(pl, ok=True):
             _auto_evidence(pl, p, ok)
         except Exception:
             log_error("PostToolUse", _tb())
+    if ok and tool in ("Bash", "Edit", "MultiEdit", "Write", "NotebookEdit"):  # T-1032: known fixes
+        try:  # a success after the session's last failure is its fix; an edit in between makes it a code fix instead
+            import fmfixes
+            if tool == "Bash":
+                fmfixes.on_success(p, pl.get("session_id"), ti.get("command"))
+            else:
+                fmfixes.on_edit(pl.get("session_id"))
+        except Exception:
+            log_error("PostToolUse", _tb())
     if ok and p and tool == "Skill":
         try:
             c.hint_used(p, "skills")  # T-0250: the skills hint was worth showing
@@ -1977,14 +1998,21 @@ def post_tool_use_failure(pl):
     post_tool_use(pl, ok=False)
     if pl.get("tool_name") != "Bash":
         return None
-    try:
+    err = str(pl.get("error") or "")
+    p = None
+    try:  # T-1032: a known fix first, in any folder (this machine's fixes need no Foreman project)
+        import fmfixes
         p = c.find_project(_cwd(pl))
+        fix = fmfixes.on_failure(p, pl.get("session_id"), (pl.get("tool_input") or {}).get("command"), err)
+    except Exception:
+        log_error("PostToolUseFailure", _tb())
+        fix = None
+    try:
         if not p:
-            return None
+            return {"hookSpecificOutput": {"hookEventName": "PostToolUseFailure", "additionalContext": fix}} if fix else None
         import fmrecall
         act = c.active_brief(c.load_briefs(p), p.lane)
-        err = str(pl.get("error") or "")
-        note = fmrecall.note_failure(p, act.id if act else None, err)
+        note = " ".join(filter(None, [fix, fmrecall.note_failure(p, act.id if act else None, err)]))
         if re.search(r"(?m)^(Traceback|FAIL:|ERROR:|\s+at .+:\d+)", err):  # T-0706: a red run comes with suspects
             import fmdebug
             note = " ".join(filter(None, [note, fmdebug.line(p, err)]))

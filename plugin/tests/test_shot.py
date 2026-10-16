@@ -55,3 +55,51 @@ class OneOff(unittest.TestCase):
         self.assertIn("FOREMAN_STATE=/tmp/fm-demo-state", own)
         self.assertNotIn("FOREMAN_ONEOFF", own)
 
+
+
+class Trust(unittest.TestCase):
+    """T-1032: the harness stalled at Claude Code's folder-trust prompt on every new folder (each demo recording); it
+    answers it itself, but only for a folder Foreman made (a temp or scratch folder, its own repo): trusting a cloned
+    repo would let that repo's hooks run."""
+
+    def load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("shot_t1032", SHOT)
+        shot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shot)
+        return shot
+
+    def test_it_answers_for_a_folder_foreman_made_and_never_for_others(self):
+        import tempfile
+        import types
+        shot = self.load()
+        sent, screens = [], []
+
+        def tmux(*args, check=True):
+            if args[0] == "capture-pane":
+                return types.SimpleNamespace(stdout=screens.pop(0) if screens else "❯ ", returncode=0)
+            sent.append(args)
+            return types.SimpleNamespace(stdout="", returncode=0)
+        shot.tmux = tmux
+        from unittest import mock
+        nap = mock.patch.object(shot.time, "sleep", lambda s: None)  # review: never the whole test process's sleep
+        nap.start()
+        self.addCleanup(nap.stop)
+        dialog = "Quick safety check: Is this a project you created or one you trust?\n❯ No, exit\n  Yes, I trust this folder"
+        with tempfile.TemporaryDirectory() as d:
+            screens[:] = [dialog, "❯ "]
+            self.assertTrue(shot.answer_trust(d, wait=2))
+            self.assertTrue(any("Enter" in a for a in sent), sent)
+        sent.clear()
+        screens[:] = [dialog]
+        self.assertFalse(shot.answer_trust("/srv/someone-elses-clone", wait=2))
+        self.assertEqual(sent, [])
+        screens[:] = ["❯ "]  # no dialog: nothing pressed
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(shot.answer_trust(d, wait=1))
+        self.assertEqual(sent, [])
+        with tempfile.TemporaryDirectory() as d:  # a repo cloned into /tmp with its own Claude Code config
+            os.makedirs(os.path.join(d, ".claude"))
+            screens[:] = [dialog]
+            self.assertFalse(shot.answer_trust(d, wait=2))
+        self.assertEqual(sent, [])

@@ -67,7 +67,7 @@ def _walk(base):
 
 
 def _travels(rel):
-    return rel.startswith(BRIEFS) or rel.startswith("research/") or rel == "decisions.md"
+    return rel.startswith(BRIEFS) or rel.startswith("research/") or rel in ("decisions.md", "fixes.md")  # T-1032
 
 
 def _for_mirror(text):
@@ -195,7 +195,7 @@ def import_(p):
                     os.remove(local.path)  # archived (or restored) on the other side
                 _write(dest, theirs.render())
                 res["updated"] += 1
-        elif rel == "decisions.md":  # append-only: take the lines this copy lacks
+        elif rel in ("decisions.md", "fixes.md"):  # append-only: take the lines this copy lacks (T-1032: fixes)
             have = _read(dest) if os.path.exists(dest) else ""
             extra = [l for l in c.plain_lines(cur).splitlines() if l.strip() and l not in have.splitlines()]
             if extra:

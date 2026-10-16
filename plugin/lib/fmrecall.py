@@ -288,7 +288,9 @@ def render(hits, tier=None):
 
 # ---------------------------------------------------------------- failure memory (T-0046)
 
-_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing")
+_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing|"
+                         r"unrecognized|unknown|invalid|unexpected|illegal|not allowed|not permitted")
+_USAGE_TAIL = re.compile(r"(?i)^(try|run|see|use) .{0,40}(--help|-h\b|help\b).{0,40}$")  # T-1032: a pointer, not the error
 REPEATS = 3  # the same failure this often in one task: a thrash note
 # T-0211: errors that say an API isn't what Claude assumed: a missing module or export, a library attribute, keyword or
 # method that doesn't exist. Another guess rarely fixes these; the real docs do.
@@ -303,7 +305,8 @@ FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 def failure_signature(text):
     """The telling line of a failure (the last one that names an error), with paths cut to their last part and
     numbers and hex zeroed, so the same failure matches across files, lines and runs."""
-    lines = [x.strip() for x in (text or "").splitlines() if x.strip() and not x.startswith("Exit code")]
+    lines = [x.strip() for x in (text or "").splitlines()
+             if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())]
     pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
     s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
     s = re.sub(r"0x[0-9a-f]+|\d+", "0", s)
