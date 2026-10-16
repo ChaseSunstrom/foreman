@@ -291,6 +291,16 @@ def _hygiene(p, apply, actions):
     since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - HINT_STALE_DAYS * 86400))
     used = {(e.get("data") or {}).get("card") for e in c.ledger_events(p, ("enforce",), since=since)
             if (e.get("data") or {}).get("kind") == "card_injected"}
+    hit = c.rule_last_hits(p)  # T-1115: rules no call matched in the window, older than it (the user removes them)
+    quiet = [f"{n} `{c.fit(r['pattern'], 40)}`" for n, r in enumerate(c.rules(p), 1)
+             if str(r.get("at") or "") < since and str(hit.get(r["pattern"]) or "") < since]
+    if quiet:
+        out.append(finding(slug, "quiet_rule", "info", f"rule(s) no call matched in {HINT_STALE_DAYS} days: "
+                           + ", ".join(quiet[:8]), "listed only: the user removes a rule (fm rule rm N) if it's obsolete"))
+    ignored = sorted(c.hints_quiet(p))
+    if ignored:
+        out.append(finding(slug, "ignored_hint", "info", f"hints shown {c.QUIET_AFTER}+ times running without use: "
+                           + ", ".join(ignored), "listed only: Next already shortens them to the bare command"))
     names = sorted(mine - used)
     if names:  # info, not warn: a clean project shouldn't read as needing action
         out.append(finding(slug, "unused_card", "info", f"{len(names)} of {len(mine)} cards picked for this project reached no "

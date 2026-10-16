@@ -315,6 +315,28 @@ class TidyHygiene(TidyCase):
         self.assertIn("losing-sig: nope", kept)
         self.assertRegex(kept, r"\d{4}-\d\d-\d\d")
 
+    def test_quiet_rules_and_ignored_hints_are_listed_not_removed(self):
+        # T-1115: a rule no call matched in 60 days, and hints shown again and again without use, are retire candidates
+        self.fm("rule", "add", "dropdb", "--why", "never drop the database")
+        self.fm("rule", "add", "npm publish", "--why", "releases go through CI", "--warn")
+        path = os.path.join(self.p.dir, "rules.json")
+        with open(path) as f:
+            rules = json.load(f)
+        old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 90 * 86400))
+        for r in rules:
+            r["at"] = old
+        with open(path, "w") as f:
+            json.dump(rules, f)
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish --dry-run"}})
+        with open(os.path.join(self.p.dir, "hints.json"), "w") as f:
+            json.dump({"ignored": {"batch": 9, "skills": 1}}, f)
+        found = {f["kind"]: f["detail"] for f in self.tidy("--apply")["findings"]}
+        self.assertIn("dropdb", found.get("quiet_rule", ""))
+        self.assertNotIn("npm publish", found.get("quiet_rule", ""))  # it matched a call just now
+        self.assertIn("batch", found.get("ignored_hint", ""))
+        self.assertNotIn("skills", found.get("ignored_hint", ""))
+        self.assertEqual(len(self.fm_json("rule", "list")), 2, "only the user removes a rule")
+
     def test_a_fix_synced_from_the_repo_is_not_touched(self):
         import fmfixes
         rec = {"sig": "synced-sig: x", "do": "do it"}
