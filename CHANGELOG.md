@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Tools forged from repeats (T-1070): `fm repeats --forge` drafts a script for each repeated command shape fm check doesn't cover and a SKILL.md for each repeated step (in state `research/`, never executable, secrets redacted, labelled as data), and captures one task per draft with a step and a criterion to adopt it; a re-run restores a deleted draft and files nothing new.
 - `fm bench guard --mutate --flip` flips one operator or constant inside the guard's check functions per mutant, the class the old `plugin/tests/mutate_guard.py` script covered; the script is gone (its copy skipped the test fixtures, so every mutant looked killed); run from a builder's worktree, `--mutate` now mutates that checkout's guard, not the main one's (T-1121).
 - Deferred-work triage (T-1048): `fm tidy` and `fm digest` propose do (its revisit date or watched file came), drop (90+ days, its scope gone from git history, no revisit trigger) or ask for each deferred brief, applying nothing; the digest lists do and drop first.
 - Mutation-test the guard (T-1066): `fm bench guard --mutate` drops (or `--weaken`s) one guard rule site at a time (every shape: appends, list returns, `+=`, comprehensions, `Block`s), runs the guard's tests on a throwaway copy in its own process group, and lists the rules no test catches (exit 1 when any); categories with no site are named. Its first full run found 13 untested sites, now being pinned (T-1120). `--coverage` keeps the command-corpus view.
