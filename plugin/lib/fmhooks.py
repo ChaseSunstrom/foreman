@@ -2548,7 +2548,7 @@ def _drive(p, sd, briefs, pl, g):
             d.setdefault("capped", {})[wb.id] = wb.meta["cost_cap"]
             return (f"Foreman drive: cost cap hit on {wb.id}: {fmcost._human(spent)} spent of its {fmcost._human(cap)} "
                     f"cap. fm checkpoint, then tell the user (raise it with fm task set {wb.id} cost_cap=…).")
-    if c.waits_on_user(wb, waiting, "full" if full else "standard"):
+    if c.waits_on_user(wb, waiting, sd.get("autonomy") or "standard"):  # T-1061: "slow" gates M too
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it
     running = sorted(str(t.get("id")) for t in bg if isinstance(t, dict)) if isinstance(bg, list) else sorted(_running(sid))
