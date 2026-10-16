@@ -5,11 +5,13 @@ fm map; the write hook imports it for lint_card on a card it just wrote (T-0947)
 matches a file (card_for, from map.json alone, and the one card's Avoid section: T-0949)."""
 import collections
 import datetime
+import errno
 import fnmatch
 import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import tomllib
 
@@ -149,6 +151,75 @@ def lint(root=CARDS):
     for x in parsed.values():
         notes += [f"{x['name']}: related {r!r} has no card" for r in x.get("related") or [] if r not in names]
     return problems, notes
+
+
+_DEP = re.compile(r"[a-z0-9@][\w@./:-]{2,60}")  # a manifest key is data: anything else never reaches a brief
+
+
+def uncovered_deps(roots, asked=()):
+    """T-1037: dependency -> number of roots using it, for those no card's dep: signal covers (and not in asked)."""
+    pats = {_norm(s[4:]) for card in cards() for s in card.get("detect") or [] if s.startswith("dep:")}
+    exact, globs = {x for x in pats if "*" not in x}, [x for x in pats if "*" in x]
+    seen = collections.Counter()
+    for root in list(roots)[:30]:
+        try:
+            deps = signals(root)["deps"]
+        except Exception:  # an unreadable project is skipped, not the scan
+            continue
+        twins = {d.split(":", 1)[1] for d in deps if ":" in d}  # T-1022: Gradle lists group:artifact and the bare id
+        seen.update(d for d in deps if _DEP.fullmatch(d) and d not in exact and d not in asked and d not in twins
+                    and not any(fnmatch.fnmatchcase(d, g) for g in globs) and not d.startswith("@types/"))
+    return seen
+
+
+# T-1037: text from a dependency's README or docs is data; a card that tells the agent to run web commands or switch
+# checks off never joins the library.
+_UNTRUSTED = re.compile(
+    r"(curl|wget|iwr|Invoke-WebRequest)\b[^\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b"
+    r"|(curl|wget)\b[^\n]*\|\s*(sudo\s+)?(python|perl|ruby|node)[\w.]*\s*(-\s*)?($|[;&`)\"'])"
+    r"|\b(ba|z)?sh\s+<\(\s*(curl|wget)\b|\b(ba|z)?sh\s+-c\s+[\"']?\$\(\s*(curl|wget)\b"
+    r"|\b(ignore|disregard|forget)\b[^\n]{0,30}\b(previous|prior|above|earlier|all)\b[^\n]{0,20}\binstructions?\b"
+    r"|--no-verify\b|--no-gpg-sign\b|\b(disable|skip|turn off|bypass)\s+(all\s+|the\s+|your\s+)?(tests?|checks?|lint\w*|hooks?|guards?|verification)\b"
+    r"|\brm\s+-\w*[rf]\w*\s+(-\w+\s+)*(~|/|\$HOME)(\s|$|`)|\bchmod\s+-R?\s*777\b|\bsudo\s+rm\b", re.I)
+_GOVERNED = re.compile(r"\b(avoid|never|don'?t|do not|must not)\s+(run(ning)?\s+|us(e|ing)\s+)?[`'\"]*$", re.I)
+_BULLET = re.compile(r"^\s*[-*]\s*[`'\"]?[^`'\"]*$")  # an Avoid bullet whose first quoted span holds the match: the heading governs it
+
+
+def _untrusted(text):
+    """T-1037: imperative instructions of the kinds above. A match is a warning, not an order, only when a negation
+    directly governs it (never run X, avoid X) or it opens a bullet under Avoid; a stray 'not' elsewhere changes nothing."""
+    out, section, fenced = [], "", False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            section = line[3:].strip()
+        elif line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced and section == "Test first":  # example test code, not an order
+            continue
+        for m in _UNTRUSTED.finditer(line):
+            before = line[:m.start()]
+            if not (_GOVERNED.search(before) or (section == "Avoid" and _BULLET.match(before))):
+                out.append(m.group(0)[:60])
+    return out
+
+
+def admit_problems(text, root, area, name):
+    """lint_card's problems for card text (linted in memory-then-temp so the lint sees the exact bytes admitted), plus
+    any instruction-like text from outside."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        d = os.path.join(tmp, area)
+        os.makedirs(d)
+        path = os.path.join(d, name + ".md")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        found = [x.replace(os.path.join(area, name + ".md"), name + ".md", 1) for x in lint_card(path)]
+    found += [f"untrusted text: {m!r} (a card never tells the agent to run web commands or switch checks off)"
+              for m in _untrusted(text)]
+    if glob.glob(os.path.join(root, "*", name + ".md")):
+        found.append(f"{name}.md: the library already has a card with that name")
+    return found
 
 
 def lint_card(path):
@@ -807,6 +878,7 @@ def _log_use(args, names):
 def cmd_lib(args):
     import fmcli
     words = " ".join(args.words or [])
+    DRAFTS = os.path.join(c.state_dir(), "lib-drafts")  # T-1037: staged cards, not yet in the library
     if args.action == "source":
         return cmd_source(args)
     if args.action == "stats":  # T-1036: which cards reach Claude, from the ledger's card_injected events
@@ -838,6 +910,61 @@ def cmd_lib(args):
             not p or c.read_meta(p).get("lib_inject") is not False
         return print(f"Edit-time stack cards: {'on' if on else 'off'} (the first edit of a file a card covers gets its "
                      f"Avoid section, once per card per task; FOREMAN_NO_CARDS=1 turns it off for one session).")
+    if args.action == "gaps":  # T-1037: dependencies no card covers, across registered projects (or --root)
+        gone = [r for r in args.root or [] if not os.path.isdir(r)]
+        if gone:
+            raise fmcli.UsageError(f"no such project root: {', '.join(gone)}")
+        roots = args.root or [x.root for x, _ in c.all_projects() if x.root and os.path.isdir(x.root)]
+        rows = [{"dep": d, "projects": n} for d, n in sorted(uncovered_deps(roots).items(), key=lambda kv: (-kv[1], kv[0]))]
+        return fmcli.out(args, rows, "\n".join(f"{r['projects']:>3}  {r['dep']}" for r in rows[:50])
+                         + f"\n{len(rows)} uncovered dependencies (fm lib draft NAME --area AREA stages a card)"
+                         if rows else "Every dependency in these projects has a card.")
+    if args.action == "draft":  # stage a skeleton under the state folder; fill it from the package's real docs
+        if not words or not args.area or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", words) or \
+                not re.fullmatch(r"[a-z0-9-]+", args.area):
+            raise fmcli.UsageError("fm lib draft NAME --area AREA (NAME kebab-case)")
+        path = os.path.join(DRAFTS, args.area, words + ".md")
+        if os.path.exists(path):
+            raise fmcli.UsageError(f"{path} is already staged")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        body = "".join(f"\n## {s}\n- TODO\n" for s in SECTIONS)
+        c.write_atomic(path, f"---\nname: {words}\ntitle: {words}\narea: {args.area}\ntags: [{args.area}]\n"
+                             f"detect: [dep:{words}]\nrelated: []\n---\nTODO one sentence.\n{body}")
+        return print(f"Staged {path}: fill it from the package's own docs to the spec in plugin/skills/library/SKILL.md, "
+                     f"then fm lib admit {words}")
+    if args.action == "admit":  # lint a staged card; move it into the library only if it is clean
+        if not words:
+            raise fmcli.UsageError("fm lib admit needs a staged card's path or name")
+        path = words if os.path.isfile(words) else next(iter(glob.glob(os.path.join(DRAFTS, "*", words + ".md"))), "")
+        if not path:
+            raise fmcli.UsageError(f"no staged card {words!r} (fm lib draft stages one)")
+        path = os.path.abspath(path)
+        into = os.path.realpath(args.into or CARDS)
+        if args.into and not any(os.path.commonpath([into, os.path.realpath(b)]) == os.path.realpath(b)
+                                 for b in (CARDS, c.state_dir())):
+            raise fmcli.UsageError("--into must be inside Foreman's cards folder or state folder")
+        area, name = os.path.basename(os.path.dirname(path)), os.path.splitext(os.path.basename(path))[0]
+        if not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", area) or not re.fullmatch(r"[a-z0-9]+(-[a-z0-9]+)*", name):
+            raise fmcli.UsageError("a staged card sits in AREA/NAME.md, both kebab-case")
+        try:  # one read of the exact bytes: lint them, then write those same bytes
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError as e:
+            raise fmcli.UsageError(f"{path}: {'a symlink is never admitted' if e.errno == errno.ELOOP else e.strerror}")
+        with os.fdopen(fd, encoding="utf-8") as f:
+            text = f.read()
+        problems = admit_problems(text, into, area, name)
+        if problems:
+            print("\n".join(problems) + "\nNot admitted; the draft stays staged.")
+            raise SystemExit(1)
+        dest = os.path.join(into, area, name + ".md")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        try:
+            with open(dest, "x", encoding="utf-8") as f:
+                f.write(text)
+        except FileExistsError:
+            raise fmcli.UsageError(f"{dest} appeared meanwhile; not admitted")
+        os.remove(path)
+        return print(f"Admitted {os.path.relpath(dest, into)}.")
     if args.action == "check":
         problems, notes = lint()
         n = len(cards())
