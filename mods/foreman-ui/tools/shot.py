@@ -44,7 +44,9 @@ def start(a, cmd=None):
     # T-0995: on the user's own state a one-off: the drive never pushes it into their queue (it once planned three tasks
     # and took the focus). T-1013: on a state of its own (the demo recorder) it is that state's working session
     own = os.environ.get("FOREMAN_STATE")
-    env = ["-e", "COLORTERM=truecolor", "-e", f"FOREMAN_STATE={own}" if own else "FOREMAN_ONEOFF=1"]
+    # T-1209: Claude Code drops to 256 colours inside tmux unless told the server passes true colour through
+    env = ["-e", "COLORTERM=truecolor", "-e", "CLAUDE_CODE_TMUX_TRUECOLOR=1",
+           "-e", f"FOREMAN_STATE={own}" if own else "FOREMAN_ONEOFF=1"]
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
          cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else ""))
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
