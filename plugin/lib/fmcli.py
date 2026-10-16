@@ -3295,9 +3295,19 @@ def cmd_check(args):
     if args.action == "affected":
         with c.lock(p.dir):
             meta = c.read_meta(p)
-            meta["affected"] = " ".join(args.words)
+            ext = (args.__dict__.get("for_ext") or "").strip()
+            if ext:  # T-1135: one command per test-file extension, beside the default
+                ext = "." + ext.lstrip(".")
+                by = dict(meta.get("affected_by") or {})
+                by.pop(ext, None) if not args.words else by.update({ext: " ".join(args.words)})
+                meta["affected_by"] = by
+            else:
+                meta["affected"] = " ".join(args.words)
             c.write_meta(p, meta)
-        return out(args, {"affected": meta["affected"]}, f"fm check --affected runs: {meta['affected'] or '(unset)'}")
+        by = meta.get("affected_by") or {}
+        return out(args, {"affected": meta.get("affected", ""), "affected_by": by},
+                   f"fm check --affected runs: {meta.get('affected') or '(unset)'}"
+                   + "".join(f"\n  {e}: {t}" for e, t in by.items()))
     if args.action == "paths":  # T-0126: the files a gate covers; it is skipped while none of them changed
         with c.lock(p.dir):
             meta = c.read_meta(p)
@@ -3902,13 +3912,20 @@ def affected(p, b=None):
     pairs = m.get("pairs") or {}
     paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
         a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
-    template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
-    if not template:
+    meta = c.read_meta(p)
+    template = meta.get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
+    by = meta.get("affected_by") or {}  # T-1135: extension -> its own runner's template
+    if not template and not by:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
-    tests = _runnable(template, sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired))
-    cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
-        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests)) if tests else None
-    return cmd, tests, changed
+    every = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
+    fill = lambda tpl, ts: tpl.replace("{tests}", " ".join(shlex.quote(t) for t in ts)).replace(  # noqa: E731
+        "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in ts))
+    rest = [x for x in every if not any(x.endswith(e) for e in by)]
+    groups = [("", template, _runnable(template, rest))] if template else []
+    groups += [(e, t, [x for x in every if x.endswith(e)]) for e, t in by.items()]
+    cmds = [fill(t, ts) for _, t, ts in groups if ts]
+    tests = sorted({x for _, _, ts in groups for x in ts})
+    return (" && ".join(cmds) if cmds else None), tests, changed
 
 
 def _check_affected(p, args):
@@ -5100,6 +5117,8 @@ def build_parser():
                                             "(paths) or {names} (file names without extension); onwrite: GLOB and a "
                                             "command with {file}, run on each matching write (5 s; a failure blocks; "
                                             "GLOB alone removes it; nothing lists them)")
+    s.add_argument("--for", dest="for_ext", metavar="EXT", help="affected: the command is for tests with this extension "
+                                                                "(.tsx), run beside the default (T-1135)")
     s.add_argument("--timeout", type=float, default=600, help="seconds per command")
     s.add_argument("--fresh", action="store_true", help="run even if the gates passed on this exact tree already")
     s.add_argument("--repeat", type=int, default=0, help="run each gate N times and report its pass rate (an "
