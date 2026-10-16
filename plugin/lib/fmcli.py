@@ -3917,14 +3917,18 @@ def _check_affected(p, args):
     act = c.active_brief(c.load_briefs(p), p.lane)
     if cmd:
         guard_stored(p, act, cmd)  # T-0901: the template is a stored command
+    # T-1131: a changed test file is always in `tests` (T-0875) unless the template's runner can't run it: say so
+    odd = sorted(f for f in changed if c.TESTISH.search(os.path.basename(f)) and c.CODE.search(f) and f not in tests)
+    note = (f"\n! {len(odd)} changed test file(s) this affected command can't run: {', '.join(odd[:5])}"
+            f"{' …' if len(odd) > 5 else ''}; run their own suite") if odd else ""
     if not tests:
-        return out(args, {"tests": [], "changed": sorted(changed)},
-                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
+        return out(args, {"tests": [], "changed": sorted(changed), "unrunnable": odd},
+                   f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check" + note) or 0
     skip = red_first_tests(p, act, [cmd])  # T-1101: as the full gates do
     code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
-    out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip},
+    out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip, "unrunnable": odd},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
-        + (f"\n! {_left_out(skip)}" if skip else "")
+        + (f"\n! {_left_out(skip)}" if skip else "") + note
         + "\n(the full gates still decide before commit and done: fm check)")
     return 1 if code else 0
 

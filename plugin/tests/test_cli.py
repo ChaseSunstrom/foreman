@@ -628,6 +628,17 @@ class Checks(ForemanTestCase):
         self.fm("check", "--affected")
         self.assertIn("tests/test_demo.py", read_text(log))
 
+    def test_a_changed_test_the_template_cannot_run_is_named(self):
+        # T-1131: a .tsx test under a Python template was dropped and the result read "No tests linked"
+        self.fm("init")
+        self.fm("check", "affected", "python3 -m unittest {names}")
+        os.makedirs(os.path.join(self.repo, "web"), exist_ok=True)
+        with open(os.path.join(self.repo, "web", "pane.test.tsx"), "w") as f:
+            f.write("test('x', () => {})\n")
+        out = self.fm("check", "--affected", check=False).stdout
+        self.assertIn("web/pane.test.tsx", out)
+        self.assertIn("can't run", out)
+
     def test_a_flaky_gate_is_rerun_and_labelled_and_old_failures_are_told_apart(self):
         # T-0047: a failure that passes on a rerun is flaky; one that already failed before the task is pre-existing
         self.fm("init")
