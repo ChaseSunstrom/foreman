@@ -1214,8 +1214,8 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        slow = " ".join(f"Foreman: the script {path} was too long for the guard to check in time, so it ran unread."
-                        for path, _ in unread[:2])
+        slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
+                        "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
         note = " ".join(filter(None, [saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))

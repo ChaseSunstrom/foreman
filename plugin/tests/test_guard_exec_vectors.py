@@ -547,6 +547,8 @@ class ScriptHook(HookCase):
                       env={"FM_GUARD_SCRIPT_BUDGET": "0.000001"})
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("too long", self.ctx_of(r))
+        self.assertIn("literal scan", self.ctx_of(r))  # it isn't run unread: the fallback scan read it (T-0275)
+        self.assertNotIn("ran unread", self.ctx_of(r))
         with open(os.path.join(self.project().dir, "ledger.jsonl")) as f:
             evs = [json.loads(x) for x in f]
         hit = [e for e in evs if e["event"] == "guard_unread"]
