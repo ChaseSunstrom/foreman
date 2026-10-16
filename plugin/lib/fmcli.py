@@ -5355,6 +5355,8 @@ def build_parser():
     s.add_argument("-v", "--verbose", action="store_true", help="list the passing checks too")
     s.add_argument("--restore-state", action="store_true", help="move fallback state back to the default dir")
     s.add_argument("--repair", action="store_true", help="move empty (crash-truncated) git objects into the quarantine")
+    s.add_argument("--fix", action="store_true", help="apply only the findings with a safe repair (views, empty git "
+                   "objects, fallback state); list the rest as left for a person")
     s.add_argument("--accept-supply", action="store_true",
                    help="take the current plugins and MCP servers as the supply-chain baseline (T-0672)")
 
