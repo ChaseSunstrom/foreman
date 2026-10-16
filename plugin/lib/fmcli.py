@@ -892,6 +892,14 @@ def task_finish(p, args):
         todo.append(("final", None, args.run))
     for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
         guard_stored(p, b, cmd)
+    if getattr(args, "ablate", False):  # T-1067: revert each hunk alone against the linked tests; informational
+        cmd, _, _ = affected(p, b)
+        if cmd is None:
+            print(f"{b.id}: --ablate: no linked tests, nothing to ablate")
+        else:
+            guard_stored(p, b, cmd)
+            task_prove_hunks(p, b, argparse.Namespace(run=cmd, max=20, step=None, ac=None,
+                                                      json=getattr(args, "json", False), timeout=args.timeout))
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -4578,6 +4586,8 @@ def build_parser():
     t.add_argument("--skip-affected", metavar="WHY", help="T-1117: close without the linked tests' verdict (a runner "
                                                          "fm can't read, a known-red suite), logged with WHY")
     t.add_argument("--lesson")
+    t.add_argument("--ablate", action="store_true", help="T-1067: revert each hunk alone against the linked tests and "
+                                                         "report the ones no test notices (slow)")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
     t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
