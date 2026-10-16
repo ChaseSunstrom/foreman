@@ -465,6 +465,34 @@ def hot_files(p, b, days=30, times=2):
             if len(t) >= times and any(c.glob_match(f, s) for s in scope)]
 
 
+# T-1164: keyword -> class, first match wins; ponytail: a keyword table, a model could classify better but costs a call
+DEFECT_CLASSES = [
+    ("hot path / cost", ("hot path", "every prompt", "every hook", "per call", "slow", "o(n", "scans the whole")),
+    ("cwd vs root paths", ("cwd", "relative path", "worktree root", "main checkout", "symlink")),
+    ("duplicated output", ("duplicate", "twice", "redundant", "printed again", "repeated")),
+    ("counting events not actors", ("distinct", "dedupe", "count events", "same session", "counted")),
+    ("untested branch", ("untested", "no test", "not covered", "never exercised")),
+    ("unbounded input", ("unbounded", "no limit", "no cap", "huge", "too large", "truncat")),
+    ("untrusted input", ("inject", "untrusted", "unescaped", "traversal", "redact", "secret")),
+    ("race / lock", ("race", "lock", "concurrent", "atomic")),
+]
+
+
+def defect_classes(p, days=30, top=5):
+    """Lines for the defect classes reviewers confirmed in the last `days` days: class, count and one 100-char example."""
+    seen = {}
+    for e in c.ledger_events(p, ["finding"], since=c.iso(time.time() - days * 86400)):
+        d = e.get("data") or {}
+        text = " ".join(str(d.get("text") or "").split())
+        if d.get("verdict") != "confirmed" or not text:
+            continue
+        low = text.lower()
+        name = next((n for n, ks in DEFECT_CLASSES if any(k in low for k in ks)), "other")
+        seen.setdefault(name, []).append(text)
+    ranked = sorted(seen.items(), key=lambda kv: -len(kv[1]))[:top]
+    return [f"- {n}: {len(t)} (e.g. {t[-1][:100]})" for n, t in ranked]
+
+
 def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -516,6 +544,10 @@ def builder_brief(p, b, args, resume_branch=None):
     warns = hot_files(p, b)
     if warns:
         parts += ["## Warning", *warns, ""]
+    keeps = defect_classes(p)
+    if keeps:
+        parts += ["## Defects this project keeps shipping", "Reviewers confirmed these in the last 30 days; check your "
+                  "diff for each before you report:", *keeps, ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
