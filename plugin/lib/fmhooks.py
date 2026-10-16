@@ -1028,6 +1028,18 @@ def _outward_denial(pl):
             f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
 
 
+def _credential_read(pl):
+    """T-1224: the guard's refusal of a Read of a credential, or None. Only a path that is one costs the task lookup
+    (for a grant): every other Read stays one path check."""
+    import fmguard as guard
+    home = os.path.expanduser("~")
+    quick = guard.Ctx(cwd=_cwd(pl), project_root=None, home=home, foreman_home="")
+    if not guard.findings("Read", pl.get("tool_input") or {}, quick):
+        return None
+    ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    return guard.message(block, ctx) if block else None
+
+
 def _guard_decision(pl, guard):
     ctx, p, act = _guard_ctx(pl, guard)
     found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
@@ -1075,8 +1087,14 @@ def _pre_tool_use(raw):
                 log_error("PreToolUse", _tb())
             return 0
         if tool == "Read":  # T-0724: its own hook entry, which never blocks a read on failure
+            try:  # T-1224: but a credential read is the guard's, and that check fails closed
+                d = _credential_read(pl)
+            except Exception:
+                log_error("PreToolUse", _tb())
+                d = ("Foreman guard: the credential-read check failed (fm doctor shows the error), so this read is "
+                     "refused until that check works again.")
             try:
-                d = _outline_first(pl)
+                d = d or _outline_first(pl)
             except Exception:
                 log_error("PreToolUse", _tb())
                 d = None
