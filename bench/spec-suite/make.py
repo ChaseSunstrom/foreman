@@ -3,6 +3,7 @@
 
     python3 bench/spec-suite/make.py DIR      build the repo in DIR (a new or empty folder)
     python3 bench/spec-suite/make.py --check  build into a temp folder and prove every task fail-to-pass
+    add --suite hard for round 2 (T-1237, hard.py): ledger, graded by its whole test suite
 
 The repo is a small stdlib-only Python package, kit: a base commit, then one commit per task adding
 kit/<name>.py and tests/test_<name>.py, its message the task's complete spec. Each hidden test checks only
@@ -10,10 +11,13 @@ behaviour its message states. The build is reproducible (fixed author and dates)
 """
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
 import tempfile
+
+import hard  # round 2, beside this file
 
 EPOCH = 1767225600  # 2026-01-01T00:00:00Z; commit i is stamped i minutes later
 VERIFY = "python3 -m unittest {tests}"
@@ -1294,27 +1298,51 @@ def _git(root, *args, i=0):
     return r.stdout.strip()
 
 
-def commits():
+def _apply(text, change, where):
+    """A file's new text: change itself when it's a str, else text with each (old, new) edit, old found exactly once."""
+    if isinstance(change, str):
+        return change.lstrip("\n")
+    for old, new in change:
+        found = 0 if text is None else text.count(old)
+        if found != 1:
+            raise SystemExit(f"make.py: {where}: an edit's old text is found {found} times, not once: {old[:60]!r}")
+        text = text.replace(old, new)
+    return text
+
+
+def commits(suite="easy"):
     """(message, {path: text}) for the base commit, then for each task."""
+    if suite == "hard":
+        tree = {}
+        for message, changes in [(hard.BASE_MESSAGE, hard.BASE_FILES)] + [(t["message"], t["files"])
+                                                                           for t in hard.TASKS]:
+            files = {p: _apply(tree.get(p), change, p) for p, change in changes.items()}
+            tree.update(files)
+            yield message.strip(), files
+        return
     yield BASE_MESSAGE.strip(), {path: text.lstrip("\n") for path, text in BASE_FILES.items()}
     for t in TASKS:
         yield t["message"].strip(), {f"kit/{t['name']}.py": t["solution"].lstrip("\n"),
                                      f"tests/test_{t['name']}.py": t["tests"].lstrip("\n")}
 
 
-def build(root):
+def _write(root, files):
+    for rel, text in files.items():
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+
+
+def build(root, suite="easy"):
     """Create the repo in root (a new or empty folder); the commit shas, base first."""
     if os.path.lexists(root) and (not os.path.isdir(root) or os.listdir(root)):
         raise SystemExit(f"make.py: {root} exists and isn't an empty folder")
     os.makedirs(root, exist_ok=True)
     _git(root, "init", "-q", "-b", "main")
     shas = []
-    for i, (message, files) in enumerate(commits()):
-        for rel, text in files.items():
-            path = os.path.join(root, rel)
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8", newline="\n") as f:
-                f.write(text)
+    for i, (message, files) in enumerate(commits(suite)):
+        _write(root, files)
         _git(root, "add", "--", *files)
         _git(root, "commit", "-q", "--no-verify", "-m", message, i=i)
         shas.append(_git(root, "rev-parse", "HEAD"))
@@ -1334,37 +1362,84 @@ def _unittest(root, *names):
     return (r.returncode or (5 if "Ran 0 tests" in out else 0)), out
 
 
-def check():
+def _failing(out):
+    """The test modules unittest's output reports a FAIL or ERROR in (an import error names the module itself)."""
+    mods = set()
+    for name, where in re.findall(r"^(?:FAIL|ERROR): (\S+) \(([\w.]+)\)", out, re.M):
+        mods.add(name if "_FailedTest" in where else where.split(".")[0])
+    return sorted(mods)
+
+
+def _naive(repo, t, sha, parent, own, tests, run):
+    """(problem or None, report) for the task's naive variant: its files on the parent (edits apply to the parent's
+    text, or to the task's own for a file the task adds), with the hidden tests restored, must fail the whole suite
+    in the module it names."""
+    naive = t["naive"]
+    _git(repo, "checkout", "-q", "-f", f"{sha}^")
+    _git(repo, "checkout", sha, "--", *tests)
+    _write(repo, {rel: _apply(parent[rel] if rel in parent else own.get(rel), change, f"{t['name']} naive {rel}")
+                  for rel, change in naive["files"].items()})
+    code, out = _unittest(repo, *run)
+    _git(repo, "clean", "-fdq")
+    fails = _failing(out)
+    hidden = {os.path.splitext(os.path.basename(p))[0] for p in tests}
+    report = f"naive ({naive['what']}) fails " + (", ".join(
+        f"{m} ({'hidden' if m in hidden else 'existing'})" for m in fails) or f"nothing (exit {code})")
+    caught = code and naive["fails"] in fails
+    return (None if caught else f"its naive variant doesn't fail {naive['fails']}"), report
+
+
+def check(suite="easy"):
     """Build into a temp folder and prove each task fail-to-pass: its hidden tests fail at the parent and pass at
-    its commit; the base's own tests and the whole suite pass; a second build gives the same commits."""
+    its commit; the base's own tests and the whole suite pass; a second build gives the same commits. The hard
+    suite runs the whole suite each time, as its --verify does, and proves each naive variant fails."""
+    tasks = hard.TASKS if suite == "hard" else TASKS
+    whole = shlex.split(hard.VERIFY)[3:] if suite == "hard" else []  # python3 -m unittest <these>
+    trees = [{}]
+    for _, files in commits(suite):
+        trees.append({**trees[-1], **files})
     problems, failed = [], 0
     with tempfile.TemporaryDirectory(prefix="spec-suite-") as tmp:
         repo = os.path.join(tmp, "kit")
-        shas = build(repo)
-        for t, sha in zip(TASKS, shas[1:]):
-            name, test = t["name"], f"tests/test_{t['name']}.py"
+        shas = build(repo, suite)
+        for i, (t, sha) in enumerate(zip(tasks, shas[1:])):
+            name, parent = t["name"], trees[i + 1]
+            if suite == "hard":  # the files the commit adds or changes, split as fm bench build splits them
+                changed = _git(repo, "show", "--name-only", "--diff-filter=AM", "--format=", sha).splitlines()
+                tests = sorted(p for p in changed if p.startswith("tests/"))
+                source = [p for p in changed if not p.startswith("tests/") and not p.endswith(".md")]
+                named = [p for p in source if p.endswith(".py") and p not in parent]
+            else:
+                tests, named, source = [f"tests/test_{name}.py"], [f"kit/{name}.py"], [f"kit/{name}.py"]
+            run = whole or tests
             _git(repo, "checkout", "-q", "-f", f"{sha}^")
-            _git(repo, "checkout", sha, "--", test)  # the hidden tests, restored at the parent as bench does
-            before, _ = _unittest(repo, test)
+            _git(repo, "checkout", sha, "--", *tests)  # the hidden tests, restored at the parent as bench does
+            before, _ = _unittest(repo, *run)
             _git(repo, "checkout", "-q", "-f", sha)
-            after, out = _unittest(repo, test)
+            after, out = _unittest(repo, *run)
             why = [w for w, bad in [("its tests pass at the parent", before == 0),
                                     (f"its tests fail at its commit (exit {after}): {out.strip()[-400:]}", after),
-                                    (f"its message doesn't name kit/{name}.py", f"kit/{name}.py" not in t["message"])]
-                   if bad]
+                                    ("it has no test files or no source files", not tests or not source)]
+                   + [(f"its message doesn't name {p}", p not in t["message"]) for p in named] if bad]
+            naive = _naive(repo, t, sha, parent, trees[i + 2], tests, run) if suite == "hard" else (None, "")
+            why += [naive[0]] if naive[0] else []
             print(f"{'FAIL' if why else 'ok':4}  {name:12} " + ("; ".join(why) if why else
                   f"fails at the parent (exit {before}), passes at {sha[:10]}"))
+            if naive[1]:
+                print(f"{'':18}{naive[1]}")
             problems += [f"{name}: {w}" for w in why]
             failed += bool(why)
-        code, out = _unittest(repo)
+        _git(repo, "checkout", "-q", "-f", shas[-1])
+        code, out = _unittest(repo, *whole)
         print(f"{'FAIL' if code else 'ok':4}  {'all tests':12} " + (out.strip()[-400:] if code else "pass at HEAD"))
         problems += [f"all tests at HEAD: exit {code}"] if code else []
-        again = build(os.path.join(tmp, "again"))
+        again = build(os.path.join(tmp, "again"), suite)
         same = again == shas
         print(f"{'ok' if same else 'FAIL':4}  {'reproducible':12} " + ("a second build gives the same commits" if same
                                                                       else "a second build gives other commits"))
         problems += [] if same else ["the build isn't reproducible"]
-    print(f"spec suite: {len(TASKS) - failed} of {len(TASKS)} tasks fail-to-pass"
+    print(f"spec suite{' (hard)' if suite == 'hard' else ''}: {len(tasks) - failed} of {len(tasks)} tasks "
+          + ("fail-to-pass with their naive variants caught" if suite == "hard" else "fail-to-pass")
           + (f"; {len(problems)} problem(s)" if problems else ""))
     return 1 if problems else 0
 
@@ -1373,16 +1448,19 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("dir", nargs="?", help="a new or empty folder to build the repo in")
     ap.add_argument("--check", action="store_true", help="build into a temp folder and prove each task fail-to-pass")
+    ap.add_argument("--suite", choices=("easy", "hard"), default="easy",
+                    help="easy: round 1, kit (default); hard: round 2, ledger, graded by its whole suite")
     args = ap.parse_args(argv)
     if args.check == bool(args.dir):
         ap.error("give DIR or --check")
     if args.check:
-        return check()
+        return check(args.suite)
     root = os.path.abspath(args.dir)
-    shas = build(root)
+    shas = build(root, args.suite)
+    verify = hard.VERIFY if args.suite == "hard" else VERIFY
     print(f"built {root}: base {shas[0][:10]} and {len(shas) - 1} task commits")
     print(f"next: cd {shlex.quote(root)} && fm bench build --commits {shas[0][:10]}..HEAD "
-          f"--verify {shlex.quote(VERIFY)} && fm bench duel --vs none --runs 3 --jobs 4")
+          f"--verify {shlex.quote(verify)} && fm bench duel --vs none --runs 3 --jobs 4")
     return 0
 
 
