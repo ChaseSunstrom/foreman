@@ -4366,6 +4366,8 @@ def cmd_next(args):
     asks = unanswered_asks(p)
     over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
+    import fmcontract
+    over += fmcontract.line(p)  # T-1158
     import fmlanes
     dead = fmlanes.stopped(p)  # T-1028
     over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
@@ -5476,6 +5478,14 @@ def build_parser():
     s.add_argument("--title")
     s.add_argument("--suggest", action="store_true", help="list related items worth one batch each (T-0670)")
     s.add_argument("--apply", action="store_true", help="with --suggest: make those batches")
+
+    s = add("contract", lazy("fmcontract", "cmd_contract"), tier=("Project and settings", 771),
+            help="bound an unattended run by time and spend: the drive, the loop and fm run stop there, with a receipt (T-1158)")
+    s.add_argument("action", nargs="?", default="show", choices=["show", "off", "receipt"])
+    s.add_argument("--until", help="stop at HH:MM local time (today, or tomorrow if past)")
+    s.add_argument("--usd", type=float, help="stop after this much USD since the contract began: counts headless runs "
+                   "(fm run, the subagent ledger), not an interactive session")
+    s.add_argument("--tokens", help="stop after this many tokens (500k, 2M) used by this project's sessions since it began")
 
     s = add("budget", lazy("fmbudget", "cmd_budget"), tier=("Project and settings", 770), help="spend on child runs and subagents today, and the caps that "
                                                             "bound it (T-0227)")

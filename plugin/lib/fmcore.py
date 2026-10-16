@@ -2729,7 +2729,8 @@ def _next_for(p, briefs=None):
             return None, "idle", (f"queue is empty, but what {len(retry)} blocked task(s) waited on changed "
                                   f"({', '.join(retry[:4])}): fm tidy --apply reopens them" + waits)
         import fmloop  # T-1057: with the forever loop on, an empty queue starts the next round
-        if fmloop.on(p):
+        import fmcontract  # T-1158: no next round past an ended contract (read-only: callers may hold the lock)
+        if fmloop.on(p) and not fmcontract.over(p, freeze=False):
             return None, "loop", fmloop.action(p) + waits
         return None, "idle", "queue is empty: FINAL VERIFY and REFLECT (/foreman:next)" + waits
     if b.status == "active" and b.meta.get("replan"):  # T-0603
