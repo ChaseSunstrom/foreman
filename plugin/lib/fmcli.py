@@ -5434,7 +5434,9 @@ def build_parser():
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent; "
                                                        "resume <id>: take back a stopped builder's work")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume"])
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume", "race", "pick"])
+    s.add_argument("--score", action="store_true", help="race: run both sides' criteria in their worktrees, count "
+                                                        "lines changed, name a leader (T-1069)")
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s.add_argument("--force", metavar="REASON", help="resume: although the builder isn't known to be stopped or ignored "
