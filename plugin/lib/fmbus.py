@@ -560,7 +560,10 @@ def cmd_lease(args):
     me = _sid(fmcli.session()) or "user"
     with c.lock(_dir()):
         data = _leases()
-        if args.action in ("take", "drop"):
+        if args.action == "drop" and not args.target:  # T-1134: bare drop releases all this session holds here
+            data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["session"] == me)}
+            _write_leases(data)
+        elif args.action in ("take", "drop"):
             if not args.target:
                 raise fmcli.UsageError(f"fm lease {args.action} FILE[::SYMBOL]...")
             act = c.active_brief(c.load_briefs(p), p.lane)
