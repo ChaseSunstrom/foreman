@@ -457,13 +457,37 @@ def after_edit(pl, p, path):
         _write_leases(data)
 
 
+def _who(v):
+    return f"session {v['session'][:8]}" + (f" ({v['task']})" if v.get("task") else "")
+
+
+def claim_overlaps(p, rel, sym, me, act=None, data=None):
+    """T-1068: live leases of other sessions on the same file where either side is file-wide or the symbols match.
+    A lease under my own task (a lane brief's pre-claim) is mine."""
+    return [v for v in (_leases() if data is None else data).values()
+            if v["project"] == p.slug and v["file"] == rel and v["session"] != me
+            and not (act and v["session"] == f"lane-{act.id}") and (v["symbol"] == sym or "*" in (sym, v["symbol"]))]
+
+
+def preclaim(p, task_id, files, seconds=LEASE_S):
+    """T-1068: a lane brief claims the task's concrete scope files up front, under the task id."""
+    with c.lock(_dir()):
+        data = _leases()
+        for f in files:
+            data[f"{p.slug}:{f}::*"] = {"session": f"lane-{task_id}", "task": task_id, "project": p.slug,
+                                       "file": f, "symbol": "*", "until": time.time() + seconds}
+        _write_leases(data)
+
+
 def conflict(pl, p, path):
     """PreToolUse: why another session's lease forbids this edit, or None."""
     sid, tool = _sid(pl.get("session_id")), pl.get("tool_name")
     if not path.startswith(p.root.rstrip("/") + "/"):
         return None
     rel = os.path.relpath(path, p.root)
-    held = [v for v in _leases().values() if v["project"] == p.slug and v["file"] == rel and v["session"] != sid]
+    act = c.active_brief(c.load_briefs(p), p.lane)  # T-1068: a lane brief's pre-claim is its own task's
+    held = [v for v in _leases().values() if v["project"] == p.slug and v["file"] == rel and v["session"] != sid
+            and not (act and v["session"] == f"lane-{act.id}")]
     if not held:
         return None
     text = _lines(path) or ""
@@ -513,17 +537,26 @@ def cmd_lease(args):
         data = _leases()
         if args.action in ("take", "drop"):
             if not args.target:
-                raise fmcli.UsageError(f"fm lease {args.action} FILE[::SYMBOL]")
-            rel, _, sym = args.target.partition("::")
-            rel = os.path.relpath(os.path.abspath(rel), p.root) if os.path.exists(rel) else rel
-            key = f"{p.slug}:{rel}::{sym or '*'}"
-            if args.action == "drop":
-                data.pop(key, None) if data.get(key, {}).get("session") in (me, None) else None
-            elif data.get(key) and data[key]["session"] != me:
-                raise fmcli.UsageError(f"{rel}::{sym or '*'} is leased by session {data[key]['session'][:8]}")
-            else:
-                data[key] = {"session": me, "task": None, "project": p.slug, "file": rel, "symbol": sym or "*",
-                             "until": time.time() + args.minutes * 60}
+                raise fmcli.UsageError(f"fm lease {args.action} FILE[::SYMBOL]...")
+            act = c.active_brief(c.load_briefs(p), p.lane)
+            todo = []
+            for t in args.target:
+                rel, _, sym = t.partition("::")
+                rel = os.path.relpath(os.path.abspath(rel), p.root) if os.path.exists(rel) else rel
+                todo.append((rel, sym or "*"))
+            if args.action == "take" and not args.warn:  # T-1068: refuse the whole claim before taking any of it
+                hit = [f"{r}::{s} overlaps {_who(v)}" for r, s in todo for v in claim_overlaps(p, r, s, me, act)]
+                if hit:
+                    raise fmcli.UsageError("; ".join(hit) + " (--warn takes it anyway)")
+            for rel, sym in todo:
+                key = f"{p.slug}:{rel}::{sym}"
+                if args.action == "drop":
+                    data.pop(key, None) if data.get(key, {}).get("session") in (me, None) else None
+                else:
+                    for v in claim_overlaps(p, rel, sym, me, act):
+                        print(f"warning: {rel}::{sym} overlaps {_who(v)}")
+                    data[key] = {"session": me, "task": act.id if act else None, "project": p.slug, "file": rel,
+                                 "symbol": sym, "until": time.time() + args.minutes * 60}
             _write_leases(data)
     rows = [v for v in data.values() if v["project"] == p.slug]
     return fmcli.out(args, {"leases": rows}, "\n".join(

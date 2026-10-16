@@ -128,6 +128,8 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
+- Before editing, claim what you plan to change: `fm lease take FILE[::SYMBOL]...` (T-1068). It fails naming the
+  session and task that already claimed an overlap: work elsewhere or message it. `fm lease drop` when done.
 - Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
   sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399). Many spots at
   once: Write the batch to a file (JSON [{{"file", "old", "new"}}]) and run fm edit --file F (T-1089).
@@ -252,7 +254,9 @@ def builder_brief(p, b, args, resume_branch=None):
                   f"`git merge {resume_branch}` (never rebase), read `git log {base}..{resume_branch}` and the Steps "
                   f"already ticked, and carry on from there.", ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
-    path = os.path.join(p.dir, "audits", f"{b.id}.builder.md")
+    import fmbus  # T-1068: claim the concrete scope files up front, under the task id
+    fmbus.preclaim(p, b.id, [s for s in b.meta.get("scope") or [] if not re.search(r"[*?\[]", s)])
+    path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, c.redact("\n".join(parts)) + "\n")
