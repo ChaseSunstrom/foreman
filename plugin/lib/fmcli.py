@@ -895,7 +895,7 @@ def task_finish(p, args):
     if b.status == "dropped":  # T-0679 chaos test
         raise c.PolicyError(f"{b.id} is dropped: reopen it first (fm task set {b.id} status=planned)")
     if b.status == "done" and args.commit:  # T-0720: a commit refused after the close is retried on its own
-        _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check)
+        _commit_task(p, b, args.commit, stack=args.stack, check=args.stack_check, with_=args.with_)
         if not getattr(args, "json", False):
             print(_landed(p, b))
         return 0
@@ -973,7 +973,7 @@ def task_finish(p, args):
     if getattr(args, "ablate", False):
         _ablate(p, need_brief(p, b.id), args)
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
-        _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
+        _commit_task(p, need_brief(p, b.id), args.commit, dry=True, with_=args.with_)
     args.task_cmd = "done"
     args.not_verified = ([f"affected tests skipped: {c.fit(args.waived_affected, 90)}"]  # T-1159
                          if getattr(args, "waived_affected", None) else []) + [
@@ -993,7 +993,7 @@ def task_finish(p, args):
     elif not rc and b.type == "FIX" and not why and not b.section("Why not caught").strip():
         print(f"{b.id}: what would have caught this earlier? (--why-not-caught next time; M/L fixes need it)")
     if args.commit and not rc:
-        _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check)
+        _commit_task(p, need_brief(p, b.id), args.commit, stack=args.stack, check=args.stack_check, with_=args.with_)
     if not rc and not getattr(args, "json", False):
         import fmledger
         try:  # T-1065: the chain head, the anchor fm verify-ledger --head checks later
@@ -1222,7 +1222,38 @@ def _self_docs_gaps(p, b):
     return [f"self docs: {res.detail}"] if res.status == "FAIL" else []
 
 
-def _commit_task(p, b, message, dry=False, stack=False, check=None):
+DIRTY_CAP = 500
+
+
+def _dirty_file(p, tid):
+    return os.path.join(p.dir, "audits", f"{tid}.dirty.json")  # a sidecar: brief meta mangles commas, ' #' and quotes
+
+
+def _save_dirty(p, b, snap):
+    """T-1169: the user's own uncommitted files when the task was first focused: those in the working-tree snapshot that
+    differ from HEAD, less any file an earlier task touched (that one is Foreman work, see _theirs). Capped."""
+    out = c._git(p.root, "diff-tree", "-r", "--name-only", "--no-renames", "-z", "HEAD", snap, timeout=30, fail=None)
+    tasks = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
+             if e.get("event") == "touched" and e.get("task") not in (None, b.id)
+             and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
+    paths = [x for x in (out or "").split("\0") if x and x not in tasks]
+    os.makedirs(os.path.dirname(_dirty_file(p, b.id)), exist_ok=True)
+    c.write_atomic(_dirty_file(p, b.id), json.dumps({"paths": paths[:DIRTY_CAP], "truncated": len(paths) > DIRTY_CAP}))
+
+
+def _dirty_at_focus(p, b):
+    try:
+        with open(_dirty_file(p, b.id)) as f:
+            return set(json.load(f)["paths"])
+    except (OSError, ValueError, KeyError):
+        return set()  # an older brief has no snapshot: everything is the task's, as before
+
+
+def _rel(p, f):
+    return os.path.normpath(os.path.relpath(os.path.join(p.root, f), p.root))
+
+
+def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     """T-0129: commit what this task changed (from its focus snapshot), only after it closed: a refused close commits
     nothing, and work from before the task stays out. A synced .foreman/ mirror goes with it. dry (T-0720): only the
     credential check, before the close, leaving the index as it was."""
@@ -1245,6 +1276,13 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None):
     files = [f for f in files if f not in theirs]
     if theirs and not dry:
         print(f"{b.id}: left out {len(theirs)} file(s) only other tasks edited: {', '.join(theirs[:8])}")
+    # T-1169: a file dirty before the focus is the user's own work unless finish --with names it
+    dirty, wanted = _dirty_at_focus(p, b), {_rel(p, w) for w in with_ or []}
+    users = [f for f in files if f in dirty and f not in wanted]
+    files = [f for f in files if f not in users]
+    if users and not dry:
+        print(f"{b.id}: left out {len(users)} file(s) that were already uncommitted when the task was focused: "
+              f"{', '.join(users[:8])} (fm task finish {b.id} --commit ... --with FILE commits one)")
     files += [".foreman"] if mirror else []
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
@@ -2443,6 +2481,7 @@ def cmd_focus(args):
             snap = c.worktree_tree(p.root)  # T-0078: its own changes are measured from the files as they are now
             if snap:
                 target.meta["base_tree"] = snap
+                _save_dirty(p, target, snap)
             else:
                 target.append_log("snapshot of the working files failed (git add): its diff starts at the start commit")
         import fmeco
@@ -4718,6 +4757,9 @@ def build_parser():
                                                          "report the ones no test notices (slow)")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
+    t.add_argument("--with", dest="with_", action="append", metavar="FILE",
+                   help="with --commit: also commit FILE, which was already uncommitted when the task was focused "
+                        "(repeatable)")
     t.add_argument("--followups", nargs="+", metavar="'Q => A'", help="the likely follow-up questions, answered (T-0639)")
     t.add_argument("--insight", help="one line: what this task taught that wasn't obvious (the digest lists them)")
     t.add_argument("--differently", metavar="TEXT", help="one line: what you would do differently next time (T-0641)")
