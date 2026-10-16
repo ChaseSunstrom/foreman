@@ -832,6 +832,32 @@ def _archived_last(p):
     return b""
 
 
+def ledger_events(p, kinds=None, since=""):
+    """Every ledger event (of these kinds, at or after since), from the months fm tidy rolled into archive/ and the
+    live file, oldest first: for reports over a window, which a fixed-size tail can't promise to cover. Archives
+    wholly before since are skipped by name."""
+    marks = [f'"{k}"'.encode() for k in kinds] if kinds else None
+    out = []
+    for path in ledger_files(p):
+        name = os.path.basename(path)
+        if since and LEDGER_ARCHIVE.fullmatch(name) and name[7:14] < str(since)[:7]:
+            continue
+        try:
+            with open(path, "rb") as f:
+                for raw in f:
+                    if marks and not any(m in raw for m in marks):
+                        continue
+                    try:
+                        e = json.loads(raw)
+                    except (ValueError, RecursionError):
+                        continue
+                    if isinstance(e, dict) and (not kinds or e.get("event") in kinds) and str(e.get("ts") or "") >= since:
+                        out.append(e)
+        except OSError:
+            continue
+    return out
+
+
 def ledger_tail(p, n=200):
     """The last n ledger events."""
     return tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), n)
