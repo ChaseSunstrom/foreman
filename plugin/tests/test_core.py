@@ -742,6 +742,13 @@ class RunCommand(unittest.TestCase):
             code, out = c.run_command(d, "python3 -m unittest test_x 2>&1 | tail -3")
             self.assertEqual(code, 1, out)
 
+    def test_a_run_never_inherits_the_test_skip_list(self):
+        # T-1114: an exported FOREMAN_SKIP_TESTS would make an evidence run of run.py leave modules out silently
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_SKIP_TESTS": "test_guard"}):
+            _, out = c.run_command(os.path.dirname(__file__), 'echo "skip=${FOREMAN_SKIP_TESTS:-none}"')
+        self.assertIn("skip=none", out)
+
 
 class NativeClaude(unittest.TestCase):
     def test_the_native_install_is_found_when_path_lacks_it(self):

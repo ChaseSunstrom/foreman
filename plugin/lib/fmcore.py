@@ -430,6 +430,8 @@ def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     if root and os.path.isdir(root):
         _drop_racy_pyc(root)
+    if env is None:  # T-1114: fm check sets the skip list itself; an inherited one would leave tests out silently
+        env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
     try:  # its own process group, so a timeout kills the servers and workers it started too; no stdin to wait on
         pr = subprocess.Popen(["bash", "-c", cmd], cwd=root, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                               stderr=subprocess.STDOUT, text=True, errors="replace", start_new_session=True, env=env)
@@ -2185,6 +2187,26 @@ def rules(p):
         return []
     return [x for x in v if isinstance(x, dict) and isinstance(x.get("pattern"), str) and x.get("on") in ("bash", "path")
             and x.get("action") in ("block", "warn")] if isinstance(v, list) else []
+
+
+def rule_last_hits(p):
+    """T-1115: {pattern: when a call last matched it}, so fm tidy can tell a rule that guards from one that never fires."""
+    try:
+        with open(os.path.join(p.dir, "rules-hits.json"), encoding="utf-8") as f:
+            v = json.load(f)
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def note_rule_hits(p, hits):
+    """Stamp each matched rule's last hit (only on a hit: no write on the common path)."""
+    seen = rule_last_hits(p)
+    seen.update({r["pattern"]: now() for _, r, _ in hits})
+    try:
+        write_atomic(os.path.join(p.dir, "rules-hits.json"), json.dumps(seen))
+    except OSError:
+        pass  # a hit stamp must never cost the guard
 
 
 def add_rule(p, pattern, on, action, why):

@@ -284,3 +284,82 @@ class TidyStateBackup(TidyCase):
         self.assertEqual(len(left), 5)
         self.assertNotIn("20200101T000000Z.tar.gz", left)
         self.assertTrue(all(n.endswith(".tar.gz") for n in left))
+
+
+class TidyHygiene(TidyCase):
+    # T-1072: fixes unused for 60 days (or losing) are listed and retired on --apply; unused cards are only listed
+    def seed_fixes(self):
+        import fmfixes
+        self.fm("fix", "add", "stale-sig: boom", "--do", "run the old thing")
+        self.fm("fix", "add", "fresh-sig: bang", "--do", "run the new thing")
+        self.fm("fix", "add", "losing-sig: nope", "--do", "run the wrong thing")
+        ids = {f["sig"]: f["id"] for f in fmfixes.known(self.p)}
+        stamp = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {ids["stale-sig: boom"]: {"worked": 1, "last": stamp(time.time() - 90 * 86400)},
+                                 ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())},
+                                 ids["losing-sig: nope"]: {"misses": 3, "last": stamp(time.time())}}}, f)
+
+    def sigs(self):
+        return sorted(f["sig"] for f in self.fm_json("fix", "list"))
+
+    def test_stale_by_age_is_listed_never_deleted_and_a_losing_fix_is_removed_with_a_copy(self):
+        self.seed_fixes()
+        found = {f["kind"] + ":" + f["detail"] for f in self.tidy()["findings"] if f["kind"] in ("stale_fix", "losing_fix")}
+        self.assertEqual(len(found), 2, found)
+        self.assertTrue(any("stale-sig" in d for d in found) and any("losing-sig" in d for d in found))
+        self.assertEqual(len(self.sigs()), 3)  # a dry run changes nothing
+        self.tidy("--apply")
+        self.assertEqual(self.sigs(), ["fresh-sig: bang", "stale-sig: boom"])
+        kept = read_text(os.path.join(self.p.dir, "archive", "fixes-removed.md"))
+        self.assertIn("losing-sig: nope", kept)
+        self.assertRegex(kept, r"\d{4}-\d\d-\d\d")
+
+    def test_quiet_rules_and_ignored_hints_are_listed_not_removed(self):
+        # T-1115: a rule no call matched in 60 days, and hints shown again and again without use, are retire candidates
+        self.fm("rule", "add", "dropdb", "--why", "never drop the database")
+        self.fm("rule", "add", "npm publish", "--why", "releases go through CI", "--warn")
+        path = os.path.join(self.p.dir, "rules.json")
+        with open(path) as f:
+            rules = json.load(f)
+        old = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 90 * 86400))
+        for r in rules:
+            r["at"] = old
+        with open(path, "w") as f:
+            json.dump(rules, f)
+        self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "npm publish --dry-run"}})
+        with open(os.path.join(self.p.dir, "hints.json"), "w") as f:
+            json.dump({"ignored": {"batch": 9, "skills": 1}}, f)
+        found = {f["kind"]: f["detail"] for f in self.tidy("--apply")["findings"]}
+        self.assertIn("dropdb", found.get("quiet_rule", ""))
+        self.assertNotIn("npm publish", found.get("quiet_rule", ""))  # it matched a call just now
+        self.assertIn("batch", found.get("ignored_hint", ""))
+        self.assertNotIn("skills", found.get("ignored_hint", ""))
+        self.assertEqual(len(self.fm_json("rule", "list")), 2, "only the user removes a rule")
+
+    def test_a_fix_synced_from_the_repo_is_not_touched(self):
+        import fmfixes
+        rec = {"sig": "synced-sig: x", "do": "do it"}
+        with open(os.path.join(self.p.dir, "fixes.md"), "w") as f:
+            f.write(fmfixes._line(rec))
+        fid = fmfixes._fid(rec)
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {fid: {"misses": 5}}}, f)
+        found = [x for x in self.tidy("--apply")["findings"] if "synced-sig" in x["detail"]]
+        self.assertTrue(found and "shared" in found[0]["detail"])
+        self.assertEqual(self.sigs(), ["synced-sig: x"])
+
+    def test_unused_cards_are_those_the_map_picked_for_this_project(self):
+        def unused():
+            return [x for x in self.tidy()["findings"] if x["kind"] == "unused_card"]
+        self.assertEqual(unused(), [])  # no map, no claim
+        with open(os.path.join(self.p.dir, "map.json"), "w") as f:
+            json.dump({"lib_cards": [{"name": "alpha", "detect": []}, {"name": "beta", "detect": []}]}, f)
+        found = unused()
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["detail"].startswith("2 of 2"), found[0]["detail"])
+        c.log_event(self.p, "enforce", data={"kind": "card_injected", "card": "alpha"})
+        found = unused()
+        self.assertTrue(found[0]["detail"].startswith("1 of 2") and "beta" in found[0]["detail"]
+                        and "alpha" not in found[0]["detail"], found[0]["detail"])
+        self.tidy("--apply")  # listed only
