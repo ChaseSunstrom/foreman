@@ -76,6 +76,9 @@ def main():
     failed = [r for r in results if r[1] != 0]
     for cid, _, err, _, _ in failed:
         sys.stderr.write(f"\n==== {cid}\n{err}")
+        if os.environ.get("GITHUB_ACTIONS"):  # T-1223: a run's log needs a login; its annotations are public
+            tail = [x.strip() for x in err.splitlines() if x.strip() and not set(x.strip()) <= set("-=~^")][-4:]
+            print(f"::error title={cid}::" + "%0A".join(tail).replace("::", ": :"), flush=True)
     total = sum(r[3] for r in results)
     slow = ", ".join(f"{c.split('.')[-1]} {s:.0f}s" for c, _, _, _, s in sorted(results, key=lambda r: -r[4])[:3])
     if skipped():
