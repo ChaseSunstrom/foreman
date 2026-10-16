@@ -1684,6 +1684,46 @@ test('a call that threw shows ✗ in the tree; a new session starts with an empt
   await fresh.unmount()
 })
 
+test('the tree is sticky: one height all turn with a blank row under it, time bars in one column; no repeat spinner line (T-1039)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  panes.shown = true
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'first look' })
+  const height = async () => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+    const tree = await ui.find({ key: 'fm-band-tree' })
+    const n = (tree!.children as unknown[]).length
+    const bars = (await ui.findAll({ type: 'Raster' })).map(r => String(r.key)).filter(k => k.startsWith('tree-bar-'))
+    await ui.unmount()
+    return { n, bars }
+  }
+  const first = await height()
+  expect(first.n).toBeGreaterThanOrEqual(6) // at least five rows and the blank one under them
+  expect(first.bars.length).toBeGreaterThanOrEqual(2) // the root's and the call's
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: `echo ${i}`, description: `more ${i}` })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/x.py', agentId: 'ag9' } as never)
+  const later = await height()
+  expect(later.n).toBe(Math.max(first.n, later.n)) // it grows when it must, never shrinks mid-turn
+  const again = await height()
+  expect(again.n).toBe(later.n) // and holds still between redraws
+  const spinner = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner', props: { mode: 'tool-use' } } as never)
+  expect(await spinner.find({ type: 'Text', text: /step|T-0007/ })).toBeUndefined() // the tree's root says it
+  await spinner.unmount()
+  const shown = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await shown.find({ key: 'tree-gap' })).toBeDefined() // a blank row under it
+  const widths = (await shown.findAll({ type: 'Box' })).filter(b => b.props.width === 18).length
+  expect(widths).toBeGreaterThanOrEqual(3) // every row ends in the same cell, so the bars line up
+  await shown.unmount()
+  // review: when the band can't draw the tree (a tall card), the spinner line stays
+  panes.shown = false
+  const cramped = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true), props: { ...band(true).props, maxRows: 4 } })
+  await cramped.unmount()
+  const back = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner', props: { mode: 'tool-use' } } as never)
+  expect(await back.find({ type: 'Text', text: /step|T-0007/ })).toBeDefined()
+  await back.unmount()
+})
+
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
   const doneTwo = { ...VIEW, active: { ...VIEW.active!, steps: VIEW.active!.steps.map(s => ({ ...s, done: true, current: false })) } }
   const { clock } = world(on, [VIEW, doneTwo])
