@@ -271,6 +271,37 @@ def calibration_lines(p, outs=None):
         + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
 
 
+PLAN_WINDOW, PLAN_MISS = 5, 3  # T-1061: the last 5 closes with a plan to compare; 3 of them missed = slow
+
+
+def missed(d):
+    """A close missed its plan: more than twice the planned files or predicted minutes, or more attempts than predicted;
+    None when it predicted nothing."""
+    checks = [d["changed"] > 2 * d["planned"] if d.get("planned") and "changed" in d else None,
+              d["minutes"] > 2 * d["predict_minutes"] if d.get("predict_minutes") and "minutes" in d else None,
+              d["attempts"] > d["predict_attempts"] if d.get("predict_attempts") and "attempts" in d else None]
+    checks = [x for x in checks if x is not None]
+    return any(checks) if checks else None
+
+
+def plan_window(p):
+    """[bool] — missed or not — for the last PLAN_WINDOW closes that had something to compare."""
+    rows = [missed(e.get("data") or {}) for e in c.ledger_tail(p, 5000) if e.get("event") == "task_done"]
+    return [m for m in rows if m is not None][-PLAN_WINDOW:]
+
+
+def misses(p):
+    """True while the plans keep missing, so the project slows to approval for M until closes recover."""
+    w = plan_window(p)
+    return len(w) >= PLAN_WINDOW and sum(w) >= PLAN_MISS
+
+
+def plan_lines(p):
+    w = plan_window(p)
+    return [f"Calibration ledger: {sum(w)} of the last {len(w)} closes missed their plan"
+            + ("; autonomy slows to approval for M until they recover" if misses(p) else "")] if w else []
+
+
 def _first_finish(p):
     first = {}
     for e in c.ledger_tail(p, 50000):

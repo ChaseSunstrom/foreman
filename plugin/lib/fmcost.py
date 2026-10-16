@@ -439,7 +439,7 @@ def cmd_digest(args):
             and str(e.get("ts", ""))[:19] >= since and (d := e.get("data") or {}).get("planned") and "changed" in d]
     lines += [f"Planned vs changed files: {len(grew)} task(s) with a scope changed ×{statistics.median(grew):.1f} "
               f"the paths they planned (median; T-0644)"] if grew else []
-    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs)  # T-1060, T-0641, T-0619
+    lines += fmoutcomes.survival_lines(p, outs) + fmoutcomes.track_lines(p, outs) + fmoutcomes.calibration_lines(p, outs) + fmoutcomes.plan_lines(p)  # T-1060, T-0641, T-0619, T-1061
     rev = reversals(p)  # T-0667: how often each kind of decision got undone
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
