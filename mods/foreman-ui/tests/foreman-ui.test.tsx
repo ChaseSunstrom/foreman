@@ -1512,6 +1512,41 @@ test('History from fm ui: the id, a coloured event and the task title across the
   await ui.unmount()
 })
 
+const HIST = [
+  { time: '10:00', mark: '⚑', task: 'T-0011', text: 'captured', title: 'Merge date helpers' },
+  { time: '10:05', mark: '✗', task: 'T-0007', text: 'step 1 failed', title: 'Login times out' },
+  { time: '10:09', mark: '✓', task: 'T-0012', text: 'step 1 passed', title: 'Other' },
+]
+
+test("palette 'cb' swaps the ok/err colours and the error still carries a glyph (T-1081)", { options: { palette: 'cb' } }, async ($, on) => {
+  world(on, [{ ...CALM, history: HIST }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failed = await ui.find({ type: 'Text', text: 'step 1 failed' })
+  const passed = await ui.find({ type: 'Text', text: 'step 1 passed' })
+  expect(failed?.props.color).not.toBe(hex(0xff6b6b))
+  expect(passed?.props.color).not.toBe(hex(0x87d787))
+  expect(failed?.props.color).toBe(hex(0xe69f00))
+  expect(passed?.props.color).toBe(hex(0x56b4e9))
+  expect(await ui.find({ type: 'Text', text: '✗' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the scrubber steps the pane back through history and live returns to now (T-1081)', async ($, on) => {
+  world(on, [{ ...CALM, history: HIST }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: 'T-0012' })).toBeDefined()
+  await ui.press({ key: 'scrub-back' })
+  expect(await ui.find({ type: 'Text', text: /as of 10:05/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'T-0012' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'T-0007' })).toBeDefined()
+  await ui.press({ key: 'scrub-live' })
+  expect(await ui.find({ type: 'Text', text: /as of/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'T-0012' })).toBeDefined()
+  await ui.unmount()
+})
+
 test('what is done and what is left: a bar of the work under the head, a segment per step under the title (T-1026)', async ($, on) => {
   world(on, [{ ...CALM, today_done: 3, blocked_total: 2 }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
