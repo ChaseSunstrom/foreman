@@ -48,7 +48,8 @@ import {
   toolFace,
   typeColor,
 } from './kit'
-import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, cfg, laneOf, running, starts, ticks, took } from './state'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, TREE_MS, cfg, feed, laneOf, running, starts, ticks, took } from './state'
+import type { FeedItem } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
 const error = atom({ plugin: 'foreman-ui', key: 'error' } as const, null)
@@ -63,7 +64,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { agentOut, agentRow, bars, editChanges, editRow, mascotTree, meter, miniRail, ownsResult, rail, sectionHead, shellRow, spark, toolRow } from './rows'
+import { agentOut, agentRow, bars, editChanges, editRow, liveTree, mascotTree, meter, miniRail, ownsResult, rail, sectionHead, shellRow, spark, toolRow } from './rows'
 import type { Motion } from './rows'
 
 // Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -532,6 +533,7 @@ export const register: Register = (on, options) => {
   cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
+    feed.length = 0 // T-1033 review: a new session's tree starts empty
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
@@ -617,6 +619,9 @@ export const register: Register = (on, options) => {
     if (face.icon !== '⚠') ticks.push({ at, lane: laneOf(face.icon), what: face.target || face.verb }) // T-0909: the swim lanes (a question isn't work)
     while (ticks.length && (ticks.length > 2000 || at - ticks[0]!.at > 2 * TIMELINE_MS)) ticks.shift()
     running.set(id, { icon: face.icon, verb: face.verb, target: face.target, color: face.color, at, agent: !!e.agentId })
+    const item: FeedItem = { id, agent: e.agentId ?? null, icon: face.icon, verb: face.verb, target: face.target, color: face.color, at }
+    if (face.icon !== '⚠') feed.push(item) // T-1033: the band's tree
+    while (feed.length > 300) feed.shift()
     try {
       if (face.icon === '◆') agentCalls.set(id, String((e as { description?: unknown }).description ?? ''))
       if (e.agentId) await noteSubagent($, e.agentId, `${face.verb} ${face.target}`.trim()).catch(() => undefined)
@@ -633,6 +638,7 @@ export const register: Register = (on, options) => {
       const note = e.tool === 'Bash' ? askNote(e.command) : null
       noteTimer = note ? $.clock.after(150, () => $.ui.notice(id, note)) : null // under the dialog, once it is open
       const r = await next(e)
+      item.ok = r.deny === undefined && !r.isError
       const why = guardReason(r)
       if (why) $.ui.toast(`⛔ Foreman: ${why}`, { timeoutMs: 8000 })
       else if (face.add !== undefined && r.deny === undefined && !r.isError) {
@@ -660,6 +666,8 @@ export const register: Register = (on, options) => {
       if (began !== undefined) took.set(id, (await $.clock.now()) - began)
       if (took.size > 400) took.delete(took.keys().next().value!)
       starts.delete(id)
+      item.end = await $.clock.now()
+      if (item.ok === undefined) item.ok = false // review: a call that threw is not a ✓
       running.delete(id)
       agentCalls.delete(id)
       agentOf.delete(id)
@@ -916,7 +924,12 @@ export const register: Register = (on, options) => {
     const doneSince = await read($, away)
     const paused = v.health?.paused_hooks ?? [] // T-0087: hooks the breaker paused after failing in a row
     const idle = !a && !asks.length && !plans.length && !(v.queue ?? []).length && !(v.inbox_total ?? 0) && !paused.length
-    if (idle && !bgs.length && !doneSince.length && !v.mode?.trust) return next(e)
+    // T-1033: the live tree, while work runs and for two minutes after the last call
+    const treeAt = await $.clock.now()
+    const treeSubs = await read($, agents)
+    const lastCall = feed.at(-1)
+    const treeLive = !!lastCall && (e.props.isWorking || treeSubs.some(x => !x.done) || treeAt - (lastCall.end ?? lastCall.at) < TREE_MS)
+    if (idle && !bgs.length && !doneSince.length && !v.mode?.trust && !treeLive) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
     const working = e.props.isWorking
     const f = working || bgs.length ? await read($, frame) : null
@@ -935,8 +948,20 @@ export const register: Register = (on, options) => {
     const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
     const bandNow = await $.clock.now()
     const cut = 'truncate-end' as const
-    // T-0989: with the pane shown it is the one panel: its attention row has what the band would say
-    if ((await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)) return next(e)
+    const tree = (rows: number) => (
+      <Box key="fm-band-tree" flexDirection="column">
+        {liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f, width: e.props.bodyColumns, rows,
+          task: a ? `${a.id} · step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}${cur ? ` ${cur.text}` : ''}` : 'no task in focus' })}
+      </Box>
+    )
+    // T-0989: with the pane shown it is the one panel: its attention row has what the band would say. T-1033: the band
+    // then carries only what the pane can't, the live tree of the session and its subagents, under the chat
+    if ((await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)) // idle: the root alone, one summary line
+      return treeLive ? tree(Math.max(3, e.props.maxRows)) : lastCall ? tree(1) : next(e)
+    // the card's own rows, so the tree under it never pushes the band past maxRows (review)
+    const cardRows = 2 + (a ? 2 : 1) + (queued > 0 || inboxN > 0 ? 1 : 0) + (doneSince.length ? 1 : 0) + (bgs.length ? 1 : 0) +
+      (!working && v.next ? 1 : 0) + (paused.length ? 2 : 0) + asks.length + Math.min(2, plans.length) + 1
+    const treeRows = e.props.maxRows - cardRows
     const sl = signalLine(v) // T-0472: quiet unless something is amber or red
 
     // Beside a docked pane the band is narrow: each row is one Text that cuts at its end, never mid-word per span.
@@ -1039,6 +1064,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column" borderStyle="round" borderColor={hex(working ? pulse(C.accent, f) : C.track)} paddingX={1} key="fm-band">
         {head}
+        {treeLive && treeRows >= 3 ? tree(treeRows) : null}
         {(queued > 0 || inboxN > 0) && (
           <Box flexDirection="row" gap={1} key="fm-band-queue-row">
             {!narrow && <Text color={hex(C.dim)}>today</Text>}

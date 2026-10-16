@@ -129,11 +129,12 @@ function world(on: On, views: FmView[]) {
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async () => ({ text: '' }))
   // hold: ms the call stays open, as a permission dialog keeps it; result: what the tool answers
-  const answer: { deny: string; hold: number; result: object } = { deny: '', hold: 0, result: {} }
+  const answer: { deny: string; hold: number; result: object; throws?: boolean } = { deny: '', hold: 0, result: {} }
   const tools: string[] = [] // every tool the plugin or the test called, with its task id when it has one
   on('tool.call', async ($, e) => {
     tools.push(`${e.tool}${(e as { task_id?: string }).task_id ? ` ${(e as { task_id?: string }).task_id}` : ''}`)
     if (answer.hold) await clock.sleep(answer.hold)
+    if (answer.throws) throw new Error('the tool crashed')
     return answer.deny ? { deny: answer.deny } : { result: answer.result }
   })
   const submitted: string[] = [] // prompts the plugin submitted (each a turn of its own)
@@ -1610,6 +1611,77 @@ test('diffRows: context within one line of a change, a break where lines are ski
   const plus = rows[2] as { text: string; mid?: [number, number] }
   expect(plus.text.slice(...plus.mid!)).toBe('count')
   expect(diffRows([{ oldStart: 1, newStart: 1, lines: ['-abc', '+xyz'] }]).every(r => !('mid' in r && r.mid))).toBe(true) // nothing shared
+})
+
+test('the band is a live tree: the session and each subagent, their latest calls under them (T-1033)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q', description: 'Run the tests' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/auth.py', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/b.py', agentId: 'ag1' } as never)
+  await $.tool.call({ tool: 'Grep', pattern: 'login_retry', agentId: 'ag1' } as never)
+  for (const shown of [false, true]) { // the pane closed (under the card) and docked (the band's whole job)
+    panes.shown = shown
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+    for (const text of [/this session/, /Run the tests/, /auth\.py/, /login_retry/, /b\.py/])
+      expect(await ui.find({ type: 'Text', text })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^[├└]─/ })).toBeDefined() // a branch off the session
+    expect(await ui.find({ type: 'Text', text: /^[│ ] {2}[├└]─/ })).toBeDefined() // a call under the subagent
+    const tree = await ui.find({ key: 'fm-band-tree' })
+    expect(tree).toBeDefined()
+    if (shown) expect(await ui.find({ key: 'fm-band' })).toBeUndefined() // no repeat of the pane
+    await ui.unmount()
+  }
+})
+
+test('the tree fits the band: older calls go first, then a count of the rest (T-1033)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  panes.shown = true
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `echo ${i}`, description: `step ${i}` })
+  for (const ag of ['ag1', 'ag2', 'ag3', 'ag4', 'ag5'])
+    for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Read', file_path: `/repo/${ag}-${i}.py`, agentId: ag } as never)
+  const small = { ...band(true), props: { ...band(true).props, maxRows: 8 } }
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...small })
+  const rows = (await ui.find({ key: 'fm-band-tree' }))!.children as unknown[]
+  expect(rows.length).toBeLessThanOrEqual(8)
+  expect(await ui.find({ type: 'Text', text: /step 5/ })).toBeDefined() // the newest call stays
+  expect(await ui.find({ type: 'Text', text: /step 0/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /more/ })).toBeDefined() // what doesn't fit is counted
+  await ui.unmount()
+})
+
+test('with no work for a while the docked band steps aside again (T-1033)', async ($, on) => {
+  const { panes, clock } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
+  panes.shown = true
+  await clock.advance(10 * 60000)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(false) })
+  const tree = await ui.find({ key: 'fm-band-tree' }) // shrunk to one summary line: the session, no branches
+  expect(tree?.children).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /this session/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^[├└]─/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a call that threw shows ✗ in the tree; a new session starts with an empty one (T-1033 review)', async ($, on) => {
+  const { panes, answer } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  answer.throws = true
+  await $.tool.call({ tool: 'Bash', command: 'boom', description: 'Blow up' }).catch(() => undefined)
+  answer.throws = false
+  panes.shown = true
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await ui.find({ type: 'Text', text: '✗' })).toBeDefined()
+  await ui.unmount()
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const fresh = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await fresh.find({ type: 'Text', text: /Blow up/ })).toBeUndefined()
+  await fresh.unmount()
 })
 
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
