@@ -21,6 +21,7 @@ export type FmActive = FmItem & {
   criteria: FmCriterion[]
   audits: { done: number; need: number }
   blockers: string[]
+  splits?: { stage: string; secs: number; typical: number | null; delta: number | null; sign: 'over' | 'under' | 'even' | null }[] // T-1078: time in each stage against the project's typical
   children?: { id: string; title: string; status: string; steps_done: number; steps_total: number }[] // T-0711
   on_task_s?: number | null // seconds since the task was first focused, when the view was built
   hypotheses?: FmHypothesis[] // T-0207/T-0228: the debugging ledger

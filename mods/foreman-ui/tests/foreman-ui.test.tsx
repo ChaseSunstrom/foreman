@@ -1527,6 +1527,21 @@ test('what is done and what is left: a bar of the work under the head, a segment
   await ui.unmount()
 })
 
+test('speedrun splits: a row per stage in the task block, the over-typical one in the err colour (T-1078)', async ($, on) => {
+  const splits = [
+    { stage: 'planning', secs: 240, typical: 300, delta: -60, sign: 'under' as const },
+    { stage: 'executing', secs: 960, typical: 600, delta: 360, sign: 'over' as const },
+    { stage: 'verifying', secs: 30, typical: null, delta: null, sign: null },
+  ]
+  world(on, [{ ...CALM, active: { ...CALM.active!, splits } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect((await ui.find({ type: 'Text', text: /^executing 16m/ }))?.props.color).toBe(hex(C.err))
+  expect((await ui.find({ type: 'Text', text: /^planning 4m/ }))?.props.color).toBe(hex(C.ok))
+  expect(await ui.find({ type: 'Text', text: /^verifying 30s$/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('stackCells: a share each, at least a cell for any non-zero part, the track when there is nothing; stepCells: a segment per step', () => {
   const read = (s: string) => decode(s).map(c => c.fg)
   const bar = read(stackCells([{ n: 50, color: C.ok }, { n: 1, color: C.accent }], 20))
