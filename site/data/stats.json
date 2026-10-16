@@ -1,17 +1,17 @@
 {
  "generated": "2026-10-16",
  "totals": {
-  "tasks_done": 723,
-  "evidence": 2667,
+  "tasks_done": 729,
+  "evidence": 2676,
   "proofs": 250,
-  "commits": 563,
-  "gate_runs": 550,
-  "subagents": 536,
+  "commits": 567,
+  "gate_runs": 554,
+  "subagents": 538,
   "lanes_merged": 131,
-  "findings": 134,
-  "guard_blocks": 293,
-  "captures": 513,
-  "lessons_shown": 717
+  "findings": 155,
+  "guard_blocks": 295,
+  "captures": 519,
+  "lessons_shown": 722
  },
  "daily": [
   {
@@ -104,31 +104,31 @@
   },
   {
    "day": "2026-10-16",
-   "FEATURE": 101,
-   "FIX": 63,
-   "CLEAN": 13,
+   "FEATURE": 103,
+   "FIX": 65,
+   "CLEAN": 15,
    "PERFORMANCE": 8,
    "SECURITY": 13,
    "RESEARCH": 4,
    "lanes": 86,
-   "evidence": 732
+   "evidence": 741
   }
  ],
  "tiers": {
-  "S": 378,
+  "S": 383,
   "M": 300,
-  "L": 45
+  "L": 46
  },
  "types": {
-  "FEATURE": 332,
-  "FIX": 236,
-  "CLEAN": 41,
+  "FEATURE": 334,
+  "FIX": 238,
+  "CLEAN": 43,
   "PERFORMANCE": 21,
   "SECURITY": 68,
   "RESEARCH": 25
  },
  "guard": {
-  "core": 109,
+  "core": 111,
   "brief": 80,
   "state-direct": 35,
   "plugin": 26,
@@ -139,41 +139,31 @@
  },
  "findings": {
   "lenses": {
-   "edge": 48,
-   "adversary": 45,
+   "edge": 55,
+   "adversary": 48,
    "operator": 22,
-   "maintainer": 10,
-   "intent": 9
+   "maintainer": 16,
+   "intent": 14
   },
   "severity": {
-   "LOW": 48,
-   "MEDIUM": 38,
-   "HIGH": 10
+   "LOW": 62,
+   "MEDIUM": 44,
+   "HIGH": 11
   }
  },
  "subagents": {
   "fm-builder": 223,
-  "fm-reviewer": 146,
+  "fm-reviewer": 148,
   "general-purpose": 76,
   "fm-recon": 71,
   "Explore": 8,
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 550,
-  "median": 75.2
+  "runs": 554,
+  "median": 75.3
  },
  "releases": [
-  {
-   "version": "1.2.21",
-   "day": "2026-10-09",
-   "tests": 1148
-  },
-  {
-   "version": "1.2.22",
-   "day": "2026-10-09",
-   "tests": 1158
-  },
   {
    "version": "1.2.23",
    "day": "2026-10-09",
@@ -243,6 +233,16 @@
    "version": "1.2.36",
    "day": "2026-10-16",
    "tests": 2131
+  },
+  {
+   "version": "1.2.37",
+   "day": "2026-10-16",
+   "tests": 2253
+  },
+  {
+   "version": "1.2.38",
+   "day": "2026-10-16",
+   "tests": 2255
   }
  ],
  "cards": {
@@ -929,6 +929,302 @@
     }
    ],
    "name": "hard-haiku"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "8 requests in one session",
+     "foreman": {
+      "pass": true,
+      "cost": 0.092,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 383.0,
+      "turns": 61.6667,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": 4,
+      "capped": null,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 0
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 4
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 4
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 2
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": false,
+      "cost": 0.056,
+      "score": null,
+      "runs": 3,
+      "passed": 1,
+      "seconds": 288.6667,
+      "turns": 33.6667,
+      "error": false,
+      "tests": [
+       89,
+       105
+      ],
+      "compactions": 2,
+      "capped": null,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 1
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 4
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 6
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         89,
+         105
+        ],
+        "compactions": 2
+       },
+       {
+        "tests": [
+         64,
+         105
+        ],
+        "compactions": 2
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 2
+       }
+      ],
+      "found": []
+     }
+    }
+   ],
+   "compact_at": 40000,
+   "marathon": null,
+   "name": "long"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "8 requests in one session",
+     "foreman": {
+      "pass": true,
+      "cost": 0.197,
+      "score": null,
+      "runs": 1,
+      "passed": 1,
+      "seconds": 784.0,
+      "turns": 126.0,
+      "error": false,
+      "tests": [
+       106,
+       106
+      ],
+      "compactions": 7,
+      "capped": false,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 0
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         106,
+         106
+        ],
+        "compactions": 7
+       }
+      ],
+      "found": [
+       "line_tax names the tax rate for an empty or malformed tax_rate (covered by T-0010) (discovered)",
+       "Make the README's helper-user list match the imports (discovered)",
+       "Name the divisor in the ZeroDivisionError for dividing by a range holding 0 (discovered)"
+      ]
+     },
+     "bare": {
+      "pass": false,
+      "cost": 0.045,
+      "score": null,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 337.0,
+      "turns": 32.0,
+      "error": false,
+      "tests": [
+       104,
+       105
+      ],
+      "compactions": 1,
+      "capped": false,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 1
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         104,
+         105
+        ],
+        "compactions": 1
+       }
+      ],
+      "found": []
+     }
+    }
+   ],
+   "compact_at": 40000,
+   "marathon": 5,
+   "name": "marathon"
   }
  ]
 }
