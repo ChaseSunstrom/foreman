@@ -291,3 +291,26 @@ class MachineIdentity(ForemanTestCase):
         r = fmdoctor.check_backup(home)
         self.assertEqual(r.status, "FAIL")
         self.assertIn("state-20260202-000000.tgz", r.detail)
+
+
+class AdoptHistory(ForemanTestCase):
+    """T-1047: reverts and fix: commits in git history become a lesson note recall finds, and known fixes."""
+
+    def test_history_seeds_a_lesson_note_and_a_fix_once(self):
+        commit(self.repo, "a.py", "x = 1\n", 'Revert "add frobnicator"')
+        commit(self.repo, "b.py", "y = 1\n", "fix: crash on empty input\n\nerror: IndexError on empty list → guard len before indexing")
+        self.fm("adopt")
+        note = read_text(os.path.join(c.find_project(self.repo).dir, "research", "git-history-lessons.md"))
+        self.assertIn("add frobnicator", note)
+        self.assertIn("crash on empty input", note)
+        self.assertIn("b.py", note)
+        self.assertIn("guard len", self.fm("fix", "list").stdout)
+        self.assertIn("git-history-lessons", self.fm("recall", "crash empty input").stdout)
+        n = len(self.fm_json("fix", "list", "--json"))
+        self.fm("adopt", "--history")
+        self.assertEqual(len(self.fm_json("fix", "list", "--json")), n, "a second run adds no fix")
+
+    def test_a_repo_without_such_commits_writes_no_note(self):
+        commit(self.repo, "a.py", "x = 1\n", "add a")
+        self.fm("adopt", "--history")
+        self.assertFalse(os.path.exists(os.path.join(c.find_project(self.repo).dir, "research", "git-history-lessons.md")))
