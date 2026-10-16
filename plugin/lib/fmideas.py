@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -90,6 +91,77 @@ def _child_env():
     return dict(os.environ, FOREMAN_NO_BACKGROUND="1")  # a child never starts Foreman's own background reviews
 
 
+def _registry(pid=""):
+    return os.path.join(c.state_dir(), "children", str(pid))
+
+
+def _starttime(pid):
+    """When the pid started, in clock ticks since boot (/proc/<pid>/stat field 22): with the pid, one process ever."""
+    with open(f"/proc/{pid}/stat") as f:
+        return f.read().rsplit(")", 1)[1].split()[19]  # after the name, which may hold spaces and parentheses
+
+
+def _popen(argv, timeout, **kw):
+    """T-1044: a child in its own process group, so a timeout kills its grandchildren too, registered in
+    state/children/<pid> (its start time, when, its timeout) so a SessionStart sweeps it if this run dies first."""
+    pr = subprocess.Popen(argv, start_new_session=True, **kw)
+    try:
+        c.write_atomic(_registry(pr.pid), f"{_starttime(pr.pid)} {time.time():.0f} {timeout:.0f}")
+    except (OSError, IndexError):  # no /proc (macOS) or no state folder: unregistered, still reaped on a timeout
+        pass
+    return pr
+
+
+def _forget(pr):
+    try:
+        os.remove(_registry(pr.pid))
+    except OSError:
+        pass
+
+
+def _reap(pr):
+    """T-1044: the child's whole process group killed (never only the leader: a grandchild holding the pipes hung the
+    runner and outlived it), its pipes drained, its registry entry gone."""
+    try:
+        os.killpg(pr.pid, signal.SIGKILL)  # not yet waited for, so the pid (the group's id) is still ours
+    except OSError:
+        pass
+    pr.communicate()
+    _forget(pr)
+
+
+def sweep_orphans(max_age=1800):
+    """T-1044: the helpers a dead run left behind, killed with their process groups: the count. An entry older than
+    max_age (or its own timeout) whose pid is still the same process (its start time) running a helper (its command
+    line) is killed; a dead, reused or foreign pid only loses its entry; a fresh one is left to its run."""
+    try:
+        names = os.listdir(_registry())
+    except OSError:
+        return 0
+    n = 0
+    for name in names:
+        if name.startswith("."):  # a write_atomic temp file mid-write
+            continue
+        path = _registry(name)
+        try:
+            with open(path) as f:
+                start, at, timeout = f.read().split()
+            if time.time() - float(at) < max(max_age, float(timeout) + 60):
+                continue  # its run may still be waiting on it
+            with open(f"/proc/{int(name)}/cmdline", "rb") as f:
+                helper = b"--no-session-persistence" in f.read().split(b"\0")
+            if helper and _starttime(int(name)) == start:
+                os.killpg(int(name), signal.SIGKILL)
+                n += 1
+        except (OSError, ValueError, IndexError):  # gone, garbled or not ours to kill: the entry goes
+            pass
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+    return n
+
+
 def run_child(feature, system, prompt, model, timeout, project=None, detail="", fallback=0.05):
     """T-0295: one tool-less child, budget-checked, run in a scratch folder and recorded: its text. ValueError when
     it can't run, fails or says nothing."""
@@ -99,14 +171,22 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
         raise ValueError(str(e))
     with _child_cwd(feature) as cwd:
         try:
-            r = subprocess.run(child_cmd(model, system), input=prompt, cwd=cwd, capture_output=True, text=True,
-                               timeout=timeout, env=_child_env())
-        except (OSError, subprocess.TimeoutExpired) as e:
+            pr = _popen(child_cmd(model, system), timeout, cwd=cwd, text=True, stdin=subprocess.PIPE,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=_child_env())
+        except OSError as e:
             raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
-    text, usd = fmbudget.result(r.stdout)
+        try:
+            so, se = pr.communicate(prompt, timeout=timeout)
+        except BaseException as e:  # a timeout or ^C: the whole group goes (subprocess.run killed only the leader)
+            _reap(pr)
+            if isinstance(e, subprocess.TimeoutExpired):
+                raise ValueError(f"the {feature} child didn't run: {e} (is `claude` on PATH and logged in?)")
+            raise
+        _forget(pr)
+    text, usd = fmbudget.result(so)
     fmbudget.record(feature, usd, project=project, detail=detail)
-    if r.returncode or not (text or "").strip():
-        raise ValueError(f"nothing came back (exit {r.returncode}: {_tail(r.stderr or r.stdout, 160)})")
+    if pr.returncode or not (text or "").strip():
+        raise ValueError(f"nothing came back (exit {pr.returncode}: {_tail(se or so, 160)})")
     return text
 
 
@@ -118,8 +198,8 @@ def run_children(jobs, timeout, feature):
         procs = []
         try:
             for argv, stdin, detail in jobs:
-                pr = subprocess.Popen(argv, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                      stderr=subprocess.PIPE, env=_child_env())
+                pr = _popen(argv, timeout, cwd=cwd, text=True, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, env=_child_env())
                 procs.append((pr, detail))
                 try:
                     pr.stdin.write(stdin)
@@ -128,13 +208,13 @@ def run_children(jobs, timeout, feature):
                     pr.stdin = None  # before 3.13, communicate() flushes a closed stdin and raises
         except OSError as e:
             for pr, _ in procs:
-                pr.kill()
-                pr.communicate()
+                _reap(pr)
             raise OSError(f"can't start claude: {e} (is it on PATH and logged in?)")
         deadline, out = time.time() + timeout, []
         for pr, detail in procs:
             try:
                 so, se = pr.communicate(timeout=max(1, deadline - time.time()))
+                _forget(pr)
                 text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
                 fmbudget.record(feature, usd, detail=detail)
                 why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
@@ -142,8 +222,7 @@ def run_children(jobs, timeout, feature):
                 out.append((text, None) if pr.returncode == 0 and text.strip() else
                            (text, why) if text.strip() else (None, why))  # both set: partial
             except subprocess.TimeoutExpired:
-                pr.kill()
-                pr.communicate()
+                _reap(pr)
                 fmbudget.record(feature, None, detail=f"{detail} (timed out: cost unknown)" if detail
                                 else "timed out: cost unknown")
                 out.append((None, f"timed out after {timeout}s"))
