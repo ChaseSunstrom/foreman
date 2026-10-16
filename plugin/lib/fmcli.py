@@ -4284,6 +4284,7 @@ def build_parser():
     s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
     s.add_argument("--area", help="list: one area's cards")
     s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")
+    s.add_argument("--days", type=int, help="stats: only injections of the last N days (default: all)")
     s.add_argument("--section", action="append", help="show: only these sections (verify, test, do, avoid, review); "
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
