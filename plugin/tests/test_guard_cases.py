@@ -41,6 +41,19 @@ class GuardCases(ForemanTestCase):
         self.assertEqual(json.loads(open(self.cases).read())["cwd"], "plugin")
         self.assertEqual(fmreplay.resolve_cwd("plugin"), os.path.join(fmreplay.repo_root(), "plugin"))
 
+    def test_a_second_checkout_gets_its_own_case(self):
+        # T-1175: run inside another Foreman checkout, the case goes to that checkout's corpus, cwd relative to it
+        co = os.path.join(self.tmp, "co")
+        os.makedirs(os.path.join(co, "plugin", "lib"))
+        os.makedirs(os.path.join(co, "sub"))
+        open(os.path.join(co, "plugin", "lib", "fmguard.py"), "w").close()
+        main = os.path.join(fmreplay.c.PLUGIN_ROOT, "tests", "fixtures", "guard_cases.jsonl")
+        before = open(main).read()
+        self.fm("guard", "wrong", "ls -la", "--should", "allow", cwd=os.path.join(co, "sub"))
+        mine = os.path.join(co, "plugin", "tests", "fixtures", "guard_cases.jsonl")
+        self.assertEqual(json.loads(open(mine).read())["cwd"], "sub")
+        self.assertEqual(open(main).read(), before)
+
     def test_the_night_job_is_for_foremans_own_repo_only(self):
         from unittest import mock
         import fmcore as c
