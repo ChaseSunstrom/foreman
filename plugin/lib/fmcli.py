@@ -666,7 +666,8 @@ def cmd_task(args):
         by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
-                                                        else {})),
+                                                        else {}),
+                              **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
                    f"{b.id} done (verification: {grade} — {why})." + (
             "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
@@ -842,6 +843,33 @@ def guard_stored(p, b, cmd):
         raise c.PolicyError(f"fm won't run the stored command `{c.fit(cmd, 100)}`: {fmguard.message(block, ctx)}")
 
 
+ABLATE_BUDGET = 600  # seconds for the whole ablation (T-1067)
+
+
+def _ablate(p, b, args):
+    """T-1067: after the real checks, revert each hunk alone against the linked tests. Informational: whatever goes
+    wrong is one line, never a failed close; the result goes in the finish output (or its JSON), not in evidence."""
+    js = getattr(args, "json", False)
+    try:
+        cmd, _, _ = affected(p, b)
+        if cmd is None:
+            raise UsageError("no linked tests")
+        guard_stored(p, b, cmd)
+        a = argparse.Namespace(run=cmd, max=20, step=None, ac=None, json=js, quiet=True, timeout=args.timeout,
+                               deadline=time.time() + float(os.environ.get("FM_ABLATE_BUDGET", ABLATE_BUDGET)))
+        task_prove_hunks(p, b, a)
+        res = a.hunks_result
+        text = f"{b.id}: ablation: {res['proven']}/{res['total']} hunks proven" + (
+            f", {res['not_run']} not run" if res.get("not_run") else "") + "".join(
+            f"\n  unproven: {u['file']} {u['at']} — {u['text']}" for u in res["unproven"])
+    except Exception as e:  # noqa: BLE001 — the work is done; ablation must never fail the close
+        res = {"skipped": str(e) or type(e).__name__}
+        text = f"{b.id}: ablation skipped: {res['skipped']}"
+    args.ablation = res
+    if not js:
+        print(text)
+
+
 def task_finish(p, args):
     """One-call close-out (R1; any tier since T-0097): runs each open criterion's own verify command (else --run) and
     --run for each open step, records them as fm runs, checks what passed, records the audits (S: self; M/L: each
@@ -892,14 +920,6 @@ def task_finish(p, args):
         todo.append(("final", None, args.run))
     for _, _, cmd in todo:  # T-0901 review: every one is checked before any runs, so a refusal leaves no side effects
         guard_stored(p, b, cmd)
-    if getattr(args, "ablate", False):  # T-1067: revert each hunk alone against the linked tests; informational
-        cmd, _, _ = affected(p, b)
-        if cmd is None:
-            print(f"{b.id}: --ablate: no linked tests, nothing to ablate")
-        else:
-            guard_stored(p, b, cmd)
-            task_prove_hunks(p, b, argparse.Namespace(run=cmd, max=20, step=None, ac=None,
-                                                      json=getattr(args, "json", False), timeout=args.timeout))
     results = [(kind, n, cmd, *run(cmd)) for kind, n, cmd in todo]
     tree = c.worktree_id(p.root)
 
@@ -935,6 +955,8 @@ def task_finish(p, args):
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
     _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
+    if getattr(args, "ablate", False):
+        _ablate(p, need_brief(p, b.id), args)
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
@@ -1346,14 +1368,15 @@ def task_prove_hunks(p, b, args):
              or [(f, h.split("\n", 1)[0], c.fit(c.plain(" ".join(x[1:].strip() for x in h.splitlines()[1:]
                                                                 if x[:1] in "+-")), 120), (head, h))]]
     if not hunks:
-        return out(args, {"total": 0, "proven": 0, "unproven": []}, f"{b.id}: no code hunks to prove (tests and docs "
-                                                                    f"aren't mutated)")
+        args.hunks_result = {"total": 0, "proven": 0, "unproven": []}
+        return 0 if getattr(args, "quiet", False) else out(
+            args, args.hunks_result, f"{b.id}: no code hunks to prove (tests and docs aren't mutated)")
     shown = hunks[:args.max]
     commit = c._git(p.root, "-c", "user.name=Foreman", "-c", "user.email=foreman@localhost", "-c", "commit.gpgsign=false",
                     "commit-tree", "--no-gpg-sign", tree, "-m", "fm prove --hunks", timeout=60).strip()
     if not commit:
         raise UsageError("git commit-tree of the current tree failed: prove --hunks needs a scratch commit of it")
-    unproven, skipped, tick = [], [], [time.time() + 2]
+    unproven, skipped, tick, unreached = [], [], [time.time() + 2], 0
 
     def touch(path):  # each version gets its own whole second: caches keyed on mtime + size (Python's .pyc, make)
         tick[0] += 2  # would otherwise reuse the other version's build when the edit keeps the size
@@ -1390,6 +1413,9 @@ def task_prove_hunks(p, b, args):
                 raise UsageError(f"the check fails on the unchanged tree in the scratch worktree ({c.run_result(code, output)})"
                                  f": fix it first — ignored files (.venv, node_modules, builds) aren't copied there")
             for f, at, text, patch in shown:
+                if time.time() > getattr(args, "deadline", float("inf")):  # T-1067: one budget for the whole run
+                    unreached += 1
+                    continue
                 if isinstance(patch[0], int):  # T-0279: one top-level definition of a new file, cut out
                     with open(os.path.join(wt, f), encoding="utf-8") as fh:
                         lines = fh.read().split("\n")
@@ -1412,19 +1438,24 @@ def task_prove_hunks(p, b, args):
         finally:
             c._git(p.root, "worktree", "remove", "--force", wt, timeout=60)
             c._git(p.root, "worktree", "prune", timeout=30)
-    tested = len(shown) - len(skipped)
+    tested = len(shown) - len(skipped) - unreached
     proven = tested - len(unproven)
-    left = len(hunks) - len(shown)
+    left = len(hunks) - len(shown) + unreached
     summary = f"{proven}/{tested} hunks proven" + (f", {len(skipped)} not tested" if skipped else "") + (
         f", {left} more not run (--max)" if left else "")
     complete = not unproven and not skipped and not left and tested > 0  # review: only a full run is a pass
     detail = "; unproven: " + "; ".join(f"{u['file']} {u['at']}" for u in unproven) if unproven else ""
-    mutate(p, b.id, lambda x: x.add_evidence(f"fm task prove --hunks: {args.run}",
-                                             ("exit 0 · " if complete else "") + summary + detail,
-                                             step=args.step, ac=args.ac, tree=c.worktree_id(p.root), ran=True,
-                                             inconclusive=not complete),
-           "prove", {"cmd": args.run[:200], "hunks": tested, "proven": proven})
-    out(args, {"total": tested, "proven": proven, "unproven": unproven, "skipped": skipped, "not_run": left},
+    quiet = getattr(args, "quiet", False)  # T-1067: at close the finish output carries it; no evidence line
+    if not quiet:
+        mutate(p, b.id, lambda x: x.add_evidence(f"fm task prove --hunks: {args.run}",
+                                                 ("exit 0 · " if complete else "") + summary + detail,
+                                                 step=args.step, ac=args.ac, tree=c.worktree_id(p.root), ran=True,
+                                                 inconclusive=not complete),
+               "prove", {"cmd": args.run[:200], "hunks": tested, "proven": proven})
+    args.hunks_result = {"total": tested, "proven": proven, "unproven": unproven, "skipped": skipped, "not_run": left}
+    if quiet:
+        return 0 if complete else 1
+    out(args, args.hunks_result,
         f"{b.id}: {summary}" + "".join(f"\n  unproven: {u['file']} {u['at']} — {u['text']}" for u in unproven)
         + "".join(f"\n  not tested: {x}" for x in skipped)
         + ("\n  Each unproven hunk can be removed without the check noticing: test it, or say why not." if unproven else ""))
