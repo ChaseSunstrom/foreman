@@ -1042,8 +1042,11 @@ def cmd_guard_try(args):
         import fmreplay
         k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)  # "" = here
         return fmcli.out(args, k, f"Stored guard case {k['id']}: should {k['should']}. fm replay --cases reports it.")
+    if args.action == "mine":  # T-1187
+        import fmreplay
+        return fmreplay.cmd_mine(args, fmcli)
     if args.action != "try":
-        raise fmcli.UsageError("fm guard: the actions are try and wrong")
+        raise fmcli.UsageError("fm guard: the actions are try, wrong and mine")
     key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(args.tool, "file_path")
     target = args.text if args.tool == "Bash" else args.path
     if not target:
@@ -2749,7 +2752,7 @@ def _drive(p, sd, briefs, pl, g):
             return None
         offered = d.get("offered") or []
         pace = _pace(p)  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
-        offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX and not pace else None
+        offer = _side_work(sd, briefs, work, full, offered, p) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
             how = _start_how(offer, lanes_free(briefs))
@@ -2851,15 +2854,16 @@ def _pace(p=None):
         return None
 
 
-def _side_work(sd, briefs, work, full, offered):
+def _side_work(sd, briefs, work, full, offered, p):
     """T-0401: the next queued task (then, in full autonomy, captured one) that can move while the active one's
     background jobs run: not the active one, not offered already for this set, not waiting on the active task
     (depends_on or what fm relate inferred), not already briefed for a builder lane."""
     by_id = {b.id: b for b in briefs}
     lanes = lanes_free(briefs)
+    gated = _gates_running(p)
     for x in sd["queue"] + (sd["inbox"] if full else []):
         b = by_id.get(x["id"])
-        if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b)
+        if (b is None or x["id"] == work["id"] or x["id"] in offered or work["id"] in c._deps(b) or x["id"] == gated
                 or b.meta.get("builder") or any(s.done for s in b.steps())  # T-0429: under way here already
                 or b.section("Verification evidence").strip()):
             continue
@@ -2868,6 +2872,17 @@ def _side_work(sd, briefs, work, full, offered):
             continue                                                 # nothing left to do on it from here
         return x
     return None
+
+
+def _gates_running(p):
+    """T-1176: the task whose `fm check --evidence` runs in the background now (meta gates_running, live pid), else None;
+    a marker whose process is gone is stale and ignored."""
+    g = c.read_meta(p).get("gates_running") or {}
+    try:
+        os.kill(int(g["pid"]), 0)
+        return g.get("task")
+    except (KeyError, TypeError, ValueError, OSError):
+        return None
 
 
 def lanes_free(briefs):
@@ -2882,7 +2897,8 @@ def _start_how(x, lanes=True):
     if x.get("status") == "captured":
         return (f"plan it (fm task new \"<title>\" --from {x['id']} with its criteria and steps; /foreman:intake §2 "
                 f"for M/L), so it's ready to run")
-    if x.get("tier") in ("S", "M") and lanes:
+    # T-1176: a brainstorm runs fm ideas here and a release pushes: neither is a builder's work
+    if x.get("tier") in ("S", "M") and lanes and x.get("type") != "RESEARCH" and not x.get("title", "").startswith("Release"):
         return f"fm lane brief {x['id']}, then launch the builder it prints (Agent, isolation worktree)"
     return f"ground it and sharpen its plan (fm second plan {x['id']}), so it's ready when the current task lands"
 
@@ -2953,6 +2969,14 @@ def subagent_stop(pl):
                           "transcript": pl.get("agent_transcript_path"),
                           "summary_chars": len(pl.get("last_assistant_message") or "")},
                     session=pl.get("session_id"))
+        if re.search(r"(?:^|:)fm-reviewer$", str(pl["agent_type"])):  # T-1181: its findings, without a typed fm task finding
+            import fmlanes
+            msg = pl.get("last_assistant_message") or ""
+            named = re.search(r"\bT-\d{4,}\b", msg)
+            tid = act.id if act else named.group(0) if named else None
+            for lens, sev, file, text in fmlanes.reviewer_findings(msg):
+                c.log_event(p, "finding", task=tid, session=pl.get("session_id"),
+                            data={"lens": lens, "severity": sev, "file": file, "text": text, "verdict": "reported"})
         chars = len((pl.get("last_assistant_message") or "").strip())
         if re.search(r"(?:^|:)fm-(?:builder|reviewer)$", str(pl["agent_type"])) and chars < HOLLOW_CHARS:
             # T-0963: async, so it can't block; fm next names it so the main thread reads the transcript first

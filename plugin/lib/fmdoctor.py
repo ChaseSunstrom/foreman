@@ -1216,7 +1216,7 @@ def run_all(full=False, accept_supply=False):
                           or f"{len(projects)} project(s) OK"))
     stale = [p.slug for p in projects if not views_match(p)]  # T-0494
     results.append(Result("views", "WARN" if stale else "PASS",
-                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --repair regenerates them"
+                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --fix regenerates them"
                           if stale else "status views match the briefs"))
     here = c.find_project(os.getcwd())
     results.append(check_dual_install())
@@ -1232,6 +1232,57 @@ def run_all(full=False, accept_supply=False):
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
                 check_routing(), check_cc_features(), check_upstream()]
     return results
+
+
+def _fix_views():
+    n = 0
+    for p, _ in c.all_projects():
+        if not views_match(p):
+            with c.lock(p.dir):
+                c.regen_views(p, mirror=False)
+            n += 1
+    return f"regenerated {n} project view(s)"
+
+
+def _fix_integrity():
+    return f"moved {len(repair(integrity_roots()))} empty git object(s) to the quarantine"
+
+
+def _recheck_integrity():
+    projects = [p for p, _ in c.all_projects()]
+    return check_integrity(integrity_roots(projects), projects).status == "PASS"
+
+
+def _fix_state_dir():
+    return f"state moved back to {c.restore_default_state()}"
+
+
+# result name -> (the repair a flag already performs, whether the check now passes); nothing here is new behaviour
+FIXERS = {
+    "views": (_fix_views, lambda: all(views_match(p) for p, _ in c.all_projects())),
+    "integrity": (_fix_integrity, _recheck_integrity),
+    "state dir": (_fix_state_dir, lambda: c.state_dir() == os.path.join(c.foreman_home(), "state")),
+}
+
+
+def fix(results):
+    """T-1184: apply the safe repair for each non-PASS result that has one; (fixed, left) as "name: what" lines. A
+    finding is left when it has no repair, the repair errs, or the check still fails after it."""
+    fixed, left = [], []
+    for r in results:
+        if r.status == "PASS":
+            continue
+        fixer = FIXERS.get(r.name)
+        if not fixer:
+            left.append(f"{r.name}: {r.detail}")
+            continue
+        try:
+            did = fixer[0]()
+            ok = fixer[1]()
+        except OSError as e:
+            did, ok = f"repair failed: {e}", False
+        (fixed if ok else left).append(f"{r.name}: {did}" if ok else f"{r.name}: {did}; still failing: {r.detail}")
+    return fixed, left
 
 
 def cmd_doctor(args):
@@ -1253,6 +1304,13 @@ def cmd_doctor(args):
         print(f"Views regenerated in {', '.join(fixed)}." if fixed else "Views match the briefs everywhere.")
         return None
     results = run_all(full=args.full, accept_supply=getattr(args, "accept_supply", False))
+    if getattr(args, "fix", False):
+        fixed, left = fix(results)
+        print("\n".join(["Fixed:"] + [f"  {x}" for x in fixed]) if fixed else "Fixed: nothing")
+        print("\n".join(["Left for a person:"] + [f"  {x}" for x in left]) if left else "Left for a person: nothing")
+        if left:
+            sys.exit(1)
+        return None
     ok = not any(r.status == "FAIL" for r in results)
     if args.json:
         print(json.dumps({"ok": ok, "results": [asdict(r) for r in results]}, indent=2, ensure_ascii=False))

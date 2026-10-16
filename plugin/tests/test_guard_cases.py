@@ -12,7 +12,8 @@ class GuardCases(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.cases = os.path.join(self.tmp, "cases.jsonl")
-        self.env = {"FOREMAN_GUARD_CASES": self.cases}
+        # no real transcripts: plain `fm replay` would otherwise replay this machine's sessions (slow, machine-specific)
+        self.env = {"FOREMAN_GUARD_CASES": self.cases, "CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "claude")}
 
     def wrong(self, *a, check=True):
         return self.fm("guard", "wrong", *a, env=self.env, check=check)
@@ -24,6 +25,21 @@ class GuardCases(ForemanTestCase):
         self.assertEqual(broken, 0, "a line of guard_cases.jsonl is not a case")
         self.assertGreaterEqual(len(cases), 6)
         self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled case")
+
+    def test_a_test_without_the_env_never_writes_the_real_corpus(self):
+        # T-1197: a temp repo has no plugin/, so the corpus fell back to the real checkout's and tests wrote junk to it
+        real = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "guard_cases.jsonl")
+        with open(real, "rb") as f:
+            before = f.read()
+        try:
+            self.fm("guard", "wrong", "echo t1197", "--should", "allow", "--why", "x")
+            with open(real, "rb") as f:
+                self.assertEqual(f.read(), before)
+        finally:
+            with open(real, "rb") as f:
+                if f.read() != before:
+                    with open(real, "wb") as g:
+                        g.write(before)
 
     def test_a_broken_line_is_counted_not_fatal(self):
         with open(self.cases, "w") as f:
@@ -40,6 +56,20 @@ class GuardCases(ForemanTestCase):
         self.wrong("ls -la", "--should", "allow", "--cwd", os.path.join(repo, "plugin"))
         self.assertEqual(json.loads(open(self.cases).read())["cwd"], "plugin")
         self.assertEqual(fmreplay.resolve_cwd("plugin"), os.path.join(fmreplay.repo_root(), "plugin"))
+
+    def test_a_second_checkout_gets_its_own_case(self):
+        # T-1175: run inside another Foreman checkout, the case goes to that checkout's corpus, cwd relative to it
+        co = os.path.join(self.tmp, "co")
+        os.makedirs(os.path.join(co, "plugin", "lib"))
+        os.makedirs(os.path.join(co, "sub"))
+        open(os.path.join(co, "plugin", "lib", "fmguard.py"), "w").close()
+        main = os.path.join(fmreplay.c.PLUGIN_ROOT, "tests", "fixtures", "guard_cases.jsonl")
+        before = open(main).read()
+        self.fm("guard", "wrong", "ls -la", "--should", "allow", cwd=os.path.join(co, "sub"),
+                env={"FOREMAN_GUARD_CASES": ""})  # the fallback itself, not the test default
+        mine = os.path.join(co, "plugin", "tests", "fixtures", "guard_cases.jsonl")
+        self.assertEqual(json.loads(open(mine).read())["cwd"], "sub")
+        self.assertEqual(open(main).read(), before)
 
     def test_the_night_job_is_for_foremans_own_repo_only(self):
         from unittest import mock
@@ -78,6 +108,15 @@ class GuardCases(ForemanTestCase):
         self.assertEqual(out.returncode, 1)
         res = json.loads(out.stdout)
         self.assertEqual((res["cases"], res["drifted"]), (1, 1))
+
+    def test_the_replay_gate_holds_the_labels_too(self):
+        # T-1182: the gate is plain `fm replay`; a drifted label must fail it, not only `fm replay --cases`
+        self.wrong("ls", "--should", "allow")
+        self.assertEqual(self.fm("replay", env=self.env, check=False).returncode, 0)
+        self.wrong("ls -la", "--should", "block")  # the guard allows ls -la: drifted
+        out = self.fm("replay", env=self.env, check=False)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("ls -la", out.stdout)
 
     def test_a_key_shaped_literal_is_refused(self):
         r = self.wrong("curl -H 'Authorization: Bearer abcdef123456' x", "--should", "block", check=False)

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+## 1.2.34 — 2026-10-16
+- `fm release VERSION [--ui V] [--push] [--dry-run] [--resume] [--abandon]` runs the release as nine named steps (clean tree, gates, bump, changelog, commit, release-check, canary, push, round close) with a checkpoint after each. A stopped release resumes at the step that failed, `--push` merges the gated release commit (never later work) behind the active task's publish grant, and `release.py` is now a thin wrapper over it (T-1188).
+- A test holds eight path-taking verbs (lease, edit, evidence, check, focus, guard wrong and others) to the same result when run from the repo root, a subdirectory and a symlinked checkout; it found no path bugs (T-1185).
+- Tests point `FOREMAN_GUARD_CASES` at a temp file by default, so a test that runs `fm guard wrong` from a temp repo can no longer write cases into the real `guard_cases.jsonl` (the subdirectory matrix had added three) (T-1197).
+- `fm guard wrong` stores the case in the corpus of the Foreman checkout it runs in (with a cwd relative to that checkout), so a builder's worktree no longer writes into the main checkout's tests mid-gates (T-1175).
+- `fm task finish` refuses a task that added a `plugin/<entry>` MASTER.md's File map doesn't list, naming the entry, instead of leaving it to release-check in the full gates (T-1179).
+- The Stop drive no longer offers a builder lane for a RESEARCH task or a release, and doesn't offer a task whose `fm check --evidence` gate run is still going (T-1176).
+- A file named on an `fm` command line that can't be read (`fm intake --file nope.txt`) is a one-line error, not a Python traceback (T-1189).
+- Common guesses run what they meant, with one quiet "(ran `fm …`)" note: `fm task list|ls|all`, `fm tasks`, `fm ls` (the queue), `fm task get|view|info|cat ID` (task show), `fm lane ls`, `fm inbox list|ls` (T-1180).
+- A stopped fm-reviewer's findings are logged as `finding` events (lens, severity, file, verdict reported) without a hand-typed `fm task finding`, and the defect classes in builder briefs count them until rejected (T-1181).
+- `fm doctor --fix` applies only the findings that already have a safe repair (stale status views, empty git objects, fallback state), rechecks them, and lists every finding it left for a person (T-1184).
+- `fm audit run ID` runs the audit lenses as headless read-only `claude -p` reviewers over the frozen `fm audit prep` brief, bounded by `fm budget` and `fm contract`, and records each lens verdict and its findings, so the drive and `fm run` can audit without a person (T-1186).
+- `fm edit` applies every `<<< === >>>` block under an `@@ file` header (a second one was dropped silently), and refuses a batch whose `<<<` count doesn't match its complete blocks (T-1191).
+- The verify check no longer reads a flag's value as a test module (`run.py -k test_some_case` gave "test_some_case.py doesn't exist yet") (T-1190).
+- `fm task block` and `fm task defer` take `--until "installed NAME"` or `--until "exists PATH"` (structured conditions, never a shell command), and `fm next` and `fm tidy` re-offer the task once it holds (T-1183).
+- The `fm replay` gate also checks the labelled guard cases and fails on a drifted or broken one, so any task touching the guard meets them at its gates (T-1182).
+- The hook bench runs `bash src/build.sh` on a ~37 KB real-shaped script, rewritten before every run so each is a cold read, with a 300 ms budget (T-1192).
+- `fm guard mine [--days N]` lists this project's real guard refusals from its Claude Code transcripts, each with its full command, today's verdict and what the session did next, grouped by rule: the input a guard-friction fix needs (T-1187).
+
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
 - Builders self-review as an adversary before they report (what input breaks it, what outside text it trusts, what is unbounded, what it writes where, what a second run does) and say so in a Self-review section (T-1147).
