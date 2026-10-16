@@ -5,6 +5,8 @@ import os
 
 from test_bus import Base
 
+import fmcore as c
+
 A = {"CLAUDE_CODE_SESSION_ID": "sess-a"}
 B = {"CLAUDE_CODE_SESSION_ID": "sess-b"}
 
@@ -47,3 +49,78 @@ class Claims(Base):
         r = self.fm("lease", "take", "x.py::f", env=B, check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn(tid, r.stderr + r.stdout)
+
+
+class ClaimsReview(Base):
+    def lane_task(self, scope):
+        return self.task(title="Lane work", tier="S", focus=False, scope=scope)
+
+    def test_a_brief_never_displaces_a_live_lease_and_says_so(self):
+        path = os.path.join(self.repo, "a.py")
+        with open(path, "w") as f:
+            f.write("def f():\n    return 1\n")
+        self.fm("lease", "take", "a.py", env=A)
+        tid = self.lane_task(["a.py"])
+        res = json.loads(self.fm("lane", "brief", tid, "--json").stdout)
+        with open(res["path"]) as f:
+            self.assertIn("a.py", f.read().split("## Claims")[1].split("## Your contract")[0])
+        _, out = self.note("sess-a", "Edit", {"file_path": path, "old_string": "return 1", "new_string": "return 2"})
+        self.assertNotEqual(out.get("permissionDecision"), "deny", "the holder keeps its lease")
+
+    def test_warn_coexists_with_the_other_lease(self):
+        path = os.path.join(self.repo, "a.py")
+        with open(path, "w") as f:
+            f.write("def f():\n    return 1\n")
+        self.fm("lease", "take", "a.py::f", env=A)
+        r = self.fm("lease", "take", "a.py::f", "--warn", env=B)
+        self.assertIn("overlaps", r.stderr)
+        self.assertEqual(r.stdout.count("overlaps"), 0, "warnings go to stderr")
+        _, out = self.note("sess-a", "Edit", {"file_path": path, "old_string": "return 1", "new_string": "return 2"})
+        self.assertNotEqual(out.get("permissionDecision"), "deny", "A's claim survived B's --warn")
+
+    def test_release_frees_a_lane_claim_and_the_full_id_is_printed(self):
+        import fmbus
+        p = self.project()
+        fmbus.preclaim(p, "T-1068", ["x.py"])
+        r = self.fm("lease", "take", "x.py", env=B, check=False)
+        self.assertIn("lane-T-1068", r.stderr + r.stdout)
+        fmbus.release(p, "T-1068")
+        self.assertEqual(self.fm("lease", "take", "x.py", env=B).returncode, 0)
+
+    def test_no_lease_means_no_brief_load(self):
+        import fmbus
+        p = self.project()
+
+        def boom(*a, **k):
+            raise AssertionError("loaded briefs")
+        real, c.load_briefs = c.load_briefs, boom
+        try:
+            self.assertIsNone(fmbus.conflict({"session_id": "s", "tool_name": "Edit", "tool_input": {}}, p,
+                                             os.path.join(p.root, "free.py")))
+        finally:
+            c.load_briefs = real
+
+    def test_json_refusal_is_structured_and_paths_are_normalised(self):
+        self.fm("lease", "take", "new.py", env=A)
+        r = self.fm("lease", "take", "./new.py::f", "--json", env=B, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        refused = json.loads(r.stdout)["refused"]
+        self.assertEqual(refused[0]["target"], "new.py::f")
+        self.assertEqual(refused[0]["session"], "sess-a")
+        self.assertIn("task", refused[0])
+        r = self.fm("lease", "take", os.path.join(self.repo, "new.py"), env=B, check=False)
+        self.assertNotEqual(r.returncode, 0, "an absolute path is the same file")
+
+    def test_a_lane_claim_exempts_its_own_task_only(self):
+        import fmbus
+        p = self.project()
+        act = c.active_brief(c.load_briefs(p), p.lane)
+        path = os.path.join(self.repo, "x.py")
+        with open(path, "w") as f:
+            f.write("x = 1\n")
+        pl = {"session_id": "s", "tool_name": "Edit", "tool_input": {"old_string": "x = 1", "new_string": "x = 2"}}
+        fmbus.preclaim(p, "T-9999", ["x.py"])
+        self.assertIn("lane-T-9999", fmbus.conflict(pl, p, path) or "", "another task's claim denies")
+        fmbus.release(p, "T-9999")
+        fmbus.preclaim(p, act.id, ["x.py"])
+        self.assertIsNone(fmbus.conflict(pl, p, path), "the lane's own task edits its claim")

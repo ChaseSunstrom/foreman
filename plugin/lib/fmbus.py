@@ -8,6 +8,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import time
 
 import fmcore as c
@@ -457,8 +458,12 @@ def after_edit(pl, p, path):
         _write_leases(data)
 
 
+def _sh(s):  # a lane claim's id is short already and its prefix is what names it
+    return s if s.startswith("lane-") else s[:8]
+
+
 def _who(v):
-    return f"session {v['session'][:8]}" + (f" ({v['task']})" if v.get("task") else "")
+    return f"session {_sh(v['session'])}" + (f" ({v['task']})" if v.get("task") else "")
 
 
 def claim_overlaps(p, rel, sym, me, act=None, data=None):
@@ -469,14 +474,34 @@ def claim_overlaps(p, rel, sym, me, act=None, data=None):
             and not (act and v["session"] == f"lane-{act.id}") and (v["symbol"] == sym or "*" in (sym, v["symbol"]))]
 
 
+def _claim(data, p, me, task, rel, sym, seconds, advisory=False):
+    """A claim is keyed per session, so claims on one file and symbol coexist instead of displacing each other.
+    An advisory one (fm lease take --warn over an overlap) is listed but denies nobody's edit."""
+    data[f"{p.slug}:{rel}::{sym}@{me}"] = {"session": me, "task": task, "project": p.slug, "file": rel,
+                                           "symbol": sym, "until": time.time() + seconds, "advisory": advisory}
+
+
 def preclaim(p, task_id, files, seconds=LEASE_S):
-    """T-1068: a lane brief claims the task's concrete scope files up front, under the task id."""
+    """T-1068: a lane brief claims the task's concrete scope files up front, under the task id. A file another
+    session holds live isn't taken from it: those come back as (file, holder) pairs."""
+    me, skipped = f"lane-{task_id}", []
     with c.lock(_dir()):
         data = _leases()
         for f in files:
-            data[f"{p.slug}:{f}::*"] = {"session": f"lane-{task_id}", "task": task_id, "project": p.slug,
-                                       "file": f, "symbol": "*", "until": time.time() + seconds}
+            held = claim_overlaps(p, f, "*", me, data=data)
+            if held:
+                skipped.append((f, _who(held[0])))
+            else:
+                _claim(data, p, me, task_id, f, "*", seconds)
         _write_leases(data)
+    return skipped
+
+
+def release(p, task_id):
+    """T-1068: drop a lane's pre-claims (its lane is merged, removed or being resumed)."""
+    with c.lock(_dir()):
+        data = _leases()
+        _write_leases({k: v for k, v in data.items() if v["session"] != f"lane-{task_id}"})
 
 
 def conflict(pl, p, path):
@@ -485,9 +510,11 @@ def conflict(pl, p, path):
     if not path.startswith(p.root.rstrip("/") + "/"):
         return None
     rel = os.path.relpath(path, p.root)
-    act = c.active_brief(c.load_briefs(p), p.lane)  # T-1068: a lane brief's pre-claim is its own task's
     held = [v for v in _leases().values() if v["project"] == p.slug and v["file"] == rel and v["session"] != sid
-            and not (act and v["session"] == f"lane-{act.id}")]
+            and not v.get("advisory")]
+    if any(v["session"].startswith("lane-") for v in held):  # T-1068: a lane's pre-claim is its own task's
+        act = c.active_brief(c.load_briefs(p), p.lane)
+        held = [v for v in held if not (act and v["session"] == f"lane-{act.id}")]
     if not held:
         return None
     text = _lines(path) or ""
@@ -499,9 +526,8 @@ def conflict(pl, p, path):
         if hit:
             left = int((v["until"] - time.time()) // 60) + 1
             what = rel if v["symbol"] == "*" else f"{rel}::{v['symbol']}"
-            return (f"Foreman lease: {what} is leased by session {v['session'][:8]}"
-                    + (f" ({v['task']})" if v.get("task") else "") + f" for {left} more min, which is editing it now. "
-                    f"Work elsewhere meanwhile, or ask it: fm bus send {v['session'][:8]} \"<what you need>\".")
+            return (f"Foreman lease: {what} is leased by {_who(v)} for {left} more min, which is editing it now. "
+                    f"Work elsewhere meanwhile, or ask it: fm bus send {_sh(v['session'])} \"<what you need>\".")
     return None
 
 
@@ -542,25 +568,29 @@ def cmd_lease(args):
             todo = []
             for t in args.target:
                 rel, _, sym = t.partition("::")
-                rel = os.path.relpath(os.path.abspath(rel), p.root) if os.path.exists(rel) else rel
+                rel = os.path.relpath(os.path.abspath(rel), p.root)
                 todo.append((rel, sym or "*"))
-            if args.action == "take" and not args.warn:  # T-1068: refuse the whole claim before taking any of it
-                hit = [f"{r}::{s} overlaps {_who(v)}" for r, s in todo for v in claim_overlaps(p, r, s, me, act)]
-                if hit:
-                    raise fmcli.UsageError("; ".join(hit) + " (--warn takes it anyway)")
+            hits = [(f"{r}::{s}", v) for r, s in todo for v in claim_overlaps(p, r, s, me, act, data)]
+            if args.action == "take" and hits and not args.warn:  # T-1068: refuse the whole claim, taking none of it
+                if getattr(args, "json", False):
+                    fmcli.out(args, {"refused": [{"target": t, "session": v["session"], "task": v.get("task")}
+                                                 for t, v in hits]}, None)
+                    return 1
+                raise fmcli.UsageError("; ".join(f"{t} overlaps {_who(v)}" for t, v in hits)
+                                       + " (--warn takes it anyway)")
+            for t, v in hits if args.action == "take" else []:
+                print(f"warning: {t} overlaps {_who(v)}", file=sys.stderr)
             for rel, sym in todo:
-                key = f"{p.slug}:{rel}::{sym}"
                 if args.action == "drop":
-                    data.pop(key, None) if data.get(key, {}).get("session") in (me, None) else None
+                    data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["file"] == rel
+                                                                   and v["symbol"] == sym and v["session"] == me)}
                 else:
-                    for v in claim_overlaps(p, rel, sym, me, act):
-                        print(f"warning: {rel}::{sym} overlaps {_who(v)}")
-                    data[key] = {"session": me, "task": act.id if act else None, "project": p.slug, "file": rel,
-                                 "symbol": sym, "until": time.time() + args.minutes * 60}
+                    _claim(data, p, me, act.id if act else None, rel, sym, args.minutes * 60,
+                           advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))
             _write_leases(data)
     rows = [v for v in data.values() if v["project"] == p.slug]
     return fmcli.out(args, {"leases": rows}, "\n".join(
-        f"{v['file']}::{v['symbol']}  session {v['session'][:8]}" + (f" ({v['task']})" if v.get("task") else "")
+        f"{v['file']}::{v['symbol']}  {_who(v)}"
         + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held.")
 
 
