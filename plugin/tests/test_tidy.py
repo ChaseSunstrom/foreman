@@ -442,3 +442,20 @@ class DecisionSunset(TidyCase):
         d = self.fm("digest").stdout
         self.assertIn("Decided without you:", d)
         self.assertIn("use sqlite for state", d)
+        self.assertIn("use sqlite for state", " ".join(self.fm_json("digest")["decided"]))
+
+    def test_a_later_row_settles_the_sunset_and_bad_or_misplaced_flags_are_refused(self):
+        for bad in ("20200101", "2020-W01-1"):
+            self.assertNotEqual(self.fm("decide", "x", "--sunset", bad, check=False).returncode, 0, bad)
+        for extra in (["--list"], ["--digest"], ["--ask", "q?", "--default", "a"]):
+            self.assertNotEqual(self.fm("decide", "x", "--sunset", "2030-01-01", *extra, check=False).returncode, 0, extra)
+        self.assertNotEqual(self.fm("decide", "--sunset", "2030-01-01", check=False).returncode, 0)
+        r = self.fm("decide", "use the old cache", "--sunset", "2020-01-01")
+        self.assertIn("already expired", r.stdout)
+        self.assertIn("sunset", self.fm("tidy", env={"HOME": self.fake_home}).stdout)
+        self.fm("decide", "keep the old cache for now", "--revisited", "old cache")
+        self.assertNotIn("sunset", self.fm("tidy", env={"HOME": self.fake_home}).stdout)
+
+    def test_a_costly_decision_is_listed_once_in_the_digest(self):
+        self.fm("decide", "ship without review", "--kind", "costly")
+        self.assertEqual(self.fm("digest").stdout.count("ship without review"), 1)

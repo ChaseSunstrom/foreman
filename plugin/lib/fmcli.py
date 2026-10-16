@@ -2770,6 +2770,12 @@ def cmd_decide(args):
     --reverses names the earlier decision it undoes; --list shows them (--review: only those to review)."""
     p = resolve(args)
     path = os.path.join(p.dir, "decisions.md")
+    sunset = None
+    if getattr(args, "sunset", None) and (not args.decision or args.list or args.review or getattr(args, "ask", None) is not None
+                                          or getattr(args, "digest", False) or getattr(args, "answer", None) is not None
+                                          or getattr(args, "export_adr", None)):
+        raise UsageError("--sunset goes with a decision text being recorded, not --list, --review, --ask, --digest, "
+                         "--answer or --export-adr")
     applied = _apply_due_asks(p)  # any fm decide applies a passed deadline first
     if getattr(args, "ask", None) is not None:
         return _decide_ask(p, args)
@@ -2796,14 +2802,17 @@ def cmd_decide(args):
     except ValueError as e:                                                                          # their own args
         raise UsageError(str(e))
     if getattr(args, "sunset", None):  # T-1084: the decision lapses on this date; fm tidy lists it as expired
-        try:
-            c.datetime.date.fromisoformat(args.sunset)
+        try:  # fromisoformat takes 20200101 and 2020-W01-1 too; the reader needs YYYY-MM-DD
+            if not re.fullmatch(r"\d{4}-\d\d-\d\d", args.sunset):
+                raise ValueError
+            sunset = c.datetime.date.fromisoformat(args.sunset).isoformat()
         except ValueError:
             raise UsageError("--sunset takes YYYY-MM-DD")
-        revisit += f"[sunset: {args.sunset}] "
+        revisit += f"[sunset: {sunset}] "
     _write_decision(p, args.decision, args.why, args.rejected, args.kind, args.reverses, args.task,
                     getattr(args, "revisited", None), revisit, cites=getattr(args, "cites", None))
-    out(args, {"decision": args.decision}, f"Decision recorded in {path}.")
+    out(args, {"decision": args.decision},
+        f"Decision recorded in {path}." + (" Its sunset is already expired." if sunset and sunset <= c.now()[:10] else ""))
 
 
 def _write_decision(p, decision, why="", rejected="", kind="reversible", reverses=None, task=None, settles=None,
