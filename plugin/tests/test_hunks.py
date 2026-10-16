@@ -110,3 +110,25 @@ class Fallback(ForemanTestCase):
                                    capture_output=True, text=True, check=True).stdout.strip()
         heads = set(open(log).read().split())
         self.assertEqual(heads, {base_tree})  # every check, baseline included, ran with HEAD at the base
+
+
+class Ablate(_Case):
+    """T-1067: fm task finish --ablate runs the hunk ablation with the linked tests, no --run needed."""
+    def finish(self):
+        return self.fm("task", "finish", self.tid, "--audit", "self", "--docs", "none: test", "--lesson", "x",
+                       "--ablate", "--run", "true", check=False)
+
+    def test_names_the_untested_hunk(self):
+        self.fm("check", "affected", "python3 {tests}")
+        self.write("calc.py", AFTER)
+        self.write("test_calc.py", "import calc\nassert calc.f() == 2\n")
+        p = self.finish()
+        self.assertIn("1/2 hunks proven", p.stdout + p.stderr)
+        self.assertIn("unproven: calc.py", p.stdout + p.stderr)
+
+    def test_no_linked_tests_is_one_line_not_a_failure(self):
+        self.fm("check", "affected", "python3 {tests}")
+        self.write("calc.py", AFTER)
+        p = self.finish()
+        self.assertIn("no linked tests", p.stdout + p.stderr)
+        self.assertNotIn("hunks proven", p.stdout + p.stderr)
