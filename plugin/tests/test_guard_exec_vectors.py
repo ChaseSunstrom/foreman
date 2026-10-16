@@ -62,6 +62,27 @@ class ExecVectors(GuardCase):
         ], self.bash)
 
 
+class Abbreviations(GuardCase):
+    def test_long_options_match_by_prefix(self):
+        self.run_table([
+            ("tar -xf a.tar --to-com='rm -rf ~'", "rm-outside"),
+            ("tar -xf a.tar --use-compress='rm -rf ~'", "rm-outside"),
+            ("tar -cf a.tar x --checkpoint-act=exec='rm -rf ~'", "rm-outside"),
+            ("rsync -av --rsh='rm -rf ~' a h:b", "rm-outside"),
+            ("zip -r --unzip-com 'rm -rf ~' a.zip x", "rm-outside"),
+            ("tar -cf a.tar x --checkpoint=100", None),
+            ("tar -xf a.tar --to-stdout", None),
+        ], self.bash)
+
+    def test_sed_with_an_unsplittable_script_and_an_e_is_refused(self):
+        self.run_table([
+            ("sed 's/a;b/rm -rf ~/e' f", "system"),
+            ("sed 's/a;b/c/;e id' f", "system"),
+            ("sed 's/a;b/c/' f", None),  # a ; inside an s command, no e anywhere
+            ("sed 's/a;b/c/;p' f", None),
+        ], self.bash)
+
+
 class ScriptFiles(GuardCase):
     def test_a_script_file_a_shell_or_python_runs_is_read(self):
         d = os.path.join(os.path.dirname(self.home), "scripts")
