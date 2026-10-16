@@ -8,6 +8,7 @@
 - The builder contract has one source: a test fails when `fmlanes.CONTRACT` and `agents/fm-builder.md` drift apart (T-1151).
 - `fm check` names the files that changed during its gates and says the change may be your own edit, instead of blaming a gate that writes files (T-1149).
 - A verify naming a test module or script that doesn't exist yet is kept with a note saying so; a verify naming an npm script its package.json lacks is refused when the criterion is added (T-1145).
+- `fm guard try "CMD"` (or `--tool Edit --path P`) prints the guard's real decision for this session (task, grants, cwd) without running anything, so a false block can be checked before a retry (T-1146).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
