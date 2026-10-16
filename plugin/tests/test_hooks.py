@@ -62,6 +62,14 @@ class SessionStart(HookCase):
     def run_ss(self, source="startup"):
         return self.hook("SessionStart", {"source": source}, env={"CLAUDE_ENV_FILE": self.env_file})
 
+    def test_an_unattended_run_is_told_to_end_with_its_checks(self):
+        # T-1228: the duel's judge read only the final reply; Foreman's evidence sat in its ledger, not in the reply
+        self.fm("init")
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
+            "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
+        self.assertIn("each check you ran", ctx)
+        self.assertNotIn("each check you ran", self.ctx_of(self.run_ss()), "an interactive session isn't told")
+
     def test_a_resumed_session_with_drive_and_full_autonomy_starts_its_own_turn(self):
         # T-0138: "you weren't reprompted when the session just continued"
         self.fm("init")
@@ -369,6 +377,18 @@ class Approvals(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "yes"})
         self.assertEqual(self.allow(tid), ["core"], "the person's own yes still grants")
 
+    def test_only_the_claude_code_that_asked_can_answer_in_chat(self):
+        # T-1226 review: a copy of claude renamed bash, under a pty, with a positional "yes" and no -p, ran as a child of
+        # the asking session; by name it looked like a wrapper. The answer must come from the very process that asked.
+        self.fm("init")
+        tid = self.task()
+        self.fm_ask(tid, "core", flags=[])  # asked from another Claude Code process
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual((self.allow(tid), len(self.pending())), ([], 1), "a yes from another process grants nothing")
+        self.fm_ask(tid, "core")
+        self.hook("UserPromptSubmit", {"prompt": "yes"})
+        self.assertEqual(self.allow(tid), ["core"], "the asking process's own yes grants")
+
     def test_a_scheduled_prompt_that_reads_as_a_yes_is_refused(self):
         self.fm("init")
         self.task()
@@ -475,6 +495,41 @@ class NoTaskGate(HookCase):
         self.assertEqual(out["permissionDecision"], "deny")
         self.assertIn("no active task", out["permissionDecisionReason"])
         self.assertIn("--focus", out["permissionDecisionReason"])
+
+    def test_a_one_request_full_autonomy_session_gets_its_task_made_for_it(self):
+        # T-1231: in the duel every Foreman session spent two turns here (the refusal, then fm task new)
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: parse_duration rejects '1h 30m'\nDONE-WHEN: spaces between units "
+                                                 "parse"})
+        p = self.pre(os.path.join(self.repo, "app.py"))
+        reason = parse(p)["hookSpecificOutput"]["permissionDecisionReason"]
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, reason)
+        self.assertIn(act.id, reason)
+        self.assertIn("retry", reason.lower())
+        self.assertEqual((act.type, act.tier), ("FIX", "S"))
+        self.assertIn("spaces between units parse", act.section("Acceptance criteria"))
+        self.assertEqual(self.pre(os.path.join(self.repo, "app.py")).returncode, 0, "the retry goes through")
+
+    def test_a_request_with_two_items_or_no_work_keeps_the_plain_refusal(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: one thing\nFEATURE: another thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "which of the two is this edit for?")
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
+
+    def test_a_second_request_or_standard_autonomy_keeps_the_plain_refusal(self):
+        self.fm("init")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: one thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "standard autonomy")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FEATURE: another thing"})
+        self.assertIn("no active task", parse(self.pre(os.path.join(self.repo, "a.py")))["hookSpecificOutput"]
+                      ["permissionDecisionReason"], "two requests: which one is this edit for?")
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
 
     def test_active_task_scratch_memory_and_outside_paths_are_allowed(self):
         self.fm("init")

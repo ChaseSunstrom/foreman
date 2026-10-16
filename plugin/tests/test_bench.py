@@ -185,7 +185,7 @@ class Bench(ForemanTestCase):
         self.write("calc.py", "def double(x):\n    return x * 2\n\n\ndef half(x):\n    return x / 2\n")
         self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
         git(self.repo, "add", "-A")
-        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.")
+        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.\n- half(0) is 0")
         sha = git(self.repo, "rev-parse", "HEAD")
         self.write("tests/test_more.py", "print('ok')\n")
         git(self.repo, "add", "-A")
@@ -196,6 +196,7 @@ class Bench(ForemanTestCase):
         case = res["cases"][0]
         self.assertEqual(case["verify"], ["PYTHONPATH=. python3 tests/test_half.py"])
         self.assertIn("half(x) divides by two", case["prompt"])
+        self.assertIn("two.\n- half(0)", case["prompt"], "T-1231: a spec keeps its lines (it was one run-on line)")
         self.assertIn("tests only", " ".join(res["skipped"]))
         self.fm("bench", "build", env=self.env)
         ids = [x["id"] for x in json.loads(self.fm("bench", "list", "--json", env=self.env).stdout)["cases"]]

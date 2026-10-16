@@ -379,6 +379,9 @@ def session_start(pl):
     except Exception:
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
+    if _headless():  # T-1228: an unattended run is judged by its final reply; nobody can ask it what it checked
+        out["additionalContext"] += ("\nUnattended run: end with a reply that names each check you ran and its "
+                                     "result (✓/✗), and anything the request asked that you left undone.")
     if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
         out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
@@ -573,8 +576,46 @@ def _pin_hashes(pins):
     return {x: fmplugins.content_hash(x) for x in pins}
 
 
+def _first_brief(p, sid):
+    """T-1231: the first edit of a full-autonomy session whose only request so far is the one being worked makes its
+    task: a brief from that request (its tag's type, a guessed tier, its DONE-WHEN lines as criteria), focused. The
+    duel's Foreman sessions each spent two turns on the refusal and fm task new. Returns the note for the agent, or
+    None. Review: one request with one item that reads as work; parallel edits make one task (a lock)."""
+    if not sid or c.effective_autonomy(p) != "full" or c.active_brief_fast(p, getattr(p, "lane", None)):
+        return None
+    mine = [e for e in c.ledger_tail(p, 400) if e.get("session_id") == sid]
+    asks = [str((e.get("data") or {}).get("text") or "") for e in mine if e.get("event") == "prompt"]
+    if len(asks) != 1 or not asks[0].strip() or any(e.get("event") in ("task_new", "focus") for e in mine):
+        return None
+    r = c.parse_intake(asks[0])
+    if len(r.items) > 1 or not r.items and not c.is_work_request(asks[0]):
+        return None
+    first = r.items[0] if r.items else None
+    type_ = first.type if first else "FEATURE"
+    title = c.fit(c.plain((first.text if first else asks[0]).strip().splitlines()[0]), 90)
+    done = (r.done_when or (first.own.get("done_when") if first else None) or ["the request is done as asked"])[:6]
+    tier = "L" if c.guess_tier(type_, asks[0]) == "L" else "M" if type_ == "SECURITY" else "S"  # S: the cheap close
+    import fcntl
+    with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        if c.active_brief_fast(p, getattr(p, "lane", None)):
+            return None  # a parallel edit's hook made it a moment ago: its own note said so
+        cmd = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "new", title, "--type", type_, "--tier", tier,
+               "--step", "do what the request asks", "--focus", "--json"] + [x for d in done for x in ("--ac", d)]
+        r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,  # the hook's limit is 5 s
+                           env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+    act = c.active_brief_fast(p, getattr(p, "lane", None))
+    if r.returncode or not act:
+        log_error("PreToolUse", f"first brief: {r.stderr.strip()[-300:]}")
+        return None
+    return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
+            f"{len(done)} criterion(s) from it. Retry the edit. To finish: fm task finish --audit \"<how>\" "
+            f"--run \"<the test command>\" (criteria without a check of their own use --run). Wrong size? "
+            f"fm task set {act.id} tier=S|M|L.")
+
+
 _PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
-_WRAPPER = re.compile(r"(sh|bash|dash|zsh|env|hook|python[\d.]*)")
+_SHELLS = {"sh", "bash", "dash", "zsh", "busybox"}
 
 
 def _argv(pid):
@@ -588,29 +629,55 @@ def _argv(pid):
     return r.stdout.split()
 
 
-def _sent_by_program():
-    """T-1226: True when the Claude Code running this hook took its prompt from argv or a stream (-p, --print,
-    stream-json, the SDK) rather than from a person at its prompt: claude --resume <this session> -p yes, run from
-    Claude's own Bash, was a yes in the asking session. That Claude Code is the hook's nearest ancestor that isn't a
-    shell or python, whatever its name."""
+def _exe(pid):
+    try:
+        return os.path.realpath(f"/proc/{pid}/exe")
+    except OSError:
+        return ""
+
+
+def _hook_claude():
+    """T-1226 review: (pid, start, argv) of the Claude Code process running this hook: the nearest ancestor that isn't
+    one of this hook's own layers — python running this very hook script, or a system shell's -c launching it. No
+    process name is trusted (a copy of claude renamed bash is still the Claude Code it is). None if there is none."""
     import fmbus
-    for pid, _ in fmbus._chain(os.getppid(), 12):
-        if any(a in _PROGRAM_FLAGS or re.fullmatch(r"-[A-Za-oq-z]*p[A-Za-z]*", a)
-               or a.startswith(tuple(f + "=" for f in _PROGRAM_FLAGS[1:])) for a in _argv(pid)[1:]):
-            return True  # a shell or python on the way is checked too: a claude renamed bash is still a claude
-        if not _WRAPPER.fullmatch(fmbus._comm(pid)):
-            return False
-    return False
+    me = os.path.realpath(sys.argv[0]) if sys.argv and sys.argv[0] else ""
+    for pid, start in fmbus._chain(os.getppid(), 12):
+        argv, exe = _argv(pid), _exe(pid)
+        runs_me = bool(me) and any(os.path.realpath(a) == me for a in argv[:2] if a and not a.startswith("-"))
+        shell = (os.path.dirname(exe) in ("/bin", "/usr/bin") and os.path.basename(exe) in _SHELLS) if exe else \
+            fmbus._comm(pid) in _SHELLS
+        if (runs_me and re.match(r"python[\d.]*$", os.path.basename(exe or argv[0] or "")) or
+                shell and argv[1:2] == ["-c"] and len(argv) > 2 and "/hooks/hook" in argv[2]):
+            continue
+        return pid, start, argv
+    return None
 
 
-def _resolve_approvals(p, meta, sid, text, hashes=None):
-    """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session.
+def _sent_by_program(hc=None):
+    """T-1226: True when the Claude Code running this hook took its prompt from argv or a stream (-p, --print,
+    stream-json, the SDK) rather than from a person at its prompt — claude --resume <this session> -p yes, run from
+    Claude's own Bash, was a yes in the asking session — or when that Claude Code can't be found."""
+    hc = hc or _hook_claude()
+    return not hc or any(a in _PROGRAM_FLAGS or re.fullmatch(r"-[A-Za-oq-z]*p[A-Za-z]*", a)
+                         or a.startswith(tuple(f + "=" for f in _PROGRAM_FLAGS[1:])) for a in hc[2][1:])
+
+
+def _claude_id(hc=None):
+    """"pid:start" of the Claude Code running this hook, or None."""
+    hc = hc or _hook_claude()
+    return f"{hc[0]}:{hc[1]}" if hc else None
+
+
+def _resolve_approvals(p, meta, sid, text, hashes=None, claude=None):
+    """The only path from a pending `fm ask` to an authorization: the user's own next prompt in that session, typed
+    into the very Claude Code process that asked (T-1226 review: `claude`, its "pid:start").
 
     A reply starting with yes grants every pending request of the session; anything else cancels them."""
     pend = meta.get("pending_approvals") or []
     valid = [a for a in pend if isinstance(a, dict) and a.get("task") and isinstance(a.get("allow"), list)
              and a.get("session")]  # a request no session owns is never answerable
-    mine = [a for a in valid if sid and a["session"] == sid]
+    mine = [a for a in valid if sid and a["session"] == sid and claude and a.get("claude") == claude]
     if len(valid) != len(pend):
         meta["pending_approvals"] = valid
     if not mine:
@@ -689,15 +756,16 @@ def user_prompt_submit(pl):
     except Exception:
         log_error("UserPromptSubmit", _tb())
     try:
-        program = _sent_by_program()
+        hc = _hook_claude()
+        program, claude = _sent_by_program(hc), _claude_id(hc)
     except Exception:  # unknown: no approval from this prompt (the permission dialog still grants)
         log_error("UserPromptSubmit", _tb())
-        program = True
+        program, claude = True, None
     try:
         hashes = _pin_hashes(a.get("pin") for a in c.read_meta(p).get("pending_approvals") or [] if isinstance(a, dict))
         with c.lock(p.dir, timeout=LOCK_WORDS):
             meta = c.read_meta(p)
-            approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes)
+            approvals = [] if program else _resolve_approvals(p, meta, sid, text, hashes, claude)
             prompts = _load_list(_prompts_path(p))  # a dialog still open when the user speaks was refused or ignored
             if any(a.get("session") == sid for a in prompts):
                 c.write_atomic(_prompts_path(p), json.dumps([a for a in prompts if a.get("session") != sid]))
@@ -1202,6 +1270,16 @@ def _pre_tool_use(raw):
               f"Details: {os.path.join(c.state_dir(), 'logs', 'hooks.log')}. "
               f"If this persists: claude plugin disable foreman@foreman", file=sys.stderr)
         return 2
+    if block and block.category == "brief" and p:
+        try:
+            made = _first_brief(p, pl.get("session_id"))
+        except Exception:
+            log_error("PreToolUse", _tb())
+            made = None
+        if made:  # refused once more, so the retry meets the whole guard with the task active
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                                     "permissionDecisionReason": made}}))
+            return 0
     if block:
         reason = guard.message(block, ctx)
         long_cmd = str((pl.get("tool_input") or {}).get("command") or "") if tool == "Bash" else ""
@@ -1516,6 +1594,13 @@ def _record_asks(pl, p, fmguard):
             asks.append({"task": task, "allow": cats, "session": pl["session_id"], "at": time.time(), "dialog": dialog})
     if not asks:
         return
+    try:
+        claude = _claude_id()  # T-1226 review: only this process's own next prompt can answer it in chat
+    except Exception:
+        log_error("PreToolUse", _tb())
+        claude = None
+    for a in asks:
+        a["claude"] = claude
     path = os.path.join(p.dir, "asks.json")
     with c.lock(p.dir, timeout=LOCK_SLOW):
         seen = _load_list(path)
