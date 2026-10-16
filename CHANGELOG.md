@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm night` works unblocked queued S/M tasks through `fm run` under the night's remaining budget, and `fm digest` names the tasks it closed; `fm run --max-usd X` stops starting tasks once its measured spend reaches X (T-1046).
 - `fm ci-watch`: after a push, polls the GitHub Actions run for that exact commit through gh; a failure's log tail becomes one FIX brief (quoted as data), and it keeps watching pushed fixes up to `--max-retries`, then says it gave up (T-1052).
 - `fm export cursor` and `fm export gemini` write `.cursor/rules/foreman.mdc` (alwaysApply) and `GEMINI.md` with the AGENTS.md body; every export gains a Known fixes section (trusted fixes only, redacted, at most 15, none in a sensitive project) (T-1043).
 - A command that would wait forever on stdin (`cat > /tmp/x` with nothing feeding it, `python3 -` without a heredoc, a bare `tee` or `bash`) is refused before it runs, naming how to feed it; builders lost two minutes to each one. On a week of recorded commands it caught 22, all real hangs (T-1129).
