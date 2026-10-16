@@ -1149,7 +1149,7 @@ def _pre_tool_use(raw):
             return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl)
+        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl) or _stdin_hang(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -1465,6 +1465,46 @@ def _wait_loop(pl):
     return ("deny", "Foreman: a foreground wait loop holds this session idle until it ends. Run it with "
                     "run_in_background (its completion notification wakes you) or as a Monitor, and do other work "
                     "meanwhile: the next step, another task, a builder lane.")
+
+
+_COMPOUND = {"while", "until", "for", "do", "done", "{", "}", "select", "if", "then", "case"}
+
+
+def _stdin_hang(pl):
+    """T-1129 (two builders, 2026-10-16: `cat > /tmp/x`, `cat > /dev/null`): a stdin reader nothing feeds waits on the
+    Bash tool's stdin, which never closes, until the call times out. Compound commands are left alone: their < sits
+    on the closing word."""
+    ti = pl.get("tool_input") or {}
+    if pl.get("tool_name") != "Bash" or ti.get("run_in_background"):
+        return None
+    import fmguard as g
+    try:
+        cmds = g._split(g._tokens(g._lines(g._strip_heredocs(ti.get("command") or ""))))
+    except Exception:
+        return None
+    if any(t in _COMPOUND for x in cmds for t in x.argv[:1]) or any(x.depth or x.procsub for x in cmds):
+        return None
+    for x in cmds:
+        argv, via_xargs = g._strip_wrappers(x.argv)
+        if x.piped or x.feeds or x.stdin or via_xargs or not argv:
+            continue
+        name, args = os.path.basename(argv[0]), argv[1:]
+        ops = [a for a in args if (a == "-" or not a.startswith("-")) and not (a.isdigit() and x.redirs)]  # 2>/dev/null
+        if name == "tee":
+            hang = True
+        elif name == "cat":
+            hang = not ops or "-" in ops
+        elif re.fullmatch(r"python[0-9.]*|bash|sh|zsh|dash", name):
+            flag = r"-[A-Za-z]*[cm]" if name.startswith("python") else r"-[A-Za-z]*c"  # -c, -uc, -m json.tool, -lc
+            hang = not any(re.fullmatch(flag, a) or a.startswith("--") or a in ("-V", "-h") for a in args) and (
+                not ops or ops[0] == "-")  # --version, --help: no stdin
+        else:
+            continue
+        if hang:
+            return ("deny", f"Foreman: `{name}` here reads stdin, which never closes in this tool, so "
+                            "the call would hang until its timeout. Feed it (a heredoc, < FILE, a pipe), give it a file, "
+                            "or leave it out.")
+    return None
 
 
 OUTLINE_LINES, OUTLINE_ROWS = 600, 80

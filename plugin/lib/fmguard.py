@@ -429,6 +429,7 @@ class Cmd:
         self.op = op  # T-0339: the separator before it (";", "&&", "|", …; "" first)
         self.depth = depth  # T-0414: the ( it sits inside, unclosed: a subshell, $( ) or <( ) (negative: a stray ))
         self.feeds = []  # T-0589: ("<<", delimiter) and ("<<<", word): what it reads on stdin
+        self.stdin = None  # T-1129: the file a < (or <>) redirect gives it
 
 
 _HEREDOC_START = r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1"
@@ -871,6 +872,8 @@ def _split(tokens):
                 continue
             if t in ("<<", "<<<"):
                 cur.feeds.append((t, nxt))
+            elif t in ("<", "<>"):
+                cur.stdin = nxt
             if nxt and (t.startswith(">") or t in ("&>", "&>>", "<>")):
                 cur.redirs.append(nxt)
             i += 2
