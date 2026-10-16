@@ -3211,12 +3211,26 @@ def _missing_target(words, cwd, root):
 
     exe, args = os.path.basename(words[0]), [w for w in words[1:]]
     if re.fullmatch(r"python[0-9.]*", exe) and args and args[:2] == ["-m", "unittest"]:
-        return modules([a for a in args[2:] if not a.startswith("-")])
+        return modules(_positional(args[2:]))
     if (re.fullmatch(r"python[0-9.]*", exe) or exe in ("bash", "sh")) and args and not args[0].startswith("-"):
         if not os.path.isfile(os.path.join(cwd, args[0])):
             return f"{args[0]} doesn't exist yet"
         if args[0].endswith("run.py"):
-            return modules([a for a in args[1:] if not a.startswith("-")])
+            return modules(_positional(args[1:]))
+
+
+def _positional(args):
+    """T-1190: the words a test runner takes as modules: flags and the value of a value-taking flag (-k PATTERN,
+    -p, -j N, --pattern X) left out."""
+    out, skip = [], False
+    for a in args:
+        if skip:
+            skip = False
+        elif a.startswith("-"):
+            skip = a in ("-k", "-p", "-j", "--pattern", "--parallel", "--top-level-directory", "-t", "-s", "--start-directory")
+        else:
+            out.append(a)
+    return out
 
 
 def _missing_npm(words, cwd):
