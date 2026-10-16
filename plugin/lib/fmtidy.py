@@ -380,60 +380,6 @@ def _backup_state(p, apply, actions):
                     f"the newest {BACKUP_KEEP} are kept" + (f"; {len(old)} older removed" if old else ""))]
 
 
-SNAPSHOT_KEEP = 3
-
-
-def _snap_dir():
-    return os.path.join(c.state_dir(), "snapshots")
-
-
-def _tar_record(path):
-    """Every project's BACKUP_PARTS into one tarball, as <slug>/<part>."""
-    import tarfile
-    with tarfile.open(path + ".part", "w:gz") as t:
-        for p, _ in c.all_projects():
-            for part in BACKUP_PARTS:
-                if os.path.exists(os.path.join(p.dir, part)):
-                    t.add(os.path.join(p.dir, part), arcname=f"{os.path.basename(p.dir)}/{part}")
-    os.replace(path + ".part", path)
-
-
-def snapshot_upgrade(old):
-    """T-1085: before a new Foreman version runs on the state, tar it as snapshots/<old version>-<stamp>.tar.gz, once
-    per old version, the newest SNAPSHOT_KEEP kept."""
-    d = _snap_dir()
-    os.makedirs(d, exist_ok=True)
-    if any(f.startswith(f"{old}-") for f in os.listdir(d)):
-        return
-    _tar_record(os.path.join(d, f"{old}-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.tar.gz"))
-    for f in sorted(os.listdir(d), key=lambda f: os.path.getmtime(os.path.join(d, f)))[:-SNAPSHOT_KEEP]:
-        os.remove(os.path.join(d, f))
-
-
-def cmd_rollback(args):
-    """T-1085: fm rollback [--list] [--to NAME] --yes: put the state back as an upgrade snapshot had it."""
-    import tarfile
-    d = _snap_dir()
-    snaps = sorted((f for f in os.listdir(d) if f.endswith(".tar.gz")),
-                   key=lambda f: os.path.getmtime(os.path.join(d, f)), reverse=True) if os.path.isdir(d) else []
-    if args.list or not snaps:
-        print("\n".join(snaps) if snaps else "no snapshots yet: one is taken when Foreman's version changes")
-        return 0 if snaps else 1
-    name = args.to or snaps[0]
-    if name not in snaps:
-        print(f"no snapshot named {name}; fm rollback --list shows them")
-        return 1
-    if not args.yes:
-        print(f"would restore {name} over the current state (files it holds are overwritten; newer briefs stay): "
-              "pass --yes to do it")
-        return 1
-    _tar_record(os.path.join(d, f"pre-rollback-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}.tar.gz"))
-    with tarfile.open(os.path.join(d, name)) as t:
-        t.extractall(c.projects_dir(), filter="data")
-    print(f"restored {name} (the state before the rollback is in snapshots/pre-rollback-*)")
-    return 0
-
-
 def _prune_snapshots(p, apply, actions):
     """T-0884: work snapshots (refs/foreman/snapshots/<UTC stamp>-<sha>) older than WORK_SNAPSHOT_DAYS go."""
     top = c.git_root(p.root)
