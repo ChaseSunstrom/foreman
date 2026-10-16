@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A command that would wait forever on stdin (`cat > /tmp/x` with nothing feeding it, `python3 -` without a heredoc, a bare `tee` or `bash`) is refused before it runs, naming how to feed it; builders lost two minutes to each one. On a week of recorded commands it caught 22, all real hangs (T-1129).
 - `fm task finish ID --ablate` reverts each hunk of the task's change against the linked tests after the close's checks and names the hunks no test notices; informational, time-bounded, never fails the close (T-1067).
 - `fm adopt` learns from git history: fix/revert commits become a `git-history-lessons` note recall finds, and `error: X → Y` commit lines become known fixes that stay hints until trusted (`fm adopt --history` alone) (T-1047).
 - Lane claims: `fm lease take FILE[::SYM]...` refuses a claim that overlaps another session's, naming it and its task (`--warn` takes an advisory one); lane briefs pre-claim the task's scope files, released on rm, merge and resume (T-1068).

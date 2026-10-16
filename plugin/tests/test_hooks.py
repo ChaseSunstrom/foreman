@@ -960,6 +960,25 @@ class PreToolUse(HookCase):
         self.assertIn("deny", p.stdout)
         self.assertNotIn("deny", self.pre("ArtifactData", {"action": "list", "url": "u"}).stdout, "reads still pass")
 
+    def test_a_bare_stdin_reader_is_refused_before_it_hangs(self):
+        # T-1129: two builders' 'cat > /tmp/x' and 'cat > /dev/null' read the tool's stdin, which never closes
+        self.fm("init")
+        self.task()
+        for bad in ("cat > /tmp/x 2>/dev/null; python3 - <<'EOF'\nprint(1)\nEOF", "cat > /dev/null; grep -n x f.py",
+                    "python3 -", "python3 -I", "bash", "sh -s", "tee out.txt", "cd plugin && cat -"):
+            with self.subTest(cmd=bad):
+                p = self.pre("Bash", {"command": bad})
+                self.assertEqual(p.returncode, 2, p.stdout)
+                self.assertIn("stdin", p.stdout)
+        for ok in ("cat f.txt", "cat > f.txt <<'EOF'\nx\nEOF", "echo x | cat", "cat < f.txt", "python3 - <<'EOF'\n1\nEOF",
+                   "python3 -c 'print(1)'", "python3 -m json.tool f.json", "python3 x.py", "bash -c 'ls'", "bash run.sh",
+                   "git log | tee log.txt", "cat <<< hi", "while read -r l; do cat; done < f.txt", "{ cat; } < f.txt",
+                   "find . -name x | xargs cat", "timeout 5 python3 - <<'EOF'\n1\nEOF", "env A=1 bash -c 'x'",
+                   "python3 --version; which claude", "bash --version", "python3 -V"):
+            with self.subTest(cmd=ok):
+                self.assertEqual(self.pre("Bash", {"command": ok}).returncode, 0, ok)
+        self.assertEqual(self.pre("Bash", {"command": "cat", "run_in_background": True}).returncode, 0)
+
     def test_foreground_wait_loops_are_refused(self):
         # T-0426 (JARVIS 2026-10-09, the user: "make sure it isn't sitting idle like it was waiting on pipelines"):
         # `until grep -q "^exit" e2e.log; do sleep 20; done` held the session in the foreground for 10 minutes
