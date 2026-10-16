@@ -281,7 +281,7 @@ def session_start(pl):
     if sid and re.fullmatch(r"[\w-]{1,100}", sid):  # a new or compacted context: the next prompt restates the state,
         folder = os.path.join(c.state_dir(), "sessions")  # and one-shot notes (outline, thrash, tripwires) re-arm
         try:
-            names = [n for n in os.listdir(folder) if n.startswith(sid + ".")]
+            names = [n for n in os.listdir(folder) if n.startswith(sid + ".") and not n.startswith(sid + ".taint.")]  # T-1053
         except OSError:
             names = []
         for name in names:
@@ -1149,7 +1149,7 @@ def _pre_tool_use(raw):
             return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard) or _wait_loop(pl)
+        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -1922,11 +1922,96 @@ _INJECTION = re.compile(
     r"|\b(?:curl|wget)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z)?sh\b")
 
 
+_TAINT_LINE = re.compile(r"^[ \t]*(?:\$[ \t]+|>[ \t]*)?((?:sudo[ \t]+)?(?:curl|wget|npm|npx|pip3?|python3?|node|git|bash|sh|rm|"
+                         r"chmod|docker|brew|apt(?:-get)?|cargo|go|make|ssh|scp|sed|cat|echo|cd)[ \t]+\S[^\n]*)$", re.M)
+# an argument beyond the verb: a URL, pipe, redirect, flag with a value, or path (bare `npm install`, `git status` stay out)
+_TAINT_ARG = re.compile(r"://|[|>]|\s-{1,2}\w[\w-]*(?:=|\s+)\S|[/~]")
+
+
+def _taint_path(sid):
+    return os.path.join(c.state_dir(), "sessions", f"{sid}.taint.json") if sid and re.fullmatch(r"[\w-]{1,100}", sid) else None
+
+
+def _leaves(o):
+    if isinstance(o, str):
+        yield o
+    elif isinstance(o, dict):
+        for v in o.values():
+            yield from _leaves(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _leaves(v)
+
+
+def _taint_locked(path, fn):
+    """Read-modify-write the taint file under a lock, so parallel calls don't drop lines. The lock file is
+    <sid>.taint.lock, which session_start keeps with the store."""
+    import fcntl
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path[:-5] + ".lock", "a") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        try:
+            st = json.load(open(path))
+        except (OSError, ValueError):
+            st = {}
+        out = fn(st)
+        json.dump(st, open(path, "w"))
+        return out
+
+
+def _taint_store(pl, resp):
+    """T-1053: command-like lines of a web/MCP result (a `$ ` line, or a command-led line, fenced or not), kept for the
+    session so a later Bash command built from them can be flagged. ponytail: a leading-word list, not a shell parser."""
+    path = _taint_path(pl.get("session_id"))
+    if not path:
+        return
+    try:
+        text = resp if isinstance(resp, str) else "\n".join(_leaves(resp))
+        lines = [" ".join(c.redact(m.group(1)).split())[:200] for m in _TAINT_LINE.finditer(text[:200_000])]
+        lines = [x for x in lines if len(x) >= 8 and _TAINT_ARG.search(x)][:20]
+        if lines:
+            _taint_locked(path, lambda st: st.__setitem__("lines", (st.get("lines", []) + lines)[-200:]))
+    except Exception:
+        log_error("PostToolUse", _tb())
+
+
+def _taint_check(pl, p):
+    """A Bash command holding a stored line asks (never blocks), once per line per session; a store error lets the
+    command go on. Where nobody can answer a prompt (headless, full autonomy) it is denied with a way forward."""
+    try:
+        path = _taint_path(pl.get("session_id"))
+        if not path or not os.path.exists(path):
+            return None
+        cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
+
+        def find(st):  # under the lock: the ask's slot is taken only when an ask is what goes out
+            hit = next((x for x in st.get("lines", []) if x in cmd and x not in st.get("asked", [])), None)
+            if hit and not deny:
+                st["asked"] = st.get("asked", []) + [hit]
+            return hit
+        deny = bool(_headless() or (p and c.state_dict(p).get("autonomy") == "full"))
+        hit = _taint_locked(path, find)
+        if not hit:
+            return None
+        if p:
+            c.log_event(p, "taint_flag", data={"line": c.fit(hit, 80)}, session=pl.get("session_id"))
+        why = f"Foreman: this command came from text a web/MCP result returned (\"{c.fit(hit, 80)}\")."
+        if deny:
+            tid = c.active_brief(c.load_briefs(p), p.lane) if p else None
+            return ("deny", why + f" Nobody can answer a permission prompt here: fm task block {tid.id if tid else 'ID'} "
+                            "\"needs the user to confirm a command from fetched text\", or ask the user.")
+        return ("ask", why + " Run it only if the user wants that.")
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
 def _injection_note(pl, p, tool):
     """A fetched page, search result or MCP answer holding instruction-like text: one note (zero tokens) that it is
     data from outside, and an injection_flag event; the first 200 KB are scanned."""
     resp = pl.get("tool_response")
     text = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False) if resp is not None else ""
+    _taint_store(pl, resp)
     m = _INJECTION.search(text[:200_000])
     if not m:
         return None
