@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A bare `fm lease drop` releases only the active task's leases. Builder lanes share their main session's id, so a builder's drop had released the main thread's leases, three times in one day. `fm lease drop FILE` also releases every symbol lease on that file (T-1216).
 - `fmmodels`, Foreman Code's model layer: one stdlib client for OpenAI-compatible endpoints and Anthropic's Messages API. Profiles come from `$FOREMAN_HOME/models.json`, keyed clouds (Anthropic, OpenAI, OpenRouter, Groq, Gemini) and local servers (Ollama, LM Studio, llama.cpp, vLLM, probed in order). It retries on 429 and 5xx with one stop vocabulary, and the key never appears in an error and is never sent over plain http to a remote host (T-1211).
 
 ## 1.2.36 — 2026-10-16

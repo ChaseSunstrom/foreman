@@ -560,8 +560,11 @@ def cmd_lease(args):
     with c.lock(_dir()):
         data = _leases()
         before = len(data)
-        if args.action == "drop" and not args.target:  # T-1134: bare drop releases all this session holds here
-            data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["session"] == me)}
+        if args.action == "drop" and not args.target:  # T-1134: bare drop releases what this session holds here
+            # T-1216: for the active task only: builder lanes share their main session's id
+            act = c.active_brief(c.load_briefs(p), p.lane)
+            data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["session"] == me
+                                                           and (act is None or v.get("task") in (act.id, None)))}
             _write_leases(data)
         elif args.action in ("take", "drop"):
             if not args.target:
@@ -585,9 +588,10 @@ def cmd_lease(args):
             for t, v in hits if args.action == "take" else []:
                 print(f"warning: {t} overlaps {_who(v)}", file=sys.stderr)
             for rel, sym in todo:
-                if args.action == "drop":
+                if args.action == "drop":  # T-1216: a file named alone drops each of its symbol leases too
                     data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["file"] == rel
-                                                                   and v["symbol"] == sym and v["session"] == me)}
+                                                                   and (sym == "*" or v["symbol"] == sym)
+                                                                   and v["session"] == me)}
                 else:
                     _claim(data, p, me, act.id if act else None, rel, sym, args.minutes * 60,
                            advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))
