@@ -350,9 +350,8 @@ def cmd_digest(args):
                                 if str(r.get("at", ""))[:19] >= since and r.get("sig"))
     briefs = c.load_briefs(p)
     blocked = [b for b in briefs if b.status == "blocked"]
-    import fmtidy  # T-1077: queued plans whose files or premises moved since planning
-    status = {b.id: b.status for b in briefs}
-    stale = {b.id: why for b in briefs if (why := fmtidy.stale_plan(p, b, status))}
+    import fmtidy
+    stale = fmtidy.stale_plans(p, briefs)  # T-1077: queued plans whose files or premises moved since planning
     tokens = None
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
