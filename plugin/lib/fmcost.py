@@ -328,6 +328,31 @@ def _refresh_detached(p):
         pass
 
 
+def check_cap(p, b, costs=None, held=False):
+    """T-1127: whether b's cost cap is hit. The first time, cap_hit=<the cap> goes on the brief, so every dispatcher
+    (c.waits_on_user: the drive, fm run, fm next, lanes) holds the task until its cost_cap changes. held: the caller
+    already holds the project lock (the Stop hook does)."""
+    cap = parse_tokens(b.meta.get("cost_cap"))
+    if not cap:
+        return False
+    if str(b.meta.get("cap_hit")) == str(b.meta["cost_cap"]):
+        return True
+    costs = cached_costs(p, compute=False, refresh=True) if costs is None else costs
+    spent = (costs or {}).get(b.id, 0)
+    if spent < cap:
+        return False
+    import contextlib
+    with (contextlib.nullcontext() if held else c.lock(p.dir)):
+        x = c.find_brief(p, b.id)
+        if x is not None:
+            x.meta["cap_hit"] = x.meta["cost_cap"]
+            x.append_log(f"cost cap hit: {_human(spent)} of {_human(cap)}")
+            c.save_brief(p, x)
+    c.log_event(p, "cost_cap_hit", task=b.id, data={"spent": spent, "cap": cap})
+    b.meta["cap_hit"] = b.meta["cost_cap"]
+    return True
+
+
 def cost_line(p, b):
     """T-1083: 'Cost: forecast ≈ N (median of K FEATURE M), cap C, spent S' for a brief's readers; '' with neither a
     forecast nor a cap. Only a task with a cap pays for fresh figures; the rest read the cache, or say nothing."""

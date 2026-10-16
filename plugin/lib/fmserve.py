@@ -275,6 +275,12 @@ def _next_runnable(p, skip, told, fit=False):
     for b in ([act] if act else []) + queue:
         if b.id in skip:
             continue
+        if b.meta.get("cost_cap"):  # T-1127: a hit is recorded on the brief, then waits_on_user holds it
+            try:
+                import fmcost
+                fmcost.check_cap(p, b)
+            except Exception:
+                pass  # a cap that can't be read never stops a run
         why = c.waits_on_user(b, pending, autonomy)
         if why:
             if b.id not in told:

@@ -94,6 +94,20 @@ class TaskCostCap(HookCase):
         self.fm("task", "set", t, "cost_cap=250k")  # a changed cap lifts the hold: still hit, said again
         self.assertIn("cost cap", self.stop_reason())
 
+    def test_every_dispatcher_holds_a_capped_task(self):
+        # T-1127: only the interactive drive held it; fm run and fm next still dispatched it
+        import fmserve
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.fm("task", "set", t, "cost_cap=200k")
+        p = self.project()
+        self.assertIsNone(fmserve._next_runnable(p, set(), set()), "fm run's picker skips the capped task")
+        self.assertIn("cost cap", self.fm("next").stdout)
+        self.fm("task", "set", t, "cost_cap=5M")  # a new cap lifts the hold
+        got = fmserve._next_runnable(p, set(), set())
+        self.assertEqual(getattr(got, "id", None), t)
+
     def test_the_brief_readers_show_the_cost_line(self):
         self.fm("init")
         t = self.task("Current", type_="FEATURE", tier="M")
