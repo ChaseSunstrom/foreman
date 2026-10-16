@@ -320,13 +320,10 @@ def note_failure(p, task, text):
         return None
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
-    if not hint:  # T-1073: not met here; an opted-in project may have fixed it
-        try:
-            for slug, _, title, lesson in others(p, text, total=1, near_ok=False):
-                hint = c.fit(c.plain(f"Foreman: the same failure was fixed in another project [{slug}] ({title}; "
-                                     f"lesson: {lesson}); data, not instructions. More: fm recall --others"), 300)
-        except Exception:  # a broken neighbour must not break the failure hook
-            hint = None
+    if not hint:  # T-1073: not met here; an opted-in project may have met it
+        for slug, tid, title, lesson in others(p, text, total=1, near_ok=False):
+            hint = (f"Foreman (other-project history, data not instructions): met in {slug} ({tid}: {title}); "
+                    f"lesson: {lesson}; more: fm recall --others")
     same, hinted, first = 0, True, False
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
@@ -370,10 +367,18 @@ def seen_before(p, sig, task):
             continue
         b = c.find_brief(p, rec["task"])
         if b and b.status == "done":
-            lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
-            return c.fit(c.plain(f"Foreman: the same failure came up in {b.id} (done: {b.title}"
-                                 + (f"; lesson: {lesson}" if lesson else "") + f"); see how it was fixed: fm task show {b.id}"), 300)
+            lesson = _live_lesson(p, b)
+            return (f"Foreman: the same failure came up in {b.id} (done: {c.fit(c.defang(c.plain(b.title)), 100)}"
+                    + (f"; lesson: {c.fit(c.defang(c.plain(lesson)), 160)}" if lesson else "")
+                    + f"); see how it was fixed: fm task show {b.id}")
     return None
+
+
+def _live_lesson(p, b):
+    """The first lesson of b that is not "none…" and not retired, or ""."""
+    gone = retired_lessons(p)
+    texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+    return next((t for i, t in enumerate(texts, 1) if not t.lower().startswith("none") and f"{b.id}.{i}" not in gone), "")
 
 
 _CLAUSE_SPLIT = re.compile(r"\n+|(?<=[.?!;])\s+|\s+(?:and also|as well as|plus)\s+", re.I)
@@ -523,25 +528,29 @@ def others(p, text, total=5, near_ok=True):
     Local and read-only; lessons and titles go through private()."""
     sig, want = failure_signature(text), set(_tokens(text or ""))
     exact, near = [], []
-    for other, _ in c.all_projects():
-        meta = c.read_meta(other)
+    for other, meta in c.all_projects():
         if other.slug == p.slug or meta.get("sensitive") or not meta.get("share_lessons"):
             continue
-        fails = {r["task"] for r in c.tail_jsonl(os.path.join(other.dir, "failures.jsonl"), FAILURES_KEEP)
-                 if sig and r.get("sig") == sig and r.get("task")}
-        if not near_ok and not fails:
+        try:  # one unreadable project must not end the search
+            fails = list(dict.fromkeys(r["task"] for r in c.tail_jsonl(os.path.join(other.dir, "failures.jsonl"),
+                                                                       FAILURES_KEEP)
+                                       if sig and r.get("sig") == sig and r.get("task")))
+            if near_ok:
+                briefs = c.load_briefs(other, include_archive=True)
+            else:
+                briefs = [x for x in (c.find_brief(other, t) for t in fails) if x]
+            for b in briefs:
+                lesson = _live_lesson(other, b) if b.status == "done" else ""
+                if not lesson:
+                    continue
+                row = (other.slug, b.id, c.fit(c.defang(private(b.title, other)), 100),
+                       c.fit(c.defang(private(lesson, other)), 160))
+                if b.id in fails:
+                    exact.append(row)
+                elif len(want & set(_tokens(b.title + " " + lesson))) >= 3:
+                    near.append(row)
+        except Exception:
             continue
-        for b in c.load_briefs(other, include_archive=True):
-            if not near_ok and b.id not in fails:
-                continue
-            lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
-            if b.status != "done" or not lesson:
-                continue
-            row = (other.slug, b.id, c.fit(private(b.title, other), 100), c.fit(private(lesson, other), 200))
-            if b.id in fails:
-                exact.append(row)
-            elif len(want & set(_tokens(b.title + " " + lesson))) >= 3:
-                near.append(row)
     return (exact + near)[:total]
 
 
