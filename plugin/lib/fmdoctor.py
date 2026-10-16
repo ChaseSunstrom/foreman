@@ -684,14 +684,37 @@ def paused_hooks():
     return fmhooks.paused_hooks()
 
 
+_FRAME = re.compile(r'^\s*File "([^"]+)", line (\d+), in ')
+
+
+def _stale(err):
+    """T-1139: the error's last frame in Foreman's code shows a line the file no longer has there (the code changed
+    since: a half-written edit, a bug already fixed)."""
+    frames = [(m.group(1), int(m.group(2)), i) for i, ln in enumerate(err) if (m := _FRAME.match(ln))
+              and os.path.realpath(m.group(1)).startswith(os.path.realpath(PLUGIN) + os.sep)]
+    if not frames:
+        return False
+    path, n, i = frames[-1]
+    shown = err[i + 1].strip() if i + 1 < len(err) else ""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            now = f.read().splitlines()
+    except OSError:
+        return True
+    return bool(shown) and (n > len(now) or now[n - 1].strip() != shown)
+
+
 def check_hook_errors():
-    recent, paused = recent_hook_errors(), paused_hooks()
+    errors, paused = recent_hook_errors(), paused_hooks()
+    recent = [e for e in errors if not _stale(e)]
+    stale = len(errors) - len(recent)
     if paused:
         return Result("hook errors", "FAIL", f"paused: {', '.join(paused)} ({len(recent)} hook error(s) in the last "
                                              f"24h; a paused hook runs again 10 min after its last failure; "
                                              f"state/logs/hooks.log)")
     if not recent:
-        return Result("hook errors", "PASS", "no hook errors in the last 24h")
+        return Result("hook errors", "PASS", "no hook errors in the last 24h" + (
+            f" ({stale} from code changed since)" if stale else ""))
     last = recent[-1]
     event = c.plain((last[0].split(" ") + ["", ""])[1])  # log text can carry anything an error message quoted
     cause = c.plain(next((l.strip() for l in reversed(last) if l.strip()), ""))
