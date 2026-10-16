@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import shlex
 import subprocess
 import sys
@@ -2264,7 +2265,9 @@ def _cc_version():
     when unknown. T-0372: only headless stops ask, and they're rare."""
     path = os.path.join(c.state_dir(), "claude-version")
     try:
-        if time.time() - os.path.getmtime(path) < 86400:
+        exe = shutil.which("claude")  # T-1109: `claude update` swaps the binary; a newer one than the cache re-reads
+        fresh = os.path.getmtime(path) >= (os.path.getmtime(os.path.realpath(exe)) if exe else 0)
+        if fresh and time.time() - os.path.getmtime(path) < 86400:
             with open(path, encoding="utf-8") as f:
                 return tuple(int(x) for x in f.read().strip().split("."))
     except (OSError, ValueError):
