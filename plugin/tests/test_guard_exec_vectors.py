@@ -516,6 +516,17 @@ class ScriptCache(GuardCase):
             g._script_verdict(p, self.repo, "sh", other, 0)
         self.assertEqual(len(set(keys)), 3)
 
+    def test_the_state_write_verbs_match_with_a_path_quote_backslash_or_backtick(self):
+        st = "$FOREMAN_HOME/state/x"
+        for line in (f"/bin/rm {st}", f"\\rm {st}", f'"rm" {st}', f"'cp' a {st}", f"echo `rm {st}`", f"/usr/bin/tee {st}",
+                     f"./bin/mv a {st}", f"x; rm {st}", f"sed -i s/a/b/ {st}"):
+            with self.subTest(line=line):
+                self.assertTrue(g._literal_scan(line + "\n", self.ctx()), line)
+        for line in (f"rm-rf-helper {st}", f'python3 - "{st}" install-manifest.json', f"echo {st}", f"farm {st}",
+                     f"# rm {st}"):
+            with self.subTest(line=line):
+                self.assertFalse(g._literal_scan(line + "\n", self.ctx()), line)
+
     def test_the_literal_scan_is_not_quadratic_on_hostile_lines(self):
         import time
         for text in ("rm -" + "r" * 250000 + "\n", "curl " * 50000 + "\n", "NODE_OPTIONS=" * 20000 + "\n",

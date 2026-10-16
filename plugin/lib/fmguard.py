@@ -3113,7 +3113,8 @@ def _literal_scan(text, ctx=None):
     marks = [".claude/foreman/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state"]
     if ctx is not None:  # the state folder this guard runs with, when it isn't under ~/.claude/foreman
         marks.append(ctx.state_dir or os.path.join(ctx.foreman_home, "state"))
-    verbs = re.compile(r"(?:^|[\s;&|(])(?:tee|cp|mv|rm|install|ln)(?=\s)|\bsed[ \t]+-i")  # not install-manifest.json
+    # a path, quote, backslash or backtick before the verb (/bin/rm, \rm, "rm", `rm`); not rm-rf-helper or install-manifest
+    verbs = re.compile(r"(?:^|[\s;&|(`\"'\\])(?:[\w./-]{0,200}/)?(?:tee|cp|mv|rm|install|ln)[\"']?(?=\s)|\bsed[ \t]+-i")
     redirect = re.compile(r">>?[ \t]*[\"']?([^\s;&|\"']+)")  # the target of a redirect, not `>/dev/null` on the line
     for mark in marks:
         i = text.find(mark)
