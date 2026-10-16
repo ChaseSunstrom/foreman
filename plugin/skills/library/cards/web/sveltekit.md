@@ -3,7 +3,7 @@ name: sveltekit
 title: SvelteKit
 area: web
 tags: [sveltekit, svelte, ssr, routing, forms, typescript]
-detect: [dep:@sveltejs/kit, file:svelte.config.*]
+detect: [dep:@sveltejs/kit, dep:@sveltejs/adapter-*, file:svelte.config.*]
 related: [svelte, playwright, vitest, tailwind]
 ---
 SvelteKit apps: file-based routes, `load` functions, form actions, hooks, adapters.
