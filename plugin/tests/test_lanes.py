@@ -301,10 +301,6 @@ class Lanes(ForemanTestCase):
         self.assertNotIn(".env", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class BuilderGates(unittest.TestCase):
     def test_builders_run_affected_tests_and_leave_the_full_gates_to_the_merge(self):
         # T-0806: two lanes and the main thread ran three full gate runs at once (load 74): tests timed out, lanes
@@ -447,3 +443,7 @@ class SafeGitFailsClosed(unittest.TestCase):
                     [], 124, "", "timed out")):
                 found = fmsecrets._tree(t)
         self.assertTrue(found and "couldn't list" in found[0]["kind"], found)  # never a false "no credentials"
+
+
+if __name__ == "__main__":
+    unittest.main()

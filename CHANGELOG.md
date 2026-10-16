@@ -5,6 +5,7 @@
 - Builders self-review as an adversary before they report (what input breaks it, what outside text it trusts, what is unbounded, what it writes where, what a second run does) and say so in a Self-review section (T-1147).
 - `fm lease take` with a path relative to the repo root, run from a subdirectory, leases that file instead of a doubled path (T-1148).
 - The pane's Agents graph says "working" for a builder's fresh worktree (its task still open, nothing committed yet) instead of "merged" (T-1152).
+- The builder contract has one source: a test fails when `fmlanes.CONTRACT` and `agents/fm-builder.md` drift apart (T-1151).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
