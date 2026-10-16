@@ -307,8 +307,22 @@ def task_hypo(p, args):
         b, n = mutate(p, args.id, lambda b: b.add_hypothesis(claim, args.probe), "hypothesis",
                       {"claim": c.redact(claim)[:200]})
         return out(args, dict(c.brief_summary(b), n=n), f"{b.id}: H{n} added (open).")
+    if args.action == "ruled":  # T-1075: this task's refutations and its scope's; --write hands them to fm-debugger
+        b = need_brief(p, args.id)
+        rows = c.refuted(p, b)
+        lines = [f"- {t} H{n}: {claim}" + (f" · why: {why}" if why else "") for t, n, claim, why in rows]
+        text = "\n".join(lines) or f"{b.id}: nothing ruled out yet, here or in tasks on its scope."
+        path = None
+        if args.write:
+            path = os.path.join(p.dir, "handoffs", f"{b.id}-ruled-out.md")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            c.write_atomic(path, c.redact(f"# Ruled out for {b.id} {b.title}\n\nAlready refuted: don't propose these "
+                                          f"again.\n\n" + ("\n".join(lines) or "(nothing yet)") + "\n"))
+            text += f"\nwritten to {path}: name it in the fm-debugger brief"
+        return out(args, {"task": b.id, "path": path, "ruled_out": [
+            {"task": t, "n": n, "claim": claim, "why": why} for t, n, claim, why in rows]}, text)
     if len(args.args) != 2 or not args.args[0].isdigit() or args.args[1] not in HYPO_STATUS:
-        raise UsageError("fm task hypo ID mark N ruled-out|confirmed|open [--run CMD]")
+        raise UsageError("fm task hypo ID mark N ruled-out|confirmed|open [--run CMD] [--why REASON]")
     n, status = int(args.args[0]), HYPO_STATUS[args.args[1]]
     if n not in {h[0] for h in need_brief(p, args.id).hypotheses()}:
         raise UsageError(f"{args.id} has no H{n}")
@@ -316,8 +330,9 @@ def task_hypo(p, args):
     if args.run:
         code, output = c.run_command(p.root, args.run, args.timeout if args.timeout > 0 else None)
         result, shown = c.run_result(code, output), "\n".join(output.rstrip().splitlines()[-20:])
-    b, _ = mutate(p, args.id, lambda b: b.mark_hypothesis(n, status, args.run, result), "hypothesis",
-                  {"n": n, "status": status, "ran": c.redact(f"{args.run or ''} → {result or ''}")[:300]})
+    b, _ = mutate(p, args.id, lambda b: b.mark_hypothesis(n, status, args.run, result, args.why), "hypothesis",
+                  {"n": n, "status": status, "ran": c.redact(f"{args.run or ''} → {result or ''}")[:300],
+                   "why": c.redact(args.why or "")[:200]})
     return out(args, c.brief_summary(b), (shown + "\n" if shown else "") + f"{b.id}: H{n} {status}.")
 
 
@@ -4251,10 +4266,13 @@ def build_parser():
     t.add_argument("text", help="a steer, scope change, decision or note; appended to the brief's Log")
     t = tadd("hypo")
     t.add_argument("id")
-    t.add_argument("action", choices=["add", "mark"])
-    t.add_argument("args", nargs="+", help="add: CLAIM · mark: N ruled-out|confirmed|open")
+    t.add_argument("action", choices=["add", "mark", "ruled"])
+    t.add_argument("args", nargs="*", help="add: CLAIM · mark: N ruled-out|confirmed|open · ruled: none (what this "
+                                           "task and tasks on its scope ruled out, and why)")
     t.add_argument("--probe", help="add: the command that would tell (recorded, not run)")
     t.add_argument("--run", metavar="CMD", help="mark: run the probe now and record its exit code and output")
+    t.add_argument("--why", metavar="REASON", help="mark: why it was ruled out (or confirmed), kept beside the claim")
+    t.add_argument("--write", action="store_true", help="ruled: also write handoffs/ID-ruled-out.md for fm-debugger")
     t.add_argument("--timeout", type=float, default=600)
     t = tadd("note")
     t.add_argument("id")
