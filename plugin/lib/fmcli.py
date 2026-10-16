@@ -891,7 +891,10 @@ def task_finish(p, args):
     args.task_cmd = "done"
     rc = cmd_task(args)
     why = (getattr(args, "why_not_caught", None) or "").strip()
-    if not rc and why and not why.lower().startswith("none"):  # T-0598: the catch that was missing is its own task
+    caught = next((f for f in c.task_touches(p, b.id) if c.TESTISH.search(f)), None) if why else None
+    if not rc and caught:  # T-1009: the close added the catching test; a follow-up would only be dropped
+        print(f"{b.id}: the catch landed with it: {caught}")
+    elif not rc and why and not why.lower().startswith("none"):  # T-0598: the catch that was missing is its own task
         with c.lock(p.dir):
             f = _create(p, _title(f"Catch it earlier: {why}"), "FEATURE", "S", "captured",
                         raw=f"{b.id} ({b.title}) wasn't caught before it shipped: {why}", source="followup")
