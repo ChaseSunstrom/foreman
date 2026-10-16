@@ -4222,6 +4222,11 @@ def cmd_audit(args):
     p = resolve(args)
     if args.action == "scan":
         return _audit_scan(p, args)
+    if args.action == "run":  # T-1186
+        if not args.id:
+            raise UsageError("fm audit run needs a task id")
+        import fmauditrun
+        return fmauditrun.run(p, args)
     if not args.id:
         raise UsageError("fm audit prep needs a task id")
     b = need_brief(p, args.id)
@@ -5321,8 +5326,11 @@ def build_parser():
     s.add_argument("--remove", action="store_true", help="off: also delete .foreman/")
 
     s = add("audit", cmd_audit, tier=("Finding your way", 420), help="prep audits: freeze the task's diff and write one review brief for one reviewer")
-    s.add_argument("action", choices=["prep", "scan"], help="prep ID: review brief for a task; scan: mechanical "
-                                                             "pre-audit of any diff (--base, default: the main branch)")
+    s.add_argument("action", choices=["prep", "scan", "run"], help="prep ID: review brief for a task; scan: mechanical "
+                                                                    "pre-audit of any diff (--base, default: the main branch); "
+                                                                    "run ID: headless reviewers, one per lens (T-1186)")
+    s.add_argument("--model", default="sonnet", help="run: the reviewers' model")
+    s.add_argument("--timeout", type=int, default=900, help="run: seconds the reviewers get")
     s.add_argument("id", nargs="?")
     s.add_argument("--print", action="store_true", help="print the brief instead of only its path")
     s.add_argument("--forge", action="store_true", help="prep: a brief asking for a change that keeps each check "
