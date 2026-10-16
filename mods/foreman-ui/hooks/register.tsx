@@ -826,14 +826,14 @@ export const register: Register = (on, options) => {
     if (((origin?.kind === 'plugin' && origin.name === 'foreman-ui') || ours.test(e.props.text)) && !e.props.isExpanded) {
       // T-0143 live: our own resume prompt drew as a four-line grey block; one quiet line says it
       const { Box, Text } = $.ui.resolve(e)
-      return (
+      return branch($.ui.resolve(e), e, 'fm-branch', ( // T-1088: on the rail like every other row
         <Box flexDirection="row" gap={1} key="fm-resumed">
           <Text color={hex(C.accent)}>↻</Text>
           <Text color={hex(C.dim)} wrap="truncate-end">
             {clean(e.props.text.replace(ours, '').split('\n')[0] ?? '')}
           </Text>
         </Box>
-      )
+      ))
     }
     // T-0182: 'my chats aren't [panelled] either': the person's own prompt is a panel in their colour
     if ((origin?.kind === 'composer' || origin?.kind === 'bridge') && e.props.text.length <= 9000 &&
@@ -857,14 +857,14 @@ export const register: Register = (on, options) => {
     const status = t.status ?? 'completed'
     const color = status === 'completed' ? C.ok : status === 'failed' ? C.err : C.warn
     const { Box, Text } = $.ui.resolve(e)
-    return (
+    return branch($.ui.resolve(e), e, 'fm-branch', ( // T-1088
       <Box flexDirection="row" gap={1} key="fm-note">
         <Text color={hex(color)}>{status === 'completed' ? '✓' : status === 'failed' ? '✗' : '■'}</Text>
         <Text color={hex(C.dim)}>background {t.type ?? 'task'} {status}</Text>
         <Text wrap="truncate-end">{e.props.text.split('\n')[0]}</Text>
         {t.durationMs ? <Text color={hex(C.dim)}>· {elapsed(t.durationMs)}</Text> : null}
       </Box>
-    )
+    ))
   })
 
   // T-0143: the working line is Foreman's ('get rid of … the "Seasoning" thing … and have it be a foreman thing'): an
