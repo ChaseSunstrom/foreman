@@ -457,11 +457,12 @@ def hot_files(p, b, days=30, times=2):
         return []
     seen = {}
     for e in c.ledger_events(p, ["lane_conflict"], since=c.iso(time.time() - days * 86400)):
-        for f in (e.get("data") or {}).get("files") or []:
-            seen[f] = seen.get(f, 0) + 1
-    return [f"Warning: {f} conflicted {n} times at lane merge in the last {days} days: merge this lane first, or keep "
-            f"its edits to that file small" for f, n in sorted(seen.items())
-            if n >= times and any(c.glob_match(f, s) for s in scope)]
+        if e.get("task") != b.id:  # a lane's own retries (fm lane resume) aren't a trend
+            for f in (e.get("data") or {}).get("files") or []:
+                seen.setdefault(f, set()).add(e.get("task"))
+    return [f"Warning: {f} conflicted {len(t)} times (in {len(t)} lanes) at lane merge in the last {days} days: merge "
+            f"this lane first, or keep its edits to that file small" for f, t in sorted(seen.items())
+            if len(t) >= times and any(c.glob_match(f, s) for s in scope)]
 
 
 def builder_brief(p, b, args, resume_branch=None):
@@ -653,11 +654,11 @@ def merge(p, b, main, unverified=None):
     _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
-        brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
-        clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
-        if clashed:  # T-1161: fm lane brief warns about files that keep clashing
-            c.log_event(p, "lane_conflict", task=b.id, data={"files": clashed[:50], "branch": branch})
+        clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
+        brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
         _git(main, "merge", "--abort")
+        if clashed:  # T-1161: after the abort, so a failed ledger write can't leave main mid-merge
+            c.log_event(p, "lane_conflict", task=b.id, data={"files": clashed[:50], "branch": branch})
 
         def restore(x):  # the aborted merge takes its base back: the task still starts where it did
             for k in keys:
@@ -672,10 +673,9 @@ def merge(p, b, main, unverified=None):
     return files
 
 
-def _conflict_brief(p, b, main, branch):
+def _conflict_brief(p, b, main, branch, files):
     """T-0446: while a lane's merge is still in conflict, write what clashed (files, their conflict hunks, the tasks
     on each side) and the steps that resolve it on the lane's branch, where the guard lets the builder's task edit."""
-    files = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
     if not files:
         return None
     hunks = _git(main, "diff", "--", *files).stdout

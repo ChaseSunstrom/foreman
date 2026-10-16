@@ -50,6 +50,17 @@ class ConflictHistory(ForemanTestCase):
         got = self.brief(new)
         self.assertTrue(any("hot.py" in w and "2" in w for w in got["warnings"]), got)
 
+    def test_one_lane_conflicting_twice_or_a_tasks_own_conflicts_do_not_warn(self):
+        p = c.find_project(self.repo)
+        self.fm("lane", "max", "6")
+        a = self.task("A", "hot.py")
+        for _ in range(2):
+            c.log_event(p, "lane_conflict", task=a, data={"files": ["hot.py"]})
+        self.assertEqual(self.brief(a).get("warnings") or [], [], "its own conflicts")
+        self.assertEqual(self.brief(self.task("B", "hot.py")).get("warnings") or [], [], "one lane, twice")
+        c.log_event(p, "lane_conflict", task="T-9002", data={"files": ["hot.py"]})
+        self.assertEqual(len(self.brief(self.task("C", "hot.py"))["warnings"]), 1, "two lanes")
+
     def test_one_conflict_or_old_ones_do_not_warn(self):
         p = c.find_project(self.repo)
         c.log_event(p, "lane_conflict", task="T-9000", data={"files": ["hot.py"]})
