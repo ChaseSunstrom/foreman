@@ -1,7 +1,7 @@
 {
   "name": "foreman-ui",
-  "version": "0.8.0",
-  "description": "Foreman inside Claude Code: a band above the prompt, a docked dashboard pane, toasts and one-press approve/next/drive/inbox actions.",
+  "version": "0.9.0",
+  "description": "Foreman inside Claude Code: one docked panel that fits the screen, a band above the prompt when it's closed, toasts and one-press approve/next/drive/inbox actions.",
   "author": {
     "name": "ChaseSunstrom"
   },

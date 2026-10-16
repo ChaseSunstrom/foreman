@@ -128,7 +128,7 @@ declare module 'claude-code' {
       shells: LiveShell[]
       away: string[]
       resumed: string | null // the resume record (its `at`) this session already acted on
-      folded: string[] // T-0914: the quieter cards folded to their head line
+      reviewing: string | null // T-0989: the waiting plan shown in the Task section, by id
     }
   }
 }

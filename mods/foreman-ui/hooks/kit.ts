@@ -391,6 +391,26 @@ export function ago(days: number | undefined): string {
 export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
 
+/** T-0989: the pane's row budget. One panel of fixed sections whose heights come from the dock's rows, never from what
+ * they hold, so it always fits and nothing moves as work comes and goes. Header 3, attention 1 and controls 1 are fixed;
+ * each section takes a label row while it has any rows of its own. */
+export type Layout = { task: number; live: number; pulse: number; queue: number; also: number }
+export function layout(rows: number): Layout {
+  const h = Math.max(0, Math.floor(rows))
+  let r = Math.max(0, h - 5)
+  const take = (want: number) => {
+    const n = Math.max(0, Math.min(want, r - 1))
+    if (n > 0) r -= n + 1
+    return n
+  }
+  const pulse = take(h >= 34 ? 5 : h >= 26 ? 4 : 0)
+  const live = take(h >= 30 ? 4 : h >= 20 ? 3 : 2)
+  const also = take(h >= 44 ? Math.min(8, Math.round(h / 8)) : h >= 36 ? 2 : 0)
+  const both = Math.max(0, r - 2) // the task and the queue share the rest, a label each
+  const task = Math.min(both, Math.ceil(both * 0.55))
+  return { task, live, pulse, queue: both - task, also }
+}
+
 // The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
 const POSES: Record<string, [string, string, string]> = {
   rest: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
