@@ -2043,6 +2043,15 @@ test('review (T-1023): finished agents age out at render, rank above lone worktr
   await later.unmount()
 })
 
+test('a builder\'s fresh worktree (its task open, nothing committed yet) is working, not merged (T-1152)', async ($, on) => {
+  world(on, [{ ...CALM, worktrees: [{ path: '/w/ag2', branch: 'wt-ag2', task: 'T-0009', agent: 'ag2', age_s: 5, ahead: 0, open: true }] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const fresh = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await fresh.find({ type: 'Text', text: 'working' })).toBeDefined()
+  expect(await fresh.find({ type: 'Text', text: 'merged' })).toBeUndefined()
+  await fresh.unmount()
+})
+
 test('review (T-1023): on a 40-column dock a quiet subagent keeps its stop button', async ($, on) => {
   const { clock } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })

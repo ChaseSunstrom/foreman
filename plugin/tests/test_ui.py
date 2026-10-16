@@ -198,6 +198,7 @@ class UiView(ForemanTestCase):
                          [("worktree-agent-a1b2c3d4", "a1b2c3d4", "T-0001", 1)])
         self.assertIsInstance(w[0]["age_s"], int)
         self.assertFalse(w[0]["stopped"])
+        self.assertTrue(w[0]["open"], "T-1152: its task is still open, so 0 ahead would mean 'working', not 'merged'")
         import fmbus  # T-1119: a lane whose builder's process ended is flagged for the pane
         b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
         c.save_brief(p, b)
