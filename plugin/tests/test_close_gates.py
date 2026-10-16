@@ -156,6 +156,30 @@ class CloseGates(ForemanTestCase):
         finally:
             del os.environ["FOREMAN_SENTINEL"]
 
+    def test_a_file_its_scope_log_names_is_committed_with_it(self):
+        # T-1122: a doc edited in the same command as the finish has no touched record yet; another task touched it
+        # since this one's first focus, so the commit left it out though the task's own scope reason named it
+        self.write("CHANGELOG.md", "# Changelog\n")
+        subprocess.run(["git", "-C", self.repo, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "changelog"], check=True)
+        a = self.task()
+        self.fm("checkpoint")
+        b = self.task("Other")
+        self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.repo, "CHANGELOG.md")},
+                                  "tool_response": {}})
+        self.fm("checkpoint")
+        self.fm("focus", a)
+        self.write("calc.py", SRC + "# a\n")
+        self.write("CHANGELOG.md", "# Changelog\n- a\n")
+        self.fm("task", "log", a, "scope: CHANGELOG.md — its release note")
+        r = self.fm("task", "finish", a, "--audit", "self", "--run", "true", "--commit", "A", check=False,
+                    env={"FOREMAN_SENTINEL": "off"})
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        shown = subprocess.run(["git", "-C", self.repo, "show", "--name-only", "--format=", "HEAD"], capture_output=True,
+                               text=True).stdout.split()
+        self.assertIn("CHANGELOG.md", shown, r.stdout)
+        self.assertIn("calc.py", shown)
+
     def test_a_close_starts_a_full_run_when_the_last_one_is_old(self):
         tid = self.task()
         self.write("calc.py", SRC + "# tidy\n")

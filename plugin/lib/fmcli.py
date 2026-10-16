@@ -1072,7 +1072,7 @@ def _theirs(p, b, files):
     this task's start snapshot couldn't be re-based past it (both changed neighbouring lines elsewhere). T-0739: from
     this task's first focus, not its capture: edits made before it started say nothing about its own changes."""
     events = c.ledger_tail(p, c.TASK_WINDOW)
-    mine = set(c.task_touches(p, b.id))
+    mine = set(c.task_touches(p, b.id)) | _claimed(p, b)
     first = next((i for i, e in enumerate(events) if e.get("event") == "focus" and e.get("task") == b.id), None)
     since = str(b.meta.get("created") or "")  # ledger order when its focus is in the window: seconds tie
     others = {os.path.relpath(f, p.root) for i, e in enumerate(events)
@@ -1080,6 +1080,16 @@ def _theirs(p, b, files):
               and (i > first if first is not None else str(e.get("ts", "")) >= since)
               and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
     return [f for f in files if f in others and f not in mine]
+
+
+def _claimed(p, b):
+    """T-1122: the files this task says are its own, its scope and the paths its 'scope:' log reasons name: an edit
+    made in the same command as the finish has no touched record yet, so the record alone can't say it's this task's."""
+    named = [s.rstrip("/") for s in b.meta.get("scope") or []]
+    for line in b.section("Log").splitlines():
+        head = line.partition(" scope: ")[2].split(" — ")[0] if " scope: " in line else ""
+        named += [x.strip(" `'\"") for x in re.split(r",\s*|\s+and\s+", head) if x.strip()]
+    return {n for n in named if n and not n.startswith(("/", "..")) and os.path.isfile(os.path.join(p.root, n))}
 
 
 def _landed(p, b):
@@ -5013,6 +5023,19 @@ def build_parser():
     b.add_argument("--reviewer", metavar="CMD", help="a reviewer that reads the diff on stdin (default: fm-reviewer)")
     b.add_argument("--model", default="sonnet")
     b.add_argument("--seed", type=int, default=0)
+    b = bsp.add_parser("guard", help="mutation-test the guard: which rules no command notices (T-1066)")
+    b.add_argument("--json", action="store_true")
+    b.add_argument("-p", "--project", default=argparse.SUPPRESS)
+    b.add_argument("--coverage", action="store_true", help="which rules a command corpus is blocked by")
+    b.add_argument("--mutate", action="store_true", help="drop one rule site at a time and run the guard's tests on each")
+    b.add_argument("--weaken", action="store_true", help="with --mutate: negate the guarding if instead of dropping")
+    b.add_argument("--days", type=int, default=14, help="--coverage: session-log days to read (default 14)")
+    b.add_argument("--cmds", metavar="FILE", help="--coverage: one command per line instead of the session logs")
+    b.add_argument("--tests", metavar="CMD", help="--mutate: the test command (default: run.py -p 'test_guard*.py')")
+    b.add_argument("--module", metavar="FILE", help="--mutate: the module to mutate (default fmguard.py)")
+    b.add_argument("--max", type=int, default=40, help="--mutate: mutants run, sampled evenly (default 40)")
+    b.add_argument("--only", metavar="CATEGORY", help="--mutate: only this category's sites")
+    b.add_argument("--timeout", type=int, default=300, help="--mutate: seconds per mutant (default 300)")
     b = bsp.add_parser("scorecard", help="each saved run's pass rate on the train and holdout splits (T-0734)")
     b.add_argument("--json", action="store_true")
     b.add_argument("-p", "--project", default=argparse.SUPPRESS)
