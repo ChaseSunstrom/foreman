@@ -1,9 +1,9 @@
 import type { EngineInterface, RenderElement, ResolveInput } from 'claude-code'
 import type { LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, hex, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
+import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { DiffRow, LabelRun } from './kit'
-import { DIFF_LINES, OUT_LINES, cfg, took } from './state'
-import type { ToolUseRender } from './state'
+import { DIFF_LINES, OUT_LINES, TREE_MS, cfg, took } from './state'
+import type { FeedItem, ToolUseRender } from './state'
 
 // T-0130: the transcript's Foreman rows and the small drawings the band and pane share; pure but for the
 // atoms they read and the shared timing maps. They take the resolved element table, not $: the engine follows
@@ -512,4 +512,103 @@ export function findingsRow(ui: UI, e: ToolUseRender) {
       {fs.length > 8 && <Text color={hex(C.dim)}>{`  └ ${more(fs.length - 8, 'finding')}`}</Text>}
     </Box>
   )
+}
+
+
+// ------------------------------------------------------------ T-1033: the band's live tree
+
+const PAST: Record<string, string> = {
+  Running: 'Ran', Editing: 'Edited', Writing: 'Wrote', Reading: 'Read', Searching: 'Searched', Finding: 'Found',
+  Fetching: 'Fetched', 'Searching the web': 'Searched the web',
+}
+
+export type TreeIn = {
+  feed: readonly FeedItem[]
+  subs: readonly LiveAgent[]
+  task: string // what the session is on: the task and step
+  live: boolean
+  now: number
+  frame: number | null
+  width: number
+  rows: number // at most this many rows
+}
+
+/** T-1033 ('a tree/graph … each agent's commands/changes under it and yours too, all on the same screen … so the chat
+ * doesn't scroll'): this session at the root with its latest calls, then a branch per subagent (running, or done in
+ * the last two minutes) with its own; each call marked running, ✓ or ✗ with its time. Within `rows`: the agents keep
+ * one call each before the session's older calls go, then the least recent agents fold into a count. */
+export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
+  const { Box, Text } = ui
+  const mine = t.feed.filter(x => x.agent === null && x.icon !== '◆')
+  const agents = t.subs.filter(s => !s.done || t.now - (s.lastAt ?? s.startedAt) < TREE_MS)
+    .sort((x, y) => Number(x.done) - Number(y.done) || (y.lastAt ?? y.startedAt) - (x.lastAt ?? x.startedAt))
+  const callsOf = (id: string) => t.feed.filter(x => x.agent === id)
+  let k1 = 3
+  let k2 = 2
+  let n = agents.length
+  const size = () => 1 + Math.min(k1, mine.length) + agents.slice(0, n).reduce((s, a) => s + 1 + Math.min(k2, callsOf(a.id).length), 0)
+    + (n < agents.length ? 1 : 0)
+  while (size() > t.rows && k2 > 1) k2--
+  while (size() > t.rows && k1 > 1) k1--
+  while (size() > t.rows && n > 0) n--
+  while (size() > t.rows && k2 > 0) k2--
+  while (size() > t.rows && k1 > 0) k1--
+  const lines = mix(C.track, C.muted, 0.35)
+  const call = (x: FeedItem, prefix: string, key: string) => {
+    const done = x.end !== undefined
+    const mark = !done ? (t.frame === null ? '▸' : spin(t.frame + x.at)) : x.ok === false ? '✗' : '✓'
+    const time = elapsed((x.end ?? t.now) - x.at)
+    return (
+      <Box key={key} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}><Text color={hex(lines)}>{prefix}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(!done ? x.color : x.ok === false ? C.err : C.ok)}>{mark}</Text></Box>
+        <Box flexShrink={0}><Text weight="bold" color={hex(x.color)}>{`${x.icon} ${done ? PAST[x.verb] ?? x.verb : x.verb}`}</Text></Box>
+        <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(x.target)}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(C.muted)}>{time}</Text></Box>
+      </Box>
+    )
+  }
+  const rest = agents.length - n
+  const branches = [...(k1 ? mine.slice(-k1) : []).map(x => ({ kind: 'call' as const, x })), ...agents.slice(0, n).map(a => ({ kind: 'agent' as const, a })),
+    ...(rest ? [{ kind: 'more' as const }] : [])]
+  let facts = [mine.length ? `${mine.length} call${mine.length === 1 ? '' : 's'}` : '',
+    agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
+  // sectionHead's own sums: its subject shows when it is 8 short of the room; cut the task to that, the facts go first
+  const fit = () => Math.max(30, t.width - 2) - 2 - 'this session'.length - 1 - (facts ? facts.length + 1 : 0) - 8
+  if (fit() < 16) facts = ''
+  const task = t.task.length > fit() ? `${t.task.slice(0, Math.max(1, fit() - 1))}…` : t.task // narrow: cut, never dropped
+  const { head } = sectionHead(ui, e, {
+    key: 'tree-root', color: C.accent, mark: t.live ? (t.frame === null ? '●' : spin(t.frame)) : '●', label: 'this session',
+    subject: task, frame: t.live ? t.frame : null, width: t.width, meta: facts ? [{ text: facts }] : [],
+  })
+  const out: RenderElement[] = [head]
+  branches.forEach((b, i) => {
+    const last = i === branches.length - 1
+    const prefix = last ? '└─' : '├─'
+    if (b.kind === 'call') return void out.push(call(b.x, prefix, `tree-${b.x.id}`))
+    if (b.kind === 'more') return void out.push(
+      <Box key="tree-more" flexDirection="row" gap={1} height={1}>
+        <Text color={hex(lines)}>{prefix}</Text>
+        <Text color={hex(C.muted)}>{`… ${rest} more subagent${rest === 1 ? '' : 's'}`}</Text>
+      </Box>,
+    )
+    const a = b.a
+    const color = agentColor(a.id)
+    const took = (a.done ? a.lastAt ?? t.now : t.now) - a.startedAt
+    const calls = callsOf(a.id)
+    out.push(
+      <Box key={`tree-agent-${a.id}`} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}><Text color={hex(lines)}>{prefix}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(color)}>{a.done ? '✓' : t.frame === null ? '◆' : spin(t.frame + a.startedAt)}</Text></Box>
+        <Box flexShrink={0}><Text weight="bold" color={hex(color)}>{`◆ ${a.type}`}</Text></Box>
+        <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(a.description || a.last)}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(C.muted)}>{[`${a.tools} call${a.tools === 1 ? '' : 's'}`,
+          ...(took >= 1000 ? [elapsed(took)] : [])].join(' · ')}</Text></Box>
+      </Box>,
+    )
+    const shown = k2 ? calls.slice(-k2) : [] // slice(-0) is the whole list
+    shown.forEach((x, j, xs) =>
+      out.push(call(x, `${last ? ' ' : '│'}  ${j === xs.length - 1 ? '└─' : '├─'}`, `tree-${a.id}-${x.id}`)))
+  })
+  return out
 }

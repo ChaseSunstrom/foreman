@@ -36,6 +36,11 @@ export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '',
 export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'skill' | 'web'
 export const ticks: { at: number; lane: Lane; what?: string }[] = []
 export const running = new Map<string, { icon: string; verb: string; target: string; color: number; at: number; agent: boolean }>()
+// T-1033: the band's live tree: every call (the session's own, agent null, and each subagent's) with how it ended
+export type FeedItem = { id: string; agent: string | null; icon: string; verb: string; target: string; color: number
+  at: number; end?: number; ok?: boolean }
+export const feed: FeedItem[] = []
+export const TREE_MS = 2 * 60 * 1000 // the band's full tree stays this long after the last call
 export const laneOf = (icon: string): Lane =>
   icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' ? 'agent' : icon === '✦' ? 'skill' : icon === '◍' || icon === '⬡' ? 'web' : 'read'
 export const TIMELINE_MS = 30 * 60 * 1000 // the lanes' window
