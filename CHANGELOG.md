@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm backtest --rule/--fix/--card`: how often a changed rule, known fix or card would have fired on recent real sessions, and how many of those calls errored (read-only) (T-1058).
+- `fm pr threads ID` turns a PR's unresolved review comments into task steps (quoted as data, once each); `fm pr train` merges approved, green, non-draft PRs in order, re-testing each head and pinning the merge to the tested commit, stopping at the first red (a publish grant spent per run) (T-1087).
 - The mod's T-1090 review test streams the long line only on the session's own turn: 1,178 ms → 104 ms, so it no longer times out under load (T-1132).
 - A daily risk budget: destructive guard blocks, failed closes and reverts spend points, and past the cap autonomy steps down a notch until tomorrow (`fm risk`; only the user moves the cap) (T-1080).
 - `fm digest` and the pane's idle line say what Foreman learned: fixes new, worked and missed, rules to propose from corrections, interventions per closed task (T-1045).
