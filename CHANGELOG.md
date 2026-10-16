@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm ci-watch`: after a push, polls the GitHub Actions run for that exact commit through gh; a failure's log tail becomes one FIX brief (quoted as data), and it keeps watching pushed fixes up to `--max-retries`, then says it gave up (T-1052).
 - `fm export cursor` and `fm export gemini` write `.cursor/rules/foreman.mdc` (alwaysApply) and `GEMINI.md` with the AGENTS.md body; every export gains a Known fixes section (trusted fixes only, redacted, at most 15, none in a sensitive project) (T-1043).
 - A command that would wait forever on stdin (`cat > /tmp/x` with nothing feeding it, `python3 -` without a heredoc, a bare `tee` or `bash`) is refused before it runs, naming how to feed it; builders lost two minutes to each one. On a week of recorded commands it caught 22, all real hangs (T-1129).
 - `fm task finish ID --ablate` reverts each hunk of the task's change against the linked tests after the close's checks and names the hunks no test notices; informational, time-bounded, never fails the close (T-1067).

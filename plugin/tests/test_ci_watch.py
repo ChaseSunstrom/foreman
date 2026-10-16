@@ -65,6 +65,9 @@ class CiWatch(ForemanTestCase):
         self.assertLess(r.stdout.index("FIX brief"), r.stdout.index("green"))
         r = self.fm("ci-watch", "--interval", "0", "--max-polls", "3", "--commit", "f" * 40, env=env, check=False)
         self.assertNotEqual(r.returncode, 0, "no run for that commit: never green")
+        os.remove(os.path.join(self.tmp, "n"))  # the fake's poll counter: start the script again
+        r = self.fm("ci-watch", "--interval", "0", "--commit", head[:7], env=env)  # gh reports full shas
+        self.assertIn("green", r.stdout)
 
     def test_the_same_run_is_never_briefed_twice(self):
         self.fm("init")
