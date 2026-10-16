@@ -775,12 +775,17 @@ def log_event(p, event, task=None, data=None, session=None):
     # T-1065: each line carries prev, the hash of the line before it (fm verify-ledger walks the chain). Under an flock
     # on the ledger, so racing writers chain in the order they land: read the last line, then one O_APPEND write.
     with open(os.path.join(p.dir, "ledger.jsonl"), "a+b") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
-        size = os.fstat(f.fileno()).st_size
-        f.seek(max(0, size - 1))
-        cut = size and f.read(1) != b"\n"  # a line cut short (a crash, a hand edit) stays its own line
+        cut = prev = None
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            size = os.fstat(f.fileno()).st_size
+            f.seek(max(0, size - 1))
+            cut = size and f.read(1) != b"\n"  # a line cut short (a crash, a hand edit) stays its own line
+            prev = ledger_hash(_last_line(f) if size else _archived_last(p))
+        except OSError:  # no flock here (NFS) or an unreadable archive: the event lands unchained, a gap
+            pass  # fm verify-ledger reports; it is never lost
         rec["ts"] = now()  # in landing order, so fm tidy's monthly roll never reorders the chain
-        rec = {"prev": ledger_hash(_last_line(f) if size else _archived_last(p)), **rec}
+        rec = {"prev": prev, **rec} if prev else rec
         f.write(("\n" if cut else "").encode() + (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8"))
     return rec
 

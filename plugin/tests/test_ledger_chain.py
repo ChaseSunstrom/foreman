@@ -42,6 +42,41 @@ class Chain(ForemanTestCase):
         r = self.verify()
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn(h(lines[-1]), r.stdout, "OK names the head: the hash of the last line")
+        self.assertIn("only with --head", r.stdout, "OK says the last line's edit needs the receipt's head")
+
+    def test_broken_chain_has_no_head(self):
+        for i in range(3):
+            c.log_event(self.p, "note", data={"i": i})
+        lines = self.lines()
+        lines[1] = lines[1].replace('"event": "', '"event": "x', 1)
+        self.put(lines)
+        r = self.verify("--json")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIsNone(json.loads(r.stdout)["head"], "a broken chain has no head, not the genesis hash")
+
+    def archive_unreadable(self):
+        if os.geteuid() == 0:
+            self.skipTest("root reads a mode-000 file")
+        os.makedirs(os.path.join(self.p.dir, "archive"), exist_ok=True)
+        path = os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl")
+        with open(path, "w") as f:
+            f.write(json.dumps({"ts": "2026-01-01T00:00:00Z", "event": "note"}) + "\n")
+        os.chmod(path, 0)  # the test's folder is removed whole: no mode to restore
+
+    def test_unreadable_archive_never_loses_an_event(self):
+        self.archive_unreadable()
+        self.put([])  # an empty live ledger: the first line's prev would come from the archive
+        c.log_event(self.p, "note", data={"kept": 1})
+        self.assertEqual([json.loads(x)["data"] for x in self.lines()], [{"kept": 1}])
+
+    def test_no_lock_never_loses_an_event(self):
+        n = len(self.lines())
+        with mock.patch.object(c.fcntl, "flock", side_effect=OSError(37, "No locks available")):
+            c.log_event(self.p, "note", data={"kept": 1})
+        self.assertEqual(len(self.lines()), n + 1)
+        self.assertEqual(json.loads(self.lines()[-1])["data"], {"kept": 1})
+        c.log_event(self.p, "note")
+        self.assertEqual(self.verify().returncode, 0, "the unchained line is a gap, not a break")
 
     def test_edit_is_named(self):
         for i in range(5):
@@ -170,3 +205,30 @@ class Receipt(ForemanTestCase):
                 "--focus")
         out = json.loads(self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--json").stdout)
         self.assertRegex(out["ledger"]["head"], r"^[0-9a-f]{16}$")
+
+    def unreadable_archive(self):
+        if os.geteuid() == 0:
+            self.skipTest("root reads a mode-000 file")
+        self.fm("task", "new", "First", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--focus")
+        folder = os.path.join(c.find_project(self.repo).dir, "archive")
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, "ledger-2026-01.jsonl")
+        with open(path, "w") as f:
+            f.write("{}\n")
+        os.chmod(path, 0)
+
+    def test_unreadable_ledger_never_fails_the_finish(self):
+        self.unreadable_archive()
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Ledger: unreadable", r.stdout)
+        self.assertTrue(r.stdout.strip().splitlines()[-1].startswith("Landed:"), r.stdout)
+
+    def test_unreadable_ledger_never_fails_done_json(self):
+        self.unreadable_archive()
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--json", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        led = json.loads(r.stdout)["ledger"]
+        self.assertIsNone(led["head"])
+        self.assertIn("unreadable", led)

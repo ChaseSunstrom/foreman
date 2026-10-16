@@ -11,10 +11,10 @@ _CHAINED = b'{"prev": "'
 
 
 def chain(p, anchor=None):
-    """The ledger's chain: head (the hash the next line will carry), chained/lines counts, start (where the chain
+    """The ledger's chain: head (the hash the next line will carry; None when broken), chained/lines counts, start (where the chain
     begins: lines before it predate it), gaps (unchained lines after the start: an older Foreman wrote them; the line
     before each is unproven), broken (the first break, else None) and, given an anchor, whether a line hashes to it."""
-    r = {"head": c.ledger_hash(b""), "chained": 0, "lines": 0, "start": None, "gaps": [], "broken": None}
+    r = {"head": None, "chained": 0, "lines": 0, "start": None, "gaps": [], "broken": None}
     prev, prev_at, found = c.ledger_hash(b""), "the start of the ledger", False
     for path in c.ledger_files(p):
         name = os.path.relpath(path, p.dir)
@@ -72,7 +72,8 @@ def cmd_verify_ledger(args):
     else:
         text = f"Ledger OK: head {r['head']}, {r['chained']} chained lines from {r['start']}" + (
             f" (the {r['lines'] - r['chained'] - len(r['gaps'])} lines before it predate the chain)"
-            if r["lines"] > r["chained"] + len(r["gaps"]) else "") + "."
+            if r["lines"] > r["chained"] + len(r["gaps"]) else "") + "; an edit to the last line shows only with " \
+                                                                       "--head (a finish receipt's)."
     if r["gaps"] and not r["broken"]:
         text += f"\n{len(r['gaps'])} unchained line(s) after the start (an older Foreman wrote them; the line before " \
                 f"each is unproven): " + ", ".join(r["gaps"][:10])
