@@ -92,6 +92,18 @@ def mutate(cmds):
     return ([x for x in g.CATEGORIES if x in seen], [x for x in g.CATEGORIES if x not in seen])
 
 
+def _checkout_plugin(cwd):
+    """The plugin/ of the Foreman checkout cwd is in (a builder's worktree included), or None outside one."""
+    d = os.path.abspath(cwd)
+    while True:
+        if os.path.isfile(os.path.join(d, "plugin", "lib", "fmguard.py")):
+            return os.path.join(d, "plugin")
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
 def cmd_mutate(args, fmcli):
     """Drop (or --weaken) one rule site of the guard at a time and run its tests on each; survivors are untested rules."""
     import shlex
@@ -101,20 +113,23 @@ def cmd_mutate(args, fmcli):
     import fmmutate
     if getattr(args, "project", None):
         fmcli.resolve(args)  # -p is checked like the other bench commands
-    module = args.module or os.path.join(c.PLUGIN_ROOT, "lib", "fmguard.py")
+    root = _checkout_plugin(os.getcwd()) or c.PLUGIN_ROOT  # T-1121: a lane mutates its own guard, not the main one's
+    module = args.module or os.path.join(root, "lib", "fmguard.py")
     rel = os.path.join("plugin", "lib", "fmguard.py") if not args.module else os.path.join("plugin", "lib", os.path.basename(module))
     cmd = shlex.split(args.tests) if args.tests else [sys.executable, os.path.join("plugin", "tests", "run.py"), "-p", "test_guard*.py"]
     if not shutil.which("bwrap"):
         print("warning: bwrap is missing, so test_guard_diff's GuardAgainstBash is skipped and its rules look untested",
               file=sys.stderr)
     try:
-        res = fmmutate.run(module, rel, c.PLUGIN_ROOT, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
+        res = fmmutate.run(module, rel, root, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
+                           flip=getattr(args, "flip", False),
                            only=args.only, limit=args.max, timeout=args.timeout,
                            log=lambda m: print(m, file=sys.stderr, flush=True))
     except (ValueError, OSError, SyntaxError) as e:
         raise fmcli.UsageError(str(e))
     s = res["survived"]
-    lines = [f"Guard mutation ({'weaken' if args.weaken else 'drop'}): {res['tried']} of {res['total']} mutants, "
+    mode = "flip" if getattr(args, "flip", False) else "weaken" if args.weaken else "drop"
+    lines = [f"Guard mutation ({mode}): {res['tried']} of {res['total']} mutants, "
              f"{res['killed']} killed, {len(s)} survived"]
     if res["not_mutated"]:
         lines.append("  not mutated (no rule site found): " + ", ".join(res["not_mutated"]))
