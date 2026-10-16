@@ -20,10 +20,11 @@ def since(p, now=None):
     return None
 
 
-def summary(p, ts):
-    """[(kind, line)] of what closed, blocked, was asked (and still waits) or was reverted after ts."""
+def summary(p, ts, titles=True):
+    """[(kind, line)] of what closed, blocked, was asked (and still waits) or was reverted after ts; titles=False
+    skips the brief lookup per closed task (the session-start line only counts)."""
     def title(tid):
-        b = c.find_brief(p, tid) if tid else None
+        b = c.find_brief(p, tid) if tid and titles else None
         return f"{tid} {c.fit(b.title, 60)}" if b else str(tid)
     pending = {a.get("q") for a in (c.read_meta(p).get("ask_digest") or {}).get("asks") or []}
     rows = []
@@ -41,7 +42,7 @@ def summary(p, ts):
             rows.append(("reverted", f"rolled back to snapshot {d.get('snapshot')}"))
     import fmoutcomes
     for at, subj, _, tasks in fmoutcomes.reverts(p):
-        if (t := c.parse_ts(at)) and c.iso(t.timestamp()) > ts:
+        if (t := fmoutcomes._ts(at)) and c.iso(t.timestamp()) > ts:
             rows.append(("reverted", f"{', '.join(sorted(tasks)) or '-'}: {c.fit(subj, 100)}"))
     return rows
 
@@ -51,10 +52,10 @@ def line(p):
     s = since(p)
     if not s:
         return ""
-    rows = summary(p, s[0])
+    rows = summary(p, s[0], titles=False)
     n = {k: sum(1 for kk, _ in rows if kk == k) for k in ("closed", "blocked", "asked", "reverted")}
     parts = [f"{v} {k}" for k, v in n.items() if v]
-    ids = sorted({r.split(":")[0].split(" ")[0] for _, r in rows if r.startswith("T-")})[:6]
+    ids = list(dict.fromkeys(r.split(":")[0].split(" ")[0] for _, r in rows if r.startswith("T-")))[-6:]  # newest last
     return (f"Away: {s[1] / 3600:.0f} h since you last spoke: {', '.join(parts)} ({' '.join(ids)}; fm away)"
             if parts else "")
 
