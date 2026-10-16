@@ -278,3 +278,15 @@ class BoardIdeas(Stubbed):
         self.events({"ts": c.now(), "kind": "guard_block"})
         self.assertNotIn("orders", json.loads(self.fm("burden", "--by-verb", "--json").stdout)["unused"])
         self.assertEqual(json.loads(self.fm("friction", "--minutes", "--json").stdout)["by_kind"]["guard blocks"], 1.0)
+
+
+class SeenIndex(ForemanTestCase):
+    INDEX = ("# Ideas by round\nIdeas: 3 distinct\n\n## Round 1\n- Cache the parser\n- Quote shell paths — near T-0004 (done): x\n"
+             "\n## Deepened: speed\n- Warm the cache at start\n\n## New ideas per lens\n- bold bets: 40\n"
+             "\n## Coverage (ideas per category)\n- capability map 23\nThin (0-1 ideas): none\n"
+             "\n## Kill it fast (the quickest test that would show it isn't worth building)\n- Cache the parser — time it\n")
+
+    def test_seen_reads_only_the_idea_sections(self):
+        # T-1056: coverage and kill bullets were read back as idea titles
+        import fmideas
+        self.assertEqual(fmideas.seen_titles(self.INDEX), ["Cache the parser", "Quote shell paths", "Warm the cache at start"])

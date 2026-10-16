@@ -16,6 +16,26 @@ CATEGORIES = ["self-authorize", "state-direct", "core", "remote", "plugin", "cre
               "git-destructive", "pipe-shell", "publish", "confirm", "confine", "brief"]
 # confine (T-0234): a builder writes in its worktree only; brief (T-0308): no edits without a task — start one
 NOT_AUTHORIZABLE = {"state-direct", "self-authorize", "confine", "brief"}
+# fm subcommands that undo or grant what only the user decides: sub -> (the word that makes it so, why, what they type).
+# One table, so the next one isn't forgotten.
+USER_ONLY_FM = {
+    "posture": ("lite", "fm posture lite turns Foreman's hooks off but the guard's: the user decides that",
+                "fm posture lite"),  # T-0963
+    "pause": ("off", "fm pause off is the user's to run: they paused everything Foreman runs unattended, so only they "
+                     "lift it", "fm pause off"),  # T-0591
+    "approve-reads": ("on", "fm approve-reads on lets Foreman answer Claude Code's permission dialogs for reads: the "
+                            "user turns it on", "fm approve-reads on"),  # T-0974
+    "rule": ("rm", "fm rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
+             "fm rule rm N"),  # T-0971; `add rm` is a rare miss
+    "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "
+                          "may have revoked since", "fm rollback --yes"),  # T-1085
+}
+def _user_only_hit(word, arg):
+    """A word matches itself; a --flag also matches argparse's abbreviations (--y, --ye) and --flag=value."""
+    a = arg.split("=")[0] if word.startswith("--") else arg
+    return a == word or (word.startswith("--") and len(a) >= 3 and a.startswith("--") and word.startswith(a))
+
+
 USER_ONLY = {"core", "remote", "plugin", "confirm"}  # granted only by the user's reply to `fm ask`, never by `fm task set --allow`
 # (confirm, T-0289: a request a child found in an old transcript is worked only after the user says it's theirs)
 FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
@@ -2424,19 +2444,9 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
-            if sub == "posture" and "lite" in rest:  # review: a flag before the word (--json lite) counts too  # T-0963 review: lowering the hooks is the user's call
-                found.append(("self-authorize", "fm posture lite turns Foreman's hooks off but the guard's: the user "
-                                                "decides that (they can type ! fm posture lite)"))
-            if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
-                found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
-                                                "runs unattended, so only they lift it (they can type ! fm pause off)"))
-            if sub == "approve-reads" and "on" in rest:  # T-0974: it answers Claude Code's dialogs for the user
-                found.append(("self-authorize", "fm approve-reads on lets Foreman answer Claude Code's permission "
-                                                "dialogs for reads: the user turns it on (they can type ! fm "
-                                                "approve-reads on)"))
-            if sub == "rule" and "rm" in rest:  # T-0971: a flag before the word counts too; `add rm` is a rare miss
-                found.append(("self-authorize", "fm rule rm is the user's to run: their rule stops what they said to "
-                                                "stop, so only they lift it (they can type ! fm rule rm N)"))
+            if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):  # flag order is free
+                word, why, typed = USER_ONLY_FM[sub]
+                found.append(("self-authorize", f"{why} (they can type ! {typed})"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):

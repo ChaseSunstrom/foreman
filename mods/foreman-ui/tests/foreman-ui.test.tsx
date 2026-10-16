@@ -1931,6 +1931,15 @@ test('Agents: a Gantt row per subagent (its worktree joined), per lone worktree 
   await ui.unmount()
 })
 
+test('Agents: a stopped builder\'s worktree says how to resume it (T-1119)', async ($, on) => {
+  const worktrees = [{ path: '/repo/.claude/worktrees/s', branch: 'lane-s', task: 'T-0042', agent: null, age_s: 60, ahead: 1, stopped: true }]
+  world(on, [{ ...CALM, worktrees }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /stopped · fm lane resume T-0042/ })).toBeDefined()
+  await ui.unmount()
+})
+
 test('review (T-1023): finished agents age out at render, rank above lone worktrees; unknown merge state says so', async ($, on) => {
   const worktrees = [{ path: '/repo/.claude/worktrees/d', branch: '', task: null, agent: null, age_s: 30, ahead: null }]
   const { clock } = world(on, [{ ...CALM, worktrees }])

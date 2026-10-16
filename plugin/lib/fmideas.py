@@ -513,6 +513,21 @@ def _words(title):
     return {w[:5] for w in _WORD.findall(title.lower())}
 
 
+IDEA_SECTIONS = re.compile(r"(?m)^## (?:Round \d+|Deepened: .*|Cross-bred)\s*$")
+
+
+def seen_titles(text):
+    """T-1056: the idea titles of an ideas.md, read only from its idea sections (Round, Deepened, Cross-bred): the
+    per-lens, coverage and kill bullets below them are tallies, not ideas."""
+    out, on = [], False
+    for line in text.splitlines():
+        if line.startswith("## "):
+            on = bool(IDEA_SECTIONS.match(line))
+        elif on and line.startswith("- "):
+            out.append(NEAR.sub("", line[2:]).strip())
+    return out
+
+
 def _is_new(title, seen):
     """Not a near-repeat of an idea already on the list (most of its words shared)."""
     w = _words(title)
@@ -625,7 +640,7 @@ def cmd_ideas(args):
     for path in args.seen or []:  # earlier brainstorms' ideas.md: don't repeat them, go past them (recursion)
         try:
             with open(path, encoding="utf-8") as f:
-                old = [NEAR.sub("", m.group(1)).strip() for m in re.finditer(r"(?m)^- (?!\w[\w ]*: \d+$)(.+)$", f.read())]
+                old = seen_titles(f.read())
         except OSError as e:
             raise fmcli.UsageError(f"can't read --seen {path}: {e.strerror}")
         for t in old:
@@ -683,6 +698,8 @@ def cmd_ideas(args):
     with open(os.path.join(out_dir, "ideas.md"), "w", encoding="utf-8") as f:
         f.write("# Ideas by round (deduplicated titles; details in the lens files; \"near T-…\" names a finished task "
                 "that shares most of an idea's words)\n"
+                + f"Ideas: {len(titles) - known} distinct (the bullets under Round, Deepened and Cross-bred; the tallies "
+                  f"below are counts, not ideas)\n"
                 + "".join(f"\n## Round {i}\n" + "".join(map(item, ts)) for i, ts in enumerate(by_round, 1))
                 + "".join(f"\n## Deepened: {cat}\n" + "".join(map(item, ts)) for cat, ts in deepened.items())
                 + "".join(f"\n## Cross-bred\n" + "".join(map(item, bred)) for _ in [0] if bred)
