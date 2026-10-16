@@ -163,7 +163,7 @@ def seed_history(p):
             continue
         fl = ", ".join(files.split()[:5])
         lines.append(f"- {subj.strip()}" + (f" ({fl})" if fl else ""))
-        m = re.search(r"error: (.+?) → (.+)", body)
+        m = next(filter(None, (re.search(r"error: (.{1,300}?) → (.+)", ln) for ln in body[:2000].splitlines())), None)
         if m:
             sig = fmrecall.failure_signature(m.group(1)) or c.plain(m.group(1))[:160]
             fixes += bool(fmfixes.add(p, {"sig": sig, "do": c.plain(c.redact(m.group(2)))[:300], "from": p.slug}, trust=False))
