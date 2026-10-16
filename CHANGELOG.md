@@ -6,6 +6,7 @@
 - `fm lease take` with a path relative to the repo root, run from a subdirectory, leases that file instead of a doubled path (T-1148).
 - The pane's Agents graph says "working" for a builder's fresh worktree (its task still open, nothing committed yet) instead of "merged" (T-1152).
 - The builder contract has one source: a test fails when `fmlanes.CONTRACT` and `agents/fm-builder.md` drift apart (T-1151).
+- `fm check` names the files that changed during its gates and says the change may be your own edit, instead of blaming a gate that writes files (T-1149).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
