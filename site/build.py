@@ -19,7 +19,15 @@ esc = html.escape
 
 
 def fmt(n):
-    return f"{n:,.0f}" if isinstance(n, (int, float)) and abs(n) >= 100 or isinstance(n, int) else f"{n:g}"
+    return f"{n:,.0f}" if (isinstance(n, (int, float)) and abs(n) >= 100) or isinstance(n, int) else f"{n:g}"
+
+
+def safe_out(out):
+    """Site review: the output folder is wiped first, so never the repo, its site/ source, a folder holding either,
+    the home folder or the root."""
+    out = os.path.realpath(out)
+    keep = [os.path.realpath(x) for x in (ROOT, HERE, os.path.expanduser("~"))]
+    return out != os.path.sep and not any(out == k or k.startswith(out.rstrip(os.sep) + os.sep) for k in keep)
 
 
 def table(head, rows):
@@ -135,6 +143,8 @@ def columns(title, note, rows, keys, label_key="day", short=lambda s: s[5:]):
 
 def line(title, note, rows, key, label_key):
     """One series over time, 2px line, the last value labelled at its end."""
+    if not rows:  # site review: no release commits yet raised IndexError
+        return figure(title, note, "<p>No data yet.</p>", "")
     w, h, left, bottom, top_pad = 640, 220, 50, 26, 16
     vals = [r[key] for r in rows]
     lo, hi = 0, max(vals + [1])
@@ -153,7 +163,7 @@ def line(title, note, rows, key, label_key):
     for x, y, r in zip(xs, ys, rows):
         out.append(f'<circle class="dot s1" cx="{x:.1f}" cy="{y:.1f}" r="4"><title>{esc(r[label_key])}: {fmt(r[key])}</title></circle>')
     out.append(f'<text class="val" x="{xs[-1] + 10:.1f}" y="{ys[-1] + 4:.1f}">{fmt(vals[-1])}</text>')
-    for i in (0, len(rows) // 2, len(rows) - 1):
+    for i in sorted({0, len(rows) // 2, len(rows) - 1}):  # two rows: each label once
         out.append(f'<text class="tick" x="{xs[i]:.1f}" y="{h - 8}" text-anchor="middle">{esc(rows[i][label_key])}</text>')
     out.append(f'<line class="axis" x1="{left}" x2="{left + plot_w}" y1="{top_pad + plot_h}" y2="{top_pad + plot_h}"/></svg>')
     return figure(title, note, "".join(out), table([label_key, key], [[r[label_key], r[key]] for r in rows]))
@@ -274,5 +284,7 @@ def build(out):
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "_site")
+    if not safe_out(target):
+        sys.exit(f"build.py: refusing to wipe {target}: give a new or build-only folder, such as _site")
     n = build(os.path.abspath(target))
     print(f"built {target}: landing page + {n} feature pages")

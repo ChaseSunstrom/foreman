@@ -80,6 +80,34 @@ class DirtyAtFocus(ForemanTestCase):
         self.assertEqual(sorted(self.committed()), ["a, b.txt", "x #y.txt"])
 
 
+
+class EditedUnderAnotherTask(ForemanTestCase):
+    """T-1235: a file edited before this task was focused (under another task) and not touched since: finish committed
+    nothing and didn't say so. It names it now, and --with commits it."""
+    write, git, finish, committed = DirtyAtFocus.write, DirtyAtFocus.git, DirtyAtFocus.finish, DirtyAtFocus.committed
+
+    def setUp(self):
+        super().setUp()
+        self.fm("init")
+        self.write("other.py", "c = 0\n")
+        self.write("clean.py", "b = 0\n")
+        self.git("add", "-A")
+        self.git("commit", "-qm", "files")
+        self.write("other.py", "c = 1\n", old=True)  # edited under another task, never while T-0001 is focused
+        self.fm("task", "new", "T", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.write("clean.py", "b = 1\n")
+
+    def test_an_untouched_uncommitted_file_is_named_as_left_out(self):
+        r = self.finish()
+        self.assertEqual(self.committed(), ["clean.py"])
+        self.assertIn("other.py", r.stdout)
+        self.assertIn("--with", r.stdout)
+
+    def test_with_commits_an_untouched_uncommitted_file(self):
+        self.finish("--with", "other.py")
+        self.assertEqual(sorted(self.committed()), ["clean.py", "other.py"])
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()

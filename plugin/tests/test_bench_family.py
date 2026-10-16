@@ -15,7 +15,14 @@ args = sys.argv[1:]
 stdin = sys.stdin.read()
 system = args[args.index("--append-system-prompt") + 1] if "--append-system-prompt" in args else ""
 with open(os.environ["STUB_LOG"], "a") as f:
-    f.write(json.dumps({"args": args, "stdin": stdin, "system": system}) + "\n")
+    f.write(json.dumps({"args": args, "stdin": stdin, "system": system,
+                        "window": os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"),
+                        "marathon": os.environ.get("FOREMAN_MARATHON")}) + "\n")
+if "--plugin-dir" in args and os.environ.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW"):  # a kept session that compacted twice
+    d = os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", "-tmp-replay")
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "s-1.jsonl"), "w") as f:
+        f.write('{"type":"user"}\n' + '{"type":"system","subtype":"compact_boundary"}\n' * 2)
 if "--plugin-dir" in args:  # a replayed session
     if os.environ.get("STUB_PLANT"):  # a session that leaves git config for whoever runs git here next
         import subprocess
@@ -286,3 +293,45 @@ class Soak(_Bench):
         res = json.loads(self.fm("bench", "soak", "--ids", self.calc, "--json", env=dict(self.env, STUB_NO_SID="1")).stdout)
         self.assertIn("session id", res["cases"][0]["error"])
         self.assertFalse(res["cases"][0]["pass"])
+
+
+class Marathon(_Bench):
+    """T-1242: a long session measured as one: both arms forced to compact early, the compactions counted."""
+
+    def test_a_duel_can_force_early_compaction_on_both_arms_and_counts_it(self):
+        cfg = os.path.join(self.tmp, "cfg")
+        env = dict(self.env, CLAUDE_CONFIG_DIR=cfg)
+        self.fm("bench", "build", env=env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--compact-at", "40000", "--max", "1", "--json",
+                                 env=env).stdout)
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual([s["window"] for s in tasks], ["40000", "40000"], "both arms")
+        self.assertTrue(all("--no-session-persistence" not in s["args"] for s in tasks), "kept, to count compactions")
+        # --vs none: "without" is Foreman's arm (the bare one is the reference it has to beat)
+        arm = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "bench", "results",
+                                                res["without"] + ".json")))
+        self.assertEqual(arm["cases"][0]["compactions"], 2)
+        self.assertEqual(arm["compact_at"], 40000)
+        self.assertFalse(os.path.exists(os.path.join(cfg, "projects", "-tmp-replay")), "the kept session is removed")
+
+    def test_a_marathon_duel_lets_foremans_arm_run_to_its_cap_and_still_grades_it(self):
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "duel", "--vs", "none", "--marathon", "3", "--budget", "0.4", "--max", "1",
+                                 "--json", env=self.env, check=False).stdout)
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual([s["marathon"] for s in tasks], ["3", None], "Foreman's arm only")
+        arm = json.loads(read_text(os.path.join(c.find_project(self.repo).dir, "bench", "results",
+                                                res["without"] + ".json")))
+        x = arm["cases"][0]
+        self.assertEqual((x["capped"], x["error"]), (True, None), "the cap ends a marathon; it isn't a crash")
+        self.assertIn("titles", x["diag"])
+
+    def test_a_run_can_force_early_compaction_too(self):
+        cfg = os.path.join(self.tmp, "cfg")
+        env = dict(self.env, CLAUDE_CONFIG_DIR=cfg)
+        self.fm("bench", "build", env=env)
+        res = json.loads(self.fm("bench", "run", "--compact-at", "30000", "--max", "1", "--json", env=env,
+                                 check=False).stdout)
+        tasks = [s for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        self.assertEqual([s["window"] for s in tasks], ["30000"])
+        self.assertEqual(res["cases"][0]["compactions"], 2)

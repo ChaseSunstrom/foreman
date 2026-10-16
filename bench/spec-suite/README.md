@@ -80,3 +80,19 @@ message alone. Then run `--check`. Changing any task changes the commit ids from
 
 In `hard.py` a task's `files` map each path to its new text or to `(old, new)` edits of the parent's, and its
 `naive` entry gives the shortcut (`what`, `files`) and the test module it must fail (`fails`).
+
+## A long session: `--together`, `--compact-at` and `--marathon`
+
+The hard suite's eight tasks are a gapless chain of commits, so they also make one long case (T-1242):
+
+    fm bench build --commits <base>..HEAD --verify 'python3 -m unittest discover -s tests' --together
+    fm bench duel --vs none --ids M-<sha> --model haiku --compact-at 40000 --budget 1
+    fm bench duel --vs none --ids M-<sha> --model haiku --compact-at 40000 --budget 1 --marathon 5
+
+`--together` asks for every request of the range in one prompt under `## Request k` headings, graded by
+all their hidden tests at the newest commit; results count the tests passing (`tests: [passed, total]`).
+`--compact-at TOKENS` sets `CLAUDE_CODE_AUTO_COMPACT_WINDOW` on both arms, so each compacts as a long
+session would, and keeps the sessions to count their compactions. With Foreman, a prompt of several
+requests queues one task per request, each holding its request's text, so the queue says what's left after
+a compaction. `--marathon N` lets Foreman's arm go on after the asked work: N passes of finding and doing
+work nobody asked for, until its `--budget` cap, which ends it without counting as a crash.

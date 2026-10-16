@@ -214,6 +214,67 @@ class Site(unittest.TestCase):
             self.assertGreaterEqual(left, 0, label)
             self.assertLessEqual(x + (0 if anchor == "end" else len(label) * 6.5), 640, label)
 
+    def _site(self, name):
+        import importlib.util
+        import sys
+        sys.path.insert(0, os.path.join(self.ROOT, "site"))
+        try:
+            spec = importlib.util.spec_from_file_location(name, os.path.join(self.ROOT, "site", name + ".py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+        finally:
+            sys.path.pop(0)
+
+    def test_a_task_name_in_the_duel_table_is_escaped(self):
+        # site review: the case name (from an agent-written title) was the one unescaped value
+        pages = self._site("pages")
+        side = {"pass": True, "cost": 0.1, "seconds": 10, "runs": 1, "passed": 1, "turns": 3, "score": None}
+        html = pages._duel({"duels": [{"name": "q", "cases": [{"case": "<b>x</b> & y", "foreman": side,
+                                                               "bare": side}]}]}, "q")
+        self.assertNotIn("<b>x</b>", html)
+        self.assertIn("&lt;b&gt;x&lt;/b&gt; &amp; y", html)
+
+    def test_the_build_refuses_to_wipe_the_repo_its_source_or_home(self):
+        # site review: build.py OUT ran shutil.rmtree on whatever it was given (python3 site/build.py . wiped the repo)
+        build = self._site("build")
+        for bad in (self.ROOT, os.path.join(self.ROOT, "site"), os.path.expanduser("~"), "/", os.path.dirname(self.ROOT)):
+            self.assertFalse(build.safe_out(bad), bad)
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(build.safe_out(os.path.join(tmp, "_site")))
+        self.assertTrue(build.safe_out(os.path.join(self.ROOT, "_site")))
+
+    def test_a_new_duel_keeps_the_saved_ones(self):
+        # site review: stats.py --duel long=DIR alone replaced quality, hard and hard-haiku with nothing
+        stats = self._site("stats")
+        merged = stats.merge_duels([{"name": "quality", "cases": [1]}, {"name": "long", "cases": [1]}],
+                                   [{"name": "long", "cases": [2]}, {"name": "marathon", "cases": [3]}])
+        self.assertEqual([(d["name"], d["cases"]) for d in merged],
+                         [("quality", [1]), ("long", [2]), ("marathon", [3])])
+
+    def test_the_long_session_section_shows_each_run_and_each_request(self):
+        pages = self._site("pages")
+        side = lambda t, f: {"pass": True, "cost": 0.1, "seconds": 400, "runs": 2, "passed": 2, "turns": 60,
+                             "score": None, "each": [{"tests": [t, 105], "compactions": 3}, {"tests": [105, 105],
+                                                                                           "compactions": 4}],
+                             "requests": [{"title": "Add <ini>", "failed": f}], "found": ["Fix a crash (discovered)"]}
+        html = pages._long({"duels": [{"name": "marathon", "marathon": 5, "cases": [
+            {"case": "x", "foreman": side(100, 5), "bare": side(105, 0)}]}]}, "marathon")
+        self.assertIn("100, 105 of 105", html)
+        same = pages._long({"duels": [{"name": "long", "cases": [{"case": "x", "foreman": side(105, 0),
+                                                                  "bare": side(105, 0)}]}]}, "long")
+        self.assertNotIn("105, 105", same)
+        self.assertIn("3, 4", html)
+        self.assertIn("✗ 5 failing", html)
+        self.assertIn("Add &lt;ini&gt;", html)
+        self.assertIn("Fix a crash", html)
+        self.assertNotIn("(discovered)", html)
+
+    def test_a_line_chart_with_no_rows_says_so(self):
+        build = self._site("build")
+        self.assertIn("No data", build.line("Releases", "note", [], "n", "day"))
+
     def test_the_benchmarks_page_opens_with_why_use_foreman(self):
         # T-1241: a reader saw equal pass rates and asked why anyone would use Foreman; the page answers first
         import sys
@@ -225,7 +286,7 @@ class Site(unittest.TestCase):
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
         self.assertEqual((kind, title), ("text", "Why use Foreman"))
-        for words in ("24 dangerous", "both sides pass", "more", "not measured yet"):
+        for words in ("24 dangerous", "both sides pass", "more", "3 runs", "1 of 3", "compact"):
             self.assertIn(words, body)
 
     def test_the_site_builds_and_every_local_link_resolves(self):
