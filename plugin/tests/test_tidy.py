@@ -277,13 +277,14 @@ class DeferredTriage(TidyCase):
         dead = self.defer("dead", 120, scope="gone.py")
         due = self.defer("due", 10, revisit="2020-01-01")
         rest = self.defer("rest", 50, scope="live.py")
+        young = self.defer("young", 1, scope="live.py")  # nobody touched live.py, but nothing says it is ready
         got = {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
-        self.assertEqual(got, {dead: "drop", due: "do", rest: "ask"})
+        self.assertEqual(got, {dead: "drop", due: "do", rest: "ask", young: "ask"})
         text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
         self.assertIn("deferred_triage", text)
         self.assertIn(f'fm task drop {dead} "', text)
         self.assertIn(f"Deferred: {dead} → drop", self.fm("digest").stdout)
-        for t in (dead, due, rest):
+        for t in (dead, due, rest, young):
             self.assertEqual(c.find_brief(self.p, t).status, "deferred")
 
 
