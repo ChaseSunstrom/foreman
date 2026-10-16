@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A subagent's work no longer puts notes into the main thread's context: its repeated edits raise no thrash note, its failed commands no known-fix, recall or suspects note (nor a failure filed against the main thread's task), and its edits start no ambient test run (T-1110).
 - Corrections become rules (T-1042): when the user corrects the same thing twice (shared rare words, stemmed), `fm taste` proposes it with a ready `fm rule add … --warn` line; `fm taste adopt N` / `decline N` act on it (a bare adopt or decline acts on steer proposals only), and a recorded veto, rule or decline hides it.
 - `fm tidy`'s ledger roll takes the ledger's own lock, reads bytes and never reorders the chain: lines with no ts, a bad ts or a future ts go with their neighbours, a racing writer's line survives, and a roll that crashes resumes from a sidecar without losing or double-archiving lines (T-1099).
 - Refuted hypotheses carry over (T-1075): `fm task hypo ID mark N ruled-out --why "<reason>"` keeps why a hypothesis was refuted; `fm task hypo ID ruled [--write]` lists this task's and same-scope tasks' refutations (rarest shared path first, with age, quoted as data) and writes `handoffs/ID-ruled-out.md`, which fm-debugger reads first; checkpoint resume lines carry them.
