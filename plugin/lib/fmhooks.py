@@ -1028,15 +1028,37 @@ def _outward_denial(pl):
             f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
 
 
+# fmguard._CRED_DIRS and _CRED_FILES (a test keeps them in step): read here before fmguard is imported
+_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
+_CRED_FILES = [".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude/.credentials.json", ".docker/config.json"]
+
+
+def _credential_like(path):
+    """A cheap superset of the guard's credential read: a credential folder or file's name anywhere in the path or
+    where it really is."""
+    for p in {path, os.path.realpath(path)}:
+        if any(f"/{d}/" in p + "/" for d in _CRED_DIRS) or any(p.endswith("/" + f) for f in _CRED_FILES):
+            return True
+    return False
+
+
 def _credential_read(pl):
-    """T-1224: the guard's refusal of a Read of a credential, or None. Only a path that is one costs the task lookup
-    (for a grant): every other Read stays one path check."""
-    import fmguard as guard
-    home = os.path.expanduser("~")
-    quick = guard.Ctx(cwd=_cwd(pl), project_root=None, home=home, foreman_home="")
-    if not guard.findings("Read", pl.get("tool_input") or {}, quick):
+    """T-1224: the guard's refusal of a Read of a credential, or None. Only a credential-like path imports the guard
+    and looks the task up (for a grant), so a guard broken mid-edit never stops an ordinary read; for that path a broken
+    guard falls back to the committed one, and with neither the read is refused."""
+    raw = str((pl.get("tool_input") or {}).get("file_path") or "")
+    if not raw or not _credential_like(os.path.join(_cwd(pl), os.path.expanduser(raw))):
         return None
-    ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    try:
+        import fmguard as guard
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    except Exception:
+        log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard:\n" + _tb())
+        guard = _committed("fmguard")
+        if guard is None:
+            return (f"Foreman guard: {raw} looks like a credential and the guard can't load (fm doctor shows the "
+                    "error), so the read is refused until it works again.")
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
     return guard.message(block, ctx) if block else None
 
 
