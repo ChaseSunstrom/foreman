@@ -1483,13 +1483,30 @@ def fm_calls(cmd):
 # passes read_only() only when every part is one of these without those flags.
 _READS = {
     "ls": (), "cat": (), "head": (), "tail": ("-f", "-F", "--follow"), "wc": (), "pwd": (), "which": (), "file": (),
-    "stat": (), "du": (), "df": (), "tree": ("-o",), "grep": (), "egrep": (), "fgrep": (), "rg": ("--pre",),
-    "sort": ("-o", "--output"), "uniq": (), "cut": (), "nl": (), "diff": (), "cmp": (), "realpath": (),
+    "stat": (), "du": (), "df": (), "tree": ("-o",), "grep": (), "egrep": (), "fgrep": (),
+    "rg": ("--pre", "--pre-glob", "--hostname-bin", "-z", "--search-zip"),
+    "sort": ("-o", "--output", "--compress-program"), "uniq": (), "cut": (), "nl": (), "diff": (), "cmp": (), "realpath": (),
     "basename": (), "dirname": (), "echo": (), "printf": (), "true": (), "date": ("-s", "--set"), "tr": (),
     "column": (), "find": ("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
                                      "-fprintf", "-fls"),
 }
 _GIT_READS = {"status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "describe", "shortlog", "grep"}
+_GIT_BAD = ("-o", "--output", "--ext-diff", "--textconv", "--open-files-in-pager", "-O")
+
+
+def _bad_flag(args, bad):
+    """True when an argument is one of the bad flags: a long option counts when it abbreviates one (GNU and git accept
+    --comp=), a single-dash cluster when it holds a bad short letter anywhere (-uo, -oFILE, -nOcat); a bad flag with a
+    longer single-dash name (find -exec) matches exactly."""
+    for a in args:
+        if a == "--":
+            break
+        if a.startswith("--"):
+            if any(b.startswith("--") and b.startswith(a.partition("=")[0]) for b in bad):
+                return True
+        elif a.startswith("-") and any(a == b or len(b) == 2 and b[1] in a[1:] for b in bad if b[:1] == "-" and b[1:2] != "-"):
+            return True
+    return False
 
 
 def read_only(cmd):
@@ -1508,11 +1525,11 @@ def read_only(cmd):
             return False
         if argv[0] == "git":
             sub = argv[1] if len(argv) > 1 else ""
-            if sub not in _GIT_READS or any(a == "--output" or a.startswith("--output=") or a == "-o" for a in argv):
+            if sub not in _GIT_READS or _bad_flag(argv[2:], _GIT_BAD if sub == "grep" else _GIT_BAD[:4]):
                 return False
             continue
         bad = _READS.get(argv[0])
-        if bad is None or any(a == b or a.startswith(b + "=") for a in argv[1:] for b in bad):
+        if bad is None or _bad_flag(argv[1:], bad):
             return False
     return bool(parts)
 
