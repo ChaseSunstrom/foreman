@@ -1042,8 +1042,11 @@ def cmd_guard_try(args):
         import fmreplay
         k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)  # "" = here
         return fmcli.out(args, k, f"Stored guard case {k['id']}: should {k['should']}. fm replay --cases reports it.")
+    if args.action == "mine":  # T-1187
+        import fmreplay
+        return fmreplay.cmd_mine(args, fmcli)
     if args.action != "try":
-        raise fmcli.UsageError("fm guard: the actions are try and wrong")
+        raise fmcli.UsageError("fm guard: the actions are try, wrong and mine")
     key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(args.tool, "file_path")
     target = args.text if args.tool == "Bash" else args.path
     if not target:

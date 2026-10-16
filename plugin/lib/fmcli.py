@@ -5142,13 +5142,15 @@ def build_parser():
                                                           "fmguard.py file) against the working one (T-0712)")
     s = add("guard", lazy("fmhooks", "cmd_guard_try"), tier=("Finding your way", 305), help="guard try \"CMD\" [--cwd DIR]: the real guard's "
                                                            "verdict for a command or --tool Edit --path P, as this session would get it; never run (T-1146)")
-    s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162)")
+    s.add_argument("action", help="try | wrong (guard wrong \"CMD\" --should allow|block [--why TEXT]: store a labelled case, T-1162) | "
+                                  "mine [--days N]: this project's real refusals, each labelled by what the session did next (T-1187)")
     s.add_argument("text", nargs="?", help="the command to ask about")
     s.add_argument("--should", choices=["allow", "block"], help="with wrong: the verdict the guard should give")
     s.add_argument("--why", default="", help="with wrong: what went wrong")
     s.add_argument("--cwd", metavar="DIR", help="the folder it would run in (default: here)")
     s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit"], help="the tool (default Bash)")
     s.add_argument("--path", metavar="P", help="with --tool Edit/Write: the file")
+    s.add_argument("--days", type=int, default=7, help="with mine: how far back the transcripts are read (default 7)")
     s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
                                                                  "fired on recent real sessions, read-only (T-1058)")
     s.add_argument("--rule", metavar="REGEX", help="calls (command, path, pattern) the regex matches")
