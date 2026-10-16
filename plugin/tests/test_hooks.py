@@ -480,6 +480,46 @@ class Approvals(HookCase):
         self.assertEqual((self.allow(tid), self.pending()), ([], []))
 
 
+class HookClaudeShape(unittest.TestCase):
+    """T-1233 review: the Claude Code process behind a hook is found by a fixed shape — at most one python layer (this
+    hook's own dispatcher, by absolute path) and then at most one system shell whose -c starts with the hook — never by
+    skipping whatever looks like a wrapper at any depth."""
+    HOOK = "/opt/plug/hooks/hook"
+
+    def find(self, procs):
+        import fmbus
+        import fmhooks
+        chain = [(pid, "s") for pid, *_ in procs]
+        table = {pid: (exe, argv) for pid, exe, argv in procs}
+        saved = (fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv)
+        fmbus._chain = lambda pid, depth: chain[:depth]
+        fmhooks._argv, fmhooks._exe = (lambda pid: table[pid][1]), (lambda pid: table[pid][0])
+        sys.argv = [self.HOOK, "UserPromptSubmit"]
+        try:
+            hc = fmhooks._hook_claude()
+        finally:
+            fmbus._chain, fmhooks._argv, fmhooks._exe, sys.argv = saved
+        return hc and hc[0]
+
+    def test_the_shapes_claude_code_launches_hooks_in(self):
+        sh = (2, "/usr/bin/bash", ["/bin/sh", "-c", f"{self.HOOK} UserPromptSubmit"])
+        cc = (3, "/usr/bin/claude", ["claude", "--continue"])
+        py = (1, "/usr/bin/python3.11", ["python3.11", self.HOOK, "UserPromptSubmit"])
+        self.assertEqual(self.find([cc]), 3)
+        self.assertEqual(self.find([sh, cc]), 3)
+        self.assertEqual(self.find([py, sh, cc]), 3)
+
+    def test_nothing_else_is_skipped(self):
+        cc = (9, "/usr/bin/claude", ["claude"])
+        sh = (2, "/usr/bin/bash", ["/bin/sh", "-c", f"{self.HOOK} UserPromptSubmit"])
+        disguised = (4, "/home/u/python3", ["/home/u/python3", "yes"])  # a copy of claude, "yes" a link to the hook
+        outer = (5, "/usr/bin/bash", ["bash", "-c", f"echo {self.HOOK}; /home/u/python3 yes"])
+        self.assertEqual(self.find([sh, disguised, outer, cc]), 4, "the nested claude is the hook's Claude Code")
+        self.assertEqual(self.find([disguised, cc]), 4, "a relative argv never counts as this hook")
+        self.assertEqual(self.find([sh, sh, cc]), 2, "one shell layer only")
+        self.assertEqual(self.find([outer, cc]), 5, "a shell whose -c doesn't start with the hook is no hook layer")
+
+
 class NoTaskGate(HookCase):
     """No edits in a Foreman project without an active task (T-0012): the harness enforces the loop."""
 
