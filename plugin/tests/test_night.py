@@ -67,7 +67,7 @@ class Night(ForemanTestCase):
         self.assertIn("second session", names)
         self.assertLessEqual(sum(j["usd"] for j in out["jobs"]), out["limit"])
         tight = json.loads(self.fm("night", "--dry-run", "--max-usd", "0.001", "--json").stdout)
-        self.assertEqual([j["name"] for j in tight["jobs"]], ["scout", "dream", "cold files"])  # T-0950, T-0665, T-0660: only free jobs fit
+        self.assertEqual([j["name"] for j in tight["jobs"]], ["scout", "dream", "cold files", "compost", "consolidate"])  # T-1071, T-0950, T-0665, T-0660: only free jobs fit
         self.assertTrue(tight["skipped"])  # what didn't fit is named
         tid = json.loads(self.fm("task", "new", "x", "--type", "CLEAN", "--tier", "S", "--ac", "ok :: true", "--step", "a",
                                  "--json").stdout)["id"]
@@ -76,6 +76,26 @@ class Night(ForemanTestCase):
         tight = json.loads(self.fm("night", "--dry-run", "--max-usd", "0.001", "--json").stdout)
         self.assertIn(("sentinel", ["sentinel", "--bisect"], 0.0),  # T-0888: closed tasks' checks against HEAD, free
                       [(j["name"], j["argv"], j["usd"]) for j in tight["jobs"]])
+
+    def test_gardening_jobs_are_listed_and_accepted(self):  # T-1071
+        out = json.loads(self.fm("night", "--dry-run", "--only", "compost", "--json").stdout)
+        self.assertEqual([j["name"] for j in out["jobs"]], ["compost"])
+        names = [j["name"] for j in json.loads(self.fm("night", "--dry-run", "--json").stdout)["jobs"]]
+        self.assertIn("compost", names)
+        self.assertIn("consolidate", names)
+
+    def test_night_compost_touches_only_lanes(self):  # T-1071 review
+        import fmnight
+        p = c.find_project(self.repo)
+        argv = dict((n, a) for n, a, _ in fmnight.jobs(p))
+        self.assertEqual(argv["compost"], ["tidy", "--apply", "--lanes-only"])
+        self.assertIn("--capture", argv["consolidate"])
+        self.fm("task", "new", "Stuck", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        tid = c.load_briefs(p)[-1].id
+        self.fm("task", "block", tid, "waiting")
+        out = self.fm("tidy", "--apply", "--lanes-only", "--json").stdout
+        self.assertEqual(json.loads(out)["findings"], [])
+        self.assertEqual(c.find_brief(p, tid).status, "blocked")
 
     def test_high_usage_runs_nothing(self):
         sessions = os.path.join(c.state_dir(), "sessions")
