@@ -856,7 +856,8 @@ def _thrash_note(pl, p, act, path):
         if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path:
             n += 1
     key = hashlib.sha1(path.encode()).hexdigest()[:10]
-    if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):  # T-1089: one call for the rest
+    # T-1089: one call for the rest; T-1104: not for a subagent's edits (the note reached the main thread's context)
+    if n == BATCH_AT and not pl.get("agent_id") and _first_time(pl.get("session_id"), "batch-" + key):
         return (f"Foreman: the {BATCH_AT}rd edit of {os.path.basename(path)} in a row. When more spots in it (or in other "
                 f"files) are known, fm edit applies them all in one call: JSON on stdin "
                 f"([{{\"file\", \"old\", \"new\"}}]) or @@ file / <<< old / === new / >>> blocks, all or none, inside "
