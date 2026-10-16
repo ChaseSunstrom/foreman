@@ -21,6 +21,7 @@
 - `fm inbox spec FILE` captures each unchecked `- [ ]` item of a SPEC.md or checklist once, quoted as untrusted data (T-1165).
 - Builder briefs list the defect classes reviewers confirmed in the last 30 days (class, count, one example) under "Defects this project keeps shipping", so builders check for them before reporting (T-1164).
 - `fm deps --capture` queues one inbox task per dependency a major version behind ("Migrate X from 2.x to 3.1.0"), never twice for the same target major (T-1166).
+- `fm pr ID --post [--pr N]` comments the rendered description, with its proof, on the PR; posting is outward, so it needs the task's publish grant and spends it (T-1167).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
