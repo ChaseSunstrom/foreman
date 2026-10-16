@@ -3,7 +3,7 @@ name: eslint
 title: ESLint
 area: node
 tags: [eslint, lint, flat-config, typescript, javascript, static-analysis]
-detect: [dep:eslint, file:eslint.config.js, file:eslint.config.mjs, file:eslint.config.ts, file:.eslintrc*]
+detect: [dep:eslint, dep:@eslint/js, file:eslint.config.js, file:eslint.config.mjs, file:eslint.config.ts, file:.eslintrc*]
 related: [prettier, biome, tsconfig, vitest, jest]
 ---
 ESLint with flat config (`eslint.config.*`), typescript-eslint, and a lint step that fails CI.
