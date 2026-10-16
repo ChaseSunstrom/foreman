@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Stack library: cards for SciPy, Python audio (librosa, soundfile, demucs) and pmndrs postprocessing, and detect lines so playwright-core, vite-plugin-svelte and svelte-check projects get the Playwright and Svelte cards (T-1016, found by `fm scout --slow`).
 - `fm task finish --why-not-caught` captures no "Catch it earlier" task when the task itself edited a test file; it says the catch landed with it (T-1009, first written by the recorded demo session).
 - `fm doctor`'s self-docs check (which also refuses the close of a task that changes `fmcli.py`) holds `fm help`'s tiers to every command once: `fm approve-reads` shipped with none, and only the full suite noticed, after the commit (T-1010, T-1011).
 - The UI harness marks a session one-off only on your own Foreman state; on a state of its own (the demo recorder) it is that state's working session, so the drive takes it to the close (T-1013: a recording stalled before its task closed).
