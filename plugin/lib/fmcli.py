@@ -4843,8 +4843,12 @@ def build_parser():
     s.add_argument("type", nargs="?", type=str.upper, choices=c.TYPES)
     s.add_argument("tier", nargs="?", type=str.upper, choices=["S", "M", "L"])
     s = add("pr", lazy("fmcost", "cmd_pr"), help="a pull-request description from a task's brief, with its proof "
-                                                  "(red→green, lens verdicts, assumptions, bench replays; printed only)")
-    s.add_argument("id")
+                                                  "(red→green, lens verdicts, assumptions, bench replays; printed only); "
+                                                  "fm pr threads ID: review comments to steps; fm pr train: merge in order")
+    s.add_argument("id", help="a task id, or threads / train")
+    s.add_argument("more", nargs="*", help="threads: the task id")
+    s.add_argument("--pr", type=int, help="threads: the PR number (default: the PR of branch foreman/ID)")
+    s.add_argument("--task", help="train: the task whose publish grant covers the merges (default: the active one)")
     s = add("second", lazy("fmsecond", "cmd_second"),
             help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
     s.add_argument("what", choices=["plan", "cheapest", "debate", "session"])
