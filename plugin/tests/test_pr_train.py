@@ -21,6 +21,8 @@ elif a[:2] == ['api', 'graphql']:
     print(json.dumps({{'data': {{'repository': {{'pullRequest': {{'reviewThreads': {{'nodes': st['threads']}}}}}}}}}}))
 elif a[:2] == ['pr', 'list']:
     print(json.dumps(st['prs']))
+elif a[:2] == ['pr', 'comment']:
+    open({log!r}, 'a').write('comment ' + a[2] + ' ' + a[a.index('--body') + 1].splitlines()[0] + '\\n')
 elif a[:2] == ['pr', 'merge']:
     if a[2] in st.get('fail_merge', []):
         sys.exit(5)
@@ -133,6 +135,20 @@ class PrTrain(ForemanTestCase):
         sha = subprocess.run(["git", "-C", self.repo, "rev-parse", "pr1"], capture_output=True, text=True).stdout.strip()
         row = open(self.log).read().split()
         self.assertEqual(row[row.index("--match-head-commit") + 1], sha)
+
+    def test_post_comments_the_body_once_per_yes(self):
+        # T-1167: posting is outward: the task's publish grant, spent by the post
+        self.gh_state()
+        r = self.fm("pr", self.tid, "--post", env=self.env, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("fm ask", r.stdout + r.stderr)
+        self.assertFalse(os.path.exists(self.log), "nothing posted without the yes")
+        self.grant()
+        self.fm("pr", self.tid, "--post", "--pr", "12", env=self.env)
+        self.assertEqual(open(self.log).read(), "comment 12 ## x\n")
+        self.assertNotIn("publish", c.find_brief(self.p, self.tid).meta.get("allow") or [])
+        self.assertNotEqual(self.fm("pr", self.tid, "--post", env=self.env, check=False).returncode, 0)  # spent
+        self.fm("pr", self.tid)  # printing stays free
 
     def test_the_grant_is_spent_by_one_run(self):
         self.origin()

@@ -301,10 +301,6 @@ class Lanes(ForemanTestCase):
         self.assertNotIn(".env", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class BuilderGates(unittest.TestCase):
     def test_builders_run_affected_tests_and_leave_the_full_gates_to_the_merge(self):
         # T-0806: two lanes and the main thread ran three full gate runs at once (load 74): tests timed out, lanes
@@ -316,6 +312,27 @@ class BuilderGates(unittest.TestCase):
             self.assertIn("full gates run after the merge", text)
             self.assertNotRegex(text, r"`fm check --evidence")
         self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808
+
+    def test_builders_review_their_own_change_as_an_adversary_before_reporting(self):
+        # T-1147: reviewers found real defects in almost every builder branch
+        import fmlanes
+        agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
+        for text in (fmlanes.CONTRACT, agent):
+            for w in ("Self-review", "what input breaks it", "what outside text it trusts", "what is unbounded",
+                      "what it writes and where", "a second run"):
+                self.assertIn(w, text)
+
+
+class BuilderContractOneSource(unittest.TestCase):
+    def test_every_contract_rule_is_in_the_builder_agent(self):
+        # T-1151: the brief's CONTRACT and fm-builder.md repeat each other by hand; a rule in one must be in the other
+        import fmlanes
+        norm = lambda s: " ".join(s.split())
+        agent = norm(read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md")))
+        rules = fmlanes.CONTRACT.format(id="<ID>", base="<BASE>").split("\n- ")[1:]
+        self.assertGreater(len(rules), 8)
+        for r in rules:
+            self.assertIn(norm(r), agent, "rule missing from agents/fm-builder.md")
 
 
 class BoardLanes(ForemanTestCase):
@@ -426,3 +443,7 @@ class SafeGitFailsClosed(unittest.TestCase):
                     [], 124, "", "timed out")):
                 found = fmsecrets._tree(t)
         self.assertTrue(found and "couldn't list" in found[0]["kind"], found)  # never a false "no credentials"
+
+
+if __name__ == "__main__":
+    unittest.main()

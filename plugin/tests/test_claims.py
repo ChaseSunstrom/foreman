@@ -48,6 +48,20 @@ class Claims(Base):
         self.assertNotIn("b.py", held)
         self.assertIn("c.py", held, "another session's lease stays")
 
+    def test_a_root_relative_path_from_a_subdirectory_is_leased_as_itself(self):
+        # T-1148: from mods/ui, 'fm lease take mods/ui/x.tsx' was recorded doubled
+        sub = os.path.join(self.repo, "mods", "ui")
+        os.makedirs(sub)
+        for f in (os.path.join(sub, "x.tsx"), os.path.join(sub, "y.tsx")):
+            open(f, "w").close()
+        self.fm("lease", "take", "mods/ui/x.tsx", cwd=sub, env=A)
+        self.fm("lease", "take", "y.tsx", "new.tsx", cwd=sub, env=A)
+        held = self.fm("lease", "list").stdout
+        self.assertIn("mods/ui/x.tsx::*", held)
+        self.assertNotIn("mods/ui/mods", held)
+        self.assertIn("mods/ui/y.tsx::*", held, "cwd-relative as before")
+        self.assertIn("mods/ui/new.tsx::*", held, "a new file keeps the cwd meaning")
+
     def test_a_lane_brief_preclaims_its_concrete_scope_and_names_the_command(self):
         tid = self.task(title="Lane work", tier="S", focus=False, scope=["x.py", "lib/*.py"])
         path = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]

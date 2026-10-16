@@ -294,9 +294,9 @@ test('band is a card: type chip, title, gradient progress (text twin off the ter
     expect(await ui.find({ type: 'Text', text: 'FIX' })).toBeDefined() // T-0122: the type is a coloured word
     expect(await ui.find({ type: 'Text', text: 'medium' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /Login times out/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^1\/2$/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: 'step 2/2' })).toBeDefined() // T-1154: the current step's number
     expect(await ui.find({ type: 'Text', text: /raise the timeout/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /→ T-0007 step 2\/2/ })).toBeUndefined() // the head says it already
     expect(await ui.find({ type: 'Text', text: 'standard' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /\bq\d|\bin\d/ })).toBeUndefined() // no letter codes
     // the stage rail in small (T-0909), the step bar and today's queue bar
@@ -1001,6 +1001,9 @@ test('the look: coloured words not highlighted blocks, quiet controls, the human
   expect(await narrow.find({ type: 'Text', text: 'FIX' })).toBeDefined()
   expect(await narrow.find({ type: 'Text', text: 'today' })).toBeUndefined() // the side details drop, nothing wraps
   expect(await narrow.find({ type: 'Text', text: 'context' })).toBeUndefined()
+  // T-1154: the step's own number beside its text ('1/2' read as step 1), and no '→' line saying the same step again
+  expect(await narrow.find({ type: 'Text', text: 'step 2/2' })).toBeDefined()
+  expect(await narrow.find({ type: 'Text', text: /→ T-0007 step/ })).toBeUndefined()
   await narrow.unmount()
 })
 
@@ -2041,6 +2044,15 @@ test('review (T-1023): finished agents age out at render, rank above lone worktr
   const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await later.find({ key: 'gantt-ag1' })).toBeUndefined() // out of the window, nothing else spawned since
   await later.unmount()
+})
+
+test('a builder\'s fresh worktree (its task open, nothing committed yet) is working, not merged (T-1152)', async ($, on) => {
+  world(on, [{ ...CALM, worktrees: [{ path: '/w/ag2', branch: 'wt-ag2', task: 'T-0009', agent: 'ag2', age_s: 5, ahead: 0, open: true }] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const fresh = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await fresh.find({ type: 'Text', text: 'working' })).toBeDefined()
+  expect(await fresh.find({ type: 'Text', text: 'merged' })).toBeUndefined()
+  await fresh.unmount()
 })
 
 test('review (T-1023): on a 40-column dock a quiet subagent keeps its stop button', async ($, on) => {

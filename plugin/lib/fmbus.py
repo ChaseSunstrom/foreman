@@ -569,6 +569,8 @@ def cmd_lease(args):
             todo = []
             for t in args.target:
                 rel, _, sym = t.partition("::")
+                if not os.path.exists(rel) and os.path.exists(os.path.join(p.root, rel)):  # T-1148: root-relative from a subdir
+                    rel = os.path.join(p.root, rel)
                 rel = os.path.relpath(os.path.abspath(rel), p.root)
                 todo.append((rel, sym or "*"))
             hits = [(f"{r}::{s}", v) for r, s in todo for v in claim_overlaps(p, r, s, me, act, data)]

@@ -245,8 +245,118 @@ def score(args, fmcli):
         raise SystemExit(1)
 
 
+def cases_path():
+    return os.environ.get("FOREMAN_GUARD_CASES") or os.path.join(c.PLUGIN_ROOT, "tests", "fixtures", "guard_cases.jsonl")
+
+
+def repo_root():
+    return os.path.dirname(c.PLUGIN_ROOT)
+
+
+def resolve_cwd(cwd):
+    """A stored cwd back to a folder: relative ones are in Foreman's repo, '' is the home folder (the guard's default)."""
+    return os.path.join(repo_root(), cwd) if cwd and not os.path.isabs(cwd) else cwd or os.path.expanduser("~")
+
+
+def _store_cwd(cwd):
+    """cwd as stored: relative to the repo root when inside it, so the committed corpus isn't machine-specific."""
+    cwd, root = os.path.realpath(cwd), os.path.realpath(repo_root())
+    if cwd == os.path.realpath(os.path.expanduser("~")):
+        return ""  # the guard's default folder
+    return os.path.relpath(cwd, root) if cwd == root or cwd.startswith(root + os.sep) else cwd
+
+
+def load_cases(path=None):
+    """T-1162: ([{id, cmd, cwd, should: allow|block, why}], broken): the labelled cases fm guard wrong stored, and how
+    many lines were not a case (a conflict marker, a torn line, a missing key). A missing file is no cases."""
+    cases, broken = [], 0
+    try:
+        with open(path or cases_path(), encoding="utf-8") as f:
+            lines = [ln for ln in f if ln.strip()]
+    except OSError:
+        return [], 0
+    for ln in lines:
+        try:
+            k = json.loads(ln)
+            ok = isinstance(k, dict) and all(isinstance(k.get(f), str) for f in ("id", "cmd", "should")) \
+                and k["should"] in ("allow", "block")
+        except ValueError:
+            ok = False
+        if ok:
+            cases.append(k)
+        else:
+            broken += 1
+    return cases, broken
+
+
+def drift(cases):
+    """The cases whose label the current guard (no grants) disagrees with, each with its 'got' verdict."""
+    now = verdicts([(k["cmd"], resolve_cwd(k.get("cwd") or "")) for k in cases])
+    out = []
+    for k in cases:
+        got = "allow" if now[_key(k["cmd"], resolve_cwd(k.get("cwd") or ""))] == "allow" else "block"
+        if got != k["should"]:
+            out.append({**k, "got": got})
+    return out
+
+
+def add_case(cmd, should, cwd="", why=""):
+    """Append one labelled case (redacted; a command that still holds a key-shaped literal is refused); the same
+    command and folder is stored once. Returns the case."""
+    import fmcli
+    cmd = cmd.strip()
+    if not cmd or should not in ("allow", "block"):
+        raise fmcli.UsageError("fm guard wrong needs a command and --should allow|block")
+    if c.redact(cmd) != cmd or c.redact(why) != why:
+        raise fmcli.UsageError("that command holds a key-shaped literal: replace it with a placeholder before storing it")
+    cwd = _store_cwd(cwd or os.getcwd())
+    case = {"id": _key(cmd, cwd), "cmd": cmd, "cwd": cwd, "should": should, "why": why}
+    for k in load_cases()[0]:
+        if k["id"] == case["id"]:
+            if k["should"] != should:
+                raise fmcli.UsageError(f"already stored as should {k['should']}: edit {cases_path()} to change a label")
+            return k
+    os.makedirs(os.path.dirname(cases_path()), exist_ok=True)
+    with open(cases_path(), "a", encoding="utf-8") as f:
+        f.write(json.dumps(case) + "\n")
+    return case
+
+
+def report_cases(args, fmcli):
+    """fm replay --cases: the labelled cases against the current guard; --capture: one FIX per drifted case (night)."""
+    cases, broken = load_cases()
+    bad = drift(cases)
+    made = []
+    if args.capture and bad:
+        p = fmcli.resolve(args)
+        with c.lock(p.dir):
+            have = "".join(b.section("Raw request") for b in c.load_briefs(p, include_archive=True))
+            for k in bad:
+                if f"[guard-case {k['id']}]" in have:
+                    continue  # captured before, open or closed: a label is one task
+                shown = c.fit(" ".join(k["cmd"].split()), 100)
+                b = fmcli._create(p, f"Guard verdict drifted from its label: should {k['should']}: {shown}", "FIX", "S",
+                                  "captured", raw=f"[guard-case {k['id']}] fm replay --cases (T-1162): the guard now "
+                                  f"{k['got']}s `{shown}` in {k.get('cwd') or '~'}; the label says {k['should']}"
+                                  f" ({k.get('why') or 'no reason given'}). Fix fmguard.py, or correct the label."
+                                  + (" The label is allow but the guard blocks: do not loosen the guard without the "
+                                     "user's yes." if k["should"] == "allow" else ""),
+                                  source="discovered")
+                c.log_event(p, "capture", task=b.id, data={"source": "discovered", "type": "FIX"})
+                made.append(b.id)
+        if made:
+            c.regen_views(p)
+    lines = [f"Guard cases: {len(cases)} labelled, {len(bad)} drifted" + (f", {broken} broken line(s) skipped" if broken else "")] + [
+        f"  should {k['should']}, guard {k['got']}: {c.fit(c.redact(' '.join(k['cmd'].split())), 120)}" for k in bad[:SHOW]]
+    fmcli.out(args, {"cases": len(cases), "drifted": len(bad), "broken": broken, "captured": made}, "\n".join(lines))
+    if broken or bad and not args.capture:
+        raise SystemExit(1)
+
+
 def cmd_replay(args):
     import fmcli
+    if getattr(args, "cases", False):
+        return report_cases(args, fmcli)
     if getattr(args, "candidate", None):
         return score(args, fmcli)
     if args.cwd and not args.cmd:  # T-0293: accepted and ignored was worse than refused

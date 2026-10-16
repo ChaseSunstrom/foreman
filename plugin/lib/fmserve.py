@@ -378,7 +378,9 @@ def _batch(p, head, skip, n):
 
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
+    import fmcontract
     return ["claude", "-p", _prompt(p, b)] + (["--output-format", "json"] if getattr(args, "max_usd", None) is not None
+                                              or fmcontract.tracks_usd(p)
                                               else []) + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
         ["--settings", json.dumps({"sandbox": _sandbox(p)})] if _sandbox_wanted(p, args) and _sandbox_available()
@@ -762,6 +764,9 @@ def cmd_run(args):
     finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
     cap, run_usd, capped = getattr(args, "max_usd", None), 0.0, False
+    import fmcontract
+    if cap is not None or fmcontract.tracks_usd(p):
+        args.parallel = 1  # lanes' sessions aren't measured (T-1158: nor under a USD contract)
     if cap is not None:
         if not cap >= 0:
             raise fmcli.UsageError("--max-usd must be a number ≥ 0")
@@ -769,6 +774,11 @@ def cmd_run(args):
     while finished < args.max:
         if c.panicked():  # T-0436: before the first session and between every two
             fail(c.PAUSED)
+        import fmcontract  # T-1158
+        if fmcontract.over(p):
+            print(f"fm run: contract ended ({c.read_meta(p)['contract']['ended']} bound); no more tasks started\n"
+                  + fmcontract.receipt(p), flush=True)
+            break
         if cap is not None and run_usd >= cap:  # T-1046: measured from each session's JSON result
             print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
             capped = True
@@ -835,13 +845,14 @@ def cmd_run(args):
             se.seek(0)
             streams = (so.read(), se.read())
         output = streams[0] + streams[1]
-        if cap is not None:  # the result line's cost, counted even when the session didn't finish its task
+        import fmcontract
+        if cap is not None or fmcontract.tracks_usd(p):  # the result line's cost, counted even when the session didn't finish
             for line in reversed(streams[0].strip().splitlines()):
                 try:
                     usd = float(json.loads(line).get("total_cost_usd") or 0)
                 except (ValueError, AttributeError, TypeError):
                     continue
-                run_usd += usd
+                run_usd += usd  # (only read under --max-usd)
                 import fmbudget
                 fmbudget.record("run", usd, project=p.slug, detail=b.id)
                 break

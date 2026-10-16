@@ -84,6 +84,23 @@ def _retest(p, b, n, base):
     return True, "", head
 
 
+def post(p, b, body, number=None):
+    """T-1167: fm pr ID --post: the rendered body as a comment on the PR (--pr N, else the current branch's), behind
+    the task's publish grant like the train's, spent before the call so one yes posts once."""
+    import fmcli
+    if "publish" not in set(b.meta.get("allow") or []):
+        raise fmcli.UsageError(f"posting is outward: fm ask {b.id} publish --why \"post {b.id}'s PR description\", "
+                               "then run it again")
+    n = number or _json(_gh(p, "pr", "view", "--json", "number")).get("number")
+    with c.lock(p.dir):
+        nb = fmcli.need_brief(p, b.id)
+        nb.meta["allow"] = [a for a in nb.meta.get("allow") or [] if a != "publish"]
+        c.save_brief(p, nb)
+        c.log_event(p, "grant_spent", task=b.id, data={"allow": "publish", "by": "fm pr --post"})
+    _gh(p, "pr", "comment", str(int(n)), "--body", body)
+    return int(n)
+
+
 def train(p, args):
     import fmcli
     b = fmcli.need_brief(p, args.task) if args.task else c.active_brief(c.load_briefs(p), p.lane)

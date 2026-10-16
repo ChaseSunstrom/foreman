@@ -99,7 +99,7 @@ export type FmHistory = { time: string; mark: string; task: string | null; text:
 // A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
 // T-1023: a git worktree: its branch, the task whose lane it is, the subagent it was made for (worktree-agent-<id>), its
 // age and the commits it holds that HEAD doesn't
-export type FmWorktree = { path: string; branch: string; task: string | null; agent: string | null; age_s: number | null; ahead: number | null; stopped?: boolean }
+export type FmWorktree = { path: string; branch: string; task: string | null; agent: string | null; age_s: number | null; ahead: number | null; stopped?: boolean; open?: boolean }
 export type FmBrainstorm = { name: string; running: boolean; answers: number; expected?: number; count: number; ideas: string[]; age_h?: number; grounded?: boolean }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }
