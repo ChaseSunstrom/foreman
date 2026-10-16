@@ -915,7 +915,7 @@ def _name(argv):
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
 _FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
-_PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:echo|printf)\s+[^`)]*?)\s*(?:\)|`)")
+_PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:(?:command\s+|builtin\s+)?(?:\S*/)?(?:echo|printf))\s[^`)]*?)\s*(?:\)|`)")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -2270,6 +2270,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             env = _track_vars(raw[idx], env, tilde)
         known = outside if env is None else {**outside, **env}
         argv, via_xargs = _strip_wrappers(c.argv)
+        xodd = via_xargs and any(re.match(r"-[adIiL0]|--(?:arg-file|delimiter|replace|null|max-lines)", x)  # T-1123
+                                 for x in c.argv[:len(c.argv) - len(argv)] if x.startswith("-"))
         if not c.piped:
             chain = []
         name = os.path.basename(argv[0]) if argv else ""
@@ -2325,12 +2327,15 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 try:
                     w = shlex.split(m.group(2))
                 except ValueError:
-                    continue
-                cmdname, w = w[0], w[1:]
+                    w = []
+                cmdname, w = (w[0], w[1:]) if w else ("", [])
                 if cmdname == "echo":
-                    w = [a for a in w if not re.fullmatch(r"-[neE]+", a)]
-                if w and (cmdname == "echo" or "%" not in w[0]):  # ponytail: printf only with no % in its format
+                    w = [a for a in w if a != "-n"]
+                if w and (cmdname == "echo" and not any(a.startswith("-") for a in w[:1] if a != "--") or
+                          cmdname == "printf" and not re.search(r"[%\\]", w[0])):
                     found += check_bash(" ".join(w), ctx, depth + 1)
+                else:  # flags, escapes, a format, a wrapped or pathed echo: the text isn't what is written
+                    found.append(("rm-outside", "eval of computed text"))
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
@@ -2434,7 +2439,8 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         for nm in names:
             if nm == "rm" != name and not _rm_opts_only(args):  # GNU rm stops at an option it doesn't know
                 continue                                      # (-fwrapv, -Wno-unused…): nothing is deleted
-            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx)
+            found += _check_rm(nm, [_with_vars(a, rm_vars) for a in args] if rm_vars else args, via_xargs, chain, cwd, ctx,
+                               xodd)
             found += _check_git(nm, args, cwd, ctx)
             found += _check_system(nm, args)
             found += _check_claude_config(nm, args, cmd if c.piped or "<<" in cmd else "")
@@ -2769,7 +2775,7 @@ def _rm_target_violation(tok, cwd, ctx, root_ok=False):
     return path
 
 
-def _check_rm(name, args, via_xargs, chain, cwd, ctx):
+def _check_rm(name, args, via_xargs, chain, cwd, ctx, xodd=False):
     out = []
     if name == "rm":
         opts, targets, seen_dd = [], [], False
@@ -2783,17 +2789,27 @@ def _check_rm(name, args, via_xargs, chain, cwd, ctx):
         recursive = any(o in ("-r", "-R") or (not o.startswith("--") and re.search(r"[rR]", o))  # T-0668: getopt takes
                         or (o.startswith("--") and len(o) > 2 and "recursive".startswith(o[2:].split("=")[0]))  # --rec
                         for o in opts)
-        if recursive or (via_xargs and not targets):  # T-1123: a plain rm fed on stdin is checked too
+        out_t = list(targets)
+        unknown = False
+        if via_xargs:  # T-1123: xargs appends what stdin holds, split on whitespace, to rm's own operands
+            up = chain[-1] if chain else None  # only the command feeding xargs directly says what it gets
+            uname = _name(up.argv) if up else ""
+            rest = _strip_wrappers(up.argv)[0][1:] if up else []
+            if xodd or not up:
+                unknown = True
+            elif uname == "find":
+                out_t += _find_paths(rest)
+            elif (_strip_wrappers(up.argv)[0][0] == "echo" and all(re.fullmatch(r"[^\s\\*?\[\]{}\"'`$%<>&;|()-][^\s\\*?\[\]{}\"'`$%<>&;|()]*", x) for x in rest)):
+                out_t += rest  # plain `echo word…`: no flags, nothing xargs or echo rewrites
+            else:
+                unknown = True
+        elif recursive and not targets:
+            unknown = True
+        if unknown and (recursive or via_xargs):
+            out.append(("rm-outside", f"{'recursive ' if recursive else ''}rm with targets from stdin"))
+        if recursive or via_xargs:
             kind = "recursive delete" if recursive else "delete"
-            if not targets:
-                upstream = next((x for x in reversed(chain) if _name(x.argv) in ("find", "echo", "printf")), None)
-                if via_xargs and upstream:
-                    up, rest = _name(upstream.argv), _strip_wrappers(upstream.argv)[0][1:]
-                    # ponytail: echo/printf operands are read as paths (printf's format too); find's start paths
-                    targets = _find_paths(rest) if up == "find" else [a for a in rest if not a.startswith("-")]
-                if not targets:
-                    out.append(("rm-outside", f"{'recursive ' if recursive else ''}rm with targets from stdin"))
-            for t in targets:
+            for t in out_t:
                 v = _rm_target_violation(t, cwd, ctx, root_ok=not recursive)
                 if v:
                     out.append(("rm-outside", f"{kind} of {v}"))
