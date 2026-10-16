@@ -262,6 +262,9 @@ class Site(unittest.TestCase):
         html = pages._long({"duels": [{"name": "marathon", "marathon": 5, "cases": [
             {"case": "x", "foreman": side(100, 5), "bare": side(105, 0)}]}]}, "marathon")
         self.assertIn("100, 105 of 105", html)
+        same = pages._long({"duels": [{"name": "long", "cases": [{"case": "x", "foreman": side(105, 0),
+                                                                  "bare": side(105, 0)}]}]}, "long")
+        self.assertNotIn("105, 105", same)
         self.assertIn("3, 4", html)
         self.assertIn("✗ 5 failing", html)
         self.assertIn("Add &lt;ini&gt;", html)
@@ -283,7 +286,7 @@ class Site(unittest.TestCase):
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
         self.assertEqual((kind, title), ("text", "Why use Foreman"))
-        for words in ("24 dangerous", "both sides pass", "more", "not measured yet"):
+        for words in ("24 dangerous", "both sides pass", "more", "3 runs", "1 of 3", "compact"):
             self.assertIn(words, body)
 
     def test_the_site_builds_and_every_local_link_resolves(self):

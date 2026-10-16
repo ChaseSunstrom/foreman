@@ -1,5 +1,7 @@
 """The feature pages (T-1220): content as data, charts as calls into build.py's helpers over site/data/stats.json.
 Every claim here is something Foreman does today; the charts are its own record of building itself."""
+import re
+
 from build import TYPES, columns, esc, hbars, line, pairs, tiles, verdicts
 
 
@@ -135,7 +137,11 @@ def _long(s, name):
 
     def tests(x):
         runs = each(x, "tests")
-        return (", ".join(str(t[0]) for t in runs) + f" of {runs[0][1]}") if runs else ("all" if x["pass"] else "failed")
+        if not runs:
+            return "all" if x["pass"] else "failed"
+        if len(runs) > 1 and len({tuple(t) for t in runs}) == 1:
+            return f"{runs[0][0]} of {runs[0][1]} in all {len(runs)}"
+        return ", ".join(str(t[0]) for t in runs) + f" of {runs[0][1]}"
     many = len(f.get("each") or []) > 1
     per = " (each run)" if many else ""
     comp = lambda x: ", ".join(str(v) for v in each(x, "compactions")) or "0"
@@ -148,9 +154,10 @@ def _long(s, name):
             + (" Foreman's ran until its dollar cap, as a marathon does." if f.get("capped") else ""))
     def mark(x):
         return "✓ all pass" if not x["failed"] else f"✗ {x['failed']} failing"
+    short = lambda t: " ".join(re.sub(r"[:(;].*", "", t).split()[:6]).rstrip(",.") or t  # as the duel tables do
     reqs = list(zip(f.get("requests") or [], b.get("requests") or []))
     table = ('<div class="verdicts"><table><thead><tr><th>Request</th><th>With Foreman</th><th>Claude Code</th></tr>'
-             "</thead><tbody>" + "".join(f"<tr><td>{esc(x['title'])}</td><td>{mark(x)}</td><td>{mark(z)}</td></tr>"
+             "</thead><tbody>" + "".join(f"<tr><td>{esc(short(x['title']))}</td><td>{mark(x)}</td><td>{mark(z)}</td></tr>"
                                          for x, z in reqs) + "</tbody></table></div>") if reqs else ""
     found = f.get("found") or []
     work = ("<p>What Foreman found and did on its own after the asked work:</p><ul>"
@@ -349,9 +356,9 @@ PAGES = [
          ("chart", lambda s: tiles([("Model client tests", 52), ("Endpoints it finds", 9), ("Status", "Building")]))]},
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
-     "lede": "Two benchmarks, run for real on this machine and published as they came out: a set of commands that "
-             "destroy work or leak secrets, and sixteen fully specified coding tasks graded by hidden tests, each run "
-             "three times with Foreman and three times with Claude Code on its own.",
+     "lede": "Benchmarks run for real on this machine and published as they came out: a set of commands that destroy "
+             "work or leak secrets, sixteen fully specified coding tasks graded by hidden tests, and one long session "
+             "of eight requests that compacts as it goes, each run with Foreman and with Claude Code on its own.",
      "blocks": [
          ("text", "Why use Foreman", "<p><strong>It stops what you'd regret.</strong> In bypass mode, out of 24 "
           "dangerous commands (deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman "
@@ -360,10 +367,14 @@ PAGES = [
           "ran and their output, and a commit you can revert.</p><p><strong>What the quality runs show.</strong> On "
           "small tasks where the request spells out every rule, both sides pass everything. There Foreman costs about "
           "10% more with Sonnet and 29% more with Haiku, and takes about the same time, so for a short, fully "
-          "specified task you're watching, Claude Code alone is cheaper.</p><p><strong>What they can't show "
-          "yet.</strong> Long unattended work across many requests and context compactions, which is what Foreman "
-          "is built for, is not measured yet. That benchmark is being built and goes on this page whichever way it "
-          "falls.</p>"),
+          "specified task you're watching, Claude Code alone is cheaper.</p><p><strong>It finishes long work.</strong> "
+          "Asked for eight requests in one Haiku session whose context compacts as it goes, Foreman passed every hidden "
+          "test in all 3 runs. Claude Code on its own did in 1 of 3 (89, 64 and 105 of 105 tests): in the two runs "
+          "that fell short, it wrote the modules it got wrong after its first compaction; in the run that passed, "
+          "before it. Foreman keeps each request's text and puts the open ones back after every compaction. It cost "
+          "about 60% more there ($0.09 against $0.06 a session) and took longer.</p>"
+          "<p><strong>It keeps going.</strong> In a marathon, once the asked work was done, Foreman went on through "
+          "seven compactions, found and fixed three things nobody asked for, and still passed every hidden test.</p>"),
          ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
           "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
           "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
@@ -409,7 +420,10 @@ PAGES = [
           "it.</li><li><strong>It starts informed.</strong> The session begins with the project's layout and test "
           "command, so the agent writes instead of listing folders.</li><li><strong>Less friction.</strong> Commands "
           "default to the active task, a broken check can be corrected, and only real security names ask for an "
-          "adversary review.</li></ul>"),
+          "adversary review.</li><li><strong>Requests survive compaction.</strong> The first long runs lost the rules "
+          "of later requests after a compaction (44 of 105 hidden tests once): a summary keeps a request's name and "
+          "drops its rules. Now each request is its own task holding its text, the open ones come back after every "
+          "compaction, and the next one is focused with its text when the agent moves on.</li></ul>"),
          ("text", "The first run, and why it was replaced", "<p>The first duel used six tasks from Foreman's own "
           "history and came out at 0 of 6 for Foreman, 1 of 6 for Claude Code, with Foreman costing 33% more. "
           "Reading its transcripts showed the case set couldn't measure either side: three cases graded what Foreman "
@@ -418,11 +432,14 @@ PAGES = [
           "the guard protects. The transcripts did show where Foreman spent extra turns on its own commands; those "
           "were cut before this run.</p>"),
          ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Sixteen tasks, three runs each, two "
-          "models: enough to see a direction, not a precise rate.</li><li><strong>Both sides passed everything."
-          "</strong> Fully specified tasks this size are within reach of today's models without help, so these runs "
-          "measure cost and time more than quality; larger, multi-file work and a public benchmark are next."
-          "</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
-          "benchmark on your own finished tasks; <code>python3 site/bench_safety.py</code> reruns the safety set."
+          "models, and five long sessions a side: enough to see a direction, not a precise rate.</li><li><strong>"
+          "Short tasks don't separate the sides.</strong> Fully specified tasks this size are within reach of "
+          "today's models without help, so those runs measure cost and time; the long session is where they part. "
+          "A public benchmark is next.</li><li><strong>Compaction is brought forward.</strong> The long sessions "
+          "compact at 40,000 tokens instead of near the model's limit, to show in minutes what a day-long session "
+          "meets.</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
+          "benchmark on your own finished tasks; <code>bench/spec-suite/README.md</code> gives the long-session "
+          "commands; <code>python3 site/bench_safety.py</code> reruns the safety set."
           "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
           "plugin beside Foreman.</li></ul>")]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
