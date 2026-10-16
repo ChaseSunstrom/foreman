@@ -14,6 +14,7 @@
 - The band reads "step 2/3" (the step being worked) beside that step's text instead of "1/3", and drops the "→" line when it only repeats that step (T-1154).
 - `fm todo` lists what only you can do (pending asks, blocked-on-you tasks, recent costly or outward decisions), each with what to type, and drops entries as they're resolved (T-1157).
 - Every close prints one "Not verified" block, replacing "Check by hand": a skipped affected-tests run (only when it was really waived), claims recorded as unchecked or inferred, then criteria no command of their own proved (T-1159).
+- `fm lane list` and `fm next` flag a live builder lane with no edit, commit or ledger event for 15 minutes (`FM_STALL_MIN`) as stalled and say how to resume it; returned and merged lanes are skipped (T-1156).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
