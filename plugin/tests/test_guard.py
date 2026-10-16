@@ -1343,12 +1343,20 @@ class PluginChanges(GuardCase):
             ("{home}/.bashrc", "system"), ("{home}/.zshrc", "system"), ("{home}/.profile", "system"),
             ("{home}/.config/fish/config.fish", "system"), ("{home}/.config/autostart/x.desktop", "system"),
             ("{repo}/.git/hooks/pre-commit", "system"), ("{repo}/src/hooks/pre-commit", None),
+            # T-1107: a config file sets core.hooksPath, a `!` alias or a filter driver just as `git config` would
+            ("{repo}/.git/config", "system"), ("{repo}/.git/config.worktree", "system"),
+            ("{repo}/.git/worktrees/w/config", "system"), ("{home}/.gitconfig", "system"),
+            ("{home}/.config/git/config", "system"), ("{repo}/src/.git/config", "system"),
+            ("{repo}/config", None), ("{repo}/docs/git/config", None), ("{repo}/.gitconfig.example", None),
         ], self.write)
         self.run_table([
             ("echo 'export X=1' >> ~/.zshrc", "system"),
             ("crontab /tmp/jobs", "system"), ("crontab -e", "system"), ("echo '* * * * * x' | crontab -", "system"),
             ("crontab -l", None),
             ("git config core.hooksPath .githooks", "system"), ("git config --get core.hooksPath", None),
+            ("git config user.name x", None), ("git remote add o https://example.com/r.git", None),  # T-1107: git's
+            ("git branch -u origin/main", None), ("git fetch origin", None),  # own config writes stay unguarded
+            ("echo '[alias] x = !sh' >> {repo}/.git/config", "system"),
             ("at now + 1 minute", "system"), ("cp x {repo}/.git/hooks/post-merge", "system"),
         ], self.bash)
 
