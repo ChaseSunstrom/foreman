@@ -22,6 +22,8 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
+import time
 import unicodedata
 
 SESSION = "fmui"
@@ -46,6 +48,47 @@ def start(a, cmd=None):
     tmux("new-session", "-d", "-s", SESSION, "-x", str(a.cols), "-y", str(a.rows), "-c", os.path.abspath(a.dir), *env,
          cmd or f"claude --plugin-dir {MOD}" + (f" --model {a.model}" if getattr(a, "model", None) else ""))
     print(f"started {SESSION} ({a.cols}x{a.rows}) in {a.dir}")
+    if cmd is None and answer_trust(a.dir):
+        print("answered Claude Code's folder-trust prompt (a folder Foreman made)")
+
+
+def _ours(path):
+    """T-1032: Foreman's own repo, or a scratch folder under the temp folder that carries no Claude Code project
+    config of its own (.claude/, .mcp.json, CLAUDE.md, here or above it up to the temp folder): trusting a folder is
+    what lets its config run hooks and servers, so a repo cloned into /tmp with any of that is never answered for
+    (review: all of /tmp was too broad)."""
+    real = os.path.realpath(path)
+    repo = os.path.realpath(os.path.dirname(os.path.dirname(MOD)))
+    if real == repo or real.startswith(repo + os.sep):
+        return True
+    tmp = os.path.realpath(tempfile.gettempdir())
+    if not real.startswith(tmp + os.sep) or not os.path.isdir(real):
+        return False
+    d = real
+    while d.startswith(tmp + os.sep):
+        if any(os.path.exists(os.path.join(d, x)) for x in (".claude", ".mcp.json", "CLAUDE.md", "CLAUDE.local.md")):
+            return False
+        d = os.path.dirname(d)
+    return True
+
+
+def answer_trust(path, wait=12):
+    """T-1032: Claude Code asks whether to trust a folder it hasn't seen, and the harness stalled there on every new
+    folder (each demo recording). It picks "Yes, I trust this folder" itself, but only for a folder Foreman made:
+    trusting a cloned repo would let that repo's own hooks run. True when it answered."""
+    if not _ours(path):
+        return False
+    end = time.time() + wait
+    while time.time() < end:
+        screen = tmux("capture-pane", "-p", "-t", SESSION, check=False).stdout or ""
+        if "trust this folder" in screen:
+            tmux("send-keys", "-t", SESSION, "Down")
+            tmux("send-keys", "-t", SESSION, "Enter")
+            return True
+        if re.search(r"(?m)^\s*❯\s*$|─{20,}\n\s*❯", screen):  # the prompt is up: nothing to answer
+            return False
+        time.sleep(0.5)
+    return False
 
 
 def keys(a):
