@@ -50,13 +50,14 @@ class Fake:
         if self.kind == "anthropic":
             content = ([{"type": "text", "text": step["text"]}] if step.get("text") else []) + [
                 {"type": "tool_use", "id": i, "name": n, "input": a} for i, n, a in calls]
-            return {"content": content, "stop_reason": "tool_use" if calls else "end_turn",
-                    "usage": {"input_tokens": 5, "output_tokens": 2}}
+            stop = "max_tokens" if step.get("cut") else "tool_use" if calls else "end_turn"
+            return {"content": content, "stop_reason": stop, "usage": {"input_tokens": 5, "output_tokens": 2}}
         msg = {"role": "assistant", "content": step.get("text")}
         if calls:
             msg["tool_calls"] = [{"id": i, "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
                                  for i, n, a in calls]
-        return {"choices": [{"message": msg, "finish_reason": "tool_calls" if calls else "stop"}],
+        stop = "length" if step.get("cut") else "tool_calls" if calls else "stop"
+        return {"choices": [{"message": msg, "finish_reason": stop}],
                 "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
 
     def close(self):
@@ -276,10 +277,117 @@ class Resume(CodeCase):
         self.assertEqual(len(second.seen), 2)  # no second plan, no second task
         self.assertNotEqual(self.fm("task", "show", "T-0002", check=False).returncode, 0)
 
+    def test_a_kill_between_two_calls_answers_every_unanswered_one(self):
+        marker = os.path.join(self.repo, "started")
+        first = self.serve("openai", plan(), {"calls": [("read", {"path": "calc.py"}),
+                                                        ("run", {"cmd": "touch started; sleep 3"}),
+                                                        ("read", {"path": "test_calc.py"})]})
+        p = subprocess.Popen([sys.executable, FM, "code", "fix add", "--model", "fake"], cwd=self.repo, env=self.env(),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            for _ in range(300):
+                if os.path.exists(marker) or p.poll() is not None:
+                    break
+                threading.Event().wait(0.05)
+            p.kill()
+        finally:
+            p.communicate(timeout=30)
+        self.assertTrue(os.path.exists(marker))
+        second = self.serve("openai", *FIX)
+        self.code("--resume", "--model", "fake")
+        sent = second.seen[0]["messages"]
+        results = {m["tool_call_id"]: m["content"] for m in sent if m["role"] == "tool"}
+        self.assertEqual(len(results), 3, sent)
+        self.assertIn("return a - b", results["c2_0"])
+        self.assertTrue(results["c2_1"].startswith("not run (interrupted)"))
+        self.assertTrue(results["c2_2"].startswith("not run (interrupted)"))
+        self.assertEqual(self.task()["status"], "done")
+
     def test_resume_with_nothing_to_resume_says_so(self):
         r = self.code("--resume", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("nothing to resume", r.stderr)
+
+
+def journal_text(case, tid="T-0001"):
+    return read_text(os.path.join(os.path.dirname(os.path.dirname(case.task(tid)["path"])), "code", f"{tid}.jsonl"))
+
+
+FIX = [call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="fixed")]
+
+
+class Review(CodeCase):
+    def test_credentials_git_and_fifos_are_never_read_or_searched(self):
+        with open(os.path.join(self.repo, ".env"), "w") as f:
+            f.write("TOKEN_VALUE=hunter2hunter2\n")
+        os.mkfifo(os.path.join(self.repo, "pipe"))
+        f = self.serve("openai", plan(), call("read", path=".env"), call("read", path=".git/config"),
+                       call("read", path="pipe"), call("search", pattern="hunter2"), *FIX)
+        self.code("fix add", "--model", "fake")
+        sent = json.dumps(f.seen)
+        self.assertNotIn("hunter2hunter2", sent)
+        self.assertNotIn("repositoryformatversion", sent)
+        self.assertIn("pipe", f.said(4))  # the FIFO read answered (refused), it didn't hang
+
+    def test_tool_results_and_the_journal_are_redacted(self):
+        with open(os.path.join(self.repo, "notes.txt"), "w") as f:
+            f.write("plain plainvalue12345 and ghp_abcdefghijklmnopqrstuvwxyz0123\n")
+        f = self.serve("openai", plan(), call("read", path="notes.txt"), *FIX)
+        self.code("fix add", "--model", "fake", env={"GROQ_API_KEY": "plainvalue12345"})
+        for text in (json.dumps(f.seen), journal_text(self)):
+            self.assertNotIn("plainvalue12345", text)
+            self.assertNotIn("ghp_abcdefghijklmnopqrstuvwxyz0123", text)
+        self.assertIn("plain", f.said(2))
+
+    def test_a_reply_cut_at_the_output_limit_is_not_run(self):
+        f = self.serve("openai", plan(), dict(call("write", file="calc.py", content="garbage"), cut=True), *FIX)
+        self.code("fix add", "--model", "fake")
+        self.assertIn("return a + b", self.calc())
+        self.assertIn("cut off", f.said(2))
+        self.assertEqual(f.seen[1]["max_tokens"], 8192)
+
+    def test_a_verify_that_already_passes_is_sent_back_once(self):
+        weak = dict(PLAN, criteria=[{"text": "it runs", "verify": "true"}])
+        f = self.serve("openai", plan(weak), plan(), *FIX)
+        r = self.code("fix add", "--model", "fake")
+        self.assertIn("proves nothing", f.said(1))
+        self.assertEqual(self.task()["status"], "done", r.stdout)
+
+    def test_a_refused_verify_gets_one_replan_then_stops_before_any_task(self):
+        bad = dict(PLAN, criteria=[{"text": "clean", "verify": "rm -rf ~"}])
+        f = self.serve("openai", plan(bad), plan(bad))
+        r = self.code("fix add", "--model", "fake", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("refused", f.said(1))
+        self.assertTrue(os.path.exists(os.path.join(self.fake_home, "keep")))
+        self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0)
+
+    def test_max_steps_stop_resumes_with_its_options(self):
+        f = self.serve("openai", plan(), call("read", path="calc.py"), call("read", path="calc.py"))
+        r = self.code("fix add", "--model", "fake", "--no-commit", "--max-steps", "2", check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("--resume", r.stdout + r.stderr)
+        self.assertEqual(self.task()["status"], "active")
+        self.assertNotIn('"end"', journal_text(self))
+        self.serve("openai", *FIX)
+        r = self.code("--resume", "--max-steps", "6")
+        self.assertEqual(self.task()["status"], "done", r.stdout)
+        self.assertIn("seed the bug", self.last_commit())  # --no-commit came back from the journal
+        self.assertEqual(len(f.seen), 3)
+
+    def test_trim_keeps_the_last_six_results_whole(self):
+        import fmcode
+        msgs = [{"role": "system", "content": "s"}, {"role": "user", "content": "plan"}]
+        for i in range(9):
+            msgs += [{"role": "assistant", "content": "", "tool_calls": [{"id": f"c{i}", "name": "read", "args": {}}]},
+                     {"role": "tool", "tool_call_id": f"c{i}", "content": f"result {i}\n" + "x" * 500}]
+        view = fmcode.trim(msgs)
+        self.assertEqual(len(view), len(msgs))
+        self.assertEqual(view[:2], msgs[:2])
+        tools = [m["content"] for m in view if m["role"] == "tool"]
+        self.assertTrue(all(len(t) < 120 and t.startswith("(older result cut") for t in tools[:3]), tools[:3])
+        self.assertEqual(tools[3:], [m["content"] for m in msgs if m["role"] == "tool"][3:])
+        self.assertIn("x" * 500, msgs[3]["content"])  # the stored conversation is untouched
 
 
 class Models(CodeCase):

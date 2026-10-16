@@ -134,6 +134,11 @@ def _config():
         raise ModelError(f"{path}: unreadable models.json ({e})") from None
 
 
+def configured():
+    """(models.json's default name or None, {name: profile}); ModelError when the file is unreadable."""
+    return _config()
+
+
 def _cloud(name=None, keyed=True):
     return [{"name": n, "kind": k, "base_url": u, "model": mo, "key_env": env, "context": ctx, "tools": True}
             for n, k, u, mo, env, ctx in CLOUD if (name is None or n == name) and (not keyed or os.environ.get(env))]
@@ -271,6 +276,11 @@ def _loopback(host):
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def is_loopback(host):
+    """True for localhost and loopback addresses: where a key may go over plain http."""
+    return _loopback(host)
 
 
 def _check_url(profile, base, key):
