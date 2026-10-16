@@ -85,8 +85,8 @@ class SessionStart(HookCase):
         self.fm("init")
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env={
             "CLAUDE_ENV_FILE": self.env_file, "CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}))
-        self.assertIn("each check you ran", ctx)
-        self.assertNotIn("each check you ran", self.ctx_of(self.run_ss()), "an interactive session isn't told")
+        self.assertIn("check you ran", ctx)
+        self.assertNotIn("check you ran", self.ctx_of(self.run_ss()), "an interactive session isn't told")
 
     def test_a_resumed_session_with_drive_and_full_autonomy_starts_its_own_turn(self):
         # T-0138: "you weren't reprompted when the session just continued"
@@ -585,19 +585,38 @@ class NoTaskGate(HookCase):
             f.write("X = 1\n")
         return c.active_brief(c.load_briefs(self.project()))
 
+    HEADLESS = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+
     def test_the_task_foreman_made_closes_itself_at_stop_when_the_tests_pass(self):
         # T-1231: the duel's last extra turn was the agent's own fm task finish
         act = self.first_task_session("True")
-        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS)
         b = c.find_brief(self.project(), act.id)
         self.assertEqual(b.status, "done", self.hooks_log()[-1500:])
         self.assertIn("(audit self) `auto:", b.section("Verification evidence"))
         log = subprocess.run(["git", "log", "--format=%s", "-1"], cwd=self.repo, capture_output=True, text=True).stdout
         self.assertIn(act.id, log, "committed")
 
-    def test_a_failing_suite_leaves_the_task_open(self):
+    def test_a_failing_suite_leaves_the_task_open_and_says_so_once(self):
         act = self.first_task_session("False")
-        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
+        out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS))
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
+        self.assertEqual((out or {}).get("decision"), "block", "the agent hears its tests fail")
+        self.assertIn("python3 -m unittest", out.get("reason", ""))
+        again = parse(self.hook("Stop", {"stop_hook_active": True, "last_assistant_message": "Still failing."},
+                                env=self.HEADLESS))
+        self.assertNotIn("python3 -m unittest", (again or {}).get("reason", ""), "said once, not a loop")
+
+    def test_an_interactive_session_is_never_closed_or_committed_at_stop(self):
+        # review: an interactive user's half-done first request was closed and committed when the agent stopped to ask
+        act = self.first_task_session("True")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Should I touch config?"})
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
+
+    def test_a_paused_project_is_not_closed_at_stop(self):
+        act = self.first_task_session("True")
+        self.fm("pause")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS)
         self.assertEqual(c.find_brief(self.project(), act.id).status, "active")
 
     def test_a_write_refused_for_another_reason_makes_no_task(self):

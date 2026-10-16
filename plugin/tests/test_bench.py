@@ -239,11 +239,12 @@ class Bench(ForemanTestCase):
         self.assertEqual((case["cost_usd"], case["turns"]), (0.42, 7))
         call = self.calls()[-1]
         self.assertIn("--plugin-dir", call["args"])
-        self.assertEqual(call["args"][call["args"].index("--plugin-dir") + 1], c.PLUGIN_ROOT)
+        snap = call["args"][call["args"].index("--plugin-dir") + 1]
+        self.assertIn("fm-bench-plugin-", snap, "T-1231: a snapshot of this Foreman, not the live folder")
         self.assertIn("off by one", " ".join(call["args"]))
         self.assertNotEqual(os.path.realpath(call["cwd"]), os.path.realpath(self.repo))
         self.assertTrue(call["state"] and not call["state"].startswith(c.state_dir()), "a fresh Foreman state")
-        self.assertEqual(call["path"], os.path.join(c.PLUGIN_ROOT, "bin"), "the candidate's fm comes first")
+        self.assertEqual(call["path"], os.path.join(snap, "bin"), "the candidate's fm comes first")
         self.assertEqual(git(self.repo, "worktree", "list").count("\n"), 0, "the replay worktree is removed")
         self.assertEqual(read_text(os.path.join(self.repo, "calc.py")), "def double(x):\n    return x * 2\n")
         out = self.fm("bench", "compare", "nofix", "fix", env=self.env).stdout

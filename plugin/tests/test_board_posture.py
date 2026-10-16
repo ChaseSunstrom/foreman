@@ -111,12 +111,23 @@ class BoardPostureBench(tbf._Bench):
         res = json.loads(self.fm("bench", "duel", "--vs", "none", "--json", env=self.env).stdout)
         args = [s["args"] for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
         dirs = [[a[i + 1] for i, x in enumerate(a) if x == "--plugin-dir"] for a in args]
-        self.assertEqual(dirs, [[c.PLUGIN_ROOT], []], "Foreman's arm, then a bare one")
+        self.assertEqual([len(d) for d in dirs], [1, 0], "Foreman's arm, then a bare one")
         bare = args[1]
         hooks = json.loads(bare[bare.index("--settings") + 1])["hooks"]["PreToolUse"]
         self.assertIn("hooks/hook", hooks[0]["hooks"][0]["command"], "the bare arm keeps the guard (bypass mode)")
         self.assertIn("none", res["with"])
         self.assertIn("verdict", res)
+
+    def test_a_duel_runs_a_snapshot_of_the_plugin_not_the_live_folder(self):
+        # T-1231: editing Foreman while a duel ran changed the code its later sessions loaded
+        self.fm("bench", "build", env=self.env)
+        self.fm("bench", "duel", "--vs", "none", "--json", env=self.env)
+        args = [s["args"] for s in self.calls() if s["args"][:1] == ["-p"] and s["args"][1].startswith("Task:")]
+        dirs = [a[a.index("--plugin-dir") + 1] for a in args if "--plugin-dir" in a]
+        self.assertTrue(dirs and all(d != c.PLUGIN_ROOT and "fm-bench-plugin-" in d for d in dirs), dirs)
+        bare = args[-1]
+        hooks = json.loads(bare[bare.index("--settings") + 1])["hooks"]["PreToolUse"]
+        self.assertIn("fm-bench-plugin-", hooks[0]["hooks"][0]["command"], "the bare arm's guard is the snapshot's too")
 
     def test_a_duel_skips_court_cases_and_runs_each_case_n_times_in_parallel(self):
         # T-1231: court cases test what Foreman learned from this user's state; a fresh duel has none, so both arms

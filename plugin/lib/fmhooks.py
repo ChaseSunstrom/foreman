@@ -381,10 +381,12 @@ def session_start(pl):
         log_error("SessionStart", _tb())
     out = {"hookEventName": "SessionStart", "additionalContext": session_context(p, sd, other_note)}
     if _headless():  # T-1228: an unattended run is judged by its final reply; nobody can ask it what it checked
-        if not sd["active"] and not sd["queue"]:  # T-1231: one request, nothing queued: the map, not the queue
-            out["additionalContext"] = f"Foreman project {p.slug}. " + (_layout_note(p) or "")
-        out["additionalContext"] += ("\nUnattended run: end with a reply that names each check you ran and its "
-                                     "result (✓/✗), and anything the request asked that you left undone.")
+        layout = None if sd["active"] or sd["queue"] or sd["paused"] else _layout_note(p)
+        if layout:  # T-1231: one request, nothing queued: the map, not the queue (and any other session's note)
+            out["additionalContext"] = " ".join(filter(None, [f"Foreman project {p.slug}.", other_note, layout]))
+        out["additionalContext"] += ("\nUnattended run: end with one short line per check you ran and its result "
+                                     "(✓/✗), and one for anything the request asked that you left undone; nothing "
+                                     "else.")
     if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
         out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
@@ -618,7 +620,7 @@ def _first_brief(p, sid):
         return None
     c.log_event(p, "first_brief", task=act.id, session=sid)  # the Stop hook may close it (_close_first_brief)
     close = (" When you stop, Foreman runs the project's tests and, if they pass, closes and commits this task "
-             "itself; no fm task finish needed." if act.tier == "S" and act.type != "FIX" else
+             "itself; no fm task finish needed." if act.tier == "S" and act.type != "FIX" and _headless() else
              " When the work is written, one call runs the tests, closes the task and commits: fm task finish --run "
              "\"<the test command>\" --audit \"<how you checked it>\" --commit \"<message>\".")
     return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
@@ -626,40 +628,72 @@ def _first_brief(p, sid):
             f"tier=S|M|L.")
 
 
+def _tracked(p):
+    r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3)
+    return r.stdout.splitlines() if not r.returncode else []
+
+
+def _test_gate(p, files):
+    """The project's detected test command (fmmap's gates, one that runs tests first), or None. No map build: hooks
+    never build it (review)."""
+    import fmmap
+    gates = fmmap._gates(p.root, files, c.read_meta(p).get("checks") or [])
+    return next((g for g in gates if "test" in g), gates[0] if gates else None)
+
+
 def _layout_note(p):
     """T-1231: the tracked layout (top folders with file counts) and the detected test command, in one line, so an
-    unattended run starts writing instead of listing folders. None when git can't list the files."""
-    import fmmap
-    r = subprocess.run(["git", "ls-files"], cwd=p.root, capture_output=True, text=True, timeout=3)
-    files = r.stdout.splitlines() if not r.returncode else []
-    if not files:
+    unattended run starts writing instead of listing folders. None when git can't list the files in time."""
+    try:
+        files = _tracked(p)
+        if not files:
+            return None
+        tops = collections.Counter(f.split("/", 1)[0] + ("/" if "/" in f else "") for f in files)
+        gate = _test_gate(p, files)
+    except (OSError, subprocess.SubprocessError):
         return None
-    tops = collections.Counter(f.split("/", 1)[0] + ("/" if "/" in f else "") for f in files)
-    gates = fmmap._gates(p.root, files, c.read_meta(p).get("checks") or [])
     return (f"Layout ({len(files)} tracked files): " + ", ".join(f"{d} {n}" for d, n in tops.most_common(10))
-            + (f". Tests: {gates[0]}." if gates else "."))
+            + (f". Tests: {gate}." if gate else "."))
 
 
 def _close_first_brief(p, act, sid):
-    """T-1231: at Stop, the S task this session's first edit made (not a FIX: its red→green proof stays the agent's)
-    closes itself when the project's detected test command passes: fm task finish runs it, records the audit and
-    commits, within 20 s. The duel's last extra turn was the agent's own fm task finish. True when it closed."""
-    if not act or act.tier != "S" or act.type == "FIX" or act.status != "active" or not sid:
-        return False
-    if not any(e.get("event") == "first_brief" and e.get("task") == act.id and e.get("session_id") == sid
-               for e in c.ledger_tail(p, 3000)):
-        return False
-    import fmmap
-    cmd = next(iter((fmmap.load(p) or {}).get("gates") or []), None)
+    """T-1231: at Stop in an unattended run, the S task this session's first edit made (not a FIX: its red→green proof
+    stays the agent's) closes itself when the project's test command passes: fm task finish runs it, records the
+    audit and commits, within 20 s. The duel's last extra turn was the agent's own fm task finish. Returns (ran, note):
+    ran when finish ran (reload the briefs), note once when the tests failed (the agent fixes its work before it ends).
+    Review: never in an interactive session (the user reviews their own first request), paused or panicked; a close
+    that timed out isn't retried."""
+    if not _headless() or not act or act.tier != "S" or act.type == "FIX" or act.status != "active" or not sid \
+            or c.panicked() or c.read_meta(p).get("paused"):
+        return False, None
+    mine = [e for e in c.ledger_tail(p, 3000) if e.get("task") == act.id and e.get("session_id") == sid]
+    if not any(e.get("event") == "first_brief" for e in mine) or any(
+            e.get("event") == "first_brief_close_timeout" for e in mine):
+        return False, None
+    cmd = _test_gate(p, _tracked(p))
     if not cmd:
-        return False
-    r = subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd, "--audit",
-                        f"auto: Foreman closed the task it made for this session's one request at stop; {cmd} passed "
-                        f"after the last edit", "--commit", f"{act.title} ({act.id})"], cwd=p.root, capture_output=True, text=True,
-                       timeout=20, env=dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off"))
-    if r.returncode:
-        log_error("Stop", f"first brief close: {(r.stderr or r.stdout).strip()[-300:]}")
-    return not r.returncode
+        return False, None
+    proc = subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd,
+                             "--audit", f"auto: Foreman closed the task it made for this session's one request at "
+                             f"stop; {cmd} passed after the last edit", "--commit", f"{act.title} ({act.id})"],
+                            cwd=p.root, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                            env=dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off"),
+                            start_new_session=True)  # a timeout takes the test run down with it
+    try:
+        out, err = proc.communicate(timeout=20)
+    except subprocess.TimeoutExpired:
+        c.kill_group(proc)
+        proc.communicate()
+        c.log_event(p, "first_brief_close_timeout", task=act.id, session=sid, data={"cmd": cmd})
+        return True, None
+    if not proc.returncode:
+        return True, None
+    tail = c.fit(c.plain(" / ".join(l.strip() for l in (err or out).strip().splitlines()[-4:])), 400)
+    told = any(e.get("event") == "first_brief_close_failed" for e in mine)
+    c.log_event(p, "first_brief_close_failed", task=act.id, session=sid, data={"cmd": cmd, "tail": tail})
+    return True, None if told else (
+        f"Foreman ran {cmd} to close {act.id} and it didn't pass: {tail}. Fix the work before you stop, or say in your "
+        f"reply what is left and why.")
 
 
 _PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
@@ -2618,12 +2652,15 @@ def stop(pl):
         return None
     briefs = c.load_briefs(p)
     act = c.active_brief(briefs, p.lane)
-    if act and not pl.get("stop_hook_active"):
+    if act:
         try:
-            if _close_first_brief(p, act, sid):
+            ran, failed = _close_first_brief(p, act, sid)
+            if ran:  # closed, or a close that failed partway: what the briefs say now
                 briefs = c.load_briefs(p)
                 act = c.active_brief(briefs, p.lane)
-        except Exception:  # (a timeout included) the task stays open and drive handles it as before
+            if failed:
+                return {"decision": "block", "reason": failed}
+        except Exception:  # the task stays open and drive handles it as before
             log_error("Stop", _tb())
     sd = c.state_dict(p, briefs)
     seq = _title_seq(sd) + _progress_seq(sd)
