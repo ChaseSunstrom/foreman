@@ -2527,6 +2527,23 @@ def fired_decisions(p):
     return out
 
 
+def expired_decisions(p):
+    """T-1084: [(date, decision, sunset)] for decisions whose [sunset: DATE] has passed."""
+    try:
+        with open(os.path.join(p.dir, "decisions.md"), encoding="utf-8", errors="replace") as f:
+            rows = [x for x in f if x.startswith("| 2")]
+    except OSError:
+        return []
+    out, today = [], now()[:10]
+    for row in rows:
+        cells = re.split(r"(?<!\\)\|", row)
+        m = re.match(r"^((?:\[[^\]]*\] )*)(.*)$", cells[2].strip()) if len(cells) >= 3 else None
+        s = re.search(r"\[sunset: (\d{4}-\d\d-\d\d)\]", m.group(1)) if m else None
+        if s and s.group(1) <= today:
+            out.append((cells[1].strip(), m.group(2), s.group(1)))
+    return out
+
+
 def stuck_rung(b):
     """T-0611: the next rung when the current step keeps failing: its failed fm runs since its last pass, and the
     task's open hypotheses. None while it isn't stuck."""
