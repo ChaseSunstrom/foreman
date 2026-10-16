@@ -292,34 +292,52 @@ class TidyHygiene(TidyCase):
         import fmfixes
         self.fm("fix", "add", "stale-sig: boom", "--do", "run the old thing")
         self.fm("fix", "add", "fresh-sig: bang", "--do", "run the new thing")
+        self.fm("fix", "add", "losing-sig: nope", "--do", "run the wrong thing")
         ids = {f["sig"]: f["id"] for f in fmfixes.known(self.p)}
         stamp = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
         with open(fmfixes._stats_path(), "w") as f:
             json.dump({"fixes": {ids["stale-sig: boom"]: {"worked": 1, "last": stamp(time.time() - 90 * 86400)},
-                                 ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())}}}, f)
+                                 ids["fresh-sig: bang"]: {"worked": 1, "last": stamp(time.time())},
+                                 ids["losing-sig: nope"]: {"misses": 3, "last": stamp(time.time())}}}, f)
 
-    def test_dry_run_lists_the_stale_fix_only_and_apply_removes_it(self):
+    def sigs(self):
+        return sorted(f["sig"] for f in self.fm_json("fix", "list"))
+
+    def test_stale_by_age_is_listed_never_deleted_and_a_losing_fix_is_removed_with_a_copy(self):
         self.seed_fixes()
-        stale = [f for f in self.tidy()["findings"] if f["kind"] == "stale_fix"]
-        self.assertEqual(len(stale), 1)
-        self.assertIn("stale-sig", stale[0]["detail"])
-        self.assertEqual(len(self.fm_json("fix", "list")), 2)
+        found = {f["kind"] + ":" + f["detail"] for f in self.tidy()["findings"] if f["kind"] in ("stale_fix", "losing_fix")}
+        self.assertEqual(len(found), 2, found)
+        self.assertTrue(any("stale-sig" in d for d in found) and any("losing-sig" in d for d in found))
+        self.assertEqual(len(self.sigs()), 3)  # a dry run changes nothing
         self.tidy("--apply")
-        self.assertEqual([f["sig"] for f in self.fm_json("fix", "list")], ["fresh-sig: bang"])
+        self.assertEqual(self.sigs(), ["fresh-sig: bang", "stale-sig: boom"])
+        kept = read_text(os.path.join(self.p.dir, "archive", "fixes-removed.md"))
+        self.assertIn("losing-sig: nope", kept)
+        self.assertRegex(kept, r"\d{4}-\d\d-\d\d")
 
-    def test_unused_cards_are_listed_and_a_recent_injection_counts_as_use(self):
-        import fmlib
-        n = len(fmlib.cards())
+    def test_a_fix_synced_from_the_repo_is_not_touched(self):
+        import fmfixes
+        rec = {"sig": "synced-sig: x", "do": "do it"}
+        with open(os.path.join(self.p.dir, "fixes.md"), "w") as f:
+            f.write(fmfixes._line(rec))
+        fid = fmfixes._fid(rec)
+        with open(fmfixes._stats_path(), "w") as f:
+            json.dump({"fixes": {fid: {"misses": 5}}}, f)
+        found = [x for x in self.tidy("--apply")["findings"] if "synced-sig" in x["detail"]]
+        self.assertTrue(found and "shared" in found[0]["detail"])
+        self.assertEqual(self.sigs(), ["synced-sig: x"])
 
+    def test_unused_cards_are_those_the_map_picked_for_this_project(self):
         def unused():
-            f = [x for x in self.tidy()["findings"] if x["kind"] == "unused_card"]
-            self.assertEqual(len(f), 1)
-            return int(re.match(r"(\d+) of", f[0]["detail"]).group(1)), f[0]["detail"]
-        self.assertEqual(unused()[0], n)
-        name = fmlib.cards()[0]["name"]
-        c.log_event(self.p, "enforce", data={"kind": "card_injected", "card": name})
-        k, detail = unused()
-        self.assertEqual(k, n - 1)
-        self.assertNotIn(name, detail)
-        self.tidy("--apply")
-        self.assertEqual(len(fmlib.cards()), n)  # shipped files are never retired
+            return [x for x in self.tidy()["findings"] if x["kind"] == "unused_card"]
+        self.assertEqual(unused(), [])  # no map, no claim
+        with open(os.path.join(self.p.dir, "map.json"), "w") as f:
+            json.dump({"lib_cards": [{"name": "alpha", "detect": []}, {"name": "beta", "detect": []}]}, f)
+        found = unused()
+        self.assertEqual(len(found), 1)
+        self.assertTrue(found[0]["detail"].startswith("2 of 2"), found[0]["detail"])
+        c.log_event(self.p, "enforce", data={"kind": "card_injected", "card": "alpha"})
+        found = unused()
+        self.assertTrue(found[0]["detail"].startswith("1 of 2") and "beta" in found[0]["detail"]
+                        and "alpha" not in found[0]["detail"], found[0]["detail"])
+        self.tidy("--apply")  # listed only
