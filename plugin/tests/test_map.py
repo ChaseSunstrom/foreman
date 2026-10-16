@@ -59,7 +59,19 @@ class Map(ForemanTestCase):
                 with open(os.path.join(self.repo, name), "a") as f:
                     f.write(f"# {i}\n")
                 self.commit(f"fix: {name} again {i}")
-        self.assertEqual(json.loads(self.fm("map", "--json").stdout)["fixy"], ["fixy.py"])
+        for i in range(3):  # not fix commits: a fixture, and a 25-file sweep
+            with open(os.path.join(self.repo, "calm.py"), "a") as f:
+                f.write(f"# f{i}\n")
+            self.commit("Add fixture")
+        for i in range(3):
+            for j in range(25):
+                with open(os.path.join(self.repo, f"sweep{j}.py"), "a") as f:
+                    f.write(f"# {i}\n")
+            self.commit("fix: lint")
+        with open(os.path.join(self.repo, "fixy.py"), "a") as f:
+            f.write("# more\n")
+        self.commit("fix: once more")
+        self.assertEqual(list(json.loads(self.fm("map", "--json").stdout)["fixy"].items()), [("fixy.py", 4)])
         tid = json.loads(self.fm("task", "new", "Touch fixy", "--type", "FIX", "--tier", "S", "--scope", "fixy.py",
                                  "--ac", "ok", "--step", "do", "--json").stdout)["id"]
         self.assertIn("Hotspot: fixy.py", self.fm("focus", tid).stdout)

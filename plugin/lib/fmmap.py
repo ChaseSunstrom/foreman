@@ -145,18 +145,19 @@ def _co_change(root, files, min_together=3, share=0.6):
     return {a: sorted(bs)[:3] for a, bs in pairs.items()}
 
 
-_FIXY = re.compile(r"\b(fix|revert|bug|hotfix)", re.I)
+_FIXY = re.compile(r"\b(fix(es|ed)?|revert(ed)?|bugs?|hotfix)\b", re.I)
 
 
 def _fixy(root, files):
-    """Hotspots (wild C18): files in 3+ commits of the last 180 days whose subject says fix, revert or bug."""
-    n, cur = collections.Counter(), False
-    for line in _git(root, "log", "--since=180.days", "--name-only", "--format=%x00%s").splitlines():
-        if line.startswith("\0"):
-            cur = bool(_FIXY.search(line[1:]))
-        elif cur and line in files:
-            n[line] += 1
-    return sorted(f for f, k in n.items() if k >= 3)
+    """Hotspots (wild C18): {file: n} for files in 3+ fix/revert/bug commits of the last 180 days, worst first, 50 at most.
+    A sweeping commit (over 20 files) says nothing about one file."""
+    n = collections.Counter()
+    for commit in _git(root, "log", "--since=180.days", "--name-only", "--format=%x00%s").split("\0")[1:]:
+        subject, _, rest = commit.partition("\n")
+        names = {f for f in rest.split("\n") if f in files}
+        if _FIXY.search(subject) and len(names) <= 20:
+            n.update(names)
+    return {f: k for f, k in n.most_common(50) if k >= 3}
 
 
 VERSION = 9 # bump when build() changes, so older maps are rebuilt
@@ -572,7 +573,7 @@ def pre_audit(root, diff, files, m=None):
             missing = [b for b in m["pairs"].get(f, []) if b not in changed]
             if missing:
                 found.append(f"{f} usually changes with {', '.join(missing)} (git history); check it needs no edit")
-    found += [f"hotspot: {f} keeps getting fixed after edits (git history); read its edges twice"
+    found += [f"hotspot: {f} has {m['fixy'][f]} fix/revert commits in 180 days (git history); read its edges twice"
               for f in files if f in (m or {}).get("fixy", ())][:5]
     found += [f"generated or vendored file edited: {f} (change its source or generator instead)" for f in files
               if is_generated(os.path.join(root, f))][:5]
