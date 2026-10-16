@@ -129,9 +129,9 @@ def main():
     try:
         for _ in range(60):  # the folder-trust question, then an idle prompt
             text = grab()
-            if "trust this folder" in text.lower():  # its default is "No, exit"
-                shot.tmux("send-keys", "-t", shot.SESSION, "Down")
-                shot.tmux("send-keys", "-t", shot.SESSION, "Enter")
+            if "trust this folder" in text.lower():  # T-1034: only a folder Foreman made, never a clone's own hooks
+                if not shot.answer_trust(repo, wait=2):
+                    raise SystemExit(f"record_live: not trusting {repo} (it has its own Claude Code config)")
                 time.sleep(1.5)
             elif "? for shortcuts" in text or "bypass permissions on" in text.lower():
                 break
