@@ -101,6 +101,26 @@ class Lanes(ForemanTestCase):
         self.fm("tidy", "--apply", env=home)
         self.assertNotIn(f"foreman/{done}", self.git("branch", "--list", "foreman/T-*"))
 
+    def test_rm_waits_for_an_open_conflict_unless_the_task_is_dropped(self):
+        # T-1136: rm right after a conflicted merge took the builder record, so the lane couldn't be resumed
+        tid = self.new("Conflicted", self.repo, focus=False)
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        with open(os.path.join(path, "work.py"), "w") as f:
+            f.write("x = 1\n")
+        self.git("add", "work.py", cwd=path)
+        self.git("-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "work", cwd=path)
+        audits = os.path.join(c.find_project(self.repo).dir, "audits")
+        os.makedirs(audits, exist_ok=True)
+        with open(os.path.join(audits, f"{tid}.conflict.md"), "w") as f:
+            f.write("# Conflict\n")
+        p = self.fm("lane", "rm", tid, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("conflict", p.stderr + p.stdout)
+        self.assertTrue(os.path.isdir(path))
+        self.fm("task", "drop", tid, "abandoned")
+        self.fm("lane", "rm", tid)
+        self.assertFalse(os.path.isdir(path))
+
     def test_fm_lane_new_list_and_rm(self):
         tid = self.new("Laned", self.repo, focus=False)
         data = json.loads(self.fm("lane", "new", tid, "--json").stdout)
