@@ -2,9 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, ResolveInput } from 'claude-code'
 
 
+const scrub = atom({ plugin: 'foreman-ui', key: 'scrub' } as const, 0) // T-1081: how many history entries back the pane is showing
 import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
   C,
+  setPalette,
   MASCOT_COLORS,
   about,
   hoursAgo,
@@ -536,6 +538,8 @@ export const register: Register = (on, options) => {
   // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
   cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
+  cfg.palette = options.palette === 'cb' ? 'cb' : 'default' // T-1081
+  setPalette(cfg.palette)
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
@@ -1350,7 +1354,11 @@ export const register: Register = (on, options) => {
     const markColor = (mark: string) =>
       '✗✖'.includes(mark) ? C.err : '✓✔■'.includes(mark) ? C.ok : '◆◇'.includes(mark) ? C.agent : '!?≈'.includes(mark) ? C.warn : C.accent2
     const recent = [...(v.recent ?? [])].reverse()
-    const historyRows: RenderElement[] = v.history?.length ? [...v.history].reverse().map((ev, i) => (
+    const hist = v.history ?? []
+    const back = Math.min(await read($, scrub), Math.max(0, hist.length - 1)) // T-1081
+    const shown = hist.slice(0, hist.length - back)
+    const asOf = back ? [<Text key="as-of" color={hex(C.warn)}>{`as of ${shown.at(-1)?.time || '?'} (${back} back) · press l for live`}</Text>] : []
+    const historyRows: RenderElement[] = shown.length ? [...asOf, ...[...shown].reverse().map((ev, i) => (
       <Box key={`r-${i}`} flexDirection="row" gap={1} height={1} overflow="hidden">
         <Box flexShrink={0}>
           <Text color={muted}>{ev.time || '     '}</Text>
@@ -1368,7 +1376,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Text wrap="truncate-end" color={muted}>{ev.title ? ` ${ev.title}` : ''}</Text>
       </Box>
-    )) : recent.map((line, i) => {
+    ))] : recent.map((line, i) => {
       const [, time, rest] = /^\s*(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line.trim()]
       const ev = /^([✓✗≈]) (T-\d+) (step \d+|criterion \d+|check): /.exec(rest)
       const text = ev
@@ -1995,6 +2003,8 @@ export const register: Register = (on, options) => {
               await update($, sound, x => !x)
               await $.store.set('sound', await read($, sound))
             }} />
+ <Button key="scrub-back" label="◂ back" hotkey="b" plain dimColor onPress={() => update($, scrub, x => x + 1)} />
+          <Button key="scrub-live" label="live" hotkey="l" plain dimColor onPress={() => update($, scrub, () => 0)} />
           <Button key="refresh" label="refresh" hotkey="r" plain dimColor onPress={() => refresh($)} />
         </Box>
       </Box>
