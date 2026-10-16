@@ -37,6 +37,8 @@ def _latest_session(project):
                 snap = json.load(f)
         except (OSError, ValueError):
             continue
+        if not isinstance(snap, dict):  # T-1097: a side file (sid.outlined-<agent>.json is a list), not a snapshot
+            continue
         if snap.get("project") in (project, None):
             return snap
     return None
@@ -125,6 +127,8 @@ def _history(events, by_id, n=60):
             mark, text = ("✔", "granted") if kind == "approval_granted" else ("✖", "declined")
         elif kind == "task_done":
             mark, text = "■", "done"
+        elif kind == "outcome" and d.get("survival") == "lost":  # T-1060: a close undone within 30 days (a first
+            mark, text = "✗", "lost"  # settle grades hundreds; the survivors would flood the 60 rows)
         else:
             continue
         b = by_id.get(t)
@@ -237,6 +241,64 @@ def typical(events):
     return {k: round(statistics.median(v)) for k, v in groups.items() if len(v) >= 3}
 
 
+_SPLIT_MARKS = (("planning", "task_new"), ("executing", "task_plan"), ("verifying", "ac_check"), ("auditing", "audit"),
+                ("closing", "finish"))  # T-1078: the ledger event that starts each stage (stages themselves aren't stored)
+
+
+def _stage_secs(evs, end):
+    """{stage: seconds} for one task's ledger events: each stage runs from its mark to the next mark that came later
+    (a stage whose mark is missing or out of order is skipped); the last runs to `end`. T-1137: recorded stage events
+    win when the task has any (a stage can recur, so its times add up); older tasks fall back to the proxies."""
+    moves = sorted((c.parse_ts(e.get("ts")), (e.get("data") or {}).get("to")) for e in evs if e.get("event") == "stage")
+    if moves:
+        out = {}
+        for i, (t, st) in enumerate(moves):
+            if t and st in dict(_SPLIT_MARKS):
+                nxt = moves[i + 1][0] if i + 1 < len(moves) else end
+                out[st] = out.get(st, 0) + max(0, round((nxt - t).total_seconds()))
+        return out
+    first = {}
+    for e in evs:
+        t = c.parse_ts(e.get("ts"))
+        if t and (e.get("event") not in first or t < first[e["event"]]):
+            first[e["event"]] = t
+    marks, last = [], None
+    for st, ev in _SPLIT_MARKS:
+        if ev in first and (last is None or first[ev] > last):
+            marks.append((st, first[ev]))
+            last = first[ev]
+    return {st: max(0, round(((marks[i + 1][1] if i + 1 < len(marks) else end) - t).total_seconds()))
+            for i, (st, t) in enumerate(marks)}
+
+
+def splits(events, act):
+    """T-1078: the active task's seconds in each stage so far against the median for closed tasks of its type and tier
+    (3+ samples per stage); sign is "over"/"under"/"even" with a typical, else None."""
+    import datetime
+    import statistics
+    by, kind = {}, {}
+    for e in events:
+        if e.get("task"):
+            by.setdefault(e["task"], []).append(e)
+            if e.get("event") == "task_new":
+                d = e.get("data") or {}
+                kind[e["task"]] = f"{d.get('type')}/{d.get('tier')}"
+    want = f"{act.type}/{act.tier}"
+    samples = {}
+    for t, evs in by.items():
+        done = [x for x in evs if x.get("event") == "task_done"]
+        if t != act.id and kind.get(t) == want and done:
+            for st, s in _stage_secs(evs, max(c.parse_ts(x.get("ts")) for x in done)).items():
+                samples.setdefault(st, []).append(s)
+    out = []
+    for st, s in _stage_secs(by.get(act.id, []), datetime.datetime.now(datetime.timezone.utc)).items():
+        v = samples.get(st, [])
+        typ = round(statistics.median(v)) if len(v) >= 3 else None
+        out.append({"stage": st, "secs": s, "typical": typ, "delta": None if typ is None else s - typ,
+                    "sign": None if typ is None else "over" if s > typ * 1.1 else "under" if s < typ * 0.9 else "even"})
+    return out
+
+
 def brainstorm(p):
     """The newest brainstorm (T-0124): while fm ideas runs, how many lens answers are in and the ideas so far; after,
     how many ideas and the first ones. None when the project has none. A run that never wrote ideas.md and started
@@ -273,6 +335,27 @@ def brainstorm(p):
     return {"name": name, "running": running, "answers": len(answers),
             "expected": len(st.get("lenses") or []) * int(st.get("rounds") or 1), "count": len(ideas), "ideas": ideas[:8],
             "age_h": age_h}
+
+
+LEARNED_TTL_S = 120
+
+
+def _learned_line(p):
+    """T-1045: what Foreman learned this week, the pane's idle line. A week's ledger and briefs cost ~0.45 s to count and
+    every pane poll is a new process (no in-process memo helps), so the line is kept in the project's state for
+    LEARNED_TTL_S: a count that is two minutes old is the same news."""
+    path = os.path.join(p.dir, "learned-line.json")
+    try:
+        with open(path, encoding="utf-8") as f:
+            hit = json.load(f)
+        if time.time() - hit["at"] < LEARNED_TTL_S:
+            return hit["line"]
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    import fmcost
+    line = fmcost.learned(p, 7, len(fmcost._week(p, 7)[0]))["line"]
+    c.write_atomic(path, json.dumps({"at": time.time(), "line": line}))
+    return line
 
 
 def _guarded(fn):
@@ -416,7 +499,9 @@ def _worktrees(p, briefs):
     root = c.git_root(p.root)
     if not root:
         return []
+    import fmlanes
     lanes = {os.path.realpath(b.meta["lane"]): b.id for b in briefs if b.meta.get("lane")}
+    gone = set(fmlanes.stopped(p, briefs))  # T-1119: builders whose Claude Code session ended
     out = []
     for block in c._git(root, "worktree", "list", "--porcelain").strip().split("\n\n")[1:]:
         f = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
@@ -428,8 +513,9 @@ def _worktrees(p, briefs):
         except OSError:
             age = None
         m = re.fullmatch(r"worktree-agent-([0-9a-f]+)", branch)
-        out.append({"path": path, "branch": branch, "task": lanes.get(os.path.realpath(path)),
-                    "agent": m.group(1) if m else None, "age_s": age, "ahead": None})
+        task = lanes.get(os.path.realpath(path))
+        out.append({"path": path, "branch": branch, "task": task, "agent": m.group(1) if m else None,
+                    "age_s": age, "ahead": None, "stopped": task in gone})
     out = sorted(out, key=lambda w: w["age_s"] if w["age_s"] is not None else 1 << 40)[:12]  # newest first, then capped
     for w in out:  # one git call each, only for those listed; a detached one's merge state stays unknown (None)
         n = c._git(root, "rev-list", "--count", f"HEAD..refs/heads/{w['branch']}").strip() if w["branch"] else ""
@@ -459,6 +545,7 @@ def view(p):
     if active:
         focused = next((e.get("ts") for e in events if e.get("event") == "focus" and e.get("task") == act.id), None)
         active["on_task_s"] = round((c.age_days(focused) or 0) * 86400) if focused else None
+        active["splits"] = splits(events, act)
         active["children"] = [{"id": k.id, "title": c.plain(k.title)[:120], "status": k.status,  # T-0711: the tree
                                "steps_done": sum(s.done for s in k.steps()), "steps_total": len(k.steps())}
                               for k in briefs if k.meta.get("parent") == act.id]
@@ -507,12 +594,14 @@ def view(p):
         "signals": _guarded(lambda: _signals(sd, d)) or [],  # T-0472
         "fleet": _guarded(_fleet) or [],  # T-0711
         "today_done": today_done,
+        "learned": _guarded(lambda: _learned_line(p)),  # T-1045
         "done_days": done_days,
         "trust_file": c.trust_path(),  # where /fm-trust on writes (the mod, never a tool call)
         # T-0145: a driven turn ended so a session's mod could reload; that mod starts the next turn (fresh ones only)
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
+        "loop": _guarded(lambda: __import__("fmloop").view(p)),  # T-1057: the forever loop's round
         "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),

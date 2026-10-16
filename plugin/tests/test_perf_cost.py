@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import time
+import unittest
 
 from helpers import read_text
 from test_hooks import HookCase, parse
@@ -205,3 +206,102 @@ class StepCompact(HookCase):
         self.context(72)
         self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.repo, "README.md")}})
         self.assertNotIn("step boundary", self.stop(), "the next step is under way: not a boundary")
+
+
+class UnexplainedSpend(HookCase):
+    """T-1079: spend from a session with no ledger events, or a turn 30+ minutes from any, is flagged."""
+
+    def setup_spend(self, rows, events=(60, 2)):
+        """rows: (session, minutes ago, output tokens); session 'known' has ledger events at `events` minutes ago."""
+        import datetime
+        import re
+        self.fm("init")
+        p = c.find_project(self.repo)
+        stamp = lambda m: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            for m in events:
+                f.write(json.dumps({"ts": stamp(m), "session_id": "known", "task": "T-0001", "event": "note", "data": {}}) + "\n")
+        cfg = os.path.join(self.tmp, "cfg")
+        folder = os.path.join(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(folder)
+        with open(os.path.join(folder, "t.jsonl"), "w") as f:
+            for i, (sid, ago, out) in enumerate(rows):
+                f.write(json.dumps({"type": "assistant", "timestamp": stamp(ago), "sessionId": sid, "message": {
+                    "id": f"m{i}", "content": [], "usage": {"output_tokens": out}}}) + "\n")
+        return {"CLAUDE_CONFIG_DIR": cfg}
+
+    def test_a_session_with_no_ledger_events_is_flagged_in_cost_and_digest(self):
+        env = self.setup_spend([("known", 59, 20000), ("known", 30, 20000), ("stray", 10, 40000), ("stray", 9, 40000)])
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["sessions"], d["tokens"], round(d["share"])), (["stray"], 400000, 67))
+        for cmd in ("cost", "digest"):
+            self.assertIn("Unexplained spend: 67% (≈ 400k tokens) in 1 session(s) with no Foreman activity within 30 min; top: stray", self.fm(cmd, env=env).stdout)
+
+    def test_a_turn_past_the_gap_from_its_sessions_events_counts(self):
+        env = self.setup_spend([("known", 85, 10000), ("known", 45, 100000)], events=(90, 2))
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["tokens"], d["sessions"]), (500000, ["known"]))
+
+    def test_events_only_in_an_archive_month_explain_a_turn(self):
+        env = self.setup_spend([("known", 59, 40000), ("known", 10, 40000)], events=())
+        p = c.find_project(self.repo)
+        os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with open(os.path.join(p.dir, "archive", now.strftime("ledger-%Y-%m.jsonl")), "w") as f:
+            for m in (60, 11):
+                ts = (now - datetime.timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                f.write(json.dumps({"ts": ts, "session_id": "known", "task": "T-0001", "event": "note", "data": {}}) + "\n")
+        self.assertEqual(json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]["tokens"], 0)
+
+    def test_a_turn_with_an_unparseable_time_is_left_out_of_the_total(self):
+        env = self.setup_spend([("stray", 10, 40000)])
+        folder = os.path.join(env["CLAUDE_CONFIG_DIR"], "projects")
+        path = os.path.join(folder, os.listdir(folder)[0], "t.jsonl")
+        with open(path, "a") as f:
+            f.write(json.dumps({"type": "assistant", "timestamp": "garbage", "sessionId": "x", "message": {
+                "id": "mx", "content": [], "usage": {"output_tokens": 999999}}}) + "\n")
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["tokens"], d["share"]), (200000, 100.0))
+
+    def test_explained_or_small_spend_shows_no_line(self):
+        env = self.setup_spend([("known", 59, 40000), ("stray", 10, 1000)])  # the stray is under 20% and 100k
+        out = self.fm("cost", env=env).stdout + self.fm("digest", env=env).stdout
+        self.assertNotIn("Unexplained", out)
+
+
+class TaskAt(unittest.TestCase):
+    def test_a_turn_goes_to_the_newest_event_at_or_before_it(self):
+        # T-1116: a bisect replaced the per-turn linear scan (4 s of fm cost's 6.8 s on a real ledger)
+        import fmcost
+        line = [("2026-10-01T00:00:00", "T-1"), ("2026-10-01T00:00:00", "T-2"), ("2026-10-02T00:00:00", "T-3")]
+        self.assertIsNone(fmcost._task_at(line, "2026-09-30T23:59:59"))
+        self.assertEqual(fmcost._task_at(line, "2026-10-01T00:00:00"), "T-2")  # same second: the later event
+        self.assertEqual(fmcost._task_at(line, "2026-10-01T12:00:00"), "T-2")
+        self.assertEqual(fmcost._task_at(line, "2026-10-03T00:00:00"), "T-3")
+        self.assertIsNone(fmcost._task_at([], "2026-10-03T00:00:00"))
+        big = [(f"2026-10-{d:02d}T{h:02d}:{m:02d}:{s:02d}", "T-1") for d in range(1, 3) for h in range(24)
+               for m in range(60) for s in range(0, 60, 2)]  # 172,800 events
+        start = time.perf_counter()
+        for _ in range(2000):  # a linear scan: ~340M steps; a bisect: ~36k
+            fmcost._task_at(big, "2026-10-02T23:59:59")
+        self.assertLess(time.perf_counter() - start, 1.0)
+
+
+class TranscriptPrefilter(unittest.TestCase):
+    def test_old_files_and_lines_are_skipped_but_a_nested_old_stamp_hides_nothing(self):
+        # T-1116: fm cost parsed 559 MB of transcripts twice; files and lines wholly before the cutoff are skipped now
+        import tempfile
+        import fmcost
+        with tempfile.TemporaryDirectory() as d:
+            new = {"type": "assistant", "timestamp": "2026-10-10T00:00:00.000Z", "sessionId": "s",
+                   "message": {"id": "m2", "usage": {"input_tokens": 5}, "content": [
+                       {"type": "tool_use", "id": "u", "name": "Bash", "input": {"timestamp": "2020-01-01T00:00:00"}}]}}
+            old = dict(new, timestamp="2026-09-01T00:00:00.000Z", message={"id": "m1", "usage": {"input_tokens": 7}})
+            with open(os.path.join(d, "a.jsonl"), "w") as f:
+                f.write(json.dumps(old, separators=(",", ":")) + "\n" + json.dumps(new, separators=(",", ":")) + "\n")
+            with open(os.path.join(d, "stale.jsonl"), "w") as f:
+                f.write(json.dumps(dict(new, message={"id": "m3", "usage": {"input_tokens": 9}})) + "\n")
+            os.utime(os.path.join(d, "stale.jsonl"), (0, 0))  # not written since the cutoff: never opened
+            msgs, _ = fmcost.scan(d, "2026-10-01T00:00:00")
+            self.assertEqual([u["input_tokens"] for _, _, u in msgs], [5])

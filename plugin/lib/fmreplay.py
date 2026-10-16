@@ -50,6 +50,35 @@ def corpus(days=DAYS, cap=MAX):
     return out
 
 
+def events(days=DAYS):
+    """T-1058: every tool call in recent session logs as {session, text (what it did), result (its output), errored}."""
+    for path in _logs(days):
+        calls, order = {}, []
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    content = (entry.get("message") or {}).get("content") if isinstance(entry, dict) else None
+                    for b in content if isinstance(content, list) else []:
+                        if not isinstance(b, dict):
+                            continue
+                        if b.get("type") == "tool_use" and isinstance(b.get("input"), dict):
+                            text = " ".join(str(v) for v in b["input"].values())
+                            calls[b.get("id")] = {"session": path, "text": text, "result": "", "errored": False}
+                            order.append(b.get("id"))
+                        elif b.get("type") == "tool_result" and b.get("tool_use_id") in calls:
+                            r = b.get("content")
+                            calls[b["tool_use_id"]].update(
+                                result=r if isinstance(r, str) else json.dumps(r), errored=bool(b.get("is_error")))
+        except OSError:
+            continue
+        for i in order:
+            yield calls[i]
+
+
 def _key(cmd, cwd):
     return hashlib.sha256(f"{cwd}\0{cmd}".encode("utf-8", "replace")).hexdigest()[:20]
 
@@ -81,6 +110,86 @@ def verdicts(cmds, g=None):
         except Exception as e:  # the guard fails closed in the hook; here it is a finding of its own
             out[_key(cmd, cwd)] = f"error: {type(e).__name__}"
     return out
+
+
+def mutate(cmds):
+    """T-1066: drop one guard rule (category) at a time: a mutant turns that category's verdicts to 'allow'. A rule some
+    command is blocked with is 'caught' (a case would notice its loss); one none is blocked with is 'untested'.
+    ponytail: a rule is a category, so two rules sharing one category are one mutant."""
+    import fmguard as g
+    seen = set(verdicts(cmds).values())
+    return ([x for x in g.CATEGORIES if x in seen], [x for x in g.CATEGORIES if x not in seen])
+
+
+def _checkout_plugin(cwd):
+    """The plugin/ of the Foreman checkout cwd is in (a builder's worktree included), or None outside one."""
+    d = os.path.abspath(cwd)
+    while True:
+        if os.path.isfile(os.path.join(d, "plugin", "lib", "fmguard.py")):
+            return os.path.join(d, "plugin")
+        up = os.path.dirname(d)
+        if up == d:
+            return None
+        d = up
+
+
+def cmd_mutate(args, fmcli):
+    """Drop (or --weaken) one rule site of the guard at a time and run its tests on each; survivors are untested rules."""
+    import shlex
+    import shutil
+    import sys
+    import fmguard as g
+    import fmmutate
+    if getattr(args, "project", None):
+        fmcli.resolve(args)  # -p is checked like the other bench commands
+    root = _checkout_plugin(os.getcwd()) or c.PLUGIN_ROOT  # T-1121: a lane mutates its own guard, not the main one's
+    module = args.module or os.path.join(root, "lib", "fmguard.py")
+    rel = os.path.join("plugin", "lib", "fmguard.py") if not args.module else os.path.join("plugin", "lib", os.path.basename(module))
+    cmd = shlex.split(args.tests) if args.tests else [sys.executable, os.path.join("plugin", "tests", "run.py"), "-p", "test_guard*.py"]
+    if not shutil.which("bwrap"):
+        print("warning: bwrap is missing, so test_guard_diff's GuardAgainstBash is skipped and its rules look untested",
+              file=sys.stderr)
+    try:
+        res = fmmutate.run(module, rel, root, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
+                           flip=getattr(args, "flip", False),
+                           only=args.only, limit=args.max, timeout=args.timeout,
+                           log=lambda m: print(m, file=sys.stderr, flush=True))
+    except (ValueError, OSError, SyntaxError) as e:
+        raise fmcli.UsageError(str(e))
+    s = res["survived"]
+    mode = "flip" if getattr(args, "flip", False) else "weaken" if args.weaken else "drop"
+    lines = [f"Guard mutation ({mode}): {res['tried']} of {res['total']} mutants, "
+             f"{res['killed']} killed, {len(s)} survived"]
+    if res["not_mutated"]:
+        lines.append("  not mutated (no rule site found): " + ", ".join(res["not_mutated"]))
+    lines += [f"  survived: fmguard.py:{m['line']} {m['category']}: {c.fit(m['stmt'], 110)}" for m in s]
+    fmcli.out(args, {**res, "survivors": len(s)}, "\n".join(lines))
+    if s:
+        raise SystemExit(1)
+
+
+def cmd_guard(args):
+    """fm bench guard --coverage: the rules no command notices; --mutate: the rules no test notices (wild C10)."""
+    import fmcli
+    if args.mutate:
+        return cmd_mutate(args, fmcli)
+    if not args.coverage:
+        raise fmcli.UsageError("fm bench guard needs --coverage or --mutate")
+    if args.cmds:
+        try:
+            with open(args.cmds, encoding="utf-8") as f:
+                cmds = [(ln.strip(), os.getcwd()) for ln in f if ln.strip()]
+        except OSError as e:
+            raise fmcli.UsageError(f"--cmds {args.cmds}: {e}")
+    else:
+        cmds = corpus(args.days)
+    caught, untested = mutate(cmds)
+    lines = [f"Guard mutation on {len(cmds)} commands: {len(caught)} rules caught, {len(untested)} untested"]
+    if untested:
+        lines.append("  untested (no command is blocked by it): " + ", ".join(untested))
+    fmcli.out(args, {"commands": len(cmds), "caught": caught, "untested": untested}, "\n".join(lines))
+    if untested:
+        raise SystemExit(1)
 
 
 def _baseline_path():

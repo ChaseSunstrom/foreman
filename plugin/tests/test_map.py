@@ -53,6 +53,29 @@ class Map(ForemanTestCase):
         self.fm("map")
         self.assertNotEqual(json.load(open(path))["head"], built)
 
+    def test_files_fixed_again_and_again_are_hotspots_in_the_map_and_focus(self):
+        for name, n in (("fixy.py", 3), ("calm.py", 1)):
+            for i in range(n):
+                with open(os.path.join(self.repo, name), "a") as f:
+                    f.write(f"# {i}\n")
+                self.commit(f"fix: {name} again {i}")
+        for i in range(3):  # not fix commits: a fixture, and a 25-file sweep
+            with open(os.path.join(self.repo, "calm.py"), "a") as f:
+                f.write(f"# f{i}\n")
+            self.commit("Add fixture")
+        for i in range(3):
+            for j in range(25):
+                with open(os.path.join(self.repo, f"sweep{j}.py"), "a") as f:
+                    f.write(f"# {i}\n")
+            self.commit("fix: lint")
+        with open(os.path.join(self.repo, "fixy.py"), "a") as f:
+            f.write("# more\n")
+        self.commit("fix: once more")
+        self.assertEqual(list(json.loads(self.fm("map", "--json").stdout)["fixy"].items()), [("fixy.py", 4)])
+        tid = json.loads(self.fm("task", "new", "Touch fixy", "--type", "FIX", "--tier", "S", "--scope", "fixy.py",
+                                 "--ac", "ok", "--step", "do", "--json").stdout)["id"]
+        self.assertIn("Hotspot: fixy.py", self.fm("focus", tid).stdout)
+
     def test_focus_names_the_likely_tests_for_the_scope(self):
         tid = json.loads(self.fm("task", "new", "Speed up parse", "--type", "PERF", "--tier", "S", "--scope",
                                  "src/parser.py", "--ac", "faster", "--step", "do", "--json").stdout)["id"]

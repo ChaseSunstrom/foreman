@@ -21,6 +21,7 @@ export type FmActive = FmItem & {
   criteria: FmCriterion[]
   audits: { done: number; need: number }
   blockers: string[]
+  splits?: { stage: string; secs: number; typical: number | null; delta: number | null; sign: 'over' | 'under' | 'even' | null }[] // T-1078: time in each stage against the project's typical
   children?: { id: string; title: string; status: string; steps_done: number; steps_total: number }[] // T-0711
   on_task_s?: number | null // seconds since the task was first focused, when the view was built
   hypotheses?: FmHypothesis[] // T-0207/T-0228: the debugging ledger
@@ -77,9 +78,11 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  learned?: string | null // T-1045: what Foreman learned this week (fixes, rules, interventions per closed task)
   blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
+  loop?: { on: boolean; round: number; dry: number } | null // the forever loop (T-1057)
   worktrees?: FmWorktree[] | null // T-1023: git worktrees beside the main checkout
   history?: FmHistory[] | null // T-1026: what happened, structured, newest last
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
@@ -96,7 +99,7 @@ export type FmHistory = { time: string; mark: string; task: string | null; text:
 // A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
 // T-1023: a git worktree: its branch, the task whose lane it is, the subagent it was made for (worktree-agent-<id>), its
 // age and the commits it holds that HEAD doesn't
-export type FmWorktree = { path: string; branch: string; task: string | null; agent: string | null; age_s: number | null; ahead: number | null }
+export type FmWorktree = { path: string; branch: string; task: string | null; agent: string | null; age_s: number | null; ahead: number | null; stopped?: boolean }
 export type FmBrainstorm = { name: string; running: boolean; answers: number; expected?: number; count: number; ideas: string[]; age_h?: number; grounded?: boolean }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }

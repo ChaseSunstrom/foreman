@@ -2,9 +2,11 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, ResolveInput } from 'claude-code'
 
 
+const scrub = atom({ plugin: 'foreman-ui', key: 'scrub' } as const, 0) // T-1081: how many history entries back the pane is showing
 import type { FileChurn, FmItem, FmView, LiveAgent, LiveShell, TurnSummary } from '../types'
 import {
   C,
+  setPalette,
   MASCOT_COLORS,
   about,
   hoursAgo,
@@ -26,6 +28,7 @@ import {
   ganttCells,
   heat,
   ruleCells,
+  narration,
   stackCells,
   stepCells,
   hex,
@@ -48,7 +51,7 @@ import {
   toolFace,
   typeColor,
 } from './kit'
-import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, TREE_MS, cfg, feed, laneOf, running, starts, ticks, took } from './state'
+import { CHECKPOINT_AT, FRAME_MS, FRESH, IDLE_FRAMES, PANE, QUIET_MS, SHELL_MAX_MS, STOP_MS, TIMELINE_MS, TREE_MS, cfg, feed, laneOf, running, said, starts, ticks, took } from './state'
 import type { FeedItem } from './state'
 
 const view = atom({ plugin: 'foreman-ui', key: 'view' } as const, null)
@@ -171,6 +174,7 @@ const waiting = (v: FmView | null) =>
 let fmPath: string | null = null
 let marks = ''
 let isDirty = true
+let saidSeq = 0 // T-1090: one id per model step, for its narration entry
 let isBusy = false
 let lastFull = 0
 let poll: { cancel: () => void } | null = null
@@ -375,9 +379,9 @@ async function capture($: EngineInterface, text: string) {
 
 // T-0711: one steer for every live session here and on the remotes the user added (fm conductor steer)
 async function steer($: EngineInterface, text: string) {
-  const said = text.trim()
-  if (!said) return
-  const r = await run($, ['conductor', 'steer', said])
+  const words = text.trim()
+  if (!words) return
+  const r = await run($, ['conductor', 'steer', words])
   $.ui.toast(r.exitCode === 0 ? `↯ ${lastLine({ stdout: r.stdout }) || 'Steer sent'}` : `fm conductor: ${lastLine({ stderr: r.stderr })}`)
   await refresh($)
 }
@@ -534,9 +538,13 @@ export const register: Register = (on, options) => {
   // T-0912: full = 30 fps charts by blit; calm = the 8 fps frame clock only; off = no clocks, a still pane
   cfg.motion = options.motion === 'calm' || options.motion === 'off' ? options.motion : 'full'
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
+  cfg.palette = options.palette === 'cb' ? 'cb' : 'default' // T-1081
+  setPalette(cfg.palette)
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
+    treeTall = 0 // T-1041: and at its own height
+    said.clear() // T-1090: and so do its nodes' words
     await $.command.register({ name: 'fm', description: 'Foreman: open or close the dashboard pane' })
     await $.command.register({
       name: 'fm-trust',
@@ -678,6 +686,42 @@ export const register: Register = (on, options) => {
     }
   })
 
+  // T-1090 ('the this session has a few inlined/summarized things for what YOURE doing, and each subagent has its own'):
+  // every model step's text, per subagent (agentId; none on the main loop), feeds its node in the live tree. A pure
+  // tap: each chunk goes on unchanged, and a failure here never touches the stream.
+  on('turn.step', async function* ($, e, next) {
+    const key = e.agentId ?? ''
+    const at = ++saidSeq // this step's entry (review: no clock round trip before the first chunk)
+    let acc = ''
+    let settled = false
+    const note = (text: string, live: boolean) => {
+      try {
+        const line = narration(text)
+        const list = (said.get(key) ?? []).filter(x => x.at !== at)
+        if (line) list.push({ text: line, at, live })
+        said.delete(key) // review: re-inserted last, so eviction takes the least recent node, never this session
+        said.set(key, list.slice(-3))
+        if (said.size > 40) said.delete([...said.keys()].find(k => k !== '')!) // this session's own words always stay
+      } catch { /* the tree is a view; the stream is not ours to break */ }
+    }
+    const stream = next(e)
+    try {
+      for await (const ch of stream) {
+        if (acc.length < 400 && (ch as { kind?: unknown }).kind === 'text') { // review: the line is cut at 200; stop there
+          acc += String((ch as { text?: unknown }).text ?? '')
+          note(acc, true)
+        }
+        yield ch
+      }
+      const r = await stream.result
+      note(typeof r?.answer === 'string' && r.answer ? r.answer : acc, false)
+      settled = true
+      return r
+    } finally {
+      if (!settled) note(acc, false) // an abort or error: the line stops spinning
+    }
+  })
+
   // T-0137: Claude Code folds commands into one "Running 1 shell command…" line, which hid the live row; a group
   // holding a shell command unfolds, so each command is its own row here. Reads and searches stay folded.
   on('ui.render', { component: 'ToolGroup' }, async ($, e, next) => {
@@ -787,14 +831,14 @@ export const register: Register = (on, options) => {
     if (((origin?.kind === 'plugin' && origin.name === 'foreman-ui') || ours.test(e.props.text)) && !e.props.isExpanded) {
       // T-0143 live: our own resume prompt drew as a four-line grey block; one quiet line says it
       const { Box, Text } = $.ui.resolve(e)
-      return (
+      return branch($.ui.resolve(e), e, 'fm-branch', ( // T-1088: on the rail like every other row
         <Box flexDirection="row" gap={1} key="fm-resumed">
           <Text color={hex(C.accent)}>↻</Text>
           <Text color={hex(C.dim)} wrap="truncate-end">
             {clean(e.props.text.replace(ours, '').split('\n')[0] ?? '')}
           </Text>
         </Box>
-      )
+      ))
     }
     // T-0182: 'my chats aren't [panelled] either': the person's own prompt is a panel in their colour
     if ((origin?.kind === 'composer' || origin?.kind === 'bridge') && e.props.text.length <= 9000 &&
@@ -818,14 +862,14 @@ export const register: Register = (on, options) => {
     const status = t.status ?? 'completed'
     const color = status === 'completed' ? C.ok : status === 'failed' ? C.err : C.warn
     const { Box, Text } = $.ui.resolve(e)
-    return (
+    return branch($.ui.resolve(e), e, 'fm-branch', ( // T-1088
       <Box flexDirection="row" gap={1} key="fm-note">
         <Text color={hex(color)}>{status === 'completed' ? '✓' : status === 'failed' ? '✗' : '■'}</Text>
         <Text color={hex(C.dim)}>background {t.type ?? 'task'} {status}</Text>
         <Text wrap="truncate-end">{e.props.text.split('\n')[0]}</Text>
         {t.durationMs ? <Text color={hex(C.dim)}>· {elapsed(t.durationMs)}</Text> : null}
       </Box>
-    )
+    ))
   })
 
   // T-0143: the working line is Foreman's ('get rid of … the "Seasoning" thing … and have it be a foreman thing'): an
@@ -965,13 +1009,18 @@ export const register: Register = (on, options) => {
     // T-1039 ('sticky so the text doesn't scroll the chat'): one height for the turn, padded, with a blank row under it
     const tree = (rows: number, sticky = true) => {
       treeDrawn = sticky
-      const els = liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f,
-        width: e.props.bodyColumns, rows: sticky ? Math.max(1, rows - 1) : rows, turnMs: turnStartedAt ? treeAt - turnStartedAt : 0,
+      const els = liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f, said, worktrees: v.worktrees ?? [],
+        width: e.props.bodyColumns, rows: sticky ? Math.max(1, rows - 2) : rows, turnMs: turnStartedAt ? treeAt - turnStartedAt : 0,
         task: a ? `${a.id} · step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}${cur ? ` ${cur.text}` : ''}` : 'no task in focus' })
       if (!sticky) return <Box key="fm-band-tree" flexDirection="column">{els}</Box>
-      treeTall = Math.min(Math.max(1, rows - 1), Math.max(treeTall, els.length, 5))
+      treeTall = Math.min(Math.max(1, rows - 2), Math.max(treeTall, els.length, 5))
+      const { Raster } = $.ui.resolve(e)
       return (
         <Box key="fm-band-tree" flexDirection="column">
+          {/* T-1090 ('theres no bar/gap seperating the this session from the chat UI'): a fading rule over the tree */}
+          {e.surface === 'terminal'
+            ? <Raster key="tree-rule" columns={Math.max(10, e.props.bodyColumns - 1)} rows={1} cells={ruleCells(Math.max(10, e.props.bodyColumns - 1), C.accent)} />
+            : null}
           {els}
           {Array.from({ length: Math.max(0, treeTall - els.length) }, (_, i) => <Text key={`tree-pad-${i}`}> </Text>)}
           <Box key="tree-gap" height={1} />
@@ -1053,6 +1102,7 @@ export const register: Register = (on, options) => {
             {m && <Text color={hex(m.autonomy === 'full' ? C.accent2 : C.dim)}>{m.autonomy === 'full' ? 'full auto' : 'standard'}</Text>}
             {m && !m.drive && <Text color={hex(C.warn)}>drive off</Text>}
             {m?.trust && <Text color={hex(C.warn)}>trust on</Text>}
+            {v.loop?.on && <Text color={hex(C.agent)}>∞ round {v.loop.round}</Text> /* T-1057: the forever loop */}
             {sl && <Text color={hex(sl.level === 'red' ? C.err : C.warn)} wrap={cut}>{sl.level === 'red' ? '●' : '◐'} {sl.text}</Text>}
           </Box>
         </Box>
@@ -1304,7 +1354,11 @@ export const register: Register = (on, options) => {
     const markColor = (mark: string) =>
       '✗✖'.includes(mark) ? C.err : '✓✔■'.includes(mark) ? C.ok : '◆◇'.includes(mark) ? C.agent : '!?≈'.includes(mark) ? C.warn : C.accent2
     const recent = [...(v.recent ?? [])].reverse()
-    const historyRows: RenderElement[] = v.history?.length ? [...v.history].reverse().map((ev, i) => (
+    const hist = v.history ?? []
+    const back = Math.min(await read($, scrub), Math.max(0, hist.length - 1)) // T-1081
+    const shown = hist.slice(0, hist.length - back)
+    const asOf = back ? [<Text key="as-of" color={hex(C.warn)}>{`as of ${shown.at(-1)?.time || '?'} (${back} back) · press l for live`}</Text>] : []
+    const historyRows: RenderElement[] = shown.length ? [...asOf, ...[...shown].reverse().map((ev, i) => (
       <Box key={`r-${i}`} flexDirection="row" gap={1} height={1} overflow="hidden">
         <Box flexShrink={0}>
           <Text color={muted}>{ev.time || '     '}</Text>
@@ -1322,7 +1376,7 @@ export const register: Register = (on, options) => {
         </Box>
         <Text wrap="truncate-end" color={muted}>{ev.title ? ` ${ev.title}` : ''}</Text>
       </Box>
-    )) : recent.map((line, i) => {
+    ))] : recent.map((line, i) => {
       const [, time, rest] = /^\s*(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line.trim()]
       const ev = /^([✓✗≈]) (T-\d+) (step \d+|criterion \d+|check): /.exec(rest)
       const text = ev
@@ -1379,7 +1433,8 @@ export const register: Register = (on, options) => {
     const railWant = a && stageIdx >= 0 ? 3 : 0 // the rail, its labels, a blank row
     const planRows = planQ ? 2 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
     const stepBar = !planQ && a && a.steps.length ? 1 : 0 // T-1026: done and left, a segment a step
-    const taskWant = 2 + stepBar + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : 0)
+    const splitRow = !planQ && a?.splits?.length ? 1 : 0 // T-1078: speedrun splits, one compact row
+    const taskWant = 2 + stepBar + splitRow + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : v.learned && !live ? 1 : 0)
 
     // ── activity: one lane per kind of call, fixed in order so nothing jumps; fewer lanes on a short dock
     const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
@@ -1395,8 +1450,9 @@ export const register: Register = (on, options) => {
     const treeNode = (w: NonNullable<typeof v.worktrees>[number]): Gantt => ({
       key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
       start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
-      status: w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
-      statusColor: w.ahead ? C.accent2 : C.warn,
+      status: w.stopped ? `stopped · fm lane resume ${w.task}`
+        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
+      statusColor: w.ahead && !w.stopped ? C.accent2 : C.warn,
     })
     const gantt: Gantt[] = recentSubs.map(s => {
       const quiet = s.done ? 0 : clockNow - (s.lastAt ?? s.startedAt)
@@ -1507,6 +1563,7 @@ export const register: Register = (on, options) => {
           ...(m.drive ? [] : ([['drive off', C.warn]] as [string, number][])),
           ...(m.sensitive ? ([['sensitive', C.warn]] as [string, number][]) : []),
           ...(m.trust ? ([['trust on', C.warn]] as [string, number][]) : []),
+          ...(v.loop?.on ? ([[`∞ round ${v.loop.round}${v.loop.dry ? ` · ${v.loop.dry} dry` : ''}`, C.agent]] as [string, number][]) : []), // T-1057
         ]
       : []
     // T-1026 ('doesn't show how many things have been complete and how many are left'): the work as one bar
@@ -1630,8 +1687,19 @@ export const register: Register = (on, options) => {
           </Box>,
         )
       }
-      const rows = R.task! - 2 - stepBar
-      const railRows = railWant && rows >= Math.min(6, taskWant - 2 - stepBar) ? 3 : 0
+      if (splitRow)
+        push(0,
+          <Box key="task-splits" flexDirection="row" gap={1} height={1} overflow="hidden">
+            {a.splits!.map(s => (
+              <Text key={`split-${s.stage}`} wrap="truncate-end"
+                color={hex(s.sign === 'over' ? C.err : s.sign === 'under' ? C.ok : C.dim)}>
+                {`${s.stage} ${elapsed(s.secs * 1000)}${s.delta == null ? '' : ` ${s.delta < 0 ? '−' : '+'}${elapsed(Math.abs(s.delta) * 1000)}`}`}
+              </Text>
+            ))}
+          </Box>,
+        )
+      const rows = R.task! - 2 - stepBar - splitRow
+      const railRows = railWant && rows >= Math.min(6, taskWant - 2 - stepBar - splitRow) ? 3 : 0
       const room = Math.max(1, rows - railRows)
       // every step and note when they fit; else a window round the current step and a row to count the rest
       const nSteps = a.steps.length + extras.length <= room ? a.steps.length : Math.max(1, Math.min(a.steps.length, room - extras.length - 1))
@@ -1681,6 +1749,7 @@ export const register: Register = (on, options) => {
           {v.next ? <Text color={dim}>Next  </Text> : null}
           {v.next ? humanNext(v.next) : <Text color={dim}>The queue and the inbox are empty.</Text>}
         </Text>,
+        ...(v.learned && !live ? [<Text key="idle-learned" color={dim} wrap="truncate-end">{v.learned}</Text>] : []), // T-1045
       )
     }
     if (taskRows.length + (hidden ? 1 : 0) > R.task!) { // never cut silently (T-0146): the last row counts what's gone
@@ -1934,6 +2003,8 @@ export const register: Register = (on, options) => {
               await update($, sound, x => !x)
               await $.store.set('sound', await read($, sound))
             }} />
+ <Button key="scrub-back" label="◂ back" hotkey="b" plain dimColor onPress={() => update($, scrub, x => x + 1)} />
+          <Button key="scrub-live" label="live" hotkey="l" plain dimColor onPress={() => update($, scrub, () => 0)} />
           <Button key="refresh" label="refresh" hotkey="r" plain dimColor onPress={() => refresh($)} />
         </Box>
       </Box>

@@ -250,7 +250,7 @@ class Ledger(ForemanTestCase):
             lines = [json.loads(l) for l in f]
         self.assertEqual([l["event"] for l in lines[-2:]], ["note", "note2"])
         rec = lines[-2]
-        self.assertEqual(set(rec), {"ts", "session_id", "project", "task", "event", "data"})
+        self.assertEqual(set(rec), {"prev", "ts", "session_id", "project", "task", "event", "data"})  # T-1065: chained
         self.assertEqual(rec["session_id"], "s1")
         self.assertNotIn("abcdef123456", json.dumps(rec))
         self.assertRegex(rec["ts"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
@@ -742,6 +742,29 @@ class RunCommand(unittest.TestCase):
             code, out = c.run_command(d, "python3 -m unittest test_x 2>&1 | tail -3")
             self.assertEqual(code, 1, out)
 
+    def test_kill_group_takes_the_children_and_never_raises(self):
+        # T-1094: fmbench's own killpg had no except, so a child that exited first crashed the bench
+        import subprocess
+        import time
+        pr = subprocess.Popen(["sh", "-c", "sleep 30 & echo $!; wait"], stdout=subprocess.PIPE, text=True,
+                              start_new_session=True)
+        child = int(pr.stdout.readline())
+        c.kill_group(pr)
+        pr.wait(timeout=5)
+        time.sleep(0.2)
+        self.assertFalse(os.path.exists(f"/proc/{child}") and "Z" not in open(f"/proc/{child}/stat").read().split()[2])
+        c.kill_group(pr)  # already gone: no exception
+        done = subprocess.Popen(["true"], start_new_session=True)
+        done.wait()
+        c.kill_group(done)
+
+    def test_a_run_never_inherits_the_test_skip_list(self):
+        # T-1114: an exported FOREMAN_SKIP_TESTS would make an evidence run of run.py leave modules out silently
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"FOREMAN_SKIP_TESTS": "test_guard"}):
+            _, out = c.run_command(os.path.dirname(__file__), 'echo "skip=${FOREMAN_SKIP_TESTS:-none}"')
+        self.assertIn("skip=none", out)
+
 
 class NativeClaude(unittest.TestCase):
     def test_the_native_install_is_found_when_path_lacks_it(self):
@@ -765,3 +788,21 @@ class NativeClaude(unittest.TestCase):
             self.assertEqual(c.claude_path(env)["PATH"], other + ":" + empty, "one on PATH already wins")
             os.remove(exe)
             self.assertEqual(c.claude_path({"HOME": home, "PATH": empty})["PATH"], empty)
+
+
+class ActiveFast(ForemanTestCase):
+    def test_the_fast_active_brief_matches_the_full_scan(self):
+        # T-1140: PreToolUse parsed every brief (1,069 here) to find the active one, half of each hook call
+        self.fm("init")
+        p = c.find_project(self.repo)
+        for i in range(5):
+            self.fm("task", "new", f"t{i}", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        self.assertIsNone(c.active_brief_fast(p))
+        self.fm("focus", "T-0003")
+        self.assertEqual(c.active_brief_fast(p).id, c.active_brief(c.load_briefs(p)).id)
+        b = c.find_brief(p, "T-0004")
+        b.meta.update(status="verifying", lane="/elsewhere")  # another lane's active task
+        c.save_brief(p, b)
+        self.assertEqual(c.active_brief_fast(p).id, "T-0003")
+        self.assertEqual(c.active_brief_fast(p, "/elsewhere").id, "T-0004")
+        self.assertIsNone(c.active_brief_fast(p, "/nowhere"))

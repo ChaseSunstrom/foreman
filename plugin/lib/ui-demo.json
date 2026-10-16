@@ -1,4 +1,5 @@
 {
+ "loop": {"on": true, "round": 3, "dry": 0},
  "v": 1, "project": "demo-1a2b3c", "root": "~/src/demo",
  "mode": {"autonomy": "standard", "drive": true, "sensitive": false, "trust": false, "standing": []},
  "active": {
@@ -13,7 +14,9 @@
   "depends": [], "stage": "executing",
   "stages": ["planning", "ready", "executing", "verifying", "documenting", "auditing", "closing"],
   "audits": {"done": 0, "need": 1}, "blockers": ["step 2 not done: Fix the token check"], "hypotheses": [],
-  "oracle": null, "batch": [], "inconclusive": 0, "unverified": [], "on_task_s": 1200, "children": []
+  "oracle": null, "batch": [], "inconclusive": 0, "unverified": [], "on_task_s": 1200, "children": [],
+  "splits": [{"stage": "planning", "secs": 240, "typical": 300, "delta": -60, "sign": "under"},
+             {"stage": "executing", "secs": 960, "typical": 600, "delta": 360, "sign": "over"}]
  },
  "next": "T-0042 step 2/3: Fix the token check",
  "queue": [{"id": "T-0043", "type": "FEATURE", "tier": "M", "title": "Remember me on the login form", "status": "planned",
@@ -22,10 +25,10 @@
             "waits": null, "steps_done": 0, "steps_total": 0, "age_days": 0.5}],
  "inbox_total": 1, "blocked_total": 0, "approvals": [],
  "closed": [{"id": "T-0041", "status": "done", "title": "Typo in the signup email", "grade": "ok", "lenses": ["self"]}],
- "signals": [], "fleet": [], "today_done": 1, "done_days": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1],
+ "signals": [], "fleet": [], "today_done": 1, "learned": "Learned: 2 new fix(es), 5 worked, 1 missed · 1 rule(s) to propose · 1.5 interventions per closed task","done_days": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3, 1],
  "trust_file": "~/.claude/foreman/state/trust.json", "resume_after_reload": null,
  "typical": {"FIX/S": 12, "FEATURE/M": 45}, "brainstorm": null, "budget": null, "bench": null, "research": [],
- "worktrees": [{"path": "/tmp/demo/.claude/worktrees/agent-a1b2c3d4", "branch": "worktree-agent-a1b2c3d4", "task": "T-0043", "agent": "a1b2c3d4", "age_s": 240, "ahead": 1}],
+ "worktrees": [{"path": "/tmp/demo/.claude/worktrees/agent-a1b2c3d4", "branch": "worktree-agent-a1b2c3d4", "task": "T-0043", "agent": "a1b2c3d4", "age_s": 240, "ahead": 1, "stopped": false}, {"path": "/tmp/demo/.claude/worktrees/lane-t0044", "branch": "lane-t0044", "task": "T-0044", "agent": null, "age_s": 900, "ahead": 2, "stopped": true}],
  "history": [{"time": "10:15", "mark": "✓", "task": "T-0042", "text": "step 1 passed", "title": "Login times out on slow wifi"}],
  "vetoes": [], "revisit": [], "recent": ["  10:15  ✓ T-0042 step 1: pytest tests/test_auth.py"],
  "skills": {"recent": [], "counts": {}, "suggested": [], "unread": []},

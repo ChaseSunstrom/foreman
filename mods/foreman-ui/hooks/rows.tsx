@@ -3,7 +3,7 @@ import type { LiveAgent } from '../types'
 import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, ganttCells, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { DiffRow, LabelRun } from './kit'
 import { OUT_LINES, TINY_OUT, TREE_MS, cfg, diffCap, took } from './state'
-import type { FeedItem, ToolUseRender } from './state'
+import type { FeedItem, Said, ToolUseRender } from './state'
 
 // T-0130: the transcript's Foreman rows and the small drawings the band and pane share; pure but for the
 // atoms they read and the shared timing maps. They take the resolved element table, not $: the engine follows
@@ -579,6 +579,8 @@ export type TreeIn = {
   width: number
   rows: number // at most this many rows
   turnMs?: number // how long this turn has run, on the root while it is live
+  said?: ReadonlyMap<string, readonly Said[]> // T-1090: what each node last said ('' for this session)
+  worktrees?: readonly { agent: string | null; branch: string }[] // T-1090: a builder's worktree, named on its node
 }
 
 /** T-1033 ('a tree/graph … each agent's commands/changes under it and yours too, all on the same screen … so the chat
@@ -591,16 +593,25 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
   const agents = t.subs.filter(s => !s.done || t.now - (s.lastAt ?? s.startedAt) < TREE_MS)
     .sort((x, y) => Number(x.done) - Number(y.done) || (y.lastAt ?? y.startedAt) - (x.lastAt ?? x.startedAt))
   const callsOf = (id: string) => t.feed.filter(x => x.agent === id)
+  const saidOf = (id: string) => t.said?.get(id) ?? []
+  const wt = (id: string) => t.worktrees?.find(w => w.agent === id)?.branch
   let k1 = 3
   let k2 = 2
+  let kn = 2 // T-1090: lines of the session's own words, then each agent's: fewer as agents multiply
+  let ka = agents.length > 2 ? 1 : 2
   let n = agents.length
-  const size = () => 1 + Math.min(k1, mine.length) + agents.slice(0, n).reduce((s, a) => s + 1 + Math.min(k2, callsOf(a.id).length), 0)
+  const size = () => 1 + Math.min(kn, saidOf('').length) + Math.min(k1, mine.length)
+    + agents.slice(0, n).reduce((s, a) => s + 1 + Math.min(ka, saidOf(a.id).length) + Math.min(k2, callsOf(a.id).length), 0)
     + (n < agents.length ? 1 : 0)
   while (size() > t.rows && k2 > 1) k2--
   while (size() > t.rows && k1 > 1) k1--
+  while (size() > t.rows && ka > 1) ka--
+  while (size() > t.rows && kn > 1) kn--
   while (size() > t.rows && n > 0) n--
   while (size() > t.rows && k2 > 0) k2--
   while (size() > t.rows && k1 > 0) k1--
+  while (size() > t.rows && ka > 0) ka--
+  while (size() > t.rows && kn > 0) kn--
   const lines = mix(C.track, C.muted, 0.35)
   // T-1039: each node's time bar in one column on a shared axis, as the pane's Agents graph ('more like a tree similar
   // to the agents in the panel'): from the earliest thing shown (at least a minute back) to now
@@ -647,7 +658,16 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
       {right([facts || 'starting', ...(t.live && t.turnMs ? [elapsed(t.turnMs)] : [])].join(' · '))}
     </Box>
   )
-  const out: RenderElement[] = [head]
+  // T-1090: a node's words, under it and over its calls: a quote mark in its colour, the line in light text
+  const words = (id: string, k: number, prefix: string, color: number, key: string) =>
+    (k ? saidOf(id).slice(-k) : []).map((w, j) => (
+      <Box key={`${key}-said-${w.at}`} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}><Text color={hex(lines)}>{prefix}</Text></Box>
+        <Box flexShrink={0}><Text color={hex(color)}>{w.live && t.frame !== null ? spin(t.frame) : '›'}</Text></Box>
+        <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(j === k - 1 || w.live ? 0xc9d1dc : C.muted)}>{w.text}</Text></Box>
+      </Box>
+    ))
+  const out: RenderElement[] = [head, ...words('', kn, branches.length ? '│' : ' ', C.accent, 'tree-root')]
   branches.forEach((b, i) => {
     const last = i === branches.length - 1
     const prefix = last ? '└─' : '├─'
@@ -667,10 +687,16 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
         <Box flexShrink={0}><Text color={hex(lines)}>{prefix}</Text></Box>
         <Box flexShrink={0}><Text color={hex(color)}>{a.done ? '✓' : t.frame === null ? '◆' : spin(t.frame + a.startedAt)}</Text></Box>
         <Box flexShrink={0}><Text weight="bold" color={hex(color)}>{`◆ ${a.type}`}</Text></Box>
-        <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(a.description || a.last)}</Text></Box>
+        <Box flexGrow={1} flexShrink={1}>
+          <Text wrap="truncate-end">
+            <Text color={hex(0xd0d5dd)}>{clean(a.description || a.last)}</Text>
+            {wt(a.id) ? <Text color={hex(C.accent2)}>{`  ⎇ ${clean(wt(a.id)!)}`}</Text> : null}
+          </Text>
+        </Box>
         {bar(`agent-${a.id}`, { start: a.startedAt, end: a.done ? a.lastAt ?? t.now : null, marks: a.calls ?? [], color }, !a.done)}
         {right([`${a.tools} call${a.tools === 1 ? '' : 's'}`, ...(took >= 1000 ? [elapsed(took)] : [])].join(' · '))}
       </Box>,
+      ...words(a.id, ka, `${last ? ' ' : '│'}  `, color, `tree-agent-${a.id}`),
     )
     const shown = k2 ? calls.slice(-k2) : [] // slice(-0) is the whole list
     shown.forEach((x, j, xs) =>

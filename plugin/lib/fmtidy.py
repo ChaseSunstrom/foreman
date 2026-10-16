@@ -5,6 +5,8 @@ archiving a copy) and logs them; everything needing judgment (stale inbox items,
 oversize memory, contradictions) is reported for a decision. Nothing is deleted without an archive copy,
 except derived caches (old statusline snapshots).
 """
+import fcntl
+import glob
 import json
 import os
 import re
@@ -116,9 +118,102 @@ def unblocked(p, b, status):
         tok = tok.rstrip(".")
         path = os.path.realpath(os.path.join(p.root, tok))
         if (_looks_like_path(tok) and path.startswith(os.path.realpath(p.root) + os.sep) and os.path.isfile(path)
-                and os.path.getmtime(path) > at.timestamp() + 1):
+                and _changed_since(p.root, path, at.timestamp())):
             return f"{tok} changed since it was blocked"
     return None
+
+
+def _changed_since(root, path, t):
+    """T-1106: a commit touched path after t, or it has uncommitted edits made after t. Not its mtime alone: a fresh
+    clone or a builder's worktree gives every file a new one (T-1077's lesson)."""
+    if not c.git_root(root):
+        return os.path.getmtime(path) > t + 1
+    rel = os.path.relpath(path, root)
+    if c._git(root, "log", "-1", "--format=%ct", f"--since=@{int(t) + 1}", "--", rel, timeout=30).strip():
+        return True
+    dirty = c._git(root, "status", "--porcelain", "--", rel, timeout=30).strip()
+    return bool(dirty) and os.path.getmtime(path) > t + 1
+
+
+def _git_facts(root, since):
+    """T-1077: the paths in HEAD, the ones changed since HEAD, and when each path last changed on the first-parent
+    line since `since` (a merged lane's change at its merge), in three git calls; all empty outside git."""
+    head = set(c._git(root, "ls-tree", "-rz", "--name-only", "HEAD", timeout=30).split("\0")) - {""}
+    dirty = set(c._git(root, "diff", "-z", "--name-only", "HEAD", timeout=30).split("\0")) - {""}
+    log, ct = {}, 0
+    for line in c._git(root, "log", "--first-parent", "--diff-merges=first-parent", "--no-renames", "--name-only",
+                       f"--since=@{int(since) - 2}", "--format=%x01%ct", timeout=30).splitlines():
+        if line.startswith("\x01"):
+            ct = int(line[1:])
+        elif line:
+            log.setdefault(line, ct)  # newest first
+    return head, dirty, log
+
+
+def stale_plans(p, briefs):
+    """T-1077: {id: why} for each queued (planned) brief that needs a re-plan: a dependency was dropped, a scope path
+    changed after the brief was last edited, or a scope path that existed is gone (one that never existed is a file the
+    plan creates). Seen from the main checkout, as git has it: a tracked file by when its change landed, so a fresh
+    clone's or a lane's checkout mtimes mean nothing; an uncommitted or untracked one by its mtime.
+    ponytail: a fast-forwarded commit counts at the time it was made, not when it landed."""
+    status = {b.id: b.status for b in briefs}
+    planned = [b for b in briefs if b.status == "planned"]
+    ats = {b.id: t.timestamp() + 1 for b in planned if (t := c.parse_ts(b.meta.get("updated")))}
+    root = os.path.realpath(c.main_view(p).root)
+    if any(b.meta.get("scope") for b in planned if b.id in ats):
+        head, dirty, log = _git_facts(root, min(ats.values()))
+    out = {}
+    for b in planned:
+        dropped = next((d for d in b.meta.get("depends_on") or [] if status.get(d) == "dropped"), None)
+        if dropped:
+            out[b.id] = f"its dependency {dropped} was dropped"
+            continue
+        at = ats.get(b.id)
+        for s in b.meta.get("scope") or [] if at else []:
+            path = os.path.realpath(os.path.join(root, s))
+            if re.search(r"[*?\[]", s) or not path.startswith(root + os.sep):
+                continue
+            rel = os.path.relpath(path, root)
+            landed = max((t for f, t in log.items() if f == rel or f.startswith(rel + "/")), default=0)
+            if not os.path.exists(path):
+                if rel in head or landed > at:
+                    out[b.id] = f"{s} is gone"
+                    break
+            elif landed > at or (os.path.isfile(path) and (rel in dirty or rel not in head)
+                                 and os.path.getmtime(path) > at):
+                out[b.id] = f"{s} changed since it was planned"
+                break
+    return out
+
+
+DEFER_DROP_DAYS = 90
+
+
+def triage_deferred(p, briefs):
+    """T-1048: [(id, verdict, why)] for each deferred brief; proposes only, nothing is applied. do: its --until date or
+    file change came (nothing else says it is ready: a young brief with untouched files is not). drop: 90+ days old
+    with no scope file left (or none named) and no revisit trigger. ask: the rest."""
+    root, today, out = c.main_view(p).root, c.datetime.date.today().isoformat(), []
+    for b in briefs:
+        if b.status != "deferred":
+            continue
+        age, rv = c.age_days(b.meta.get("updated")) or 0, b.meta.get("revisit")
+        scope = b.meta.get("scope") or []
+        live = gone = False
+        for s in scope:  # like stale_plans: a path that never existed is a file the plan creates, not a dead one
+            if re.search(r"[*?\[]", s):
+                live = live or bool(glob.glob(os.path.join(root, s), recursive=True))
+            elif os.path.exists(os.path.join(root, s)):
+                live = True
+            elif c._git(root, "log", "-1", "--format=%ct", "--", s, timeout=30).strip():
+                gone = True
+        if rv and c.deferral_due(root, rv, today):
+            out.append((b.id, "do", f"its revisit trigger came ({rv})"))
+        elif age >= DEFER_DROP_DAYS and not live and not rv and (gone or not scope):
+            out.append((b.id, "drop", f"{int(age)}d old, " + ("its scope is gone" if gone else "no scope and no trigger")))
+        else:
+            out.append((b.id, "ask", f"{int(age)}d old" + (f", revisit {rv}" if rv else "")))
+    return out
 
 
 def check_project(p, apply, actions):
@@ -152,6 +247,22 @@ def check_project(p, apply, actions):
     for a, d in dangling:
         out.append(finding(slug, "dangling_dep", "warn", f"{a} depends on unknown {d}", f"fm task set {a} depends_on=…"))
     status = {b.id: b.status for b in briefs}
+    for tid, why in stale_plans(p, briefs).items():
+        out.append(finding(slug, "stale_plan", "warn", f"{tid} re-plan: {why}", f're-read its Steps against the code, '
+                           f'fix what no longer holds, then fm task log {tid} "plan re-read: <what changed, or still valid>"'))
+    for date, decision, sunset in c.expired_decisions(p):  # T-1084
+        out.append(finding(slug, "decision_expired", "warn", f"decision of {date} hit its sunset {sunset}: {c.fit(decision, 80)}",
+                           'keep it (fm decide "<it again>" --revisited WORDS) or undo it (--reverses WORDS)'))
+    asks = []
+    for tid, verdict, why in triage_deferred(p, briefs):
+        if verdict == "ask":
+            asks.append(tid)
+            continue
+        out.append(finding(slug, "deferred_triage", "warn" if verdict == "drop" else "info", f"{tid} deferred: propose {verdict} ({why})",
+                           f'fm task drop {tid} "{why}"' if verdict == "drop" else f"fm task set {tid} status=planned"))
+    if asks:
+        out.append(finding(slug, "deferred_triage", "info", f"{len(asks)} deferred briefs to decide: {', '.join(asks)}",
+                           "do each (fm task set ID status=planned) or drop it (fm task drop ID \"<why>\")"))
     for b in briefs:
         why = unblocked(p, b, status) if b.status == "blocked" else None
         if why:
@@ -184,6 +295,7 @@ def check_project(p, apply, actions):
     out += _prune_snapshots(p, apply, actions)
     out += _backup_state(p, apply, actions)
     out += _check_memory(p, apply, actions)
+    out += _hygiene(p, apply, actions)
     out += _check_instructions(slug, p.root, [os.path.join(p.root, "CLAUDE.md"), os.path.join(p.root, ".claude", "CLAUDE.md"),
                                               os.path.join(p.root, "CLAUDE.local.md")],
                                os.path.join(p.root, ".claude", "rules"), PROJECT_MD_MAX)
@@ -193,6 +305,63 @@ def check_project(p, apply, actions):
         c.update_meta(p, last_tidy=c.now())
         c.log_event(p, "tidy", data={"actions": [f"{k}:{v}" for k, v in actions if k != "global"][:50],
                                      "findings": len(out)})
+    return out
+
+
+HINT_STALE_DAYS = 60
+
+
+def _hygiene(p, apply, actions):
+    """T-1072: a known fix that keeps missing is removed on --apply (its line copied to archive/fixes-removed.md first);
+    one unused for 60 days is only listed (a quarterly fix is still a fix), and so is one synced from the repo (fmsync
+    would put it back). Of the cards the map picked for this project, those no edit used in 60 days are listed once
+    (a shipped card file is never retired). Lessons keep no fire record."""
+    import fmfixes
+    slug, out, st = p.slug, [], fmfixes._load(fmfixes._stats_path())
+    for f in fmfixes.known(p, st):
+        x = (st.get("fixes") or {}).get(f["id"]) or {}
+        age = c.age_days(x.get("last"))  # no record at all: unknown age, kept
+        losing = fmfixes._losing(st, f["id"])
+        if not (losing or (age and age > HINT_STALE_DAYS)):
+            continue
+        synced = f["store"] == "project" and not f["trusted"]
+        what = "keeps missing" if losing else f"unused {int(age)}d"
+        out.append(finding(slug, "losing_fix" if losing else "stale_fix", "warn",
+                           f"known fix `{f['sig'][:60]}` ({what}{'; shared: change it in the repo file' if synced else ''})",
+                           "fm tidy --apply retires it" if losing and not synced else
+                           "listed only: fm fix rm <n> if it no longer applies", auto=losing and not synced))
+        if apply and losing and not synced:
+            line = fmfixes._line({k: v for k, v in f.items() if k != "trusted"})
+            if fmfixes.remove(p, f["id"]):
+                d = os.path.join(p.dir, "archive")
+                os.makedirs(d, exist_ok=True)
+                with open(os.path.join(d, "fixes-removed.md"), "a", encoding="utf-8") as fh:
+                    fh.write(f"<!-- removed {c.now()[:10]} -->\n{line}")
+                actions.append(("losing_fix", f["id"]))
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as fh:
+            rows = json.load(fh).get("lib_cards")
+    except (OSError, ValueError, AttributeError):
+        rows = None
+    mine = {x["name"] for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str)} if isinstance(rows, list) else set()
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - HINT_STALE_DAYS * 86400))
+    used = {(e.get("data") or {}).get("card") for e in c.ledger_events(p, ("enforce",), since=since)
+            if (e.get("data") or {}).get("kind") == "card_injected"}
+    hit = c.rule_last_hits(p)  # T-1115: rules no call matched in the window, older than it (the user removes them)
+    quiet = [f"{n} `{c.fit(r['pattern'], 40)}`" for n, r in enumerate(c.rules(p), 1)
+             if str(r.get("at") or "") < since and str(hit.get(r["pattern"]) or "") < since]
+    if quiet:
+        out.append(finding(slug, "quiet_rule", "info", f"rule(s) no call matched in {HINT_STALE_DAYS} days: "
+                           + ", ".join(quiet[:8]), "listed only: the user removes a rule (fm rule rm N) if it's obsolete"))
+    ignored = sorted(c.hints_quiet(p))
+    if ignored:
+        out.append(finding(slug, "ignored_hint", "info", f"hints shown {c.QUIET_AFTER}+ times running without use: "
+                           + ", ".join(ignored), "listed only: Next already shortens them to the bare command"))
+    names = sorted(mine - used)
+    if names:  # info, not warn: a clean project shouldn't read as needing action
+        out.append(finding(slug, "unused_card", "info", f"{len(names)} of {len(mine)} cards picked for this project reached no "
+                           f"edit here in {HINT_STALE_DAYS} days: {', '.join(names[:8])}",
+                           "listed only: cards ship with the plugin (fm lib stats shows use)"))
     return out
 
 
@@ -250,24 +419,82 @@ def _roll_ledger(p, apply, actions):
     out = [finding(p.slug, "roll_ledger", "action", f"ledger.jsonl is {size // 1024} KB",
                    "move past months to archive/ledger-YYYY-MM.jsonl", auto=True)]
     if apply:
-        month = c.now()[:7]
-        with c.lock(p.dir):
-            keep, rolled = [], {}
-            with open(path, encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        m = json.loads(line).get("ts", month)[:7]
-                    except ValueError:
-                        m = month
-                    (rolled.setdefault(m, []) if m < month else keep).append(line)
+        month, rolled = c.now()[:7], {}
+        # T-1099: bytes, under the ledger's own flock (log_event's), rewritten in place: write_atomic would swap the
+        # inode, and a writer waiting on the old one would append to the unlinked file. ponytail: an older Foreman's
+        # log_event never flocks, so its line can land mid-roll (lost) or between a writer's tail read and its write
+        # (a false break in fm verify-ledger); closing that needs every writer upgraded.
+        side = path + ".rolling"
+        with open(path, "r+b") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)
+            _resume_rewrite(f, side)
+            f.seek(0)
+            lines = f.readlines()
+            run = ([os.path.basename(a)[7:14] for a in c.ledger_files(p)[:-1]] or [None])[-1]
+            months = []
+            for line in lines:  # months never fall, so the archives read in chain order and the rolled lines are a prefix
+                m = _ledger_month(line, month)
+                run = max(run, m) if run and m else run or m  # no ts, or a future one: the line before's month
+                months.append(run)
+            first = next((m for m in months if m), month)  # leading lines with no ts go with the first that has one
+            months = [m or first for m in months]
+            cut = sum(m < month for m in months)
+            for line, m in zip(lines[:cut], months):
+                rolled.setdefault(m, []).append(line if line.endswith(b"\n") else line + b"\n")
             os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
-            for m, lines in rolled.items():
-                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "a", encoding="utf-8") as f:
-                    f.writelines(lines)
-            c.write_atomic(path, "".join(keep))
-        c.log_event(p, "ledger_rolled", data={m: len(v) for m, v in rolled.items()})
-        actions.append(("roll_ledger", ",".join(sorted(rolled))))
+            for m, chunk in rolled.items():
+                chunk = b"".join(chunk)
+                with open(os.path.join(p.dir, "archive", f"ledger-{m}.jsonl"), "a+b") as a:
+                    a.seek(max(0, a.seek(0, os.SEEK_END) - len(chunk)))
+                    if a.read() != chunk:  # equal: a roll that died before its rewrite archived these already
+                        a.write(chunk)
+                        a.flush()
+                        os.fsync(a.fileno())  # archived for good before the live file lets them go
+            if cut:
+                _rewrite(f, side, b"".join(lines), b"".join(lines[cut:]))
+        if rolled:
+            c.log_event(p, "ledger_rolled", data={m: len(v) for m, v in rolled.items()})
+            actions.append(("roll_ledger", ",".join(sorted(rolled))))
     return out
+
+
+def _rewrite(f, side, whole, keep):
+    """The live ledger `whole` cut down to its suffix `keep`, in place. The sidecar first holds keep, the old size and the
+    hash of the bytes past keep that the rewrite leaves until its truncate, so a roll that dies midway can be resumed."""
+    c.write_atomic(side, b"%d %s\n" % (len(whole), c.ledger_hash(whole[len(keep):]).encode()) + keep)
+    f.seek(0)
+    f.write(keep)
+    f.flush()
+    os.ftruncate(f.fileno(), len(keep))
+    os.fsync(f.fileno())
+    os.remove(side)
+
+
+def _resume_rewrite(f, side):
+    """T-1099 review: finish a rewrite a dead roll left. Bytes past the sidecar's keep still as they were: it never
+    truncated, so the live ledger is keep plus whatever landed past the old size since. Else it did, and the sidecar
+    is stale."""
+    try:
+        with open(side, "rb") as s:
+            head, keep = s.readline(), s.read()
+    except FileNotFoundError:
+        return
+    size, h = head.split()
+    live = f.read()
+    if c.ledger_hash(live[len(keep):int(size)]) == h.decode():
+        _rewrite(f, side, live, keep + live[int(size):])
+    else:
+        os.remove(side)
+
+
+def _ledger_month(line, month):
+    """A ledger line's YYYY-MM, None when its ts is missing, unparseable or past `month` (a clock that ran ahead)."""
+    try:
+        ts = json.loads(line.decode("utf-8", "replace")).get("ts")
+    except (ValueError, AttributeError, RecursionError):
+        return None
+    m = ts[:7] if isinstance(ts, str) and re.match(r"\d{4}-\d\d", ts) else None
+    return m if m and m <= month else None
 
 
 def _check_memory(p, apply, actions):
@@ -447,9 +674,15 @@ def cmd_tidy(args):
     import fmcli
     projects = [p for p, _ in c.all_projects()] if args.all else [fmcli.resolve(args)]
     actions, findings = [], []
+    lanes = getattr(args, "lanes_only", False)  # T-1071: what fm night runs: nothing but closed tasks' lanes
     for p in projects:
-        findings += check_project(p, args.apply, actions)
-    findings += check_global(args.apply, actions, plugins=getattr(args, "plugins", False))
+        if lanes:
+            import fmlanes
+            findings += fmlanes.stale(p, c.load_briefs(p), args.apply, actions, finding)
+        else:
+            findings += check_project(p, args.apply, actions)
+    if not lanes:
+        findings += check_global(args.apply, actions, plugins=getattr(args, "plugins", False))
     report = {"applied": bool(args.apply), "projects": [p.slug for p in projects], "findings": findings,
               "actions": [f"{k}:{v}" for k, v in actions]}
     if args.json:

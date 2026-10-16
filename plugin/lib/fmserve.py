@@ -9,6 +9,7 @@ fm run works the queue in fresh `claude -p` sessions, one task per session (driv
 FOREMAN_DRIVE_TASK), so a long queue never runs in one ever-growing context.
 """
 import fcntl
+import functools
 import glob
 import json
 import os
@@ -264,7 +265,7 @@ def _fingerprint(b):
 def _next_runnable(p, skip, told, fit=False):
     briefs = c.lane_view(c.load_briefs(p), p.lane)  # T-0134: never another lane's task
     meta = c.read_meta(p)
-    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
+    pending, autonomy = c.pending_tasks(meta), c.effective_autonomy(p, meta)  # T-1061
     act = c.active_brief(briefs, p.lane)
     queue = c.order_queue(briefs)[0]
     if fit:  # T-0732: small first, so more finish before a limit; a task waiting on an open one keeps waiting
@@ -274,6 +275,12 @@ def _next_runnable(p, skip, told, fit=False):
     for b in ([act] if act else []) + queue:
         if b.id in skip:
             continue
+        if b.meta.get("cost_cap"):  # T-1127: a hit is recorded on the brief, then waits_on_user holds it
+            try:
+                import fmcost
+                fmcost.check_cap(p, b)
+            except Exception:
+                pass  # a cap that can't be read never stops a run
         why = c.waits_on_user(b, pending, autonomy)
         if why:
             if b.id not in told:
@@ -284,10 +291,10 @@ def _next_runnable(p, skip, told, fit=False):
     return None
 
 
-def _ahead_of_pace():
+def _ahead_of_pace(p=None):
     try:
         import fmbudget
-        return fmbudget.degrade()
+        return fmbudget.degrade(p)
     except Exception:  # an unreadable snapshot never changes the order
         return None
 
@@ -350,7 +357,7 @@ def _batch(p, head, skip, n):
     are pairwise disjoint, nothing unfinished they depend on, nothing waiting on the user. One task: run as before."""
     briefs = c.lane_view(c.load_briefs(p), p.lane)
     by_id, meta = {b.id: b for b in c.load_briefs(p)}, c.read_meta(p)
-    pending, autonomy = c.pending_tasks(meta), meta.get("autonomy", "standard")
+    pending, autonomy = c.pending_tasks(meta), c.effective_autonomy(p, meta)
 
     def free(b):
         return (b.tier in ("S", "M") and b.status == "planned" and b.meta.get("scope") and b.id not in skip
@@ -371,18 +378,88 @@ def _batch(p, head, skip, n):
 
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
-    return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
+    return ["claude", "-p", _prompt(p, b)] + (["--output-format", "json"] if getattr(args, "max_usd", None) is not None
+                                              else []) + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
-        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) else [])
+        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if _sandbox_wanted(p, args) and _sandbox_available()
+        else [])
+
+
+def _sandbox_wanted(p, args):
+    """T-1086: the sandbox is opt-in: fm run --sandbox, or fm sandbox on (a project setting, so fm night keeps it);
+    --no-sandbox turns the setting off for one run."""
+    return not getattr(args, "no_sandbox", False) and bool(
+        getattr(args, "sandbox", False) or (c.read_meta(p).get("sandbox") or {}).get("on"))
+
+
+@functools.cache
+def _sandbox_available():
+    """T-1086: the host can run Claude Code's sandbox: bubblewrap that really starts (a bwrap on PATH is not enough:
+    flatpak ships one, and user namespaces may be off) plus socat, or sandbox-exec on macOS. Probed once."""
+    if shutil.which("sandbox-exec"):
+        return True
+    if not (shutil.which("bwrap") and shutil.which("socat")):
+        return False
+    try:
+        return subprocess.run(["bwrap", "--unshare-user", "--ro-bind", "/", "/", "true"], capture_output=True,
+                              timeout=10).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+_REGISTRIES = (("package.json", ("registry.npmjs.org",)),
+               ("pyproject.toml", ("pypi.org", "files.pythonhosted.org")),
+               ("requirements.txt", ("pypi.org", "files.pythonhosted.org")),
+               ("Cargo.toml", ("crates.io", "index.crates.io", "static.crates.io")),
+               ("go.mod", ("proxy.golang.org", "sum.golang.org")))
+
+
+def _sandbox_domains(p):
+    """The domains a sandboxed session may reach: the project's list (fm sandbox allow), else the git remote's host and
+    the package registries for the languages the project holds."""
+    meta = c.read_meta(p).get("sandbox") or {}
+    if meta.get("allow"):
+        return list(meta["allow"])
+    out = []
+    url = c._git(p.root, "remote", "get-url", "origin").strip()
+    m = re.search(r"://(?:[^/@]*@)?([^/:]+)|@([^:/]+):", url)
+    if m:
+        out.append(m.group(1) or m.group(2))
+    for f, hosts in _REGISTRIES:
+        if os.path.exists(os.path.join(p.root, f)):
+            out += [h for h in hosts if h not in out]
+    return out
 
 
 def _sandbox(p):
-    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only its checkout plus what fm needs (its
-    state; the git dir, where a lane's commits land), and no unsandboxed fallback, so a host without bubblewrap fails
-    the session instead of running it open."""
+    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only the checkout, the cache dirs, fm's
+    state and the git dir (where a lane's commits land), and reaches only the allowed domains. No unsandboxed
+    fallback (fm run refuses first when the host has no working sandbox)."""
     git_dir = c._git(p.root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    home = os.path.expanduser("~")
     return {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
-            "filesystem": {"allowWrite": [c.state_dir()] + ([git_dir] if git_dir else [])}}
+            "network": {"allowedDomains": _sandbox_domains(p)},
+            "filesystem": {"allowWrite": [p.root, c.state_dir(), os.path.join(home, ".cache"), os.path.join(home, ".npm")]
+                           + ([git_dir] if git_dir else [])}}
+
+
+def cmd_sandbox(args):
+    """fm sandbox [on|off|allow DOMAIN…|show]: fm run's sandbox as a project setting (T-1086)."""
+    import fmcli
+    p = fmcli.resolve(args)
+    s = dict(c.read_meta(p).get("sandbox") or {})
+    if args.action in ("on", "off"):
+        s["on"] = args.action == "on"
+    elif args.action == "allow":
+        if not args.domains:
+            raise fmcli.UsageError("fm sandbox allow needs a domain")
+        s["allow"] = sorted(set(s.get("allow") or _sandbox_domains(p)) | set(args.domains))
+    if args.action != "show":
+        c.update_meta(p, sandbox=s)
+    on = s.get("on", False)
+    fmcli.out(args, {"on": on, "domains": _sandbox_domains(p), "available": _sandbox_available()},
+              f"fm run sandbox: {'on' if on else 'off'} ({', '.join(_sandbox_domains(p)) or 'no network'}); this host "
+              f"{'can' if _sandbox_available() else 'cannot'} run it")
 
 
 def _run_lanes(p, batch, args, models, log):
@@ -462,10 +539,7 @@ def _watch(proc, cwd, deadline, stall_s):
 
 
 def _stop(proc, signal):
-    try:
-        os.killpg(proc.pid, signal.SIGKILL)
-    except OSError:
-        proc.kill()
+    c.kill_group(proc)
     proc.wait()
 
 
@@ -645,8 +719,15 @@ def _inhibit():
 
 def cmd_run(args):
     import fmcli
+    if args.sandbox and args.no_sandbox:
+        raise fmcli.UsageError("--sandbox and --no-sandbox contradict each other: pick one")
     _inhibit()
     p = fmcli.resolve(args)
+    if _sandbox_wanted(p, args):  # T-1086: no working sandbox means no run, never a silently open one
+        if not _sandbox_available():
+            raise c.PolicyError("the sandbox is on but this host can't run it (needs bubblewrap that starts, plus "
+                                "socat; or sandbox-exec): fm sandbox off, or fm run --no-sandbox")
+        print(f"sandbox: on ({', '.join(_sandbox_domains(p)) or 'no network'})")
     if c.read_meta(p).get("serve"):
         raise c.PolicyError(f"fm serve is running Remote Control for {p.slug}; a second writer would collide. Send "
                             f"work to that session, or fm serve stop first")
@@ -680,10 +761,19 @@ def cmd_run(args):
     models = _models(p, args)
     finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
+    cap, run_usd, capped = getattr(args, "max_usd", None), 0.0, False
+    if cap is not None:
+        if not cap >= 0:
+            raise fmcli.UsageError("--max-usd must be a number ≥ 0")
+        args.parallel = 1  # lanes' sessions aren't measured, so a capped run goes one at a time
     while finished < args.max:
         if c.panicked():  # T-0436: before the first session and between every two
             fail(c.PAUSED)
-        b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace()))
+        if cap is not None and run_usd >= cap:  # T-1046: measured from each session's JSON result
+            print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
+            capped = True
+            break
+        b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace(p)))
         if not b:
             break
         batch = _batch(p, b, skip, min(args.parallel, PARALLEL_MAX, args.max - finished))
@@ -745,6 +835,16 @@ def cmd_run(args):
             se.seek(0)
             streams = (so.read(), se.read())
         output = streams[0] + streams[1]
+        if cap is not None:  # the result line's cost, counted even when the session didn't finish its task
+            for line in reversed(streams[0].strip().splitlines()):
+                try:
+                    usd = float(json.loads(line).get("total_cost_usd") or 0)
+                except (ValueError, AttributeError, TypeError):
+                    continue
+                run_usd += usd
+                import fmbudget
+                fmbudget.record("run", usd, project=p.slug, detail=b.id)
+                break
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"== {c.now()} {b.id} exit {code}{' (' + why + ')' if why else ''}\n{c.redact(output)}\n")
         if why == "stalled":  # T-0447: stopped; it resumes from its brief in a fresh session if it moved at all
@@ -792,4 +892,5 @@ def cmd_run(args):
                 fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping", quarantine=b.id)
     _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
-          + ("; the queue has nothing else runnable" if finished < args.max else f"; stopped at --max {args.max}"))
+          + ("; spend cap reached" if capped else "; the queue has nothing else runnable" if finished < args.max
+             else f"; stopped at --max {args.max}"))

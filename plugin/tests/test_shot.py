@@ -103,3 +103,10 @@ class Trust(unittest.TestCase):
             screens[:] = [dialog]
             self.assertFalse(shot.answer_trust(d, wait=2))
         self.assertEqual(sent, [])
+
+    def test_the_live_recorder_trusts_only_through_the_shared_check(self):
+        # T-1034: demo/record_live.py pressed Down/Enter on the trust prompt for any folder, a cloned --repo included
+        with open(os.path.join(os.path.dirname(SHOT), "..", "..", "..", "demo", "record_live.py"), encoding="utf-8") as f:
+            src = f.read()
+        self.assertIn("shot.answer_trust(", src)
+        self.assertNotIn('"Down")', src)

@@ -156,3 +156,19 @@ class KnownFixes(ForemanTestCase):
         self.assertEqual(len(self.fm_json("fix", "list")), 1)  # its own store
         shared = os.path.join(c.state_dir(), "shared", "fixes.md")
         self.assertFalse(os.path.exists(shared) and "python3 -m pytest" in open(shared, encoding="utf-8").read())
+
+    def test_the_digest_counts_fixes_and_interventions_per_closed_task(self):
+        """T-1045: what was learned: fixes new, worked, missed, and interventions per closed task."""
+        import fmfixes
+        self.learn()
+        p = c.find_project(self.repo)
+        fmfixes._bump(self.fm_json("fix", "list")[0]["id"], worked=2, misses=1)
+        self.fm("task", "new", "One", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        tid = c.load_briefs(p)[-1].id
+        self.fm("task", "finish", tid, "--audit", "self", "--run", "true")
+        for t in ("no, use the other way", "wrong file again"):
+            c.log_event(p, "correction", task=tid, data={"text": t})
+        d = self.fm_json("digest")["learned"]
+        self.assertEqual((d["fixes_new"], d["worked"], d["missed"]), (1, 2, 1))
+        self.assertEqual(d["interventions_per_task"], 2.0)
+        self.assertIn("per closed task", self.fm("digest").stdout)

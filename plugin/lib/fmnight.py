@@ -16,12 +16,13 @@ import time
 
 import fmbudget
 import fmcore as c
+import fmdraft
 import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("scout", "dream", "cold files", "compost", "consolidate", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
 
 
 def current_model(p):
@@ -52,6 +53,8 @@ def jobs(p):
     meta, out = c.read_meta(p), [("scout", ["scout", "--slow"], 0.0)]  # T-0950: free to look: work nobody asked for
     out.append(("dream", ["dream"], 0.0))  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
+    out.append(("compost", ["tidy", "--apply", "--lanes-only"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
+    out.append(("consolidate", ["recall", "--lessons", "--consolidate", "--capture", "--from-night"], 0.0))  # T-1071: free: a merge proposal, retires nothing
     if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
     smoke = meta.get("smoke") or {}
@@ -62,10 +65,10 @@ def jobs(p):
     age = c.age_days(meta.get("landscape_at"))
     if age is None or age >= fmoutside.LANDSCAPE_DAYS:
         out.append(("landscape", ["landscape", "--if-due"], fmbudget.estimate("research", 4, 0.2)))
-    lesion = None if fmbudget.degrade() else next_lesion(p)
+    lesion = None if fmbudget.degrade(p) else next_lesion(p)
     if lesion:  # T-0734: a model nobody has ablated Foreman's rules and skills on yet
         out.append((f"model lesion {lesion}", ["evolve", "--target", lesion, "--drop"], fmbudget.estimate("bench", 3, 0.5)))
-    big = None if fmbudget.degrade() else next(  # T-0730: optional, so it waits while usage runs ahead of pace
+    big = None if fmbudget.degrade(p) else next(  # T-0730: optional, so it waits while usage runs ahead of pace
         (b for b in c.order_queue(c.load_briefs(p))[0] if b.tier == "L" and not b.section("Plan review").strip()), None)
     if big:  # a queued L task's plan read by another model while nobody is waiting on it
         out.append((f"pre-plan {big.id}", ["second", "plan", big.id], fmbudget.estimate("second-plan", 1, 0.05)))
@@ -87,6 +90,14 @@ def jobs(p):
         est = fmbudget.estimate("bench", 4, 0.5)
         out.append((f"evolve candidate {cand}", ["bench", "versions", cand, "--max", "2", "--budget",
                                                  f"{max(0.1, est / 4):.2f}"], est))
+    briefs = c.load_briefs(p)
+    state = {b.id: b.status for b in briefs}
+    if any(b.tier in ("S", "M") and all(state.get(d) in c.CLOSED for d in c._deps(b))
+           for b in c.order_queue(briefs)[0]):  # T-1046: an unblocked small task is waiting: fm run works it
+        out.append(("queue", ["run", "--fit", "--max", "2", "--wait", "0"], fmbudget.estimate("run", 2, 0.5)))
+    top = fmdraft._top(p)
+    if top and not os.path.exists(os.path.join(p.dir, "draft.json")):  # T-1062: a small task drafted for review, never merged
+        out.append((f"draft {top.id}", ["draft"], fmbudget.estimate("run", 1, 0.3)))
     return out
 
 
@@ -165,7 +176,7 @@ def cmd_night(args):
            [f"  skipped {j['name']} (≈ ${j['usd']:.2f}: over the limit)" for j in skipped]
     if args.dry_run:
         return fmcli.out(args, {"jobs": plan, "skipped": skipped, "limit": limit, "note": note}, "\n".join([head] + rows))
-    ran, stopped = [], ""
+    ran, stopped, t0 = [], "", c.now()
     for j in plan:  # one at a time; before each, the real spend so far and the usage now (review)
         night_usd = fmbudget.spent()[0] - start
         if night_usd >= limit and ran:
@@ -182,7 +193,8 @@ def cmd_night(args):
             break
         fmserve.beat(p, "night", JOB_TIMEOUT, j["name"])
         try:
-            r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"]], cwd=p.root,
+            left = ["--max-usd", f"{max(0.0, limit - (fmbudget.spent()[0] - start)):.4f}"] if j["name"] == "queue" else []
+            r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"], *left], cwd=p.root,
                                env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"), capture_output=True, text=True,
                                timeout=JOB_TIMEOUT)
             code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-1:]
@@ -191,9 +203,11 @@ def cmd_night(args):
         ran.append({"name": j["name"], "exit": code, "tail": c.fit(c.plain(" ".join(tail)), 160)})
     if not stopped and ran and fmbudget.spent()[0] - start > limit:
         stopped = f"spend ${fmbudget.spent()[0] - start:.2f} passed the limit ${limit:.2f} in the last job"
+    closed = [e["task"] for e in c.ledger_tail(p, 5000) if e.get("event") == "task_done" and e.get("task")
+              and str(e.get("ts", ""))[:19] >= t0[:19]] if any(x["name"] == "queue" for x in ran) else []
     with c.lock(p.dir):
         c.log_event(p, "night", data={"ran": ran, "skipped": [s["name"] for s in skipped], "limit": limit,
-                                      "stopped": stopped}, session=fmcli.session())
+                                      "stopped": stopped, "closed": closed}, session=fmcli.session())
     fmcli.out(args, {"ran": ran, "skipped": skipped, "limit": limit, "stopped": stopped, "note": note},
               "\n".join([head] + [f"  {'✓' if x['exit'] == 0 else '✗'} {x['name']}: {x['tail']}" for x in ran]
                         + [f"  skipped {s['name']}" for s in skipped] + ([f"  stopped: {stopped}"] if stopped else [])))

@@ -10,6 +10,7 @@ import fmcore as c
 
 _TID = re.compile(r"\bT-\d{4,}\b")
 SMOKE_DAYS = 7  # a failing smoke run this soon after a close points at that task (weakly: smoke covers the whole UI)
+SURVIVE_DAYS = 30  # T-1060: a close survives when nothing undid it this long after
 _VERSION = re.compile(r"\b\d+\.\d+\.\d+\b")  # a release task names what it ships
 
 
@@ -43,10 +44,11 @@ def outcomes(p):
     briefs = c.load_briefs(p, include_archive=True)
     closed = {b.id: done_at(b) for b in briefs if b.status == "done" and not b.meta.get("done_in")}  # T-0852: a
     # task folded into another has no close of its own: its host's record is the one that counts
-    reverted = collections.defaultdict(list)
-    for _, subj, _, tasks in reverts(p):
+    reverted, when = collections.defaultdict(list), collections.defaultdict(list)  # when: T-1060, each bad event's time
+    for at, subj, _, tasks in reverts(p):
         for t in tasks:
             reverted[t].append(subj)
+            when[t].append((_ts(at), "reverted"))
     later = collections.defaultdict(list)
     for f in briefs:
         # ponytail: a FIX naming exactly one finished task is a follow-up fix; releases and batches name several
@@ -56,25 +58,70 @@ def outcomes(p):
         named = (set(_TID.findall(" ".join([f.title, f.section("Raw request")]))) - {f.id}) & closed.keys()
         if len(named) == 1 and str(f.meta.get("created") or "") >= closed[next(iter(named))]:
             later[next(iter(named))].append(f.id)
+            when[next(iter(named))].append((_ts(f.meta.get("created")), f"fixed by {f.id}"))
     corrected = collections.defaultdict(list)  # T-0602: the user corrected it after it closed
-    for e in c.ledger_tail(p, 50000):
+    events = c.ledger_events(p, ("correction", "smoke"))  # T-1060 review: the archived months too
+    for e in events:
         t = e.get("task")
         if e.get("event") == "correction" and t in closed and str(e.get("ts") or "") > closed[t]:
             corrected[t].append(c.fit(str((e.get("data") or {}).get("text") or ""), 100))
+            when[t].append((_ts(e.get("ts")), "corrected"))
     smoked = collections.defaultdict(list)  # T-0743: a smoke run that found defects within a week of the close
-    for e in c.ledger_tail(p, 50000):
+    for e in events:
         if e.get("event") == "smoke" and (e.get("data") or {}).get("defects"):
             at = c.parse_ts(e.get("ts"))
             for t, ts in closed.items():
                 done = c.parse_ts(ts)
                 if at and done and 0 <= (at - done).total_seconds() <= SMOKE_DAYS * 86400:
                     smoked[t].append(f"smoke {str(e.get('ts'))[:10]}: {e['data']['defects']} defect(s)")
+                    # no survival loss: smoke covers the whole UI, too weak a link to grade a task lost for good
     fate = lambda i: ("reverted" if i in reverted else "fixed later" if i in later else
                       "corrected" if i in corrected else "smoke failed after" if i in smoked else "held")
     return {b.id: {"fate": fate(b.id), "by": reverted.get(b.id) or sorted(later.get(b.id, [])) or corrected.get(b.id, [])
                    or smoked.get(b.id, []),
-                   "type": b.type, "tier": b.tier}
+                   "type": b.type, "tier": b.tier, **_survival(closed[b.id], when.get(b.id, []))}
             for b in briefs if b.id in closed}
+
+
+def _ts(s):
+    """A time from a ledger/brief stamp (UTC Z) or git's %cI (with an offset); None when unreadable."""
+    t = c.parse_ts(s) if s else None
+    if t is None and s:
+        import datetime
+        try:
+            t = datetime.datetime.fromisoformat(str(s)).astimezone(datetime.timezone.utc)
+        except ValueError:
+            t = None
+    return t
+
+
+def _survival(closed_at, bad):
+    """T-1060 (wild C1, 'grade closed work by whether it survived'): survived (nothing undid it within SURVIVE_DAYS of
+    the close), lost (the first thing that did, and when), or settling (days left in the window)."""
+    import datetime
+    t0 = _ts(closed_at)
+    if not t0:
+        return {"survival": "unknown"}
+    end = t0 + datetime.timedelta(days=SURVIVE_DAYS)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    hits = sorted((at, why) for at, why in bad if at and t0 <= at <= min(end, now))  # a future-dated commit waits
+    if hits:
+        return {"survival": "lost", "lost_at": c.iso(hits[0][0].timestamp()), "lost_by": hits[0][1]}
+    left = (end - now).total_seconds() / 86400
+    return {"survival": "survived"} if left <= 0 else {"survival": "settling", "days_left": int(left) + 1}
+
+
+def survival_lines(p, outs=None):
+    """One line: how the closes graded, and the days since the last lost one (an accident-free counter)."""
+    import datetime
+    outs = outcomes(p) if outs is None else outs
+    n = collections.Counter(o.get("survival") for o in outs.values())
+    if not outs:
+        return []
+    lost = [_ts(o["lost_at"]) for o in outs.values() if o.get("lost_at")]
+    since = (f"days since a lost task: {max(0, (datetime.datetime.now(datetime.timezone.utc) - max(lost)).days)}" if lost
+             else "no lost task yet")
+    return [f"Survival ({SURVIVE_DAYS} days): {n['survived']} survived, {n['lost']} lost, {n['settling']} settling; {since}"]
 
 
 def track(p, outs=None):
@@ -122,10 +169,77 @@ def cmd_outcomes(args):
     lines += [f"- {t} {o['fate']}: {c.fit(', '.join(o['by'][:3]), 140)}" for t, o in sorted(bad.items())[-20:]]
     if getattr(args, "atlas", False):  # T-0620
         return fmcli.out(args, atlas(p, outs), "\n".join(atlas_lines(p, outs)))
-    lines += track_lines(p) + calibration_lines(p, outs)
+    for flag in ("settle", "claims", "regret", "graveyard", "seen"):  # T-1060: reports that read the 30-day grades
+        if getattr(args, flag, False):
+            res = globals()["_" + flag](p, outs)
+            return fmcli.out(args, res, "\n".join(res["lines"]))
+    lines += survival_lines(p, outs) + track_lines(p) + calibration_lines(p, outs)
     rows = track(p, outs)
     return fmcli.out(args, {"tasks": outs, "track": {f"{a} {b}": dict(r) for (a, b), r in rows.items()}},
                      "\n".join(lines))
+
+
+def _settle(p, outs):
+    """One `outcome` ledger event per task whose window has closed (survived or lost), once per task."""
+    done = {e.get("task") for e in c.ledger_events(p, ("outcome",))}
+    new = [(t, o) for t, o in sorted(outs.items()) if o.get("survival") in ("survived", "lost") and t not in done]
+    for t, o in new:
+        c.log_event(p, "outcome", task=t, data={k: o[k] for k in ("survival", "lost_at", "lost_by", "fate") if k in o})
+    return {"graded": [t for t, _ in new], "lines": [f"{len(new)} graded"]
+            + [f"- {t} {o['survival']}" + (f": {o['lost_by']}" if o.get("lost_by") else "") for t, o in new[-20:]]}
+
+
+def _graded(p, outs):
+    return {b.id: b for b in c.load_briefs(p, include_archive=True) if b.id in outs
+            and outs[b.id].get("survival") in ("survived", "lost")}
+
+
+def _claims(p, outs):
+    """Did a strong close survive more often than a weak one? Survival by the grade the finish recorded."""
+    rows = collections.defaultdict(lambda: [0, 0])
+    for t, b in _graded(p, outs).items():
+        r = rows[str(b.meta.get("verified") or "ungraded")]
+        r[0] += 1
+        r[1] += outs[t]["survival"] == "survived"
+    return {"by_grade": {k: {"graded": n, "survived": ok} for k, (n, ok) in rows.items()},
+            "lines": ["Survival by close grade:"] + ([f"- {k}: {ok} of {n} survived" for k, (n, ok) in sorted(rows.items())]
+                                                     or [f"- nothing graded yet: a close is graded {SURVIVE_DAYS} days on"])}
+
+
+def _regret(p, outs):
+    """Lost tasks with the approach they took, and the decisions a later one reversed."""
+    import fmcost
+    lost = [(t, b) for t, b in _graded(p, outs).items() if outs[t]["survival"] == "lost"]
+    lines = [f"Lost within {SURVIVE_DAYS} days ({len(lost)}):"] + [
+        f"- {t} {c.fit(c.plain(b.title), 60)}: {outs[t].get('lost_by')}; approach: "
+        f"{c.fit(c.plain(' '.join(b.section('Approach').split())) or '(none written)', 120)}" for t, b in lost[-15:]]
+    rev = fmcost.reversals(p)
+    lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n}" for k, (n, r) in rev.items())] \
+        if any(r for _, r in rev.values()) else []
+    return {"lost": [t for t, _ in lost], "lines": lines}
+
+
+def _graveyard(p, outs):
+    """What didn't make it: lost closes and dropped tasks."""
+    lost = [t for t, o in outs.items() if o.get("survival") == "lost"]
+    briefs = c.load_briefs(p, include_archive=True)
+    dropped = [b for b in briefs if b.status == "dropped"]
+    by = {b.id: b for b in briefs if b.id in lost}
+    lines = [f"Lost ({len(lost)}):"] + [f"- {t} {c.fit(c.plain(by[t].title), 60)}: {outs[t].get('lost_by')}"
+                                        for t in sorted(lost)[-15:] if t in by]
+    lines += [f"Dropped ({len(dropped)}):"] + [f"- {b.id} {c.fit(c.plain(b.title), 60)}" for b in dropped[-15:]]
+    return {"lost": sorted(lost), "dropped": [b.id for b in dropped], "lines": lines}
+
+
+def _seen(p, outs):
+    """Did a correction during the task (the user steering it) make it more or less likely to survive?"""
+    graded = _graded(p, outs)
+    during = {e.get("task") for e in c.ledger_events(p, ("correction",)) if e.get("task") in graded
+              and str(e.get("ts") or "") <= str(done_at(graded[e["task"]]) or "")}
+    rows = {k: [t for t in graded if (t in during) == k] for k in (True, False)}
+    lines = [f"- {'corrected during the task' if k else 'not corrected'}: "
+             f"{sum(outs[t]['survival'] == 'survived' for t in ts)} of {len(ts)} survived" for k, ts in rows.items()]
+    return {"corrected": sorted(rows[True]), "lines": ["Survival by whether the user corrected the task:"] + lines}
 
 
 BUCKETS = ((0, 59), (60, 79), (80, 94), (95, 100))
@@ -155,6 +269,53 @@ def calibration_lines(p, outs=None):
     return ["Calibration (stated confidence → held on the first finish): " + " · ".join(
         f"{lo}–{hi}%: {n} task(s), {ok} held on the first finish ({round(100 * ok / n)}%)" for lo, hi, n, ok in rows)
         + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
+
+
+PLAN_WINDOW, PLAN_MISS, PLAN_DAYS, PLAN_OUTSIDE = 5, 3, 14, 2  # T-1061: last 5 closes within 14 days; 3 missed = slow
+
+
+def missed(d):
+    """A close missed its plan: more than PLAN_OUTSIDE files outside the scope it had at first focus, more than twice the
+    predicted minutes, or more attempts than predicted; None when nothing was compared."""
+    checks = [d["outside"] > PLAN_OUTSIDE if "outside" in d else None,
+              d["minutes"] > 2 * d["predict_minutes"] if d.get("predict_minutes") and "minutes" in d else None,
+              d["attempts"] > d["predict_attempts"] if d.get("predict_attempts") and "attempts" in d else None]
+    checks = [x for x in checks if x is not None]
+    return any(checks) if checks else None
+
+
+def active_minutes(stamps, idle=1800):
+    """Minutes between consecutive epoch stamps, leaving out gaps of idle seconds or more (overnight, away)."""
+    return round(sum(b - a for a, b in zip(stamps, stamps[1:]) if b - a < idle) / 60)
+
+
+def record_close(p, d):
+    """Keep this close's verdict in project meta (the last PLAN_WINDOW), so reading it costs nothing per turn."""
+    m = missed(d)
+    if m is not None:
+        with c.lock(p.dir):  # read and append under one lock: two closes can't lose a verdict
+            meta = c.read_meta(p)
+            meta["plan_verdicts"] = ((meta.get("plan_verdicts") or []) + [[c.now(), m]])[-PLAN_WINDOW:]
+            c.write_meta(p, meta)
+
+
+def plan_window(p):
+    """[bool] — missed or not — for the stored verdicts under PLAN_DAYS old; malformed entries are skipped."""
+    rows = c.read_meta(p).get("plan_verdicts")
+    return [bool(r[1]) for r in rows if isinstance(r, (list, tuple)) and len(r) == 2 and isinstance(r[0], str)
+            and (c.age_days(r[0]) or 0) < PLAN_DAYS] if isinstance(rows, list) else []
+
+
+def misses(p):
+    """True while the plans keep missing, so the project slows to approval for M until closes recover."""
+    w = plan_window(p)
+    return len(w) >= PLAN_WINDOW and sum(w) >= PLAN_MISS
+
+
+def plan_lines(p):
+    w = plan_window(p)
+    return [f"Plan calibration: {sum(w)} of the last {len(w)} closes missed their plan"
+            + ("; autonomy slows to approval for M until they recover" if misses(p) else "")] if w else []
 
 
 def _first_finish(p):
@@ -206,4 +367,13 @@ def caution(p, scope):
     for k, total, bad, _ in atlas(p)["files"]:
         if bad >= 2 and bad / total >= 0.2 and any(k == s or k.startswith(s.rstrip("/") + "/") for s in scope):
             hits.append(f"{k}: {bad} of {total} tasks that touched it needed a later fix or revert")
-    return ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""
+    out = ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""
+    hot = []
+    if scope and c.git_root(p.root):
+        try:  # wild C18: files git history keeps fixing; the map is a hint, it never stops a focus
+            import fmmap
+            hot = [f"{f} ({n} fix/revert commits in 180 days)" for f, n in fmmap.load(p).get("fixy", {}).items()
+                   if any(f == s or f.startswith(s.rstrip("/") + "/") for s in scope)]
+        except Exception:
+            pass
+    return "\n".join(filter(None, [out, ("Hotspot: " + ", ".join(hot[:5])) if hot else ""]))
