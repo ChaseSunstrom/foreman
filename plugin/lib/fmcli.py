@@ -3447,6 +3447,24 @@ def _cached_pass(p, checks, tree):
     return None
 
 
+# T-0994: the test files a runner can run, by the words in its command; an unknown runner takes them all
+_RUNNERS = (
+    (re.compile(r"\b(?:python3?|pytest|unittest|tox|nox)\b|\.py\b"), (".py",)),
+    (re.compile(r"\b(?:npm|npx|yarn|pnpm|bun|jest|vitest|mocha|node|deno)\b"),
+     (".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts")),
+    (re.compile(r"\bgo\s+test\b"), (".go",)),
+    (re.compile(r"\bcargo\b"), (".rs",)),
+)
+
+
+def _runnable(template, tests):
+    """The tests `template` can run (a .tsx test handed to a Python runner ran nothing and read as a pass)."""
+    for rx, exts in _RUNNERS:
+        if rx.search(template):
+            return [t for t in tests if t.endswith(exts)]
+    return tests
+
+
 def affected(p):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
@@ -3465,10 +3483,10 @@ def affected(p):
     pairs = m.get("pairs") or {}
     paired = {t for f in changed for t in pairs.get(f, []) if istest(t)} | {
         a for a, bs in pairs.items() if istest(a) and any(b in changed for b in bs)}
-    tests = sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired)
     template = c.read_meta(p).get("affected") or ("python3 -m pytest -q {tests}" if any("pytest" in g for g in m["gates"]) else "")
     if not template:
         raise UsageError("no affected-tests command: fm check affected '<cmd with {tests} or {names}>'")
+    tests = _runnable(template, sorted(set(fmmap.tests_for(m, sorted(changed))) | own | paired))
     cmd = template.replace("{tests}", " ".join(shlex.quote(t) for t in tests)).replace(
         "{names}", " ".join(shlex.quote(os.path.basename(t).rsplit(".", 1)[0]) for t in tests)) if tests else None
     return cmd, tests, changed
