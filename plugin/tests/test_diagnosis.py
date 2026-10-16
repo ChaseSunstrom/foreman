@@ -29,7 +29,6 @@ class Prove(Base):
     def test_the_fix_removed_is_red_and_the_fix_is_green(self):
         self.write("calc.py", "def add(a, b):\n    return a - b\n")
         self.commit("bug")
-        self.write("test_calc.py", "import calc\nassert calc.add(1, 2) == 3\n")
         self.fm("task", "new", "Fix add", "--type", "FIX", "--tier", "S", "--ac", "adds :: python3 test_calc.py",
                 "--step", "fix", "--focus")
         self.write("test_calc.py", "import calc\nassert calc.add(1, 2) == 3\n")

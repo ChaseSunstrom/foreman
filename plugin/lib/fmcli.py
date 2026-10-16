@@ -816,7 +816,11 @@ def _refuse_unrunnable(p, cmds):
     """T-0765: a verify that can't run at all is refused before the brief changes: once it has evidence it can't be
     edited (T-0342), and the only way out was dropping and recreating the task."""
     for cmd in filter(None, cmds):
-        why = c.unrunnable(cmd, p.root)
+        notes = []
+        why = c.unrunnable(cmd, p.root, notes)
+        for note in notes:  # T-1145: a test named before it is written is the test-first flow: keep it, say so
+            print(f"fm: note: {note}: write it before the step runs, or fix the name "
+                  f"(fm task ac ID edit N --verify …)", file=sys.stderr)
         if why:
             raise UsageError(f"verify `{cmd}` can't run: {why}. Fix it before adding it: a criterion with evidence "
                              f"can't be edited later")
