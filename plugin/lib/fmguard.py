@@ -2869,12 +2869,13 @@ def _script_chunks(text, limit=2000):
     out, cur = [], []
     for line in text.split("\n"):
         cur.append(line)
-        if line.strip():
-            continue
         chunk = "\n".join(cur)
+        if len(chunk) < limit // 4:
+            continue
         open_here = any(not re.search(rf"^\s*{re.escape(m.group(1))}\s*$", chunk[m.end():], re.M)
                         for m in re.finditer(r"<<-?\s*['\"]?(\w+)['\"]?", chunk))
-        if not open_here and chunk.count("'") % 2 == 0 and chunk.count('"') % 2 == 0 and not chunk.rstrip().endswith("\\"):
+        if not open_here and chunk.count("'") % 2 == 0 and chunk.count('"') % 2 == 0 and chunk.count("`") % 2 == 0 \
+                and chunk.count("$(") <= chunk.count(")") and not chunk.rstrip().endswith("\\"):
             out.append(chunk)
             cur = []
     return out + (["\n".join(cur)] if cur else [])
@@ -2886,11 +2887,20 @@ def _check_script(text, ctx, depth):
     refused 4 of 10 real scripts. ponytail: a literal danger (rm -rf ~, a pipe into a shell) is what is caught."""
     # only what no script of the user's does innocently: a deploy script reboots, installs plugins, reads .env, and
     # splits words on IFS (replay of 3 real scripts: reboot, plugin, system and credentials refusals were all benign)
-    return [f for chunk in _script_chunks(text) for f in check_bash(chunk, ctx, depth + 1)
+    import time
+    end, late = time.monotonic() + 10, []
+
+    def pieces():
+        for chunk in _script_chunks(text):
+            if time.monotonic() > end:  # a hook that hangs is worse than a refusal
+                late.append(("system", "script too long for the guard to read in time: run its commands directly"))
+                return
+            yield from check_bash(chunk, ctx, depth + 1)
+    # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
+    kept = [f for f in pieces()
             if (f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1])
-            and "$" not in f[1]
-            and not re.search(r"not known|too deep|unresolvable|from stdin", f[1])]  # a script of Foreman's own (evals)
-    #                                                      writes its checkout: only its state folder counts
+            and "$" not in f[1] and not re.search(r"not known|too deep|unresolvable|from stdin", f[1])]
+    return kept + late
 
 
 def _script_target(name, argv0, args):
