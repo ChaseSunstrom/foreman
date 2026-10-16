@@ -2803,18 +2803,25 @@ def cmd_ask(args):
 
 
 # ponytail: words, not meaning; a block whose reason names none of these isn't listed (fm task list shows all blocks)
-_USER_BLOCK = re.compile(r"(?i)\b(user|you|your|log ?in|secret|credential|password|approv\w*|permission|grant|sign ?in|token)\b")
+_USER_BLOCK = re.compile(r"(?i)\b(user|your|log(?:ging)? ?in|sign(?:ing)? ?in|secrets?|credentials?|passwords?|approv\w*|permissions?|grant\w*|tokens? (?:expired|needed|missing|required)|(?:need|needs|needed|waiting on|ask) you)\b")
 
 
 def cmd_todo(args):
     """T-1157: what only the user can do now, each with what to type; built from the stores, so a resolved entry is gone."""
     p = resolve(args)
     todo = []
+    import time
     for a in c.read_meta(p).get("pending_approvals") or []:
         if isinstance(a, dict):
             cats = ", ".join(a.get("allow") or [])
+            at = c.parse_ts(a.get("at"))
+            fresh = bool(at) and time.time() - at.timestamp() < c.APPROVAL_TTL  # the hook's own rule (fmhooks)
             todo.append({"kind": "ask", "task": a.get("task"), "text": f"{cats}: {a.get('why') or 'no reason given'}",
-                         "command": f"reply \"yes\" to Claude's question (grants {cats} for {a.get('task')}); anything else cancels"})
+                         "command": (f"reply \"yes\" in the session that asked (grants {cats} for {a.get('task')}); anything "
+                                     f"else cancels") if fresh else "expired: ask again (fm ask)"})
+    for tid in unanswered_asks(p):  # T-0622: requests the last session missed
+        todo.append({"kind": "unanswered", "task": tid, "text": "a request the last session didn't answer",
+                     "command": f"fm task show {tid}; answer it or fm task drop {tid} \"reason\""})
     for b in c.load_briefs(p):
         if b.status == "blocked":
             why = next((l.split("blocked:", 1)[1].strip() for l in reversed(b.section("Log").splitlines())
@@ -2822,15 +2829,23 @@ def cmd_todo(args):
             if _USER_BLOCK.search(why):
                 todo.append({"kind": "block", "task": b.id, "text": why,
                              "command": f"do it, then fm task set {b.id} status=planned"})
-    path = os.path.join(p.dir, "decisions.md")
-    for l in (open(path, encoding="utf-8").read().splitlines() if os.path.exists(path) else []):
-        if l.startswith("| 2") and not l.endswith("← reversed later"):
-            r = _decision_row(l)
-            if r["kind"]:
-                todo.append({"kind": "decision", "task": None, "text": f"[{r['kind']}] {r['text']}",
-                             "command": "fm decide --review, then fm decide \"<new>\" --reverses \"<it>\" to undo"})
-    out(args, {"todo": todo}, "\n".join(f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}\n    → {e['command']}"
-                                        for e in todo) or "Nothing waits on you.")
+    # a decision can't be completed by the user, so only the last 7 days are listed and older ones counted
+    rows, older, cut = c._decision_rows(p), 0, (c.datetime.date.today() - c.datetime.timedelta(days=7)).isoformat()
+    for i, (date, tags, text) in enumerate(rows):
+        kind = re.search(r"\[(costly|outward)\]", tags)
+        if kind and not c._settled(rows, i):
+            if date < cut:
+                older += 1
+            else:
+                todo.append({"kind": "decision", "task": None, "text": f"[{kind.group(1)}] {text}",
+                             "command": "fm decide --review; fm decide \"<new>\" --reverses \"<words of it>\" to undo"})
+    shown = todo[:20]
+    lines = [f"- {e['task'] + ' ' if e['task'] else ''}{e['kind']}: {e['text']}\n    → {e['command']}" for e in shown]
+    if len(todo) > len(shown):
+        lines.append(f"{len(todo) - len(shown)} more (fm todo --json)")
+    if older:
+        lines.append(f"{older} older: fm decide --review")
+    out(args, {"todo": todo, "older_decisions": older}, "\n".join(lines) or "Nothing waits on you.")
 
 
 def cmd_trust(args):
