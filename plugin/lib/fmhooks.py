@@ -1109,6 +1109,8 @@ def _pre_tool_use(raw):
         return 2
     try:
         hits = _rule_hits(pl, p)
+        if hits:
+            c.note_rule_hits(p, hits)  # T-1115: fm tidy lists rules that never fire
     except Exception:  # the guard's half: fails closed
         log_error("PreToolUse", _tb())
         hits = [(0, {"action": "block", "pattern": "?", "why": "the rule check failed (fm doctor shows the error)"},
