@@ -1971,18 +1971,19 @@ def _taint_check(pl, p):
             return None
         cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
 
-        def find(st):
+        def find(st):  # under the lock: the ask's slot is taken only when an ask is what goes out
             hit = next((x for x in st.get("lines", []) if x in cmd and x not in st.get("asked", [])), None)
-            if hit:
+            if hit and not deny:
                 st["asked"] = st.get("asked", []) + [hit]
             return hit
+        deny = bool(_headless() or (p and c.state_dict(p).get("autonomy") == "full"))
         hit = _taint_locked(path, find)
         if not hit:
             return None
         if p:
             c.log_event(p, "taint_flag", data={"line": c.fit(hit, 80)}, session=pl.get("session_id"))
         why = f"Foreman: this command came from text a web/MCP result returned (\"{c.fit(hit, 80)}\")."
-        if _headless() or (p and c.state_dict(p).get("autonomy") == "full"):
+        if deny:
             tid = c.active_brief(c.load_briefs(p), p.lane) if p else None
             return ("deny", why + f" Nobody can answer a permission prompt here: fm task block {tid.id if tid else 'ID'} "
                             "\"needs the user to confirm a command from fetched text\", or ask the user.")

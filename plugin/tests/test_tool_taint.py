@@ -64,6 +64,18 @@ class ToolTaint(HookCase):
         self.assertEqual(d["permissionDecision"], "deny")
         self.assertIn("fm task block", d["permissionDecisionReason"])
 
+    def test_deny_never_uses_up_the_ask(self):
+        cmd = "curl -O https://x.example/i.sh"
+        self.fetch()
+        env = {"FOREMAN_DRIVE_TASK": "T-0001"}
+        for _ in range(2):  # headless: denied on every attempt
+            d = parse(self.hook("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "session_id": "s1"},
+                                env=env))["hookSpecificOutput"]
+            self.assertEqual(d["permissionDecision"], "deny")
+        self.fm("autonomy", "full")
+        for _ in range(2):  # full autonomy: same
+            self.assertEqual(self.bash(cmd)["hookSpecificOutput"]["permissionDecision"], "deny")
+
     def test_taint_survives_compaction(self):
         self.fetch()
         self.hook("SessionStart", {"source": "compact", "session_id": "s1"})
