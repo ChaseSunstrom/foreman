@@ -271,6 +271,53 @@ def calibration_lines(p, outs=None):
         + f"; Brier {brier:.2f} (0 is perfect)"] if rows else []
 
 
+PLAN_WINDOW, PLAN_MISS, PLAN_DAYS, PLAN_OUTSIDE = 5, 3, 14, 2  # T-1061: last 5 closes within 14 days; 3 missed = slow
+
+
+def missed(d):
+    """A close missed its plan: more than PLAN_OUTSIDE files outside the scope it had at first focus, more than twice the
+    predicted minutes, or more attempts than predicted; None when nothing was compared."""
+    checks = [d["outside"] > PLAN_OUTSIDE if "outside" in d else None,
+              d["minutes"] > 2 * d["predict_minutes"] if d.get("predict_minutes") and "minutes" in d else None,
+              d["attempts"] > d["predict_attempts"] if d.get("predict_attempts") and "attempts" in d else None]
+    checks = [x for x in checks if x is not None]
+    return any(checks) if checks else None
+
+
+def active_minutes(stamps, idle=1800):
+    """Minutes between consecutive epoch stamps, leaving out gaps of idle seconds or more (overnight, away)."""
+    return round(sum(b - a for a, b in zip(stamps, stamps[1:]) if b - a < idle) / 60)
+
+
+def record_close(p, d):
+    """Keep this close's verdict in project meta (the last PLAN_WINDOW), so reading it costs nothing per turn."""
+    m = missed(d)
+    if m is not None:
+        with c.lock(p.dir):  # read and append under one lock: two closes can't lose a verdict
+            meta = c.read_meta(p)
+            meta["plan_verdicts"] = ((meta.get("plan_verdicts") or []) + [[c.now(), m]])[-PLAN_WINDOW:]
+            c.write_meta(p, meta)
+
+
+def plan_window(p):
+    """[bool] — missed or not — for the stored verdicts under PLAN_DAYS old; malformed entries are skipped."""
+    rows = c.read_meta(p).get("plan_verdicts")
+    return [bool(r[1]) for r in rows if isinstance(r, (list, tuple)) and len(r) == 2 and isinstance(r[0], str)
+            and (c.age_days(r[0]) or 0) < PLAN_DAYS] if isinstance(rows, list) else []
+
+
+def misses(p):
+    """True while the plans keep missing, so the project slows to approval for M until closes recover."""
+    w = plan_window(p)
+    return len(w) >= PLAN_WINDOW and sum(w) >= PLAN_MISS
+
+
+def plan_lines(p):
+    w = plan_window(p)
+    return [f"Plan calibration: {sum(w)} of the last {len(w)} closes missed their plan"
+            + ("; autonomy slows to approval for M until they recover" if misses(p) else "")] if w else []
+
+
 def _first_finish(p):
     first = {}
     for e in c.ledger_tail(p, 50000):
