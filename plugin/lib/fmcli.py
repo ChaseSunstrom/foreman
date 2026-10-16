@@ -4709,8 +4709,9 @@ def build_parser():
                    help="wake an idle session: its watcher prints the mail, else one line typed into its tmux pane")
     s = add("lease", lazy("fmbus", "cmd_lease"), help="function-level edit leases between sessions (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "take", "drop"])
-    s.add_argument("target", nargs="?", help="FILE[::SYMBOL]")
+    s.add_argument("target", nargs="*", help="FILE[::SYMBOL]...")
     s.add_argument("--minutes", type=float, default=20)
+    s.add_argument("--warn", action="store_true", help="take a claim that overlaps another session's, with a warning")
     s = add("conductor", lazy("fmbus", "cmd_conductor"), help="live sessions with their task, context, mail and leases; "
                                                               "steer them all (T-0708)")
     s.add_argument("action", nargs="?", default="list", choices=["list", "steer", "remote", "refresh"])

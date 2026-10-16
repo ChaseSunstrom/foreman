@@ -68,7 +68,10 @@ def cmd_lane(args):
             raise c.PolicyError("--unverified needs a reason (what makes the criteria's re-run wrong)")
         if why is not None and p.lane:  # T-0948: a builder can't waive its own gate
             raise c.PolicyError("--unverified is for the main thread: a builder can't waive its own gate")
-        return fmcli.out(args, {"id": b.id, "merged": merge(p, b, main, why)}, f"{b.id}: merged {merge.last} into {main} "
+        merged = merge(p, b, main, why)
+        import fmbus
+        fmbus.release(p, b.id)  # T-1068
+        return fmcli.out(args, {"id": b.id, "merged": merged}, f"{b.id}: merged {merge.last} into {main} "
                          f"(--no-ff); next: fm lane rm {b.id}, fm focus {b.id}, re-run its criteria, fm task finish")
     if args.action == "new":
         if c.panicked():
@@ -128,6 +131,8 @@ CONTRACT = """## Your contract (foreman:fm-builder)
 - Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
 - Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
   launch agents.
+- Before editing, claim what you plan to change: `fm lease take FILE[::SYMBOL]...` (T-1068). It fails naming the
+  session and task that already claimed an overlap: work elsewhere or message it. `fm lease drop` when done.
 - Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
   sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399). Many spots at
   once: Write the batch to a file (JSON [{{"file", "old", "new"}}]) and run fm edit --file F (T-1089).
@@ -207,6 +212,7 @@ def resume(p, b, main, args):
         x.append_log(f"builder stopped: lane {path} removed" + (f", work kept on {branch}" if have else "")
                      + (f" (forced: {why})" if why else ""))
     fmcli.mutate(p, b.id, reset, "lane_resume", {"path": path, "branch": branch if have else None, "forced": why or None})
+    fmbus.release(p, b.id)  # T-1068: the fresh brief claims again
     return builder_brief(p, c.find_brief(p, b.id), args, resume_branch=branch if have else None)
 
 
@@ -251,8 +257,13 @@ def builder_brief(p, b, args, resume_branch=None):
                   f"unfinished files, is on branch `{resume_branch}`. Right after `fm focus {b.id}`, run "
                   f"`git merge {resume_branch}` (never rebase), read `git log {base}..{resume_branch}` and the Steps "
                   f"already ticked, and carry on from there.", ""]
+    import fmbus  # T-1068: claim the concrete scope files up front, under the task id
+    skipped = fmbus.preclaim(p, b.id, [s for s in b.meta.get("scope") or [] if not re.search(r"[*?\[]", s)])
+    if skipped:
+        parts += ["## Claims", "Not pre-claimed, already held live (ask the holder with `fm bus send`): "
+                  + "; ".join(f"{f} by {w}" for f, w in skipped), ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
-    path = os.path.join(p.dir, "audits", f"{b.id}.builder.md")
+    path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         c.write_atomic(path, c.redact("\n".join(parts)) + "\n")
@@ -463,6 +474,8 @@ def remove(p, b, main):
             r = _git(main, "worktree", "remove", path)
         if r.returncode:
             raise fmcli.UsageError(f"git worktree remove failed: {r.stderr.strip()[:300]}")
+    import fmbus
+    fmbus.release(p, b.id)  # T-1068: its file claims end with the lane
     _git(main, "worktree", "prune")  # a folder deleted by hand leaves a registration that holds the branch (review)
     have = [x for x in branches if _git(main, "rev-parse", "--verify", "-q", f"refs/heads/{x}").returncode == 0]
     kept = [x for x in have if _git(main, "branch", "-d", x).returncode]  # -d refuses an unmerged one: commits stay
