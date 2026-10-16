@@ -3,6 +3,7 @@ removal still passes is unproven — the check doesn't test it."""
 import json
 import os
 import subprocess
+import time
 
 from helpers import ForemanTestCase
 
@@ -110,3 +111,73 @@ class Fallback(ForemanTestCase):
                                    capture_output=True, text=True, check=True).stdout.strip()
         heads = set(open(log).read().split())
         self.assertEqual(heads, {base_tree})  # every check, baseline included, ran with HEAD at the base
+
+
+class Ablate(_Case):
+    """T-1067: fm task finish --ablate runs the hunk ablation after the real checks; it never fails the close."""
+    def setUp(self):
+        super().setUp()
+        self.fm("task", "set", self.tid, "--section", "Regression test", "--text", "none: scratch repo")
+
+    def finish(self, *extra, tmpl=True, env=None):
+        if tmpl:
+            self.fm("check", "affected", "python3 {tests}")
+        return self.fm("task", "finish", self.tid, "--audit", "self", "--docs", "none: test", "--lesson", "x",
+                       "--ablate", "--run", "true", *extra, check=False,
+                       env=dict(env or {}, PYTHONDONTWRITEBYTECODE="1"))  # a .pyc would change the audited tree
+
+    def case(self):
+        self.write("calc.py", AFTER)
+        self.write("test_calc.py", "import calc\nassert calc.f() == 2\n")
+
+    def test_names_the_untested_hunk(self):
+        self.case()
+        p = self.finish()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("1/2 hunks proven", p.stdout)
+        self.assertIn("unproven: calc.py", p.stdout)
+        self.assertNotIn("hunks proven", self.fm("task", "show", self.tid).stdout)  # no permanent evidence line
+
+    def test_no_linked_tests_is_one_line_not_a_failure(self):
+        self.write("calc.py", AFTER)
+        p = self.finish()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped: no linked tests", p.stdout)
+
+    def test_no_affected_template_skips(self):
+        self.case()
+        p = self.finish(tmpl=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped", p.stdout)
+
+    def test_red_baseline_skips(self):
+        with open(os.path.join(self.repo, ".gitignore"), "w") as f:
+            f.write("data.txt\n")
+        self.write("data.txt", "x")  # ignored: not in the scratch worktree
+        self.write("calc.py", AFTER)
+        self.write("test_calc.py", "import calc\nassert calc.f() == 2\nassert open('data.txt')\n")
+        p = self.finish()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped", p.stdout)
+
+    def test_deadline_reports_not_run(self):
+        self.case()
+        p = self.finish(env={"FM_ABLATE_BUDGET": "-1"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("0/0 hunks proven, 2 not run", p.stdout)
+
+    def test_json_carries_the_ablation(self):
+        self.case()
+        p = self.finish("--json", "--why-not-caught", "none: test")
+        res, end = json.JSONDecoder().raw_decode(p.stdout)
+        self.assertEqual(p.stdout[end:].strip(), "", p.stdout[end:])
+        self.assertEqual((res["ablation"]["total"], res["ablation"]["proven"]), (2, 1))
+
+    def test_a_slow_run_is_cut_at_the_deadline(self):
+        self.write("calc.py", AFTER)  # the reverted f() sleeps; the baseline is fast
+        self.write("test_calc.py", "import calc, time\nif calc.f() != 2:\n    time.sleep(5)\nassert calc.f() == 2\n")
+        t = time.time()
+        p = self.finish(env={"FM_ABLATE_BUDGET": "1"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertRegex(p.stdout, r"not run|timed out")
+        self.assertLess(time.time() - t, 5)  # uncapped, the 5 s sleep alone would exceed this
