@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm release VERSION [--ui V] [--push] [--dry-run] [--resume] [--abandon]` runs the release as nine named steps (clean tree, gates, bump, changelog, commit, release-check, canary, push, round close) with a checkpoint after each. A stopped release resumes at the step that failed, `--push` merges the gated release commit (never later work) behind the active task's publish grant, and `release.py` is now a thin wrapper over it (T-1188).
 - A test holds eight path-taking verbs (lease, edit, evidence, check, focus, guard wrong and others) to the same result when run from the repo root, a subdirectory and a symlinked checkout; it found no path bugs (T-1185).
 - Tests point `FOREMAN_GUARD_CASES` at a temp file by default, so a test that runs `fm guard wrong` from a temp repo can no longer write cases into the real `guard_cases.jsonl` (the subdirectory matrix had added three) (T-1197).
 - `fm guard wrong` stores the case in the corpus of the Foreman checkout it runs in (with a cwd relative to that checkout), so a builder's worktree no longer writes into the main checkout's tests mid-gates (T-1175).
