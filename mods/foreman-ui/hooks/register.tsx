@@ -23,6 +23,7 @@ import {
   clawd,
   elapsed,
   fade,
+  heat,
   hex,
   humanNext,
   layout,
@@ -36,6 +37,7 @@ import {
   sparkCells,
   sparkText,
   spin,
+  tankCells,
   textBar,
   textComet,
   tone,
@@ -376,8 +378,8 @@ const MOTION_MS = 33
 let motionClock: { cancel: () => void } | null = null
 const frameAt = (ms: number) => ms / FRAME_MS // time in frames, fractional: what a comet takes
 // T-1000: the kinds of tool call the Live section's lanes chart, and their colours
-const KINDS = ['edit', 'run', 'read', 'agent', 'web'] as const
-const KIND_COLOR: Record<string, number> = { edit: C.edit, run: C.accent, read: C.accent2, agent: C.agent, web: C.web }
+const KINDS = ['edit', 'run', 'read', 'agent', 'skill', 'web'] as const
+const KIND_COLOR: Record<string, number> = { edit: C.edit, run: C.accent, read: C.accent2, agent: C.agent, skill: C.skill, web: C.web }
 // A step that just got done glows green and fades over FLASH_MS; the frame clock runs until it has
 const flashed = new Map<string, number>() // "T-0007:2" → when it was seen done
 const FLASH_MS = 2500
@@ -596,7 +598,7 @@ export const register: Register = (on, options) => {
     const face = toolFace(String(e.tool), e, cfg.root)
     const at = await $.clock.now()
     starts.set(id, at)
-    if (face.icon !== '⚠') ticks.push({ at, lane: laneOf(face.icon) }) // T-0909: the swim lanes (a question isn't work)
+    if (face.icon !== '⚠') ticks.push({ at, lane: laneOf(face.icon), what: face.target || face.verb }) // T-0909: the swim lanes (a question isn't work)
     while (ticks.length && (ticks.length > 2000 || at - ticks[0]!.at > 2 * TIMELINE_MS)) ticks.shift()
     running.set(id, { icon: face.icon, verb: face.verb, target: face.target, color: face.color, at, agent: !!e.agentId })
     try {
@@ -1108,9 +1110,11 @@ export const register: Register = (on, options) => {
     )
   })
 
-  // T-0989: one panel, sized by the dock. Fixed sections whose heights come from the dock's rows (layout), never from what
-  // they hold, so the pane fits one screen and nothing moves as work comes and goes; rules between them, not boxes; each
-  // fact shown once. Rasters that move are registered for the 30 fps blit while work is live.
+  // T-0989, T-1000, T-1002: one panel that fills the dock exactly. The head and the task read first, then the one thing
+  // that needs you; then sections, each under a titled divider (a blank row above it on a tall dock): Activity (one plot
+  // of the session's tool calls by kind, with what runs now at each lane's end), Up next, Sessions, History (it takes the
+  // rows left) and Today (closes per day beside four tank gauges). Few words per row; every number has a picture.
+  // Rasters that move are registered for the 30 fps blit while work is live.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const ui = $.ui.resolve(e)
     const { Box, Button, Input, Raster, Text } = ui
@@ -1137,11 +1141,9 @@ export const register: Register = (on, options) => {
     const a = v.active
     const m = v.mode
     const W = Math.max(24, e.props.bodyColumns - 2) // inside the panel's padding
+    const H = e.props.scroll?.bodyRows ?? 40
     const dim = hex(C.dim)
     const soft = hex(mix(C.dim, C.track, 0.3))
-    const touched = await read($, files)
-    const base = `${v.root || cfg.root}/` // T-0146: the project's files, relative; scratch files elsewhere aren't counted
-    const mine = touched.filter(t => t.path.startsWith(base))
     const subs = await read($, agents)
     const bgShells = await read($, shells)
     const fb = bgShells.length ? await read($, frame) : 0
@@ -1153,8 +1155,6 @@ export const register: Register = (on, options) => {
     const inbox = v.inbox ?? []
     const inboxN = v.inbox_total ?? inbox.length
     const checks = v.checks
-    const done = a ? a.steps.filter(s => s.done).length : 0
-    const proved = a ? a.criteria.filter(x => x.checked).length : 0
     const stageIdx = a ? a.stages.indexOf(a.stage) : -1
     const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
     const onMin = a && typeof a.on_task_s === 'number' ? (a.on_task_s * 1000 + Math.max(0, clockNow - lastFull)) / 60000 : null
@@ -1163,207 +1163,126 @@ export const register: Register = (on, options) => {
     const asks = v.approvals ?? []
     const plans = queue.flatMap(q => (q.plan ? [{ ...q, plan: q.plan }] : []))
     const nowCalls = [...running].filter(([, x]) => !x.agent)
+    const asking = nowCalls.find(([, x]) => x.icon === '⚠')
     const days = v.done_days ?? []
     const paused = v.health?.paused_hooks ?? []
-    const mascotW = cfg.mascot === 'off' ? 0 : 13 + Math.min(4, subs.filter(s => !s.done).length) * 8
-    const headW = Math.max(16, W - mascotW)
     const since = (ms: number) => (ms < 3600000 ? `${Math.max(1, Math.round(ms / 60000))}m ago` : hoursAgo(ms / 3600000))
-    const chip = (it: FmItem) => (
-      <Box flexDirection="row" gap={1} flexShrink={0}>
-        <Text weight="bold" color={typeColor(it.type)}>
-          {it.type}
-        </Text>
-        <Text color={dim}>{sizeWord(it.tier)}</Text>
-      </Box>
-    )
-    // a section: a rule naming it with one line of detail, then exactly `rows` rows, whatever it holds (none: not drawn);
-    // what doesn't fit is counted on its last row, never cut silently (T-0146). `tall`: rows its elements take beyond one each
-    const section = (key: string, rows: number, label: string, color: number, detail: string, body: RenderElement[], tall = 0) => {
-      if (rows <= 0) return null
-      const over = body.length + tall > rows
-      const shown = over
-        ? [...body.slice(0, Math.max(0, rows - 1 - tall)), <Text key={`${key}-more`} color={dim} wrap="truncate-end">{`… ${body.length - Math.max(0, rows - 1 - tall)} more`}</Text>]
-        : body
-      const pad = Math.max(0, rows - tall - shown.length) // blank rows drawn, not left to the box: the row after stays plain
-      const head = detail ? `${label} ${detail} ` : `${label} `
-      return (
-        <Box key={key} flexDirection="column" flexShrink={0}>
-          <Text key={`${key}-rule`} wrap="truncate-end">
-            <Text weight="bold" color={hex(color)}>
-              {label}
-            </Text>
-            <Text color={dim}>{detail ? ` ${detail} ` : ' '}</Text>
-            <Text color={hex(C.track)}>{'─'.repeat(Math.max(0, W - head.length))}</Text>
-          </Text>
-          <Box key={`${key}-body`} flexDirection="column" height={rows} overflow="hidden">
-            {shown}
-            {Array.from({ length: pad }, (_, i) => (
-              <Text key={`${key}-pad-${i}`}> </Text>
-            ))}
-          </Box>
-        </Box>
-      )
-    }
-
-    // T-1000: what each section holds comes first; the dock's rows are shared out from that (layout), so the panel fills
-    // the dock exactly with no blank rows, and the charts at the bottom stretch into whatever is left
     const raster = (key: string, cols: number, cellsOf: string, twin: string, color: number) =>
       term ? <Raster key={key} columns={cols} rows={1} cells={cellsOf} /> : <Text key={key} color={hex(color)}>{twin}</Text>
+    const typeWord = (it: FmItem) => (
+      <Box flexShrink={0}>
+        <Text weight="bold" color={typeColor(it.type)}>
+          {(it.type === 'PERFORMANCE' ? 'PERF' : it.type).padEnd(8)}
+        </Text>
+      </Box>
+    )
 
-    // ── the queue, then the inbox; a line to capture into it
+    // ── up next: plans waiting for a yes first, the queue, the inbox, a line to capture into it
     const capture = captureBox($, e)
     const queueRows: RenderElement[] = [
       ...[...queue].sort((x, y) => Number(!!y.plan) - Number(!!x.plan)).map((q, i) => (
         <Box flexDirection="row" gap={1} key={`q-${q.id}`}>
           <Box flexShrink={0}>
-            <Text color={hex(i === 0 ? C.accent2 : C.dim)}>{i === 0 ? '▶' : `${i + 1}.`}</Text>
+            <Text color={hex(i === 0 ? C.accent2 : C.track)}>{i === 0 ? '▶' : '·'}</Text>
           </Box>
-          {chip(q)}
-          {meter(ui, e, `q-bar-${q.id}`, 6, q.steps_total ? (q.steps_done ?? 0) / q.steps_total : 0, C.ok, null)}
-          <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : i === 0 ? undefined : hex(mix(C.dim, 0xc8ccd4, 0.6))}>
-            {q.id} {q.title}
-            {q.waits ? `  (${q.waits})` : ''}
+          {typeWord(q)}
+          <Box flexShrink={0}>
+            <Text color={hex(q.waits ? C.warn : C.accent)}>{q.id}</Text>
+          </Box>
+          <Text wrap="truncate-end" color={q.waits ? hex(C.warn) : undefined}>
+            {q.title}
           </Text>
           {q.plan && (
             <Button key={`approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
           )}
-          {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
-            <Box key={`q-typ-${q.id}`} flexShrink={0}>
-              <Text color={dim}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
-            </Box>
-          )}
         </Box>
       )),
-      ...(capture ? [capture] : []), // after the plans waiting for a yes: a crowded dock cuts it first
       ...inbox.map(it => (
         <Box flexDirection="row" gap={1} key={`in-${it.id}`}>
-          <Text color={dim}>⚑</Text>
-          {chip(it)}
-          {/* its age as a bar: a week fills it, amber from then on */}
-          {meter(ui, e, `in-bar-${it.id}`, 4, Math.min(1, (it.age_days ?? 0) / 7), (it.age_days ?? 0) >= 7 ? C.warn : C.dim, null)}
-          <Text wrap="truncate-end">
-            {it.id} {it.title}
+          <Box flexShrink={0}>
+            <Text color={hex((it.age_days ?? 0) >= 7 ? C.warn : C.track)}>⚑</Text>
+          </Box>
+          {typeWord(it)}
+          <Box flexShrink={0}>
+            <Text color={dim}>{it.id}</Text>
+          </Box>
+          <Text wrap="truncate-end" color={hex(mix(C.dim, 0xc8ccd4, 0.7))}>
+            {it.title}
           </Text>
-          {it.age_days !== undefined && (
-            // T-0228: the title gives way, never the age
-            <Box flexShrink={0} key={`in-age-${it.id}`}>
-              <Text color={dim}>{ago(it.age_days)}</Text>
-            </Box>
-          )}
-          <Button key={`start-${it.id}`} label="▸ start" plain dimColor
+          <Button key={`start-${it.id}`} label="start" plain dimColor
             onPress={() => void $.prompt.submit({ text: `Plan and start ${it.id} (/foreman:intake).`, asUser: true })} />
-          <Button key={`drop-${it.id}`} label="✕ drop" plain dimColor
+          <Button key={`drop-${it.id}`} label="drop" plain dimColor
             onPress={() => act($, ['task', 'drop', it.id, 'dropped from the Foreman pane'], `${it.id} dropped`)} />
         </Box>
       )),
       ...(inboxN > inbox.length ? [<Text key="in-more" color={dim}>{`… ${inboxN - inbox.length} more in the inbox`}</Text>] : []),
+      ...(capture ? [capture] : []), // last: a crowded dock cuts it before a plan waiting for a yes
     ]
 
-    // ── more: one line each, the most useful first, each with its picture
-    const one = (key: string, word: string, color: number, text: string, textColor: number = C.dim, pic: RenderElement | null = null) => (
-      <Box key={key} flexDirection="row" gap={1}>
-        <Box flexShrink={0}>
-          <Text weight="bold" color={hex(color)}>{word.padEnd(8)}</Text>
-        </Box>
-        {pic && <Box flexShrink={0}>{pic}</Box>}
-        <Text wrap="truncate-end" color={hex(textColor)}>{text}</Text>
-      </Box>
-    )
+    // ── other sessions here, each with its context, and one steer for all (T-0711: one alone is this one)
     const fleet = v.fleet ?? []
-    const sk = v.skills // T-0939
-    const skillUses = Object.values(sk?.counts ?? {}).reduce((x, y) => x + y, 0)
-    const topSkills = Object.entries(sk?.counts ?? {}).sort((x, y) => y[1] - x[1]).slice(0, 6)
-    const b = v.budget
-    const bs = v.brainstorm
-    const SEG = [C.accent2, C.agent, C.edit, C.web, C.ok]
-    const runsTop = (b?.top ?? []).slice(0, 5)
-    const runsAll = Math.max(1, runsTop.reduce((n, t) => n + t.runs, 0))
-    const stacked = (w: number) => { // spend's features as one bar, each its share of the runs
-      const out: [string, number][] = []
-      runsTop.forEach((t, i) => { for (let k = Math.round((w * t.runs) / runsAll); k > 0 && out.length < w; k--) out.push(['━', SEG[i]!]) })
-      while (out.length < w) out.push(['━', C.track])
-      return cells(out)
-    }
-    const churnMax = Math.max(1, ...mine.map(t => t.add + t.del))
-    const added = mine.reduce((n, t) => n + t.add, 0)
-    const removed = mine.reduce((n, t) => n + t.del, 0)
-    const moreRows: RenderElement[] = [
-      // T-0711: every live session here, one steer for all; one session alone is this one, already above
-      ...(fleet.some(s => s.remote || s.error) || fleet.length > 1
-        ? [
-            ...fleet.slice(0, 4).map((s, i) =>
-              one(`more-fleet-${i}`, i ? '' : 'fleet', C.agent,
-                s.error ? `! ${s.error}` : `${s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)} ${s.project ?? '-'} ${s.task ?? 'idle'}${s.title ? ` ${s.title}` : ''}${s.mail ? ` ✉${s.mail}` : ''}`,
-                s.error ? C.warn : C.dim,
-                s.error ? null : (
-                  <Box flexDirection="row" gap={1}>
-                    {meter(ui, e, `fleet-ctx-${i}`, 8, Math.min(1, (s.context_pct ?? 0) / 100), (s.context_pct ?? 0) >= 60 ? C.warn : C.ok, null)}
-                    <Text color={dim}>{`${String(s.context_pct ?? '?').padStart(3)}%`}</Text>
-                  </Box>
-                ))),
-            ...(e.surface !== 'mobile'
-              ? [<Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />]
-              : []),
-          ]
-        : []),
-      ...(v.revisit ?? []).slice(0, 1).map(rv =>
-        one('more-revisit', 'revisit', C.warn, `◆ ${rv.decision} (${rv.why})${(v.revisit ?? []).length > 1 ? ` · ${(v.revisit ?? []).length - 1} more` : ''}`, C.warn)),
-      ...((v.vetoes ?? []).length
-        ? [one('more-vetoes', 'you said', C.accent, `✋ ${v.vetoes![0]}${v.vetoes!.length > 1 ? ` · ${v.vetoes!.length - 1} more` : ''}`)]
-        : []),
-      ...(mine.length
-        ? [one('more-files', 'files', C.edit, `${mine.length} this session · +${added} −${removed} · ${mine.slice(-3).reverse().map(t => shortPath(t.path.slice(base.length), 28)).join(', ')}`,
-            C.dim, raster('files-churn', 12, churnCells(added, removed, Math.max(churnMax, added + removed), 12), `+${added} −${removed}`, C.edit))]
-        : []),
-      ...(b && (b.subagent_tokens > 0 || b.top.length || b.halved || b.subagents_paused)
-        ? [one('more-spend', 'spend', C.accent2, [
-            `subagents ${tokensWord(b.subagent_tokens)}`,
-            ...runsTop.slice(0, 3).map(t => `${t.feature.replace(/^subagent:(foreman:)?/, '')} ${t.tokens ? tokensWord(t.tokens) : `$${t.usd.toFixed(2)}`}`),
-            ...(b.halved ? [`caps halved: ${b.halved}`] : []),
-            ...(b.subagents_paused ? [`waiting: ${b.subagents_paused}`] : []),
-          ].join(' · '), b.halved || b.subagents_paused ? C.warn : C.dim, runsTop.length ? raster('spend-stack', 12, stacked(12), '━'.repeat(12), C.accent2) : null)]
-        : []),
-      ...(sk && (sk.recent.length || sk.unread.length)
-        ? [one('more-skills', 'skills', C.agent, [
-            `${skillUses} use${skillUses === 1 ? '' : 's'} · 7d`,
-            ...(topSkills.length ? [topSkills.map(([n, k]) => `${n} ×${k}`).join(', ')] : []),
-            ...(sk.recent[0] ? [`last ${sk.recent[0].name} ${since(Math.max(0, clockNow - Date.parse(sk.recent[0].at)))}`] : []),
-            ...(sk.unread.length ? [`${sk.unread.length} cards unread: fm lib show ${sk.unread[0]}`] : []),
-          ].join(' · '), C.dim, topSkills.length ? bars(ui, e, 'skills-bars', topSkills.map(([, k]) => k), 1, C.agent, C.accent2) : null)]
-        : []),
-      ...(bs
-        ? [one('more-ideas', 'ideas', C.agent, bs.running
-            ? `${spin(fb + clockNow / 300)} ${bs.answers}/${bs.expected ?? '?'} answers · ${bs.count} ideas so far${bs.ideas.length ? ` · latest: ${bs.ideas.at(-1)}` : ''}`
-            : `${bs.count} ideas · ${bs.grounded ? 'grounded' : hoursAgo(bs.age_h ?? 0)} · fm research show ${bs.name}`,
-            C.dim, meter(ui, e, 'ideas-bar', 8, bs.running ? bs.answers / Math.max(1, bs.expected ?? bs.answers) : 1, bs.grounded ? C.ok : C.agent, null))]
-        : []),
-      ...(v.bench?.last
-        ? [one('more-bench', 'bench', C.agent, `${v.bench.last.passed}/${v.bench.last.total} passed · $${v.bench.last.cost_usd.toFixed(2)} · ${v.bench.last.label}${v.bench.last.score != null ? ` · judged ${v.bench.last.score}/5` : ''}`,
-            v.bench.last.passed === v.bench.last.total ? C.dim : C.warn,
-            meter(ui, e, 'bench-bar', 8, v.bench.last.passed / Math.max(1, v.bench.last.total), v.bench.last.passed === v.bench.last.total ? C.ok : C.warn, null))]
-        : []),
-      ...(v.bench?.verdicts ?? []).slice(0, 1).map((x, i) => one(`more-verdict-${i}`, '', C.dim, `${x.ok ? '✓' : '✗'} ${x.kind}: ${x.verdict ?? ''}`, x.ok ? C.dim : C.warn)),
-      ...(v.bench?.evolve ?? []).slice(0, 1).map((x, i) =>
-        one(`more-evolve-${i}`, '', C.dim, `${x.kept ? '✓ kept' : '✗ dropped'} ${shortPath(x.target ?? '', 34)} · ${x.why ?? ''}`)),
-      ...(v.research ?? []).slice(0, 1).map(r =>
-        one(`more-research-${r.name}`, 'research', C.accent2, `${(v.research ?? []).length > 1 ? `${(v.research ?? []).length} asks, newest ` : ''}${r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')} · ✓${r.verified} ✗${r.not_found} ?${r.unchecked}${(r.conflicts ?? 0) > 0 ? ` · ⟷${r.conflicts} conflicts` : ''}${(r.single ?? 0) > 0 ? ` · ${r.single} single-source` : ''}`,
-          r.not_found ? C.warn : C.dim,
-          meter(ui, e, 'research-bar', 8, r.verified / Math.max(1, r.verified + r.not_found + r.unchecked), r.not_found ? C.warn : C.ok, null))),
-    ]
+    const pctColor = (p: number) => (p >= CHECKPOINT_AT ? C.err : p >= 60 ? C.warn : C.ok)
+    const sessionRows: RenderElement[] = fleet.some(s => s.remote || s.error) || fleet.length > 1
+      ? [
+          ...fleet.slice(0, 4).map((s, i) =>
+            s.error ? (
+              <Text key={`more-fleet-${i}`} color={hex(C.warn)} wrap="truncate-end">! {s.error}</Text>
+            ) : (
+              <Box key={`more-fleet-${i}`} flexDirection="row" gap={1}>
+                <Box flexShrink={0}>
+                  <Text color={hex(s.remote ? C.accent2 : C.agent)}>{(s.remote ? s.remote.toUpperCase() : s.session.slice(0, 8)).padEnd(9)}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Text color={hex(s.context_pct === undefined || s.context_pct === null ? C.dim : pctColor(s.context_pct))}>
+                    {`${String(s.context_pct ?? '?').padStart(3)}%`}
+                  </Text>
+                </Box>
+                <Text wrap="truncate-end">
+                  {` ${s.task ?? 'idle'}`}
+                  <Text color={dim}>{`${s.title ? ` ${s.title}` : ''}${s.mail ? `  ✉${s.mail}` : ''}${s.project && s.project !== v.project ? `  ${s.project}` : ''}`}</Text>
+                </Text>
+              </Box>
+            )),
+          ...(e.surface !== 'mobile'
+            ? [<Input key="steer" placeholder="↯ steer every session… (Enter)" submitLabel="Steer" onSubmit={text => void steer($, text)} />]
+            : []),
+        ]
+      : []
 
-    // ── the task's parts, so its demand is known before the rows are shared out
+    // ── history: what happened, newest first, one short line each (the command and its output stay in the ledger)
+    const recent = [...(v.recent ?? [])].reverse()
+    const historyRows: RenderElement[] = recent.map((line, i) => {
+      const [, time, rest] = /^\s*(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line.trim()]
+      const ev = /^([✓✗≈]) (T-\d+) (step \d+|criterion \d+|check): /.exec(rest)
+      const text = ev
+        ? `${ev[2]} ${ev[3]} ${ev[1] === '✓' ? 'passed' : ev[1] === '✗' ? 'failed' : 'inconclusive'}`
+        : rest.slice(2).replace(/^(T-\d+ audit [\w-]+): .*$/, '$1')
+      const mark = rest[0] ?? ''
+      const color = '✗✖'.includes(mark) ? C.err : '✓✔■'.includes(mark) ? C.ok : '◆◇'.includes(mark) ? C.agent : '!?≈'.includes(mark) ? C.warn : C.dim
+      return (
+        <Box key={`r-${i}`} flexDirection="row" gap={2}>
+          <Box flexShrink={0}>
+            <Text color={soft}>{time || '     '}</Text>
+          </Box>
+          <Box flexShrink={0}>
+            <Text color={hex(color)}>{mark}</Text>
+          </Box>
+          <Text color={hex(fade(Math.max(0, recent.length - 1 - i), recent.length, 0xc8ccd4))} wrap="truncate-end">
+            {text}
+          </Text>
+        </Box>
+      )
+    })
+
+    // ── the task block's parts, so its height is known before the rows are shared out
     const planQ = plans.find(q => q.id === shownPlan) ?? (a ? undefined : plans[0])
-    const left = a ? a.blockers.filter(x => !/^(step \d+ not done|acceptance criterion \d+ not checked)/.test(x)) : [] // the ○ marks say those
     const extras: RenderElement[] = !a ? [] : [
       // T-0711 the parts fm task split made; T-0228 the debugging ledger, the oracle, a batch; T-0261 runs that proved nothing
       ...(a.children ?? []).map(k => (
-        <Box key={`kid-${k.id}`} flexDirection="row" gap={1}>
-          <Text color={k.status === 'done' ? dim : k.status === 'active' ? hex(C.accent) : undefined}>
-            {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'}
-          </Text>
-          {meter(ui, e, `kid-bar-${k.id}`, 6, k.steps_total ? (k.steps_done ?? 0) / k.steps_total : k.status === 'done' ? 1 : 0, C.ok, null)}
-          <Text wrap="truncate-end" color={k.status === 'done' ? dim : undefined}>part {k.id} {k.title}</Text>
-        </Box>
+        <Text key={`kid-${k.id}`} wrap="truncate-end" color={k.status === 'done' ? dim : k.status === 'active' ? hex(C.accent) : undefined}>
+          {k.status === 'done' ? '✓' : k.status === 'active' ? '▸' : '○'} part {k.id} {k.title}
+          <Text color={dim}>{k.steps_total ? `  ${k.steps_done ?? 0}/${k.steps_total}` : ''}</Text>
+        </Text>
       )),
       ...(a.hypotheses ?? []).map(hy => (
         <Text key={`hyp-${hy.n}`} color={hex(hy.status === 'confirmed' ? C.ok : hy.status === 'ruled out' ? C.dim : C.warn)} wrap="truncate-end">
@@ -1374,7 +1293,7 @@ export const register: Register = (on, options) => {
         ? [
             <Text key="fm-pane-oracle" color={hex(a.oracle.ambiguities.length ? C.warn : C.dim)} wrap="truncate-end">
               oracle: {a.oracle.examples} example{a.oracle.examples === 1 ? '' : 's'}
-              {a.oracle.ambiguities.length ? ` · open: ${a.oracle.ambiguities[0]}` : ' · no open questions'}
+              {a.oracle.ambiguities.length ? `, open: ${a.oracle.ambiguities[0]}` : ', no open questions'}
             </Text>,
           ]
         : []),
@@ -1385,75 +1304,26 @@ export const register: Register = (on, options) => {
       ...((a.unverified ?? []).length
         ? [<Text key="fm-pane-unverified" color={dim} wrap="truncate-end">? {(a.unverified ?? []).length} unverified assumption{(a.unverified ?? []).length === 1 ? '' : 's'}: {(a.unverified ?? [])[0]}</Text>]
         : []),
-      ...(left.length ? [<Text key="fm-pane-blockers" color={dim} wrap="truncate-end">left before done: {left.join(' · ')}</Text>] : []),
     ]
-    const planRows = planQ ? 1 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
-    const taskWant = planQ ? planRows : a ? (stageIdx >= 0 ? 2 : 0) + a.steps.length + a.criteria.length + extras.length : 0
-    const L = layout(e.props.scroll?.bodyRows ?? 40, { task: taskWant, queue: queueRows.length, more: moreRows.length })
+    const railWant = a && stageIdx >= 0 ? 3 : 0 // the rail, its labels, a blank row
+    const planRows = planQ ? 2 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
+    const taskWant = 2 + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : 0)
 
-    // ── header: who and how, the task or what's next, and Claude
-    const modes: [string, number][] = m
-      ? [
-          [m.autonomy === 'full' ? 'full auto' : 'standard', m.autonomy === 'full' ? C.accent2 : C.dim],
-          ...(m.drive ? [] : ([['drive off', C.warn]] as [string, number][])),
-          ...(m.sensitive ? ([['sensitive', C.warn]] as [string, number][]) : []),
-          ...(m.trust ? ([['trust on', C.warn]] as [string, number][]) : []),
-          ...((m.standing ?? []).length ? ([['standing yes', C.dim]] as [string, number][]) : []),
-        ]
-      : []
-    const header = (
-      <Box key="fm-pane-head" flexDirection="row" height={3} overflow="hidden" flexShrink={0}>
-        <Box flexDirection="column" flexGrow={1} flexShrink={1} width={headW}>
-          <Text key="head-who" wrap="truncate-end">
-            <Text weight="bold" color={hex(C.accent)}>
-              {moving ? spin(f ?? 0) : '▍'} Foreman
-            </Text>
-            <Text color={dim}> {v.project}</Text>
-            {modes.map(([w, c], i) => (
-              <Text key={`mode-${i}`} color={hex(c)}>{` · ${w}`}</Text>
-            ))}
-          </Text>
-          {a ? (
-            <Box key="head-task" flexDirection="row" gap={1}>
-              {chip(a)}
-              <Box flexShrink={0}>
-                <Text weight="bold" color={hex(C.accent)}>
-                  {a.id}
-                </Text>
-              </Box>
-              <Text weight="bold" wrap="truncate-end">
-                {a.title}
-              </Text>
-            </Box>
-          ) : (
-            <Text key="head-task" color={dim} wrap="truncate-end">
-              Nothing active{live ? ' · working' : ''}
-            </Text>
-          )}
-          {a ? (
-            <Box key="head-progress" flexDirection="row" gap={1}>
-              {a.steps.length > 0 && meter(ui, e, 'fm-pane-bar', Math.max(6, Math.min(16, headW - 44)), done / a.steps.length, C.ok, f)}
-              <Text wrap="truncate-end">
-                {a.steps.length > 0 ? <Text weight="bold">{`${done}/${a.steps.length} steps`}</Text> : null}
-                {L.task < 8 ? <Text color={dim}>{` · ${a.stage}`}</Text> : null}
-                {onMin !== null ? (
-                  <Text color={hex(usual !== undefined && onMin > usual ? C.warn : C.dim)}>
-                    {` · ${elapsed(onMin * 60000)} on it${usual !== undefined ? ` · usually ${about(usual)}` : ''}`}
-                  </Text>
-                ) : null}
-              </Text>
-            </Box>
-          ) : (
-            <Text key="head-progress" color={dim} wrap="truncate-end">
-              {v.next ? `→ ${humanNext(v.next)}` : 'queue and inbox empty'}
-            </Text>
-          )}
-        </Box>
-        {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
-      </Box>
-    )
+    // ── activity: one lane per kind of call, fixed in order so nothing jumps; fewer lanes on a short dock
+    const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
+    const axis = H >= 30 ? 1 : 0
+    const T = H >= 44 ? 6 : H >= 32 ? 5 : 4 // the Today charts' rows
+    const L = layout(H, [
+      { key: 'task', want: taskWant, cap: Math.max(4, Math.round(H * 0.4)), min: Math.min(taskWant, 4), bare: true },
+      { key: 'activity', want: 1, fixed: nLanes + axis },
+      { key: 'today', want: 1, fixed: T },
+      { key: 'queue', want: queueRows.length, cap: Math.max(3, Math.round(H * 0.2)), min: plans.length + 2 }, // every plan's approve
+      { key: 'sessions', want: sessionRows.length, cap: 5 },
+      { key: 'history', want: historyRows.length, stretch: true },
+    ])
+    const R = L.rows
 
-    // ── one attention row: the most urgent thing, or that nothing needs you
+    // ── the one thing that needs you
     const attention = (() => {
       const row = (color: number, text: string, lead?: RenderElement | null, tail?: RenderElement | null) => (
         <Box key="fm-pane-attention" flexDirection="row" gap={1} height={1} overflow="hidden" flexShrink={0}>
@@ -1466,16 +1336,17 @@ export const register: Register = (on, options) => {
       )
       if (err) return row(C.err, `✗ fm: ${err}`)
       if (paused.length) // Foreman's own checks are off: before anything else (T-0087)
-        return row(C.warn, `⚠ ${paused.join(', ')} hook${paused.length === 1 ? ' is' : 's are'} paused after failing 3 times in a row · fm doctor`)
+        return row(C.warn, `⚠ ${paused.join(', ')} hook${paused.length === 1 ? ' is' : 's are'} paused after failing 3 times in a row (fm doctor)`)
+      if (asking) return row(C.warn, `⚠ waiting for your answer, ${elapsed(clockNow - asking[1].at)}`)
       if (asks.length) {
         const x = asks[0]!
-        return row(C.warn, `⚠ needs you: ${x.task} ${x.allow.join(', ')} — ${x.why}${asks.length > 1 ? ` · ${asks.length - 1} more` : ''}`)
+        return row(C.warn, `⚠ needs you: ${x.task} ${x.allow.join(', ')} — ${x.why}${asks.length > 1 ? ` (+${asks.length - 1} more)` : ''}`)
       }
       if (plans.length) {
         const q = plans[0]!
         return row(
           C.warn,
-          `⚠ ${q.id} plan awaits your yes${a ? `: ${q.title}` : ' (below)'}${plans.length > 1 ? ` · ${plans.length - 1} more` : ''}`,
+          `⚠ ${q.id} plan awaits your yes${a ? `: ${q.title}` : ''}${plans.length > 1 ? ` (+${plans.length - 1} more)` : ''}`,
           null,
           <Box key="attention-plan" flexDirection="row" gap={1} flexShrink={0}>
             <Button key={`att-approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
@@ -1498,247 +1369,325 @@ export const register: Register = (on, options) => {
         return row(C.ok, `✔ ${c.id} done${closeCard(c)}${facts.length ? ` · ${facts.join(' · ')}` : ''}${c.title ? ` · ${c.title}` : ''}`,
           <Box key="attention-sweep" flexShrink={0}>{meter(ui, e, 'closed-sweep', 8, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}</Box>)
       }
-      if (failing) return row(C.err, `✗ gates failing: ${checks!.results.filter(r => r.exit).map(r => r.cmd).join(' · ')}`)
-      if (doneSince.length) return row(C.ok, `✔ since your last message: ${doneSince.length} done · ${doneSince.slice(-6).join(' ')}`)
+      if (failing) return row(C.err, `✗ gates failing: ${checks!.results.filter(r => r.exit).map(r => r.cmd).join(', ')}`)
+      const caps = v.budget?.halved || v.budget?.subagents_paused
+      if (caps) return row(C.warn, `◐ spend caps halved: ${caps}${v.budget?.subagents_paused ? ', subagents wait' : ''}`)
+      const rv = (v.revisit ?? [])[0]
+      if (rv) return row(C.warn, `◆ revisit: ${rv.decision} (${rv.why})`)
+      if (doneSince.length) return row(C.ok, `✔ since your last message: ${doneSince.length} done (${doneSince.slice(-6).join(' ')})`)
       const sl = signalLine(v) // T-0472: usage ahead of pace, tasks blocked …: the band's glyph, here while the pane is open
       if (sl) return row(sl.level === 'red' ? C.err : C.warn, `${sl.level === 'red' ? '●' : '◐'} ${sl.text}`)
       return row(C.dim, '✓ nothing needs you')
     })()
 
-    // ── the task: its rail, steps around the current one, what proves it; or a plan waiting for a yes
-    const fit = <T,>(xs: T[], k: number, at: number) => {
+    // ── head: who and how, the mascot on the right
+    const modes: [string, number][] = m
+      ? [
+          [m.autonomy === 'full' ? 'full auto' : 'standard', m.autonomy === 'full' ? C.accent2 : C.dim],
+          ...(m.drive ? [] : ([['drive off', C.warn]] as [string, number][])),
+          ...(m.sensitive ? ([['sensitive', C.warn]] as [string, number][]) : []),
+          ...(m.trust ? ([['trust on', C.warn]] as [string, number][]) : []),
+        ]
+      : []
+    const head = (
+      <Box key="fm-pane-head" flexDirection="row" height={3} overflow="hidden" flexShrink={0}>
+        <Box flexDirection="column" flexGrow={1} flexShrink={1}>
+          <Text key="head-who" wrap="truncate-end">
+            <Text weight="bold" color={hex(C.accent)}>
+              {moving ? spin(f ?? 0) : '▍'} Foreman
+            </Text>
+            <Text color={dim}>{`  ${v.project}`}</Text>
+          </Text>
+          <Text key="head-mode" wrap="truncate-end">
+            {modes.map(([w, c], i) => (
+              <Text key={`mode-${i}`} color={hex(c)}>{`${i ? '   ' : '  '}${w}`}</Text>
+            ))}
+          </Text>
+          {attention}
+        </Box>
+        {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
+      </Box>
+    )
+
+    // ── the task: its type and id with the time on it, the title, the stage rail, the steps, what proves it done
+    const fit = <X,>(xs: X[], k: number, at: number) => {
       if (xs.length <= k) return xs
-      const s = Math.max(0, Math.min(xs.length - k, at - 1)) // one done step stays in view above the current
+      const s = Math.max(0, Math.min(xs.length - k, k > 1 ? at - 1 : at)) // one done step above the current, room permitting
       return xs.slice(s, s + k)
     }
-    let task: { label: string; color: number; detail: string; body: RenderElement[]; tall?: number } = { label: 'Task', color: C.dim, detail: '', body: [] }
+    const idLine = (left: RenderElement, right: string, rightColor: number) => (
+      <Box key="task-id" flexDirection="row" justifyContent="space-between" gap={2} height={1} overflow="hidden">
+        {left}
+        <Box flexShrink={0}>
+          <Text color={hex(rightColor)}>{right}</Text>
+        </Box>
+      </Box>
+    )
+    const taskRows: RenderElement[] = []
+    const weight: number[] = [] // the steps, criteria or notes each row stands for (the head and the rail: none)
+    const push = (w: number, ...xs: RenderElement[]) => xs.forEach(x => void (taskRows.push(x), weight.push(w)))
+    let hidden = 0 // steps outside the window
     if (planQ) {
       const p = planQ.plan
-      task = {
-        label: 'Plan',
-        color: C.warn,
-        detail: `${planQ.id} waits for your yes`,
-        body: [
-          <Text key="plan-title" weight="bold" wrap="truncate-end">{planQ.title}</Text>,
-          ...(p.interpretation ? [<Text key="plan-means" wrap="truncate-end"><Text color={dim}>means </Text>{p.interpretation}</Text>] : []),
-          ...(p.approach ? [<Text key="plan-approach" wrap="truncate-end"><Text color={dim}>approach </Text>{p.approach}</Text>] : []),
-          ...p.steps.map(s => <Text key={`plan-step-${s.n}`} wrap="truncate-end">○ {s.n}. {s.text}</Text>),
-          ...p.criteria.map(c => <Text key={`plan-ac-${c.n}`} color={dim} wrap="truncate-end">○ AC{c.n} {c.text}</Text>),
-        ],
-      }
+      push(
+        0,
+        idLine(
+          <Box key="plan-chip" flexDirection="row" gap={1} flexShrink={0}>
+            <Text weight="bold" color={hex(C.warn)}>Plan to approve</Text>
+            <Text color={hex(C.accent)}>{planQ.id}</Text>
+          </Box>,
+          `${p.steps.length} steps`,
+          C.dim,
+        ),
+        <Text key="plan-title" weight="bold" wrap="truncate-end">{planQ.title}</Text>,
+      )
+      push(
+        1,
+        ...(p.interpretation ? [<Text key="plan-means" wrap="truncate-end"><Text color={dim}>means     </Text>{p.interpretation}</Text>] : []),
+        ...(p.approach ? [<Text key="plan-approach" wrap="truncate-end"><Text color={dim}>approach  </Text>{p.approach}</Text>] : []),
+        ...p.steps.map(s => <Text key={`plan-step-${s.n}`} wrap="truncate-end"><Text color={dim}>{`○ ${String(s.n).padStart(2)}  `}</Text>{s.text}</Text>),
+        ...p.criteria.map(c => <Text key={`plan-ac-${c.n}`} color={dim} wrap="truncate-end">✓ when {c.text}</Text>),
+      )
     } else if (a) {
-      const railRows = stageIdx >= 0 && L.task >= Math.min(8, taskWant) ? 2 : 0
-      const crit = a.criteria.map(c => (
-        <Text key={`ac-${c.n}`} color={c.checked ? hex(C.ok) : undefined} wrap="truncate-end">
-          {c.checked ? '✓' : '○'} AC{c.n} {c.text}
-          {!c.checked && c.verify ? <Text color={soft}>{`  ↳ ${c.verify}`}</Text> : null}
-        </Text>
-      ))
-      const room = Math.max(0, L.task - railRows)
-      const nSteps = Math.min(a.steps.length, Math.max(Math.min(3, a.steps.length), room - crit.length - extras.length))
-      const nCrit = Math.min(crit.length, Math.max(0, room - nSteps))
+      const over = usual !== undefined && onMin !== null && onMin > usual
+      push(
+        0,
+        idLine(
+          <Box key="task-chip" flexDirection="row" gap={1} flexShrink={0}>
+            <Text weight="bold" color={typeColor(a.type)}>{a.type}</Text>
+            <Text weight="bold" color={hex(C.accent)}>{a.id}</Text>
+            <Text color={dim}>{sizeWord(a.tier)}</Text>
+          </Box>,
+          [a.criteria.length ? `${a.criteria.filter(c => c.checked).length}/${a.criteria.length} proved` : '',
+            onMin === null ? '' : `${elapsed(onMin * 60000)}${usual !== undefined ? ` of ${about(usual)}` : ''}`].filter(Boolean).join('   '),
+          over ? C.warn : C.dim,
+        ),
+        <Text key="task-title" weight="bold" wrap="truncate-end">{a.title}</Text>,
+      )
+      const rows = R.task! - 2
+      const railRows = railWant && rows >= Math.min(6, taskWant - 2) ? 3 : 0
+      const room = Math.max(1, rows - railRows)
+      // every step and note when they fit; else a window round the current step and a row to count the rest
+      const nSteps = a.steps.length + extras.length <= room ? a.steps.length : Math.max(1, Math.min(a.steps.length, room - extras.length - 1))
       const at = Math.max(0, a.steps.findIndex(s => s.current))
-      task = {
-        label: 'Task',
-        color: C.accent,
-        tall: railRows ? 1 : 0, // the rail: its raster and its labels
-        detail: [
-          `${proved}/${a.criteria.length} proved`,
-          ...(a.audits.need ? [`audits ${a.audits.done}/${a.audits.need}`] : []),
-          ...(a.steps.length - nSteps + crit.length - nCrit > 0 ? [`${a.steps.length - nSteps + crit.length - nCrit} more not shown`] : []),
-        ].join(' · '),
-        body: [
-          ...(railRows ? [<Box key="fm-pane-rail" flexDirection="column">{rail(ui, e, a.stages, stageIdx, W, ft, blit)}</Box>] : []),
-          ...fit(a.steps, nSteps, at).map(s => {
-            const lit = flashed.get(`${a.id}:${s.n}`)
-            const k = lit === undefined ? 1 : (clockNow - lit) / FLASH_MS
-            return (
-              <Text key={`step-${s.n}`} wrap="truncate-end"
-                color={s.current ? hex(C.accent) : s.done ? hex(k < 1 ? C.ok : C.dim) : undefined}
-                backgroundColor={k < 1 ? hex(mix(mix(C.ok, BG, 0.62), BG, k)) : undefined}>
-                {s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'} {s.n}. {s.text}
-              </Text>
-            )
-          }),
-          ...crit.slice(0, nCrit),
-          ...extras,
-        ],
-      }
-    }
-
-    // ── live: tool calls, subagents and background shells, one row each; quiet rows draw the session's tool lanes
-    const runningSubs = subs.filter(s => !s.done)
-    const liveRows: RenderElement[] = [
-      ...nowCalls.map(([id, x], i) => {
-        if (x.icon === '⚠')
+      if (railRows)
+        push(0, <Box key="fm-pane-rail" flexDirection="column">{rail(ui, e, a.stages, stageIdx, W, ft, blit)}</Box>, <Text key="rail-gap"> </Text>)
+      hidden = a.steps.length - nSteps
+      push(
+        1,
+        ...fit(a.steps, nSteps, at).map(s => {
+          const lit = flashed.get(`${a.id}:${s.n}`)
+          const k = lit === undefined ? 1 : (clockNow - lit) / FLASH_MS
           return (
-            <Text key={`now-${id}`} color={hex(C.warn)} wrap="truncate-end">
-              ⚠ {x.verb} · {elapsed(clockNow - x.at)}
+            <Text key={`step-${s.n}`} wrap="truncate-end"
+              color={s.current ? hex(C.accent) : s.done ? hex(k < 1 ? C.ok : C.dim) : undefined}
+              backgroundColor={k < 1 ? hex(mix(mix(C.ok, BG, 0.62), BG, k)) : undefined}>
+              <Text color={hex(s.done ? C.ok : s.current ? C.accent : C.dim)}>{s.done ? '✓' : s.current ? (moving ? spin(f ?? 0) : '▸') : '○'}</Text>
+              {` ${String(s.n).padStart(2)}  ${s.text}`}
             </Text>
           )
-        if (blit && ft !== null) blit.set(`now-bar-${i}`, { columns: 8, rows: 1, draw: t => activityCells(8, x.color, t + i * 3) })
-        return (
-          <Box flexDirection="row" gap={1} key={`now-${id}`}>
-            <Box flexShrink={0} flexDirection="row" gap={1}>
-              {meter(ui, e, `now-bar-${i}`, 8, null, x.color, ft === null ? null : ft + i * 3)}
-              <Text color={hex(x.color)}>
-                {x.icon} {x.verb}
-              </Text>
-            </Box>
-            <Text wrap="truncate-end">{x.target}</Text>
-            <Box flexShrink={0}>
-              <Text color={dim}>{elapsed(clockNow - x.at)}</Text>
-            </Box>
-          </Box>
-        )
-      }),
-      ...[...runningSubs, ...subs.filter(s => s.done)].map(s => (
-        <Box flexDirection="row" gap={1} key={`agent-${s.id}`}>
-          <Text color={hex(s.done ? C.dim : agentColor(s.id))}>{s.done ? '✓' : spin((f ?? 0) + s.tools)}</Text>
-          <Box flexShrink={0}>
-            <Text weight="bold" color={hex(s.done ? C.dim : C.agent)}>
-              {s.type}
-            </Text>
-          </Box>
-          <Text wrap="truncate-end" color={s.done ? dim : undefined}>
-            {s.description}
-          </Text>
-          <Box flexShrink={0}>
-            <Text color={hex(!s.done && clockNow - (s.lastAt ?? s.startedAt) >= QUIET_MS ? C.warn : C.dim)}>
-              {s.done
-                ? `done · ${s.tools} tool${s.tools === 1 ? '' : 's'}` // its last action is stale once it ends (T-0146)
-                : clockNow - (s.lastAt ?? s.startedAt) >= QUIET_MS
-                  ? `quiet ${elapsed(clockNow - (s.lastAt ?? s.startedAt))}`
-                  : `${s.tools} tools${s.last ? ` · ${s.last.slice(0, 30)}` : ''} · ${elapsed(clockNow - s.startedAt)}`}
-            </Text>
-          </Box>
-          {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= STOP_MS && (
-            <Button key={`stop-${s.id}`} label="■ stop" plain onPress={() => void stopAgent($, s.id)} />
-          )}
-        </Box>
-      )),
-      ...bgShells.map((x, i) => (
-        <Box flexDirection="row" gap={1} key={`shell-${x.id}`}>
-          <Text color={hex(C.accent2)}>{spin(fb + i)}</Text>
-          <Text color={hex(C.accent2)}>◷</Text>
-          <Text wrap="truncate-end">{x.command}</Text>
-          <Box flexShrink={0}>
-            <Text color={dim}>{elapsed(clockNow - x.startedAt)}</Text>
-          </Box>
-        </Box>
-      )),
-    ]
-    const nLive = nowCalls.filter(([, x]) => x.icon !== '⚠').length + runningSubs.length + bgShells.length
+        }),
+        ...extras,
+      )
+    } else {
+      push(
+        0,
+        idLine(
+          <Text key="idle-word" color={dim}>{live ? 'Working, no task in focus' : 'Nothing active'}</Text>,
+          `${v.today_done ?? 0} closed today`,
+          C.ok,
+        ),
+        <Text key="idle-next" wrap="truncate-end">
+          {v.next ? <Text color={dim}>Next  </Text> : null}
+          {v.next ? humanNext(v.next) : <Text color={dim}>The queue and the inbox are empty.</Text>}
+        </Text>,
+      )
+    }
+    if (taskRows.length + (hidden ? 1 : 0) > R.task!) { // never cut silently (T-0146): the last row counts what's gone
+      const keep = Math.max(0, R.task! - 1)
+      hidden += weight.slice(keep).reduce((x, y) => x + y, 0)
+      taskRows.splice(keep)
+    }
+    if (hidden) taskRows.push(<Text key="task-more" color={dim}>{`… ${hidden} more`}</Text>)
+
+    // ── activity: each lane plots its calls over the window; its end names what runs there now, else its count
     const lastTick = ticks.at(-1)
     const spanMs = Math.ceil(Math.min(TIMELINE_MS, Math.max(60000, ticks.length ? clockNow - ticks[0]!.at : TIMELINE_MS)) / 60000) * 60000
     const recentTicks = ticks.filter(t => clockNow - t.at <= spanMs)
-    const laneW = Math.max(8, W - 14)
-    const lanesBy = KINDS.map(k => ({ k, n: recentTicks.filter(t => t.lane === k).length })).sort((x, y) => y.n - x.n)
-    // T-1000: the rows no call holds show what the session has been doing, one lane per kind of call, busiest first
-    lanesBy.slice(0, Math.max(0, L.live - liveRows.length)).forEach(({ k, n }) => {
+    const LBL = 6
+    const RW = Math.max(12, Math.min(34, Math.floor(W * 0.4))) // the count, then what runs there now or ran last
+    const laneW = Math.max(8, W - LBL - RW - 1)
+    const runningSubs = subs.filter(s => !s.done)
+    const bs = v.brainstorm
+    type Now = { key: string; text: string; time: string; color: number; stop?: string }
+    const nowIn: Record<string, Now[]> = {}
+    const put = (k: string, x: Now) => void (nowIn[k] ??= []).push(x)
+    nowCalls.filter(([, x]) => x.icon !== '⚠').forEach(([id, x]) =>
+      put(laneOf(x.icon), { key: id, text: x.target || x.verb, time: elapsed(clockNow - x.at), color: x.color }))
+    runningSubs.forEach(s => {
+      const quiet = clockNow - (s.lastAt ?? s.startedAt)
+      put('agent', {
+        key: s.id, text: `${s.type}${s.description ? `: ${s.description}` : ''}`, color: quiet >= QUIET_MS ? C.warn : agentColor(s.id),
+        time: quiet >= QUIET_MS ? `quiet ${elapsed(quiet)}` : elapsed(clockNow - s.startedAt), stop: quiet >= STOP_MS ? s.id : undefined,
+      })
+    })
+    if (bs?.running) put('agent', { key: 'ideas', text: `ideas${bs.ideas.length ? `: ${bs.ideas.at(-1)}` : ''}`, time: `${bs.answers}/${bs.expected ?? '?'}`, color: C.agent })
+    bgShells.forEach(x => put('run', { key: x.id, text: `◷ ${x.command}`, time: elapsed(clockNow - x.startedAt), color: C.accent2 }))
+    const nLive = Object.values(nowIn).reduce((n, xs) => n + xs.length, 0)
+    const counts = Object.fromEntries(KINDS.map(k => [k, recentTicks.filter(t => t.lane === k).length])) as Record<string, number>
+    const busiest = [...KINDS].sort((x, y) => counts[y]! - counts[x]!).slice(0, nLanes) // by the window only: nothing swaps as calls start
+    const laneRows: RenderElement[] = KINDS.filter(k => busiest.includes(k)).map(k => {
+      const n = counts[k]!
       const slots = bucketize(recentTicks.filter(t => t.lane === k).map(t => t.at), clockNow, spanMs, laneW * 2)
-      if (blit && ft !== null) blit.set(`lane-r-${k}`, { columns: laneW, rows: 1, draw: t => laneCells([{ color: KIND_COLOR[k], slots }], laneW, t) })
-      liveRows.push(
-        <Box key={`lane-${k}`} flexDirection="row" gap={1}>
-          <Box flexShrink={0}>
-            <Text color={hex(n ? KIND_COLOR[k] : C.dim)}>{k.padEnd(5)}</Text>
+      if (blit && ft !== null && n) blit.set(`lane-r-${k}`, { columns: laneW, rows: 1, draw: t => laneCells([{ color: KIND_COLOR[k]!, slots }], laneW, t) })
+      const here = nowIn[k] ?? []
+      const x = here[0]
+      return (
+        <Box key={`lane-${k}`} flexDirection="row" height={1} overflow="hidden">
+          <Box flexShrink={0} width={LBL}>
+            <Text color={hex(n || x ? KIND_COLOR[k]! : C.dim)}>{k}</Text>
           </Box>
-          {n ? raster(`lane-r-${k}`, laneW, laneCells([{ color: KIND_COLOR[k], slots }], laneW, ft), sparkText(slots.filter((_, i) => i % 2 === 0), laneW), KIND_COLOR[k])
-            : raster(`lane-r-${k}`, laneW, cells(Array.from({ length: laneW }, () => ['┈', C.track] as const)), '┈'.repeat(laneW), C.track)}
-          <Text color={dim}>{String(n).padStart(3)}</Text>
-        </Box>,
+          <Box flexShrink={0}>
+            {raster(`lane-r-${k}`, laneW, laneCells([{ color: KIND_COLOR[k]!, slots }], laneW, n ? ft : null), n ? sparkText(slots.filter((_, i) => i % 2 === 0), laneW) : '⣀'.repeat(laneW), KIND_COLOR[k]!)}
+          </Box>
+          <Box flexShrink={0} width={RW + 1} flexDirection="row" gap={1}>
+            <Box key="lane-n" flexShrink={0} width={4} flexDirection="row" justifyContent="flex-end">
+              {x ? <Text color={hex(x.color)}>{moving ? spin((f ?? 0) + here.length) : '▸'}</Text> : <Text color={dim}>{n ? String(n) : ''}</Text>}
+            </Box>
+            {x
+              ? [
+                  <Text key="now-text" wrap="truncate-end" color={hex(mix(x.color, 0xc8ccd4, 0.5))}>{x.stop ? `${x.time}  ${x.text}` : x.text}</Text>,
+                  ...(x.stop // a narrow dock keeps the button: the time goes into the text, which gives way first
+                    ? [<Button key={`stop-${x.stop}`} label="■ stop" plain onPress={() => void stopAgent($, x.stop!)} />]
+                    : [<Box key="now-time" flexShrink={0}><Text color={dim}>{`${x.time}${here.length > 1 ? ` +${here.length - 1}` : ''}`}</Text></Box>]),
+                ]
+              : <Text key="lane-last" wrap="truncate-end" color={soft}>{n ? (recentTicks.filter(t => t.lane === k).at(-1)?.what ?? '') : ''}</Text>}
+          </Box>
+        </Box>
       )
     })
-    const liveDetail = nowCalls.length + subs.length + bgShells.length
+    const axisRow = (
+      <Box key="lane-axis" flexDirection="row" height={1} overflow="hidden">
+        <Box flexShrink={0} width={LBL} />
+        <Text color={soft}>{`${spanMs / 60000}m ago`.padEnd(Math.max(1, laneW - 3))}now</Text>
+      </Box>
+    )
+    const activityRight = nLive
       ? `${nLive} running`
-      : `quiet · ${lastTick ? `last call ${since(clockNow - lastTick.at)}` : 'no calls yet'} · ${recentTicks.length} in ${spanMs / 60000}m`
+      : lastTick ? `${recentTicks.length} calls, last ${since(clockNow - lastTick.at)}` : 'no calls yet'
 
-    // ── pulse: 14 days of closes beside the gauges, then the newest news; it stretches to fill the dock
-    const P = L.pulse
-    const leftW = days.length ? days.length * 2 - 1 : 0
-    const gw = Math.max(6, Math.min(14, W - leftW - 2 - 8 - 20))
-    const label7 = (s: string) => <Text color={dim}>{s.padEnd(7)}</Text>
-    const ctxColor = cx ? (cx.percent >= CHECKPOINT_AT ? C.err : cx.percent >= 60 ? C.warn : C.ok) : C.dim
-    const spendFrac = v.budget ? Math.min(1, v.budget.today_usd / Math.max(0.01, v.budget.caps.day)) : null
-    const toolW = gw
-    const gaugeRows: RenderElement[] = [
-      <Box key="g-ctx" flexDirection="row" gap={1}>
-        {label7('context')}
-        {meter(ui, e, 'fm-pane-ctx', gw, cx ? cx.percent / 100 : 0, ctxColor, null)}
-        <Text wrap="truncate-end">{cx ? `${Math.round(cx.percent)}%` : '–'}</Text>
-      </Box>,
-      <Box key="g-spend" flexDirection="row" gap={1}>
-        {label7('spend')}
-        {meter(ui, e, 'fm-pane-spend', gw, spendFrac ?? 0, (spendFrac ?? 0) >= 0.9 ? C.warn : C.accent2, null)}
-        <Text wrap="truncate-end" color={v.budget?.halved || v.budget?.subagents_paused ? hex(C.warn) : undefined}>
-          {v.budget ? `$${v.budget.today_usd.toFixed(2)} of $${v.budget.caps.day.toFixed(0)}` : '–'}
-        </Text>
-      </Box>,
-      <Box key="g-hooks" flexDirection="row" gap={1}>
-        {label7('hooks')}
-        {spark(ui, e, 'fm-latency', (v.latency ?? []).length > 1 ? v.latency ?? [] : [0, 0], gw)}
-        <Text wrap="truncate-end" color={hex(v.health?.hook_errors ? C.err : C.dim)}>
-          {v.health
-            ? `p95 ${v.health.hook_p95_ms ?? '–'} ms · ${v.health.guard_blocks} block${v.health.guard_blocks === 1 ? '' : 's'}${v.health.hook_errors ? ` · ${v.health.hook_errors} error${v.health.hook_errors === 1 ? '' : 's'}` : ''}`
-            : '–'}
-        </Text>
-      </Box>,
-      <Box key="g-gates" flexDirection="row" gap={1}>
-        {label7('gates')}
-        <Text wrap="truncate-end">
-          {(checks?.results ?? []).map((r, i) => (
-            <Text key={`gate-${i}`} color={hex(r.exit ? C.err : r.note ? C.warn : C.ok)}>
-              ●
-            </Text>
-          ))}
-          <Text color={hex(failing ? C.err : C.dim)}>
-            {checks?.results.length
-              ? ` ${passed}/${checks.results.length} · ${checks.at.slice(11, 16)} · a full run ≈ ${elapsed(1000 * checks.results.reduce((t, r) => t + r.s, 0))}`
-              : 'none yet: fm check'}
-          </Text>
-        </Text>
-      </Box>,
-      <Box key="pulse-tools" flexDirection="row" gap={1}>
-        {label7('tools')}
-        {spark(ui, e, 'fm-tools', bucketize(recentTicks.map(t => t.at), clockNow, spanMs, toolW), toolW)}
-        <Text color={dim} wrap="truncate-end">{`${recentTicks.length} call${recentTicks.length === 1 ? '' : 's'} · ${spanMs / 60000}m`}</Text>
-      </Box>,
-      ...[...(v.recent ?? [])].reverse().map((line, i, all) => {
-        const [, time, rest] = /^(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line]
-        return (
-          <Text key={`r-${i}`} color={hex(fade(Math.max(0, all.length - 1 - i), all.length, 0xc8ccd4))} wrap="truncate-end">
-            {time ? <Text color={dim}>{`${time} `}</Text> : null}
-            {rest}
-          </Text>
-        )
-      }),
+    // ── today: closes per day as tall columns, beside four tank gauges that read as full or not at a glance
+    const bw = days.length ? Math.max(1, Math.min(3, Math.floor((Math.floor(W / 2) + 1) / days.length) - 1)) : 0
+    const daysW = term ? days.length * (bw + 1) - 1 : days.length // off the terminal a sparkline, a column a day
+    const showDays = days.length > 0 && W - daysW - 4 >= 4 * 6 + 6 // the four tanks, 6 wide, first
+    const leftW = showDays ? daysW : 0
+    const GAP = showDays ? 4 : 0
+    const rightW = Math.max(8, W - leftW - GAP)
+    const b = v.budget
+    const p95 = v.health?.hook_p95_ms
+    const levels: { label: string; value: string; frac: number; color: number }[] = [
+      { label: 'context', value: cx ? `${Math.round(cx.percent)}%` : '–', frac: cx ? cx.percent / 100 : 0, color: cx ? pctColor(cx.percent) : C.dim },
+      ...(b
+        ? [{ label: 'spend', value: `$${b.today_usd < 10 ? b.today_usd.toFixed(2) : Math.round(b.today_usd)}`, frac: b.today_usd / Math.max(0.01, b.caps.day),
+            color: b.today_usd >= 0.9 * b.caps.day || b.halved ? C.warn : C.accent2 }]
+        : [{ label: 'spend', value: '–', frac: 0, color: C.dim }]),
+      { label: 'hooks', value: typeof p95 === 'number' ? `${p95}ms` : '–', frac: typeof p95 === 'number' ? Math.min(1, p95 / 300) : 0,
+        color: v.health?.hook_errors ? C.err : typeof p95 === 'number' ? heat(Math.min(1, p95 / 300)) : C.dim },
+      { label: 'gates', value: checks?.results.length ? `${passed}/${checks.results.length}` : '–', frac: checks?.results.length ? passed / checks.results.length : 0,
+        color: failing ? C.err : C.ok },
     ]
-    const pulseRows: RenderElement[] = P > 0 ? [
-      <Box key="pulse-top" flexDirection="row" gap={2} height={P} overflow="hidden">
-        {days.length > 0 && (
-          <Box key="pulse-days" flexDirection="column" flexShrink={0}>
-            {bars(ui, e, 'done-days', days, Math.max(1, P - 1), C.accent2, C.ok)}
-            <Text color={dim} wrap="truncate-end">
-              {`${v.today_done ?? 0} today · ${days.reduce((x, y) => x + y, 0)}/14d`.slice(0, Math.max(1, leftW))}
-            </Text>
+    const tw = Math.max(3, Math.floor((rightW - 2 * (levels.length - 1)) / levels.length))
+    const tk = Math.min(tw, 6) // a tank's width, centred in its column
+    const tanksW = levels.length * tk + (tw - tk + 2) * (levels.length - 1)
+    const centre = (s: string, w: number) => {
+      const t = s.slice(0, w)
+      const l = Math.floor((w - t.length) / 2)
+      return ' '.repeat(l) + t + ' '.repeat(w - t.length - l)
+    }
+    const TR = Math.max(1, R.today! - 2) // the tanks' rows, between the values and the labels
+    const todayBody: RenderElement[] = R.today! > 0 ? [
+      <Box key="today-row" flexDirection="row" gap={GAP} height={R.today!} overflow="hidden">
+        {showDays && (
+          <Box key="today-days" flexDirection="column" flexShrink={0}>
+            {bars(ui, e, 'done-days', days, Math.max(1, R.today! - 1), C.accent2, C.ok, bw)}
+            <Text color={soft}>{`14 days ago${' '.repeat(Math.max(1, leftW - 11 - `${v.today_done ?? 0} today`.length))}`}<Text color={hex(C.ok)}>{`${v.today_done ?? 0} today`}</Text></Text>
           </Box>
         )}
-        <Box key="pulse-gauges" flexDirection="column" flexGrow={1} flexShrink={1}>
-          {gaugeRows.slice(0, P)}
+        <Box key="today-tanks" flexDirection="column" flexShrink={0}>
+          <Text key="tank-values">
+            {levels.map((l, i) => (
+              <Text key={`tv-${l.label}`} weight="bold" color={hex(l.value === '–' ? C.dim : l.color)}>{`${i ? '  ' : ''}${centre(l.value, tw)}`}</Text>
+            ))}
+          </Text>
+          {term ? (
+            <Box key="fm-tanks" flexShrink={0} paddingLeft={Math.floor((tw - tk) / 2)}>
+              <Raster key="fm-tank-cells" columns={tanksW} rows={TR} cells={tankCells(levels, TR, tk, tw - tk + 2)} />
+            </Box>
+          ) : (
+            <Text key="fm-tanks" color={dim}>{levels.map(l => `${l.label} ${Math.round(l.frac * 100)}%`).join('  ')}</Text>
+          )}
+          <Text key="tank-labels" color={dim}>{levels.map((l, i) => `${i ? '  ' : ''}${centre(l.label, tw)}`).join('')}</Text>
         </Box>
       </Box>,
     ] : []
 
+    // ── drawing: a titled divider, then exactly the section's rows; what doesn't fit is counted, never cut silently
+    const titleRow = (key: string, label: string, color: number, right: string) => (
+      <Text key={`${key}-title`} wrap="truncate-end">
+        <Text weight="bold" color={hex(color)}>{label}</Text>
+        <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, W - label.length - 1 - (right ? right.length + 2 : 0)))}`}</Text>
+        {right ? <Text color={dim}>{`  ${right}`}</Text> : null}
+      </Text>
+    )
+    const todayTitle = (
+      <Text key="today-title" wrap="truncate-end">
+        {showDays && <Text weight="bold" color={hex(C.ok)}>Closed per day</Text>}
+        {showDays && <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, leftW - 15))}${' '.repeat(GAP)}`}</Text>}
+        <Text weight="bold" color={hex(C.accent2)}>Today</Text>
+        <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, W - leftW - GAP - 6))}`}</Text>
+      </Text>
+    )
+    const body = (key: string, rows: number, xs: RenderElement[], tall = 0, log = false) => {
+      const over = xs.length + tall > rows
+      const shown = log || !over // a log just loses its oldest lines; never more rows than fit, or flex squeezes them
+        ? xs.slice(0, Math.max(0, rows - tall))
+        : [...xs.slice(0, Math.max(0, rows - 1 - tall)), <Text key={`${key}-more`} color={dim} wrap="truncate-end">{`… ${xs.length - Math.max(0, rows - 1 - tall)} more`}</Text>]
+      return (
+        <Box key={`${key}-body`} flexDirection="column" height={rows} overflow="hidden" flexShrink={0}>
+          {shown}
+        </Box>
+      )
+    }
+    const SECTIONS: { key: string; title: RenderElement; rows: RenderElement[]; tall?: number; log?: boolean }[] = [
+      { key: 'activity', title: titleRow('activity', 'Activity', nLive ? C.accent : C.dim, activityRight), rows: [...laneRows, ...(axis ? [axisRow] : [])] },
+      { key: 'queue', title: titleRow('queue', 'Up next', C.accent2, inboxN ? `${queue.length} queued, ${inboxN} in the inbox` : `${queue.length} queued`), rows: queueRows },
+      { key: 'sessions', title: titleRow('sessions', 'Sessions', C.agent, `${fleet.filter(s => !s.error).length} live`), rows: sessionRows },
+      { key: 'history', title: titleRow('history', 'History', C.dim, ''), rows: historyRows, log: true },
+      { key: 'today', title: todayTitle, rows: todayBody, tall: Math.max(0, R.today! - 1) },
+    ]
+    const sections: RenderElement[] = []
+    for (const s of SECTIONS) {
+      const n = R[s.key] ?? 0
+      if (!n) continue
+      if (L.gap) sections.push(<Box key={`gap-${s.key}`} height={1} flexShrink={0} />)
+      sections.push(
+        <Box key={s.key} flexDirection="column" flexShrink={0}>
+          {s.title}
+          {body(s.key, n, s.rows, s.tall ?? 0, s.log)}
+        </Box>,
+      )
+    }
+
     return (
       <Box flexDirection="column" key="fm-pane" paddingX={1}>
-        {header}
-        {attention}
-        {section('task', L.task, task.label, task.color, task.detail, task.body, task.tall ?? 0)}
-        {section('live', L.live, 'Live', nLive ? C.accent : C.dim, liveDetail, liveRows)}
-        {section('queue', L.queue, 'Queue', C.accent2, `${queue.length} queued · ${inboxN} in inbox`, queueRows)}
-        {section('more', L.also, 'More', C.dim, '', moreRows)}
-        {section('pulse', L.pulse, 'Pulse', C.accent2, '', pulseRows, Math.max(0, P - 1))}
-        <Box flexDirection="row" gap={2} key="fm-pane-controls" height={1} overflow="hidden" flexShrink={0}>
+        {head}
+        {L.gap ? <Box key="gap-head" height={1} flexShrink={0} /> : null}
+        <Box key="task" flexDirection="column" height={R.task!} overflow="hidden" flexShrink={0}>
+          {taskRows.slice(0, R.task!)}
+        </Box>
+        {sections}
+        {L.gap ? <Box key="gap-controls" height={1} flexShrink={0} /> : null}
+        <Box flexDirection="row" gap={W >= 64 ? 3 : 2} key="fm-pane-controls" height={1} overflow="hidden" flexShrink={0}>
           <Button key="next" label="next" hotkey="n" plain onPress={() => void $.prompt.submit({ text: '/foreman:next', asUser: true })} />
           <Button key="drive" label={m?.drive ? 'turn drive off' : 'turn drive on'} hotkey="d" plain
             onPress={() => act($, ['drive', m?.drive ? 'off' : 'on'], `drive ${m?.drive ? 'off' : 'on'}`)} />

@@ -10,6 +10,7 @@ export const C = {
   edit: 0xffaf5f,
   agent: 0xd787ff,
   web: 0x87d7af,
+  skill: 0xf5a3c7,
   dim: 0x6c7686,
   add: 0xa8d5a2, // diff text: softer than ok/err, which stay on the +/- signs (T-0143: 'weird in contrast')
   del: 0xe0a3a3,
@@ -206,21 +207,21 @@ export function laneCells(lanes: readonly { color: number; slots: readonly numbe
   return cells(out)
 }
 
-/** Column bars `rows` tall in eighth blocks, one column per value with a gap between, coloured from→to by height; a
+/** Column bars `rows` tall in eighth blocks, `bw` columns per value with a gap between, coloured from→to by height; a
  * zero shows as a dim floor. The newest (last) value is the brightest. */
-export function barCells(values: readonly number[], rows: number, from: number, to: number): string {
+export function barCells(values: readonly number[], rows: number, from: number, to: number, bw = 1): string {
   const max = Math.max(1, ...values)
-  const width = values.length * 2 - 1
+  const width = values.length * (bw + 1) - 1
   const out: [string, number][] = []
   for (let r = 0; r < rows; r++) {
     for (let x = 0; x < width; x++) {
-      const v = x % 2 ? -1 : values[x / 2]!
+      const v = x % (bw + 1) === bw ? -1 : values[Math.floor(x / (bw + 1))]!
       const eighths = v > 0 ? Math.max(1, Math.round((v / max) * rows * 8)) : 0
       const level = Math.max(0, Math.min(8, eighths - (rows - 1 - r) * 8))
       if (v < 0) out.push([' ', C.track])
       else if (!level) out.push(r === rows - 1 && v === 0 ? ['▁', C.track] : [' ', C.track])
       else {
-        const newest = x === width - 1
+        const newest = Math.floor(x / (bw + 1)) === values.length - 1
         out.push([SPARK[level - 1]!, newest ? mix(to, C.white, 0.25) : mix(from, to, v / max)])
       }
     }
@@ -391,27 +392,55 @@ export function ago(days: number | undefined): string {
 export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
 
-/** T-0989, T-1000: the pane's row budget. One panel that fills the dock exactly: Task, Queue and More take the rows
- * they hold (each capped, so none starves the rest), Live keeps a fixed height (its quiet rows draw the tool lanes), and
- * Pulse takes what's left, its charts stretching to fill it. Header 3, attention 1 and controls 1 are fixed; each section
- * takes a label row while it has rows of its own. */
-export type Layout = { task: number; live: number; pulse: number; queue: number; also: number }
-export type Demand = { task: number; queue: number; more: number }
-export function layout(rows: number, want: Demand): Layout {
+/** T-0989, T-1000, T-1002: the pane's row budget. One panel that fills the dock exactly: the head (its third row the
+ * attention row) and the controls take 4 rows; every section but a `bare` one (the task under the head) gets a titled
+ * divider, and on a tall dock (40 rows up) a blank row above it, under the head and above the controls. Sections take
+ * the rows they hold: each its `min` (2) first, then up to its `cap` in order; a `fixed` one its height, and the
+ * `stretch` one (the history) everything left. When sections get no rows the least important (last) of them is dropped
+ * and the rest placed again, so its divider goes to the others; with the stretch one gone, what's left pads the task. */
+export type Part = { key: string; want: number; cap?: number; min?: number; fixed?: number; stretch?: boolean; bare?: boolean }
+export function layout(rows: number, parts: Part[]): { gap: number; rows: Record<string, number> } {
   const h = Math.max(0, Math.floor(rows))
-  const live = h >= 30 ? 4 : h >= 20 ? 3 : 2
-  const pulseMin = h >= 26 ? 4 : 0
-  let r = Math.max(0, h - 5 - (live + 1) - (pulseMin ? pulseMin + 1 : 0))
-  const take = (n: number, cap: number) => {
-    const k = Math.max(0, Math.min(n, cap, r - 1))
-    if (k > 0) r -= k + 1
-    return k
+  const gap = h >= 40 ? 1 : 0
+  let shown = parts.filter(p => p.want > 0 || p.fixed || p.stretch)
+  let out: Record<string, number> = {}
+  for (let pass = 0; pass < parts.length + 1; pass++) {
+    const titled = shown.filter(p => !p.bare).length
+    let r = Math.max(0, h - 4 - 2 * gap - titled * (1 + gap))
+    out = {}
+    for (const p of shown) if (p.fixed) r -= out[p.key] = Math.min(p.fixed, r)
+    const flex = shown.filter(p => !p.fixed && !p.stretch)
+    for (const p of flex) r -= out[p.key] = Math.max(0, Math.min(p.want, p.cap ?? p.want, p.min ?? 2, r)) // each its minimum first
+    for (const p of flex) { // then up to its cap, in order
+      const more = Math.max(0, Math.min(Math.min(p.want, p.cap ?? p.want) - out[p.key]!, r))
+      out[p.key] = out[p.key]! + more
+      r -= more
+    }
+    const stretch = shown.find(p => p.stretch)
+    const spare = stretch ?? shown.find(p => p.bare) // with the history gone, a blank row under the task
+    if (spare) out[spare.key] = (out[spare.key] ?? 0) + r
+    const empty = shown.filter(p => !out[p.key])
+    if (!empty.length) break
+    const last = empty.at(-1)! // the least important goes first; its divider frees rows for the others
+    shown = shown.filter(p => p !== last)
   }
-  const task = take(want.task, Math.max(3, Math.round(h * 0.4)))
-  const queue = take(want.queue, Math.max(2, Math.round(h * 0.25)))
-  const also = take(want.more, Math.max(1, Math.round(h * 0.18)))
-  if (pulseMin) return { task, live, pulse: pulseMin + r, queue, also } // the charts take the rest
-  return r >= 2 ? { task, live, pulse: r - 1, queue, also } : { task, live: live + r, pulse: 0, queue, also }
+  return { gap, rows: Object.fromEntries(parts.map(p => [p.key, out[p.key] ?? 0])) }
+}
+
+/** T-1002: level gauges as tanks side by side, `rows` tall and `width` wide each, `gap` apart: each fills from the
+ * bottom in eighths to its fraction, in its colour, over a dim slot that shows where full is. */
+export function tankCells(levels: readonly { frac: number; color: number }[], rows: number, width: number, gap: number): string {
+  const out: [string, number, number][] = []
+  const slot = mix(C.track, 0x1a1d24, 0.35)
+  for (let r = 0; r < rows; r++) {
+    levels.forEach((l, i) => {
+      if (i) for (let g = 0; g < gap; g++) out.push([' ', C.track, DEFAULT_BG])
+      const eighths = l.frac > 0 ? Math.max(1, Math.round(Math.min(1, l.frac) * rows * 8)) : 0
+      const level = Math.max(0, Math.min(8, eighths - (rows - 1 - r) * 8))
+      for (let x = 0; x < width; x++) out.push(level >= 8 ? ['█', l.color, slot] : level ? [SPARK[level - 1]!, l.color, slot] : [' ', l.color, slot])
+    })
+  }
+  return cells(out)
 }
 
 // The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
