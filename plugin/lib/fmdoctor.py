@@ -1216,7 +1216,7 @@ def run_all(full=False, accept_supply=False):
                           or f"{len(projects)} project(s) OK"))
     stale = [p.slug for p in projects if not views_match(p)]  # T-0494
     results.append(Result("views", "WARN" if stale else "PASS",
-                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --repair regenerates them"
+                          f"views don't match the briefs in {', '.join(stale[:5])}: fm doctor --fix regenerates them"
                           if stale else "status views match the briefs"))
     here = c.find_project(os.getcwd())
     results.append(check_dual_install())
