@@ -5108,6 +5108,8 @@ def build_parser():
             "improvement round (review, brainstorm past every earlier run, queue, build) until two dry rounds")
     s.add_argument("action", nargs="?", choices=["status", "on", "off", "round", "yield"])
     s.add_argument("n", nargs="?", type=int, help="yield: how many grounded ideas this round queued")
+    s.add_argument("--next", action="store_true", help="round: end the open round (its yield is the tasks it made "
+                   "unless fm loop yield recorded one) and start the next; without it an open round is shown again")
 
     s = add("posture", cmd_posture, tier=("Project and settings", 710), help="lite: only the guard's hook runs in this project; full: every hook (T-0963)")
     s.add_argument("state", nargs="?", choices=["lite", "full"])
