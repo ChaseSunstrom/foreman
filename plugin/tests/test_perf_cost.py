@@ -234,12 +234,34 @@ class UnexplainedSpend(HookCase):
         d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
         self.assertEqual((d["sessions"], d["tokens"], round(d["share"])), (["stray"], 400000, 67))
         for cmd in ("cost", "digest"):
-            self.assertIn("Unexplained spend: 67% (≈ 400k) in 1 session(s)", self.fm(cmd, env=env).stdout)
+            self.assertIn("Unexplained spend: 67% (≈ 400k tokens) in 1 session(s) with no Foreman activity within 30 min; top: stray", self.fm(cmd, env=env).stdout)
 
     def test_a_turn_past_the_gap_from_its_sessions_events_counts(self):
         env = self.setup_spend([("known", 85, 10000), ("known", 45, 100000)], events=(90, 2))
         d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
         self.assertEqual((d["tokens"], d["sessions"]), (500000, ["known"]))
+
+    def test_events_only_in_an_archive_month_explain_a_turn(self):
+        env = self.setup_spend([("known", 59, 40000), ("known", 10, 40000)], events=())
+        p = c.find_project(self.repo)
+        os.makedirs(os.path.join(p.dir, "archive"), exist_ok=True)
+        import datetime
+        now = datetime.datetime.now(datetime.timezone.utc)
+        with open(os.path.join(p.dir, "archive", now.strftime("ledger-%Y-%m.jsonl")), "w") as f:
+            for m in (60, 11):
+                ts = (now - datetime.timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                f.write(json.dumps({"ts": ts, "session_id": "known", "task": "T-0001", "event": "note", "data": {}}) + "\n")
+        self.assertEqual(json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]["tokens"], 0)
+
+    def test_a_turn_with_an_unparseable_time_is_left_out_of_the_total(self):
+        env = self.setup_spend([("stray", 10, 40000)])
+        folder = os.path.join(env["CLAUDE_CONFIG_DIR"], "projects")
+        path = os.path.join(folder, os.listdir(folder)[0], "t.jsonl")
+        with open(path, "a") as f:
+            f.write(json.dumps({"type": "assistant", "timestamp": "garbage", "sessionId": "x", "message": {
+                "id": "mx", "content": [], "usage": {"output_tokens": 999999}}}) + "\n")
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["tokens"], d["share"]), (200000, 100.0))
 
     def test_explained_or_small_spend_shows_no_line(self):
         env = self.setup_spend([("known", 59, 40000), ("stray", 10, 1000)])  # the stray is under 20% and 100k

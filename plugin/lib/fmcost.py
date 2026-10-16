@@ -183,9 +183,11 @@ def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
     sessions = collections.Counter()
     for ts, sid, usage in msgs:
         w = sum((usage.get(k) or 0) * wt for k, wt in WEIGHTS.items())
-        total += w
         t, near = _epoch(ts), times.get(sid)
-        if t is not None and near:
+        if t is None:  # no usable time: neither explained nor not, and left out of the total
+            continue
+        total += w
+        if near:
             i = bisect.bisect_left(near, t)
             if any(abs(near[j] - t) <= gap for j in (i - 1, i) if 0 <= j < len(near)):
                 continue
@@ -195,9 +197,16 @@ def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
             "sessions": [s for s, _ in sessions.most_common()]}
 
 
+def unexplained_spend(p, msgs, days):
+    """unexplained() over every ledger event (archived months too) from the window's start less the gap."""
+    since = _since(days + UNEXPLAINED_GAP_S / 86400)
+    return unexplained(msgs, c.ledger_events(p, since=since))
+
+
 def unexplained_line(u):
     if u["share"] >= UNEXPLAINED_MIN_PCT and u["tokens"] >= UNEXPLAINED_MIN_TOKENS:
-        return f"Unexplained spend: {u['share']:.0f}% (≈ {_human(u['tokens'])}) in {len(u['sessions'])} session(s) with no Foreman task or turn near them"
+        return (f"Unexplained spend: {u['share']:.0f}% (≈ {_human(u['tokens'])} tokens) in {len(u['sessions'])} session(s) "
+                f"with no Foreman activity within {UNEXPLAINED_GAP_S // 60} min; top: {u['sessions'][0][:8]}")
     return ""
 
 
@@ -237,7 +246,8 @@ def cmd_cost(args):
     base = sorted(first.values())[len(first) // 2] if first else 0
     model_s, tool_s, shell_s = timing(folder, _since(args.days))
     active = model_s + sum(tool_s.values())
-    unex = unexplained(msgs, c.ledger_tail(p, 20000))
+    unex = unexplained_spend(p, msgs, args.days)
+    unex_line = unexplained_line(unex)
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
             "unexplained": unex,
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
@@ -254,7 +264,7 @@ def cmd_cost(args):
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
             + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
-            + ("\n" + unexplained_line(unex) if unexplained_line(unex) else "")
+            + ("\n" + unex_line if unex_line else "")
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
             + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
@@ -396,7 +406,7 @@ def cmd_digest(args):
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
         tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
-        unex = unexplained_line(unexplained(msgs, c.ledger_tail(p, 20000)))
+        unex = unexplained_line(unexplained_spend(p, msgs, args.days))
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
