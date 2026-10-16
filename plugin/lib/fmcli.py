@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import time
+import types
 
 import fmcore as c
 
@@ -617,18 +618,24 @@ def cmd_task(args):
             b.append_log("done")  # T-0487: what passed on which model, for fm cost --by-model (and routing later)
             logged.update(model=_session_model(), type=b.type, tier=b.tier, verified=b.meta["verified"],
                           planned=len(b.meta.get("scope") or []), changed=len(files))  # T-0644
-            if b.meta.get("predict_minutes") or b.meta.get("predict_attempts"):  # T-1061: the plan's guesses vs what happened
+            # T-1061: the plan as it was at first focus (scope, predictions) against what happened
+            if b.meta.get("plan0_at") and b.meta.get("plan0_scope"):
+                logged["outside"] = len(c.scope_drift(types.SimpleNamespace(meta={"scope": b.meta["plan0_scope"]}), files))
+            pm, pa = int(b.meta.get("predict_minutes") or 0), int(b.meta.get("predict_attempts") or 0)
+            if pm or pa:
                 evs = [e for e in c.ledger_tail(p, 5000) if e.get("task") == b.id]
-                began = min((c.parse_ts(e.get("ts")) for e in evs if e.get("event") == "focus" and c.parse_ts(e.get("ts"))),
-                            default=None)
-                logged.update(predict_minutes=int(b.meta.get("predict_minutes") or 0),
-                              predict_attempts=int(b.meta.get("predict_attempts") or 0),
-                              minutes=round((time.time() - began.timestamp()) / 60) if began else 0,
-                              attempts=1 + sum(1 for e in evs if e.get("event") == "finish" and (e.get("data") or {}).get("failed")))
+                start = [i for i, e in enumerate(evs) if e.get("event") == "focus" and c.parse_ts(e.get("ts"))]
+                logged.update(predict_minutes=pm, predict_attempts=pa)
+                if start:  # the latest focus (a block or reopen means a re-focus); unknown start: no minutes, never a clean 0
+                    logged["minutes"] = round((time.time() - c.parse_ts(evs[start[-1]]["ts"]).timestamp()) / 60)
+                    logged["attempts"] = 1 + sum(1 for e in evs[start[-1]:]
+                                                 if e.get("event") == "finish" and (e.get("data") or {}).get("failed"))
         first_edit = c.first_touch(p, pre.id)
         gaps = _plan_gaps(p, pre)
         logged = {"lesson": lesson[:300]} if lesson else {}
         b, _ = mutate(p, args.id, done, "task_done", logged)
+        import fmoutcomes
+        fmoutcomes.record_close(p, logged)  # T-1061
         if b.meta.get("batch"):
             _settle_batch(p, b, done=True)
         chose = " ".join(b.section("Decision").split()) if b.type == "RESEARCH" else ""
@@ -2186,10 +2193,14 @@ def task_set(p, args):
                 raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
                                  f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
-        if k == "confidence" and not (v.isdigit() and 0 <= int(v) <= 100):  # T-0619
+        if k == "confidence" and not (v.isdecimal() and 0 <= int(v) <= 100):  # T-0619
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
-        if k in ("predict_minutes", "predict_attempts") and not (v.isdigit() and int(v) > 0):  # T-1061
-            raise UsageError(f"{k} is a whole number above 0: the plan's guess, compared at the close")
+        if k in ("predict_minutes", "predict_attempts"):  # T-1061: a guess made before the work, never moved after
+            cap = 10080 if k == "predict_minutes" else 20
+            if not (v.isdecimal() and 0 < int(v) <= cap):
+                raise UsageError(f"{k} is a whole number from 1 to {cap}: the plan's guess, compared at the close")
+            if need_brief(p, args.id).meta.get("plan0_at"):
+                raise UsageError(f"{k} is fixed once work has started (fm focus); the close scores it as planned")
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -2365,6 +2376,8 @@ def cmd_focus(args):
         if moved:  # R2/R3 preflight: the plan was grounded on files that have changed since (kept for fresh sessions)
             related = (related + "\n" if related else "") + moved
             target.set_section("Preflight", moved + "\n")
+        if not target.meta.get("plan0_at"):  # T-1061: the plan at first focus, which the close is scored against
+            target.meta.update(plan0_at=c.now(), plan0_scope=list(target.meta.get("scope") or []))
         c.save_brief(p, target)
         other = c.read_meta(p).get("session") or {}
         age = c.age_days(other.get("seen"))
@@ -4154,7 +4167,9 @@ def cmd_autonomy(args):
     p = resolve(args)
     if not args.level:
         level = c.read_meta(p).get("autonomy", "standard")
-        return out(args, {"autonomy": level}, f"{p.slug}: autonomy {level}.")
+        slow = c.effective_autonomy(p) == "slow"  # T-1061
+        return out(args, {"autonomy": level, "slow": slow}, f"{p.slug}: autonomy {level}"
+                   + (" (slow: recent closes missed their plan, M needs approval; fm digest)" if slow else "") + ".")
     c.update_meta(p, autonomy=args.level)
     with c.lock(p.dir):
         c.log_event(p, "autonomy", data={"level": args.level}, session=session())

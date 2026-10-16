@@ -2068,7 +2068,11 @@ def plan_gaps(b, autonomy="standard"):
         gaps.append("step")
     if needs_approval(b, autonomy):
         gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
-                    if b.meta.get("confirm") else f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
+                    if b.meta.get("confirm") else
+                    f"approval (M tier needs it: 3 or more of the last 5 closes missed their plan, see fm digest; approve "
+                    f"with fm task set {b.id} approved=true, or close smaller tasks on plan)"
+                    if autonomy == "slow" and b.tier == "M" and not b.meta.get("explore") else
+                    f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
     return gaps
 
 
