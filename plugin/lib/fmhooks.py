@@ -1034,7 +1034,7 @@ def cmd_guard_try(args):
     import fmguard as g
     if args.action == "wrong":  # T-1162
         import fmreplay
-        k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)
+        k = fmreplay.add_case(args.text or "", args.should, os.path.abspath(args.cwd) if args.cwd else "", args.why)  # "" = here
         return fmcli.out(args, k, f"Stored guard case {k['id']}: should {k['should']}. fm replay --cases reports it.")
     if args.action != "try":
         raise fmcli.UsageError("fm guard: the actions are try and wrong")

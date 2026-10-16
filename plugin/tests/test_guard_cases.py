@@ -18,8 +18,49 @@ class GuardCases(ForemanTestCase):
         return self.fm("guard", "wrong", *a, env=self.env, check=check)
 
     def test_the_repos_corpus_agrees_with_the_guard(self):
-        cases = fmreplay.load_cases()
+        # the committed file itself: FOREMAN_GUARD_CASES and a missing file can't make this pass vacuously
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "guard_cases.jsonl")
+        cases, broken = fmreplay.load_cases(path)
+        self.assertEqual(broken, 0, "a line of guard_cases.jsonl is not a case")
+        self.assertGreaterEqual(len(cases), 6)
         self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled case")
+
+    def test_a_broken_line_is_counted_not_fatal(self):
+        with open(self.cases, "w") as f:
+            f.write('<<<<<<< HEAD\n{"id": "x"}\n{"id": "y", "cmd": "ls", "should": "allow"\n')
+        self.wrong("ls -la", "--should", "allow")  # still adds
+        cases, broken = fmreplay.load_cases(self.cases)
+        self.assertEqual((len(cases), broken), (1, 3))
+        out = self.fm("replay", "--cases", "--json", env=self.env, check=False)
+        self.assertEqual(out.returncode, 1)  # a broken corpus is seen
+        self.assertEqual(json.loads(out.stdout)["broken"], 3)
+
+    def test_cwd_inside_the_repo_is_stored_relative(self):
+        repo = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.wrong("ls -la", "--should", "allow", "--cwd", os.path.join(repo, "plugin"))
+        self.assertEqual(json.loads(open(self.cases).read())["cwd"], "plugin")
+        self.assertEqual(fmreplay.resolve_cwd("plugin"), os.path.join(fmreplay.repo_root(), "plugin"))
+
+    def test_the_night_job_is_for_foremans_own_repo_only(self):
+        from unittest import mock
+        import fmcore as c
+        import fmnight
+        self.fm("init")
+        self.wrong("ls -la", "--should", "allow")
+        p = c.find_project(self.repo)
+        with mock.patch.dict(os.environ, self.env):
+            self.assertNotIn("guard cases", [n for n, _, _ in fmnight.jobs(p)])
+            with mock.patch.object(c, "PLUGIN_ROOT", os.path.join(self.repo, "plugin")):
+                self.assertIn("guard cases", [n for n, _, _ in fmnight.jobs(p)])
+
+    def test_an_allow_label_the_guard_blocks_warns_against_loosening(self):
+        import fmcore as c
+        self.fm("init")
+        self.wrong("git push --force origin main", "--should", "allow")
+        self.fm("replay", "--cases", "--capture", env=self.env, check=False)
+        tdir = os.path.join(c.find_project(self.repo).dir, "tasks")
+        text = "".join(open(os.path.join(tdir, f)).read() for f in os.listdir(tdir))
+        self.assertIn("do not loosen the guard without the user's yes", text)
 
     def test_a_case_is_stored_once_and_replay_reports_it(self):
         self.wrong("ls -la", "--should", "allow", "--why", "was refused")
@@ -46,9 +87,6 @@ class GuardCases(ForemanTestCase):
     def test_night_captures_one_fix_per_drift(self):
         self.fm("init")
         self.wrong("ls -la", "--should", "block")
-        names = lambda: [j["name"] for j in json.loads(
-            self.fm("night", "--dry-run", "--json", env=self.env).stdout)["jobs"]]
-        self.assertIn("guard cases", names())
         for _ in range(2):
             self.fm("replay", "--cases", "--capture", env=self.env, check=False)
         import fmcore as c

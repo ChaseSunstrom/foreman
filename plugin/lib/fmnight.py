@@ -54,9 +54,9 @@ def jobs(p):
     out.append(("dream", ["dream"], 0.0))  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
     import fmreplay
-    if fmreplay.load_cases():  # T-1162: free: labelled guard cases; a drifted verdict becomes one FIX
-        out.append(("guard cases", ["replay", "--cases", "--capture"], 0.0))
-    out.append(("compost",["tidy", "--apply", "--lanes-only"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
+    if os.path.realpath(p.root) == os.path.realpath(fmreplay.repo_root()) and fmreplay.load_cases()[0]:
+        out.append(("guard cases", ["replay", "--cases", "--capture"], 0.0))  # T-1162: free: only Foreman's own repo; a drift is one FIX
+    out.append(("compost", ["tidy", "--apply", "--lanes-only"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
     out.append(("consolidate", ["recall", "--lessons", "--consolidate", "--capture", "--from-night"], 0.0))  # T-1071: free: a merge proposal, retires nothing
     if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
