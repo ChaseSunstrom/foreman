@@ -1028,6 +1028,40 @@ def _outward_denial(pl):
             f"(claude.ai, a phone, another session or a cloud routine). If the user wants it shared: fm sensitive off.")
 
 
+# fmguard._CRED_DIRS and _CRED_FILES (a test keeps them in step): read here before fmguard is imported
+_CRED_DIRS = [".ssh", ".aws", ".config/gcloud", ".kube", ".gnupg", ".config/gh"]
+_CRED_FILES = [".netrc", ".npmrc", ".pypirc", ".git-credentials", ".claude/.credentials.json", ".docker/config.json"]
+
+
+def _credential_like(path):
+    """A cheap superset of the guard's credential read: a credential folder or file's name anywhere in the path or
+    where it really is."""
+    for p in {path, os.path.realpath(path)}:
+        if any(f"/{d}/" in p + "/" for d in _CRED_DIRS) or any(p.endswith("/" + f) for f in _CRED_FILES):
+            return True
+    return False
+
+
+def _credential_read(pl):
+    """T-1224: the guard's refusal of a Read of a credential, or None. Only a credential-like path imports the guard
+    and looks the task up (for a grant), so a guard broken mid-edit never stops an ordinary read; for that path a broken
+    guard falls back to the committed one, and with neither the read is refused."""
+    raw = str((pl.get("tool_input") or {}).get("file_path") or "")
+    if not raw or not _credential_like(os.path.join(_cwd(pl), os.path.expanduser(raw))):
+        return None
+    try:
+        import fmguard as guard
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    except Exception:
+        log_error("PreToolUse", "the working copy of fmguard failed; using the committed guard:\n" + _tb())
+        guard = _committed("fmguard")
+        if guard is None:
+            return (f"Foreman guard: {raw} looks like a credential and the guard can't load (fm doctor shows the "
+                    "error), so the read is refused until it works again.")
+        ctx, _p, _act, _found, block = _guard_decision(pl, guard)
+    return guard.message(block, ctx) if block else None
+
+
 def _guard_decision(pl, guard):
     ctx, p, act = _guard_ctx(pl, guard)
     found = guard.findings(pl.get("tool_name", ""), pl.get("tool_input"), ctx)
@@ -1075,8 +1109,14 @@ def _pre_tool_use(raw):
                 log_error("PreToolUse", _tb())
             return 0
         if tool == "Read":  # T-0724: its own hook entry, which never blocks a read on failure
+            try:  # T-1224: but a credential read is the guard's, and that check fails closed
+                d = _credential_read(pl)
+            except Exception:
+                log_error("PreToolUse", _tb())
+                d = ("Foreman guard: the credential-read check failed (fm doctor shows the error), so this read is "
+                     "refused until that check works again.")
             try:
-                d = _outline_first(pl)
+                d = d or _outline_first(pl)
             except Exception:
                 log_error("PreToolUse", _tb())
                 d = None
