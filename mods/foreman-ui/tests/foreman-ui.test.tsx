@@ -2128,6 +2128,16 @@ test('the chat is a tree: your prompt the root, each row a branch on one rail, f
   expect(await huge.find({ text: 'engine' })).toBeDefined()
   expect(await huge.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
   await huge.unmount()
+  // T-1088: the resume row and a background task's note hang on the rail too; before, the rail broke at them
+  const resumed = await mount('UserMessage', { text: 'continue the Foreman run', origin: { kind: 'plugin', name: 'foreman-ui' }, isExpanded: false })
+  expect(await resumed.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await resumed.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await resumed.unmount()
+  const bg = await mount('UserMessage', { text: 'Run the gate', origin: { kind: 'task-notification' }, isExpanded: false,
+    task: { status: 'completed', type: 'local_bash' } })
+  expect(await bg.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await bg.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await bg.unmount()
   const tip = await mount('TurnDuration', { word: 'Baked', durationMs: 4100 })
   expect(await tip.find({ type: 'Text', text: '└─ ' })).toBeDefined()
   await tip.unmount()
