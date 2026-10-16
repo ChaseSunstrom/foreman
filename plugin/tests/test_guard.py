@@ -1532,6 +1532,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("fm taste compile --bl 1", "self-authorize", "fm taste compile N --block"),
             ("fm decide yes --answer 1", "self-authorize", "they can type ! fm decide"),  # T-1064
             ("fm decide yes --ans 1", "self-authorize", "fm decide ANSWER --answer N"),
+            ("fm risk set --day 20 --because more", "self-authorize", "fm risk set"),  # T-1080
             ("cat list | xargs rm -rf", "rm-outside", "recursive rm with targets from stdin"),
         ]:
             with self.subTest(cmd=cmd):

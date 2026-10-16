@@ -123,8 +123,11 @@ class Night(ForemanTestCase):
         p = c.find_project(self.repo)
 
         seen = []
+        real = fmnight.subprocess.run
 
         def fake(argv, **kw):  # fm run closing T-0001
+            if "run" not in argv:  # the patch is process-wide: git (T-1080's risk read) runs for real
+                return real(argv, **kw)
             seen.append(argv)
             c.log_event(p, "task_done", task="T-0001", data={})
             return mock.Mock(returncode=0, stdout="finished 1", stderr="")

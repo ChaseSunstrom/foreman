@@ -688,7 +688,7 @@ def cmd_ideas(args):
             pack += "\n\n## Past lessons (provocations for the oblique lens)\n" + "\n".join(
                 f"- {c.fit(c.plain(x), 200)}" for x in lessons)
     deepen = max(0, getattr(args, "deepen", 0) or 0)
-    pace = fmbudget.degrade() if deepen else None
+    pace = fmbudget.degrade(p) if deepen else None
     if pace:  # T-0449: optional rounds go first; the caps below still refuse what's over one
         print(f"fm: usage ahead of pace ({pace}): --deepen dropped (0 rounds, optional work); the lenses still run",
               file=sys.stderr)

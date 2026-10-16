@@ -2033,7 +2033,12 @@ def effective_autonomy(p, meta=None):
     """The project's autonomy, or "slow" (standard plus approval for M, T-1061) while its plans keep missing."""
     if panicked():  # every reader agrees: standard while paused (T-0436)
         return "standard"
-    a = (read_meta(p) if meta is None else meta).get("autonomy", "standard")
+    meta = read_meta(p) if meta is None else meta
+    a = meta.get("autonomy", "standard")
+    if a in ("full", "standard"):
+        import fmrisk  # T-1080: past today's risk budget, one notch down
+        if fmrisk.slowed(p, meta):
+            return "standard" if a == "full" else "slow"
     if a == "standard":
         import fmoutcomes
         return "slow" if fmoutcomes.misses(p) else a
@@ -2076,7 +2081,8 @@ def plan_gaps(b, autonomy="standard"):
     if needs_approval(b, autonomy):
         gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
                     if b.meta.get("confirm") else
-                    f"approval (M tier needs it: 3 or more of the last 5 closes missed their plan, see fm digest; approve "
+                    f"approval (M tier needs it: plans keep missing or today's risk budget is spent, see fm risk and "
+                    f"fm digest; approve "
                     f"by asking the user one yes/no, then fm task set {b.id} approved=true after their yes; or close "
                     f"smaller tasks on plan)"
                     if autonomy == "slow" and b.tier == "M" and not b.meta.get("explore") else
@@ -2694,18 +2700,22 @@ def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
     autonomy = "standard" if panicked() else effective_autonomy(p)
     waits = ""
+    if not panicked():
+        import fmrisk
+        risky = fmrisk.slowed(p)
+        waits = f" · {risky}" if risky else ""  # T-1080: fm next says why the autonomy slowed
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
         if fmfriction.due(p):
             try:  # T-0449: optional work waits while usage runs ahead of pace
                 import fmbudget
-                pace = fmbudget.degrade()
+                pace = fmbudget.degrade(p)
             except Exception:  # an unreadable snapshot never costs the next action
                 pace = None
             if not pace:
                 return None, "reflect", fmfriction.ACTION
-            waits = (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
-                     f"required gates still run)")
+            waits += (f" · usage ahead of pace ({pace}): the self-improvement pass waits (optional work dropped; "
+                      f"required gates still run)")
     mine = lambda x: not (x.meta.get("confirm") and needs_approval(x))  # T-0289: waits for the user, never picked
     b = active_brief(briefs, p.lane) or next(filter(mine, order_queue(briefs)[0]), None) or \
         next(filter(mine, rank_inbox(briefs)), None)
