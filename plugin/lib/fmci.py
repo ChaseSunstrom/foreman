@@ -14,7 +14,7 @@ def _gh(p, *argv):
         r = subprocess.run(["gh", *argv], cwd=p.root, capture_output=True, text=True, errors="replace", timeout=120,
                            stdin=subprocess.DEVNULL)
     except FileNotFoundError:
-        raise UsageError("gh isn't installed (https://cli.github.com); fm ci-watch reads runs through it")
+        raise UsageError("gh isn't installed (https://cli.github.com); fm reads runs and PRs through it")
     except subprocess.TimeoutExpired:
         raise UsageError(f"gh {argv[0]} {argv[1]} timed out")
     if r.returncode:

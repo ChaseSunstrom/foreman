@@ -767,6 +767,9 @@ def cmd_pr(args):
     was verified and reviewed, the lesson. Printed only: opening the PR stays an outward action behind the user's yes."""
     import fmcli
     p = fmcli.resolve(args)
+    if args.id in ("threads", "train"):  # T-1087
+        import fmpr
+        return getattr(fmpr, args.id)(p, args)
     b = fmcli.need_brief(p, args.id)
     why = (b.section("Interpretation").strip() or re.sub(r"(?m)^> ?", "", b.section("Raw request")).strip()
            or b.title)
