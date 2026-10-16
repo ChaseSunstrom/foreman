@@ -598,8 +598,8 @@ def check_hook_writers(settings, home):
                   "; ".join(bad) or "only Foreman's own hooks write Foreman state; no duplicate registrations")
 
 
-def recent_hook_errors():
-    """Hook errors of the last 24h, each its log lines: "<ts> <event> <traceback…>" and its continuation."""
+def recent_hook_errors(days=1):
+    """Hook errors of the last `days` (24h), each its log lines: "<ts> <event> <traceback…>" and its continuation."""
     log = _read(os.path.join(c.state_dir(), "logs", "hooks.log")) or ""
     entries = []
     for line in log.splitlines():
@@ -607,7 +607,44 @@ def recent_hook_errors():
             entries.append([line])
         elif entries:
             entries[-1].append(line)
-    return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < 1]
+    return [e for e in entries if (c.age_days(e[0].split(" ", 1)[0]) or 99) < days]
+
+
+def _recent_errors(days=7):
+    """T-1076: error texts of the last `days`: each hook error and every project's failure signatures."""
+    out = ["\n".join(e) for e in recent_hook_errors(days)]
+    for p, _ in c.all_projects():
+        out += [r.get("sig") or "" for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
+                if (c.age_days(r.get("at")) or 99) < days]
+    return out
+
+
+def check_upstream(errors=None, version=None, issues=None):
+    """T-1076: an error seen twice or more in 7 days that matches a known Claude Code issue (lib/upstream-issues.json),
+    with the version that fixes it. Stubs: `errors` texts, `version` tuple (() unknown), `issues` entries."""
+    if errors is None:
+        errors = _recent_errors()
+    if version is None:
+        import fmhooks
+        version = fmhooks._cc_version()
+    if issues is None:
+        issues = _load_json(os.path.join(PLUGIN, "lib", "upstream-issues.json"))
+        if not isinstance(issues, list):
+            return Result("upstream issues", "WARN", "plugin/lib/upstream-issues.json is missing or unreadable")
+    found = []
+    for i in issues:
+        n = sum(bool(re.search(i["pattern"], e, re.I)) for e in errors)
+        if n < 2:
+            continue
+        seen, fix = f"matches {i['issue_url']} (seen {n}×)", i["fixed_in"]
+        if not fix:
+            found.append(f"{seen}; no fix released yet: {i['note']}")
+        elif version and version >= tuple(map(int, fix.split("."))):
+            found.append(f"{seen}; should be fixed in {fix} yet recurs")
+        else:
+            found.append(f"{seen}; fixed in {fix}: claude update")
+    return Result("upstream issues", "WARN" if found else "PASS", "; ".join(found) or
+                  f"no error seen twice in 7 days matches the {len(issues)} known Claude Code issue(s)")
 
 
 def paused_hooks():
@@ -1139,7 +1176,7 @@ def run_all(full=False, accept_supply=False):
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),
                 check_deny_rules(settings, manifest), check_rules_symlink(), check_scripts(home, full),
                 check_integrity(integrity_roots(projects), projects, current=c.find_project(os.getcwd()) or False),
-                check_routing(), check_cc_features()]
+                check_routing(), check_cc_features(), check_upstream()]
     return results
 
 
