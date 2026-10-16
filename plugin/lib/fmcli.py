@@ -5176,7 +5176,7 @@ def build_parser():
     s.add_argument("--should", choices=["allow", "block"], help="with wrong: the verdict the guard should give")
     s.add_argument("--why", default="", help="with wrong: what went wrong")
     s.add_argument("--cwd", metavar="DIR", help="the folder it would run in (default: here)")
-    s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit"], help="the tool (default Bash)")
+    s.add_argument("--tool", default="Bash", choices=["Bash", "Edit", "Write", "NotebookEdit", "Read"], help="the tool (default Bash)")
     s.add_argument("--path", metavar="P", help="with --tool Edit/Write: the file")
     s.add_argument("--days", type=int, default=7, help="with mine: how far back the transcripts are read (default 7)")
     s = add("backtest", lazy("fmbacktest", "cmd_backtest"), tier=("Reports", 1080), help="where a changed rule, known fix or card would have "
