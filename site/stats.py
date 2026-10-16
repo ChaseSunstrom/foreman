@@ -137,15 +137,17 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
-def duel(state, model=None):
+def duel(state, model=None, kind=""):
     """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
-    arms (T-1222)."""
+    arms (T-1222). `kind` (T-1242): "long", the newest run with forced compaction; "marathon", the newest whose
+    Foreman arm went on past the asked work; "", the newest with neither."""
     res = os.path.join(state, "bench", "results")
     for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")), reverse=True):
         bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
         with open(path, encoding="utf-8") as f:
             fm_ = json.load(f)
-        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model):
+        found = "marathon" if fm_.get("marathon") else "long" if fm_.get("compact_at") else ""
+        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model) and found == kind:
             break
     else:
         return None
@@ -153,7 +155,10 @@ def duel(state, model=None):
         bare = json.load(f)
     pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
                       "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
-                      "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error"))}
+                      "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error")),
+                      "tests": x.get("tests"), "compactions": x.get("compactions"), "capped": x.get("capped"),
+                      "found": [t for t in ((x.get("diag") or {}).get("titles") or {}).values()
+                                if t.endswith("(discovered)")]}
     b = {x["id"]: x for x in bare.get("cases", [])}
     try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
         with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
@@ -166,7 +171,8 @@ def duel(state, model=None):
         return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]).rstrip(",;.") or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
-    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}
+    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases,
+            **({"compact_at": fm_.get("compact_at"), "marathon": fm_.get("marathon")} if kind else {})}
 
 
 def main():
@@ -186,7 +192,8 @@ def main():
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
              "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
-             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(*x.partition("=")[2].split("@", 1)))
+             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
+                 *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d]
              or old.get("duels") or []}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

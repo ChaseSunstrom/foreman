@@ -597,6 +597,137 @@ class NoTaskGate(HookCase):
         log = subprocess.run(["git", "log", "--format=%s", "-1"], cwd=self.repo, capture_output=True, text=True).stdout
         self.assertIn(act.id, log, "committed")
 
+    def test_a_multi_request_run_queues_one_task_per_request_in_order(self):
+        # T-1242: a marathon's prompt asks for several requests; each gets its own task with its text in the brief, so
+        # what's done and what's left survive compaction
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "Task: ## Request 1\nAdd half(): divides by two.\n\n## Request 2\n"
+                                                 "- third(): divides by three\n\n## Request 3\nFIX: double(0) crashes\n"
+                                                 "DONE-WHEN: double(0) is 0"})
+        out = parse(self.pre(os.path.join(self.repo, "calc.py")))["hookSpecificOutput"]
+        self.assertNotEqual(out.get("permissionDecision"), "deny", out)
+        briefs = sorted(c.load_briefs(self.project()), key=lambda b: c.id_num(b.id))
+        self.assertEqual([b.title for b in briefs], ["Request 1: Add half(): divides by two.",
+                                                     "Request 2: third(): divides by three",
+                                                     "Request 3: FIX: double(0) crashes"])
+        self.assertEqual([b.status for b in briefs], ["active", "planned", "planned"])
+        self.assertEqual([b.meta.get("depends_on") for b in briefs[1:]], [[briefs[0].id], [briefs[1].id]], "in order")
+        self.assertEqual((briefs[2].type, briefs[2].tier), ("FIX", "S"))
+        self.assertIn("double(0) is 0", briefs[2].section("Acceptance criteria"))
+        self.assertIn("divides by three", briefs[1].section("Raw request"))
+        for b in briefs:
+            self.assertIn(b.id, out["additionalContext"])
+
+    def test_a_long_multi_request_prompt_queues_every_request(self):
+        # T-1242 smoke: the ledger keeps a prompt's first 2,000 characters, so eight long requests queued as two
+        self.fm("init")
+        self.fm("autonomy", "full")
+        prompt = "Task: " + "\n\n".join(f"## Request {k}\nAdd f{k}().\n" + "- a rule\n" * 60 for k in range(1, 9))
+        transcript = os.path.join(self.tmp, "t.jsonl")
+        with open(transcript, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
+        self.hook("UserPromptSubmit", {"prompt": prompt, "transcript_path": transcript})
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "f.py"),
+                                                                      "content": "x"}, "transcript_path": transcript})
+        self.assertEqual(len(c.load_briefs(self.project())), 8)
+
+    def test_at_stop_the_requests_with_evidence_close_together(self):
+        # T-1242 smoke: seven turns of fm focus so each stop could close one request
+        self.first_task_session("True")  # one request, then three more queued the way _queue_requests does
+        tasks = c.load_briefs(self.project())
+        p = self.project()
+        ids = []
+        for k in (2, 3, 4):
+            tid = json.loads(self.fm("task", "new", f"Request {k}", "--type", "FEATURE", "--tier", "S", "--ac",
+                                     "done :: true", "--step", "s", "--json").stdout)["id"]
+            c.log_event(p, "first_brief", task=tid, session="sess-1")
+            ids.append(tid)
+        for tid in ids[:2]:  # the agent's evidence for requests 2 and 3, none for 4
+            self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS)
+        status = {b.id: b.status for b in c.load_briefs(self.project())}
+        self.assertEqual([status[t.id] for t in tasks], ["done"])
+        self.assertEqual([status[t] for t in ids], ["done", "done", "planned"], self.hooks_log()[-800:])
+
+    def test_after_a_compaction_the_open_requests_come_back_word_for_word(self):
+        # T-1242 smoke: after a compaction the agent wrote three modules "from the summary, which gives only their
+        # signatures", and failed 61 of 105 hidden tests; each task held the request's text and nobody read it
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "Task: ## Request 1\nAdd half().\n\n## Request 2\nAdd ini.parse: "
+                                                 "a key line is `key = value`; keys are lowercased.\n\n## Request 3\n"
+                                                 "Add lexer.tokenize: numbers may not run into a letter."})
+        self.pre(os.path.join(self.repo, "calc.py"))
+        first = c.active_brief(c.load_briefs(self.project()))
+        self.fm("task", "drop", first.id, "--reason", "done elsewhere")
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
+        self.assertIn("keys are lowercased", ctx)
+        self.assertIn("numbers may not run into a letter", ctx)
+        self.assertNotIn("Add half()", ctx, "only what's left")
+        self.assertNotIn("keys are lowercased", self.ctx_of(self.hook("SessionStart", {"source": "startup"})),
+                         "after a compaction only")
+
+    def test_the_note_after_a_compaction_fits_what_claude_code_shows(self):
+        # T-1242 smoke: a 16 KB note was saved to a file with a 2 KB preview, so the requests never came back
+        self.fm("init")
+        self.fm("autonomy", "full")
+        prompt = "Task: " + "\n\n".join(f"## Request {k}\nAdd f{k}(): rule {k}.\n" + "- a long rule line\n" * 120
+                                          for k in range(1, 9))
+        transcript = os.path.join(self.tmp, "t.jsonl")
+        with open(transcript, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
+        self.hook("UserPromptSubmit", {"prompt": prompt, "transcript_path": transcript})
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "f.py"),
+                                                                      "content": "x"}, "transcript_path": transcript})
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
+        self.assertLess(len(ctx), 9500, "Claude Code moves a longer hook context to a file")
+        self.assertIn("rule 1.", ctx, "the active request first, whole")
+        self.assertIn("fm task show", ctx, "the rest by id")
+
+    def test_an_edit_between_requests_focuses_the_next_and_shows_its_text(self):
+        # T-1242 smoke: after fm task finish nothing was active, the next write was refused, and the module was
+        # written from a draft the summary kept instead of the request
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "Task: ## Request 1\nAdd half().\n\n## Request 2\nAdd ini.parse: "
+                                                 "keys are lowercased."})
+        self.pre(os.path.join(self.repo, "calc.py"))
+        first = c.active_brief(c.load_briefs(self.project()))
+        self.fm("task", "drop", first.id, "--reason", "done")  # closed: nothing active now
+        out = parse(self.pre(os.path.join(self.repo, "ini.py")))["hookSpecificOutput"]
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, out)
+        self.assertIn("Request 2", act.title)
+        self.assertNotEqual(out.get("permissionDecision"), "deny", out)
+        self.assertIn("keys are lowercased", out["additionalContext"])
+
+    def test_a_marathon_run_is_sent_to_find_more_work_after_the_asked_work(self):
+        # T-1242: FOREMAN_MARATHON=N: once the asked work is closed, N passes of finding and doing work nobody asked for
+        act = self.first_task_session("True")
+        env = dict(self.HEADLESS, FOREMAN_MARATHON="2")
+        reasons = [(parse(self.hook("Stop", {"stop_hook_active": k > 0, "last_assistant_message": "Done."}, env=env))
+                    or {}).get("reason") or "" for k in range(3)]
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "done")
+        self.assertIn("pass 1 of 2", reasons[0])
+        self.assertIn("fm capture", reasons[0])
+        self.assertIn("pass 2 of 2", reasons[1])
+        self.assertNotIn("marathon", reasons[2].lower(), "N passes, then it ends")
+
+    def test_a_bench_replay_never_asks_for_a_push_notification(self):
+        # T-1242: a replay that drained its queue was told to notify the user's phone
+        act = self.first_task_session("True")
+        more = json.loads(self.fm("task", "new", "Request 2", "--type", "FEATURE", "--tier", "S", "--ac", "x :: true",
+                                  "--step", "s", "--json").stdout)["id"]
+        first = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
+                                env=self.HEADLESS)) or {}
+        self.assertIn(more, first.get("reason") or "", "the drive goes on to the queued request")
+        self.fm("task", "drop", more, "--reason", "not needed")
+        out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
+                              env=self.HEADLESS)) or {}
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "done")
+        self.assertNotIn("PushNotification", out.get("reason") or "")
+
     def test_a_failing_suite_leaves_the_task_open_and_says_so_once(self):
         act = self.first_task_session("False")
         out = parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."}, env=self.HEADLESS))

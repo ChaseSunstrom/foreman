@@ -115,7 +115,7 @@ def has_guard(plugin):
         isinstance(h, dict) and "Bash" in str(h.get("matcher", "")) for h in pre)
 
 
-def _grade(wt, case, env, timeout=900):
+def _grade(wt, case, env, timeout=900, failed=None):
     """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored. T-1237 review: and
     every other file in their folders as the reference commit has them, so an arm that edited or gutted an existing
     test to make its change pass is graded by the real one."""
@@ -125,9 +125,48 @@ def _grade(wt, case, env, timeout=900):
         return [("restore the hidden tests", r.returncode, r.stderr.strip()[-200:])]
     out = []
     for cmd in case["verify"]:
-        code, output = c.run_command(wt, cmd, timeout, env=env)
-        out.append((cmd, code, " / ".join(x.strip() for x in output.strip().splitlines()[-2:])[:200]))
+        code, output = c.run_command(wt, cmd, timeout, env=env)  # T-1242: the last two lines with text keep the count
+        if failed is not None:  # T-1242: which hidden tests failed (unittest's FAIL:/ERROR: lines, pytest's FAILED)
+            failed += [m if m.endswith("." + t) else f"{m}.{t}"  # Python 3.11+ names the test in the brackets too
+                       for t, m in re.findall(r"(?m)^(?:FAIL|ERROR): (\w+) \(([\w.]+)\)", output)]
+            failed += re.findall(r"(?m)^FAILED ([^\s(]\S*)", output)  # not unittest's "FAILED (failures=…)"
+        out.append((cmd, code, " / ".join([x.strip() for x in output.splitlines() if x.strip()][-2:])[:200]))
     return out
+
+
+def count_tests(tails):
+    """T-1242: (passed, total) tests across graded tails (unittest's "Ran N tests" and its FAILED line, or pytest's
+    summary), or None when no tail says. A multi-request case's partial progress."""
+    passed = total = 0
+    seen = False
+    for tail in tails:
+        ran = re.search(r"\bRan (\d+) tests?\b", tail)
+        bad = sum(int(n) for n in re.findall(r"\b(?:failures|errors)=(\d+)", tail))
+        py = {k: int(n) for n, k in re.findall(r"\b(\d+) (passed|failed|error|errors)\b", tail)}
+        if ran:
+            seen, total, passed = True, total + int(ran[1]), passed + int(ran[1]) - bad
+        elif py:
+            fails = py.get("failed", 0) + py.get("error", 0) + py.get("errors", 0)
+            seen, total, passed = True, total + py.get("passed", 0) + fails, passed + py.get("passed", 0)
+    return (passed, total) if seen else None
+
+
+def _compactions(sid):
+    """T-1242: how many times the kept session compacted (its compact_boundary entries); its file is removed after, or
+    moved into FOREMAN_BENCH_SESSIONS when that names a folder (to read how a run went)."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    keep = os.environ.get("FOREMAN_BENCH_SESSIONS")
+    n = 0
+    for path in glob.glob(os.path.join(home, "projects", "*", f"{sid}.jsonl")) if sid else []:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            n += sum('"compact_boundary"' in line for line in f)
+        if keep and os.path.isdir(keep):
+            shutil.move(path, os.path.join(keep, os.path.basename(path)))
+        else:
+            os.remove(path)
+        with contextlib.suppress(OSError):
+            os.rmdir(os.path.dirname(path))  # only when the replay's worktree left nothing else there
+    return n
 
 
 def _cases_path(p):
@@ -209,6 +248,30 @@ def build_commits(p, rng, verify, last=30):
     return cases, skipped
 
 
+def together(p, cases, skipped, verify):
+    """T-1242: one multi-request case from a range's commit cases: their requests in commit order under "## Request k"
+    headings, every hidden test, graded at the newest commit. Needs a gapless chain (each case's base the one before's
+    commit), so the prompt asks for everything the diff holds."""
+    import fmcli
+    if skipped or len(cases) < 2:
+        raise fmcli.UsageError("--together needs every commit in the range to be a case, and at least two: "
+                               + ("; ".join(skipped[:3]) or f"{len(cases)} case(s)"))
+    chain = list(reversed(cases))  # rev-list order is newest first
+    gap = next((b["id"] for a, b in zip(chain, chain[1:]) if b["base"] != a["commit"]), None)
+    if gap:
+        raise fmcli.UsageError(f"--together needs a gapless chain of commits; {gap} doesn't follow the one before it")
+    tests = sorted({t for x in chain for t in x["tests"]})
+    case = {"id": f"M-{chain[-1]['commit'][:10]}", "title": f"{len(chain)} requests in one session", "tier": "?",
+            "type": "COMMIT", "commit": chain[-1]["commit"], "base": chain[0]["base"], "tests": tests,
+            "requests": [{"id": x["id"], "title": x["title"], "tests": x["tests"]} for x in chain],
+            "prompt": "\n\n".join(f"## Request {k}\n{x['prompt']}" for k, x in enumerate(chain, 1)),
+            "verify": [verify.replace("{tests}", " ".join(shlex.quote(t) for t in tests))]}
+    why = validate(p, case)
+    if why:
+        raise fmcli.UsageError(f"the combined case isn't valid: {why}")
+    return case
+
+
 def validate(p, case):
     """None if the verify commands fail at the base with the hidden tests and pass at the commit, else why not."""
     try:
@@ -226,7 +289,7 @@ def validate(p, case):
 def _diagnose(state):
     """T-0220: what the replay's own Foreman did, from its state before the worktree goes: ledger events by kind, its
     tasks' type, tier and final status, guard blocks by category, and the tools used most."""
-    ledger, blocks, tools, tasks = collections.Counter(), collections.Counter(), collections.Counter(), {}
+    ledger, blocks, tools, tasks, titles = collections.Counter(), collections.Counter(), collections.Counter(), {}, {}
     for path in glob.glob(os.path.join(state, "projects", "*", "ledger.jsonl")):
         ledger.update(str(e.get("event")) for e in c.tail_jsonl(path, 20000))
     for path in sorted(glob.glob(os.path.join(state, "projects", "*", "tasks", "*.md"))):
@@ -238,12 +301,16 @@ def _diagnose(state):
         meta = dict(re.findall(r"(?m)^(id|type|tier|status): *(\S+)", head))
         if meta.get("id"):
             tasks[meta["id"]] = f"{meta.get('type', '?')} {meta.get('tier', '?')} {meta.get('status', '?')}"
+            title = re.search(r"(?m)^# (.+)$", head)  # T-1242: a marathon's page lists the work it found
+            source = re.search(r"(?m)^source: *(\S+)", head)
+            titles[meta["id"]] = (title[1].strip() if title else "") + (f" ({source[1]})" if source else "")
     for e in c.tail_jsonl(os.path.join(state, "events.jsonl"), 50000):
         if e.get("kind") == "guard_block":
             blocks[str(e.get("category"))] += 1
         elif e.get("kind") == "tool":
             tools[str(e.get("tool"))] += 1
-    return {"ledger": dict(ledger), "tasks": tasks, "guard_blocks": dict(blocks), "tools": dict(tools.most_common(8))}
+    return {"ledger": dict(ledger), "tasks": tasks, "titles": titles, "guard_blocks": dict(blocks),
+            "tools": dict(tools.most_common(8))}
 
 
 def _result_json(text):
@@ -340,41 +407,53 @@ def _bare_guard(plugin):
     return json.dumps({"hooks": {"PreToolUse": entries}})
 
 
-def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False):
+def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False, compact_at=None, marathon=None):
     t0 = time.monotonic()
     with _worktree(p.root, case["base"]) as (tmp, wt):
         state = os.path.join(tmp, "state")
         env = _env(plugin, state)
+        if compact_at:  # T-1242: both arms compact early, as a long session would; kept to count the compactions
+            env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = str(compact_at)
+        if marathon and not bare:  # T-1242: after the asked work, Foreman's drive finds and does more, N passes
+            env["FOREMAN_MARATHON"] = str(marathon)
         if bare:  # no fm on PATH, no Foreman project, only the guard
             env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
             prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away; finish the work, "
                       f"deciding with your defaults.)")
-            res, error = _session(wt, env, [], prompt, model, budget, timeout, settings=_bare_guard(plugin))
+            res, error = _session(wt, env, [], prompt, model, budget, timeout, settings=_bare_guard(plugin),
+                                  keep=bool(compact_at))
         else:
             _seed(plugin, wt, env)
             prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full "
                       f"autonomy; finish the work with Foreman, deciding with your defaults.)")
-            res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout)
-        score, reasons = None, []
+            res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout, keep=bool(compact_at))
+        compactions = _compactions(res.get("session_id")) if compact_at else None
+        capped = bool(marathon and error and error.startswith("hit the $"))
+        error = None if capped else error  # a marathon runs until its cap: the asked work is graded either way
+        score, reasons, failed = None, [], []
         if case.get("judge"):  # T-0231: no hidden tests; a judge grades the change against the rubric
             graded = []
             if not error:  # review: a crashed session isn't worth a paid judgement
                 score, reasons, error = _judge(p, wt, case, res.get("result"))
         else:
-            graded = _grade(wt, case, env)
+            graded = _grade(wt, case, env, failed=failed)
         diag = _diagnose(state)
     fmbudget.record("bench", res.get("total_cost_usd"), project=p.slug, detail=case["id"])  # T-0227
     ok = not error and (score >= 4 if case.get("judge") else all(code == 0 for _, code, _ in graded))
     return {"id": case["id"], "pass": ok, "diag": diag,
             "verify": [{"cmd": x, "exit": code, "tail": tail} for x, code, tail in graded],
             "cost_usd": res.get("total_cost_usd"), "turns": res.get("num_turns"),
-            "seconds": round(time.monotonic() - t0), "error": error,
+            "seconds": round(time.monotonic() - t0), "error": error, "tests": count_tests(t for _, _, t in graded),
+            **({"compactions": compactions} if compact_at else {}), **({"capped": capped} if marathon else {}),
+            **({"failed": sorted(set(failed))[:60]} if failed else {}),
             **({"score": score, "judge": reasons} if case.get("judge") else {})}
 
 
-def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=(), bare=False):
+def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=(), bare=False, compact_at=None,
+               marathon=None):
     """T-0221: a case run `runs` times: pass rate, mean cost, turns and time; the first attempt's details kept."""
-    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare) for _ in range(max(1, runs))]
+    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare, compact_at, marathon)
+             for _ in range(max(1, runs))]
     rate = sum(t["pass"] for t in tries) / len(tries)
 
     def mean(k):
@@ -382,7 +461,8 @@ def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extr
         return round(sum(vals) / len(vals), 4) if vals else None
     return dict(tries[0], runs=len(tries), pass_rate=rate, cost_usd=mean("cost_usd"), turns=mean("turns"),
                 seconds=mean("seconds"), **{"pass": rate >= 0.5},
-                attempts=[{k: t[k] for k in ("pass", "cost_usd", "turns", "seconds", "error")} for t in tries])
+                attempts=[{k: t.get(k) for k in ("pass", "cost_usd", "turns", "seconds", "error", "tests", "compactions")
+                           if k in t} for t in tries])
 
 
 def _rate(x):
@@ -516,7 +596,7 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
 
 
 def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
-            bare=False, jobs=1):
+            bare=False, jobs=1, compact_at=None, marathon=None):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
     Ctrl-C keeps what was paid for). Refuses a plugin without the guard here, so no caller can skip it (replays run in
     bypass mode). `bare` (T-0963): no plugin loaded, only the plugin's guard as a settings hook."""
@@ -527,13 +607,14 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
                          f"replays run in bypass mode, so they never run without it")
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results,
-           **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {})}
+           **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {}),
+           **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
     _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
     def one(case):
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
-            return run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare)
+            return run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare, compact_at, marathon)
         except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
             return {"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None, "seconds": 0,
                     "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"}
@@ -738,7 +819,8 @@ def _contest(p, args):
             raise fmcli.UsageError("no bench cases: fm bench build first (or --ids names none of them)")
     arm = dict(model=args.model, budget=args.budget, timeout=args.timeout, quiet=args.json)
     if args.bench_cmd in ("duel", "versions"):
-        arm.update(runs=max(1, args.runs), jobs=max(1, args.jobs))
+        arm.update(runs=max(1, args.runs), jobs=max(1, args.jobs), compact_at=args.compact_at,
+                   marathon=getattr(args, "marathon", None))
     try:
         if args.bench_cmd == "soak":
             if not has_guard(plugin):
@@ -833,6 +915,8 @@ def cmd_bench(args):
             raise fmcli.UsageError("--commits RANGE and --verify CMD go together (CMD may use {tests})")
         if args.commits:
             cases, skipped = build_commits(p, args.commits, args.verify, args.last)
+            if args.together:
+                cases = [together(p, cases, skipped, args.verify)]
         else:
             cases, skipped = build(p, ids=set(args.ids or []) or None, last=args.last, judged=args.judged)
         new = {y["id"] for y in cases}
@@ -840,7 +924,7 @@ def cmd_bench(args):
         # and the judged ones unless it rebuilds those too (review)
         keep = (lambda x: x["id"] not in new) if args.commits else \
             (lambda x: x["id"] not in new | set(args.ids)) if args.ids else \
-            (lambda x: (x["id"].startswith(("C-", "R-")) or x.get("judge") and not args.judged) and x["id"] not in new)
+            (lambda x: (x["id"].startswith(("C-", "R-", "M-")) or x.get("judge") and not args.judged) and x["id"] not in new)
         cases += [x for x in _load_cases(p) if keep(x)]
         os.makedirs(os.path.dirname(_cases_path(p)), exist_ok=True)
         c.write_atomic(_cases_path(p), json.dumps(cases, indent=1))
@@ -878,7 +962,8 @@ def cmd_bench(args):
             raise fmcli.UsageError(f"label must be a plain name, got {label!r}")
         try:
             with _frozen(plugin) as snap:
-                res = run_arm(p, cases, snap, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json)
+                res = run_arm(p, cases, snap, label, args.model, args.budget, args.timeout, args.runs, quiet=args.json,
+                              compact_at=args.compact_at)
         except ValueError as e:
             raise fmcli.UsageError(str(e))
         results = res["cases"]

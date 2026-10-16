@@ -1,6 +1,6 @@
 """The feature pages (T-1220): content as data, charts as calls into build.py's helpers over site/data/stats.json.
 Every claim here is something Foreman does today; the charts are its own record of building itself."""
-from build import TYPES, columns, hbars, line, pairs, tiles, verdicts
+from build import TYPES, columns, esc, hbars, line, pairs, tiles, verdicts
 
 
 def _daily_types(s):
@@ -119,6 +119,27 @@ def _duel(s, name):
             + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
             + pairs("Time per task", "Seconds from the first prompt to the session ending.",
                     [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
+
+
+def _long(s, name):
+    """T-1242: one multi-request session per side, compacting as it goes: the hidden tests passing at the end, the
+    compactions, cost and time; for a marathon, the work Foreman found and did after the asked work."""
+    d = next((x for x in s.get("duels") or [] if x.get("name") == name), None)
+    if not d or not d.get("cases"):
+        return "<p><strong>Not run yet.</strong> Its results replace this line when the run finishes.</p>"
+    f, b = d["cases"][0]["foreman"], d["cases"][0]["bare"]
+    tests = lambda x: f"{x['tests'][0]} of {x['tests'][1]}" if x.get("tests") else ("all" if x["pass"] else "failed")
+    head = tiles([("Hidden tests passing, with Foreman", tests(f)), ("Compactions, with Foreman", f.get("compactions") or 0),
+                  ("Cost, with Foreman", f"${f['cost']:.2f}"), ("Hidden tests passing, Claude Code", tests(b)),
+                  ("Compactions, Claude Code", b.get("compactions") or 0), ("Cost, Claude Code", f"${b['cost']:.2f}")],
+                 "three")
+    said = (f"Foreman's session took {f['seconds'] / 60:.0f} min and Claude Code's {b['seconds'] / 60:.0f} min."
+            + (" Foreman's ran until its dollar cap, as a marathon does." if f.get("capped") else ""))
+    found = f.get("found") or []
+    work = ("<p>What Foreman found and did on its own after the asked work:</p><ul>"
+            + "".join(f"<li>{esc(x.rsplit(' (discovered)', 1)[0])}</li>" for x in found) + "</ul>") if found else (
+        "<p>Foreman found nothing more worth doing before its cap.</p>" if d.get("marathon") else "")
+    return head + f"<p><strong>{said}</strong></p>" + work
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
@@ -350,6 +371,16 @@ PAGES = [
           "a cent each, so Foreman's fixed cost (its skill and agent listings, its hooks and the test run at the end) "
           "weighs more here.</p>"),
          ("chart", lambda s: _duel(s, "hard-haiku")),
+         ("text", "One long session: eight requests, compacting as it goes", "<p>The eight harder tasks asked for "
+          "at once, in one Haiku session per side. Each side's context is compacted whenever it nears 40,000 tokens, "
+          "which brings forward what happens in any long session: earlier work is summarised and the details are "
+          "gone. The hidden tests of all eight requests grade where each side ends up.</p>"),
+         ("chart", lambda s: _long(s, "long")),
+         ("text", "A marathon: Foreman keeps going", "<p>The same long session, but once the asked work is closed, "
+          "Foreman's side looks for more work in the repo and does it, test first, until its dollar cap. Claude Code "
+          "on its own stops when the asked work is done. The hidden tests still grade the end state, so work found "
+          "later can't quietly break what was asked for.</p>"),
+         ("chart", lambda s: _long(s, "marathon")),
          ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
           "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "
