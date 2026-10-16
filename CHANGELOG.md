@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- Long sessions in the bench (T-1242): `fm bench build --commits R --verify CMD --together` makes one case asking for a range's requests at once, graded by all their hidden tests; `fm bench duel --compact-at TOKENS` makes both arms compact early, as a long session does, and counts the compactions; results count the hidden tests passing. `--marathon N` lets Foreman's arm keep going after the asked work: N passes of finding and doing work nobody asked for, test first, until its dollar cap
+- A prompt of several `## Request k` sections, in a full-autonomy run, becomes one task per request, in order, each holding its request's text, so after a compaction the queue says what's done and what's left (T-1242). A prompt longer than the 2,000 characters the ledger keeps is read whole from the transcript. After a compaction, the requests still open come back word for word: in the first long run the summary kept only their names, and the agent wrote three modules from signatures and failed 61 of 105 hidden tests. At stop, the requests the agent has recorded evidence for close together, instead of one per stop. An edit between requests focuses the next one and shows its text, instead of refusing the write. The note after a compaction stays under the size Claude Code shows in full (a longer one reached the agent as a 2 KB preview)
+- A bench replay is never told to send a push notification to your phone when its queue drains (T-1242)
+- `fm task finish --commit` names the uncommitted files it leaves out because the task never changed them (edited before its focus, often under another task), and `--with FILE` commits one (T-1235)
 - CI: the `fm run --sandbox` test stubs bubblewrap and socat, so it passes on runners with no working sandbox (it failed both Ubuntu jobs) (T-1227)
 
 ## 1.2.38 — 2026-10-16

@@ -225,6 +225,63 @@ class Bench(ForemanTestCase):
         self.assertIn(f"C-{sha[:10]}", ids, "a brief build keeps the commit cases")
         self.assertIn(self.tid, ids)
 
+    def test_together_makes_one_case_asking_for_a_chain_of_requests(self):
+        # T-1242: a long session measured as one: every request of a range, graded by all their hidden tests
+        start = git(self.repo, "rev-parse", "HEAD")
+        self.write("calc.py", "def double(x):\n    return x * 2\n\n\ndef half(x):\n    return x / 2\n")
+        self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Add half()\n\nhalf(x) divides by two.")
+        self.write("calc.py", "def double(x):\n    return x * 2\n\n\ndef half(x):\n    return x / 2\n\n\n"
+                              "def third(x):\n    return x / 3\n")
+        self.write("tests/test_third.py", "from calc import third\nassert third(9) == 3\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Add third()\n\nthird(x) divides by three.")
+        last = git(self.repo, "rev-parse", "HEAD")
+        verify = "for t in {tests}; do PYTHONPATH=. python3 $t || exit 1; done"
+        res = json.loads(self.fm("bench", "build", "--commits", "HEAD~2..HEAD", "--verify", verify, "--together",
+                                 "--json", env=self.env).stdout)
+        [case] = [x for x in res["cases"] if x["id"].startswith("M-")]
+        self.assertEqual((case["id"], case["base"], case["commit"]), (f"M-{last[:10]}", start, last))
+        self.assertEqual(case["tests"], ["tests/test_half.py", "tests/test_third.py"])
+        p = case["prompt"]
+        self.assertLess(p.index("## Request 1"), p.index("divides by two"))
+        self.assertLess(p.index("divides by two"), p.index("## Request 2"))
+        self.assertLess(p.index("## Request 2"), p.index("divides by three"))
+        self.assertEqual(len(case["requests"]), 2)
+        self.write("tests/test_more.py", "print('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "more tests")
+        r = self.fm("bench", "build", "--commits", "HEAD~3..HEAD", "--verify", verify, "--together", env=self.env,
+                    check=False)
+        self.assertNotEqual(r.returncode, 0, "a commit that isn't a case would leave its change unasked")
+        self.assertIn("every commit", r.stderr)
+
+    def test_test_counts_read_unittest_and_pytest_summaries(self):
+        import fmbench
+        self.assertEqual(fmbench.count_tests(["Ran 12 tests in 0.1s / FAILED (failures=2, errors=1)",
+                                              "3 failed, 9 passed in 0.2s"]), (18, 24))
+        self.assertEqual(fmbench.count_tests(["Ran 5 tests in 0.0s / OK"]), (5, 5))
+        self.assertIsNone(fmbench.count_tests(["ok"]))
+
+    def test_grading_names_the_hidden_tests_that_failed(self):
+        import fmbench
+        import fmcore as c
+        out = ("FAIL: test_split (test_lexer.LexerTest.test_split)\nERROR: test_x (tests.test_ini.IniTest)\n"
+               "FAILED tests/test_a.py::test_b - assert 1 == 2\n")
+        failed, orig = [], c.run_command
+        c.run_command = lambda *a, **k: (1, out)
+        try:
+            fmbench._safe_git, safe = (lambda *a: subprocess.CompletedProcess([], 0, "", "")), fmbench._safe_git
+            try:
+                fmbench._grade(self.repo, {"tests": [], "commit": "HEAD", "verify": ["x"]}, {}, failed=failed)
+            finally:
+                fmbench._safe_git = safe
+        finally:
+            c.run_command = orig
+        self.assertEqual(failed, ["test_lexer.LexerTest.test_split", "tests.test_ini.IniTest.test_x",
+                                  "tests/test_a.py::test_b"])
+
     def test_models_recommends_the_cheapest_that_passes(self):
         # T-0223: which model each tier needs, measured on the project's own work
         self.fm("bench", "build", env=self.env)
