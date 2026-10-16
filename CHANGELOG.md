@@ -16,6 +16,7 @@
 - Every close prints one "Not verified" block, replacing "Check by hand": a skipped affected-tests run (only when it was really waived), claims recorded as unchecked or inferred, then criteria no command of their own proved (T-1159).
 - `fm lane list` and `fm next` flag a live builder lane with no edit, commit or ledger event for 15 minutes (`FM_STALL_MIN`) as stalled and say how to resume it; returned and merged lanes are skipped (T-1156).
 - `fm away`: what closed, blocked, was asked or reverted since you last spoke; a session start or resume after a 2 h gap carries one "Away" line (T-1155).
+- The guard's "driving Foreman's modules" refusal for a test written with `cat <<EOF` and run in the same command now says to write it in one command and run it in the next (each half passes), the cause of 12 of 31 such refusals in four days (T-1171).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
