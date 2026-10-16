@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
 - The guard reads a heredoc fed to `fm edit` as data, like one fed to `cat`: an edit block that names Foreman's modules is no longer refused as interpreter code just because the same command also runs python3 (T-1141).
 - Hooks find the active task without parsing every brief (only briefs whose frontmatter says active or verifying are parsed): the PreToolUse hook on this repo went from a 135 ms median to 72 ms (T-1140).

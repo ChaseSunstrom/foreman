@@ -131,6 +131,8 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - The guard reads every Bash command and file edit before it runs, including the commands fm stores and runs later.
 - Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back; `fm oops` shows the newest and `fm oops --apply` restores it.
 - `fm sensitive on` keeps a repo's content from leaving the machine; `fm sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
+- A daily risk budget: destructive guard blocks, failed closes and reverts spend points, and past the cap Claude's autonomy steps down a notch until tomorrow (`fm risk`; only you move the cap).
+- Install commands are checked before they run: a package one edit from a popular name, or published in the last 30 days, gets a note (`fm deps check "<cmd>"`). A command copied from a web page or MCP result asks before it runs.
 - `fm posture lite` (yours to type: `! fm posture lite`; Claude may not lower it) keeps only the guard and the evidence gate in a repo where the rest of Foreman is in the way (no injected notes, no drive); `fm posture full` brings it back.
 
 **Shows you what happened.**
@@ -140,7 +142,9 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
 - `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence; `fm outcomes` grades every close by whether it survived 30 days (nothing reverted it, fixed it or corrected it), and `--claims`, `--regret`, `--graveyard` and `--seen` read those grades; `fm round close` tags a round and lists what it closed.
 
-**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
+**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task; `--max-usd` caps what it spends), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs: it works the queue under the night's budget, composts finished lanes and proposes merged lessons) and `fm notify` for when it's done.
+- `fm draft` has the top queued small task drafted on a throwaway branch while Claude waits; `fm lane race T` has two builders take different approaches and `fm lane pick` merges the better one.
+- `fm ci-watch` follows the CI run of the commit you pushed and turns a failure into a fix task; `fm pr threads` turns review comments into steps and `fm pr train` merges approved, green PRs in order after a re-test.
 
 **Stays light.** Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
 
@@ -148,7 +152,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 
 **Learns a fix once.** When a command fails and a later one on the same program gets past it, Foreman keeps the pair with no one asking. The next time any session meets that failure, in this project or another on the machine, Claude gets the fix in the failure's context (`Foreman: known fix for this failure … Try that before anything else`), and a command that failed before is flagged before it runs again. A look around (`ls`, `cat`, `git status`) or a retry that happens to pass teaches nothing. A fix that keeps missing stops being offered, and a failure met three times with no fix becomes a task to remove its cause. Project fixes travel with the repo: `fm sync on` mirrors them into `.foreman/fixes.md`, so clones, other machines and teammates' sessions get them through git; a fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `fm fix trust N`. A sensitive project's fixes stay in that project. A code edit between the failure and the pass makes it a code fix, so nothing is kept. `fm fix list` shows them, `fm fix add "<error>" --do "<what works>"` teaches one the hooks can't see, `fm fix rm N` forgets one. A hook only ever says a fix; it never runs one. The UI harness answers Claude Code's folder-trust prompt itself, for folders Foreman made only.
 
-**Improves itself.** `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), `fm burden --by-verb` lists the verbs nobody calls, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
+**Improves itself.** `fm backtest --rule/--fix/--card` shows how often a change would have fired on your real recent sessions before it ships; `fm rule add … --moves corrections --by 30` makes a change a trial the digest grades later; `fm adopt` learns from a repo's history of reverts and fixes. `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), `fm burden --by-verb` lists the verbs nobody calls, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
 ## Seeing what's going on
 
@@ -163,7 +167,11 @@ The `foreman-ui` mod draws Foreman live inside the session.
 - the task's type chip, id and title, and its stage on a mini rail (●━●━◉─○─○);
 - a true-color gradient step bar that animates while Claude works;
 - audits, queue and inbox counts, and what waits on you;
+- speedrun splits: each stage's time against your typical for that kind of task, green under and red over;
+- when idle, one line on what Foreman learned this week (fixes that worked or missed, rules to propose);
 - `[f]` dashboard and `[n]` next.
+
+Set `palette: 'cb'` for a colourblind-safe ok/error pair (errors keep their ✗), and in the history press `b` to step back in time and `l` to return to live.
 
 **The chat.** Every row reads like a section of the pane: a mark, a bold label in the row's colour, its subject, a rule fading out in that colour and the facts on the right, with a blank line above it and no box. Your prompts (`❯ You`), Claude's replies (`● Claude`), commands, edits, subagents and every other tool (skills, MCP calls, artifacts …) get one (a tool's result of up to three lines sits in its row; a longer one keeps Claude Code's own block under it, which expands; a failed call keeps Claude Code's row); a review's findings list each one with what came of it (fixed, skipped), where it is and the short claim. While a call runs, a comet runs along its rule beside the elapsed time. A command shows its lines, its output (failures first when it failed), the files it changed and a commit. An edit's diff keeps a line of context either side of each change, breaks between hunks with `┄`, and washes only the words that changed in a changed line, never the whole width. Successful `fm` bookkeeping commands fold to one quiet `⚙ fm …  ✓ …` line, while failures keep their full row; finished reads and background-task notifications also fold to one quiet line.
 
