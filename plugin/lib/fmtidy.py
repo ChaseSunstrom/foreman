@@ -173,6 +173,33 @@ def stale_plans(p, briefs):
     return out
 
 
+DEFER_DROP_DAYS, DEFER_YOUNG_DAYS = 90, 30
+
+
+def triage_deferred(p, briefs):
+    """T-1048: [(id, verdict, why)] for each deferred brief; proposes only, nothing is applied. do: its --until date or
+    file change came, or its scope is untouched since it was deferred and it is young. drop: 90+ days old with no
+    scope file left (or none named) and no revisit trigger. ask: the rest.
+    ponytail: "untouched" is the files' mtime vs. the brief's updated time, not git history."""
+    root, today, out = c.main_view(p).root, c.datetime.date.today().isoformat(), []
+    for b in briefs:
+        if b.status != "deferred":
+            continue
+        age, rv = c.age_days(b.meta.get("updated")) or 0, b.meta.get("revisit")
+        files = [os.path.join(root, s) for s in b.meta.get("scope") or [] if not re.search(r"[*?\[]", s)]
+        live = [f for f in files if os.path.exists(f)]
+        at = c.parse_ts(b.meta.get("updated"))
+        if rv and c.deferral_due(root, rv, today):
+            out.append((b.id, "do", f"its revisit trigger came ({rv})"))
+        elif age >= DEFER_DROP_DAYS and not live and not rv:
+            out.append((b.id, "drop", f"{int(age)}d old, " + ("its scope is gone" if files else "no scope and no trigger")))
+        elif live and at and age < DEFER_YOUNG_DAYS and not rv and all(os.path.getmtime(f) <= at.timestamp() + 1 for f in live):
+            out.append((b.id, "do", f"{int(age)}d old and its scope is untouched"))
+        else:
+            out.append((b.id, "ask", f"{int(age)}d old" + (f", revisit {rv}" if rv else "")))
+    return out
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -207,6 +234,10 @@ def check_project(p, apply, actions):
     for tid, why in stale_plans(p, briefs).items():
         out.append(finding(slug, "stale_plan", "warn", f"{tid} re-plan: {why}", f're-read its Steps against the code, '
                            f'fix what no longer holds, then fm task log {tid} "plan re-read: <what changed, or still valid>"'))
+    for tid, verdict, why in triage_deferred(p, briefs):
+        out.append(finding(slug, "deferred_triage", "warn" if verdict == "drop" else "info", f"{tid} deferred: propose {verdict} ({why})",
+                           f'fm task drop {tid} "{why}"' if verdict == "drop" else
+                           f"fm task set {tid} status=planned" if verdict == "do" else "decide: do it, or drop it"))
     for b in briefs:
         why = unblocked(p, b, status) if b.status == "blocked" else None
         if why:
