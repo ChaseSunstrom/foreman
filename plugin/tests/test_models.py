@@ -35,7 +35,8 @@ class Fake:
                 self.send_response(status)
                 for k, v in (hdrs or {}).items():
                     self.send_header(k, v)
-                self.send_header("Content-Length", str(len(data)))
+                if "Content-Length" not in (hdrs or {}):  # a script may lie about it (a truncated reply)
+                    self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
 
@@ -104,7 +105,7 @@ class OpenAIShape(Base):
         self.assertEqual(r["text"], "hello")
         self.assertEqual(r["tool_calls"], [])
         self.assertEqual(r["usage"], {"in": 7, "out": 3})
-        self.assertEqual(r["stop"], "stop")
+        self.assertEqual(r["stop"], "end")
         method, path, hdrs, body = f.seen[0]
         self.assertEqual((method, path), ("POST", "/v1/chat/completions"))
         self.assertEqual(hdrs["Authorization"], f"Bearer {SECRET}")
@@ -118,7 +119,92 @@ class OpenAIShape(Base):
         r = m.complete(self.profile(f), [{"role": "user", "content": "read a.py"}], tools=[TOOL])
         self.assertEqual(r["tool_calls"], [{"id": "c1", "name": "read", "args": {"path": "a.py"}}])
         self.assertEqual(r["text"], "")
+        self.assertEqual(r["stop"], "tool_calls")
         self.assertEqual(f.seen[0][3]["tools"], [TOOL])
+
+    def test_stop_vocabulary(self):
+        call = {"type": "function", "function": {"name": "read", "arguments": "{}"}}
+        f = self.fake((200, oa_reply("x", finish="length"), None), (200, oa_reply(None, [call, call], "stop"), None))
+        p = self.profile(f)
+        self.assertEqual(m.complete(p, [{"role": "user", "content": "hi"}])["stop"], "length")
+        r = m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertEqual(r["stop"], "tool_calls")  # a local server that says "stop" beside its tool calls
+        ids = [c["id"] for c in r["tool_calls"]]
+        self.assertTrue(all(i and i.startswith("call_") for i in ids))
+        self.assertEqual(len(set(ids)), 2)
+
+    def test_key_with_control_characters_is_refused_unechoed(self):
+        f = self.fake((200, oa_reply(), None))
+        p = self.profile(f)
+        os.environ["FM_TEST_KEY"] = "sk-abc\r\nX-Evil: 1"
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertNotIn("sk-abc", str(cm.exception))
+        self.assertNotIn("sk-abc", repr(cm.exception.__context__ or ""))
+        self.assertEqual(f.seen, [])
+
+    def test_key_http_client_cannot_encode_is_a_scrubbed_model_error(self):
+        f = self.fake((200, oa_reply(), None))
+        p = self.profile(f)
+        os.environ["FM_TEST_KEY"] = "sk-€SECRETPART"
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertNotIn("SECRETPART", str(cm.exception))
+        self.assertTrue(cm.exception.__suppress_context__)
+
+    def test_key_whitespace_is_stripped(self):
+        f = self.fake((200, oa_reply(), None))
+        p = self.profile(f)
+        os.environ["FM_TEST_KEY"] = f"  {SECRET}\n"
+        m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertEqual(f.seen[0][2]["Authorization"], f"Bearer {SECRET}")
+
+    def test_truncated_reply_is_a_model_error(self):
+        f = self.fake((200, '{"choices": [', {"Content-Length": "500"}))
+        with self.assertRaises(m.ModelError):
+            m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
+
+    def test_deeply_nested_reply_is_a_model_error(self):
+        f = self.fake((200, "[" * 200000, None))
+        with self.assertRaises(m.ModelError):
+            m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
+
+    def test_fields_of_the_wrong_type_read_as_missing(self):
+        f = self.fake((200, {"choices": [{"message": {"content": "x"}}], "usage": [1]}, None),
+                      (200, {"content": "oops", "usage": 5, "stop_reason": "end_turn"}, None))
+        self.assertEqual(m.complete(self.profile(f), [{"role": "user", "content": "hi"}])["usage"], {"in": 0, "out": 0})
+        r = m.complete(self.profile(f, "anthropic"), [{"role": "user", "content": "hi"}])
+        self.assertEqual((r["text"], r["usage"]), ("", {"in": 0, "out": 0}))
+
+    def test_reply_that_is_not_an_object_is_a_model_error(self):
+        f = self.fake((200, [1, 2], None))
+        for kind in ("openai", "anthropic"):
+            with self.assertRaises(m.ModelError):
+                m.complete(self.profile(f, kind), [{"role": "user", "content": "hi"}])
+
+    def test_no_choices_error_is_scrubbed(self):
+        f = self.fake((200, {"echo": SECRET}, None))
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
+        self.assertNotIn(SECRET, str(cm.exception))
+
+    def test_key_never_goes_over_plain_http_to_a_remote_host(self):
+        os.environ["FM_TEST_KEY"] = SECRET
+        p = {"name": "x", "kind": "openai", "base_url": "http://example.invalid/v1", "model": "m",
+             "key_env": "FM_TEST_KEY"}
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertIn("https", str(cm.exception))
+        f = self.fake((200, oa_reply(), None))
+        m.complete(dict(p, base_url=f.url.replace("127.0.0.1", "localhost")), [{"role": "user", "content": "hi"}])
+
+    def test_userinfo_in_base_url_is_refused_unechoed(self):
+        f = self.fake((200, oa_reply(), None))
+        p = dict(self.profile(f, key=False), base_url=f.url.replace("http://", "http://bob:hunter2@"))
+        with self.assertRaises(m.ModelError) as cm:
+            m.complete(p, [{"role": "user", "content": "hi"}])
+        self.assertNotIn("hunter2", str(cm.exception))
+        self.assertEqual(f.seen, [])
 
     def test_complete_s_own_tool_calls_go_back_in_wire_shape(self):
         f = self.fake((200, oa_reply("done"), None))
@@ -182,9 +268,10 @@ class OpenAIShape(Base):
 
     def test_redirect_is_not_followed(self):
         f = self.fake((302, "", {"Location": "http://127.0.0.1:9/steal"}))
-        with self.assertRaises(m.ModelError):
+        with self.assertRaises(m.ModelError) as cm:
             m.complete(self.profile(f), [{"role": "user", "content": "hi"}])
         self.assertEqual(len(f.seen), 1)
+        self.assertIn("127.0.0.1:9/steal", str(cm.exception))
 
     def test_non_json_reply_raises(self):
         f = self.fake((200, "<html>proxy</html>", None))
@@ -205,7 +292,7 @@ class AnthropicShape(Base):
         f = self.fake((200, self.reply([{"type": "text", "text": "hel"}, {"type": "text", "text": "lo"}]), None))
         r = m.complete(self.profile(f, "anthropic"), [{"role": "system", "content": "be brief"},
                                                        {"role": "user", "content": "hi"}])
-        self.assertEqual(r, {"text": "hello", "tool_calls": [], "usage": {"in": 11, "out": 4}, "stop": "end_turn"})
+        self.assertEqual(r, {"text": "hello", "tool_calls": [], "usage": {"in": 11, "out": 4}, "stop": "end"})
         method, path, hdrs, body = f.seen[0]
         self.assertEqual(path, "/v1/messages")
         hdrs = {k.lower(): v for k, v in hdrs.items()}
@@ -222,7 +309,7 @@ class AnthropicShape(Base):
         r = m.complete(self.profile(f, "anthropic"), [{"role": "user", "content": "go"}], tools=[TOOL])
         self.assertEqual(r["tool_calls"], [{"id": "tu1", "name": "read", "args": {"path": "a"}}])
         self.assertEqual(r["text"], "reading")
-        self.assertEqual(r["stop"], "tool_use")
+        self.assertEqual(r["stop"], "tool_calls")
         self.assertEqual(f.seen[0][3]["tools"], [{"name": "read", "description": "read a file",
                                                   "input_schema": TOOL["function"]["parameters"]}])
 
@@ -245,6 +332,21 @@ class AnthropicShape(Base):
             {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "a", "content": "X"},
                                          {"type": "tool_result", "tool_use_id": "b", "content": "Y"},
                                          {"type": "text", "text": "and?"}]}])
+
+    def test_conversion_leaves_the_callers_messages_alone(self):
+        msgs = [{"role": "assistant", "content": [{"type": "text", "text": "a"}],
+                 "tool_calls": [{"id": "t", "name": "ls", "args": {}}]},
+                {"role": "assistant", "content": [{"type": "text", "text": "b"}]}]
+        before = json.dumps(msgs)
+        first = m.to_anthropic(msgs)
+        self.assertEqual(json.dumps(msgs), before)
+        self.assertEqual(m.to_anthropic(msgs), first)
+        self.assertEqual(len(first[1][0]["content"]), 3)
+
+    def test_max_tokens_stop_is_length(self):
+        f = self.fake((200, self.reply([{"type": "text", "text": "x"}], "max_tokens"), None))
+        self.assertEqual(m.complete(self.profile(f, "anthropic"), [{"role": "user", "content": "go"}])["stop"],
+                         "length")
 
     def test_tool_conversion_accepts_bare_specs(self):
         bare = TOOL["function"]
@@ -342,6 +444,32 @@ class Profiles(Base):
         with self.assertRaises(m.ModelError) as cm:
             m.resolve()
         self.assertIn("models.json", str(cm.exception))
+
+    def test_resolve_stops_probing_at_the_first_local_answer(self):
+        a = self.fake((200, {"data": [{"id": "one"}]}, None))
+        b = self.fake((200, {"data": [{"id": "two"}]}, None))
+        m.LOCAL = [("ollama", a.url), ("vllm", b.url)]
+        self.assertEqual(m.resolve()["model"], "one")
+        self.assertEqual(b.seen, [])
+
+    def test_broken_local_replies_are_skipped(self):
+        cut = self.fake((200, '{"data": [', {"Content-Length": "500"}))
+        deep = self.fake((200, "[" * 200000, None))
+        listy = self.fake((200, [1], None))
+        m.LOCAL = [("a", cut.url), ("b", deep.url), ("c", listy.url)]
+        os.environ["OPENAI_API_KEY"] = "k"
+        self.assertEqual(m.resolve()["name"], "openai")
+
+    def test_bad_profile_fields_name_models_json(self):
+        for bad in ({"kind": "cohere"}, {"tools": "yes"}, {"key_env": 5}, {"context": "big"}):
+            self.write_models({"profiles": {"p": dict({"base_url": "http://h/v1", "model": "x"}, **bad)}})
+            with self.assertRaises(m.ModelError, msg=bad) as cm:
+                m.resolve("p")
+            self.assertIn("models.json", str(cm.exception))
+
+    def test_anthropic_default_model(self):
+        os.environ["ANTHROPIC_API_KEY"] = "k"
+        self.assertEqual(m.resolve("anthropic")["model"], "claude-sonnet-5-5")
 
     def test_local_server_with_no_models_is_skipped(self):
         empty = self.fake((200, {"data": []}, None))
