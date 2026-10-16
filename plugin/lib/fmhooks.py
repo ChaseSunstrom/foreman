@@ -847,6 +847,8 @@ BATCH_AT = 3  # T-1089: the edit of one file that points at fm edit, once a sess
 
 def _thrash_note(pl, p, act, path):
     """R1: the same file edited again and again with no check recorded in between is guessing, not converging."""
+    if pl.get("agent_id"):  # T-1104, T-1110: a subagent's edits; its notes landed in the main thread's context
+        return None
     n = 0
     for e in reversed(c.ledger_tail(p, 300)):
         if e.get("task") != act.id:
@@ -856,7 +858,8 @@ def _thrash_note(pl, p, act, path):
         if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path:
             n += 1
     key = hashlib.sha1(path.encode()).hexdigest()[:10]
-    if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):  # T-1089: one call for the rest
+    # T-1089: one call for the rest
+    if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):
         return (f"Foreman: the {BATCH_AT}rd edit of {os.path.basename(path)} in a row. When more spots in it (or in other "
                 f"files) are known, fm edit applies them all in one call: JSON on stdin "
                 f"([{{\"file\", \"old\", \"new\"}}]) or @@ file / <<< old / === new / >>> blocks, all or none, inside "
@@ -1868,7 +1871,8 @@ def post_tool_use(pl, ok=True):
                     session=pl.get("session_id"))
         try:  # T-0705: the affected tests run out of the model's turns; only a flip comes back
             import fmambient
-            fmambient.after_edit(p, path)
+            if not pl.get("agent_id"):  # T-1110: a subagent's edit; its flip would land in the main thread's context
+                fmambient.after_edit(p, path)
         except Exception:
             log_error("PostToolUse", _tb())
         try:  # T-0708: the function this edit landed in is this session's for a while
@@ -2017,8 +2021,8 @@ def _runner_evidence(pl, p, act, cmd):
 def post_tool_use_failure(pl):
     """Also failure memory (T-0046): a failed command whose failure a finished task already met gets a pointer to it."""
     post_tool_use(pl, ok=False)
-    if pl.get("tool_name") != "Bash":
-        return None
+    if pl.get("tool_name") != "Bash" or pl.get("agent_id"):  # T-1110: a subagent's failure is its own; the notes
+        return None  # landed in the main thread's context and the failure was filed against this thread's task
     err = str(pl.get("error") or "")
     p = None
     try:  # T-1032: a known fix first, in any folder (this machine's fixes need no Foreman project)

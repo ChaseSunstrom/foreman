@@ -160,8 +160,9 @@ class Apply(TidyCase):
         ledger = os.path.join(self.p.dir, "ledger.jsonl")
         old = {"ts": "2026-01-15T00:00:00Z", "session_id": None, "project": self.p.slug, "task": None,
                "event": "note", "data": {"pad": "y" * 300}}
-        with open(ledger, "a") as f:
-            f.write((json.dumps(old) + "\n") * 4000)
+        live = read_text(ledger)
+        with open(ledger, "w") as f:  # past months before this month's lines, as a ledger lands (T-1099)
+            f.write((json.dumps(old) + "\n") * 4000 + live)
         self.assertIn("roll_ledger", self.kinds(self.tidy()))
         self.tidy("--apply")
         monthly = read_text(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"))

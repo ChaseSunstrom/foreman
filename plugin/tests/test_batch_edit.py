@@ -191,6 +191,27 @@ class Hint(ForemanTestCase):
         self.assertEqual(sum("fm edit" in n for n in notes), 1, notes)
         self.assertIn("fm edit", notes[2])
 
+    def test_a_subagents_edits_get_no_batch_hint(self):
+        # T-1104: a builder's edits raised the hint in the main thread's context
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+        path = os.path.join(self.repo, "b.py")
+        notes = [self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": path}, "agent_id": "a1"}).stdout
+                 for _ in range(7)]
+        self.assertFalse(any("fm edit" in n for n in notes), notes)
+        self.assertFalse(any("without a check" in n for n in notes), notes)  # T-1110: nor the thrash note
+
+    def test_a_subagents_failed_run_gives_this_thread_no_note(self):
+        # T-1110: a builder's red run put "Suspects: …" and its failure (against this thread's task) into this context
+        self.fm("init")
+        self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a", "--focus")
+        err = "Traceback (most recent call last):\n  File \"x.py\", line 3\nKeyError: 'col'\nFAIL: test_x"
+        pl = {"tool_name": "Bash", "tool_input": {"command": "python3 x.py"}, "error": err}
+        with open(os.path.join(self.repo, "x.py"), "w") as f:  # changed and on the stack: a suspect
+            f.write("a = 1\nb = 2\nc = {}['col']\n")
+        self.assertEqual(self.hook("PostToolUseFailure", dict(pl, agent_id="a1")).stdout.strip(), "")
+        self.assertIn("Suspects", self.hook("PostToolUseFailure", pl).stdout)  # this thread's own failure still notes
+
 
 if __name__ == "__main__":
     unittest.main()
