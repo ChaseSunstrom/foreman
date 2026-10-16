@@ -77,9 +77,13 @@ def mutate(p, tid, fn, event, data=None):
     """Load a brief under the project lock, apply fn(brief), save, log, regenerate views."""
     with c.lock(p.dir):
         b = need_brief(p, tid)
+        before = c.stage(b)  # T-1137: in-memory only, no extra loads
         result = fn(b)
         c.save_brief(p, b)
         c.log_event(p, event, task=b.id, data=data or {}, session=session())
+        after = c.stage(b)
+        if after != before:  # pane splits read these instead of proxy events
+            c.log_event(p, "stage", task=b.id, data={"from": before, "to": after}, session=session())
         c.regen_views(p)
     return b, result
 
