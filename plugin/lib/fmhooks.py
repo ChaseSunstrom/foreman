@@ -1176,16 +1176,21 @@ def _card_note(pl, p, act):
             return None
         import fmlib
         path = os.path.normpath(os.path.join(_cwd(pl), path))
-        name = fmlib.card_for(p, path)
-        if not name or _card_injected(p, act.id, name):
-            return None
-        note = fmlib.card_avoid(name)
-        if note:
-            _card_mark(p, act.id, name)
-            c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
-                                                         "file": os.path.relpath(path, p.root)},
-                        session=pl.get("session_id"))
-        return note
+        text = ti.get("content") or ti.get("new_string") or ti.get("new_source") or ""  # T-1036: what it will import
+        if isinstance(ti.get("edits"), list):  # MultiEdit
+            text = "\n".join(str((x or {}).get("new_string", "")) for x in ti["edits"] if isinstance(x, dict))
+        notes = []
+        fresh = [n for n in fmlib.cards_for(p, path, text if isinstance(text, str) else "")  # T-1036: imports' cards too
+                 if not _card_injected(p, act.id, n)][:2]  # review: the cap after the filter, so none is crowded out
+        for name in fresh:
+            note = fmlib.card_avoid(name)
+            if note:
+                _card_mark(p, act.id, name)
+                c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
+                                                             "file": os.path.relpath(path, p.root)},
+                            session=pl.get("session_id"))
+                notes.append(note)
+        return "\n".join(notes) or None
     except Exception:
         log_error("PreToolUse", _tb())
         return None

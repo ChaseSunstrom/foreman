@@ -3711,6 +3711,18 @@ def cmd_audit(args):
         head += "\nPre-audit (mechanical; confirm or dismiss each, then review the rest):\n" + "\n".join(
             f"- {x}" for x in found)
     steps = _files_vs_steps(b, files)  # T-0610: does each changed file serve a step?
+    import fmlib  # T-1036: the review checklists of the stack cards this task's edits used (self block and reviewers)
+    try:  # the hook's per-task marker, not a ledger scan (an archived ledger would lose them); ":" names are markers
+        with open(os.path.join(p.dir, "cards.json"), encoding="utf-8") as f:
+            seen = json.load(f)
+    except (OSError, ValueError):
+        seen = {}
+    used = [n for n in ((seen.get(b.id) if isinstance(seen, dict) else None) or [])
+            if isinstance(n, str) and not n.startswith(":")]
+    checks = [(n, rv) for n in used[:4] if (rv := fmlib.card_review(n))]  # never r: the diff run below is r
+    if checks:
+        steps += ("\n\n## Stack card checklists\nThe cards this task's edits used; hold the diff to them:\n"
+                  + "\n".join(f"### {n}\n{rv[:1200]}" for n, rv in checks))
     head += steps
     blocks, sections = [], []
     for lens in lenses:
@@ -4265,9 +4277,10 @@ def build_parser():
     s.add_argument("--cold", action="store_true", help="the most-changed files no session has read (T-0660)")
     s.add_argument("--capture", action="store_true", help="with --cold: file one inbox item to read them (one open at a time)")
     s = add("lib", lazy("fmlib", "cmd_lib"), help="stack library: cards per language, framework, service and tool, "
-            "plus installed plugins' skills (suggest, search, show, list, check; inject on|off: the edit-time card)")
+            "plus installed plugins' skills (suggest, search, show, list, check; inject on|off: the edit-time card; "
+            "stats: which cards fired)")
     s.add_argument("action", nargs="?", default="suggest", choices=["suggest", "search", "show", "list", "check", "source",
-                                                                    "inject"])
+                                                                    "inject", "stats"])
     s.add_argument("words", nargs="*", help="search: topic words; show: a card name or plugin:skill")
     s.add_argument("--area", help="list: one area's cards")
     s.add_argument("-n", type=int, default=12, help="suggest: at most this many cards")

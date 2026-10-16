@@ -123,7 +123,7 @@ class EditCards(_CardCase):
         self.assertTrue(py, m["lib_cards"])
         self.assertEqual(py[0]["area"], "lang")
         self.assertIn("ext:.py", py[0]["detect"])
-        self.assertFalse([s for x in m["lib_cards"] for s in x["detect"] if s.startswith("dep:")])
+        self.assertFalse([s for x in m["lib_cards"] for s in x["detect"] if s.startswith("dep:")])  # no deps in this repo (T-1036 keeps dep: signals when there are)
         shared = [x for x in m["lib_cards"] if x["area"] != "lang" and "ext:.py" in x["detect"]]
         self.assertFalse(shared, "a non-language card keeps the language's ext only as lext:")
         self.assertEqual(m["lib"], [x["name"] for x in m["lib_cards"]])
@@ -215,3 +215,106 @@ class LangCardsKept(HookCase):
             fmlib.suggest = real
         self.assertIn("python", names)
         self.assertLessEqual(len(names), 8 + 3)  # the top 8 plus at most a few languages
+
+
+class ImportCards(_CardCase):
+    """T-1036: a card known by a dependency (React, FastAPI, Tokio, Gin …) never fired: injection keyed on the file's
+    extension, so only language cards reached Claude (6 of 1,084 cards in 50 injections). Now what the edited file
+    imports picks the project's framework cards too, before the language card, at most two cards an edit."""
+
+    def put(self, rel, text):
+        path = os.path.join(self.repo, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+    def write(self, rel, content):
+        proc = self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, rel),
+                                                                          "content": content}})
+        ctx = self.ctx_of(proc)
+        return ctx[ctx.index(HEAD):] if HEAD in ctx else ""
+
+    def test_a_file_that_imports_a_framework_gets_its_card_beside_the_language_card(self):
+        self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react", "dep:react-dom")])
+        self.put("src/App.tsx", "import { useState } from 'react'\nimport x from './local'\nexport const A = () => null\n")
+        note = self.edit("src/App.tsx")
+        self.assertIn("stack card react", note)
+        self.assertIn("stack card typescript", note)
+        self.assertEqual(sorted(e["data"]["card"] for e in self.injected()), ["react", "typescript"])
+        self.assertEqual(self.edit("src/App.tsx"), "")  # once per card per task
+
+    def test_python_rust_and_go_imports_match_their_deps(self):
+        self.map([card("python", "lang", 5, "ext:.py"), card("fastapi", "python", 3, "dep:fastapi"),
+                  card("pydantic", "python", 2, "dep:pydantic"), card("tokio", "rust", 3, "dep:tokio"),
+                  card("gin", "go", 3, "dep:github.com/gin-gonic/gin")])
+        self.put("api.py", "from fastapi import FastAPI\nimport pydantic.v1 as p\n")
+        note = self.edit("api.py")
+        self.assertIn("stack card fastapi", note)
+        self.assertIn("stack card pydantic", note)  # two frameworks: they come before the language card
+        self.assertNotIn("stack card python,", note)
+        self.assertIn("stack card tokio", self.write("src/main.rs", "use tokio::sync::mpsc;\nfn main() {}\n"))
+        self.assertIn("stack card gin", self.write("main.go", 'package main\n\nimport (\n\t"fmt"\n\t"github.com/gin-gonic/gin"\n)\n'))
+
+    def test_relative_imports_and_packages_the_map_lacks_match_nothing(self):
+        self.map([card("typescript", "lang", 5, "ext:.ts"), card("react", "web", 3, "dep:react")])
+        self.put("util.ts", "import { pad } from 'left-pad'\nimport y from '../react'\nconst r = require('./react')\n")
+        note = self.edit("util.ts")
+        self.assertIn("stack card typescript", note)
+        self.assertNotIn("stack card react", note)
+
+    def test_a_big_or_binary_file_is_read_only_at_its_head(self):
+        self.map([card("python", "lang", 5, "ext:.py"), card("fastapi", "python", 3, "dep:fastapi")])
+        self.put("big.py", "x = 1\n" * 50000 + "from fastapi import FastAPI\n")  # an import far down: not looked for
+        self.assertNotIn("fastapi", self.edit("big.py"))
+
+    def test_audit_prep_carries_the_review_checklists_of_the_cards_used(self):
+        self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react")])
+        self.put("App.tsx", "import React from 'react'\n")
+        self.edit("App.tsx")
+        brief = self.fm("audit", "prep", self.tid, check=False)
+        path = os.path.join(self.project().dir, "audits", f"{self.tid}.review.md")
+        self.assertTrue(os.path.exists(path), brief.stdout + brief.stderr)
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("Stack card checklists", text)
+        self.assertIn("react", text)
+
+    def test_fm_lib_stats_counts_injections_per_card(self):
+        self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react")])
+        self.put("App.tsx", "import React from 'react'\n")
+        self.edit("App.tsx")
+        rows = json.loads(self.fm("lib", "stats", "--json").stdout)
+        self.assertEqual({r["card"]: r["injected"] for r in rows}, {"react": 1, "typescript": 1})
+
+    def test_audit_prep_of_an_l_task_that_used_a_card_runs(self):
+        # T-1036: a walrus in the checklist comprehension bound r in cmd_audit's scope and broke its L-tier path
+        tid = self.task(title="Big one", type_="FEATURE", tier="L", focus=False)
+        for sec in ("Interpretation", "Approach (options → choice → why)", "Build vs reuse"):
+            self.fm("task", "set", tid, "--section", sec, "--text", "planned")
+        self.fm("task", "set", tid, "approved=true")
+        self.fm("focus", tid)
+        self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react")])
+        self.put("Big.tsx", "import React from 'react'\n")
+        self.edit("Big.tsx")
+        r = self.fm("audit", "prep", tid, check=False)
+        self.assertEqual(r.returncode, 0, r.stderr[-500:])
+        self.assertIn("Stack card checklists", open(os.path.join(self.project().dir, "audits", f"{tid}.review.md")).read())
+
+    def test_review_cards_already_used_never_crowd_out_the_rest(self):
+        # T-1036 review: the cap of two came before the already-injected filter, so later cards never fired
+        self.map([card("python", "lang", 5, "ext:.py"), card("fastapi", "python", 3, "dep:fastapi"),
+                  card("pydantic", "python", 2, "dep:pydantic")])
+        self.put("api.py", "from fastapi import FastAPI\nimport pydantic\n")
+        self.assertIn("fastapi", self.edit("api.py"))
+        self.assertIn("stack card python", self.edit("api.py"))  # the next edit gets the one left out
+
+    def test_review_wildcard_deps_match_and_files_outside_the_project_never_count(self):
+        self.map([card("typescript", "lang", 5, "ext:.ts"), card("tauri", "web", 3, "dep:@tauri-apps/plugin-*")])
+        self.put("a.ts", "import { open } from '@tauri-apps/plugin-shell'\n")
+        self.assertIn("stack card tauri", self.edit("a.ts"))
+        outside = os.path.join(self.tmp, "scratch.ts")
+        with open(outside, "w") as f:
+            f.write("import x from '@tauri-apps/plugin-fs'\n")
+        self.fm("task", "new", "Other", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
+        proc = self.hook("PreToolUse", {"tool_name": "Edit", "tool_input": {"file_path": outside, "old_string": "x", "new_string": "y"}})
+        self.assertNotIn(HEAD, self.ctx_of(proc))
