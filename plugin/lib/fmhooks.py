@@ -1022,6 +1022,25 @@ def _guard_decision(pl, guard):
     return ctx, p, act, found, guard.check(pl.get("tool_name", ""), pl.get("tool_input"), ctx, found)
 
 
+def cmd_guard_try(args):
+    """T-1146: fm guard try: the hook's own decision (task, grants, cwd) for a command or a file edit, never run."""
+    import fmcli
+    import fmguard as g
+    if args.action != "try":
+        raise fmcli.UsageError("fm guard: the only action is try")
+    key = {"Bash": "command", "NotebookEdit": "notebook_path"}.get(args.tool, "file_path")
+    target = args.text if args.tool == "Bash" else args.path
+    if not target:
+        raise fmcli.UsageError("fm guard try needs a command" if args.tool == "Bash" else f"--tool {args.tool} needs --path")
+    pl = {"tool_name": args.tool, "tool_input": {key: target}, "cwd": os.path.abspath(args.cwd or os.getcwd()),
+          "session_id": c.session_id()}
+    ctx, _p, _act, _found, block = _guard_decision(pl, g)
+    msg = g.message(block, ctx) if block else None
+    fmcli.out(args, {"decision": "deny" if block else "allow", "category": block.category if block else None,
+                     "rule": getattr(block, "rule", None) if block else None, "message": msg},
+              f"deny {block.category}: {c.plain(msg)}" if block else "allow")
+
+
 def _pre_tool_use(raw):
     try:
         pl = json.loads(raw)
