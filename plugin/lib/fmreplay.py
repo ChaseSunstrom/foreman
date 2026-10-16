@@ -83,6 +83,71 @@ def verdicts(cmds, g=None):
     return out
 
 
+def mutate(cmds):
+    """T-1066: drop one guard rule (category) at a time: a mutant turns that category's verdicts to 'allow'. A rule some
+    command is blocked with is 'caught' (a case would notice its loss); one none is blocked with is 'untested'.
+    ponytail: a rule is a category, so two rules sharing one category are one mutant."""
+    import fmguard as g
+    seen = set(verdicts(cmds).values())
+    return ([x for x in g.CATEGORIES if x in seen], [x for x in g.CATEGORIES if x not in seen])
+
+
+def cmd_mutate(args, fmcli):
+    """Drop (or --weaken) one rule site of the guard at a time and run its tests on each; survivors are untested rules."""
+    import shlex
+    import shutil
+    import sys
+    import fmguard as g
+    import fmmutate
+    if getattr(args, "project", None):
+        fmcli.resolve(args)  # -p is checked like the other bench commands
+    module = args.module or os.path.join(c.PLUGIN_ROOT, "lib", "fmguard.py")
+    rel = os.path.join("plugin", "lib", "fmguard.py") if not args.module else os.path.join("plugin", "lib", os.path.basename(module))
+    cmd = shlex.split(args.tests) if args.tests else [sys.executable, os.path.join("plugin", "tests", "run.py"), "-p", "test_guard*.py"]
+    if not shutil.which("bwrap"):
+        print("warning: bwrap is missing, so test_guard_diff's GuardAgainstBash is skipped and its rules look untested",
+              file=sys.stderr)
+    try:
+        res = fmmutate.run(module, rel, c.PLUGIN_ROOT, "plugin", cmd, g.CATEGORIES, weaken=args.weaken,
+                           only=args.only, limit=args.max, timeout=args.timeout,
+                           log=lambda m: print(m, file=sys.stderr, flush=True))
+    except (ValueError, OSError, SyntaxError) as e:
+        raise fmcli.UsageError(str(e))
+    s = res["survived"]
+    lines = [f"Guard mutation ({'weaken' if args.weaken else 'drop'}): {res['tried']} of {res['total']} mutants, "
+             f"{res['killed']} killed, {len(s)} survived"]
+    if res["not_mutated"]:
+        lines.append("  not mutated (no rule site found): " + ", ".join(res["not_mutated"]))
+    lines += [f"  survived: fmguard.py:{m['line']} {m['category']}: {c.fit(m['stmt'], 110)}" for m in s]
+    fmcli.out(args, {**res, "survivors": len(s)}, "\n".join(lines))
+    if s:
+        raise SystemExit(1)
+
+
+def cmd_guard(args):
+    """fm bench guard --coverage: the rules no command notices; --mutate: the rules no test notices (wild C10)."""
+    import fmcli
+    if args.mutate:
+        return cmd_mutate(args, fmcli)
+    if not args.coverage:
+        raise fmcli.UsageError("fm bench guard needs --coverage or --mutate")
+    if args.cmds:
+        try:
+            with open(args.cmds, encoding="utf-8") as f:
+                cmds = [(ln.strip(), os.getcwd()) for ln in f if ln.strip()]
+        except OSError as e:
+            raise fmcli.UsageError(f"--cmds {args.cmds}: {e}")
+    else:
+        cmds = corpus(args.days)
+    caught, untested = mutate(cmds)
+    lines = [f"Guard mutation on {len(cmds)} commands: {len(caught)} rules caught, {len(untested)} untested"]
+    if untested:
+        lines.append("  untested (no command is blocked by it): " + ", ".join(untested))
+    fmcli.out(args, {"commands": len(cmds), "caught": caught, "untested": untested}, "\n".join(lines))
+    if untested:
+        raise SystemExit(1)
+
+
 def _baseline_path():
     return os.path.join(c.state_dir(), "guard-replay.json")
 
