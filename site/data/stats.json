@@ -1,17 +1,17 @@
 {
  "generated": "2026-10-16",
  "totals": {
-  "tasks_done": 710,
-  "evidence": 2624,
-  "proofs": 249,
-  "commits": 553,
-  "gate_runs": 540,
-  "subagents": 524,
-  "lanes_merged": 126,
-  "findings": 97,
-  "guard_blocks": 286,
-  "captures": 505,
-  "lessons_shown": 694
+  "tasks_done": 717,
+  "evidence": 2646,
+  "proofs": 250,
+  "commits": 559,
+  "gate_runs": 542,
+  "subagents": 530,
+  "lanes_merged": 129,
+  "findings": 115,
+  "guard_blocks": 292,
+  "captures": 509,
+  "lessons_shown": 703
  },
  "daily": [
   {
@@ -104,71 +104,66 @@
   },
   {
    "day": "2026-10-16",
-   "FEATURE": 96,
-   "FIX": 61,
-   "CLEAN": 12,
+   "FEATURE": 98,
+   "FIX": 63,
+   "CLEAN": 13,
    "PERFORMANCE": 7,
-   "SECURITY": 9,
+   "SECURITY": 11,
    "RESEARCH": 4,
-   "lanes": 81,
-   "evidence": 689
+   "lanes": 84,
+   "evidence": 711
   }
  ],
  "tiers": {
-  "S": 372,
-  "M": 294,
+  "S": 376,
+  "M": 297,
   "L": 44
  },
  "types": {
-  "FEATURE": 327,
-  "FIX": 234,
-  "CLEAN": 40,
+  "FEATURE": 329,
+  "FIX": 236,
+  "CLEAN": 41,
   "PERFORMANCE": 20,
-  "SECURITY": 64,
+  "SECURITY": 66,
   "RESEARCH": 25
  },
  "guard": {
   "core": 109,
-  "brief": 78,
+  "brief": 80,
   "state-direct": 34,
   "plugin": 26,
-  "rm-outside": 14,
-  "system": 11,
-  "pipe-shell": 6,
+  "rm-outside": 15,
+  "system": 12,
+  "pipe-shell": 8,
   "credentials": 4
  },
  "findings": {
   "lenses": {
-   "edge": 37,
-   "adversary": 35,
-   "operator": 13,
-   "maintainer": 8,
-   "intent": 4
+   "edge": 42,
+   "adversary": 39,
+   "operator": 19,
+   "maintainer": 10,
+   "intent": 5
   },
   "severity": {
-   "LOW": 32,
-   "MEDIUM": 19,
-   "HIGH": 8
+   "LOW": 41,
+   "MEDIUM": 27,
+   "HIGH": 9
   }
  },
  "subagents": {
-  "fm-builder": 217,
-  "fm-reviewer": 141,
+  "fm-builder": 221,
+  "fm-reviewer": 143,
   "general-purpose": 76,
   "fm-recon": 71,
   "Explore": 8,
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 540,
-  "median": 73.9
+  "runs": 542,
+  "median": 74.0
  },
  "releases": [
-  {
-   "version": "1.2.20",
-   "day": "2026-10-09",
-   "tests": 1127
-  },
   {
    "version": "1.2.21",
    "day": "2026-10-09",
@@ -241,6 +236,11 @@
   },
   {
    "version": "1.2.35",
+   "day": "2026-10-16",
+   "tests": 2131
+  },
+  {
+   "version": "1.2.36",
    "day": "2026-10-16",
    "tests": 2131
   }
@@ -355,5 +355,125 @@
    "p95": 38.8,
    "budget": 150
   }
+ },
+ "duel": {
+  "model": "sonnet",
+  "at": "2026-10-16",
+  "cases": [
+   {
+    "case": "R-T-0218-b40c34",
+    "foreman": {
+     "pass": false,
+     "cost": 0.115,
+     "score": 1,
+     "seconds": 79.0,
+     "turns": 10.0,
+     "error": false
+    },
+    "bare": {
+     "pass": false,
+     "cost": 0.223,
+     "score": 1,
+     "seconds": 189.0,
+     "turns": 21.0,
+     "error": false
+    }
+   },
+   {
+    "case": "R-T-0201-39a53b",
+    "foreman": {
+     "pass": false,
+     "cost": 0.256,
+     "score": 2,
+     "seconds": 236.0,
+     "turns": 26.0,
+     "error": false
+    },
+    "bare": {
+     "pass": true,
+     "cost": 0.161,
+     "score": 4,
+     "seconds": 152.0,
+     "turns": 12.0,
+     "error": false
+    }
+   },
+   {
+    "case": "R-T-0205-8d4b0f",
+    "foreman": {
+     "pass": false,
+     "cost": 0.367,
+     "score": 1,
+     "seconds": 225.0,
+     "turns": 20.0,
+     "error": false
+    },
+    "bare": {
+     "pass": false,
+     "cost": 0.224,
+     "score": 1,
+     "seconds": 257.0,
+     "turns": 13.0,
+     "error": false
+    }
+   },
+   {
+    "case": "T-0205",
+    "foreman": {
+     "pass": false,
+     "cost": 0.351,
+     "score": null,
+     "seconds": 167.0,
+     "turns": 23.0,
+     "error": false
+    },
+    "bare": {
+     "pass": false,
+     "cost": 0.227,
+     "score": null,
+     "seconds": 416.0,
+     "turns": 16.0,
+     "error": false
+    }
+   },
+   {
+    "case": "T-0207",
+    "foreman": {
+     "pass": false,
+     "cost": 0.417,
+     "score": null,
+     "seconds": 425.0,
+     "turns": 30.0,
+     "error": false
+    },
+    "bare": {
+     "pass": false,
+     "cost": 0.351,
+     "score": null,
+     "seconds": 297.0,
+     "turns": 22.0,
+     "error": false
+    }
+   },
+   {
+    "case": "T-0206",
+    "foreman": {
+     "pass": false,
+     "cost": 0.44,
+     "score": null,
+     "seconds": 185.0,
+     "turns": 32.0,
+     "error": false
+    },
+    "bare": {
+     "pass": false,
+     "cost": 0.279,
+     "score": null,
+     "seconds": 213.0,
+     "turns": 18.0,
+     "error": false
+    }
+   }
+  ]
  }
 }

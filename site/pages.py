@@ -1,6 +1,6 @@
 """The feature pages (T-1220): content as data, charts as calls into build.py's helpers over site/data/stats.json.
 Every claim here is something Foreman does today; the charts are its own record of building itself."""
-from build import TYPES, columns, hbars, line, tiles
+from build import TYPES, columns, hbars, line, pairs, tiles, verdicts
 
 
 def _daily_types(s):
@@ -71,6 +71,48 @@ def _totals(s, keys):
              "findings": "Review findings", "guard_blocks": "Guard blocks", "captures": "Ideas captured",
              "lessons_shown": "Lessons recalled"}
     return tiles([(names[k], t[k]) for k in keys])
+
+
+def _safety(s):
+    x = s.get("safety")
+    if not x:
+        return "<p>The safety benchmark hasn't been run on this build.</p>"
+    n, m = len(x["dangerous"]), len(x["everyday"])
+    return tiles([("Dangerous commands stopped", f"{x['stopped']} of {n}"), ("Allowed after saving your work", x["saved"]),
+                  ("Everyday commands stopped", f"{x['false_stops']} of {m}")]) + verdicts(x["dangerous"])
+
+
+def _duel(s):
+    d = s.get("duel")
+    if not d or not d.get("cases"):
+        return ("<p><strong>Running.</strong> The first run of this benchmark is in progress; its results replace this "
+                "line when it finishes.</p>")
+    cs = d["cases"]
+    won, lost = sum(c["foreman"]["pass"] for c in cs), sum(c["bare"]["pass"] for c in cs)
+    cost_f, cost_b = sum(c["foreman"]["cost"] for c in cs), sum(c["bare"]["cost"] for c in cs)
+    head = tiles([("Passed, with Foreman", f"{won} of {len(cs)}"), ("Passed, Claude Code", f"{lost} of {len(cs)}"),
+                  (f"Cost of all {len(cs)}, with Foreman", f"${cost_f:.2f}"),
+                  (f"Cost of all {len(cs)}, Claude Code", f"${cost_b:.2f}")])
+    if won > lost:
+        verdict = f"Foreman passed {won - lost} more of the {len(cs)} tasks."
+    elif won == lost:
+        verdict = f"Both passed {won} of the {len(cs)} tasks: no difference in what was finished on this run."
+    else:
+        verdict = (f"Foreman did not do better on this run: it passed {won} of {len(cs)} and Claude Code passed {lost}. "
+                   "Single runs of so few tasks are noisy, so read it as no measured gain, not as a measured loss.")
+    if cost_f > cost_b * 1.15:
+        verdict += f" Foreman's planning, evidence and audits cost {round((cost_f / cost_b - 1) * 100)}% more in all."
+
+    def cell(x):
+        mark = "✓ passed" if x["pass"] else "✗ failed"
+        return f"{mark} (judge {x['score']} of 5)" if x.get("score") is not None else f"{mark} (hidden tests)"
+    rows = "".join(f"<tr><td>{c['case']}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>" for c in cs)
+    table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
+             f'</thead><tbody>{rows}</tbody></table></div>')
+    return (head + f"<p><strong>{verdict}</strong></p>" + table
+            + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
+            + pairs("Time per task", "Seconds from the first prompt to the session ending.",
+                    [(c["case"], c["foreman"]["seconds"], c["bare"]["seconds"]) for c in cs], unit=" s"))
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
@@ -261,6 +303,36 @@ PAGES = [
           "edit, through the hook other harnesses use.</li><li><strong>A bench</strong> that grades any model as a "
           "Foreman worker on seeded tasks.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", 52), ("Endpoints it finds", 9), ("Status", "Building")]))]},
+    {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
+     "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
+     "lede": "Two benchmarks, run for real on this machine and published as they came out: a set of commands that "
+             "destroy work or leak secrets, and real coding tasks graded by hidden tests or a judge, run once with "
+             "Foreman and once with Claude Code on its own.",
+     "blocks": [
+         ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
+          "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
+          "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),
+         ("chart", _safety),
+         ("text", "Quality: real tasks, graded blind", "<p>Each case is a task Foreman already finished in its own "
+          "repo, rewound to its starting commit; the session gets only the original request. Three are graded by the "
+          "tests written for them, hidden from the session. Three have no such tests, so a judge model scores the diff "
+          "and the final reply against the task's criteria and the user's corrections, and 4 of 5 passes. Both sides "
+          "use the same model, budget and time limit, each in a clean worktree. The Claude Code side runs with no "
+          "plugins but keeps Foreman's guard on, so neither side can damage the machine.</p>"),
+         ("chart", _duel),
+         ("text", "What the losses showed", "<ul><li><strong>An unattended reply left out the proof.</strong> On the "
+          "task Foreman lost, it recorded its checks in its ledger, but the final reply the judge read didn't show "
+          "them.</li><li><strong>A "
+          "side task was opened and dropped</strong> mid-run, which the judge counted against it.</li><li><strong>The "
+          "three hidden-test tasks were failed by both sides</strong>, so they didn't separate them; each passes with "
+          "its original solution under the same grading.</li></ul>"),
+         ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Six tasks, one run each, one model "
+          "(Sonnet): enough to see a direction, not a precise rate; <code>--runs 3</code> measures the noise."
+          "</li><li><strong>Foreman's own repo.</strong> The tasks come from building Foreman; a public benchmark is "
+          "next.</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
+          "benchmark on your own finished tasks; <code>python3 site/bench_safety.py</code> reruns the safety set."
+          "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
+          "plugin beside Foreman.</li></ul>")]},
     {"slug": "releases", "nav": "Releases", "title": "Shipped in small, gated releases",
      "desc": "Every release passes the full gates and a release check before it reaches main.",
      "lede": "<code>fm release</code> runs the ritual as nine named steps with a checkpoint after each: gates, version "
