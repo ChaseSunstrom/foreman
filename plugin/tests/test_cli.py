@@ -1043,7 +1043,7 @@ class DecisionsResearchSelf(ForemanTestCase):
         self.fm("task", "new", "CSV export", "--type", "FEATURE", "--tier", "S", "--ac", "it writes rows :: true",
                 "--ac", "the CSV opens in Excel", "--step", "build it", "--focus")
         out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check").stdout
-        card = out.split("Check by hand", 1)[1] if "Check by hand" in out else ""
+        card = out.split("Not verified", 1)[1] if "Not verified" in out else ""
         self.assertIn("the CSV opens in Excel", card)
         self.assertNotIn("it writes rows", card)
 

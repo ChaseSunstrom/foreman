@@ -670,22 +670,22 @@ def cmd_task(args):
         guessed = b.unverified() if b.tier in ("M", "L") else []  # T-0254: a warning, not a gate
         own = {a.n for a in b.acceptance() if c.verify_of(a.text) and any(  # T-0900: proven by its own command
             ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
-        by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
-        nv = getattr(args, "not_verified", None) or []
+        # T-1159: one list: what finish was told it didn't check (waiver, claims) first, then criteria no command proved
+        by_hand = list(getattr(args, "not_verified", None) or []) + [
+            f"criterion {a.n}: " + c.fit(re.sub(r" — verify with `.*`$", "", a.text), 90)
+            for a in b.acceptance() if a.n not in own]
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
-                              **({"not_verified": nv} if hasattr(args, "not_verified") else {}),
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
                    f"{b.id} done (verification: {grade} — {why})." + (
-            "\nCheck by hand (no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:8])
+            f"\nNot verified ({len(by_hand)}; no command of its own proved these here):\n  - " + "\n  - ".join(by_hand[:5])
+            + (f"\n  … and {len(by_hand) - 5} more" if len(by_hand) > 5 else "")
             if by_hand else "\nNothing needed from you: each criterion was proved by its own check."
             if not guessed and b.acceptance() else "") + (
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
-            f"\nNot verified ({len(nv)}):\n  - " + "\n  - ".join(nv[:5]) + (f"\n  … and {len(nv) - 5} more" if len(nv) > 5 else "")
-            if nv else "") + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
@@ -975,7 +975,9 @@ def task_finish(p, args):
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
-    args.not_verified = _close_unverified(need_brief(p, b.id), claims, getattr(args, "skip_affected", None))  # T-1159
+    args.not_verified = ([f"affected tests skipped: {c.fit(args.waived_affected, 90)}"]  # T-1159
+                         if getattr(args, "waived_affected", None) else []) + [
+        f"claim ({t}): {c.fit(x, 90)}" for t, x, _ in claims if t != "checked"]
     rc = cmd_task(args)
     why = (getattr(args, "why_not_caught", None) or "").strip()
     caught = next((f for f in c.task_touches(p, b.id) if c.TESTISH.search(f)), None) if why else None
@@ -1011,18 +1013,6 @@ def task_finish(p, args):
     return rc
 
 
-def _close_unverified(b, claims, waived):
-    """T-1159: what this close did not verify: criteria with no verify command of their own, claims tagged unchecked
-    or inferred, and the affected-tests check when --skip-affected waived it."""
-    own = {n for n, cmd in b.verify_cmds() if cmd}
-    out = [f"criterion {a.n}: {c.fit(re.sub(r' — verify with `.*`$', '', a.text), 90)} (no verify command)"
-           for a in b.acceptance() if a.n not in own]
-    out += [f"claim ({t}): {c.fit(x, 90)}" for t, x, _ in claims if t != "checked"]
-    if (waived or "").strip():
-        out.append(f"affected tests skipped: {c.fit(c.plain(waived.strip()), 90)}")
-    return out
-
-
 def _known_flaky(p):
     """The test names the flake ledger (c.note_flakes) has seen fail and then pass on the same tree."""
     try:
@@ -1047,6 +1037,7 @@ def _close_affected(p, b, runs, args):
         return
     waive = (getattr(args, "skip_affected", None) or "").strip()
     if waive:
+        args.waived_affected = c.plain(waive)  # T-1159: the close says it only when the waiver was really used
         mutate(p, b.id, lambda x: x.append_log(f"affected tests waived: {c.plain(waive)[:200]}"), "close_affected",
                {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
         return

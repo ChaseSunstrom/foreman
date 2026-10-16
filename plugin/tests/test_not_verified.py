@@ -22,6 +22,16 @@ class NotVerified(ForemanTestCase):
         self.assertIn("typed by hand", block)
         self.assertIn("the docs are right", block)
         self.assertNotIn("criterion 2", block)
+        self.assertEqual(out.count("typed by hand"), 1, "listed once")
+        self.assertNotIn("Check by hand", out)
+        self.assertNotIn("Nothing needed from you", out)
+        self.assertLess(block.index("the docs are right"), block.index("typed by hand"), "claims first")
+
+    def test_a_skip_that_was_never_used_is_not_reported(self):
+        self.new("ran :: true")
+        out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check",
+                      "--skip-affected", "slow").stdout
+        self.assertNotIn("Not verified", out)
 
     def test_a_fully_verified_close_prints_none(self):
         self.new("ran :: true")
@@ -33,7 +43,7 @@ class NotVerified(ForemanTestCase):
         self.new("typed by hand")
         out = self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check",
                       "--claim", "inferred: it scales", "--json").stdout
-        nv = json.loads(out)["not_verified"]
+        nv = json.loads(out)["check_by_hand"]
         self.assertEqual(len(nv), 2)
         self.assertTrue(any("it scales" in x for x in nv))
 
