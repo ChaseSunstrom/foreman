@@ -1,7 +1,8 @@
 """fm audit run ID (T-1186): the audit lenses as headless `claude -p` reviewers, one per lens, over the frozen brief
 fm audit prep writes. Each gets read-only tools (Read, Grep, Glob), no MCP and no user settings; refuses when fm budget
 is spent or fm contract is over; records each lens's verdict as audit evidence and each finding as a finding event
-(verdict "unverified": the main thread confirms or rejects it with fm task finding)."""
+(verdict "reported", as SubagentStop logs an fm-reviewer's: the main thread confirms or rejects it with fm task
+finding; the defect classes count it until rejected)."""
 import contextlib
 import io
 import json
@@ -91,7 +92,7 @@ def run(p, args):
             "audit", {"lens": lens, "how": "fm audit run", "result": result})
         with c.lock(p.dir):
             for text in found[:20]:
-                c.log_event(p, "finding", task=b.id, data={"lens": lens, "verdict": "unverified",
+                c.log_event(p, "finding", task=b.id, data={"lens": lens, "verdict": "reported",
                                                            "text": c.redact(text)[:300]})
     data = {"task": b.id, "verdicts": {k: v[0] for k, v in verdicts.items()},
             "findings": {k: v[1] for k, v in verdicts.items() if v[1]}, "failed": failed}
