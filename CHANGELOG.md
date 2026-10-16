@@ -2,6 +2,7 @@
 
 ## Unreleased
 - `fm guard wrong` stores the case in the corpus of the Foreman checkout it runs in (with a cwd relative to that checkout), so a builder's worktree no longer writes into the main checkout's tests mid-gates (T-1175).
+- `fm task finish` refuses a task that added a `plugin/<entry>` MASTER.md's File map doesn't list, naming the entry, instead of leaving it to release-check in the full gates (T-1179).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
