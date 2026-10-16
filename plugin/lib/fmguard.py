@@ -787,8 +787,10 @@ def _drop_data_heredocs(cmd, only=None):
         out.append(line)
         seen.append(line)
         for quote, delim in starts:
-            data = bool(quote) and line.split()[:1] in (["cat"], ["tee"]) and not re.search(r"[|`;&]|\$\(", line) \
-                and (only is None or only(line))
+            # T-1141: fm edit reads its heredoc as edit blocks it applies through the guard's own Edit check, never runs it
+            data = bool(quote) and not re.search(r"[|`;&]|\$\(", line) and (
+                line.split()[:2] == ["fm", "edit"]
+                or line.split()[:1] in (["cat"], ["tee"]) and (only is None or only(line)))
             while i < len(lines) and not _ends_body(lines[i], delim, line):
                 if not data:
                     out.append(lines[i])

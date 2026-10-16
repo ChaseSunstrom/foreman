@@ -1601,6 +1601,15 @@ class GuardFriction(GuardCase):
         self.assertBlocked(r, "core")
         self.assertIn("&&", g.message(r, self.ctx()))
 
+    def test_an_fm_edit_heredoc_is_data_even_beside_python(self):  # T-1141
+        body = ("@@ plugin/lib/fmlanes.py\n<<<\n    import fmcli\n    fmcli.mutate(p, b.id, f, 'x', None)\n===\n"
+                "    import fmcli\n    fmcli.mutate(p, b.id, g, 'x', None)\n>>>\n")
+        edit = f"fm edit <<'EOF'\n{body}EOF\npython3 plugin/tests/run.py test_lanes"
+        r = self.bash(edit, cwd=self.fhome)
+        self.assertFalse(r and "driving Foreman's modules" in str(r.detail), r and r.detail)
+        run = self.sub(f"python3 - <<'EOF'\n{self.BODY}EOF\npython3 plugin/tests/run.py test_lanes")
+        self.assertBlocked(self.bash(run, cwd=self.fhome), "core")
+
     def test_git_reset_writes_the_tree_only_when_hard(self):  # T-0935
         fm = self.fhome
         for cmd in ("git reset -q --soft HEAD~1", "git reset --mixed HEAD~1", "git reset HEAD~1", "git reset -q HEAD file"):
