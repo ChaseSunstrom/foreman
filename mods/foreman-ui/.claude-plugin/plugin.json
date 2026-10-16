@@ -43,6 +43,16 @@
       ],
       "default": "full"
     },
+    "palette": {
+      "type": "string",
+      "title": "Palette",
+      "description": "default: green and red for ok and error. cb: a colourblind-safe blue and orange pair (errors also carry a glyph).",
+      "options": [
+        "default",
+        "cb"
+      ],
+      "default": "default"
+    },
     "chat": {
       "type": "string",
       "title": "Chat",

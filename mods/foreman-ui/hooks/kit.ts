@@ -17,9 +17,13 @@ export const C = {
   del: 0xe0a3a3,
   track: 0x30363f,
   white: 0xffffff,
-} as const
+}
 
-export const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
+// T-1081: the colourblind-safe pair (Okabe-Ito blue and orange); rows that mean an error also carry a glyph
+export const PALETTES = { default: { ok: 0x87d787, err: 0xff6b6b }, cb: { ok: 0x56b4e9, err: 0xe69f00 } }
+export const setPalette = (name: string) => void Object.assign(C, name === 'cb' ? PALETTES.cb : PALETTES.default)
+
+export const hex= (c: number) => `#${c.toString(16).padStart(6, '0')}`
 
 const TYPE_COLOR: Record<string, number> = {
   FIX: C.err,
