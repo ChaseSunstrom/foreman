@@ -2023,7 +2023,18 @@ def needs_approval(b, autonomy="standard"):
         return "confirm" not in (b.meta.get("allow") or [])
     if b.meta.get("approved"):
         return False
-    return (b.tier == "L" or bool(b.meta.get("explore"))) and autonomy != "full"
+    return (b.tier == "L" or bool(b.meta.get("explore")) or (b.tier == "M" and autonomy == "slow")) and autonomy != "full"
+
+
+def effective_autonomy(p, meta=None):
+    """The project's autonomy, or "slow" (standard plus approval for M, T-1061) while its plans keep missing."""
+    if panicked():  # every reader agrees: standard while paused (T-0436)
+        return "standard"
+    a = (read_meta(p) if meta is None else meta).get("autonomy", "standard")
+    if a == "standard":
+        import fmoutcomes
+        return "slow" if fmoutcomes.misses(p) else a
+    return a
 
 
 def audit_progress(b, since=None):
@@ -2059,7 +2070,12 @@ def plan_gaps(b, autonomy="standard"):
         gaps.append("step")
     if needs_approval(b, autonomy):
         gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
-                    if b.meta.get("confirm") else f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
+                    if b.meta.get("confirm") else
+                    f"approval (M tier needs it: 3 or more of the last 5 closes missed their plan, see fm digest; approve "
+                    f"by asking the user one yes/no, then fm task set {b.id} approved=true after their yes; or close "
+                    f"smaller tasks on plan)"
+                    if autonomy == "slow" and b.tier == "M" and not b.meta.get("explore") else
+                    f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
     return gaps
 
 
@@ -2668,7 +2684,7 @@ def digest_due(d):
 
 def _next_for(p, briefs=None):
     briefs = lane_view(load_briefs(p) if briefs is None else briefs, p.lane)  # T-0134: not another lane's work
-    autonomy = "standard" if panicked() else read_meta(p).get("autonomy", "standard")
+    autonomy = "standard" if panicked() else effective_autonomy(p)
     waits = ""
     if not active_brief(briefs, p.lane):
         import fmfriction  # T-0125: at a task boundary, every N closed tasks, Foreman reviews its own friction
@@ -2761,7 +2777,7 @@ def state_dict(p, briefs=None):
     since = meta.get("last_tidy") or meta.get("created")
     days = age_days(since)
     panic = panicked()
-    autonomy = "standard" if panic else meta.get("autonomy", "standard")
+    autonomy = "standard" if panic else effective_autonomy(p, meta)
     active = None
     if act:
         changed = last_change(p, act.id)

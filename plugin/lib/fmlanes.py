@@ -221,7 +221,7 @@ def builder_brief(p, b, args, resume_branch=None):
     if b.status in c.CLOSED or b.status in ("active", "verifying") or c.held_elsewhere(b):
         where = f" in {b.meta['lane']}" if b.meta.get("lane") else ""
         raise c.PolicyError(f"{b.id} is {b.status}{where}: a builder takes a task nobody is working on")
-    gaps = c.plan_gaps(b, c.read_meta(p).get("autonomy", "standard"))
+    gaps = c.plan_gaps(b, c.effective_autonomy(p))
     if gaps:  # T-0823: the builder's first act is fm focus, which refuses these
         raise c.PolicyError(f"{b.id} isn't planned enough for a builder: missing {', '.join(gaps)} (fm task set/ac/step)")
     if not [v for _, v in b.verify_cmds() if v]:
