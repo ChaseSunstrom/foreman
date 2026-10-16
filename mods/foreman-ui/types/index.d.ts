@@ -77,6 +77,7 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  learned?: string | null // T-1045: what Foreman learned this week (fixes, rules, interventions per closed task)
   blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
