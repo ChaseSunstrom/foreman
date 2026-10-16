@@ -2189,6 +2189,26 @@ def rules(p):
             and x.get("action") in ("block", "warn")] if isinstance(v, list) else []
 
 
+def rule_last_hits(p):
+    """T-1115: {pattern: when a call last matched it}, so fm tidy can tell a rule that guards from one that never fires."""
+    try:
+        with open(os.path.join(p.dir, "rules-hits.json"), encoding="utf-8") as f:
+            v = json.load(f)
+        return v if isinstance(v, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def note_rule_hits(p, hits):
+    """Stamp each matched rule's last hit (only on a hit: no write on the common path)."""
+    seen = rule_last_hits(p)
+    seen.update({r["pattern"]: now() for _, r, _ in hits})
+    try:
+        write_atomic(os.path.join(p.dir, "rules-hits.json"), json.dumps(seen))
+    except OSError:
+        pass  # a hit stamp must never cost the guard
+
+
 def add_rule(p, pattern, on, action, why):
     """Store a rule; ValueError for a pattern that is empty, too long or not a regex (it's compiled here, not later)."""
     if not pattern or len(pattern) > RULE_MAX:

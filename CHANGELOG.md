@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- `fm cost` runs in half the time (7.6 s → 3.8 s on 559 MB of transcripts): turns are matched to tasks by bisect, transcript files and lines wholly before the window are skipped before parsing, and task attribution reads the archived ledger months (T-1116).
+- `fm cost` and `fm digest` flag unexplained spend (T-1079): tokens from sessions with no Foreman activity, or turns more than 30 minutes from any, once they reach 20% and 100k tokens, with the top session named; the archived ledger months count.
+- `fm tidy` also lists the user's rules that no call matched in 60 days (each hit's time is now recorded) and the hints shown six or more times running without use; both are listed only, since only the user removes a rule (T-1115).
 - `fm tidy` hygiene (T-1072): known fixes that keep missing are removed by `--apply` (a copy goes to `archive/fixes-removed.md`; fixes synced from the repo are left to the repo file), ones unused for 60 days are listed, and so are the project's picked library cards no edit used in 60 days.
 - Hotspots (T-1074): files with 3 or more fix or revert commits in 180 days (sweeping commits over 20 files left out) are named at `fm focus` ("Hotspot: x.py (4 fix/revert commits in 180 days)") and in `fm audit prep`'s findings for a diff that touches them.
 - Evidence and other verification runs never inherit an exported `FOREMAN_SKIP_TESTS`, so a run of the test suite can't leave modules out silently (T-1114).
