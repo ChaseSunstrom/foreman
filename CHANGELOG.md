@@ -11,6 +11,7 @@
 - `fm audit run ID` runs the audit lenses as headless read-only `claude -p` reviewers over the frozen `fm audit prep` brief, bounded by `fm budget` and `fm contract`, and records each lens verdict and its findings, so the drive and `fm run` can audit without a person (T-1186).
 - `fm edit` applies every `<<< === >>>` block under an `@@ file` header (a second one was dropped silently), and refuses a batch whose `<<<` count doesn't match its complete blocks (T-1191).
 - The verify check no longer reads a flag's value as a test module (`run.py -k test_some_case` gave "test_some_case.py doesn't exist yet") (T-1190).
+- `fm task block` and `fm task defer` take `--until "installed NAME"` or `--until "exists PATH"` (structured conditions, never a shell command), and `fm next` and `fm tidy` re-offer the task once it holds (T-1183).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
