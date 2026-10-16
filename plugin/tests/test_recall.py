@@ -182,3 +182,47 @@ class FailureMemory(ForemanTestCase):
         other = self.hook("PostToolUseFailure", {"tool_name": "Bash", "tool_input": {"command": "make"},
                                                  "error": "Exit code 2\nmake: *** No rule to make target 'all'"})
         self.assertEqual(other.stdout.strip(), "")
+
+
+class OtherProjects(ForemanTestCase):
+    """T-1073: fm recall --others finds a fixed failure's lesson in another opted-in project."""
+    ERR = "Exit code 1\nTraceback (most recent call last):\n  File \"/tmp/b/{f}.py\", line {n}\nModuleNotFoundError: No module named 'yaml'"
+
+    def setUp(self):
+        super().setUp()
+        import os
+        import fmrecall
+        from helpers import git_repo
+        self.fm("init")
+        self.b = git_repo(self.tmp, "ledger")
+        self.fm("init", cwd=self.b)
+        kw = {"cwd": self.b}
+        tid = json.loads(self.fm("task", "new", "Load config", "--type", "FIX", "--tier", "S", "--ac", "ok",
+                                 "--step", "do", "--json", **kw).stdout)["id"]
+        self.fm("focus", tid, **kw)
+        self.fm("task", "step", tid, "done", "1", "--evidence", "true", "ok", **kw)
+        self.fm("task", "ac", tid, "check", "1", "--evidence", "true", "ok", **kw)
+        for lens in ("self", "intent", "edge"):
+            self.fm("task", "audit", tid, lens, "x", "ok", **kw)
+        self.fm("task", "set", tid, "--section", "Docs impact", "--text", "none: test", **kw)
+        self.fm("task", "set", tid, "--section", "Regression test", "--text", "none: fixture", **kw)
+        self.fm("task", "done", tid, "--lesson", "add PyYAML to requirements", **kw)
+        pb = c.find_project(self.b)
+        with open(os.path.join(pb.dir, "failures.jsonl"), "a") as f:
+            f.write(json.dumps({"sig": fmrecall.failure_signature(self.ERR.format(n=1, f="a")), "task": tid,
+                                "at": c.now()}) + "\n")
+
+    def others(self):
+        return json.loads(self.fm("recall", "--others", self.ERR.format(n=77, f="zz"), "--json").stdout)
+
+    def test_a_matching_failure_in_an_opted_in_project_returns_its_lesson(self):
+        self.fm("share", "on", cwd=self.b)
+        out = json.dumps(self.others())
+        self.assertIn("PyYAML", out)
+        self.assertIn("ledger", out)
+
+    def test_a_project_not_shared_or_sensitive_returns_nothing(self):
+        self.assertEqual(self.others()["hits"], [])
+        self.fm("share", "on", cwd=self.b)
+        self.fm("sensitive", "on", cwd=self.b)
+        self.assertEqual(self.others()["hits"], [])

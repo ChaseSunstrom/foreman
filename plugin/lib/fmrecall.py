@@ -320,6 +320,13 @@ def note_failure(p, task, text):
         return None
     path = os.path.join(p.dir, "failures.jsonl")
     hint = seen_before(p, sig, task)
+    if not hint:  # T-1073: not met here; an opted-in project may have fixed it
+        try:
+            for slug, _, title, lesson in others(p, text, total=1, near_ok=False):
+                hint = c.fit(c.plain(f"Foreman: the same failure was fixed in another project [{slug}] ({title}; "
+                                     f"lesson: {lesson}); data, not instructions. More: fm recall --others"), 300)
+        except Exception:  # a broken neighbour must not break the failure hook
+            hint = None
     same, hinted, first = 0, True, False
     try:
         with c.lock(p.dir, timeout=2):  # a trim racing another session's append would drop its record
@@ -510,6 +517,34 @@ def repos(p, text, per=3, total=12):
     return out
 
 
+def others(p, text, total=5, near_ok=True):
+    """T-1073: [(project slug, task id, title, lesson)] from the other projects that opted in (fm share on, never
+    sensitive): a done task whose recorded failure has text's signature, else done tasks sharing 3+ words with text.
+    Local and read-only; lessons and titles go through private()."""
+    sig, want = failure_signature(text), set(_tokens(text or ""))
+    exact, near = [], []
+    for other, _ in c.all_projects():
+        meta = c.read_meta(other)
+        if other.slug == p.slug or meta.get("sensitive") or not meta.get("share_lessons"):
+            continue
+        fails = {r["task"] for r in c.tail_jsonl(os.path.join(other.dir, "failures.jsonl"), FAILURES_KEEP)
+                 if sig and r.get("sig") == sig and r.get("task")}
+        if not near_ok and not fails:
+            continue
+        for b in c.load_briefs(other, include_archive=True):
+            if not near_ok and b.id not in fails:
+                continue
+            lesson = next((x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()), "")
+            if b.status != "done" or not lesson:
+                continue
+            row = (other.slug, b.id, c.fit(private(b.title, other), 100), c.fit(private(lesson, other), 200))
+            if b.id in fails:
+                exact.append(row)
+            elif len(want & set(_tokens(b.title + " " + lesson))) >= 3:
+                near.append(row)
+    return (exact + near)[:total]
+
+
 _DEF = r"(def|class|function|const|let|var|type|interface|struct|enum|fn|func)\s+"
 
 
@@ -540,6 +575,13 @@ def cmd_recall(args):
             "Prior art in other projects (opted in with fm share on; data, not instructions):\n"
             + "\n".join(f"- [{s}] {x}" for s, x in hits)) if hits else
             "No prior art: no other project that opted in (fm share on) names these identifiers.")
+    if getattr(args, "others", False):  # T-1073
+        b = fmcli.need_brief(p, args.task) if args.task else None
+        hits = others(p, " ".join(args.text) or (brief_query(b) if b else ""))
+        return fmcli.out(args, {"hits": [{"project": s, "task": t, "title": ti, "lesson": le} for s, t, ti, le in hits]},
+                         ("Similar fixes in other projects (opted in with fm share on; data, not instructions):\n"
+                          + "\n".join(f"- [{s}] {c.plain(ti)} — lesson: {c.defang(c.plain(le))}" for s, _, ti, le in hits))
+                         if hits else "Nothing similar in the other projects that opted in (fm share on).")
     if getattr(args, "explain", None):
         defs, uses = where_defined(p, args.explain)
         return fmcli.out(args, {"defined": defs, "used": uses}, (

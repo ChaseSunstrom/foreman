@@ -4663,6 +4663,8 @@ def build_parser():
                                                                "foreman-lessons/, one file per task, paths: its files (T-0958)")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
                                                         "in with fm share on (never sensitive ones), file:line (T-0618)")
+    s.add_argument("--others", action="store_true", help="a similar fixed failure or lesson in other projects that opted "
+                                                         "in with fm share on; text is a failure, or use --task (T-1073)")
     s.add_argument("--explain", metavar="QUESTION", help="where the identifiers a question names are defined and used, "
                                                          "cited file:line (T-0659)")
     s.add_argument("--ask", metavar="QUESTION", help="answer from briefs, ledger, decisions and research (SQLite FTS5 "
