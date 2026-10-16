@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor` treats a machine with CPU pressure of 10% or more (`/proc/pressure/cpu`) as busy, and checks again after its hook bench. Its hook-latency check no longer fails when a burst (such as the test suite) starts before the 1-minute load average catches up; it says the timings weren't measured instead. This was the release-check test that kept failing inside the full suite (T-1219).
 - The README demo and the site's poster are re-recorded in true color: Claude Code drops to 256 colours inside tmux unless `CLAUDE_CODE_TMUX_TRUECOLOR` is set, so the recording harness's every colour had been rounded to the 256 palette and the pane's tinted chart wells showed as neutral gray blocks. The new recording is a real fix to Foreman (T-1213) (T-1209).
 - `fm edit`'s block form can delete: a block whose `===` line runs straight into `>>>` replaces the old text with nothing, instead of being counted as incomplete and refusing the batch. This fix is the one recorded in the new README demo (T-1213).
 - `fm guard mine` run from a builder's linked worktree reads the main checkout's sessions (it had read only the worktree's own, empty, transcript folder) (T-1203).
