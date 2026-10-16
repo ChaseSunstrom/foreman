@@ -1029,6 +1029,52 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(f"python3 - <<'PY'\n{code}{run}PY"), run)
         self.assertFalse(driving(f"python3 - <<'PY'\nimport re, json\n{code}open('x.txt', 'w').write(s)\nPY"))
 
+    def test_python_c_code_gets_the_same_proof_as_a_quoted_heredoc(self):
+        # T-1194: -c code went to the text match, so a helper naming fm modules only in its strings was refused
+        driving = lambda cmd: "driving Foreman's modules" in str(self.bash(cmd) or "")
+        lit = "import re; s = 'import fmcore; fmcore.write_meta(p, {{}})'; print(len(re.findall('fm', s)))"
+        for cmd in (f"python3 -c \"{lit}\"", f"python3 -c '{lit.replace(chr(39), chr(34))}'",
+                    f"python3 -Bc \"{lit}\"", f"python3 -I -W ignore -X utf8 -c \"{lit}\" arg | head -3",
+                    f"/usr/bin/python3.12 -c \"{lit}\"", f"ls; cd ./sub && python3 -c \"{lit}\"",
+                    f"python3 -c \"\nimport re\ns = 'import fmcore\\nfmcore.write_meta(p, {{{{}}}})'\nprint(s)\n\"",
+                    f"python3 -c \"s = \\\"import fmcore; fmcore.write_meta(x)\\\"; print(s)\""):  # \" inside "…"
+            self.assertFalse(driving(cmd), cmd)
+        s = "s = 'import fmcore; fmcore.write_meta(p, {{}})'"
+        for cmd in ("python3 -c 'import fmcore; fmcore.write_meta(p, {{}})'",
+                    "python3 -c 'from fmcore import write_meta as w; w(p, {{}})'",
+                    f"python3 -c \"{s}; exec(s)\"", f"python3 -c \"{s}; eval(s)\"",
+                    f"python3 -c \"{s}; __import__('fmcore').write_meta(p, {{{{}}}})\"",
+                    f"python3 -c \"{s}; import importlib; importlib.import_module('fmcore')\"",
+                    f"python3 -c \"{s}; compile(s, 'x', 'exec')\"", f"python3 -c \"{s}; import runpy\"",
+                    f"python3 -c \"{s}; import os; os.system('python3 -c ' + repr(s))\"",
+                    f"python3 -c \"{s}; import subprocess; subprocess.run(['python3', '-c', s])\"",
+                    f"python3 -c \"{s}; open('m.py', 'w').write(s); import m\"",
+                    f"python3 -c \"{s}; exec(open('x.py').read())\"",
+                    f"python3 -c \"{s}; ().__class__.__base__.__subclasses__()\"",
+                    "python3 -c \"import fmcore; fmcore.write_meta(\"",  # doesn't parse
+                    f"python3 -c \"$(cat f) {s}\"", f"python3 -c \"$CODE {s}\"", f"python3 -c \"`cat f` {s}\"",
+                    f"python3 -c '{s}' -c 'import fmcore'",  # the second -c is sys.argv, read as text: still refused
+                    f"python3 -c '{s}' 'import fmcore'",  # an argument after the code is shell text
+                    f"echo x | timeout 5 python3 -c \"import fmcore; fmcore.write_meta(p)\"",
+                    f"bash -c \"python3 -c 'import fmcore; fmcore.write_meta(p)'\"",
+                    f"python3() {{{{ eval \"$2\"; }}}}; python3 -c '{s}'",  # a shell function standing for python
+                    f"# it's\npython3 -c \"{s}\"",  # a comment: the quote scan can't follow, the text match reads it
+                    # review (adversary): code handed as an argument to another python that runs it
+                    f"python3 -c 'import sys; exec(sys.argv[1])' x\\;python3 -c \"{s}\"",
+                    f"python3 -c 'import sys; exec(sys.argv[1])' ${{{{x:-;python3 -c \"{s}\"}}}}",
+                    f"export PYTHONPATH=/tmp; python3 -c \"import re; {s}\"",
+                    f"echo 'import fmcore; fmcore.write_meta(p)' > /tmp/x.py; python3 -ic \"{s}\" < /tmp/x.py",
+                    f"cat <<'EOF'\n{s}\nEOF\npython3 -c \"import fmcore; fmcore.write_meta(p)\""):
+            self.assertTrue(driving(cmd), cmd)
+        with tempfile.TemporaryDirectory(dir="/tmp") as d:  # -c imports from its folder first: a re.py there runs
+            code = f"python3 -c \"import re; {s}\""
+            self.assertFalse(driving(f"cd {d} && {code}"))
+            open(os.path.join(d, "re.py"), "w").close()
+            for cmd in (f"cd {d} && {code}", f"cd {d}; {code}", f"pushd {d}; {code}",
+                        f"cd {d} && " + "cd . && " * 9 + code):  # a chain longer than the regex reads
+                self.assertTrue(driving(cmd), cmd)
+            self.assertIn("driving Foreman's modules", str(self.bash(code, cwd=d)))  # no cd: the cwd is the folder
+
     def test_a_test_written_and_run_in_one_command_is_told_to_split(self):
         # T-1171: 12 of 31 real refusals in four days wrote a test with cat <<EOF and ran the tests in the same
         # command; each half alone passes, so the refusal says to split instead of only naming the Edit tool
