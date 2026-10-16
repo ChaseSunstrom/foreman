@@ -1707,6 +1707,8 @@ def _bash_touches(pl, p):
     """T-0086: files a Bash command changed (git status entries whose mtime falls inside the call) are the active
     task's touches, as an Edit's are, and one outside its scope gets the scope note (once per file)."""
     import subprocess
+    if _oneoff():  # T-1007: a one-off session's files aren't the working session's task's
+        return None
     act, top = c.active_brief(c.load_briefs(p), p.lane), c.git_root(p.root)
     if not act or not top:
         return None
@@ -1818,7 +1820,7 @@ def post_tool_use(pl, ok=True):
         if note:
             return {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": note}}
     if ok and p and tool in FILE_TOOLS:
-        act = c.active_brief(c.load_briefs(p), p.lane)
+        act = None if _oneoff() else c.active_brief(c.load_briefs(p), p.lane)  # T-1007: a one-off owns no task
         path = os.path.normpath(os.path.join(_cwd(pl), ti.get("file_path") or ti.get("notebook_path") or ""))
         c.log_event(p, "touched", task=act.id if act else None, data={"file": path, "tool": tool},
                     session=pl.get("session_id"))
