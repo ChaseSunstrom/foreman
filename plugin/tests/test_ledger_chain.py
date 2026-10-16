@@ -34,6 +34,19 @@ class Chain(ForemanTestCase):
     def verify(self, *args):
         return self.fm("verify-ledger", *args, check=False)
 
+    def test_ledger_events_reads_every_month(self):
+        # a report over a window reads the months fm tidy rolled into archive/, not just the live file's tail
+        os.makedirs(os.path.join(self.p.dir, "archive"), exist_ok=True)
+        with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "w") as f:
+            f.write(json.dumps({"ts": "2026-01-05T00:00:00Z", "event": "correction", "task": "T-0001"}) + "\n")
+            f.write(json.dumps({"ts": "2026-01-06T00:00:00Z", "event": "focus", "task": "T-0001"}) + "\n")
+            f.write("not json\n")
+        c.log_event(self.p, "correction", task="T-0002")
+        got = [e["task"] for e in c.ledger_events(self.p, ("correction",))]
+        self.assertEqual(got, ["T-0001", "T-0002"])
+        self.assertEqual([e["task"] for e in c.ledger_events(self.p, ("correction",), since="2026-02-01")], ["T-0002"])
+        self.assertGreaterEqual(len(c.ledger_events(self.p)), 3)
+
     def test_untouched_ledger_verifies(self):
         for i in range(5):
             c.log_event(self.p, "note", data={"i": i})
