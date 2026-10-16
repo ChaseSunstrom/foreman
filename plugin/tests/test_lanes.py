@@ -184,6 +184,102 @@ class Lanes(ForemanTestCase):
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
 
+    def stopped_builder(self, proc=None, wip="wip.py"):
+        """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
+        import fmbus
+        tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
+                            "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["builder"] = c.now()
+        b.meta["builder_proc"] = proc or f"{fmbus.host_id()}|999999999|1"
+        c.save_brief(p, b)
+        with open(os.path.join(path, wip), "w") as f:
+            f.write("x = 1\n")
+        return tid, path
+
+    def test_a_builder_whose_claude_process_ended_is_flagged_with_the_resume_command(self):
+        tid, _ = self.stopped_builder()
+        self.assertIn(f"fm lane resume {tid}", self.fm("next").stdout)
+        import fmbus
+        self.assertFalse(fmbus.proc_alive(999999999, "1"))
+        self.assertTrue(fmbus.proc_alive(os.getpid(), fmbus._proc(os.getpid())[1]))
+        self.assertEqual(fmbus.proc_state("elsewhere|ns|1|1"), "unknown")
+
+    def test_resume_keeps_the_work_frees_the_folder_and_briefs_from_the_branch(self):
+        tid, path = self.stopped_builder()
+        self.fm("lane", "resume", tid)
+        self.assertFalse(os.path.isdir(path))
+        self.assertIn("WIP", self.git("log", "--format=%s", f"foreman/{tid}"))
+        self.assertIn("wip.py", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        self.assertNotIn("lane", meta)
+        self.assertNotIn("|999999999|", meta.get("builder_proc") or "", "the dead process is no longer the builder's")
+        self.assertIn("builder", meta, "briefed again")
+        brief = read_text(os.path.join(c.find_project(self.repo).dir, "audits", f"{tid}.builder.md"))
+        self.assertIn(f"git merge foreman/{tid}", brief)
+        self.assertNotIn(f"fm lane resume {tid}", self.fm("next").stdout, "its new process is recorded")
+
+    def test_resume_refuses_a_live_builder_unless_forced_with_a_reason(self):
+        import fmbus
+        me = fmbus._proc(os.getpid())[1]
+        tid, path = self.stopped_builder(proc=f"{fmbus.host_id()}|{os.getpid()}|{me}")
+        self.assertNotIn(f"fm lane resume {tid}", self.fm("next").stdout)
+        self.assertNotEqual(self.fm("lane", "resume", tid, check=False).returncode, 0)
+        self.assertTrue(os.path.isdir(path), "a live builder keeps its worktree")
+        self.fm("lane", "resume", tid, "--force", "it hung")
+        self.assertFalse(os.path.isdir(path))
+        self.assertIn("it hung", self.fm("task", "show", tid).stdout)
+
+    def test_another_host_is_unknown_not_stopped(self):
+        tid, path = self.stopped_builder(proc="elsewhere|ns|999999999|1")
+        self.assertNotIn(f"fm lane resume {tid}", self.fm("next").stdout)
+        self.assertNotEqual(self.fm("lane", "resume", tid, check=False).returncode, 0)
+        self.assertTrue(os.path.isdir(path))
+
+    def test_a_briefed_never_launched_task_is_not_flagged(self):
+        import fmbus
+        tid = first(self.fm("task", "new", "Idle", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
+                            "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["builder"] = c.now()
+        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        c.save_brief(p, b)
+        self.assertNotIn(f"fm lane resume {tid}", self.fm("next").stdout)
+
+    def test_resume_on_a_detached_head_keeps_the_commit_on_a_branch(self):
+        tid, path = self.stopped_builder()
+        self.git("checkout", "-q", "--detach", cwd=path)
+        self.git("branch", "-D", f"foreman/{tid}")
+        self.fm("lane", "resume", tid)
+        brief = read_text(os.path.join(c.find_project(self.repo).dir, "audits", f"{tid}.builder.md"))
+        self.assertNotIn("git merge HEAD", brief)
+        self.assertIn("wip.py", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
+
+    def test_resume_refuses_to_delete_ignored_files(self):
+        tid, path = self.stopped_builder()
+        with open(os.path.join(path, ".gitignore"), "w") as f:
+            f.write(".venv/\n")
+        os.makedirs(os.path.join(path, ".venv"))
+        with open(os.path.join(path, ".venv", "x"), "w") as f:
+            f.write("1")
+        p = self.fm("lane", "resume", tid, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(".venv", p.stderr)
+        self.assertTrue(os.path.isdir(path))
+        self.fm("lane", "resume", tid, "--force", "venv is rebuilt")
+        self.assertFalse(os.path.isdir(path))
+
+    def test_resume_leaves_secrets_out_of_the_wip_commit_and_stops(self):
+        tid, path = self.stopped_builder(wip=".env")
+        p = self.fm("lane", "resume", tid, check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn(".env", p.stderr)
+        self.assertTrue(os.path.isdir(path), "nothing is removed")
+        self.assertNotIn(".env", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
+
 
 if __name__ == "__main__":
     unittest.main()
