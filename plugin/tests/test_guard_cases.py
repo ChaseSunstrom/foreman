@@ -12,7 +12,8 @@ class GuardCases(ForemanTestCase):
     def setUp(self):
         super().setUp()
         self.cases = os.path.join(self.tmp, "cases.jsonl")
-        self.env = {"FOREMAN_GUARD_CASES": self.cases}
+        # no real transcripts: plain `fm replay` would otherwise replay this machine's sessions (slow, machine-specific)
+        self.env = {"FOREMAN_GUARD_CASES": self.cases, "CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "claude")}
 
     def wrong(self, *a, check=True):
         return self.fm("guard", "wrong", *a, env=self.env, check=check)

@@ -14,6 +14,7 @@
 - `fm task block` and `fm task defer` take `--until "installed NAME"` or `--until "exists PATH"` (structured conditions, never a shell command), and `fm next` and `fm tidy` re-offer the task once it holds (T-1183).
 - The `fm replay` gate also checks the labelled guard cases and fails on a drifted or broken one, so any task touching the guard meets them at its gates (T-1182).
 - The hook bench runs `bash src/build.sh` on a ~37 KB real-shaped script, rewritten before every run so each is a cold read, with a 300 ms budget (T-1192).
+- `fm guard mine [--days N]` lists this project's real guard refusals from its Claude Code transcripts, each with its full command, today's verdict and what the session did next, grouped by rule: the input a guard-friction fix needs (T-1187).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
