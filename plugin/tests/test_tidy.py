@@ -259,6 +259,34 @@ class StalePlans(TidyCase):
         self.assertFalse(any(new in d for d in found), "a scope file the plan creates isn't missing")
 
 
+class DeferredTriage(TidyCase):
+    # T-1048: each deferred brief gets drop / do / ask proposed; nothing is applied
+    def defer(self, title, days, revisit=None, scope=None):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *(["--scope", scope] if scope else [])).stdout
+        tid = re.search(r"T-\d{4}", out).group(0)
+        age(self.p, tid, days, status="deferred")
+        if revisit:
+            b = c.find_brief(self.p, tid)
+            b.meta["revisit"] = revisit
+            c.save_brief(self.p, b, touch=False)
+        return tid
+
+    def test_old_with_a_dead_scope_is_drop_a_due_one_is_do_and_the_rest_ask_and_nothing_changes(self):
+        with open(os.path.join(self.repo, "live.py"), "w") as f:
+            f.write("x\n")
+        dead = self.defer("dead", 120, scope="gone.py")
+        due = self.defer("due", 10, revisit="2020-01-01")
+        rest = self.defer("rest", 50, scope="live.py")
+        got = {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+        self.assertEqual(got, {dead: "drop", due: "do", rest: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("deferred_triage", text)
+        self.assertIn(f'fm task drop {dead} "', text)
+        self.assertIn(f"Deferred: {dead} → drop", self.fm("digest").stdout)
+        for t in (dead, due, rest):
+            self.assertEqual(c.find_brief(self.p, t).status, "deferred")
+
+
 class TidyStateBackup(TidyCase):
     # T-0922: the briefs and the ledger are the record; tidy --apply keeps dated copies of them, the newest five
     def test_apply_keeps_dated_backups_of_the_record_and_only_five(self):

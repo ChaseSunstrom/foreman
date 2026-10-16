@@ -414,6 +414,7 @@ def cmd_digest(args):
     blocked = [b for b in briefs if b.status == "blocked"]
     import fmtidy
     stale = fmtidy.stale_plans(p, briefs)  # T-1077: queued plans whose files or premises moved since planning
+    triage = fmtidy.triage_deferred(p, briefs)  # T-1048
     tokens, unex = None, ""
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
@@ -440,6 +441,7 @@ def cmd_digest(args):
         if any(r for _, r in rev.values()) else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
+    lines += [f"Deferred: {t} → {v} ({w})" for t, v, w in triage[:6]]
     lines += [f"Plans to re-plan ({len(stale)}): " + ", ".join(f"{t} ({why})" for t, why in list(stale.items())[:5])
               ] if stale else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
@@ -453,7 +455,7 @@ def cmd_digest(args):
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
         for e in nights[-5:]] if nights else []
     fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review,
-                     "blocked": [b.id for b in blocked], "stale_plans": stale, "failures": dict(fails.most_common(5)), "tokens": tokens},
+                     "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
 
 
