@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The pane flags a stopped builder (T-1119): its worktree node in the Agents graph reads "stopped · fm lane resume T-…" in the warning colour, from `fm ui`'s new `stopped` mark on that worktree.
 - `fm task set` applies every `--section`/`--text` pair given in one call (only the last one landed, silently) and refuses a section without its own text (T-1124).
 - One `c.kill_group(proc)` kills a child's whole process group for run_command, the bench, fm serve, guard mutation and the claude -p helpers; the bench's own copy had no guard, so a run that ended just as its timeout hit crashed it (T-1094).
 - Guard (T-1123): `rm` fed targets on stdin is checked whether recursive or not, against the command directly feeding xargs (only plain `echo` operands with no shell syntax are trusted as targets; any xargs option that changes how items are read, in any short-option cluster, makes them unknown), explicit operands don't hide the stdin ones, and `eval` reads the text an `echo` substitution prints, flagging any substitution it can't read.
