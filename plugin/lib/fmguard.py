@@ -2441,15 +2441,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 found.append(("system", f"{script} is written earlier in this command and run here, which the guard "
                                         "can't read: write it in one command, run it in the next"))
             else:
-                text, why, got = _script_text(script, cwd, shebang=kind == "exec")
-                if why:
-                    found.append(("system", why))
-                elif text is not None and (got or kind) == "py":
-                    for spawned in _spawned_commands(text):  # only a command written out: computed ones ("$_")
-                        if '"$_"' not in spawned:  # flag every demo script that builds a path (replay: 27 false denials)
-                            found += check_bash(spawned, ctx, depth + 1)
-                elif text is not None:
-                    found += _check_script(text, ctx, depth)
+                found += _script_verdict(script, cwd, kind, ctx, depth)
         fed += c.redirs if any(op == "<<" for op, _ in c.feeds) else []
         # an in-place edit (sed -i FILE && python3 FILE) is the everyday edit-then-run: only a file made here counts
         wrote += c.redirs + ([] if name in ("sed", "gsed", "perl", "ed", "ex") else _write_targets(name, args))
@@ -2881,26 +2873,139 @@ def _script_chunks(text, limit=2000):
     return out + (["\n".join(cur)] if cur else [])
 
 
-def _check_script(text, ctx, depth):
+def _check_script(text, ctx, depth, acc):
     """check_bash over a script file's pieces, keeping what is certain: a target a variable holds ("not known before
     it runs", `$HOME/x`) is every script's `rm -rf "$DIR"`, and one that reads .env is a deploy script: counting them
-    refused 4 of 10 real scripts. ponytail: a literal danger (rm -rf ~, a pipe into a shell) is what is caught."""
+    refused 4 of 10 real scripts. ponytail: a literal danger (rm -rf ~, a pipe into a shell) is what is caught.
+    What it finds goes into `acc` as it goes, so a read cut off by the time budget keeps what it had."""
     # only what no script of the user's does innocently: a deploy script reboots, installs plugins, reads .env, and
     # splits words on IFS (replay of 3 real scripts: reboot, plugin, system and credentials refusals were all benign)
-    import time
-    end, late = time.monotonic() + 10, []
+    for chunk in _script_chunks(text):
+        # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
+        acc += [f for f in check_bash(chunk, ctx, depth + 1)
+                if (f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1])
+                and "$" not in f[1] and not re.search(r"not known|too deep|unresolvable|from stdin", f[1])]
+    return acc
 
-    def pieces():
-        for chunk in _script_chunks(text):
-            if time.monotonic() > end:  # a hook that hangs is worse than a refusal
-                late.append(("system", "script too long for the guard to read in time: run its commands directly"))
-                return
-            yield from check_bash(chunk, ctx, depth + 1)
-    # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
-    kept = [f for f in pieces()
-            if (f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1])
-            and "$" not in f[1] and not re.search(r"not known|too deep|unresolvable|from stdin", f[1])]
-    return kept + late
+
+class _OverBudget(BaseException):  # not an Exception: check_bash's own handlers must not swallow it
+    pass
+
+
+_UNREAD = []  # (path, why) of scripts this call left unread (the hook logs and notes them)
+_IN_SCRIPT = []  # non-empty while a script is being read: the outermost read owns the clock
+
+
+def take_unread():
+    out, _UNREAD[:] = list(_UNREAD), []
+    return out
+
+
+def _script_budget():
+    try:
+        return float(os.environ.get("FM_GUARD_SCRIPT_BUDGET") or _BUDGET)
+    except ValueError:
+        return _BUDGET
+
+
+_BUDGET = 0.2  # CPU seconds. 0.5 gave a cold hook p95 of 331 ms over 330 real scripts (goal 300); 0.2 trims the tail
+
+
+def _script_cache_path(ctx):
+    return os.path.join(ctx.home, ".cache", "foreman", "guard-scripts.json")
+
+
+_CACHE_MAX = 200
+
+
+def _cache_load(path):
+    import json
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _cache_store(path, key, entry):
+    """Atomic write of one more entry: files that are gone dropped first, then the oldest past 200."""
+    import json
+    cache = {k: v for k, v in _cache_load(path).items() if isinstance(v, dict) and os.path.exists(v.get("p", ""))}
+    cache[key] = entry
+    for k in sorted(cache, key=lambda k: cache[k].get("at", 0))[:max(0, len(cache) - _CACHE_MAX)]:
+        del cache[k]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass  # no cache dir: the next run reads the file again
+
+
+def _script_verdict(script, cwd, kind, ctx, depth):
+    """Findings for the script file a command runs, cached by (realpath, size, mtime_ns) so a script run again costs
+    a stat (the hook runs before every Bash call: a 20 KB script took seconds to read cold). One cold read has a time
+    budget (FM_GUARD_SCRIPT_BUDGET, CPU seconds, default _BUDGET): past it the script is allowed unread, noted in _UNREAD, and that too is
+    cached. The file's own size over the limit is refused (_script_text)."""
+    if re.search(r"[$`*?\[]", script):
+        return []
+    p = os.path.realpath(os.path.join(cwd, os.path.expanduser(script)))
+    try:
+        st = os.stat(p)
+    except OSError:
+        return []
+    import hashlib
+    import signal
+    import time
+    salt =hashlib.sha1(repr((ctx.home, ctx.foreman_home, ctx.project_root, kind, os.stat(__file__).st_mtime_ns))
+                        .encode()).hexdigest()[:12]
+    key = f"{p}|{st.st_size}|{st.st_mtime_ns}|{salt}"
+    nested = bool(_IN_SCRIPT)
+    path = _script_cache_path(ctx)
+    hit = None if nested else _cache_load(path).get(key)
+    if hit:
+        if hit.get("u"):
+            _UNREAD.append((p, hit["u"]))
+        return [tuple(f) for f in hit["f"]]
+    found, unread = [], None
+    _IN_SCRIPT.append(1)
+    old = None
+    try:
+        if not nested:
+            def over(*_):
+                raise _OverBudget()
+            try:
+                old = signal.signal(signal.SIGPROF, over)  # CPU time, not wall: a busy machine mustn't trip it
+                signal.setitimer(signal.ITIMER_PROF, _script_budget())
+            except ValueError:  # not the main thread: no clock (ponytail: only the main thread is time-boxed)
+                old = None
+        text, why, got = _script_text(script, cwd, shebang=kind == "exec")
+        if why:
+            found.append(("system", why))
+        elif text is not None and (got or kind) == "py":
+            for spawned in _spawned_commands(text):  # only a command written out: computed ones ("$_")
+                if '"$_"' not in spawned:  # flag every demo script that builds a path (replay: 27 false denials)
+                    found += check_bash(spawned, ctx, depth + 1)
+        elif text is not None:
+            _check_script(text, ctx, depth, found)
+    except _OverBudget:
+        if nested:
+            raise  # the outermost read owns the clock and decides
+        unread = f"read past its {_script_budget():g} s budget; allowed unread"
+    finally:
+        _IN_SCRIPT.pop()
+        if old is not None:
+            signal.setitimer(signal.ITIMER_PROF, 0)
+            signal.signal(signal.SIGPROF, old)
+    if nested:
+        return found  # the owner's read decides what is cached
+    if unread:
+        _UNREAD.append((p, unread))
+    _cache_store(path, key, {"p": p, "f": found, "u": unread, "at": time.time()})
+    return found
 
 
 def _script_target(name, argv0, args):
