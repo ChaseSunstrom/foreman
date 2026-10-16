@@ -482,7 +482,8 @@ def remove(p, b, main):
 
     def take_back(x):
         for k in ("lane", "lane_branch", "builder", "builder_proc"):  # the builder slot comes back too (review)
-            x.meta.pop(k, None)
+            if not (k == "lane_branch" and x.meta.get(k) in kept):  # T-1071: an unmerged branch stays findable
+                x.meta.pop(k, None)
         if x.status in ("active", "verifying"):
             x.meta["status"] = "planned"  # not the main checkout's active task by accident
         x.append_log(f"lane removed: {path}" + (f" (branch {', '.join(kept)} kept: not merged)" if kept else ""))

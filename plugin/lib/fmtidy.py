@@ -674,9 +674,15 @@ def cmd_tidy(args):
     import fmcli
     projects = [p for p, _ in c.all_projects()] if args.all else [fmcli.resolve(args)]
     actions, findings = [], []
+    lanes = getattr(args, "lanes_only", False)  # T-1071: what fm night runs: nothing but closed tasks' lanes
     for p in projects:
-        findings += check_project(p, args.apply, actions)
-    findings += check_global(args.apply, actions, plugins=getattr(args, "plugins", False))
+        if lanes:
+            import fmlanes
+            findings += fmlanes.stale(p, c.load_briefs(p), args.apply, actions, finding)
+        else:
+            findings += check_project(p, args.apply, actions)
+    if not lanes:
+        findings += check_global(args.apply, actions, plugins=getattr(args, "plugins", False))
     report = {"applied": bool(args.apply), "projects": [p.slug for p in projects], "findings": findings,
               "actions": [f"{k}:{v}" for k, v in actions]}
     if args.json:

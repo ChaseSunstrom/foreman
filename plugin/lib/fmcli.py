@@ -4939,6 +4939,10 @@ def build_parser():
     s.add_argument("--retire", metavar="LESSON", help="with --lessons: leave this lesson (T-0123.1) out of recall and "
                                                       "tripwires (T-0743)")
     s.add_argument("--why", help="with --retire: why it no longer helps")
+    s.add_argument("--consolidate", action="store_true", help="with --lessons: group near-duplicate lessons and "
+                                                              "propose one each; retires nothing (T-1071)")
+    s.add_argument("--from-night", action="store_true", help=argparse.SUPPRESS)
+    s.add_argument("--capture", action="store_true", help="with --consolidate: file the proposal as a captured task")
     s.add_argument("--export-rules", action="store_true", help="write the live lessons to .claude/rules/"
                                                                "foreman-lessons/, one file per task, paths: its files (T-0958)")
     s.add_argument("--repos", action="store_true", help="prior art: the text's identifiers in other projects that opted "
@@ -5083,6 +5087,7 @@ def build_parser():
     s = add("tidy", lazy("fmtidy", "cmd_tidy"), help="hygiene (dry-run by default)")
     s.add_argument("--apply", action="store_true")
     s.add_argument("--all", action="store_true")
+    s.add_argument("--lanes-only", action="store_true", help="only worktrees and branches of closed tasks (what fm night runs)")
     s.add_argument("--plugins", action="store_true", help="also report plugin footprint (slow: runs claude plugin details)")
 
     s = add("rollback", lazy("fmrollback", "cmd_rollback"), help="restore the state as the snapshot taken at the last "
