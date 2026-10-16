@@ -2887,12 +2887,44 @@ def _check_script(text, ctx, depth, acc):
     What it finds goes into `acc` as it goes, so a read cut off by the time budget keeps what it had."""
     # only what no script of the user's does innocently: a deploy script reboots, installs plugins, reads .env, and
     # splits words on IFS (replay of 3 real scripts: reboot, plugin, system and credentials refusals were all benign)
+    state = []  # what earlier pieces did that a later one depends on: cd, literal assignments, files written
     for chunk in _script_chunks(text):
         # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
-        acc += [f for f in check_bash(chunk, ctx, depth + 1)
-                if (f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1])
-                and "$" not in f[1] and not re.search(r"not known|too deep|unresolvable|from stdin", f[1])]
+        for f in check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1):
+            if f == ("system", "script nests too deep to read"):
+                pass  # from a script further down the chain: it keeps its way up
+            elif "too deep" in f[1]:
+                # a chain of scripts this deep hides its last one: refuse, never read as clean. Only from the third
+                # script in a chain: a script of its own deep $( … ) nesting is no chain (5 of 330 real scripts)
+                if len(_IN_SCRIPT) < 3:
+                    continue
+                f = ("system", "script nests too deep to read")
+            elif not ((f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1]
+                       or f[0] == "system" and ("is written earlier in this command" in f[1] or "too deep" in f[1]))
+                      and "$" not in f[1] and not re.search(r"not known|unresolvable|from stdin", f[1])):
+                continue
+            if f not in acc:  # the carried lines are read again with each piece
+                acc.append(f)
+        state += _state_lines(chunk)
     return acc
+
+
+_STATE_LINE = re.compile(r"^\s*(?:(?:cd|pushd|popd)\b.*|(?:(?:export|declare|local|readonly)\s+)?[A-Za-z_]\w*=[^\s`$(]*"
+                         r"|.*(?:[^<>&\d]|^)>>?\s*(?!/dev/null)[^\s&>|]\S*.*|.*\b(?:tee|cp|mv|install|ln)\b.*)$")
+_HEREDOC_OP = re.compile(r"<<-?\s*['\"]?\w+['\"]?")
+
+
+def _state_lines(chunk):
+    """The lines of a piece a later piece may depend on: a cd, a plain assignment, a write (heredoc operators cut, so a
+    carried line never opens a heredoc). Pieces are read with these in front, so `cd /` in one and `rm -rf etc` in the
+    next are read as one script, and so is a file written in one and run in the next. ponytail: the last 40 lines."""
+    out = []
+    for line in chunk.split("\n"):
+        line = _HEREDOC_OP.sub("", line)
+        if line.strip() and not line.lstrip().startswith("#") and len(line) < 400 and "<<" not in line \
+                and not line.rstrip().endswith("\\") and _STATE_LINE.match(line):
+            out.append(line)
+    return out
 
 
 class _OverBudget(BaseException):  # not an Exception: check_bash's own handlers must not swallow it
@@ -2983,6 +3015,8 @@ _SCAN = [(re.compile(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
     (r"\b(?:LD_PRELOAD|LD_AUDIT|BASH_ENV|PROMPT_COMMAND|RSYNC_RSH|PERL5OPT)=[^\s\n]", "a code-loading variable", False),
     (r"\b(?:NODE_OPTIONS|RUBYOPT)=[^\n]{0,200}?(?:--require|--import|--loader|(?:^|[ \t'\"=])-r)",
      "code loaded by an option", False),
+    (r"(?:^|[\s;&|(])(?:(?:ba|z|da|k)?sh\b|source\b|\.(?=[ \t])|eval\b)[^\n]{0,60}?(?:<\(|\$\(|`)\s*(?:curl|wget)\b",
+     "downloaded code run", False),
     (r"-javaagent|OnOutOfMemoryError|-XX:OnError|--to-command|--use-compress-program|--checkpoint-action=exec|"
      r"--rsh-command|--rmt-command|--unzip-command", "a command an option runs", False),
     (r"\b(?:Proxy|Local)Command[ =]|\bvim?[ \t][^\n]{0,200}?-c[ \t]*['\"]?!", "a command an option runs", True),
@@ -2999,7 +3033,8 @@ def _scan_units(text):
     out, nums, lines, i = [], [], text.split("\n"), 0
     while i < len(lines):
         start, cur = i + 1, lines[i]
-        while cur.endswith("\\") and i + 1 < len(lines) and len(cur) < 4 * _LINE_CAP:
+        # (a comment ends at its newline whatever it ends with: bash runs the next line)
+        while cur.endswith("\\") and not cur.lstrip().startswith("#") and i + 1 < len(lines) and len(cur) < 4 * _LINE_CAP:
             i += 1
             cur = cur[:-1] + " " + lines[i]
         step = _LINE_CAP * 7 // 8
@@ -3027,14 +3062,30 @@ def _rm_hit(text):
         flags = [o for o in ops if o.startswith("-") and not o.startswith("--") and o[1:].isalpha()]
         if any("r" in f or "R" in f for f in flags) or "--recursive" in ops:
             for o in ops:
-                t = o.replace('"', "").replace("'", "")
+                t = re.sub(r"/{2,}", "/", o.replace('"', "").replace("'", ""))  # ~//* and // are ~/* and /
                 if not t.startswith("-") and _RM_TARGET.sub("", t) in ("", "~", "$HOME", "${HOME}"):
                     return m.start(), m.group(0)
     return None
 
 
+def _fm_hit(text):
+    """The first `fm …` the guard itself refuses an agent (USER_ONLY_FM verbs, --allow core|remote), as (position, line):
+    read from the guard's own tables, so a new entry there is caught here."""
+    for m in re.finditer(r"\bfm\b([^\n;&|]*)", text):
+        if _commented(text, m.start()):
+            continue
+        args = [a.replace('"', "").replace("'", "") for a in m.group(1)[:_LINE_CAP].split()]
+        sub, rest = _fm_subcommand(args)
+        if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):
+            return m.start(), m.group(0)
+        if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(args, args[1:] + [""])):
+            return m.start(), m.group(0)
+    return None
+
+
 def _pipe_sh_hit(text):
-    """The first download piped (maybe through tee, env, a path, a newline) into a shell, from up to 200 starts."""
+    """The first download piped (maybe through tee, env, a path, a newline) into a shell.
+    ponytail: the first 200 curl/wget words and a 1500-character window each; a pipe further on is missed."""
     pos = 0
     for _ in range(200):
         m = re.compile(r"\b(?:curl|wget)\b").search(text, pos)
@@ -3053,7 +3104,8 @@ def _literal_scan(text, ctx=None):
     out = []
     text, nums = _scan_units(text)
     at = lambda pos: nums[min(text.count("\n", 0, pos), len(nums) - 1)]  # noqa: E731  original line of a position
-    for hit, why in ((_rm_hit(text), "rm -r of ~, / or $HOME"), (_pipe_sh_hit(text), "a download piped into a shell")):
+    for hit, why in ((_rm_hit(text), "rm -r of ~, / or $HOME"), (_pipe_sh_hit(text), "a download piped into a shell"),
+                     (_fm_hit(text), "an fm command only the user may run")):
         if hit:
             out.append((at(hit[0]), hit[1].strip()[:120], why))
     # a write into Foreman's state: find the path as a plain substring (a regex over the whole text was 30 ms), then
@@ -3061,7 +3113,7 @@ def _literal_scan(text, ctx=None):
     marks = [".claude/foreman/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state"]
     if ctx is not None:  # the state folder this guard runs with, when it isn't under ~/.claude/foreman
         marks.append(ctx.state_dir or os.path.join(ctx.foreman_home, "state"))
-    verbs = re.compile(r"\b(?:tee|cp|mv|rm|install|ln)\b|\bsed[ \t]+-i")
+    verbs = re.compile(r"(?:^|[\s;&|(])(?:tee|cp|mv|rm|install|ln)(?=\s)|\bsed[ \t]+-i")  # not install-manifest.json
     redirect = re.compile(r">>?[ \t]*[\"']?([^\s;&|\"']+)")  # the target of a redirect, not `>/dev/null` on the line
     for mark in marks:
         i = text.find(mark)
@@ -3089,28 +3141,43 @@ _DEPS = []  # (path, sha256) of every nested script that read used: a cached ver
 
 
 def _file_digest(p):
-    """sha256 of a script's bytes as the verdict read them (at most limit + 1), None if it can't be read."""
+    """sha256 of a script's bytes as the verdict read them (at most limit + 1), "" if it can't be read (absent too:
+    a dependency on an absent script holds only while it stays absent). A link is followed."""
     import hashlib
     try:
         if not os.path.isfile(p):
-            return None
+            return ""
         with open(p, "rb") as f:
             return hashlib.sha256(f.read(_SCRIPT_LIMIT + 1)).hexdigest()
     except OSError:
-        return None
+        return ""
 
 
-_RUN_TARGET = re.compile(r"(?:^|[;&|(\s`])(?:(?:ba|z|da|k)?sh|source|\.|python3?)[ \t]+(?:-\S+[ \t]+)*[\"']?"
-                         r"([^\s;&|)<>\"'$`]+)|(?:^|[;&|(\s`])(\./[^\s;&|)<>\"'$`]+)", re.M)
+_RUN_CMD = re.compile(r"(?:^|[;&|(\s`])(?:/[^\s;&|]*/)?(?:env[ \t]+)?(?:(?:ba|z|da|k)?sh|python3?|source|\.)(?=[ \t])"
+                      r"([^\n;&|)<>]{0,300})", re.M)
+_RUN_DIRECT = re.compile(r"(?:^|[;&|(\s`])((?:\./|/)[^\s;&|)<>\"'$`]*(?:\.(?:sh|bash|zsh|ksh|py)\b|(?<=\./)[^\s;&|)<>\"'$`]+))",
+                         re.M)
 
 
 def _run_targets(text):
-    """Script files a script's text runs by name (bash X, source X, . X, python X, ./X): literal words only."""
-    out = []
-    for m in _RUN_TARGET.finditer(text[:_SCRIPT_LIMIT]):
-        out.append(m.group(1) or m.group(2))
+    """Script files a script's text runs by name: bash/sh/zsh/python/source/. X (also /bin/bash, env bash, options such
+    as -e and -o pipefail before X) and a ./x or /abs/x.sh run directly. Literal words only (a $ or ` is skipped)."""
+    out, text = [], text[:_SCRIPT_LIMIT]
+    for m in _RUN_CMD.finditer(text):
+        words, i = m.group(1).split(), 0
+        while i < len(words):
+            w = words[i]
+            i += 1
+            if w in ("-o", "+o", "-O", "+O", "-W", "-X"):
+                i += 1
+            elif not w.startswith(("-", "+")):
+                w = w.strip("\"'")
+                if w and not re.search(r"[$`]", w):
+                    out.append(w)
+                break
         if len(out) >= 40:
             break
+    out += [m.group(1) for m in _RUN_DIRECT.finditer(text)][:40]
     return out
 
 
@@ -3127,21 +3194,25 @@ def _script_verdict(script, cwd, kind, ctx, depth):
     import hashlib
     import signal
     import time
-    if not os.path.isfile(p):  # a FIFO or a device would block the open below, and the hook with it
-        return []
-    try:
-        with open(p, "rb") as f:
-            data = f.read(_SCRIPT_LIMIT + 1)
-    except OSError:
+    lex = os.path.normpath(os.path.join(cwd, os.path.expanduser(script)))  # as named: a link is followed at each check
+    nested = bool(_IN_SCRIPT)
+    data = None
+    if os.path.isfile(p):  # a FIFO or a device would block the open below, and the hook with it
+        try:
+            with open(p, "rb") as f:
+                data = f.read(_SCRIPT_LIMIT + 1)
+        except OSError:
+            pass
+    if nested:  # the outer verdict is only as good as this file's bytes, or as its absence
+        _DEPS.append((lex, hashlib.sha256(data).hexdigest() if data is not None else ""))
+    if data is None:
         return []
     digest = hashlib.sha256(data).hexdigest()
-    nested = bool(_IN_SCRIPT)
-    if nested:
-        _DEPS.append((p, digest))  # the outer verdict is only as good as this file's bytes
     key = None
     if len(data) <= _SCRIPT_LIMIT:  # over it: refused below, nothing to cache
         key = "|".join((p, digest, hashlib.sha256(repr(
-            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, kind, _guard_hash())).encode()).hexdigest()[:16]))
+            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.confine,
+             ctx.unbriefed, kind, _guard_hash())).encode()).hexdigest()[:16]))
     path = _script_cache_path(ctx)
     hit = None if nested or key is None else _cache_load(path).get(key)
     if hit and all(_file_digest(dp) == dd for dp, dd in hit.get("n", [])):  # the scripts it read, unchanged
@@ -3188,15 +3259,18 @@ def _script_verdict(script, cwd, kind, ctx, depth):
             seen.add(sp)
             found += [("system", f"{sp} line {n}: {line[:80]} ({why}; the script was too long to parse in time)")
                       for n, line, why in _literal_scan(st, ctx)]
-            for target in _run_targets(st)[:8]:
-                tp = os.path.realpath(os.path.join(cwd, os.path.expanduser(target)))
-                if tp not in seen and os.path.isfile(tp) and os.path.getsize(tp) <= _SCRIPT_LIMIT:
+            for target in _run_targets(st)[:8]:  # ponytail: 8 files; a script past that, or named by a variable, is unread
+                lex = os.path.normpath(os.path.join(cwd, os.path.expanduser(target)))
+                tp, raw = os.path.realpath(lex), None
+                if tp not in seen and os.path.isfile(tp):
                     try:
                         with open(tp, "rb") as f:
-                            todo.append((tp, f.read(_SCRIPT_LIMIT).decode("utf-8", "replace")))
-                        _DEPS.append((tp, _file_digest(tp)))
+                            raw = f.read(_SCRIPT_LIMIT + 1)
                     except OSError:
                         pass
+                _DEPS.append((lex, hashlib.sha256(raw).hexdigest() if raw is not None else ""))  # absent: stays absent
+                if raw is not None and len(raw) <= _SCRIPT_LIMIT:
+                    todo.append((tp, raw.decode("utf-8", "replace")))
     finally:
         _IN_SCRIPT.pop()
         if old is not None:
