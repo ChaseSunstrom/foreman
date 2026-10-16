@@ -1,5 +1,6 @@
 """Hook handler tests: run plugin/hooks/hook <Event> with JSON payloads against an isolated FOREMAN_HOME."""
 import datetime
+import glob
 import json
 import os
 import time
@@ -1505,6 +1506,30 @@ class Stop(HookCase):
         self.assertNotIn("PushNotification", (parse(self.stop("Still waiting.")) or {}).get("reason", ""), "once per ask")
         self.fm("autonomy", "standard")
         self.assertNotIn("PushNotification", (parse(self.stop("Waiting.", session="sess-2")) or {}).get("reason", ""))
+
+    def test_a_oneoff_session_leaves_the_task_untouched_through_every_hook(self):
+        # T-1007 (after T-1004): a one-off's Bash run closed the working session's step; no hook of a one-off may write
+        # the task's brief or attribute its edits to the task
+        self.fm("init")
+        tid = self.task()
+        briefs = lambda: {f: open(f, "rb").read() for f in glob.glob(os.path.join(self.project().dir, "tasks", "*.md"))}  # noqa: E731
+        before = briefs()
+        oneoff = {"FOREMAN_ONEOFF": "1", "CLAUDE_ENV_FILE": self.env_file}
+        path = os.path.join(self.repo, "app.py")
+        ok = {"stdout": "1 passed", "stderr": "", "interrupted": False}
+        for event, payload in (
+                ("SessionStart", {"source": "startup"}),
+                ("UserPromptSubmit", {"prompt": "fix the login timeout"}),
+                ("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest"}}),
+                ("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest"}, "tool_response": ok}),
+                ("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x = 1\n"}}),
+                ("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x = 1\n"},
+                                 "tool_response": {"filePath": path}}),
+                ("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})):
+            self.hook(event, dict(payload, session_id="sess-oneoff"), env=oneoff)
+        self.assertEqual(briefs(), before)
+        touched = [e for e in c.ledger_tail(self.project(), 200) if e.get("event") == "touched" and e.get("task") == tid]
+        self.assertEqual(touched, [], "a one-off's edits aren't the task's files")
 
     def test_a_oneoff_headless_session_never_drives(self):
         # T-0775: an ad-hoc claude -p got the queue in its context and the drive's push, focused a queued task and
