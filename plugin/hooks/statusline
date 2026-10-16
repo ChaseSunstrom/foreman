@@ -123,7 +123,7 @@ def progress(c, p):
 
 def snapshot(c, data, p):
     sid = re.sub(r"[^\w-]", "", str(data.get("session_id") or ""))[:80]
-    if not sid:
+    if not sid or os.environ.get("FOREMAN_ONEOFF") == "1":  # T-1001: a one-off (the UI harness) isn't in the fleet
         return
     cw, cost = data.get("context_window") or {}, data.get("cost") or {}
     snap = {"ts": c.now(), "session_id": sid, "project": p.slug if p else None, "cwd": data.get("cwd"),

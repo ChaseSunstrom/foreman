@@ -229,6 +229,26 @@ class Lease(Base):
 
 
 class Conductor(Base):
+    def test_a_session_whose_claude_is_gone_or_a_one_off_isnt_listed(self):
+        # T-1001: killed UI-harness sessions stayed 'live' for 15 minutes and filled the pane's More lines
+        import subprocess
+        from helpers import PLUGIN
+        self.snap("live0001")
+        self.snap("dead0001")
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        d = os.path.join(self.home, "state", "sessions", "by-pid")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, str(gone.pid)), "w") as f:
+            json.dump({"sid": "dead0001", "start": "1"}, f)
+        out = self.fm("conductor").stdout
+        self.assertIn("live0001", out)
+        self.assertNotIn("dead0001", out)
+        subprocess.run([os.path.join(PLUGIN, "hooks", "statusline")], input=json.dumps({"session_id": "sess-oneoff", "cwd": self.repo}),
+                       text=True, capture_output=True, timeout=15, cwd=self.repo,
+                       env=dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_ONEOFF="1"))
+        self.assertFalse(os.path.exists(os.path.join(self.home, "state", "sessions", "sess-oneoff.json")))
+
     def test_it_lists_live_sessions_and_its_steer_reaches_them(self):
         self.snap("sess-x", context_pct=41)
         self.snap("sess-y", ts="2020-01-01T00:00:00Z")
