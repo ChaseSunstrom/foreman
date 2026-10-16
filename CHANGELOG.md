@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Hotspots (T-1074): files with 3 or more fix or revert commits in 180 days (sweeping commits over 20 files left out) are named at `fm focus` ("Hotspot: x.py (4 fix/revert commits in 180 days)") and in `fm audit prep`'s findings for a diff that touches them.
 - Evidence and other verification runs never inherit an exported `FOREMAN_SKIP_TESTS`, so a run of the test suite can't leave modules out silently (T-1114).
 - `fm check` leaves test files that are only another open task's red-first tests out of the suite run (`FOREMAN_SKIP_TESTS`, honoured by `run.py`, never inherited from the environment) and says which task's tests it skipped; a cached pass is reused only for the same skip set (T-1101).
 - The cached Claude Code version refreshes as soon as the `claude` binary is newer than the cache (it waited a day, so `fm doctor` said to update right after an update), and failure signatures zero hex ids such as `agent-a0bd0ad0edc0`, so one failure in two builders' worktrees groups as a repeat (T-1109).
