@@ -1,5 +1,5 @@
-"""T-1145: a verify that names a test module, script file or npm script that doesn't exist is refused when the
-criterion is added or edited, with what is missing, instead of failing at evidence or finish time."""
+"""T-1145: a verify that names a test module or script file that doesn't exist yet is kept with a note (test-first
+names tests before they exist); a missing npm script is refused when the criterion is added or edited."""
 import os
 from helpers import ForemanTestCase
 
@@ -24,6 +24,7 @@ class VerifyCheck(ForemanTestCase):
             with self.subTest(verify=verify):
                 self.setUp()
                 self.put("tests/run.py")
+                self.put(".claude/worktrees/agent-x/tests/test_nowhere_x.py")  # a builder's copy isn't this tree's
                 r = self.add(verify)
                 self.assertEqual(r.returncode, 0, r.stderr)
                 self.assertIn(f"note: {named} doesn't exist yet", r.stderr)
