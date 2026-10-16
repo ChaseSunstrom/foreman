@@ -120,3 +120,21 @@ class TaskErgonomics(ForemanTestCase):
         tid = self.task(ac=f"works :: {cmd}")
         self.fm("task", "evidence", tid, "--ac", "1", "--run", cmd, check=False)
         self.assertNotEqual(self.fm("task", "ac", tid, "edit", "1", "--verify", "true", check=False).returncode, 0)
+
+    def test_only_whole_words_make_a_path_security_sensitive(self):
+        # T-1231: kit/tokenbucket.py needed an adversary audit; the duel's agent spent five turns and a reviewer on it
+        for path in ("kit/tokenbucket.py", "app/tokenizer.py", "lib/oracle.py", "src/sessionless_cache.py"):
+            self.assertEqual(c.sensitive([path]), [], path)
+        for path in ("src/auth/token.py", "access_token.py", "plugin/lib/fmguard.py", "api/session.py",
+                     "src/login_form.tsx", "db/acl.py", "lib/crypto_utils.py", "app/oauth2.py", "PasswordReset.java",
+                     # review: acronym camelCase, run-on words, and web-security names
+                     "APIToken.ts", "HTTPSession.ts", "ACLManager.java", "usertoken.py", "sessionmanager.go",
+                     "userpermissions.py", "codesigning.py", "csrf.py", "xss_filter.js", "sanitize_html.py"):
+            self.assertEqual(c.sensitive([path]), [path], path)
+
+    def test_the_adversary_refusal_says_how_to_record_it_in_the_close(self):
+        tid = self.task()
+        with open(os.path.join(self.repo, "auth.py"), "w") as f:
+            f.write("x = 1\n")
+        r = self.fm("task", "finish", tid, "--audit", "self: x", "--run", "true", check=False)
+        self.assertIn('--lens "adversary:', r.stderr)

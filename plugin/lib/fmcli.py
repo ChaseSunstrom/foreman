@@ -588,7 +588,8 @@ def cmd_task(args):
             risky.append("diff unavailable, so its content wasn't checked")
 
         def done(b):
-            reasons = [r + f" (security-sensitive: {', '.join(risky)})" if r.startswith("audit missing: adversary")
+            reasons = [r + f" (security-sensitive: {', '.join(risky)}); record it in this close: --lens \"adversary: "
+                       f"<what you tried and what held>\"" if r.startswith("audit missing: adversary")
                        else r for r in b.done_blockers(since, tree, ("adversary",) if risky else ())] + drift
             import fmsplit  # T-0709: a parent closes after its children
             reasons += [f"child {k.id} is {k.status}: finish it first (fm task capsule {k.id} shows what it returned)"

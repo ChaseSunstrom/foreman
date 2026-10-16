@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- More turns cut, measured on the neutral suite (T-1231): Foreman went from 13 turns and $0.22 to 4 turns and $0.08 on the same task (Claude Code alone: 4 turns, $0.07).
+  - In a one-request full-autonomy session the first edit makes its task and goes ahead, after the whole guard passes it with the task active; the note teaches the one-call close (`fm task finish --run … --audit … --commit …`).
+  - A `Task: …` prompt counts as a work request.
+  - Only whole words like token, session, login or acl make a path security-sensitive (`kit/tokenbucket.py` had cost five turns and a reviewer), and the adversary refusal says to record it with `--lens "adversary: …"`.
 - The Claude Code process behind a hook is found by a fixed shape: at most this hook's own python dispatcher (the same file by absolute path), then at most one system shell whose `-c` starts with the hook, then Claude Code. Nothing else is skipped and no process name or argv substring is trusted, so a disguised nested claude can't pass for the asking session (T-1236)
 - A neutral benchmark suite: `bench/spec-suite/make.py DIR` builds a small repo of eight fully specified tasks (durations, an LRU cache, SemVer precedence, text tables, ranges, dotted paths, a token bucket, CSV lines) whose hidden tests check only what each commit message states; `--check` proves each fail-to-pass and the build reproducible (T-1232)
 - A chat yes now answers a pending `fm ask` only when it is typed into the same Claude Code process that ran the ask. That process is named exactly: the hook's nearest ancestor that isn't its own python or the system shell launching it, never trusted by name. A nested or resumed Claude Code (renamed, under a pty, with a positional prompt) is always another process (T-1233)

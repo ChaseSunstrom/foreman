@@ -543,14 +543,54 @@ class NoTaskGate(HookCase):
         self.hook("UserPromptSubmit", {"prompt": "FIX: parse_duration rejects '1h 30m'\nDONE-WHEN: spaces between units "
                                                  "parse"})
         p = self.pre(os.path.join(self.repo, "app.py"))
-        reason = parse(p)["hookSpecificOutput"]["permissionDecisionReason"]
+        out = parse(p)["hookSpecificOutput"]
         act = c.active_brief(c.load_briefs(self.project()))
-        self.assertIsNotNone(act, reason)
-        self.assertIn(act.id, reason)
-        self.assertIn("retry", reason.lower())
+        self.assertIsNotNone(act, out)
+        self.assertNotEqual(out.get("permissionDecision"), "deny", "the edit goes ahead once its task exists")
+        self.assertIn(act.id, out["additionalContext"])
+        self.assertIn("--commit", out["additionalContext"], "one call tests, closes and commits")
         self.assertEqual((act.type, act.tier), ("FIX", "S"))
         self.assertIn("spaces between units parse", act.section("Acceptance criteria"))
-        self.assertEqual(self.pre(os.path.join(self.repo, "app.py")).returncode, 0, "the retry goes through")
+
+    def test_a_write_refused_for_another_reason_makes_no_task(self):
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "FIX: tidy the state"})
+        out = parse(self.pre(os.path.join(self.home, "state", "meta.json")))["hookSpecificOutput"]
+        self.assertEqual(out.get("permissionDecision"), "deny", "a direct state write stays refused")
+        self.assertIn("state", out["permissionDecisionReason"])
+        self.assertIsNone(c.active_brief(c.load_briefs(self.project())), "brief is the guard's last check")
+
+    def test_a_long_untagged_task_request_gets_its_task_made_too(self):
+        # T-1231: the neutral suite's prompts start "Task: Add kit.x …" and run past 200 words
+        self.fm("init")
+        self.fm("autonomy", "full")
+        spec = "Task: Add kit.lru.LRUCache: a fixed-size cache\n\n" + "- a stated rule about the cache\n" * 80
+        self.hook("UserPromptSubmit", {"prompt": spec})
+        out = parse(self.pre(os.path.join(self.repo, "kit.py")))["hookSpecificOutput"]
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, out)
+        self.assertEqual((act.type, act.tier), ("FEATURE", "S"))
+        self.assertIn("LRUCache", act.title)
+
+    def test_a_plan_only_or_open_ended_request_keeps_the_plain_refusal(self):
+        for prompt in ("Make a plan for the cache, don't implement anything yet", "Fix everything"):
+            with self.subTest(prompt=prompt):
+                self.fm("init")
+                self.fm("autonomy", "full")
+                self.hook("UserPromptSubmit", {"prompt": prompt, "session_id": prompt[:8].replace(" ", "-")})
+                self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "PLAN.md"),
+                                                                              "content": "x"},
+                                         "session_id": prompt[:8].replace(" ", "-")})
+                self.assertIsNone(c.active_brief(c.load_briefs(self.project())))
+
+    def test_the_edit_that_loses_a_parallel_race_goes_ahead_too(self):
+        # review: the second of two parallel edits found the task made and was refused "no active task"
+        import fmhooks
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.task()
+        self.assertEqual(fmhooks._first_brief(self.project(), "sess-1"), "", "a task exists: re-check, don't refuse")
 
     def test_a_request_with_two_items_or_no_work_keeps_the_plain_refusal(self):
         self.fm("init")
