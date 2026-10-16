@@ -444,7 +444,9 @@ def cmd_digest(args):
     lines += ["Decisions reversed, by kind: " + " · ".join(f"{k}: {r} of {n} reversed" for k, (n, r) in rev.items())] \
         if any(r for _, r in rev.values()) else []
     decided = week_decisions(p, args.days)
-    lines += [f"Decided without you: {len(decided)}"] + [f"- {c.fit(x, 160)}" for x in decided[-6:]] if decided else []
+    plain = [x for x in decided if x not in review]  # costly/outward rows are listed once, under review below
+    lines += [f"Decided without you: {len(decided)} ({len(review)} to review below)"] + [f"- {c.fit(x, 160)}" for x in plain[-6:]] \
+        if decided else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
     triage.sort(key=lambda r: ("do", "drop", "ask").index(r[1]))  # a do or drop never hides behind asks
@@ -462,7 +464,7 @@ def cmd_digest(args):
                                                         for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
         for e in nights[-5:]] if nights else []
-    fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review,
+    fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
                      "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
 
