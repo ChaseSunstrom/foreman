@@ -4320,6 +4320,12 @@ def build_parser():
     s.add_argument("--atlas", action="store_true", help="by file and language: where work didn't hold (T-0620)")
     s.add_argument("--readme", action="store_true", help="one sentence for a README: held, closed and ungraded "
                                                          "counts (T-0960)")
+    for flag, why in (("settle", "log one outcome event per task whose 30-day window closed (survived or lost)"),
+                      ("claims", "survival by the grade each finish recorded: did strong closes hold more often"),
+                      ("regret", "lost tasks with the approach they took, and reversed decisions"),
+                      ("graveyard", "lost and dropped tasks"),
+                      ("seen", "survival of tasks the user corrected mid-task against the rest")):  # T-1060
+        s.add_argument("--" + flag, action="store_true", help=why)
     s = add("verify-ledger", lazy("fmledger", "cmd_verify_ledger"), help="prove no ledger line was edited or removed: "
                                                                          "each carries the hash of the one before (T-1065)")
     s.add_argument("--head", help="also prove this head (a finish receipt's) is still in the chain: the tail wasn't cut")

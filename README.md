@@ -138,7 +138,7 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - `fm why FILE:LINE` traces a line back to the task and the words you asked in.
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
 - `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
-- `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence; `fm round close` tags a round and lists what it closed.
+- `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence; `fm outcomes` grades every close by whether it survived 30 days (nothing reverted it, fixed it or corrected it), and `--claims`, `--regret`, `--graveyard` and `--seen` read those grades; `fm round close` tags a round and lists what it closed.
 
 **Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
