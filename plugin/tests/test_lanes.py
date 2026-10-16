@@ -327,6 +327,18 @@ class BuilderGates(unittest.TestCase):
                 self.assertIn(w, text)
 
 
+class BuilderContractOneSource(unittest.TestCase):
+    def test_every_contract_rule_is_in_the_builder_agent(self):
+        # T-1151: the brief's CONTRACT and fm-builder.md repeat each other by hand; a rule in one must be in the other
+        import fmlanes
+        norm = lambda s: " ".join(s.split())
+        agent = norm(read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md")))
+        rules = fmlanes.CONTRACT.format(id="<ID>", base="<BASE>").split("\n- ")[1:]
+        self.assertGreater(len(rules), 8)
+        for r in rules:
+            self.assertIn(norm(r), agent, "rule missing from agents/fm-builder.md")
+
+
 class BoardLanes(ForemanTestCase):
     """T-0961: the merge base is on disk before git merge runs (a merge that dies midway still measures the task from
     there) and a failed merge leaves the old one; one git runner (fmcore's) behind fmlanes, fmsecrets, fmmap, fmbench."""
