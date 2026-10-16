@@ -133,7 +133,9 @@ class ClaimsReview(Base):
         held = {(v["session"], v["symbol"]) for v in fmbus._leases().values() if v["file"] == "a.py"}
         self.assertEqual(held, {("sess-b", "f"), ("sess-a", "*")})
 
-    def test_a_lane_claim_exempts_its_own_task_only(self):
+    def test_a_lane_preclaim_never_denies_another_worktrees_edit(self):
+        # T-1138: lane-T-1135's file-wide pre-claim of fmcli.py stalled T-1137's builder in its own worktree; lanes
+        # edit separate checkouts and the merge settles overlaps, so a pre-claim is advisory (fm lease list shows it)
         import fmbus
         p = self.project()
         act = c.active_brief(c.load_briefs(p), p.lane)
@@ -142,7 +144,8 @@ class ClaimsReview(Base):
             f.write("x = 1\n")
         pl = {"session_id": "s", "tool_name": "Edit", "tool_input": {"old_string": "x = 1", "new_string": "x = 2"}}
         fmbus.preclaim(p, "T-9999", ["x.py"])
-        self.assertIn("lane-T-9999", fmbus.conflict(pl, p, path) or "", "another task's claim denies")
+        self.assertIsNone(fmbus.conflict(pl, p, path), "another lane's pre-claim is advisory")
+        self.assertIn("lane-T-9999", self.fm("lease", "list").stdout, "and still listed")
         fmbus.release(p, "T-9999")
         fmbus.preclaim(p, act.id, ["x.py"])
         self.assertIsNone(fmbus.conflict(pl, p, path), "the lane's own task edits its claim")
