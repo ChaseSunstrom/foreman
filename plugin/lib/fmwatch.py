@@ -513,6 +513,7 @@ def view(p):
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
+        "loop": _guarded(lambda: __import__("fmloop").view(p)),  # T-1057: the forever loop's round
         "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),
