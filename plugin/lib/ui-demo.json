@@ -14,7 +14,9 @@
   "depends": [], "stage": "executing",
   "stages": ["planning", "ready", "executing", "verifying", "documenting", "auditing", "closing"],
   "audits": {"done": 0, "need": 1}, "blockers": ["step 2 not done: Fix the token check"], "hypotheses": [],
-  "oracle": null, "batch": [], "inconclusive": 0, "unverified": [], "on_task_s": 1200, "children": []
+  "oracle": null, "batch": [], "inconclusive": 0, "unverified": [], "on_task_s": 1200, "children": [],
+  "splits": [{"stage": "planning", "secs": 240, "typical": 300, "delta": -60, "sign": "under"},
+             {"stage": "executing", "secs": 960, "typical": 600, "delta": 360, "sign": "over"}]
  },
  "next": "T-0042 step 2/3: Fix the token check",
  "queue": [{"id": "T-0043", "type": "FEATURE", "tier": "M", "title": "Remember me on the login form", "status": "planned",
