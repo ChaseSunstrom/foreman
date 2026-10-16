@@ -1,5 +1,5 @@
 """Builder lanes (T-0234): an S/M task worked by a foreman:fm-builder subagent in its own git worktree (Agent isolation
-"worktree"); the main thread reviews, merges, re-verifies and closes. At most two builders at once."""
+"worktree"); the main thread reviews, merges, re-verifies and closes. At most `fm lane max` builders at once (2 by default)."""
 import json
 import os
 import re
@@ -102,7 +102,7 @@ class Brief(_Tasks):
         self.fm("lane", "brief", two)
         p = self.fm("lane", "brief", three, check=False)
         self.assertNotEqual(p.returncode, 0)
-        self.assertIn("two builders", p.stderr + p.stdout)
+        self.assertIn("the cap is 2", p.stderr + p.stdout)  # T-1089: fm lane max sets it; 2 by default
         self.fm("task", "drop", one, "not needed")  # a closed one frees its slot
         self.fm("lane", "brief", three)
 
