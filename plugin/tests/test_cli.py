@@ -1154,6 +1154,19 @@ class SetLists(ForemanTestCase):
             self.assertEqual(c.find_brief(c.find_project(self.repo), tid).meta["scope"], ["plugin/a.py", "plugin/b.py"])
 
 
+    def test_several_sections_in_one_call_all_land(self):
+        # T-1124: only the last --section/--text pair was applied, silently
+        self.fm("init")
+        tid = json.loads(self.fm("task", "new", "X", "--type", "FIX", "--tier", "S", "--json").stdout)["id"]
+        self.fm("task", "set", tid, "--section", "Interpretation", "--text", "first", "--section", "Non-goals",
+                "--text", "second")
+        b = c.find_brief(c.find_project(self.repo), tid)
+        self.assertEqual((b.section("Interpretation").strip(), b.section("Non-goals").strip()), ("first", "second"))
+        r = self.fm("task", "set", tid, "--section", "Interpretation", "--section", "Approach", "--text", "x", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--text", r.stdout + r.stderr)
+
+
 class BareFm(ForemanTestCase):
     # T-0917: bare fm inside a project answers "what now?"; outside one it is the help it always was
     def test_bare_fm_in_a_project_says_where_things_stand_and_what_is_next(self):

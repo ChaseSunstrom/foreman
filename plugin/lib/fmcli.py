@@ -2147,6 +2147,19 @@ def task_new(p, args):
         cmd_focus(argparse.Namespace(id=b.id, project=getattr(args, "project", None), json=False))
 
 
+def _section_pairs(args):
+    """T-1124: [(section, text)] in the order given: each --section takes its own --text (or the one --file)."""
+    secs, texts = args.section or [], list(args.text or [])
+    if isinstance(secs, str):  # a caller building its own Namespace
+        secs, texts = [secs], [texts] if isinstance(texts, str) else texts
+    if args.file and len(secs) == 1 and not texts:
+        with open(args.file, encoding="utf-8") as f:
+            texts = [f.read()]
+    if len(texts) != len(secs):
+        raise UsageError(f"each --section needs its own --text: {len(secs)} section(s), {len(texts)} text(s)")
+    return list(zip(secs, texts))
+
+
 def task_set(p, args):
     import fmguard
     for cat in args.allow or []:
@@ -2174,7 +2187,7 @@ def task_set(p, args):
         if k == "approved" and v == "true":  # T-0490: an L feature names what it builds on before it's approved
             b = need_brief(p, args.id)
             if b.type == "FEATURE" and b.tier == "L" and not b.section("Build vs reuse").strip() and \
-                    not (args.section == "Build vs reuse" and (args.text or "").strip()):
+                    not any(sec == "Build vs reuse" and txt.strip() for sec, txt in _section_pairs(args)):
                 raise UsageError(f"{b.id} is a FEATURE L: before it's approved, say what it builds on — fm task set "
                                  f"{b.id} --section \"Build vs reuse\" --text \"<the fm command, module or library it "
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
@@ -2183,11 +2196,7 @@ def task_set(p, args):
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
-    section_text = None
-    if args.section:
-        section_text = args.text if args.text is not None else (open(args.file).read() if args.file else None)
-        if section_text is None:
-            raise UsageError("--section needs --text or --file")
+    pairs = _section_pairs(args)
 
     def apply(b):
         if changes.get("status") in ("active", "verifying") and b.status not in ("active", "verifying"):
@@ -2209,12 +2218,13 @@ def task_set(p, args):
                 allow.append(cat)
             b.meta["allow"] = allow
             b.append_log(f"guard authorization added: {cat}")
-        if args.section:
-            text = c.redact(section_text)
-            b.set_section(args.section, b.keep_ticks(text) if args.section == "Acceptance criteria" else text)
+        for sec, raw in pairs:
+            text = c.redact(raw)
+            b.set_section(sec, b.keep_ticks(text) if sec == "Acceptance criteria" else text)
         if changes:
             b.append_log("set " + ", ".join(f"{k}={v}" for k, v in changes.items()))
-    b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [], "section": args.section})
+    b, _ = mutate(p, args.id, apply, "task_set", {"changes": changes, "allow": args.allow or [],
+                                                  "section": [sec for sec, _ in pairs] or None})
     out(args, c.brief_summary(b), f"{b.id} updated.")
 
 
@@ -4458,8 +4468,9 @@ def build_parser():
     t.add_argument("id")
     t.add_argument("assignments", nargs="*")
     t.add_argument("--allow", action="append")
-    t.add_argument("--section")
-    t.add_argument("--text")
+    t.add_argument("--section", action="append", help="repeatable: each --section takes the --text (or --file) "
+                                                       "given after it (T-1124)")
+    t.add_argument("--text", action="append")
     t.add_argument("--file")
     t = tadd("step")
     t.add_argument("id")
