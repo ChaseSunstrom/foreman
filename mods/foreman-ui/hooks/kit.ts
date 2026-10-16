@@ -33,7 +33,7 @@ const TYPE_COLOR: Record<string, number> = {
   SECURITY: C.edit,
   RESEARCH: 0xafafff,
 }
-export const typeColor = (type: string) => hex(TYPE_COLOR[type] ?? C.dim)
+export const typeColor = (type: string) => hex(type === 'FIX' ? C.err : TYPE_COLOR[type] ?? C.dim) // C.err follows the palette (T-1081)
 
 export function mix(a: number, b: number, t: number): number {
   const k = Math.max(0, Math.min(1, t))
