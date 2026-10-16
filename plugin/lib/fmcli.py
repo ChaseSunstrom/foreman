@@ -4337,7 +4337,7 @@ HELP_TIERS = [
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget risk sync share notify compact-output complete wiring "
                              "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay backtest bench evolve trial"),
-    ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
+    ("Running elsewhere", "lane page serve run session claude agents night draft scout orders mcp ui projects sweep machine watch "
                           "bus lease conductor"),
     ("Internal (hooks and installer)", "sentinel install-user uninstall-user"),
 ]
@@ -4906,6 +4906,10 @@ def build_parser():
     s.add_argument("--max-usd", type=float, default=2.0, help="the night's spend at most (and today's budget left)")
     s.add_argument("--only", action="append", metavar="JOB", help="only this job (repeatable): landscape, "
                                                                   "second session, court")
+    s = add("draft", lazy("fmdraft", "cmd_draft"),
+            help="draft the top queued S task with a headless claude in a throwaway worktree (branch draft/T-x); "
+                 "swept when the queue's top changes; never merged")
+    s.add_argument("--status", action="store_true", help="sweep a stale draft and say what is waiting; draft nothing")
     s = add("landscape", lazy("fmoutside", "cmd_landscape"),
             help="research what people want from coding-agent harnesses now: what's new since the last scan, what "
                  "Foreman lacks")
