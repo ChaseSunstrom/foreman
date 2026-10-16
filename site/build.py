@@ -69,15 +69,15 @@ def pairs(title, note, rows, names=("With Foreman", "Claude Code"), unit=""):
     """Two horizontal bars per row (series 1 and 2), each with its value at the tip: rows are (label, a, b)."""
     rows = list(rows)
     top = max([max(a, b) for _, a, b in rows] + [1e-9])
-    band, label_w, w = 52, 120, 640
+    band, label_w, w = 72, 0, 640  # T-1239: each label above its bars, full width, so a long task name stays inside
     plot = w - label_w - 80
     h = band * len(rows) + 6
-    out = [f'<svg class="viz" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
+    out = [f'<svg class="viz pairs" viewBox="0 0 {w} {h}" role="img" aria-label="{esc(title)}">']
     for i, (k, a, b) in enumerate(rows):
         y = 4 + i * band
-        out.append(f'<text class="lab" x="{label_w - 10}" y="{y + 26}" text-anchor="end">{esc(str(k))}</text>')
+        out.append(f'<text class="lab" x="0" y="{y + 14}">{esc(str(k))}</text>')
         for j, (v, name) in enumerate(((a, names[0]), (b, names[1]))):
-            yy = y + 4 + j * 22
+            yy = y + 20 + j * 22
             bw = max(2, plot * v / top)
             out.append(f'<rect class="m s{j + 1}" x="{label_w}" y="{yy}" width="{bw:.1f}" height="18" rx="4">'
                        f'<title>{esc(str(k))} · {esc(name)}: {fmt(v)}{unit}</title></rect>'

@@ -163,7 +163,7 @@ def duel(state, model=None):
     def name(cid):  # kit.lru → "lru"; otherwise the title's first words
         t = titles.get(cid, "")
         mod = re.findall(r"\bkit\.(\w+)", t)
-        return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]) or cid)
+        return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]).rstrip(",;.") or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
     return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}

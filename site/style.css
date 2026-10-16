@@ -218,6 +218,7 @@ footer .fine { flex-basis: 100%; }
 .viz .lab { fill: var(--ink-2); }
 .viz .tick { fill: var(--muted, #898781); font-variant-numeric: tabular-nums; }
 .viz .val { fill: var(--ink); font-weight: 600; }
+@media (max-width: 560px) { .viz.pairs .lab { font-size: 24px; } .viz.pairs .val { font-size: 22px; } } /* T-1239: the chart scales down on phones */
 .viz .grid { stroke: var(--grid); stroke-width: 1; }
 .viz .axis { stroke: var(--axis); stroke-width: 1; }
 .viz .budget { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 3; }

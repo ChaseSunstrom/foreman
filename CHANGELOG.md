@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Benchmarks page: chart labels sit above their bars at full width, so a long task name can't run outside its card; table cells read "✓ 3 of 3 runs"; times are whole seconds; the per-task charts' text is larger on phones (T-1239)
 
 ## 1.2.37 — 2026-10-16
 - A one-request unattended run's first task is S (M for SECURITY), not a size guessed from words in a long spec. An L guess had sent a lexer task into the full plan-and-audit flow (25 turns, 272 s). The run's one request is its work whatever its first word (T-1231)

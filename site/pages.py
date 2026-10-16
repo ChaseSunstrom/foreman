@@ -108,17 +108,17 @@ def _duel(s, name):
                     f" Its {what} was within 3% of Claude Code's.")
 
     def cell(x):
-        mark = "✓ passed" if x["pass"] else "✗ failed"
+        mark = "✓" if x["pass"] else "✗"
         if x.get("score") is not None:
-            return f"{mark} (judge {x['score']} of 5)"
-        return f"{mark} ({x['passed']} of {x['runs']} runs)" if x.get("runs", 1) > 1 else f"{mark} (hidden tests)"
+            return f"{mark} judge {x['score']} of 5"
+        return f"{mark} {x['passed']} of {x['runs']} runs" if x.get("runs", 1) > 1 else f"{mark} hidden tests"
     rows = "".join(f"<tr><td>{c['case']}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>" for c in cs)
     table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
              f'</thead><tbody>{rows}</tbody></table></div>')
     return (head + f"<p><strong>{verdict}</strong></p>" + table
             + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
             + pairs("Time per task", "Seconds from the first prompt to the session ending.",
-                    [(c["case"], c["foreman"]["seconds"], c["bare"]["seconds"]) for c in cs], unit=" s"))
+                    [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">
