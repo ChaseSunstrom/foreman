@@ -197,6 +197,23 @@ class Site(unittest.TestCase):
     resolve, and every feature page carries a chart or figures from site/data/stats.json."""
     ROOT = os.path.dirname(PLUGIN)
 
+    def test_a_long_chart_label_stays_inside_its_card(self):
+        # T-1239: the harder suite's task names ("Add ledger.lexer.tokenize") ran out of the paired bars' card
+        import importlib.util
+        import re
+        spec = importlib.util.spec_from_file_location("site_build", os.path.join(self.ROOT, "site", "build.py"))
+        build = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build)
+        svg = build.pairs("Cost", "note", [("Add ledger.lexer.tokenize", 0.07, 0.08), ("Group thousands in invoice "
+                                                                                       "amounts", 0.1, 0.09)])
+        labels = re.findall(r'(<text class="lab"[^>]*>)([^<]+)<', svg)
+        self.assertEqual(len(labels), 2)
+        for tag, label in labels:
+            x, anchor = float(re.search(r' x="([\d.]+)"', tag)[1]), (re.search(r'text-anchor="(\w+)"', tag) or [0, ""])[1]
+            left = x - (len(label) * 6.5 if anchor == "end" else 0)
+            self.assertGreaterEqual(left, 0, label)
+            self.assertLessEqual(x + (0 if anchor == "end" else len(label) * 6.5), 640, label)
+
     def test_the_site_builds_and_every_local_link_resolves(self):
         import subprocess
         import sys
