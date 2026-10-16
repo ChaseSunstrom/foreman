@@ -915,6 +915,7 @@ def _name(argv):
 _SHELLS = re.compile(r"^((ba|z|da|k|fi|c|tc)?sh|python[0-9.]*|perl|ruby|node|php|pwsh)$")
 _FETCHERS = {"curl", "wget", "fetch"}
 _FETCH_WORD = re.compile(r"(?<![\w./-])(?:\S*/)?(?:curl|wget|(?<!git )fetch)(?![\w.-])")  # T-0421: a fetcher anywhere; T-0937: not `git fetch`
+_PRINTED_SUBST = re.compile(r"(\$\(|`)\s*((?:echo|printf)\s+[^`)]*?)\s*(?:\)|`)")
 _DOWNLOAD_SUBST = re.compile(r"(\$\(|`)\s*(curl|wget|fetch)\b")
 
 
@@ -2320,6 +2321,16 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             joined = " ".join(args)
             for text in _readings(joined, {**lits, **known}):  # T-0587: q='rm -rf'; eval "$q ~"
                 found += check_bash(text, ctx, depth + 1)
+            for m in _PRINTED_SUBST.finditer(joined):  # T-1123: eval "$(printf 'rm -rf ~')" runs the printed text
+                try:
+                    w = shlex.split(m.group(2))
+                except ValueError:
+                    continue
+                cmdname, w = w[0], w[1:]
+                if cmdname == "echo":
+                    w = [a for a in w if not re.fullmatch(r"-[neE]+", a)]
+                if w and (cmdname == "echo" or "%" not in w[0]):  # ponytail: printf only with no % in its format
+                    found += check_bash(" ".join(w), ctx, depth + 1)
             if _DOWNLOAD_SUBST.search(joined):
                 found.append(("pipe-shell", "eval of a downloaded script"))
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
@@ -2772,16 +2783,20 @@ def _check_rm(name, args, via_xargs, chain, cwd, ctx):
         recursive = any(o in ("-r", "-R") or (not o.startswith("--") and re.search(r"[rR]", o))  # T-0668: getopt takes
                         or (o.startswith("--") and len(o) > 2 and "recursive".startswith(o[2:].split("=")[0]))  # --rec
                         for o in opts)
-        if recursive:
+        if recursive or (via_xargs and not targets):  # T-1123: a plain rm fed on stdin is checked too
+            kind = "recursive delete" if recursive else "delete"
             if not targets:
-                upstream = next((x for x in reversed(chain) if _name(x.argv) == "find"), None)
-                targets = _find_paths(_strip_wrappers(upstream.argv)[0][1:]) if (via_xargs and upstream) else []
+                upstream = next((x for x in reversed(chain) if _name(x.argv) in ("find", "echo", "printf")), None)
+                if via_xargs and upstream:
+                    up, rest = _name(upstream.argv), _strip_wrappers(upstream.argv)[0][1:]
+                    # ponytail: echo/printf operands are read as paths (printf's format too); find's start paths
+                    targets = _find_paths(rest) if up == "find" else [a for a in rest if not a.startswith("-")]
                 if not targets:
-                    out.append(("rm-outside", "recursive rm with targets from stdin"))
+                    out.append(("rm-outside", f"{'recursive ' if recursive else ''}rm with targets from stdin"))
             for t in targets:
-                v = _rm_target_violation(t, cwd, ctx)
+                v = _rm_target_violation(t, cwd, ctx, root_ok=not recursive)
                 if v:
-                    out.append(("rm-outside", f"recursive delete of {v}"))
+                    out.append(("rm-outside", f"{kind} of {v}"))
     elif name == "find":
         deleting = "-delete" in args or any(a in ("-exec", "-execdir", "-ok") and i + 1 < len(args)
                                             and os.path.basename(args[i + 1]) in ("rm", "shred") for i, a in enumerate(args))
