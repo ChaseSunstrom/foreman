@@ -627,7 +627,10 @@ def cmd_task(args):
                 start = [i for i, e in enumerate(evs) if e.get("event") == "focus" and c.parse_ts(e.get("ts"))]
                 logged.update(predict_minutes=pm, predict_attempts=pa)
                 if start:  # the latest focus (a block or reopen means a re-focus); unknown start: no minutes, never a clean 0
-                    logged["minutes"] = round((time.time() - c.parse_ts(evs[start[-1]]["ts"]).timestamp()) / 60)
+                    # active time only: gaps of 30+ minutes between the task's events (overnight, away) don't count
+                    import fmoutcomes
+                    logged["minutes"] = fmoutcomes.active_minutes(
+                        [c.parse_ts(e.get("ts")).timestamp() for e in evs[start[-1]:] if c.parse_ts(e.get("ts"))] + [time.time()])
                     logged["attempts"] = 1 + sum(1 for e in evs[start[-1]:]
                                                  if e.get("event") == "finish" and (e.get("data") or {}).get("failed"))
         first_edit = c.first_touch(p, pre.id)

@@ -2028,6 +2028,8 @@ def needs_approval(b, autonomy="standard"):
 
 def effective_autonomy(p, meta=None):
     """The project's autonomy, or "slow" (standard plus approval for M, T-1061) while its plans keep missing."""
+    if panicked():  # every reader agrees: standard while paused (T-0436)
+        return "standard"
     a = (read_meta(p) if meta is None else meta).get("autonomy", "standard")
     if a == "standard":
         import fmoutcomes
@@ -2070,7 +2072,8 @@ def plan_gaps(b, autonomy="standard"):
         gaps.append(f"the user's yes (fm ask {b.id} confirm: a child found this request in an old session)"
                     if b.meta.get("confirm") else
                     f"approval (M tier needs it: 3 or more of the last 5 closes missed their plan, see fm digest; approve "
-                    f"with fm task set {b.id} approved=true, or close smaller tasks on plan)"
+                    f"by asking the user one yes/no, then fm task set {b.id} approved=true after their yes; or close "
+                    f"smaller tasks on plan)"
                     if autonomy == "slow" and b.tier == "M" and not b.meta.get("explore") else
                     f"approval ({'L tier' if b.tier == 'L' else 'explore item'}, standard autonomy)")
     return gaps

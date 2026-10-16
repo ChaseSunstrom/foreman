@@ -284,16 +284,26 @@ def missed(d):
     return any(checks) if checks else None
 
 
+def active_minutes(stamps, idle=1800):
+    """Minutes between consecutive epoch stamps, leaving out gaps of idle seconds or more (overnight, away)."""
+    return round(sum(b - a for a, b in zip(stamps, stamps[1:]) if b - a < idle) / 60)
+
+
 def record_close(p, d):
     """Keep this close's verdict in project meta (the last PLAN_WINDOW), so reading it costs nothing per turn."""
     m = missed(d)
     if m is not None:
-        c.update_meta(p, plan_verdicts=((c.read_meta(p).get("plan_verdicts") or []) + [[c.now(), m]])[-PLAN_WINDOW:])
+        with c.lock(p.dir):  # read and append under one lock: two closes can't lose a verdict
+            meta = c.read_meta(p)
+            meta["plan_verdicts"] = ((meta.get("plan_verdicts") or []) + [[c.now(), m]])[-PLAN_WINDOW:]
+            c.write_meta(p, meta)
 
 
 def plan_window(p):
-    """[bool] — missed or not — for the stored verdicts under PLAN_DAYS old."""
-    return [bool(m) for ts, m in c.read_meta(p).get("plan_verdicts") or [] if (c.age_days(ts) or 0) < PLAN_DAYS]
+    """[bool] — missed or not — for the stored verdicts under PLAN_DAYS old; malformed entries are skipped."""
+    rows = c.read_meta(p).get("plan_verdicts")
+    return [bool(r[1]) for r in rows if isinstance(r, (list, tuple)) and len(r) == 2 and isinstance(r[0], str)
+            and (c.age_days(r[0]) or 0) < PLAN_DAYS] if isinstance(rows, list) else []
 
 
 def misses(p):
