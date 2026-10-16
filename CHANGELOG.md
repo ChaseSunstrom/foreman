@@ -6,6 +6,7 @@
 - The Stop drive no longer offers a builder lane for a RESEARCH task or a release, and doesn't offer a task whose `fm check --evidence` gate run is still going (T-1176).
 - A file named on an `fm` command line that can't be read (`fm intake --file nope.txt`) is a one-line error, not a Python traceback (T-1189).
 - Common guesses run what they meant, with one quiet "(ran `fm …`)" note: `fm task list|ls|all`, `fm tasks`, `fm ls` (the queue), `fm task get|view|info|cat ID` (task show), `fm lane ls`, `fm inbox list|ls` (T-1180).
+- A stopped fm-reviewer's findings are logged as `finding` events (lens, severity, file, verdict reported) without a hand-typed `fm task finding`, and the defect classes in builder briefs count them until rejected (T-1181).
 
 ## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
