@@ -833,6 +833,7 @@ def _onwrite(p, path):
 
 
 THRASH = 6  # edits of one file with no check recorded in between
+BATCH_AT = 3  # T-1089: the edit of one file that points at fm edit, once a session per file
 
 
 def _thrash_note(pl, p, act, path):
@@ -845,7 +846,13 @@ def _thrash_note(pl, p, act, path):
             break
         if e.get("event") == "touched" and (e.get("data") or {}).get("file") == path:
             n += 1
-    if n < THRASH or not _first_time(pl.get("session_id"), "thrash-" + hashlib.sha1(path.encode()).hexdigest()[:10]):
+    key = hashlib.sha1(path.encode()).hexdigest()[:10]
+    if n == BATCH_AT and _first_time(pl.get("session_id"), "batch-" + key):  # T-1089: one call for the rest
+        return (f"Foreman: the {BATCH_AT}rd edit of {os.path.basename(path)} in a row. When more spots in it (or in other "
+                f"files) are known, fm edit applies them all in one call: JSON on stdin "
+                f"([{{\"file\", \"old\", \"new\"}}]) or @@ file / <<< old / === new / >>> blocks, all or none, inside "
+                f"the task's scope; fm sub PATTERN REPL --glob G previews a regex change across files.")
+    if n < THRASH or not _first_time(pl.get("session_id"), "thrash-" + key):
         return None
     return (f"Foreman: {os.path.basename(path)} has been edited {n} times without a check in between. State one "
             f"hypothesis (fm task log {act.id} \"hypothesis: …\"), test it, and log what it rules out before editing "

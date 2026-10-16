@@ -3931,7 +3931,7 @@ def _all_parsers(parser):
 HELP_TIERS = [
     ("Every task", "next capture clauses intake batch task focus check smoke gates checkpoint resume queue relate state status log "
                    "ask decide"),
-    ("Finding your way", "help demo show recall fix explain surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
+    ("Finding your way", "help demo show recall fix explain edit sub surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
     ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
@@ -4607,6 +4607,17 @@ def build_parser():
     s = add("drive", cmd_drive, help="keep Claude working while the queue has unblocked work")
     s.add_argument("state", choices=["on", "off"])
 
+    s = add("edit", lazy("fmedit", "cmd_edit"), help="a batch of exact replacements across files from stdin (JSON or "
+            "@@ file / <<< old / === new / >>> blocks), all or none, inside the task's scope (T-1089)")
+    s.add_argument("--dry-run", action="store_true", help="say what would change; write nothing")
+    s.add_argument("--file", help="read the batch from this file instead of stdin (a builder writes it with Write)")
+    s = add("sub", lazy("fmedit", "cmd_sub"), help="a regex codemod: per-file counts first, --apply writes (T-1089)")
+    s.add_argument("pattern")
+    s.add_argument("repl", help="the replacement (re.sub syntax: \\g<1> for a group)")
+    s.add_argument("--glob", action="append", help="files to search, relative to the project (repeatable; ** works)")
+    s.add_argument("--apply", action="store_true", help="write the changes (inside the task's scope)")
+    s.add_argument("--max", type=int, default=50, help="refuse to write more files than this")
+
     s = add("loop", lazy("fmloop", "cmd_loop"), help="the forever loop (T-1057): on, an empty queue starts the next "
             "improvement round (review, brainstorm past every earlier run, queue, build) until two dry rounds")
     s.add_argument("action", nargs="?", choices=["status", "on", "off", "round", "yield"])
@@ -4902,8 +4913,8 @@ def build_parser():
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
                                                        "brief <id>: an S/M task for a foreman:fm-builder subagent")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge"])
-    s.add_argument("id", nargs="?")
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max"])
+    s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "
                                                           "reason on the ledger (main thread only, T-0948)")
