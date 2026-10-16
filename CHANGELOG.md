@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm round close` lists the newest 20 tasks closed in the round and counts the rest (`--json` still lists every one); the first round of 1.2.34 had printed 744 lines into the release output (T-1200).
 - A builder's brief names the main checkout's path as the one place never to cd into, write or point `git -C` at, and says its worktree is the folder it starts in and that fm verbs run there act on its lane (builders had hit Claude Code's "isolated in the worktree" refusal 31 times by leaving it) (T-1196).
 - Guard: `git checkout -- FILE`, `git checkout REV -- FILE` and `git checkout FILE` are judged as writes to those files, not the whole tree. A branch, `-b`, `.`, a glob or pathspec-magic word, `--pathspec-from-file`, `--icase-pathspecs`/`--glob-pathspecs` and `GIT_ICASE_PATHSPECS`/`GIT_GLOB_PATHSPECS` still count as tree writes (T-1195).
 - The guard reads what a command runs: script files (`bash x.sh`, `source`, a script run by its path, `python x.py`), hidden exec vectors (`tar -I`, `ssh`, `rsync -e`, `git -c core.*`, `find -exec`, env-loaded code) and the scripts those run, and refuses a dangerous one naming the file and line. Over its time budget it falls back to a literal scan, and verdicts are cached by content hash (T-0275).
