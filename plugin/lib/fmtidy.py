@@ -118,9 +118,21 @@ def unblocked(p, b, status):
         tok = tok.rstrip(".")
         path = os.path.realpath(os.path.join(p.root, tok))
         if (_looks_like_path(tok) and path.startswith(os.path.realpath(p.root) + os.sep) and os.path.isfile(path)
-                and os.path.getmtime(path) > at.timestamp() + 1):
+                and _changed_since(p.root, path, at.timestamp())):
             return f"{tok} changed since it was blocked"
     return None
+
+
+def _changed_since(root, path, t):
+    """T-1106: a commit touched path after t, or it has uncommitted edits made after t. Not its mtime alone: a fresh
+    clone or a builder's worktree gives every file a new one (T-1077's lesson)."""
+    if not c.git_root(root):
+        return os.path.getmtime(path) > t + 1
+    rel = os.path.relpath(path, root)
+    if c._git(root, "log", "-1", "--format=%ct", f"--since=@{int(t) + 1}", "--", rel, timeout=30).strip():
+        return True
+    dirty = c._git(root, "status", "--porcelain", "--", rel, timeout=30).strip()
+    return bool(dirty) and os.path.getmtime(path) > t + 1
 
 
 def _git_facts(root, since):

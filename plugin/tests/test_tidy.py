@@ -525,3 +525,27 @@ class Rollback(TidyCase):
             f.write(b"not a tarball")
         r = self.fm("rollback", "--yes", check=False)
         self.assertNotEqual(r.returncode, 0)
+
+
+class UnblockedByGit(TidyCase):
+    def test_a_fresh_mtime_is_no_change_but_a_commit_is(self):
+        # T-1106: a fresh clone or a builder's worktree gave every file a new mtime, so every blocked task read
+        # "changed since it was blocked"
+        import subprocess
+        import time
+        import fmtidy
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 1\n")
+        subprocess.run(["git", "-C", self.repo, "add", "a.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "a"], check=True)
+        tid = self.fm_json("task", "new", "Wait", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s")["id"]
+        self.fm("task", "block", tid, "waiting on a.py to settle")
+        time.sleep(1.1)
+        later = time.time() + 30
+        os.utime(os.path.join(self.repo, "a.py"), (later, later))  # what a clone does
+        b = c.find_brief(self.p, tid)
+        self.assertIsNone(fmtidy.unblocked(self.p, b, {}))
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 2\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "a changed"], check=True)
+        self.assertIn("a.py changed", fmtidy.unblocked(self.p, c.find_brief(self.p, tid), {}) or "")

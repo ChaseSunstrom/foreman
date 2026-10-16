@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm tidy` and `fm next` judge "what a blocked task waited on changed" by git (a commit after the block, or uncommitted edits), not by the file's mtime: a fresh clone or a builder's worktree made every blocked task look ready (T-1106).
 - State rollback on upgrade (T-1085): the first session after a Foreman version change snapshots every project's record in the background (keeping 3, with a manifest), and `fm rollback [--list] [--to NAME] --yes` restores it after a safety copy, file by file under each project's lock, never touching the ledger or consent changed since; the guard leaves `fm rollback --yes` (and every abbreviation of it) to the user, from one table of user-only fm commands.
 - A brainstorm's `ideas.md` states its distinct idea count at the top, and `fm ideas --seen` reads only its idea sections: the per-lens, coverage and kill bullets were read back as idea titles, and a bullet count overstated a run (409 bullets for ~290 ideas) (T-1056).
 - The pane flags a stopped builder (T-1119): its worktree node in the Agents graph reads "stopped · fm lane resume T-…" in the warning colour, from `fm ui`'s new `stopped` mark on that worktree.
