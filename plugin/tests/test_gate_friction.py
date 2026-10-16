@@ -64,6 +64,20 @@ class Typos(ForemanTestCase):
             self.assertNotEqual(p.returncode, 0)
             self.assertIn(f"did you mean {want}", p.stderr, argv)
 
+    def test_common_guesses_run_the_real_command(self):
+        # T-1180: builders and small models guess `fm task list`; the guess runs what it meant, with one quiet note
+        self.fm("init")
+        self.fm("task", "new", "Alpha", "--type", "FIX", "--tier", "S", "--step", "s", "--ac", "x :: true")
+        for argv, ran in ((["task", "list"], "fm queue"), (["task", "ls"], "fm queue"), (["tasks"], "fm queue"),
+                          (["ls"], "fm queue"), (["task", "get", "T-0001"], "fm task show"),
+                          (["task", "view", "T-0001"], "fm task show"), (["lane", "ls"], "fm lane list"),
+                          (["inbox", "list"], "fm inbox")):
+            r = self.fm(*argv, check=False)
+            self.assertEqual(r.returncode, 0, (argv, r.stderr))
+            self.assertIn(f"(ran `{ran}", r.stderr, argv)
+        self.assertIn("Alpha", self.fm("task", "view", "T-0001").stdout)
+        self.assertNotEqual(self.fm("task", "nonsense", check=False).returncode, 0)
+
     def test_an_unknown_command_skips_the_list_of_every_command(self):
         # T-1170: argparse's "choose from" named all ~170 commands (2 KB of output for one typo)
         p = self.fm("tsk", check=False)
