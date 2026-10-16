@@ -1,8 +1,10 @@
 """fm doctor: each check passes on good fixtures and fails on bad ones; the command runs end to end."""
 import json
 import os
+import re
 import subprocess
 import tempfile
+import time
 import unittest
 
 from helpers import PLUGIN, ForemanTestCase, git_repo
@@ -40,6 +42,64 @@ class Checks(unittest.TestCase):
         self.assertNotIn("sessionTitle", r.detail)
         self.assertEqual(d.check_cc_features((2, 1, 299), pl).status, "PASS")
         self.assertEqual(d.check_cc_features((), pl).status, "PASS")  # unknown version: nothing to compare
+
+    def test_upstream_issues(self):
+        # T-1076: a recurring error that is a known Claude Code bug is named with the version that fixes it
+        url = "https://github.com/anthropics/claude-code/issues/25990"
+        issues = [{"id": "zsh-heredoc", "pattern": r"can't create temp file for here document", "issue_url": url,
+                   "fixed_in": "2.1.47", "note": "sandboxed zsh heredocs"}]
+        text = "(eval):1: can't create temp file for here document: read-only file system"
+        before, after = "2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z"
+        update = c.parse_ts("2026-10-02T00:00:00Z").timestamp()  # the installed Claude Code arrived
+        err = (after, text)
+        r = d.check_upstream([err, (after, "other"), err], (2, 1, 40), issues, update)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn(url, r.detail)
+        self.assertIn("seen 2×", r.detail)
+        self.assertIn("fixed in 2.1.47", r.detail)
+        self.assertIn("claude update", r.detail)
+        r = d.check_upstream([err, err], (2, 1, 50), issues, update)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("recurs", r.detail)
+        self.assertNotIn("claude update", r.detail)
+        # review: errors from before the update that fixed them don't recur; when the update time is unknown, say so
+        self.assertEqual(d.check_upstream([(before, text)] * 3 + [err], (2, 1, 50), issues, update).status, "PASS")
+        r = d.check_upstream([(before, text)] * 2, (2, 1, 50), issues, 0)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("seen 2× in 7 days (possibly before an update)", r.detail)
+        r = d.check_upstream([err, err], (), issues, update)
+        self.assertIn("installed version unknown", r.detail)
+        self.assertNotIn("claude update", r.detail)
+        self.assertEqual(d.check_upstream([err], (2, 1, 40), issues, update).status, "PASS")  # once is not a pattern
+        self.assertEqual(d.check_upstream([], (2, 1, 40), issues, update).status, "PASS")
+        self.assertEqual(d.check_upstream([err, err], (2, 1, 40), [], update).status, "PASS")
+        r = d.check_upstream([(after, text.upper()), err], (2, 1, 40), [dict(issues[0], fixed_in=None)], update)
+        self.assertEqual(r.status, "WARN")  # case doesn't hide it; an open issue has no fix to name
+        self.assertIn("no fix released", r.detail)
+        # review: a bad entry is a finding, never a crashed doctor run
+        r = d.check_upstream([err, err], (2, 1, 40), [{"id": "broken", "pattern": "("}, "junk"] + issues, update)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("broken", r.detail)
+        self.assertIn(url, r.detail)
+
+    def test_the_installed_claude_code_arrived_when_its_binary_did(self):
+        binary = self.write("versions/2.1.301", "#!/bin/sh\n")
+        os.chmod(binary, 0o755)
+        os.makedirs(os.path.join(self.t, "bin"))
+        os.symlink(binary, os.path.join(self.t, "bin", "claude"))
+        self.assertEqual(d._cc_installed_at(os.path.join(self.t, "bin")), os.stat(binary).st_ctime)
+        self.assertEqual(d._cc_installed_at(os.path.join(self.t, "none")), 0)  # not found: unknown
+
+    def test_the_shipped_upstream_list_is_well_formed(self):
+        issues = json.load(open(os.path.join(PLUGIN, "lib", "upstream-issues.json"), encoding="utf-8"))
+        self.assertIsInstance(issues, list)
+        ids = [i["id"] for i in issues]
+        self.assertEqual(len(ids), len(set(ids)))
+        for i in issues:
+            self.assertEqual(set(i), {"id", "pattern", "issue_url", "fixed_in", "note"}, i)
+            re.compile(i["pattern"])
+            self.assertRegex(i["issue_url"], r"^https://github\.com/anthropics/claude-code/issues/\d+$")
+            self.assertTrue(i["fixed_in"] is None or re.fullmatch(r"\d+\.\d+\.\d+", i["fixed_in"]), i)
 
     def test_mod_release(self):
         # T-0191: every other session draws the installed foreman-ui; it lagged this repo (0.4.0 vs 0.5.0) unnoticed
@@ -315,7 +375,7 @@ class Command(ForemanTestCase):
         names = {r["name"] for r in json.loads(p.stdout)["results"]}
         for n in ("settings json", "hook scripts", "hook latency", "hook exit codes", "injection budgets", "footprint",
                   "frontmatter", "briefs", "file map", "backup", "plugin validate", "git hygiene", "statusline",
-                  "deny rules", "rules symlink", "scripts", "name collisions", "hook state writers"):
+                  "deny rules", "rules symlink", "scripts", "name collisions", "hook state writers", "upstream issues"):
             self.assertIn(n, names)
 
     def test_plain_output_lists_only_problems_unless_verbose(self):
@@ -349,6 +409,25 @@ class HookErrors(ForemanTestCase):
         with open(log, "a") as f:
             f.write(f"{c.now()} Stop\x1b]0;x\x07 ValueError: bad \x1b[2Jtitle\n")
         self.assertNotIn("\x1b", d.check_hook_errors().detail)
+
+    def test_upstream_reads_a_week_of_hook_errors_and_failures(self):
+        # T-1076: hooks.log entries and every project's failure signatures of the last 7 days, matched case-blind
+        self.fm("init")
+        p = c.find_project(self.repo)
+        ago = lambda days: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - days * 86400))
+        log = os.path.join(self.home, "state", "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        with open(log, "w") as f:
+            f.write(f"{ago(10)} SubagentStop failed: classifyHandoffIfNeeded is not defined\n"  # too old
+                    f"{ago(3)} SubagentStop Traceback (most recent call last):\n"
+                    "ReferenceError: classifyHandoffIfNeeded is not defined\n")
+        with open(os.path.join(p.dir, "failures.jsonl"), "a") as f:
+            rec = {"sig": "agent failed: classifyhandoffifneeded is not defined", "task": None, "at": c.now()}
+            f.write(json.dumps(rec) + "\n" + json.dumps(dict(rec, hinted=True)) + "\n[1]\n")  # neither is a new error
+        r = d.check_upstream(version=(2, 1, 40))
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("issues/22087 (seen 2×)", r.detail)
+        self.assertEqual(d.check_upstream(errors=[], version=(2, 1, 40)).status, "PASS")
 
 
 class CoreIntegrity(unittest.TestCase):
