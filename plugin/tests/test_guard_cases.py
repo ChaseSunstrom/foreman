@@ -92,6 +92,15 @@ class GuardCases(ForemanTestCase):
         res = json.loads(out.stdout)
         self.assertEqual((res["cases"], res["drifted"]), (1, 1))
 
+    def test_the_replay_gate_holds_the_labels_too(self):
+        # T-1182: the gate is plain `fm replay`; a drifted label must fail it, not only `fm replay --cases`
+        self.wrong("ls", "--should", "allow")
+        self.assertEqual(self.fm("replay", env=self.env, check=False).returncode, 0)
+        self.wrong("ls -la", "--should", "block")  # the guard allows ls -la: drifted
+        out = self.fm("replay", env=self.env, check=False)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("ls -la", out.stdout)
+
     def test_a_key_shaped_literal_is_refused(self):
         r = self.wrong("curl -H 'Authorization: Bearer abcdef123456' x", "--should", "block", check=False)
         self.assertNotEqual(r.returncode, 0)
