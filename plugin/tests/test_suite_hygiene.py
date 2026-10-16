@@ -33,6 +33,16 @@ class SuiteHygiene(unittest.TestCase):
         self.assertIn("load=", os.environ.get("FOREMAN_HOST", ""))
         self.assertIsNone(fmcore.host_strain())
 
+    def test_a_test_that_replaces_path_still_cant_reach_the_paid_claude(self):
+        # T-0993: fmcore's native-install fallback (T-0990) found the real ~/.local/bin/claude for tests that replace
+        # PATH, around the lockout (T-0992); every fm a test starts inherits this environment
+        import tempfile
+        import helpers  # noqa: F401  (it sets the lockout)
+        import fmcore
+        with tempfile.TemporaryDirectory() as empty:
+            env = dict(os.environ, PATH=empty, HOME=os.path.expanduser("~"))
+            self.assertEqual(fmcore.claude_path(env)["PATH"], empty)
+
     def test_the_screenshot_harness_runs_on_a_socket_of_its_own(self):
         # T-0744: two suites at once shared tmux -L fm-shot and killed each other's session
         with open(os.path.join(os.path.dirname(__file__), "test_shot.py"), encoding="utf-8") as f:
