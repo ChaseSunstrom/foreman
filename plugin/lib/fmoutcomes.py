@@ -320,4 +320,13 @@ def caution(p, scope):
     for k, total, bad, _ in atlas(p)["files"]:
         if bad >= 2 and bad / total >= 0.2 and any(k == s or k.startswith(s.rstrip("/") + "/") for s in scope):
             hits.append(f"{k}: {bad} of {total} tasks that touched it needed a later fix or revert")
-    return ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""
+    out = ("Caution: " + "; ".join(hits[:3]) + " — test its edges first.") if hits else ""
+    hot = []
+    if scope and c.git_root(p.root):
+        try:  # wild C18: files git history keeps fixing; the map is a hint, it never stops a focus
+            import fmmap
+            hot = [f"{f} ({n} fix/revert commits in 180 days)" for f, n in fmmap.load(p).get("fixy", {}).items()
+                   if any(f == s or f.startswith(s.rstrip("/") + "/") for s in scope)]
+        except Exception:
+            pass
+    return "\n".join(filter(None, [out, ("Hotspot: " + ", ".join(hot[:5])) if hot else ""]))
