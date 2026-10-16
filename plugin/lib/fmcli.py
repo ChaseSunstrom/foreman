@@ -5623,6 +5623,19 @@ def build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
+    s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
+            help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
+                 "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
+                 "closes. fm code models lists the profiles (T-1212)")
+    s.add_argument("request", nargs="*", help="what to do (or: models)")
+    s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
+    s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
+    s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
+                                                 "run's own unless given)")
+    s.add_argument("--dry-plan", action="store_true", help="print the plan and stop: no task, no change")
+    s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
+                                                                     "journal (default: the newest unfinished one)")
+    s.add_argument("--no-commit", action="store_true", help="close the task without committing")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
