@@ -1021,7 +1021,7 @@ test('kit: a command output, short: failures first, else the tail, each line ton
   expect(bad.failures).toBe(true)
 })
 
-test('a finished shell command is a Foreman row in the chat: status, command, time, its output formatted inline', async ($, on) => {
+test('a finished shell command is a Foreman row in the chat: status, command, time, its output formatted inline', { options: { chat: 'full' } }, async ($, on) => {
   // T-0137: 'in the actual claude code chat … not just results, but tool calls'; no Output card in the pane
   const { clock } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1057,7 +1057,7 @@ test('a finished shell command is a Foreman row in the chat: status, command, ti
   await pane.unmount()
 })
 
-test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', async ($, on) => {
+test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', { options: { chat: 'full' } }, async ($, on) => {
   // T-0141: 'the text output and formatting is not formatted/clean, especially with the tool calls like update'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1273,7 +1273,7 @@ test('a long task title gives way before the task id: the id never wraps', async
   await ui.unmount()
 })
 
-test('a shell row with a description reads like the running row: the description as its title, the command under it', async ($, on) => {
+test('a shell row with a description reads like the running row: the description as its title, the command under it', { options: { chat: 'full' } }, async ($, on) => {
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const cmd = "python3 - <<'EOF'\nprint(1)\nprint(2)\nprint(3)\nEOF"
@@ -2038,4 +2038,126 @@ test('review (T-0989): with nothing urgent, a signal the band used to show takes
   const calm = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await calm.find({ type: 'Text', text: /◐ usage ahead of pace/ })).toBeDefined()
   await calm.unmount()
+})
+
+test('the chat is a tree: your prompt the root, each row a branch on one rail, finished calls compact, the turn line the tip (T-1040)', async ($, on) => {
+  // 'it needs to be more of like a tree similar to the agents in the panel … so the text doesn't scroll the chat' / 'the full
+  // claude code chat here, like what is above the banner, the scrolling stuff'
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const mount = (component: string, props: object, requestId?: string) =>
+    $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component, ...(requestId ? { requestId } : {}), props } as never)
+  const you = await mount('UserMessage', { text: 'fix the loop\nand the docs', origin: { kind: 'composer' }, isExpanded: false })
+  expect(await you.find({ type: 'Box', key: 'fm-user-rail' })).toBeDefined() // the root's rail runs under its text
+  expect(await you.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  await you.unmount()
+  const shell = (id: string, extra: object) => mount('ToolUse', { tool_use_id: id, tool: 'Bash', isRunning: false,
+    isInterrupted: false, isErrored: false, input: { command: 'python3 -m unittest', description: 'Run the tests' }, ...extra }, id)
+  const stdout = Array.from({ length: 30 }, (_, i) => `test ${i} ... ok`).join('\n') + '\nRan 30 tests\nOK'
+  const ok = await shell('t1', { output: { stdout, stderr: '', interrupted: false } })
+  expect(await ok.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await ok.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  expect(await ok.find({ type: 'Text', text: /Run the tests/ })).toBeDefined()
+  expect((await ok.find({ type: 'Text', text: /python3 -m unittest/ }))?.props.wrap).toBe('truncate-end') // what ran, one line
+  expect(await ok.find({ type: 'Text', text: /Ran 30 tests/ })).toBeUndefined() // a passing run's output stays folded
+  expect(await ok.find({ type: 'Text', text: /32 lines/ })).toBeDefined()
+  await ok.unmount()
+  const tiny = await shell('t2', { output: { stdout: 'OK', stderr: '', interrupted: false } })
+  expect(await tiny.find({ type: 'Text', text: /│ OK$/ })).toBeDefined() // one or two lines say more than a count
+  await tiny.unmount()
+  const bad = await shell('t3', { isErrored: true, output: 'Exit code 101\ncompiling\nerror[E0425]: cannot find value `x`\ntest result: FAILED' })
+  expect(await bad.find({ type: 'Text', text: /error\[E0425\]/ })).toBeDefined() // a failure in full
+  await bad.unmount()
+  // live: the engine refuses its own row under a Box with a width ('engine node under a Box with prop "width"')
+  const engineRow = await mount('ToolUse', { tool_use_id: 'q1', tool: 'AskUserQuestion', isRunning: false, isErrored: false,
+    isInterrupted: false, input: {}, output: {} }, 'q1')
+  expect(await engineRow.find({ text: 'engine' })).toBeDefined()
+  expect((await engineRow.find({ type: 'Box', key: 'fm-branch' }))?.props.width).toBeUndefined()
+  expect((await engineRow.find({ type: 'Box', key: 'fm-branch-row' }))?.props.width).toBeUndefined()
+  expect(await engineRow.find({ type: 'Text', text: '├─ ' })).toBeUndefined() // its own blank line comes first: rail only
+  expect(await engineRow.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await engineRow.unmount()
+  const lines = Array.from({ length: 10 }, (_, i) => `+line ${i}`)
+  const edit = await mount('ToolUse', { tool_use_id: 'e1', tool: 'Edit', isRunning: false, isErrored: false, isInterrupted: false,
+    input: { file_path: '/repo/a.py', old_string: 'x', new_string: 'y' }, output: { filePath: '/repo/a.py', oldString: 'x',
+      newString: 'y', originalFile: null, userModified: false, replaceAll: false,
+      structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] } }, 'e1')
+  expect(await edit.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^line 3$/ })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^line 4$/ })).toBeUndefined() // a diff of four changed lines, then a count
+  expect(await edit.find({ type: 'Text', text: /6 more changed lines/ })).toBeDefined()
+  await edit.unmount()
+  const read = await mount('ToolUse', { tool_use_id: 'r1', tool: 'Read', isRunning: false, isErrored: false, isInterrupted: false,
+    input: { file_path: '/repo/a.py' }, output: { type: 'text', file: { filePath: '/repo/a.py', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } } }, 'r1')
+  expect(await read.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await read.find({ type: 'Text', text: /^│$/ })).toBeUndefined() // a one-line call sits tight, no rail gap above it
+  await read.unmount()
+  const first = await mount('AssistantMessage', { text: 'Fixed the loop.', isFirstOfReply: true })
+  expect(await first.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  await first.unmount()
+  const later = await mount('AssistantMessage', { text: 'a second block', isFirstOfReply: false })
+  expect(await later.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await later.find({ type: 'Box', key: 'fm-rail' })).toBeDefined() // the same branch's rail goes on
+  await later.unmount()
+  await $.turn.start({ text: 'go', turnId: 'tt' })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q' })
+  await $.turn.complete({ answer: '', durationMs: 4100, isAborted: false, turnId: 'tt', reason: 'answer' })
+  // review: a long command with no description stays one line in the tree; a Bash row's diff is cut to four lines too
+  const long = await shell('t4', { input: { command: 'x'.repeat(400) }, output: { stdout: '', stderr: '', interrupted: false,
+    bashEditDiff: { hunks: [{ path: '/repo/b.py', hunks: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] }] } } })
+  expect((await long.find({ type: 'Text', text: /^ +x{300}/ }))?.props.wrap).toBe('truncate-end')
+  expect(await long.find({ type: 'Text', text: /6 more changed lines/ })).toBeDefined()
+  await long.unmount()
+  // review: the engine's folded group and result block hang on the rail; so does a reply too long for a Markdown element
+  const group = await mount('ToolGroup', { calls: [{ tool: 'Read' }, { tool: 'Grep' }], isActive: false, isExpanded: false })
+  expect(await group.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await group.unmount()
+  const result = await mount('ToolResult', { tool_use_id: 'x1', tool: 'mcp__srv__op', output: 'a\nb\nc\nd\ne', isErrored: false }, 'x1')
+  expect(await result.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await result.unmount()
+  const huge = await mount('AssistantMessage', { text: 'y'.repeat(12000), isFirstOfReply: true })
+  expect(await huge.find({ text: 'engine' })).toBeDefined()
+  expect(await huge.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await huge.unmount()
+  const tip = await mount('TurnDuration', { word: 'Baked', durationMs: 4100 })
+  expect(await tip.find({ type: 'Text', text: '└─ ' })).toBeDefined()
+  await tip.unmount()
+  const quiet = await mount('TurnDuration', { word: 'Baked', durationMs: 900 }) // a turn with no calls: our line, not the engine's
+  expect(await quiet.find({ type: 'Text', text: '└─ ' })).toBeDefined()
+  expect(await quiet.find({ type: 'Text', text: /worked 0\.9s/ })).toBeDefined()
+  expect(await quiet.find({ text: 'engine' })).toBeUndefined()
+  await quiet.unmount()
+})
+
+test('chat full keeps the long rows: no branches, the command and its output in full (T-1040)', { options: { chat: 'full' } }, async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const stdout = Array.from({ length: 30 }, (_, i) => `test ${i} ... ok`).join('\n') + '\nRan 30 tests\nOK'
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'f1',
+    props: { tool_use_id: 'f1', tool: 'Bash', input: { command: 'python3 -m unittest', description: 'Run the tests' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { stdout, stderr: '', interrupted: false } } })
+  expect(await row.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: /python3 -m unittest/ })).toBeDefined()
+  const plain = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'f2',
+    props: { tool_use_id: 'f2', tool: 'Bash', input: { command: 'one\ntwo\nthree\nfour\nfive' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { stdout: 'ok', stderr: '', interrupted: false } } })
+  expect(await plain.find({ type: 'Text', text: /^four$/ })).toBeUndefined() // as before T-1040: two lines under the title
+  expect(await plain.find({ type: 'Text', text: /2 more command lines/ })).toBeDefined()
+  await plain.unmount()
+  expect(await row.find({ type: 'Text', text: /Ran 30 tests/ })).toBeDefined()
+  await row.unmount()
+})
+
+test('off the terminal no tree is drawn and nothing is compacted (T-1040 review)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  const lines = Array.from({ length: 10 }, (_, i) => `+line ${i}`)
+  const edit = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', component: 'ToolUse', requestId: 'd1',
+    props: { tool_use_id: 'd1', tool: 'Edit', isRunning: false, isErrored: false, isInterrupted: false,
+      input: { file_path: '/repo/a.py', old_string: 'x', new_string: 'y' }, output: { filePath: '/repo/a.py', oldString: 'x',
+        newString: 'y', originalFile: null, userModified: false, replaceAll: false,
+        structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] } } } as never)
+  expect(await edit.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await edit.find({ type: 'Text', text: /^line 6$/ })).toBeDefined() // the full row's eight changed lines
+  await edit.unmount()
 })
