@@ -64,6 +64,16 @@ class GuardMine(ForemanTestCase):
         got = {r["command"] for r in json.loads(self.fm("guard", "mine", "--json", env=env).stdout)["refusals"]}
         self.assertEqual(got, {"echo sub", "echo wt"})
 
+    def test_from_a_linked_worktree_it_reads_the_main_checkouts_sessions(self):
+        # T-1203: a builder runs it in its own worktree, whose transcript folder is empty; the sessions are the main's
+        import subprocess
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-m", "base"], check=True)
+        wt = os.path.join(self.tmp, "wt")
+        subprocess.run(["git", "-C", self.repo, "worktree", "add", "-q", "--detach", wt], check=True)
+        env = self.seed("main", [("echo main", REFUSAL.format(p="/x"), True)])
+        got = {r["command"] for r in json.loads(self.fm("guard", "mine", "--json", cwd=wt, env=env).stdout)["refusals"]}
+        self.assertEqual(got, {"echo main"})
+
     def test_from_home_and_clamped_days(self):
         env = self.seed("a", [("ls", "x", False)])
         out = self.fm("guard", "mine", "--json", "--days", "-5", cwd=os.path.expanduser("~"), env=env)
