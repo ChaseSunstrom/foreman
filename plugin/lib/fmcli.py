@@ -671,7 +671,9 @@ def cmd_task(args):
         own = {a.n for a in b.acceptance() if c.verify_of(a.text) and any(  # T-0900: proven by its own command
             ln.startswith(f"- (ac {a.n}) ") and c._RAN_MARK in ln for ln in b.evidence())}
         by_hand = [re.sub(r" — verify with `.*`$", "", a.text) for a in b.acceptance() if a.n not in own]
+        nv = getattr(args, "not_verified", None) or []
         return out(args, dict(c.brief_summary(b), doc_drift=notes, verified=grade, unverified=guessed,
+                              **({"not_verified": nv} if hasattr(args, "not_verified") else {}),
                               check_by_hand=by_hand, **({"ledger": _ledger_head(p)} if getattr(args, "json", False)
                                                         else {}),
                               **({"ablation": args.ablation} if getattr(args, "ablation", None) else {})),
@@ -682,6 +684,8 @@ def cmd_task(args):
             f"\n{len(guessed)} unverified assumption(s) — the plan rested on them unchecked; next time, fm task assume "
             f"{b.id} verify N --run CMD before building on one:\n  - " + "\n  - ".join(x[:140] for x in guessed[:5])
             if guessed else "") + (
+            f"\nNot verified ({len(nv)}):\n  - " + "\n  - ".join(nv[:5]) + (f"\n  … and {len(nv) - 5} more" if len(nv) > 5 else "")
+            if nv else "") + (
             "\nDoc drift elsewhere (fm docs; not from this task):\n  - " + "\n  - ".join(notes[:10]) if notes else ""))
     if sub == "prove":
         return task_prove(p, args)
@@ -971,6 +975,7 @@ def task_finish(p, args):
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
+    args.not_verified = _close_unverified(need_brief(p, b.id), claims, getattr(args, "skip_affected", None))  # T-1159
     rc = cmd_task(args)
     why = (getattr(args, "why_not_caught", None) or "").strip()
     caught = next((f for f in c.task_touches(p, b.id) if c.TESTISH.search(f)), None) if why else None
@@ -1004,6 +1009,18 @@ def task_finish(p, args):
             print("Full gates: running in the background (a red result becomes an urgent baseline task)")
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
+
+
+def _close_unverified(b, claims, waived):
+    """T-1159: what this close did not verify: criteria with no verify command of their own, claims tagged unchecked
+    or inferred, and the affected-tests check when --skip-affected waived it."""
+    own = {n for n, cmd in b.verify_cmds() if cmd}
+    out = [f"criterion {a.n}: {c.fit(re.sub(r' — verify with `.*`$', '', a.text), 90)} (no verify command)"
+           for a in b.acceptance() if a.n not in own]
+    out += [f"claim ({t}): {c.fit(x, 90)}" for t, x, _ in claims if t != "checked"]
+    if (waived or "").strip():
+        out.append(f"affected tests skipped: {c.fit(c.plain(waived.strip()), 90)}")
+    return out
 
 
 def _known_flaky(p):
