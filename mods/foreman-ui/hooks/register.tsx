@@ -25,6 +25,9 @@ import {
   fade,
   ganttCells,
   heat,
+  ruleCells,
+  stackCells,
+  stepCells,
   hex,
   humanNext,
   layout,
@@ -1157,6 +1160,7 @@ export const register: Register = (on, options) => {
     const H = e.props.scroll?.bodyRows ?? 40
     const dim = hex(C.dim)
     const soft = hex(mix(C.dim, C.track, 0.3))
+    const muted = hex(C.muted) // T-1026: secondary text that still reads
     const subs = await read($, agents)
     const bgShells = await read($, shells)
     const fb = bgShells.length ? await read($, frame) : 0
@@ -1217,7 +1221,7 @@ export const register: Register = (on, options) => {
           </Box>
           {typeWord(it)}
           <Box flexShrink={0}>
-            <Text color={dim}>{it.id}</Text>
+            <Text color={muted}>{it.id}</Text>
           </Box>
           <Text wrap="truncate-end" color={hex(mix(C.dim, 0xc8ccd4, 0.7))}>
             {it.title}
@@ -1252,7 +1256,7 @@ export const register: Register = (on, options) => {
                 </Box>
                 <Text wrap="truncate-end">
                   {` ${s.task ?? 'idle'}`}
-                  <Text color={dim}>{`${s.title ? ` ${s.title}` : ''}${s.mail ? `  ✉${s.mail}` : ''}${s.project && s.project !== v.project ? `  ${s.project}` : ''}`}</Text>
+                  <Text color={muted}>{`${s.title ? ` ${s.title}` : ''}${s.mail ? `  ✉${s.mail}` : ''}${s.project && s.project !== v.project ? `  ${s.project}` : ''}`}</Text>
                 </Text>
               </Box>
             )),
@@ -1262,9 +1266,30 @@ export const register: Register = (on, options) => {
         ]
       : []
 
-    // ── history: what happened, newest first, one short line each (the command and its output stay in the ledger)
+    // ── history: what happened, newest first, one short line each (the command and its output stay in the ledger);
+    // T-1026: from fm ui's structured history when it has one: the id, the event in its colour, the task's title
+    const markColor = (mark: string) =>
+      '✗✖'.includes(mark) ? C.err : '✓✔■'.includes(mark) ? C.ok : '◆◇'.includes(mark) ? C.agent : '!?≈'.includes(mark) ? C.warn : C.accent2
     const recent = [...(v.recent ?? [])].reverse()
-    const historyRows: RenderElement[] = recent.map((line, i) => {
+    const historyRows: RenderElement[] = v.history?.length ? [...v.history].reverse().map((ev, i) => (
+      <Box key={`r-${i}`} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}>
+          <Text color={muted}>{ev.time || '     '}</Text>
+        </Box>
+        <Box flexShrink={0} width={1}>
+          <Text color={hex(markColor(ev.mark))}>{ev.mark}</Text>
+        </Box>
+        {ev.task ? (
+          <Box flexShrink={0}>
+            <Text color={hex(C.accent)}>{ev.task}</Text>
+          </Box>
+        ) : null}
+        <Box flexShrink={0}>
+          <Text color={hex('✗✖✓✔■'.includes(ev.mark) ? markColor(ev.mark) : 0xd0d5dd)}>{ev.text}</Text>
+        </Box>
+        <Text wrap="truncate-end" color={muted}>{ev.title ? ` ${ev.title}` : ''}</Text>
+      </Box>
+    )) : recent.map((line, i) => {
       const [, time, rest] = /^\s*(\d\d:\d\d)\s+(.*)$/.exec(line) ?? [null, '', line.trim()]
       const ev = /^([✓✗≈]) (T-\d+) (step \d+|criterion \d+|check): /.exec(rest)
       const text = ev
@@ -1320,7 +1345,8 @@ export const register: Register = (on, options) => {
     ]
     const railWant = a && stageIdx >= 0 ? 3 : 0 // the rail, its labels, a blank row
     const planRows = planQ ? 2 + (planQ.plan.interpretation ? 1 : 0) + (planQ.plan.approach ? 1 : 0) + planQ.plan.steps.length + planQ.plan.criteria.length : 0
-    const taskWant = 2 + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : 0)
+    const stepBar = !planQ && a && a.steps.length ? 1 : 0 // T-1026: done and left, a segment a step
+    const taskWant = 2 + stepBar + (planQ ? planRows : a ? railWant + a.steps.length + extras.length : 0)
 
     // ── activity: one lane per kind of call, fixed in order so nothing jumps; fewer lanes on a short dock
     const nLanes = H >= 40 ? KINDS.length : H >= 30 ? 4 : 3
@@ -1331,43 +1357,55 @@ export const register: Register = (on, options) => {
     const trees = v.worktrees ?? []
     const bsNow = v.brainstorm
     type Gantt = { key: string; glyph: string; color: number; start: number; end: number | null; marks: number[]; name: string;
-      status: string; statusColor: number; live: boolean; stop?: string; dim?: boolean }
+      status: string; statusColor: number; live: boolean; stop?: string; dim?: boolean; child?: Gantt }
     const recentSubs = subs.filter(s => !s.done || clockNow - (s.lastAt ?? s.startedAt) < TIMELINE_MS) // the window, at every draw
+    const treeNode = (w: NonNullable<typeof v.worktrees>[number]): Gantt => ({
+      key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
+      start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
+      status: w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
+      statusColor: w.ahead ? C.accent2 : C.warn,
+    })
     const gantt: Gantt[] = recentSubs.map(s => {
       const quiet = s.done ? 0 : clockNow - (s.lastAt ?? s.startedAt)
       const tree = trees.find(w => w.agent === s.id)
       return {
         key: s.id, glyph: '◆', color: quiet >= QUIET_MS ? C.warn : agentColor(s.id), start: s.startedAt, live: !s.done,
-        end: s.done ? (s.lastAt ?? s.startedAt) : null, marks: s.calls ?? [],
-        name: `${s.type}${tree ? ` ⎇ ${tree.task ?? tree.branch}` : ''}${s.description ? `  ${s.description}` : ''}`,
+        end: s.done ? (s.lastAt ?? s.startedAt) : null, marks: s.calls ?? [], child: tree ? treeNode(tree) : undefined,
+        name: `${s.type}${s.description ? `  ${s.description}` : ''}`,
         status: s.done ? `✓ ${s.tools} call${s.tools === 1 ? '' : 's'}` : quiet >= QUIET_MS ? `quiet ${elapsed(quiet)}` : elapsed(clockNow - s.startedAt),
-        statusColor: quiet >= QUIET_MS ? C.warn : C.dim, stop: !s.done && quiet >= STOP_MS ? s.id : undefined,
+        statusColor: quiet >= QUIET_MS ? C.warn : C.muted, stop: !s.done && quiet >= STOP_MS ? s.id : undefined,
       }
     })
     const seenIdeas = ideas && bsNow && ideas.name === bsNow.name ? ideas : null
     if (bsNow && (bsNow.running || (seenIdeas && clockNow - (seenIdeas.end ?? clockNow) < TIMELINE_MS)))
       gantt.push({
         key: 'ideas', glyph: '✦', color: C.skill, start: seenIdeas?.at ?? clockNow, end: bsNow.running ? null : seenIdeas?.end ?? clockNow,
-        marks: seenIdeas?.answers ?? [], live: bsNow.running, statusColor: C.dim,
+        marks: seenIdeas?.answers ?? [], live: bsNow.running, statusColor: C.muted,
         name: `ideas${bsNow.ideas.length ? `: ${bsNow.ideas.at(-1)}` : ''}`,
         status: bsNow.running ? `${bsNow.answers}/${bsNow.expected ?? '?'}` : `✓ ${bsNow.count} ideas`,
       })
-    for (const w of trees.filter(w => !recentSubs.some(s => s.id === w.agent)))
-      gantt.push({
-        key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
-        start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
-        status: w.ahead === null ? (w.branch ? 'merge state unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'nothing to merge',
-        statusColor: w.ahead ? C.accent2 : C.warn,
-      })
+    for (const w of trees.filter(w => !recentSubs.some(s => s.id === w.agent))) gantt.push(treeNode(w))
     const rank = (g: Gantt) => (g.live ? 0 : g.glyph === '⎇' ? 2 : 1) // running, then finished, then lone worktrees
     gantt.sort((x, y) => rank(x) - rank(y) || x.start - y.start)
+    // the graph's rows: the session at the root, then each child with the lines that join it (and its worktree under it)
+    type Node = Gantt & { prefix: string; lineColor: number }
+    const nodes: Node[] = !gantt.length ? [] : [
+      { key: 'session', glyph: '●', color: C.accent, start: 0, end: null, marks: [], live: live, prefix: '', lineColor: C.track,
+        name: `this session${a ? `  ${a.id}` : ''}`, status: '', statusColor: C.muted },
+      ...gantt.flatMap((g, i) => {
+        const last = i === gantt.length - 1
+        const line = mix(C.track, g.color, 0.55)
+        return [{ ...g, prefix: last ? '└─' : '├─', lineColor: line },
+          ...(g.child ? [{ ...g.child, prefix: `${last ? '  ' : '│ '}└─`, lineColor: line }] : [])]
+      }),
+    ]
     const L = layout(H, [
       { key: 'task', want: taskWant, cap: Math.max(4, Math.round(H * 0.4)), min: Math.min(taskWant, 4), bare: true },
       { key: 'activity', want: 1, fixed: nLanes + axis, grow: KINDS.length - nLanes }, // spare rows: every lane
       { key: 'today', want: 1, fixed: T, grow: Math.max(0, 8 - T) }, // then taller charts
-      { key: 'agents', want: gantt.length, cap: Math.max(2, Math.round(H * 0.15)) },
+      { key: 'agents', want: nodes.length, cap: Math.max(3, Math.round(H * 0.18)), min: Math.min(nodes.length, H >= 40 ? 5 : 3) }, // the root and its children, not just the root
       { key: 'queue', want: queueRows.length, cap: Math.max(3, Math.round(H * 0.2)), min: plans.length + 2 }, // every plan's approve
-      { key: 'sessions', want: sessionRows.length, cap: 5 },
+      { key: 'sessions', want: sessionRows.length, cap: 5, min: Math.min(sessionRows.length, 3) },
       { key: 'history', want: historyRows.length, stretch: true },
     ])
     const R = L.rows
@@ -1438,6 +1476,20 @@ export const register: Register = (on, options) => {
           ...(m.trust ? ([['trust on', C.warn]] as [string, number][]) : []),
         ]
       : []
+    // T-1026 ('doesn't show how many things have been complete and how many are left'): the work as one bar
+    const work = [
+      { n: v.today_done ?? 0, word: 'done today', color: C.ok },
+      { n: a ? 1 : 0, word: 'now', color: C.accent },
+      { n: queue.length, word: 'queued', color: C.accent2 },
+      { n: inboxN, word: 'inbox', color: C.muted },
+      { n: v.blocked_total ?? 0, word: 'blocked', color: C.warn },
+    ]
+    const leftParts = work.slice(1).filter(x => x.n)
+    const doneWord = `${work[0]!.n} done today`
+    const leftWord = `${leftParts.reduce((n, x) => n + x.n, 0)} left`
+    const mascotW = cfg.mascot === 'off' ? 0 : 12 + Math.min(4, subs.filter(x => !x.done).length) * 8 // and its minis
+    // done on the bar's filled side, left on its track side; the breakdown after them gives way first
+    const workW = Math.max(0, Math.min(28, W - mascotW - doneWord.length - leftWord.length - 4 - 22))
     const head = (
       <Box key="fm-pane-head" flexDirection="row" height={3} overflow="hidden" flexShrink={0}>
         <Box flexDirection="column" flexGrow={1} flexShrink={1}>
@@ -1445,13 +1497,29 @@ export const register: Register = (on, options) => {
             <Text weight="bold" color={hex(C.accent)}>
               {moving ? spin(f ?? 0) : '▍'} Foreman
             </Text>
-            <Text color={dim}>{`  ${v.project}`}</Text>
-          </Text>
-          <Text key="head-mode" wrap="truncate-end">
+            <Text color={muted}>{`  ${v.project}`}</Text>
             {modes.map(([w, c], i) => (
-              <Text key={`mode-${i}`} color={hex(c)}>{`${i ? '   ' : '  '}${w}`}</Text>
+              <Text key={`mode-${i}`} color={hex(c)}>{`   ${w}`}</Text>
             ))}
           </Text>
+          <Box key="head-work" flexDirection="row" gap={1} height={1} overflow="hidden">
+            <Box flexShrink={0}>
+              <Text weight="bold" color={hex(C.ok)}>{doneWord}</Text>
+            </Box>
+            {term && workW >= 6 && (
+              <Box flexShrink={0}>
+                <Raster key="work-bar" columns={workW} rows={1} cells={stackCells(work, workW)} />
+              </Box>
+            )}
+            <Box flexShrink={0}>
+              <Text weight="bold" color={hex(0xd0d5dd)}>{leftWord}</Text>
+            </Box>
+            <Text key="work-parts" wrap="truncate-end">
+              {leftParts.map((x, i) => (
+                <Text key={`work-${x.word}`} color={hex(x.color)}>{`${i ? ' · ' : ' '}${x.n} ${x.word}`}</Text>
+              ))}
+            </Text>
+          </Box>
           {attention}
         </Box>
         {mascotTree(ui, e, live ? 'work' : clockNow < happyUntil ? 'happy' : 'idle', live ? (f ?? 0) : idleBeat, subs)}
@@ -1505,16 +1573,32 @@ export const register: Register = (on, options) => {
           <Box key="task-chip" flexDirection="row" gap={1} flexShrink={0}>
             <Text weight="bold" color={typeColor(a.type)}>{a.type}</Text>
             <Text weight="bold" color={hex(C.accent)}>{a.id}</Text>
-            <Text color={dim}>{sizeWord(a.tier)}</Text>
+            <Text color={muted}>{sizeWord(a.tier)}</Text>
           </Box>,
           [a.criteria.length ? `${a.criteria.filter(c => c.checked).length}/${a.criteria.length} proved` : '',
             onMin === null ? '' : `${elapsed(onMin * 60000)}${usual !== undefined ? ` of ${about(usual)}` : ''}`].filter(Boolean).join('   '),
-          over ? C.warn : C.dim,
+          over ? C.warn : C.muted,
         ),
         <Text key="task-title" weight="bold" wrap="truncate-end">{a.title}</Text>,
       )
-      const rows = R.task! - 2
-      const railRows = railWant && rows >= Math.min(6, taskWant - 2) ? 3 : 0
+      if (stepBar) {
+        const left = a.steps.filter(s => !s.done).length
+        const label = `${a.steps.length - left} of ${a.steps.length} steps done · ${left} left`
+        const sw = Math.max(6, W - label.length - 2)
+        if (blit && ft !== null) blit.set('task-steps', { columns: sw, rows: 1, draw: t => stepCells(a.steps, sw, t) })
+        push(0,
+          <Box key="task-progress" flexDirection="row" gap={2} height={1} overflow="hidden">
+            {term && (
+              <Box flexShrink={0}>
+                <Raster key="task-steps" columns={sw} rows={1} cells={stepCells(a.steps, sw, ft)} />
+              </Box>
+            )}
+            <Text color={hex(left ? C.muted : C.ok)} wrap="truncate-end">{label}</Text>
+          </Box>,
+        )
+      }
+      const rows = R.task! - 2 - stepBar
+      const railRows = railWant && rows >= Math.min(6, taskWant - 2 - stepBar) ? 3 : 0
       const room = Math.max(1, rows - railRows)
       // every step and note when they fit; else a window round the current step and a row to count the rest
       const nSteps = a.steps.length + extras.length <= room ? a.steps.length : Math.max(1, Math.min(a.steps.length, room - extras.length - 1))
@@ -1615,7 +1699,7 @@ export const register: Register = (on, options) => {
                     ? [<Button key={`stop-${x.stop}`} label="■ stop" plain onPress={() => void stopAgent($, x.stop!)} />]
                     : [<Box key="now-time" flexShrink={0}><Text color={dim}>{`${x.time}${here.length > 1 ? ` +${here.length - 1}` : ''}`}</Text></Box>]),
                 ]
-              : <Text key="lane-last" wrap="truncate-end" color={soft}>{n ? (recentTicks.filter(t => t.lane === k).at(-1)?.what ?? '') : ''}</Text>}
+              : <Text key="lane-last" wrap="truncate-end" color={muted}>{n ? (recentTicks.filter(t => t.lane === k).at(-1)?.what ?? '') : ''}</Text>}
           </Box>
         </Box>
       )
@@ -1630,28 +1714,47 @@ export const register: Register = (on, options) => {
     const gStarts = gantt.filter(g => g.glyph !== '⎇').map(g => g.start) // a worktree's age doesn't stretch the axis
     const earliest = gStarts.length ? Math.min(...gStarts) : clockNow - TIMELINE_MS
     const gSpan = Math.ceil(Math.min(60, Math.max(2, (clockNow - earliest) / 60000))) * 60000 // its own axis, 2 to 60 min
-    const gw = Math.max(8, Math.floor(W * 0.48)) // the bars; the name and status take the rest
-    const agentRows: RenderElement[] = gantt.map(g => (
-      <Box key={`agent-row-${g.key}`} flexDirection="row" gap={1} height={1} overflow="hidden">
-        <Box flexShrink={0}>
-          <Text color={hex(g.color)}>{g.live && moving ? spin((f ?? 0) + g.start) : g.glyph}</Text>
-        </Box>
-        {term && (
-          <Box flexShrink={0}>
-            <Raster key={`gantt-${g.key}`} columns={gw} rows={1} cells={ganttCells(g, clockNow - gSpan, gSpan, gw, clockNow, g.live ? ft : null)} />
+    const gw = Math.max(8, Math.floor(W * 0.38)) // the bars, in one column; the tree and names on the left
+    const STW = 12 // the status column
+    const agentRows: RenderElement[] = nodes.map(g => {
+      const isRoot = g.key === 'session'
+      const node = isRoot // the root's bar: every call this session made in the window
+        ? { ...g, start: clockNow - gSpan, marks: recentTicks.map(t => t.at), status: `${recentTicks.length} calls` }
+        : g
+      return (
+        <Box key={`agent-row-${g.key}`} flexDirection="row" gap={1} height={1} overflow="hidden">
+          <Box flexGrow={1} flexShrink={1} flexDirection="row" overflow="hidden">
+            {g.prefix ? (
+              <Box flexShrink={0}>
+                <Text color={hex(g.lineColor)}>{g.prefix}</Text>
+              </Box>
+            ) : null}
+            <Box flexShrink={0}>
+              <Text color={hex(g.color)}>{`${g.live && moving && !isRoot ? spin((f ?? 0) + g.start) : g.glyph} `}</Text>
+            </Box>
+            <Text wrap="truncate-end" weight={isRoot ? 'bold' : 'regular'} color={hex(g.stop ? C.warn : isRoot ? 0xd0d5dd : mix(g.color, 0xd0d5dd, g.dim ? 0.45 : 0.6))}>
+              {g.stop ? `${g.status}  ${g.name}` : g.name}
+            </Text>
           </Box>
-        )}
-        {g.stop // a narrow dock keeps the button: the time goes into the name, which gives way first
-          ? [
-              <Text key="gantt-name" wrap="truncate-end" color={hex(C.warn)}>{`${g.status}  ${g.name}`}</Text>,
-              <Button key={`stop-${g.stop}`} label="■ stop" plain onPress={() => void stopAgent($, g.stop!)} />,
-            ]
-          : [
-              <Text key="gantt-name" wrap="truncate-end" color={hex(mix(g.color, 0xc8ccd4, g.dim ? 0.3 : 0.55))}>{g.name}</Text>,
-              <Box key="gantt-status" flexShrink={0}><Text color={hex(g.statusColor)}>{g.status}</Text></Box>,
-            ]}
-      </Box>
-    ))
+          {term && (
+            <Box flexShrink={0}>
+              <Raster key={`gantt-${g.key}`} columns={gw} rows={1} cells={ganttCells(node, clockNow - gSpan, gSpan, gw, clockNow, g.live ? ft : null)} />
+            </Box>
+          )}
+          {g.stop // a narrow dock keeps the button: the time went into the name, which gives way first
+            ? ( // in the status column's width, so every bar keeps one time axis (T-1026 review)
+              <Box key="gantt-stop" flexShrink={0} width={STW} flexDirection="row" justifyContent="flex-end">
+                <Button key={`stop-${g.stop}`} label="■ stop" plain onPress={() => void stopAgent($, g.stop!)} />
+              </Box>
+            )
+            : (
+              <Box key="gantt-status" flexShrink={0} width={STW} flexDirection="row" justifyContent="flex-end">
+                <Text color={hex(g.statusColor)} wrap="truncate-end">{node.status}</Text>
+              </Box>
+            )}
+        </Box>
+      )
+    })
     const activityRight = nLive
       ? `${nLive} running`
       : lastTick ? `${recentTicks.length} calls, last ${since(clockNow - lastTick.at)}` : 'no calls yet'
@@ -1690,7 +1793,7 @@ export const register: Register = (on, options) => {
         {showDays && (
           <Box key="today-days" flexDirection="column" flexShrink={0}>
             {bars(ui, e, 'done-days', days, Math.max(1, R.today! - 1), C.accent2, C.ok, bw)}
-            <Text color={soft}>{`14 days ago${' '.repeat(Math.max(1, leftW - 11 - `${v.today_done ?? 0} today`.length))}`}<Text color={hex(C.ok)}>{`${v.today_done ?? 0} today`}</Text></Text>
+            <Text color={muted}>{`14 days ago${' '.repeat(Math.max(1, leftW - 11 - `${v.today_done ?? 0} today`.length))}`}<Text color={hex(C.ok)}>{`${v.today_done ?? 0} today`}</Text></Text>
           </Box>
         )}
         <Box key="today-tanks" flexDirection="column" flexShrink={0}>
@@ -1706,26 +1809,40 @@ export const register: Register = (on, options) => {
           ) : (
             <Text key="fm-tanks" color={dim}>{levels.map(l => `${l.label} ${Math.round(l.frac * 100)}%`).join('  ')}</Text>
           )}
-          <Text key="tank-labels" color={dim}>{levels.map((l, i) => `${i ? '  ' : ''}${centre(l.label, tw)}`).join('')}</Text>
+          <Text key="tank-labels" color={muted}>{levels.map((l, i) => `${i ? '  ' : ''}${centre(l.label, tw)}`).join('')}</Text>
         </Box>
       </Box>,
     ] : []
 
     // ── drawing: a titled divider, then exactly the section's rows; what doesn't fit is counted, never cut silently
+    // T-1026: a divider is a line in the section's own colour, fading out; the words around it read in muted, not dim
+    const rule = (key: string, width: number, color: number) => {
+      const n = Math.max(1, width)
+      return term
+        ? <Raster key={key} columns={n} rows={1} cells={ruleCells(n, color)} />
+        : <Text key={key} color={hex(mix(C.track, color, 0.5))}>{'─'.repeat(n)}</Text>
+    }
     const titleRow = (key: string, label: string, color: number, right: string) => (
-      <Text key={`${key}-title`} wrap="truncate-end">
-        <Text weight="bold" color={hex(color)}>{label}</Text>
-        <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, W - label.length - 1 - (right ? right.length + 2 : 0)))}`}</Text>
-        {right ? <Text color={dim}>{`  ${right}`}</Text> : null}
-      </Text>
+      <Box key={`${key}-title`} flexDirection="row" gap={1} height={1} overflow="hidden">
+        <Box flexShrink={0}>
+          <Text weight="bold" color={hex(color)}>{label}</Text>
+        </Box>
+        <Box flexShrink={0}>{rule(`${key}-rule`, W - label.length - 1 - (right ? right.length + 1 : 0), color)}</Box>
+        {right ? (
+          <Box flexShrink={0}>
+            <Text color={muted}>{right}</Text>
+          </Box>
+        ) : null}
+      </Box>
     )
     const todayTitle = (
-      <Text key="today-title" wrap="truncate-end">
-        {showDays && <Text weight="bold" color={hex(C.ok)}>Closed per day</Text>}
-        {showDays && <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, leftW - 15))}${' '.repeat(GAP)}`}</Text>}
-        <Text weight="bold" color={hex(C.accent2)}>Today</Text>
-        <Text color={hex(C.track)}>{` ${'─'.repeat(Math.max(1, W - leftW - GAP - 6))}`}</Text>
-      </Text>
+      <Box key="today-title" flexDirection="row" height={1} overflow="hidden">
+        {showDays && <Box flexShrink={0}><Text weight="bold" color={hex(C.ok)}>Closed per day </Text></Box>}
+        {showDays && <Box flexShrink={0}>{rule('days-rule', leftW - 15, C.ok)}</Box>}
+        {showDays && <Box flexShrink={0} width={GAP} />}
+        <Box flexShrink={0}><Text weight="bold" color={hex(C.accent2)}>Today </Text></Box>
+        <Box flexShrink={0}>{rule('today-rule', W - leftW - GAP - 6, C.accent2)}</Box>
+      </Box>
     )
     const body = (key: string, rows: number, xs: RenderElement[], tall = 0, log = false) => {
       const over = xs.length + tall > rows

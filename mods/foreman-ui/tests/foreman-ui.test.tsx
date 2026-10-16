@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -1481,6 +1481,54 @@ test('History lists the newest first, one short line each, as many as fit (T-100
   await ui.unmount()
 })
 
+test('History from fm ui: the id, a coloured event and the task title across the row; dividers are gradients (T-1026)', async ($, on) => {
+  const history = [
+    { time: '10:00', mark: '⚑', task: 'T-0011', text: 'captured', title: 'Merge date helpers' },
+    { time: '10:05', mark: '✗', task: 'T-0007', text: 'step 1 failed', title: 'Login times out' },
+    { time: '10:09', mark: '✓', task: 'T-0007', text: 'step 1 passed', title: 'Login times out' },
+  ]
+  world(on, [{ ...CALM, history }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failed = await ui.find({ type: 'Text', text: 'step 1 failed' })
+  expect(failed?.props.color).toBe(hex(C.err))
+  expect(await ui.find({ type: 'Text', text: / Merge date helpers$/ })).toBeDefined()
+  const rows = await ui.findAll({ type: 'Text', text: /^step 1 (passed|failed)$/ })
+  expect(rows.map(r => (r as { text?: string }).text ?? r.props.children)).toEqual(['step 1 passed', 'step 1 failed']) // newest first
+  const rules = (await ui.findAll({ type: 'Raster' })).map(r => String(r.key)).filter(k => k.endsWith('-rule'))
+  expect(rules).toEqual(expect.arrayContaining(['activity-rule', 'queue-rule', 'history-rule']))
+  const rule = decode(String((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'activity-rule')!.props.cells))
+  expect(rule[0]!.fg).not.toBe(rule.at(-1)!.fg) // a gradient, not one gray
+  await ui.unmount()
+})
+
+test('what is done and what is left: a bar of the work under the head, a segment per step under the title (T-1026)', async ($, on) => {
+  world(on, [{ ...CALM, today_done: 3, blocked_total: 2 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (const text of ['3 done today', '5 left', / 1 now$/, /· 1 queued$/, /· 1 inbox$/, /· 2 blocked$/, /1 of 2 steps done · 1 left/])
+    expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  const rasters = await ui.findAll({ type: 'Raster' })
+  const work = decode(String(rasters.find(r => r.key === 'work-bar')!.props.cells))
+  expect(work.filter(c => c.fg === C.ok).length).toBeGreaterThan(work.length / 3) // 3 of the 8 are done
+  const steps = decode(String(rasters.find(r => r.key === 'task-steps')!.props.cells))
+  expect(steps[0]!.fg).toBe(C.ok) // step 1 done
+  expect(steps.at(-1)!.fg).not.toBe(C.ok) // step 2 not yet
+  await ui.unmount()
+})
+
+test('stackCells: a share each, at least a cell for any non-zero part, the track when there is nothing; stepCells: a segment per step', () => {
+  const read = (s: string) => decode(s).map(c => c.fg)
+  const bar = read(stackCells([{ n: 50, color: C.ok }, { n: 1, color: C.accent }], 20))
+  expect(bar.length).toBe(20)
+  expect(bar.filter(x => x === C.accent).length).toBe(1)
+  expect(read(stackCells([{ n: 0, color: C.ok }], 6))).toEqual(Array(6).fill(C.track))
+  const seg = decode(stepCells([{ done: true, current: false }, { done: false, current: true }, { done: false, current: false }], 14, null))
+  expect(seg.length).toBe(14)
+  expect(seg.filter(c => c.ch === ' ').length).toBe(2) // a gap between steps
+  expect([seg[0]!.fg, seg.at(-1)!.fg]).toEqual([C.ok, C.track])
+})
+
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
   const doneTwo = { ...VIEW, active: { ...VIEW.active!, steps: VIEW.active!.steps.map(s => ({ ...s, done: true, current: false })) } }
   const { clock } = world(on, [VIEW, doneTwo])
@@ -1679,10 +1727,12 @@ test('Agents: a Gantt row per subagent (its worktree joined), per lone worktree 
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await ui.find({ key: 'agents' })).toBeDefined()
   const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
-  expect(rasters).toEqual(expect.arrayContaining(['gantt-ag1', 'gantt-tree-old-lane', 'gantt-ideas']))
-  expect(rasters).not.toContain('gantt-tree-worktree-agent-ag1') // joined to its agent's row
-  for (const text of [/⎇ T-0012/, /old-lane/, /nothing to merge/, 'ideas: A mascot', '3/12', /2 running, 2 worktrees/])
+  expect(rasters).toEqual(expect.arrayContaining(['gantt-session', 'gantt-ag1', 'gantt-tree-worktree-agent-ag1', 'gantt-tree-old-lane', 'gantt-ideas']))
+  const order = rasters.filter(k => String(k).startsWith('gantt-'))
+  expect(order.indexOf('gantt-tree-worktree-agent-ag1')).toBe(order.indexOf('gantt-ag1') + 1) // hangs under its agent
+  for (const text of ['this session', /old-lane/, 'merged', 'ideas: A mascot', '3/12', /2 running, 2 worktrees/, /T-0012/])
     expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  for (const text of [/^├─/, /^└─/, /^│ └─|^ {2}└─/]) expect(await ui.find({ type: 'Text', text })).toBeDefined() // the lines
   await ui.unmount()
 })
 
@@ -1694,9 +1744,9 @@ test('review (T-1023): finished agents age out at render, rank above lone worktr
   await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't9', reason: 'answer', agentId: 'ag1' })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   const keys = (await ui.findAll({ type: 'Raster' })).map(r => r.key).filter(k => String(k).startsWith('gantt-'))
-  expect(keys).toEqual(['gantt-ag1', 'gantt-tree-/repo/.claude/worktrees/d']) // the finished agent first
+  expect(keys).toEqual(['gantt-session', 'gantt-ag1', 'gantt-tree-/repo/.claude/worktrees/d']) // the finished agent first
   expect(await ui.find({ type: 'Text', text: /detached/ })).toBeDefined() // not 'nothing to merge'
-  expect(await ui.find({ type: 'Text', text: /nothing to merge/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'merged' })).toBeUndefined()
   await ui.unmount()
   await clock.advance(31 * 60 * 1000)
   const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
