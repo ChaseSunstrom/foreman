@@ -16,12 +16,13 @@ import time
 
 import fmbudget
 import fmcore as c
+import fmdraft
 import fmserve
 
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("scout", "dream", "cold files", "compost", "consolidate", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue")
+NAMES = ("scout", "dream", "cold files", "compost", "consolidate", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate", "queue", "draft")
 
 
 def current_model(p):
@@ -94,6 +95,9 @@ def jobs(p):
     if any(b.tier in ("S", "M") and all(state.get(d) in c.CLOSED for d in c._deps(b))
            for b in c.order_queue(briefs)[0]):  # T-1046: an unblocked small task is waiting: fm run works it
         out.append(("queue", ["run", "--fit", "--max", "2", "--wait", "0"], fmbudget.estimate("run", 2, 0.5)))
+    top = fmdraft._top(p)
+    if top and not os.path.exists(os.path.join(p.dir, "draft.json")):  # T-1062: a small task drafted for review, never merged
+        out.append((f"draft {top.id}", ["draft"], fmbudget.estimate("run", 1, 0.3)))
     return out
 
 
