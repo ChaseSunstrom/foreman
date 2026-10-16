@@ -27,6 +27,11 @@ if os.environ.get("STUB_ALTERNATE"):  # solve every other attempt: a flaky candi
     open(n, "w").write(str(k + 1))
     if k % 2 == 0:
         os.environ["STUB_SOLVE"] = "1"
+if os.environ.get("STUB_GUT"):  # does the new work, breaks the old, and guts the existing test that would say so
+    with open("calc.py", "w") as f:
+        f.write("def half(x):\n    return x\n\n\ndef third(x):\n    return x / 3\n")
+    with open("tests/test_half.py", "w") as f:
+        f.write("print('ok')\n")
 model = args[args.index("--model") + 1] if "--model" in args else ""
 if os.environ.get("STUB_SOLVE") or model and model in os.environ.get("STUB_SOLVE_MODELS", "").split(","):
     with open("calc.py", "w") as f:
@@ -179,6 +184,23 @@ class Bench(ForemanTestCase):
         pricey = self.fm("bench", "gate", "live", "pricey", env=self.env, check=False)
         self.assertEqual(pricey.returncode, 1, "more passes don't buy 50% more cost")
         self.assertIn("cost", pricey.stdout)
+
+    def test_grading_restores_the_reference_tests_an_arm_edited(self):
+        # T-1237 review: only the commit's own test files were restored, so gutting another existing test passed
+        self.write("calc.py", "def half(x):\n    return x / 2\n")
+        self.write("tests/test_half.py", "from calc import half\nassert half(4) == 2\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "half")
+        self.write("calc.py", "def half(x):\n    return x / 2\n\n\ndef third(x):\n    return x / 3\n")
+        self.write("tests/test_third.py", "from calc import third\nassert third(9) == 3\nprint('ok')\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "Add third()\n\nthird(x) divides by three; half() keeps working.")
+        sha = git(self.repo, "rev-parse", "HEAD")
+        self.fm("bench", "build", "--commits", "HEAD~1..HEAD", "--verify",
+                "PYTHONPATH=. python3 tests/test_half.py && PYTHONPATH=. python3 {tests}", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--ids", f"C-{sha[:10]}", "--label", "gut", "--json",
+                                 env=dict(self.env, STUB_GUT="1"), check=False).stdout)
+        self.assertFalse(res["cases"][0]["pass"], "the reference test_half.py runs, not the gutted one")
 
     def test_any_commit_with_a_test_and_a_fix_is_a_case(self):
         # T-0222: bench from a repo's own history, no Foreman brief needed
