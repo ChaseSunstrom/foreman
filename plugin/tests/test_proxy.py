@@ -21,7 +21,7 @@ class Proxy(ForemanTestCase):
         r = self.ask("use  TABS??")
         self.assertTrue(r["proxy"])
         self.assertEqual(r["answer"], "yes")
-        self.assertIn("Proxy answer (from 3 earlier answers)", self.fm("decide", "--ask", "Use tabs?", "--default", "no").stdout)
+        self.assertIn("Proxy answer (from 3 earlier answers)", self.fm("decide", "--ask", "Use tabs?", "--options", "yes", "no", "--default", "no").stdout)
         self.assertIn("Proxy answer", self.fm_json("decide", "--list")["rows"][-1]["why"])
 
     def test_disagreeing_precedents_no_proxy(self):
@@ -46,3 +46,14 @@ class Proxy(ForemanTestCase):
             self.fm("decide", "yes", "--answer", str(self.ask("Tabs again?")["queued"]))
         r = self.fm("decide", "--ask", "Force push now?", "--default", "no", check=False)
         self.assertEqual(r.returncode, 1)
+
+    def test_options_are_part_of_the_ask(self):
+        for _ in range(2):
+            self.fm("decide", "yes", "--answer", str(self.ask("Same words?")["queued"]))
+        r = self.fm_json("decide", "--ask", "Same words?", "--options", "maybe", "later", "--default", "later")
+        self.assertNotIn("proxy", r)  # other options: another ask, and "yes" isn't one of them
+
+    def test_empty_key_never_proxies(self):
+        for _ in range(2):
+            self.fm("decide", "yes", "--answer", str(self.ask("???")["queued"]))
+        self.assertNotIn("proxy", self.ask("???"))

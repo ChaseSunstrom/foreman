@@ -2936,7 +2936,7 @@ def _decide_ask(p, args):
         _write_decision(p, f"{q} → {answer}", f"full autonomy: the default ({why})", rejected, task=args.task)
         return out(args, dict(data, answer=answer, applied=True), f"Decided (full autonomy): {q} → {answer} ({why}).")
     import fmideas
-    prec = fmideas.precedent(p, q)  # T-1064: the user's own earlier answers stand in, labelled, and can be overruled
+    prec = fmideas.precedent(p, q, options)  # T-1064: the user's own earlier answers stand in, labelled, and can be overruled
     if prec:
         answer, why = prec[0], f"Proxy answer (from {prec[1]} earlier answers)"
         data = dict(data, default=answer, why=why)
@@ -3011,7 +3011,7 @@ def _answer(p, args):
                         args.rejected or ", ".join(o for o in a.get("options") or [] if o != args.decision),
                         task=a.get("task") or args.task, locked=True)
         import fmideas
-        c.log_event(p, "ask_answered", task=a.get("task"), data={"q": fmideas.norm_ask(a["q"]), "a": args.decision},
+        c.log_event(p, "ask_answered", task=a.get("task"), data={"q": fmideas.ask_key(a["q"], a.get("options")), "a": args.decision},
                     session=session())
         if a.get("proxy") and a.get("default") != args.decision:
             c.log_event(p, "proxy_overruled", task=a.get("task"), data={"n": args.answer, "q": a["q"]}, session=session())
