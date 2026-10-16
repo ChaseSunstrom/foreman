@@ -2,7 +2,8 @@
 """Aggregates of Foreman's own history for the site's charts (T-1220): python3 site/stats.py [--state DIR] [--no-bench]
 
 Reads this repo's Foreman state (the ledger, the task briefs) and git, and writes site/data/stats.json. Only counts,
-categories and timings are written: never a task title, a path, a command or a session id. CI has no Foreman state, so
+categories and timings are written, plus the benchmark repos' short task names and the titles of work a marathon found
+there (toy repos, published on purpose): never this repo's task titles, a path, a command or a session id. CI has no Foreman state, so
 this runs here and its output is committed; site/build.py only reads it."""
 import argparse
 import collections
@@ -137,36 +138,60 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
-def duel(state, model=None):
+def merge_duels(old, new):
+    """Site review: the duels named now replace the saved ones of the same name; the others stay, in order."""
+    fresh = {d["name"]: d for d in new}
+    return [fresh.pop(d["name"], d) for d in old] + list(fresh.values())
+
+
+def duel(state, model=None, kind=""):
     """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
-    arms (T-1222)."""
+    arms (T-1222). `kind` (T-1242): "long", the newest run with forced compaction; "marathon", the newest whose
+    Foreman arm went on past the asked work; "", the newest with neither."""
     res = os.path.join(state, "bench", "results")
     for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")), reverse=True):
         bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
         with open(path, encoding="utf-8") as f:
             fm_ = json.load(f)
-        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model):
+        found = "marathon" if fm_.get("marathon") else "long" if fm_.get("compact_at") else ""
+        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model) and found == kind:
             break
     else:
         return None
     with open(bare_path, encoding="utf-8") as f:
         bare = json.load(f)
-    pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
-                      "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
-                      "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error"))}
-    b = {x["id"]: x for x in bare.get("cases", [])}
     try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
         with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
-            titles = {x["id"]: x.get("title") or "" for x in json.load(f)}
+            known = {x["id"]: x for x in json.load(f)}
     except (OSError, ValueError, TypeError, KeyError):
-        titles = {}
+        known = {}
+    titles = {k: x.get("title") or "" for k, x in known.items()}
+
+    def per_request(x):  # T-1242: from the failing hidden tests when the run predates its own per-request count
+        case = known.get(x["id"]) or {}
+        if x.get("requests") or not case.get("requests"):
+            return x.get("requests")
+        sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+        import fmbench
+        return fmbench.per_request(case, x.get("failed") or [])
+    pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
+                      "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
+                      "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error")),
+                      "tests": x.get("tests"), "compactions": x.get("compactions"), "capped": x.get("capped"),
+                      "requests": per_request(x),
+                      "each": [{k: a.get(k) for k in ("tests", "compactions")} for a in x.get("attempts") or []],
+                      "found": [t for t in ((x.get("diag") or {}).get("titles") or {}).values()
+                                if t.endswith("(discovered)")]}
+    b = {x["id"]: x for x in bare.get("cases", [])}
+
     def name(cid):  # kit.lru → "lru"; otherwise the title's first words
         t = titles.get(cid, "")
         mod = re.findall(r"\bkit\.(\w+)", t)
         return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]).rstrip(",;.") or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
-    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases}
+    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases,
+            **({"compact_at": fm_.get("compact_at"), "marathon": fm_.get("marathon")} if kind else {})}
 
 
 def main():
@@ -186,9 +211,9 @@ def main():
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
              "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
-             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(*x.partition("=")[2].split("@", 1)))
-                                                     for x in (a.duel or [f"quality={state}"])) if d]
-             or old.get("duels") or []}
+             "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
+                 *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
+                                                     for x in (a.duel or [f"quality={state}"])) if d])}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=1)

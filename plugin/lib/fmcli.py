@@ -1322,6 +1322,16 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     if users and not dry:
         print(f"{b.id}: left out {len(users)} file(s) that were already uncommitted when the task was focused: "
               f"{', '.join(users[:8])} (fm task finish {b.id} --commit ... --with FILE commits one)")
+    # T-1235: uncommitted files this task never changed (edited before its focus, often under another task) were left
+    # out without a word; they're named now, and --with FILE commits one
+    st = c._git(p.root, "status", "--porcelain", "-z", "-uall", "--no-renames", timeout=30)
+    rest = [f for f in (e[3:] for e in st.split("\0") if len(e) > 3)
+            if f not in files and f not in theirs and f not in users and not f.startswith(".foreman/")]
+    files += [f for f in rest if f in wanted]
+    rest = [f for f in rest if f not in wanted]
+    if rest and not dry:
+        print(f"{b.id}: left out {len(rest)} uncommitted file(s) it didn't change: {', '.join(rest[:8])}"
+              f"{' …' if len(rest) > 8 else ''} (fm task finish {b.id} --commit ... --with FILE commits one)")
     files += [".foreman"] if mirror else []
     elsewhere = {}  # T-0360: edits in another checkout are that repo's to commit, so say where they are
     for e in c.ledger_tail(p, c.TASK_WINDOW):
@@ -5496,6 +5506,8 @@ def build_parser():
                                                             "becomes its test files")
             b.add_argument("--judged", action="store_true", help="work whose commit has no tests (docs, UI, prose) "
                                                                  "becomes a case a judge grades against its criteria")
+            b.add_argument("--together", action="store_true", help="with --commits: one case asking for all the "
+                                                                   "range's requests in one session (T-1242)")
         if name == "run":
             b.add_argument("--plugin", help="the plugin folder to test (default: this Foreman)")
             b.add_argument("--max", type=int, default=3, help="cases to run")
@@ -5504,6 +5516,8 @@ def build_parser():
             b.add_argument("--timeout", type=int, default=30, help="minutes per case")
             b.add_argument("--label", help="name for these results (default: the time)")
             b.add_argument("--runs", type=int, default=1, help="attempts per case: a pass rate instead of one sample")
+            b.add_argument("--compact-at", type=int, metavar="TOKENS", help="compact once the context nears TOKENS, "
+                                                                            "and count the compactions (T-1242)")
         if name == "show":
             b.add_argument("label")
         if name == "gate":
@@ -5546,6 +5560,12 @@ def build_parser():
             b.add_argument("--cost-tolerance", type=float, default=0.15, help="allowed rise in mean cost per case")
             b.add_argument("--runs", type=int, default=1, help="attempts per case and arm: a pass rate, not one sample")
             b.add_argument("--jobs", type=int, default=1, help="cases run at once (each in its own worktree)")
+            b.add_argument("--compact-at", type=int, metavar="TOKENS", help="both arms compact once their context "
+                           "nears TOKENS (CLAUDE_CODE_AUTO_COMPACT_WINDOW), as a long session would; results count "
+                           "the compactions (T-1242)")
+        if name == "duel":
+            b.add_argument("--marathon", type=int, metavar="N", help="after the asked work, Foreman's arm finds and "
+                           "does work nobody asked for, N passes, until its --budget cap (T-1242)")
         if name == "court":
             b.add_argument("--label", help="name for these results (default: court-<time>)")
 

@@ -387,6 +387,13 @@ def session_start(pl):
         out["additionalContext"] += ("\nUnattended run: end with one short line per check you ran and its result "
                                      "(✓/✗), and one for anything the request asked that you left undone; nothing "
                                      "else.")
+    if pl.get("source") == "compact":
+        try:
+            note = _requests_note(p, sid, cap=min(REQUEST_TEXT_CAP, 9000 - len(out["additionalContext"])))
+            if note:
+                out["additionalContext"] += "\n\n" + note
+        except Exception:
+            log_error("SessionStart", _tb())
     if pl.get("source") in (None, "startup", "resume", "fork") and (name := _session_title(sid, sd)):
         out["sessionTitle"] = name  # T-0781
     first = not busy and _resume_turn(pl, sd)  # another session minutes ago: don't start a second driver
@@ -581,7 +588,26 @@ def _pin_hashes(pins):
     return {x: fmplugins.content_hash(x) for x in pins}
 
 
-def _first_brief(p, sid):
+def _first_prompt(path):
+    """T-1242: the session's first user message, whole, from its transcript (the ledger keeps 2,000 characters)."""
+    try:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for _, line in zip(range(400), f):
+                e = json.loads(line) if line.strip() else {}
+                m = e.get("message") if isinstance(e, dict) else None
+                if not isinstance(m, dict) or e.get("type") != "user" or m.get("role") != "user":
+                    continue
+                body = m.get("content")
+                if isinstance(body, list):
+                    body = "".join(x.get("text", "") for x in body if isinstance(x, dict) and x.get("type") == "text")
+                if isinstance(body, str) and body.strip():
+                    return body
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def _first_brief(p, sid, transcript=None):
     """T-1231: the first edit of a full-autonomy session whose only request so far is the one being worked makes its
     task: a brief from that request (its tag's type, a guessed tier, its DONE-WHEN lines as criteria), focused. The
     duel's Foreman sessions each spent two turns on the refusal and fm task new. Returns the note for the agent, or
@@ -591,9 +617,20 @@ def _first_brief(p, sid):
     if c.active_brief_fast(p, getattr(p, "lane", None)):
         return ""  # review: a parallel edit's hook made it a moment ago; the caller re-runs the guard with it
     mine = [e for e in c.ledger_tail(p, 3000) if e.get("session_id") == sid]
+    queued = [e.get("task") for e in mine if e.get("event") == "first_brief"]
+    if queued:  # T-1242: this session's own requests: the next one, never a second copy of them
+        return _next_request(p, sid, queued)
     asks = [str((e.get("data") or {}).get("text") or "") for e in mine if e.get("event") == "prompt"]
     if len(asks) != 1 or not asks[0].strip() or any(e.get("event") in ("task_new", "focus") for e in mine):
         return None
+    ask = asks[0]
+    bare = lambda t: re.sub(r"(?i)^\s*task:\s*", "", t or "")  # a bench prompt's "Task: ## Request 1"
+    if len(ask) >= 1990 and REQUEST_HEAD.search(bare(ask)) and transcript:  # cut short in the ledger: read it whole
+        whole = _first_prompt(transcript)
+        ask = c.redact(c.plain_lines(whole)) if whole and REQUEST_HEAD.search(bare(whole)) else ask
+    reqs = _requests(ask)
+    if reqs:
+        return _queue_requests(p, sid, reqs)
     r = c.parse_intake(asks[0])
     head = re.sub(r"(?i)^\s*task:\s*", "", asks[0]).strip()  # a bench or scripted prompt's "Task: <request>"
     first_line = head.splitlines()[0] if head else ""
@@ -626,6 +663,151 @@ def _first_brief(p, sid):
     return (f"Foreman made this session's task from your request: {act.id} ({act.type} {act.tier}, focused), with "
             f"{len(done)} criterion(s) from it; this edit goes ahead.{close} Wrong size? fm task set {act.id} "
             f"tier=S|M|L.")
+
+
+REQUEST_HEAD = re.compile(r"(?im)^#{1,3}\s*request\s+\d+\b[^\n]*$")
+
+
+def _requests(text):
+    """T-1242: the requests of a prompt written as "## Request k" sections, in order; [] when there are fewer than two.
+    Review: what comes before the first heading ("NEVER touch tests/.") goes with every request, after its own text."""
+    pre, *parts = REQUEST_HEAD.split(re.sub(r"(?i)^\s*task:\s*", "", text or ""))
+    pre = pre.strip()
+    parts = [x.strip() + (f"\n\nFor every request: {pre}" if pre else "") for x in parts if x.strip()]
+    return parts if len(parts) > 1 else []
+
+
+def _queue_requests(p, sid, reqs):
+    """T-1242: a prompt of several requests queues one task per request, each depending on the one before and holding
+    its request's own text, so what's done and what's left survive a compaction; the first is focused. Within the
+    hook's 5 s: tasks that don't fit are left to the agent, and the note says so."""
+    import fcntl
+    fm, made, t0 = os.path.join(c.PLUGIN_ROOT, "bin", "fm"), [], time.monotonic()
+    with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
+        fcntl.flock(lk, fcntl.LOCK_EX)
+        if c.active_brief_fast(p, getattr(p, "lane", None)):
+            return ""  # a parallel edit's hook queued them a moment ago
+        for k, text in enumerate(reqs, 1):
+            if time.monotonic() - t0 > 3.2:  # review: room left for this task and the focus within the hook's 5 s
+                break
+            r = c.parse_intake(text)
+            type_ = r.items[0].type if r.items else "FEATURE"
+            first = c.plain(text.splitlines()[0]).lstrip("-*• ").strip()
+            done = (r.done_when or ["the request is done as asked"])[:6]
+            cmd = [fm, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_, "--tier",
+                   "M" if type_ == "SECURITY" else "S", f"--raw={text}", "--step=do what the request asks", "--json",
+                   *[f"--ac={d}" for d in done], *([f"--depends={made[-1]}"] if made else [])]
+            try:
+                r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True,
+                                   timeout=max(0.5, 4.0 - (time.monotonic() - t0)),
+                                   env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+            except subprocess.TimeoutExpired:
+                break  # a task it may have made has no first_brief event: the agent's own queue picks it up
+            tid = re.search(r'"id": "(T-\d+)"', r.stdout)
+            if r.returncode or not tid:
+                log_error("PreToolUse", f"queue requests: {r.stderr.strip()[-300:]}")
+                break
+            made.append(tid[1])
+            c.log_event(p, "first_brief", task=tid[1], session=sid)  # the Stop hook may close it (_close_first_brief)
+        try:
+            if not made or subprocess.run([fm, "focus", made[0]], cwd=p.root, capture_output=True,
+                                          timeout=max(0.5, 4.6 - (time.monotonic() - t0)),
+                                          env=dict(os.environ, FOREMAN_SESSION_ID=sid)).returncode:
+                return None
+        except subprocess.TimeoutExpired:
+            return None
+    left = len(reqs) - len(made)
+    return (f"Foreman queued this session's {len(reqs)} requests as tasks, in order: {', '.join(made)}"
+            + (f" (the last {left} didn't fit in time: queue them with fm task new)" if left else "")
+            + f"; {made[0]} is focused and this edit goes ahead. Each holds its request's text (fm task show ID), so "
+            f"after a compaction the queue says what's left. After each request, one command closes it and moves on: "
+            f"fm task finish --run \"<the test command>\" --audit \"<how you checked>\" --commit \"<message>\" && "
+            f"fm focus <the next id>.")
+
+
+REQUEST_TEXT_CAP = 6000  # Claude Code saves a hook context over ~10 KB to a file and shows a 2 KB preview
+
+
+def _request_text(b, cap=REQUEST_TEXT_CAP):
+    text = re.sub(r"(?m)^>\s?", "", b.section("Raw request")).strip()
+    return text if len(text) <= cap else text[:cap] + f"\n… (the rest: fm task show {b.id})"
+
+
+def _next_request(p, sid, queued):
+    """T-1242: an edit with nothing active, in a session whose requests Foreman queued: the next open one whose
+    requests before it are closed is focused, and its text comes with the note. The smoke run's write after a close
+    was refused, and the module was then written from a draft the compaction summary kept instead of the request."""
+    briefs = {b.id: b for b in c.load_briefs(p)}
+    nxt = next((briefs[t] for t in sorted(set(queued), key=c.id_num) if t in briefs
+                and briefs[t].status not in c.CLOSED
+                and all(briefs.get(d) is None or briefs[d].status in c.CLOSED for d in briefs[t].meta.get("depends_on")
+                        or [])), None)
+    if not nxt:
+        return None
+    r = subprocess.run([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "focus", nxt.id], cwd=p.root, capture_output=True,
+                       text=True, timeout=3, env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+    if r.returncode:
+        log_error("PreToolUse", f"next request: {r.stderr.strip()[-300:]}")
+        return None
+    return (f"Foreman focused {nxt.id}, this session's next request; this edit goes ahead. Its text, word for word "
+            f"(work to it, not to a summary or an earlier draft):\n\n{_request_text(nxt)}")
+
+
+def _requests_note(p, sid, cap=REQUEST_TEXT_CAP):
+    """T-1242: after a compaction, the open requests this session queued (_queue_requests), word for word from their
+    briefs: the smoke run's summary kept their names and dropped their rules, and the agent wrote three modules from
+    signatures. The active one first, then in order, within the cap (a longer hook context reaches the agent as a
+    2 KB preview); fm task show names the rest."""
+    ids = {e.get("task") for e in c.ledger_tail(p, 5000)
+           if e.get("event") == "first_brief" and e.get("session_id") == sid}
+    left = sorted((b for b in c.load_briefs(p) if b.id in ids and b.status not in c.CLOSED),
+                  key=lambda b: (b.status != "active", c.id_num(b.id)))
+    parts, used, rest = [], 0, []
+    for b in left:
+        block = f"### {b.id} ({b.status}) {b.title}\n" + _request_text(b, cap)
+        if parts and used + len(block) > cap:
+            rest.append(b.id)
+            continue
+        parts.append(block)
+        used += len(block)
+    if not left:
+        return None
+    return ("The requests still open in this session, word for word (a compaction summary keeps their names and drops "
+            "their rules: follow these, not the summary):\n\n" + "\n\n".join(parts)
+            + (f"\n\nAlso open: {', '.join(rest)} (fm task show ID)." if rest else ""))
+
+
+# T-1242: one way of looking per pass, so a marathon doesn't reread the same code and find nothing (the first one found
+# one improvement in five passes, each "nothing in the code I've read")
+MARATHON_LENSES = (
+    "pick a module and run it on inputs its tests don't cover (empty, huge, negative, unicode, malformed) in a quick "
+    "python3 -c; a crash or a wrong answer is the work",
+    "read the README and the docstrings against what the code does; where they disagree, the code or the doc is wrong",
+    "find an error that doesn't say what was wrong or where (a bare exception, a message with no value or line); make "
+    "it say so",
+    "find a public function with no test of its own; write its tests from what it promises, and fix what they catch",
+    "find logic written twice that one helper can hold without changing behaviour, or a slow path on large input",
+)
+MARATHON_NOTE = ("Foreman marathon, pass {k} of {n}: the asked work is done. Find one more improvement this repo needs. "
+                 "This pass, {lens}. Read the code you need first, including modules you haven't read this session. "
+                 "Capture what you find (fm capture \"<what and why>\" --source discovered), plan it as an S task with a "
+                 "test that fails first, make it pass without breaking the suite, and close it with fm task finish "
+                 "--run \"<the test command>\" --commit \"<message>\". Only if this way of looking finds nothing real, "
+                 "say so in one line and stop.")
+
+
+def _marathon(p, sid):
+    """T-1242: FOREMAN_MARATHON=N (a bench marathon): once this session's asked work is closed, N passes of finding
+    and doing work nobody asked for, each pass started at a stop with an empty queue. None when it's off or used up."""
+    n = int(os.environ.get("FOREMAN_MARATHON") or 0) if (os.environ.get("FOREMAN_MARATHON") or "").isdigit() else 0
+    if not n or not sid:
+        return None
+    mine = [e for e in c.ledger_tail(p, 5000) if e.get("session_id") == sid]
+    k = sum(e.get("event") == "marathon_pass" for e in mine)
+    if k >= n or not any(e.get("event") in ("first_brief", "task_new") for e in mine):
+        return None
+    c.log_event(p, "marathon_pass", session=sid, data={"pass": k + 1, "of": n})
+    return MARATHON_NOTE.format(k=k + 1, n=n, lens=MARATHON_LENSES[k % len(MARATHON_LENSES)])
 
 
 def _tracked(p):
@@ -673,6 +855,7 @@ def _close_first_brief(p, act, sid):
     cmd = _test_gate(p, _tracked(p))
     if not cmd:
         return False, None
+    until = time.monotonic() + 25  # the Stop hook's limit is 30 s
     proc = subprocess.Popen([os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "task", "finish", act.id, "--run", cmd,
                              "--audit", f"auto: Foreman closed the task it made for this session's one request at "
                              f"stop; {cmd} passed after the last edit", "--commit", f"{act.title} ({act.id})"],
@@ -687,6 +870,7 @@ def _close_first_brief(p, act, sid):
         c.log_event(p, "first_brief_close_timeout", task=act.id, session=sid, data={"cmd": cmd})
         return True, None
     if not proc.returncode:
+        _close_evidenced(p, sid, cmd, until)
         return True, None
     tail = c.fit(c.plain(" / ".join(l.strip() for l in (err or out).strip().splitlines()[-4:])), 400)
     told = any(e.get("event") == "first_brief_close_failed" for e in mine)
@@ -694,6 +878,32 @@ def _close_first_brief(p, act, sid):
     return True, None if told else (
         f"Foreman ran {cmd} to close {act.id} and it didn't pass: {tail}. Fix the work before you stop, or say in your "
         f"reply what is left and why.")
+
+
+def _close_evidenced(p, sid, cmd, until):
+    """T-1242: once the active request closed at stop, this session's other queued requests that already have the
+    agent's evidence close the same way (focused, then finished), in order, while the stop's time lasts. The smoke run
+    spent seven turns focusing them one at a time so each stop could close one."""
+    fm, env = os.path.join(c.PLUGIN_ROOT, "bin", "fm"), dict(os.environ, FOREMAN_SESSION_ID=sid, FOREMAN_SENTINEL="off")
+    ids = {e.get("task") for e in c.ledger_tail(p, 5000)
+           if e.get("event") == "first_brief" and e.get("session_id") == sid}
+    for b in sorted((b for b in c.load_briefs(p) if b.id in ids and b.status not in c.CLOSED and b.tier == "S"
+                     and b.type != "FIX" and b.has_evidence(step=1)), key=lambda b: c.id_num(b.id)):
+        for args in (["focus", b.id], ["task", "finish", b.id, "--run", cmd, "--audit", f"auto: the agent recorded "
+                     f"evidence for this request; Foreman closed it at stop after {cmd} passed", "--commit",
+                     f"{b.title} ({b.id})"]):
+            left = until - time.monotonic()
+            if left < 3:
+                return
+            proc = subprocess.Popen([fm, *args], cwd=p.root, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    env=env, start_new_session=True)
+            try:
+                if proc.wait(timeout=left):
+                    return  # refused (a request before it still open): the agent and the drive take it from here
+            except subprocess.TimeoutExpired:
+                c.kill_group(proc)
+                proc.wait()
+                return
 
 
 _PROGRAM_FLAGS = ("-p", "--print", "--input-format", "--output-format", "--sdk-url")
@@ -1369,7 +1579,7 @@ def _pre_tool_use(raw):
     made = None
     if block and block.category == "brief" and p:
         try:
-            made = _first_brief(p, pl.get("session_id"))
+            made = _first_brief(p, pl.get("session_id"), pl.get("transcript_path"))
             if made is not None:  # the whole guard again, with the task active: the edit goes ahead if nothing stops it
                 ctx, p, act, found, block = _guard_decision(pl, guard)
         except Exception:
@@ -2681,6 +2891,11 @@ def stop(pl):
         reloading, waiting_on = d.pop("reloading", None), d.pop("waiting_on", None)
         _write_gate(p, g)
     drained = bool(had_work and not d["had_work"])
+    if not reason and not oneoff and not (sd["active"] or sd["queue"]):
+        try:
+            reason = _marathon(p, sid)
+        except Exception:  # a bench marathon's next pass, never worth a failed stop
+            log_error("Stop", _tb())
     if drained and not oneoff and sd.get("autonomy") == "full" and sd["drive"] and not sd["inbox"] \
             and not os.environ.get("FOREMAN_BENCH"):  # T-1229: a replay's job is its request, not new work after it
         try:  # T-0950: the queue just drained: Foreman looks for work itself (an answer to a question isn't a drain)
@@ -2699,7 +2914,8 @@ def stop(pl):
             log_error("Stop", _tb())
     if not reason and ((act and needs_user(msg)) or drained):
         seq += _notify_seq("waiting for your answer" if act else "queue empty")
-    if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active"):
+    if not reason and not oneoff and sd.get("autonomy") == "full" and not pl.get("stop_hook_active") \
+            and not os.environ.get("FOREMAN_BENCH"):  # T-1242: a replay never pings the user's phone
         reason = _push_nudge(sid, sd, drained)
     if not reason and not oneoff and not reloading and not waiting_on and (sd["active"] or sd["queue"]):
         # T-0957: open work, and nothing kept it going (a reload or a background wait resumes by itself)
