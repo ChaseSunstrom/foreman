@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.33 — 2026-10-16
 - Help tiers are declared where each fm command is registered (`add(..., tier=(title, order))`), so parallel builders adding commands no longer conflict on one shared table; `fm help` is unchanged (T-1144).
 - Builders self-review as an adversary before they report (what input breaks it, what outside text it trusts, what is unbounded, what it writes where, what a second run does) and say so in a Self-review section (T-1147).
 - `fm lease take` with a path relative to the repo root, run from a subdirectory, leases that file instead of a doubled path (T-1148).
