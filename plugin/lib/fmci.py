@@ -22,14 +22,20 @@ def _gh(p, *argv):
     return r.stdout
 
 
-def _latest(p, branch):
-    cmd = ["run", "list", "--limit", "1", "--json", "databaseId,status,conclusion,url"] + (["--branch", branch] if branch else [])
+def _head(p):
+    r = subprocess.run(["git", "rev-parse", "HEAD"], cwd=p.root, capture_output=True, text=True, stdin=subprocess.DEVNULL)
+    return r.stdout.strip()
+
+
+def _latest(p, branch, sha):
+    """The newest run for commit `sha` (an older commit's run, the usual first poll after a push, is never it)."""
+    cmd = ["run", "list", "--limit", "20", "--json", "databaseId,status,conclusion,url,headSha"] + (["--branch", branch] if branch else [])
     try:
         rows = json.loads(_gh(p, *cmd))
     except ValueError:
         return None
-    r = rows[0] if isinstance(rows, list) and rows and isinstance(rows[0], dict) else None
-    return r if r and isinstance(r.get("databaseId"), int) else None
+    return next((r for r in rows if isinstance(r, dict) and isinstance(r.get("databaseId"), int)
+                 and r.get("headSha") == sha), None) if isinstance(rows, list) else None
 
 
 def _brief(p, run, branch):
@@ -45,11 +51,12 @@ def _brief(p, run, branch):
     return capture_once(p, text, "FIX", "ci", key=f"CONTEXT: {url}, ")
 
 
-def watch(p, branch, retries, interval, max_polls=120, say=print):
+def watch(p, branch, retries, interval, max_polls=120, say=print, commit=None):
     """(code, message): 0 once a run is green; 1 after more than `retries` failed runs or `max_polls` polls."""
     seen, fails = set(), 0
+    say(f"watching {(commit or _head(p))[:7]} on {branch or 'this branch'}, up to {max_polls} polls", flush=True)
     for _ in range(max_polls):
-        run = _latest(p, branch)
+        run = _latest(p, branch, commit or _head(p))  # a pushed fix moves HEAD: follow it unless --commit pins one
         if run and run.get("status") == "completed" and run["databaseId"] not in seen:
             seen.add(run["databaseId"])
             if run.get("conclusion") == "success":
@@ -65,6 +72,6 @@ def watch(p, branch, retries, interval, max_polls=120, say=print):
 
 def cmd_ci_watch(args):
     import fmcli
-    code, msg = watch(fmcli.resolve(args), args.branch, args.max_retries, args.interval, args.max_polls)
+    code, msg = watch(fmcli.resolve(args), args.branch, args.max_retries, args.interval, args.max_polls, commit=args.commit)
     print(msg)
     return code
