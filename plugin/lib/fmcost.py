@@ -164,6 +164,43 @@ def _forecast(args, fmcli):
                      "each turn once Claude Code reports rate limits)")
 
 
+UNEXPLAINED_GAP_S = 1800  # a turn this far from every ledger event of its session has no Foreman work around it (T-1079)
+UNEXPLAINED_MIN_PCT = 20  # flag only when at least this share of the spend…
+UNEXPLAINED_MIN_TOKENS = 100000  # …and this many input-equivalent tokens nothing in Foreman accounts for
+
+
+def unexplained(msgs, events, gap=UNEXPLAINED_GAP_S):
+    """Spend no ledger event explains: a session with none, or a turn over `gap` seconds from each of its session's.
+    Returns {tokens, share (%), sessions}."""
+    import bisect
+    times = collections.defaultdict(list)
+    for e in events:
+        if e.get("session_id") and (t := _epoch(str(e.get("ts", "")))) is not None:
+            times[e["session_id"]].append(t)
+    for v in times.values():
+        v.sort()
+    total = lost = 0.0
+    sessions = collections.Counter()
+    for ts, sid, usage in msgs:
+        w = sum((usage.get(k) or 0) * wt for k, wt in WEIGHTS.items())
+        total += w
+        t, near = _epoch(ts), times.get(sid)
+        if t is not None and near:
+            i = bisect.bisect_left(near, t)
+            if any(abs(near[j] - t) <= gap for j in (i - 1, i) if 0 <= j < len(near)):
+                continue
+        lost += w
+        sessions[sid] += w
+    return {"tokens": round(lost), "share": round(100 * lost / total, 1) if total else 0.0,
+            "sessions": [s for s, _ in sessions.most_common()]}
+
+
+def unexplained_line(u):
+    if u["share"] >= UNEXPLAINED_MIN_PCT and u["tokens"] >= UNEXPLAINED_MIN_TOKENS:
+        return f"Unexplained spend: {u['share']:.0f}% (≈ {_human(u['tokens'])}) in {len(u['sessions'])} session(s) with no Foreman task or turn near them"
+    return ""
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -200,7 +237,9 @@ def cmd_cost(args):
     base = sorted(first.values())[len(first) // 2] if first else 0
     model_s, tool_s, shell_s = timing(folder, _since(args.days))
     active = model_s + sum(tool_s.values())
+    unex = unexplained(msgs, c.ledger_tail(p, 20000))
     data = {"days": args.days, "messages": len(msgs), "tokens": dict(totals), "input_equivalent": round(total),
+            "unexplained": unex,
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
             "time": {"active_s": round(active), "model_s": round(model_s),
@@ -215,6 +254,7 @@ def cmd_cost(args):
             + " · ".join(f"{SHORT[k]} {_human(totals[k])}" for k in WEIGHTS)
             + f" ≈ {_human(total)} input-equivalent (cache reads ×0.1, writes ×1.25, output ×5)"
             + "\nBy task: " + " · ".join(f"{t} {_human(v)} ({100 * v / total:.0f}%)" for t, v in by_task.most_common(8))
+            + ("\n" + unexplained_line(unex) if unexplained_line(unex) else "")
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
             + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
@@ -352,10 +392,11 @@ def cmd_digest(args):
     blocked = [b for b in briefs if b.status == "blocked"]
     import fmtidy
     stale = fmtidy.stale_plans(p, briefs)  # T-1077: queued plans whose files or premises moved since planning
-    tokens = None
+    tokens, unex = None, ""
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
         tokens = sum((u.get(k) or 0) * w for _, _, u in msgs for k, w in WEIGHTS.items())
+        unex = unexplained_line(unexplained(msgs, c.ledger_tail(p, 20000)))
     lines = [f"Last {args.days:g} day(s) in {p.slug}: {len(done)} task(s) done — "
              + (", ".join(f"{v} {k}" for k, v in grades.most_common()) or "none")
              + ("; latest 8:" if len(done) > 8 else "")]  # T-0349: the list below is cut, the count isn't
@@ -382,6 +423,7 @@ def cmd_digest(args):
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
         if any(n > 1 for n in fails.values()) else []
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
+    lines += [unex] if unex else []
     nights = [e for e in c.ledger_tail(p, 3000) if e.get("event") == "night" and str(e.get("ts", ""))[:19] >= since]
     lines += ["Night shift (fm night):"] + [  # T-0236
         f"- {str(e.get('ts', ''))[:10]}: " + (", ".join(f"{'✓' if r.get('exit') == 0 else '✗'} {r.get('name')}"

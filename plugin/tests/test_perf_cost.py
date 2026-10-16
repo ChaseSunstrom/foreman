@@ -205,3 +205,43 @@ class StepCompact(HookCase):
         self.context(72)
         self.hook("PostToolUse", {"tool_name": "Edit", "tool_input": {"file_path": os.path.join(self.repo, "README.md")}})
         self.assertNotIn("step boundary", self.stop(), "the next step is under way: not a boundary")
+
+
+class UnexplainedSpend(HookCase):
+    """T-1079: spend from a session with no ledger events, or a turn 30+ minutes from any, is flagged."""
+
+    def setup_spend(self, rows, events=(60, 2)):
+        """rows: (session, minutes ago, output tokens); session 'known' has ledger events at `events` minutes ago."""
+        import datetime
+        import re
+        self.fm("init")
+        p = c.find_project(self.repo)
+        stamp = lambda m: (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=m)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            for m in events:
+                f.write(json.dumps({"ts": stamp(m), "session_id": "known", "task": "T-0001", "event": "note", "data": {}}) + "\n")
+        cfg = os.path.join(self.tmp, "cfg")
+        folder = os.path.join(cfg, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(folder)
+        with open(os.path.join(folder, "t.jsonl"), "w") as f:
+            for i, (sid, ago, out) in enumerate(rows):
+                f.write(json.dumps({"type": "assistant", "timestamp": stamp(ago), "sessionId": sid, "message": {
+                    "id": f"m{i}", "content": [], "usage": {"output_tokens": out}}}) + "\n")
+        return {"CLAUDE_CONFIG_DIR": cfg}
+
+    def test_a_session_with_no_ledger_events_is_flagged_in_cost_and_digest(self):
+        env = self.setup_spend([("known", 59, 20000), ("known", 30, 20000), ("stray", 10, 40000), ("stray", 9, 40000)])
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["sessions"], d["tokens"], round(d["share"])), (["stray"], 400000, 67))
+        for cmd in ("cost", "digest"):
+            self.assertIn("Unexplained spend: 67% (≈ 400k) in 1 session(s)", self.fm(cmd, env=env).stdout)
+
+    def test_a_turn_past_the_gap_from_its_sessions_events_counts(self):
+        env = self.setup_spend([("known", 85, 10000), ("known", 45, 100000)], events=(90, 2))
+        d = json.loads(self.fm("cost", "--json", env=env).stdout)["unexplained"]
+        self.assertEqual((d["tokens"], d["sessions"]), (500000, ["known"]))
+
+    def test_explained_or_small_spend_shows_no_line(self):
+        env = self.setup_spend([("known", 59, 40000), ("stray", 10, 1000)])  # the stray is under 20% and 100k
+        out = self.fm("cost", env=env).stdout + self.fm("digest", env=env).stdout
+        self.assertNotIn("Unexplained", out)
