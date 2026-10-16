@@ -4,3 +4,17 @@
 {"id": "9748fc8d7f55aa394421", "cmd": "ls", "cwd": ".", "should": "allow", "why": "plain read"}
 {"id": "3069bfeb200a2c7e3f4d", "cmd": "S=/tmp/zz; mkdir -p $S/a", "cwd": ".", "should": "allow", "why": "scratch dir through a variable"}
 {"id": "2bedfe473782909f1ab2", "cmd": "cat >> tests/test_x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {})\nEOF", "cwd": "plugin", "should": "allow", "why": "quoted heredoc written with cat, nothing run"}
+{"id": "5bdb9ce9f00d2e6da8d9", "cmd": "tar -xf a.tar --to-command='rm -rf ~'", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "8cf8bb2f94604f78ea98", "cmd": "ssh -o ProxyCommand='rm -rf ~' host", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "1273caf3a28388e4fa21", "cmd": "rsync -av -e 'rm -rf ~' a host:b", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "1b6f44eebd272d5e885e", "cmd": "zip -T -TT 'rm -rf ~' a.zip x", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "deaf94821d0de5b42758", "cmd": "less '+!rm -rf ~' file", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "a1e54233af4d277ca326", "cmd": "vim -c '!rm -rf ~' file", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "770e678fba50712a0b1a", "cmd": "sed 'e rm -rf ~' file", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "582f7cff6f93e3eef4f1", "cmd": "NODE_OPTIONS='--require /tmp/x.js' node a.js", "cwd": ".", "should": "block", "why": "T-0275 hidden exec"}
+{"id": "1322dba08d3e84b29465", "cmd": "tar -I zstd -cf a.tar.zst x", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "892a389dc0c682110f1e", "cmd": "ssh host", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "d3e6ed98602990d4e208", "cmd": "rsync -av a host:b", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "b3b2429187d5f4c27aef", "cmd": "sed -e 's/a/b/' file", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "97a170d9139087517344", "cmd": "vim file", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "b783c2ba222f39bfd750", "cmd": "NODE_OPTIONS=--max-old-space-size=4096 node a.js", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}

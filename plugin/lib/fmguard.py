@@ -2673,6 +2673,7 @@ def _sed_code(args):
     scripts = _opt_values(args, "-e", "--expression") or [a for a in args if not a.startswith("-")][:1]
     out = []
     for text in scripts:
+        unsplit = False
         for seg in re.split(r";|\n", text):
             seg = re.sub(r"^\s*(?:\d+|\$|/[^/]*/)?(?:,(?:\d+|\$|/[^/]*/))?!?\s*", "", seg)
             m = re.match(r"e(?:\s+(.*))?$", seg)
@@ -2682,6 +2683,10 @@ def _sed_code(args):
                 d = re.escape(seg[1])
                 if re.match(rf"s{d}(?:\\.|[^{d}\\])*{d}(?:\\.|[^{d}\\])*{d}\w*e", seg):
                     out.append(("sed s///e runs its result as a command", None))
+                elif not re.fullmatch(rf"s{d}(?:\\.|[^{d}\\])*{d}(?:\\.|[^{d}\\])*{d}[\w\s}}]*", seg):
+                    unsplit = True  # a ; (or newline) inside the s command cut it: the split is a guess
+        if unsplit and re.search(r"[/|#,:@!]e\b|(?:^|[;\n{}\s])e(?:\s|$)", text):
+            out.append(("sed script with an e command or flag the guard can't split reliably", None))
     return out
 
 
@@ -2701,8 +2706,16 @@ def _vim_code(args):
 def _exec_options(name, args):
     """T-0275: [(why, shell code or None)] for the command string an option makes a program run (tar --to-command,
     ssh -o ProxyCommand, rsync -e, zip -TT, less +!cmd, vim -c !cmd, sed e). None: refused, it can't be read here.
-    ponytail: long options are matched in full (tar takes unique prefixes); abbreviations slip by."""
+    Long options match by prefix as GNU getopt does (--to-com= is --to-command); a prefix of two exec options
+    expands to the first."""
     out = []
+    longs = {"tar": ("--to-command", "--use-compress-program", "--info-script", "--new-volume-script",
+                     "--checkpoint-action"), "rsync": ("--rsh",), "zip": ("--unzip-command",)}.get(
+        {"gtar": "tar", "bsdtar": "tar"}.get(name, name), ())
+    if longs:
+        args = [next((f + a[len(a.partition("=")[0]):] for f in longs if f.startswith(a.partition("=")[0])
+                      and len(a.partition("=")[0]) >= 5 and a.partition("=")[0] != "--checkpoint"), a)
+                if a.startswith("--") else a for a in args]
     if name in ("tar", "gtar", "bsdtar"):
         for flag in ("--to-command", "--use-compress-program", "-I", "--info-script", "--new-volume-script", "-F"):
             out += [(f"tar {flag}", v) for v in _opt_values(args, flag) if v.strip()]
