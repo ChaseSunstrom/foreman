@@ -348,7 +348,11 @@ def cmd_digest(args):
     grades = collections.Counter(grade(b) for b in done)
     fails = collections.Counter(r.get("sig") for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
                                 if str(r.get("at", ""))[:19] >= since and r.get("sig"))
-    blocked = [b for b in c.load_briefs(p) if b.status == "blocked"]
+    briefs = c.load_briefs(p)
+    blocked = [b for b in briefs if b.status == "blocked"]
+    import fmtidy  # T-1077: queued plans whose files or premises moved since planning
+    status = {b.id: b.status for b in briefs}
+    stale = {b.id: why for b in briefs if (why := fmtidy.stale_plan(p, b, status))}
     tokens = None
     if os.path.isdir(transcripts_dir(p.root)):
         msgs, _ = scan(transcripts_dir(p.root), since)
@@ -374,6 +378,8 @@ def cmd_digest(args):
         if any(r for _, r in rev.values()) else []
     lines += ["Decisions to review (costly/outward):"] + [f"- {c.fit(x, 160)}" for x in review[-6:]] if review else []
     lines += [f"Blocked: {', '.join(f'{b.id} {c.fit(b.title, 40)}' for b in blocked[:5])}"] if blocked else []
+    lines += [f"Plans to re-plan ({len(stale)}): " + ", ".join(f"{t} ({why})" for t, why in list(stale.items())[:5])
+              ] if stale else []
     lines += ["Recurring failures: " + " · ".join(f"{c.fit(s, 60)} ×{n}" for s, n in fails.most_common(3) if n > 1)] \
         if any(n > 1 for n in fails.values()) else []
     lines += [f"Tokens: ≈ {_human(tokens)} input-equivalent (fm cost for the breakdown)"] if tokens else []
@@ -384,7 +390,7 @@ def cmd_digest(args):
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
         for e in nights[-5:]] if nights else []
     fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review,
-                     "blocked": [b.id for b in blocked], "failures": dict(fails.most_common(5)), "tokens": tokens},
+                     "blocked": [b.id for b in blocked], "stale_plans": stale, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
 
 

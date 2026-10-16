@@ -121,6 +121,28 @@ def unblocked(p, b, status):
     return None
 
 
+def stale_plan(p, b, status):
+    """T-1077: why a queued (planned) brief needs a re-plan — a dependency was dropped, a scope file changed after the
+    plan was last edited, or a scope file git knew is gone — or None. A scope file that never existed is one the plan
+    creates. ponytail: mtimes, as unblocked(); a fresh clone or worktree makes every scope file look new."""
+    if b.status != "planned":
+        return None
+    dropped = [d for d in b.meta.get("depends_on") or [] if status.get(d) == "dropped"]
+    if dropped:
+        return f"its dependency {dropped[0]} was dropped"
+    at = c.parse_ts(b.meta.get("updated"))
+    root = os.path.realpath(p.root)
+    for s in b.meta.get("scope") or []:
+        path = os.path.realpath(os.path.join(root, s))
+        if re.search(r"[*?\[]", s) or not path.startswith(root + os.sep):
+            continue
+        if at and os.path.isfile(path) and os.path.getmtime(path) > at.timestamp() + 1:
+            return f"{s} changed since it was planned"
+        if not os.path.exists(path) and c._git(root, "log", "-1", "--format=%h", "--", s):
+            return f"{s} is gone"
+    return None
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -153,6 +175,10 @@ def check_project(p, apply, actions):
         out.append(finding(slug, "dangling_dep", "warn", f"{a} depends on unknown {d}", f"fm task set {a} depends_on=…"))
     status = {b.id: b.status for b in briefs}
     for b in briefs:
+        stale = stale_plan(p, b, status)
+        if stale:
+            out.append(finding(slug, "stale_plan", "warn", f"{b.id} re-plan: {stale}",
+                               f"re-read its Steps against the code, then fm task set {b.id} … or drop it"))
         why = unblocked(p, b, status) if b.status == "blocked" else None
         if why:
             out.append(finding(slug, "unblockable", "action", f"{b.id} is blocked but {why}",

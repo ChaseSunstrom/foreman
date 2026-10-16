@@ -177,6 +177,57 @@ class Apply(TidyCase):
         self.assertEqual(len(self.tidy("--all")["projects"]), 2)
 
 
+class StalePlans(TidyCase):
+    # T-1077: a queued brief whose scope file changed (or went, or whose dependency was dropped) since it was planned
+    def plan(self, title, *args):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *args).stdout
+        return re.search(r"T-\d{4}", out).group(0)
+
+    def touch(self, rel, tid, delta):
+        path = os.path.join(self.repo, rel)
+        if not os.path.exists(path):
+            open(path, "w").close()
+        t = c.parse_ts(c.find_brief(self.p, tid).meta["updated"]).timestamp() + delta
+        os.utime(path, (t, t))
+
+    def stale(self):
+        return [f["detail"] for f in self.tidy()["findings"] if f["kind"] == "stale_plan"]
+
+    def test_a_scope_file_newer_than_the_plan_flags_a_replan_in_tidy_and_digest(self):
+        tid = self.plan("change a", "--scope", "a.py")
+        self.assertEqual(c.find_brief(self.p, tid).status, "planned")
+        self.touch("a.py", tid, -3600)
+        self.assertEqual(self.stale(), [], "a scope file older than the plan is fine")
+        self.touch("a.py", tid, 60)
+        self.assertTrue(any(tid in d and "a.py changed since it was planned" in d for d in self.stale()), self.stale())
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("stale_plan", text)
+        self.assertIn("re-plan", text)
+        self.assertIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+        self.assertIn("Plans to re-plan", self.fm("digest").stdout)
+        age(self.p, tid, 0, status="done")
+        self.touch("a.py", tid, 60)
+        self.assertEqual(self.stale(), [], "only queued plans")
+        self.assertNotIn(tid, json.loads(self.fm("digest", "--json").stdout)["stale_plans"])
+
+    def test_a_scope_file_gone_or_a_dependency_dropped_flags_it_but_a_file_still_to_create_doesnt(self):
+        import subprocess
+        open(os.path.join(self.repo, "b.py"), "w").close()
+        subprocess.run(["git", "-C", self.repo, "add", "b.py"], check=True)
+        subprocess.run(["git", "-C", self.repo, "commit", "-qm", "b"], check=True)
+        gone = self.plan("change b", "--scope", "b.py")
+        new = self.plan("create c", "--scope", "c.py", "--scope", "src/**/*.py")
+        dep = self.plan("dependency")
+        after = self.plan("after it", "--depends", dep)
+        self.assertEqual(self.stale(), [])
+        os.remove(os.path.join(self.repo, "b.py"))
+        self.fm("task", "drop", dep, "not needed")
+        found = self.stale()
+        self.assertTrue(any(gone in d and "b.py is gone" in d for d in found), found)
+        self.assertTrue(any(after in d and f"{dep} was dropped" in d for d in found), found)
+        self.assertFalse(any(new in d for d in found), "a scope file the plan creates isn't missing")
+
+
 class TidyStateBackup(TidyCase):
     # T-0922: the briefs and the ledger are the record; tidy --apply keeps dated copies of them, the newest five
     def test_apply_keeps_dated_backups_of_the_record_and_only_five(self):
