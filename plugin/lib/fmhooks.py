@@ -1151,6 +1151,15 @@ def _pre_tool_use(raw):
                                                  "permissionDecisionReason": reason}}))
         print(reason, file=sys.stderr)
         return 2
+    unread = []  # T-0275: scripts the guard allowed unread (over its time budget): logged, and noted below
+    try:
+        unread = getattr(guard, "take_unread", lambda: [])()
+        for path, why in unread:
+            if p:
+                c.log_event(p, "guard_unread", task=act.id if act else None, data={"path": path, "reason": why},
+                            session=pl.get("session_id"))
+    except Exception:
+        log_error("PreToolUse", _tb())
     try:
         hits = _rule_hits(pl, p)
         if hits:
@@ -1205,7 +1214,9 @@ def _pre_tool_use(raw):
     try:
         warn = " ".join(f"Foreman: the user's rule {n} ({r['pattern']}) matches this call: {r.get('why') or 'take care'}."
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
-        note = " ".join(filter(None, [saved, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
+        slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
+                        "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
+        note = " ".join(filter(None, [saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
                                       _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
                                       _test_first_note(pl, p, act)]))
         if note:
@@ -1243,7 +1254,8 @@ def _dep_note(pl, p):
 
 def _card_note(pl, p, act):
     """T-0949: the first edit of a file the map's stack cards cover gets that card's Avoid section, once per card per
-    task. The ledger event is the memory (it outlives the session) and is written before the note goes out, so a lost
+    session (T-1193: a later task in the same session gets one pointer line instead, once per card per task). The
+    ledger event is the memory (it outlives the session) and is written before the note goes out, so a lost
     output loses the note rather than repeating it; two edits at once may both inject it. Off with FOREMAN_NO_CARDS=1
     or fm lib inject off; any failure here injects nothing and never blocks the edit."""
     if not p or not act or pl.get("tool_name") not in FILE_TOOLS or os.environ.get("FOREMAN_NO_CARDS", "") not in ("", "0"):
@@ -1261,10 +1273,18 @@ def _card_note(pl, p, act):
         notes = []
         fresh = [n for n in fmlib.cards_for(p, path, text if isinstance(text, str) else "")  # T-1036: imports' cards too
                  if not _card_injected(p, act.id, n)][:2]  # review: the cap after the filter, so none is crowded out
+        sid = pl.get("session_id")
+        skey = f"session:{sid}" if isinstance(sid, str) and sid else None  # T-1193: the note is shown once per session
         for name in fresh:
+            if skey and _card_injected(p, skey, name):
+                _card_mark(p, act.id, name)  # the pointer comes once per card per task
+                notes.append(f"Foreman: stack card {name}: its notes were shown earlier this session; fm lib show {name}")
+                continue
             note = fmlib.card_avoid(name)
             if note:
                 _card_mark(p, act.id, name)
+                if skey:
+                    _card_mark(p, skey, name)
                 c.log_event(p, "enforce", task=act.id, data={"kind": "card_injected", "card": name,
                                                              "file": os.path.relpath(path, p.root)},
                             session=pl.get("session_id"))

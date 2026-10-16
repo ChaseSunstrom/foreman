@@ -192,5 +192,24 @@ class PluginFiles(unittest.TestCase):
                 self.assertTrue(os.access(os.path.join(PLUGIN, f), os.X_OK))
 
 
+class Site(unittest.TestCase):
+    """T-1206: the Pages site's local links resolve, as the workflow assembles it (site/ plus the demo files)."""
+    ROOT = os.path.dirname(PLUGIN)
+
+    def test_every_local_link_resolves_and_the_workflow_copies_what_exists(self):
+        flow = read_text(os.path.join(self.ROOT, ".github", "workflows", "pages.yml"))
+        copied = re.findall(r"\bdemo/[\w.-]+", flow.split("Assemble the site", 1)[1])
+        self.assertTrue(copied)
+        for f in copied:
+            self.assertTrue(os.path.isfile(os.path.join(self.ROOT, f)), f)
+        page = read_text(os.path.join(self.ROOT, "site", "index.html"))
+        local = [u for u in re.findall(r'(?:src|href|poster)="([^"#:]+)"', page) if not u.startswith("//")]
+        self.assertTrue(local)
+        for u in local:
+            self.assertTrue(u in copied or os.path.isfile(os.path.join(self.ROOT, "site", u)), u)
+        for anchor in re.findall(r'href="#([\w-]+)"', page):
+            self.assertIn(f'id="{anchor}"', page)
+
+
 if __name__ == "__main__":
     unittest.main()

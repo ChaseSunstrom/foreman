@@ -329,7 +329,7 @@ class BuilderContractOneSource(unittest.TestCase):
         import fmlanes
         norm = lambda s: " ".join(s.split())
         agent = norm(read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md")))
-        rules = fmlanes.CONTRACT.format(id="<ID>", base="<BASE>").split("\n- ")[1:]
+        rules = fmlanes.CONTRACT.format(id="<ID>", base="<BASE>", main="<MAIN>").split("\n- ")[1:]
         self.assertGreater(len(rules), 8)
         for r in rules:
             self.assertIn(norm(r), agent, "rule missing from agents/fm-builder.md")

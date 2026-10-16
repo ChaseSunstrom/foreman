@@ -1361,18 +1361,71 @@ def _run_dir(starter, cwd):
     return d
 
 
+# the cd chain is bounded (unbounded, each separator rescans the chain: quadratic); a longer chain is matched from a
+# later link, and the cd before it makes the run folder unknown in _drives_fm
+_PY_C = re.compile(r"(?:^|(?<=[\n;&|(]))[ \t]*((?:cd\s+[\w./~@+:=,-]+\s*&&\s*){0,8}(?:/[\w./-]*/)?python[0-9.]*\s+"
+                   r"(?:-(?:[bBdEIOPqsSuvV]+|[WX]\s*[\w.:=-]+)\s+)*-[bBdEIOPqsSuvV]*c\s+)"  # not -i: stdin runs after
+                   r"""('[^']*'|"(?:[^"\\$`]|\\[\s\S])*")(?=\s|$|[;&|)])""")
+_CD = re.compile(r"(?:^|[\s;&|(])(?:cd|pushd|popd)\b")
+
+
+def _python_c_units(shell):
+    """T-1194: (the code of each `python -c CODE` that starts a command at shell top level, CODE one literal word with
+    no expansion, after a chain of plain `cd DIR &&`; the shell with those words emptied; their starters). Nothing
+    when the quote scan could part from bash's: a heredoc, $'…', a comment, an unclosed quote, a shell function or
+    alias that could stand for python, ${…} (a ; in it is a word's text), python's own settings (what its imports load)."""
+    if "<<" in shell or "$'" in shell or "${" in shell or "PYTHON" in shell or any(
+            os.environ.get(k) for k in _PY_PATH_VARS) or re.search(
+            r"\balias\b|\bfunction\b|python[0-9.]*\s*\(\s*\)", shell):
+        return [], shell, []
+    top, q, esc = [], None, False  # top[i]: shell[i] is outside every quote and escape (_quote_at, in one pass)
+    for ch in shell:
+        top.append(q is None and not esc)
+        if esc:
+            esc = False
+        elif ch == "\\" and q != "'":
+            esc = True
+        elif q:
+            q = None if ch == q else q
+        elif ch in "'\"":
+            q = ch
+    if q or esc or any(ch == "#" and top[i] and (i == 0 or shell[i - 1] in " \t\n;&|(") for i, ch in enumerate(shell)):
+        return [], shell, []
+    units, starters, out, last = [], [], [], 0
+    for m in _PY_C.finditer(shell):
+        if not (top[m.start()] and (m.start() == 0 or top[m.start() - 1])):  # x\;python3 is one word, not a command
+            continue
+        word = m.group(2)[1:-1]
+        units.append(word if m.group(2)[0] == "'" else
+                     re.sub(r'\\(\n|[$`"\\])', lambda e: "" if e.group(1) == "\n" else e.group(1), word))
+        starters.append(m.group(1))
+        out.append(shell[last:m.start(2)] + "''")
+        last = m.end()
+    return units, "".join(out) + shell[last:], starters
+
+
 def _drives_fm(cmd, cwd=None):
     """T-0170: interpreter code that imports Foreman's modules and calls their writers. Quoted heredocs fed straight to
-    python are parsed: text that merely mentions `import fm…` (an edit script's strings) isn't an import. The text match
-    of before decides for everything else: fm import text outside those bodies (-c code, data heredocs, the shell), code
-    that doesn't parse, and dynamic code (exec, eval, getattr, importlib…). It only relaxes what it can prove."""
+    python, and (T-1194) literal `python -c` code, are parsed: text that merely mentions `import fm…` (an edit script's
+    strings) isn't an import. The text match of before decides for everything else: fm import text outside those
+    (data heredocs, the shell, -c code it can't read), code that doesn't parse, and dynamic code (exec, eval, getattr,
+    importlib…). It only relaxes what it can prove."""
     if not (_FM_INTERNALS.search(cmd) and _FM_MUTATORS.search(cmd)):
         return False
     units, rest, starters = _python_units(cmd)
-    if _FM_INTERNALS.search("\n".join(rest + starters)):
+    c_units, shell, c_starters = _python_c_units("\n".join(rest))
+    if _FM_INTERNALS.search("\n".join([shell] + starters)):
         return True
+    # T-1204: python's own settings (PYTHONPATH loads sitecustomize, PYTHONSTARTUP…), set in the command or inherited,
+    # change what any of its code runs, as _python_c_units already refuses for -c
+    if (units or c_units) and ("PYTHON" in "\n".join([shell] + starters) or any(os.environ.get(k) for k in _PY_PATH_VARS)):
+        return True
+    # python - and -c import from the folder they run in: a cd anywhere but in their own `cd DIR &&` chain (an earlier
+    # line, a `;`) makes that folder unknown (T-1204: heredocs too)
+    moved = len(_CD.findall("\n".join([shell] + starters))) > sum(len(_CD.findall(s)) for s in starters + c_starters)
+    runs = [None if moved else _run_dir(s, cwd) for s in starters + c_starters]
     import ast
-    for code, starter in zip(units, starters):
+    for code, run in zip(units + c_units, runs):
         if not _FM_INTERNALS.search(code):
             continue
         try:
@@ -1386,7 +1439,7 @@ def _drives_fm(cmd, cwd=None):
         if names & _DYNAMIC or any(x.startswith("__") for x in names) or \
                 any(m.split(".")[0] not in _PLAIN_IMPORTS and not m.startswith("fm") for m in modules):
             return True  # its strings could still run: a process, a module it wrote, pickle, dunder walking…
-        run = _run_dir(starter, cwd)  # review (T-0286): python - imports from its folder first — a json.py there runs
+        # review (T-0286): python - (and -c) imports from its folder first — a json.py there runs
         if modules and (run is None or any(os.path.exists(os.path.join(run, m.split(".")[0] + x))
                                            for m in modules for x in (".py", ""))):
             return True
@@ -2312,6 +2365,7 @@ def check_bash(cmd, ctx, depth=0, tails=True):
     fixed = pre if env is None and bare is not None else {}  # T-0183: set once before the
     outside = {**outside, **fixed}                                                  # branches, known in them
     scan = _mask_fm(shell, ctx)  # T-0183: guess from the command's own words, not fm's text arguments
+    wrote, fed = [], []  # T-0275: files earlier commands here write (all; and those a heredoc fills)
     for idx, c in enumerate(cmds):
         nxt_op = cmds[idx + 1].op if idx + 1 < len(cmds) else ""
         piped = c.op in ("|", "|&") or nxt_op in ("|", "|&")  # T-0355: in a pipeline, a cd moves its subshell only
@@ -2422,8 +2476,28 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             found.append(("system", "git with core.hooksPath set through the environment"))
         # T-0269/T-0270: a command git (or a program) will run on its own is checked as if typed; config it would load
         # from elsewhere is refused; a file a variable makes it write is a write target
-        for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []):
+        for why, code in _env_channels(c.argv, name) + (_git_code(args) if name == "git" else []) + _exec_options(
+                name, args):
             found += [("system", why)] if code is None else check_bash(code, ctx, depth + 1)
+        # T-0275: the file a shell, source, python or an executable with a #! line is told to run
+        kind, script = _script_target(name, argv[0] if argv else "", args)
+        if script:
+            norm = lambda w: os.path.normpath(os.path.join(cwd, os.path.expanduser(w)))  # noqa: E731
+            path = norm(script)
+            if path in {norm(w) for w in fed} and kind != "py":  # cat > f <<'EOF' … EOF; bash f: the body is the script
+                for body in _heredoc_split(cmd)[1]:  # (which heredoc wrote it isn't modelled: all are read, as for bash <<EOF)
+                    found += check_bash("\n".join(body), ctx, depth + 1)
+            # a python script written by a heredoc in this command is read by the heredoc scan (T-0345); a path-named
+            # command is refused only when it looks like a script: curl -o x; ./x is a download, not a script
+            elif path in {norm(w) for w in wrote} and not (kind == "py" and "<<" in cmd) and (
+                    kind != "exec" or script.endswith((".sh", ".bash", ".zsh", ".py", ".ksh"))):
+                found.append(("system", f"{script} is written earlier in this command and run here, which the guard "
+                                        "can't read: write it in one command, run it in the next"))
+            else:
+                found += _script_verdict(script, cwd, kind, ctx, depth)
+        fed += c.redirs if any(op == "<<" for op, _ in c.feeds) else []
+        # an in-place edit (sed -i FILE && python3 FILE) is the everyday edit-then-run: only a file made here counts
+        wrote += c.redirs + ([] if name in ("sed", "gsed", "perl", "ed", "ex") else _write_targets(name, args))
         unlinks = set(_write_targets(name, args)) if name == "rm" else set()  # T-0412: rm of a link unlinks it
         # T-0859: a bare git init where the cwd the guard resolves already holds .git rewrites nothing
         init = name == "git" and args[:1] == ["init"]  # no global options: -C and --git-dir move the target
@@ -2432,10 +2506,14 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         bare_init = init and not lost and not git_env and all(a in ("-q", "--quiet") for a in args[1:]) and all(
             os.path.exists(os.path.join(d, ".git")) for d in cwds or [ctx.cwd]) and not re.search(
             r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_\w*=", cmd)
-        for target in c.redirs + ([] if bare_init else _write_targets(name, args)) + git_env + _env_files(c.argv):
+        # T-1195: an environment that changes how git reads pathspecs makes a named-file checkout a tree write
+        # (anywhere in the command text: export, env, an earlier assignment)
+        targs = args + ["--pathspec-from-file"] if name == "git" and re.search(
+            r"(?:^|[\s;&|(`])(?:export\s+|env\s+)?GIT_(?:GLOB|ICASE)_PATHSPECS=", cmd) else args
+        for target in c.redirs + ([] if bare_init else _write_targets(name, targs)) + git_env + _env_files(c.argv):
             how = classify_unlink if target in unlinks and not target.endswith("/") else classify_write
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, how)
-        for target in [] if bare_init else _tree_targets(name, args) + git_env:
+        for target in [] if bare_init else _tree_targets(name, targs) + git_env:
             found += _target_cats(target, known, bare, cwds, lost, scan, ctx, classify_tree,  # T-0394: a merge's
                                   " (a tree write over it" + ("; git merge" if name == "git" and "merge" in args
                                                              else "") + ")" +  # refusal names fm lane merge
@@ -2612,12 +2690,707 @@ def _assignments(argv):
     return [m.groups() for m in map(_ASSIGN_ANY.match, cand) if m]
 
 
+def _clip(s, n=60):
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def _opts_match(rx):
+    """A code-loading variable's check: its value is refused unread (None) when rx finds a loading option, else it is
+    harmless (False)."""
+    return lambda val: None if re.search(rx, val) else False
+
+
+# T-0275: variables that make the next program run code. A value that is a command or a script is read (the string
+# returned is checked as a command); one that names a binary or a module can't be read here: None refuses it.
+_CODE_VARS = {
+    "BASH_ENV": lambda v: f"source {shlex.quote(v)}", "ENV": lambda v: f"source {shlex.quote(v)}",  # ENV: sh only
+    "PROMPT_COMMAND": lambda v: v, "LESSOPEN": lambda v: v.lstrip("|-") or False,
+    "LESSCLOSE": lambda v: v.lstrip("|-") or False, "RSYNC_RSH": lambda v: v,
+    "TAR_OPTIONS": lambda v: next((c for _, c in _exec_options("tar", _words(v)) if c is not None), False),
+    "LD_PRELOAD": lambda v: None, "LD_AUDIT": lambda v: None,
+    "NODE_OPTIONS": _opts_match(r"(?:^|\s)(?:-r\b|--require\b|--import\b|--loader\b|--experimental-loader\b)"),
+    "PERL5OPT": _opts_match(r"(?:^|\s)-[Mm]"), "RUBYOPT": _opts_match(r"(?:^|\s)-r"),
+    **{k: _opts_match(r"-(?:javaagent|agentpath|agentlib|Xbootclasspath|XX:OnOutOfMemoryError|XX:OnError)")
+       for k in ("JAVA_TOOL_OPTIONS", "_JAVA_OPTIONS", "JDK_JAVA_OPTIONS")},
+    **{k: _opts_match(r"\$\(|`") for k in ("PS4", "SHELLOPTS")},  # expanded by the shell on every traced line
+}
+
+
+def _words(s):
+    try:
+        return shlex.split(s)
+    except ValueError:
+        return s.split()
+
+
+def _parse_opts(args, short="", long=()):
+    """([(option, value)], positionals) of an argv: a letter in `short` takes the rest of its cluster, else the next
+    word (-avze CMD, -Co OPT, -I'cmd'); a `long` option takes =value or the next word. Everything after -- is positional."""
+    vals, pos, i = [], [], 0
+    while i < len(args):
+        a, i = args[i], i + 1
+        if a == "--":
+            pos += args[i:]
+            break
+        if a.startswith("--"):
+            key, eq, v = a.partition("=")
+            if key in long:
+                if not eq and i < len(args):
+                    v, i = args[i], i + 1
+                vals.append((key, v))
+        elif a.startswith("-") and len(a) > 1:
+            for j, ch in enumerate(a[1:], 1):
+                if ch in short:
+                    v = a[j + 1:]
+                    if not v and i < len(args):
+                        v, i = args[i], i + 1
+                    vals.append(("-" + ch, v))
+                    break
+        else:
+            pos.append(a)
+    return vals, pos
+
+
+def _quoted(*words):
+    return " ".join(shlex.quote(w) for w in words)
+
+
+def _ssh_options(name, args):
+    out = []
+    vals, _ = _parse_opts(args, "BbcDEeFIiJLlmOopQRSWw" if name == "ssh" else "BbcDFiJloPRSsX")
+    for opt, o in vals:
+        if opt == "-o":
+            m = re.match(r"\s*(\w+)\s*[=\s]\s*(.*)", o, re.S)  # Key=value and "Key value"
+            key, val = (m.group(1).lower(), m.group(2).strip().strip("'\"")) if m else ("", "")
+            if key in ("proxycommand", "localcommand", "knownhostscommand") and val:
+                out.append((f"ssh -o {m.group(1)}", val))
+            elif key in ("pkcs11provider", "securitykeyprovider") and val not in ("", "none"):
+                out.append((f"ssh -o {m.group(1)}={_clip(val)} loads a library", None))
+        elif opt == "-F" and o != "/dev/null":  # a config file may hold a ProxyCommand or LocalCommand
+            out.append(("ssh -F config file (it may set a ProxyCommand or LocalCommand)", None))
+        elif opt == "-I" and name == "ssh" and o:
+            out.append((f"ssh -I {_clip(o)} loads a PKCS#11 library", None))
+        elif opt == "-S" and name != "ssh" and o:  # scp/sftp -S PROGRAM replaces ssh
+            out.append((f"{name} -S", o))
+    return out
+
+
+def _sed_code(args):
+    """What sed's `e` command and `s///e` flag run: the `e COMMAND` text, or None when it is computed from the input."""
+    if "--sandbox" in args:
+        return []
+    args = [next((f + a[len(a.partition("=")[0]):] for f in ("--expression", "--file")
+                  if len(a.partition("=")[0]) >= 4 and f.startswith(a.partition("=")[0])), a)
+            if a.startswith("--") else a for a in args]
+    vals, pos = _parse_opts(args, "efl", ("--expression", "--file"))
+    out = [("sed -f/--file runs a script file the guard can't read here", None)
+           for o, _ in vals if o in ("-f", "--file")][:1]
+    scripts = [v for o, v in vals if o in ("-e", "--expression")] or pos[:1]
+    addr = re.compile(r"\s*(?:\d+|\$|[,~+!]|/(?:\\.|[^/\\])*/[IM]*|\\(.)(?:\\.|(?!\1).)*?\1[IM]*)")
+    for text in scripts:
+        unsplit = False
+        for seg in re.split(r";|\n", text):
+            while True:  # addresses, and the { of a block, before the command letter
+                n = 0
+                while (am := addr.match(seg, n)) and am.end() > n:
+                    n = am.end()
+                seg = seg[n:].lstrip()
+                if not seg.startswith("{"):
+                    break
+                seg = seg[1:]
+            seg = seg.rstrip().rstrip("}").rstrip()
+            if seg[:1] and not seg[0].isalpha() and seg[0] not in "#=:}":
+                unsplit = True  # an address form the guard doesn't parse
+            m = re.match(r"e(?:\s+(.*))?$", seg)
+            if m:
+                out.append(("sed e command", m.group(1) or None))
+            elif seg.startswith("s") and len(seg) > 1:
+                d = re.escape(seg[1])
+                if re.match(rf"s{d}(?:\\.|[^{d}\\])*{d}(?:\\.|[^{d}\\])*{d}\w*e", seg):
+                    out.append(("sed s///e runs its result as a command", None))
+                elif not re.fullmatch(rf"s{d}(?:\\.|[^{d}\\])*{d}(?:\\.|[^{d}\\])*{d}[\w\s}}]*", seg):
+                    unsplit = True  # a ; (or newline) inside the s command cut it: the split is a guess
+        if unsplit and re.search(r"[/|#,:@!]e\b|(?:^|[;\n{}\s])e(?:\s|$)", text):
+            out.append(("sed script with an e command or flag the guard can't split reliably", None))
+    return out
+
+
+def _vim_code(args):
+    """-S/-s/-u/-l/--cmd load a script the guard can't read; in a -c or + command a `!` (after a space, an address, r
+    or read; not wq!) runs the rest in the shell, and :py/:lua/system() run code."""
+    out = []
+    i = 0
+    while i < len(args):
+        a, i = args[i], i + 1
+        nxt = args[i] if i < len(args) else ""
+        if a.startswith("-S") or a in ("-s", "-l", "--cmd") or a == "-u" and nxt not in ("NONE", "NORC", "DEFAULTS"):
+            out.append((f"vim {a} loads a script the guard can't read", None))
+            continue
+        cmd = nxt if a == "-c" else a[2:] if a.startswith("-c") and len(a) > 2 else a[1:] if a.startswith("+") else None
+        if not cmd:
+            continue
+        bangs = [x.rstrip("\"' ") for x in re.findall(r"(?:^|[\s:|%,;\"'$\d]|\br|\bread)!\s*(\S.*)$", cmd)]
+        out += [("vim !command", x) for x in bangs if x]
+        if not bangs and re.search(r"(?:^|[\s:|])(?:system\(|py3?\b|python3?\b|pyx\b|lua\b|perl\b|ruby\b|terminal\b)", cmd):
+            out.append(("vim command that runs code", None))
+    return out
+
+
+def _exec_options(name, args):
+    """T-0275: [(why, shell code or None)] for the command string an option makes a program run (tar --to-command,
+    ssh -o ProxyCommand, rsync -e, zip -TT, less +!cmd, vim -c !cmd, sed e). None: refused, it can't be read here.
+    Long options match by prefix as GNU getopt does (--to-com= is --to-command); a prefix of two exec options
+    expands to the first."""
+    out = []
+    longs = {"tar": ("--to-command", "--use-compress-program", "--info-script", "--new-volume-script",
+                     "--checkpoint-action", "--rsh-command", "--rmt-command"), "rsync": ("--rsh",),
+             "zip": ("--unzip-command",)}.get({"gtar": "tar", "bsdtar": "tar"}.get(name, name), ())
+    if longs:
+        args = [next((f + a[len(a.partition("=")[0]):] for f in longs if f.startswith(a.partition("=")[0])
+                      and len(a.partition("=")[0]) >= 5 and a.partition("=")[0] != "--checkpoint"), a)
+                if a.startswith("--") else a for a in args]
+    if name in ("tar", "gtar", "bsdtar"):
+        vals, _ = _parse_opts(args, "bCfFgHIKLNTVX", longs)
+        for opt, v in vals:
+            if opt == "--checkpoint-action":
+                out += [("tar --checkpoint-action exec", v[5:])] if v.startswith("exec=") and v[5:].strip() else []
+            elif opt in ("-I", "-F") or opt in longs:
+                out += [(f"tar {opt}", v)] if v.strip() else []
+    elif name in ("ssh", "scp", "sftp"):
+        out += _ssh_options(name, args)
+    elif name == "rsync":
+        vals, _ = _parse_opts(args, "eBTfM@", ("--rsh",))
+        out += [("rsync -e", v) for o, v in vals if o in ("-e", "--rsh") and v.strip()]
+    elif name == "zip":
+        out += [("zip -TT", v) for v in _opt_values(args, "-TT", "--unzip-command") if v.strip()]
+    elif name == "less":
+        out += [("less +!", a[2:]) for a in args if a.startswith("+!")]
+    elif name in ("vim", "vi", "nvim", "view", "ex", "gvim"):
+        out += _vim_code(args)
+    elif name in ("sed", "gsed"):
+        out += _sed_code(args)
+    return out
+
+
+_SCRIPT_LIMIT = 1 << 18
+_SH_NAME = re.compile(r"^(ba|z|da|k|fi|c|tc)?sh$")
+
+
+def _script_text(path, cwd, shebang=False, data=None):
+    """(text, problem, kind) of a script file a shell, source or python is told to run (shebang: of an executable run
+    by its path, read only when it starts #! with a shell or python; a binary or other script is no concern).
+    text None: not read (computed, missing, not a plain file). problem: refused (over the size limit).
+    data: the file's bytes (at most limit + 1) the caller already read and hashed: the text is those bytes, never a
+    second open that a swap could answer differently.
+    ponytail: a script a variable names is not read; one over 256 KB is refused, run by path it is skipped."""
+    if re.search(r"[$`*?\[]", path):
+        return None, None, None
+    p = os.path.join(cwd, os.path.expanduser(path))
+    try:
+        if not os.path.isfile(p):
+            return None, None, None
+        kind = None
+        if shebang:
+            if not os.access(p, os.X_OK):
+                return None, None, None
+            if data is not None:
+                head = data[:256].split(b"\n")[0].decode("utf-8", "replace")
+            else:
+                with open(p, "rb") as f:
+                    head = f.readline(256).decode("utf-8", "replace")
+            words = head[2:].split() if head.startswith("#!") else []
+            interp = os.path.basename(words[1] if words[:1] and os.path.basename(words[0]) == "env" and len(words) > 1
+                                      else words[0]) if words else ""
+            kind = "py" if interp.startswith("python") else "sh" if _SH_NAME.match(interp) else None
+            if kind is None:
+                return None, None, None
+        size = len(data) if data is not None and len(data) <= _SCRIPT_LIMIT else os.path.getsize(p)
+        if size > _SCRIPT_LIMIT:
+            if shebang:
+                return None, None, None
+            return None, f"{path} is {size // 1024} KB, over the {_SCRIPT_LIMIT >> 10} KB the guard reads: run its " \
+                         f"commands directly or split it", kind
+        if data is not None:
+            return data.decode("utf-8", "replace"), None, kind
+        with open(p, encoding="utf-8", errors="replace") as f:
+            return f.read(), None, kind
+    except OSError:
+        return None, None, None
+
+
+def _script_chunks(text, limit=2000):
+    """A script's text cut at blank lines into pieces check_bash reads on their own: reading it whole is quadratic
+    (a 21 KB deploy script took 12 s). A piece stays open while a quote or a heredoc is open in it; a cut never
+    drops text."""
+    out, cur = [], []
+    for line in text.split("\n"):
+        cur.append(line)
+        chunk = "\n".join(cur)
+        if len(chunk) < limit // 4:
+            continue
+        open_here = any(not re.search(rf"^\s*{re.escape(m.group(1))}\s*$", chunk[m.end():], re.M)
+                        for m in re.finditer(r"<<-?\s*['\"]?(\w+)['\"]?", chunk))
+        if not open_here and chunk.count("'") % 2 == 0 and chunk.count('"') % 2 == 0 and chunk.count("`") % 2 == 0 \
+                and chunk.count("$(") <= chunk.count(")") and not chunk.rstrip().endswith("\\"):
+            out.append(chunk)
+            cur = []
+    return out + (["\n".join(cur)] if cur else [])
+
+
+def _check_script(text, ctx, depth, acc):
+    """check_bash over a script file's pieces, keeping what is certain: a target a variable holds ("not known before
+    it runs", `$HOME/x`) is every script's `rm -rf "$DIR"`, and one that reads .env is a deploy script: counting them
+    refused 4 of 10 real scripts. ponytail: a literal danger (rm -rf ~, a pipe into a shell) is what is caught.
+    What it finds goes into `acc` as it goes, so a read cut off by the time budget keeps what it had."""
+    # only what no script of the user's does innocently: a deploy script reboots, installs plugins, reads .env, and
+    # splits words on IFS (replay of 3 real scripts: reboot, plugin, system and credentials refusals were all benign)
+    state = []  # what earlier pieces did that a later one depends on: cd, literal assignments, files written
+    for chunk in _script_chunks(text):
+        # core: a script of Foreman's own (evals) writes its checkout; only its state folder counts
+        for f in check_bash("\n".join(state[-40:] + [chunk]), ctx, depth + 1):
+            if f == ("system", "script nests too deep to read"):
+                pass  # from a script further down the chain: it keeps its way up
+            elif "too deep" in f[1]:
+                # a chain of scripts this deep hides its last one: refuse, never read as clean. Only from the third
+                # script in a chain: a script of its own deep $( … ) nesting is no chain (5 of 330 real scripts)
+                if len(_IN_SCRIPT) < 3:
+                    continue
+                f = ("system", "script nests too deep to read")
+            elif not ((f[0] in ("rm-outside", "self-authorize", "state-direct") or f[0] == "core" and "/state" in f[1]
+                       or f[0] == "system" and ("is written earlier in this command" in f[1] or "too deep" in f[1]))
+                      and "$" not in f[1] and not re.search(r"not known|unresolvable|from stdin", f[1])):
+                continue
+            if f not in acc:  # the carried lines are read again with each piece
+                acc.append(f)
+        state += _state_lines(chunk)
+    return acc
+
+
+_STATE_LINE = re.compile(r"^\s*(?:(?:cd|pushd|popd)\b.*|(?:(?:export|declare|local|readonly)\s+)?[A-Za-z_]\w*=[^\s`$(]*"
+                         r"|.*(?:[^<>&\d]|^)>>?\s*(?!/dev/null)[^\s&>|]\S*.*|.*\b(?:tee|cp|mv|install|ln)\b.*)$")
+_HEREDOC_OP = re.compile(r"<<-?\s*['\"]?\w+['\"]?")
+
+
+def _state_lines(chunk):
+    """The lines of a piece a later piece may depend on: a cd, a plain assignment, a write (heredoc operators cut, so a
+    carried line never opens a heredoc). Pieces are read with these in front, so `cd /` in one and `rm -rf etc` in the
+    next are read as one script, and so is a file written in one and run in the next. ponytail: the last 40 lines."""
+    out = []
+    for line in chunk.split("\n"):
+        line = _HEREDOC_OP.sub("", line)
+        if line.strip() and not line.lstrip().startswith("#") and len(line) < 400 and "<<" not in line \
+                and not line.rstrip().endswith("\\") and _STATE_LINE.match(line):
+            out.append(line)
+    return out
+
+
+class _OverBudget(BaseException):  # not an Exception: check_bash's own handlers must not swallow it
+    pass
+
+
+_UNREAD = []  # (path, why) of scripts this call left unread (the hook logs and notes them)
+_IN_SCRIPT = []  # non-empty while a script is being read: the outermost read owns the clock
+
+
+def take_unread():
+    out, _UNREAD[:] = list(_UNREAD), []
+    return out
+
+
+def _script_budget():
+    try:
+        return float(os.environ.get("FM_GUARD_SCRIPT_BUDGET") or _BUDGET)
+    except ValueError:
+        return _BUDGET
+
+
+_BUDGET = 0.2  # CPU seconds. 0.5 gave a cold hook p95 of 331 ms over 330 real scripts (goal 300); 0.2 trims the tail
+
+
+def _script_cache_path(ctx):
+    """In Foreman's state folder, where the guard refuses a direct write: a session can't forge an entry."""
+    return os.path.join(ctx.state_dir or os.path.join(ctx.foreman_home, "state"), "guard-scripts.json")
+
+
+_GUARD_HASH = []
+
+
+def _guard_hash():
+    """sha256 of this file's bytes: an edited guard reads every script again."""
+    if not _GUARD_HASH:
+        import hashlib
+        with open(__file__, "rb") as f:
+            _GUARD_HASH.append(hashlib.sha256(f.read()).hexdigest()[:16])
+    return _GUARD_HASH[0]
+
+
+_CACHE_MAX = 200
+
+
+def _pairs(v, n):
+    return isinstance(v, list) and all(isinstance(x, list) and len(x) == n and all(isinstance(y, str) for y in x)
+                                       for x in v)
+
+
+def _cache_load(path):
+    """The cache's good entries: one that is malformed (a hand edit, a crash, an older shape) is dropped on its own,
+    never an error that blocks every script run. Limit, documented not fixed: the cache is trusted as the guard's own
+    file because the guard refuses a Bash write to Foreman's state; a write made outside the guard (another program
+    running as the user) can forge an entry."""
+    import json
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: v for k, v in data.items() if isinstance(k, str) and isinstance(v, dict) and isinstance(v.get("p"), str)
+            and _pairs(v.get("f"), 2) and _pairs(v.get("n", []), 2) and isinstance(v.get("u"), (str, type(None)))
+            and isinstance(v.get("at"), (int, float)) and not isinstance(v.get("at"), bool)}
+
+
+def _cache_store(path, key, entry):
+    """Atomic write of one more entry: files that are gone dropped first, then the oldest past 200."""
+    import json
+    cache = {k: v for k, v in _cache_load(path).items() if isinstance(v, dict) and os.path.exists(v.get("p", ""))}
+    cache[key] = entry
+    for k in sorted(cache, key=lambda k: cache[k].get("at", 0))[:max(0, len(cache) - _CACHE_MAX)]:
+        del cache[k]
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(cache, f)
+        os.replace(tmp, path)
+    except OSError:
+        pass  # no cache dir: the next run reads the file again
+
+
+_SCAN = [(re.compile(rx, re.M | re.I if ci else re.M), why) for rx, why, ci in (
+    # every quantifier is bounded: a line of NODE_OPTIONS= repeated would otherwise cost its length per occurrence
+    (r"\b(?:LD_PRELOAD|LD_AUDIT|BASH_ENV|PROMPT_COMMAND|RSYNC_RSH|PERL5OPT)=[^\s\n]", "a code-loading variable", False),
+    (r"\b(?:NODE_OPTIONS|RUBYOPT)=[^\n]{0,200}?(?:--require|--import|--loader|(?:^|[ \t'\"=])-r)",
+     "code loaded by an option", False),
+    (r"(?:^|[\s;&|(])(?:(?:ba|z|da|k)?sh\b|source\b|\.(?=[ \t])|eval\b)[^\n]{0,60}?(?:<\(|\$\(|`)\s*(?:curl|wget)\b",
+     "downloaded code run", False),
+    (r"-javaagent|OnOutOfMemoryError|-XX:OnError|--to-command|--use-compress-program|--checkpoint-action=exec|"
+     r"--rsh-command|--rmt-command|--unzip-command", "a command an option runs", False),
+    (r"\b(?:Proxy|Local)Command[ =]|\bvim?[ \t][^\n]{0,200}?-c[ \t]*['\"]?!", "a command an option runs", True),
+)]
+_LINE_CAP = 4096  # a longer line is scanned in overlapping pieces of this size, never as one backtracking field
+_RM_TARGET = re.compile(r"/?\*?$")
+_PIPE_SH = re.compile(r"(?:curl|wget)\b[^|\n]*(?:\|[^|\n]*)*?\|\s*(?:(?:sudo|exec|env|command|nohup)(?:\s+-\S+)*\s+|"
+                      r"[A-Za-z_]+=\S*\s+)*(?:/\S+/)?(?:ba|z|da|k)?sh\b")
+
+
+def _scan_units(text):
+    """(text, original line number per line): continuation lines joined (rm \\ -rf \\ ~), lines over _LINE_CAP cut
+    into overlapping pieces so no regex runs over more than that at once."""
+    out, nums, lines, i = [], [], text.split("\n"), 0
+    while i < len(lines):
+        start, cur = i + 1, lines[i]
+        # (a comment ends at its newline whatever it ends with: bash runs the next line)
+        while cur.endswith("\\") and not cur.lstrip().startswith("#") and i + 1 < len(lines) and len(cur) < 4 * _LINE_CAP:
+            i += 1
+            cur = cur[:-1] + " " + lines[i]
+        step = _LINE_CAP * 7 // 8
+        for k in range(0, max(len(cur), 1), step):
+            out.append(cur[k:k + _LINE_CAP])
+            nums.append(start)
+            if k + _LINE_CAP >= len(cur):
+                break
+        i += 1
+    return "\n".join(out), nums
+
+
+def _commented(text, pos):
+    """Whether the line holding pos is a comment (`#   curl … | sh` in a usage note isn't run)."""
+    return text[text.rfind("\n", 0, pos) + 1:pos].lstrip().startswith("#")
+
+
+def _rm_hit(text):
+    """The first `rm` with a recursive flag and a target of ~, / or $HOME (also /*, "$HOME"/*), operands and flags in
+    any order, as (position, line)."""
+    for m in re.finditer(r"\brm\b([^\n;&|]*)", text):
+        if _commented(text, m.start()):
+            continue
+        ops = m.group(1)[:_LINE_CAP].split()
+        flags = [o for o in ops if o.startswith("-") and not o.startswith("--") and o[1:].isalpha()]
+        if any("r" in f or "R" in f for f in flags) or "--recursive" in ops:
+            for o in ops:
+                t = re.sub(r"/{2,}", "/", o.replace('"', "").replace("'", ""))  # ~//* and // are ~/* and /
+                if not t.startswith("-") and _RM_TARGET.sub("", t) in ("", "~", "$HOME", "${HOME}"):
+                    return m.start(), m.group(0)
+    return None
+
+
+def _fm_hit(text):
+    """The first `fm …` the guard itself refuses an agent (USER_ONLY_FM verbs, --allow core|remote), as (position, line):
+    read from the guard's own tables, so a new entry there is caught here."""
+    for m in re.finditer(r"\bfm\b([^\n;&|]*)", text):
+        if _commented(text, m.start()):
+            continue
+        args = [a.replace('"', "").replace("'", "") for a in m.group(1)[:_LINE_CAP].split()]
+        sub, rest = _fm_subcommand(args)
+        if sub in USER_ONLY_FM and any(_user_only_hit(USER_ONLY_FM[sub][0], a) for a in rest):
+            return m.start(), m.group(0)
+        if any(_is_allow(a) and (a.partition("=")[2] or b) in USER_ONLY for a, b in zip(args, args[1:] + [""])):
+            return m.start(), m.group(0)
+    return None
+
+
+def _pipe_sh_hit(text):
+    """The first download piped (maybe through tee, env, a path, a newline) into a shell.
+    ponytail: the first 200 curl/wget words and a 1500-character window each; a pipe further on is missed."""
+    pos = 0
+    for _ in range(200):
+        m = re.compile(r"\b(?:curl|wget)\b").search(text, pos)
+        if not m:
+            return None
+        h = _PIPE_SH.match(text, m.start(), m.start() + 1500)
+        if h and not _commented(text, m.start()):
+            return m.start(), h.group(0)
+        pos = m.end()
+    return None
+
+
+def _literal_scan(text, ctx=None):
+    """[(line number, line, why)] for the dangerous literals in a script's raw text: a plain regex pass with no shell
+    parsing (about 10 ms for 256 KB). What the guard falls back to when a script can't be parsed in time."""
+    out = []
+    text, nums = _scan_units(text)
+    at = lambda pos: nums[min(text.count("\n", 0, pos), len(nums) - 1)]  # noqa: E731  original line of a position
+    for hit, why in ((_rm_hit(text), "rm -r of ~, / or $HOME"), (_pipe_sh_hit(text), "a download piped into a shell"),
+                     (_fm_hit(text), "an fm command only the user may run")):
+        if hit:
+            out.append((at(hit[0]), hit[1].strip()[:120], why))
+    # a write into Foreman's state: find the path as a plain substring (a regex over the whole text was 30 ms), then
+    # look for a writing word on that line
+    marks = [".claude/foreman/state", "FOREMAN_HOME}/state", "FOREMAN_HOME/state"]
+    if ctx is not None:  # the state folder this guard runs with, when it isn't under ~/.claude/foreman
+        marks.append(ctx.state_dir or os.path.join(ctx.foreman_home, "state"))
+    # a path, quote, backslash or backtick before the verb (/bin/rm, \rm, "rm", `rm`); not rm-rf-helper or install-manifest
+    verbs = re.compile(r"(?:^|[\s;&|(`\"'\\])(?:[\w./-]{0,200}/)?(?:tee|cp|mv|rm|install|ln)[\"']?(?=\s)|\bsed[ \t]+-i")
+    redirect = re.compile(r">>?[ \t]*[\"']?([^\s;&|\"']+)")  # the target of a redirect, not `>/dev/null` on the line
+    for mark in marks:
+        i = text.find(mark)
+        while i != -1:
+            a, b = text.rfind("\n", 0, i) + 1, text.find("\n", i)
+            line = text[a:len(text) if b == -1 else b]
+            if not line.lstrip().startswith("#") and (verbs.search(line) or any(
+                    mark in r.group(1) for r in redirect.finditer(line))):
+                out.append((at(i), line.strip(), "a write into Foreman's state"))
+                break
+            i = text.find(mark, len(text) if b == -1 else b)
+    for rx, why in _SCAN:
+        for m in rx.finditer(text):
+            a, b = text.rfind("\n", 0, m.start()) + 1, text.find("\n", m.start())
+            line = text[a:len(text) if b == -1 else b].strip()
+            if line.startswith("#"):  # a usage comment ("#   curl … | sh") isn't run
+                continue
+            out.append((at(m.start()), line, why))
+            break  # the first of each kind is enough to refuse
+    return sorted(out)
+
+
+_TEXTS = []  # (path, text) of the scripts read since the outermost read began: what a budget cut-off scans
+_DEPS = []  # (path, sha256) of every nested script that read used: a cached verdict is valid while they are unchanged
+
+
+def _file_digest(p):
+    """sha256 of a script's bytes as the verdict read them (at most limit + 1), "" if it can't be read (absent too:
+    a dependency on an absent script holds only while it stays absent). A link is followed."""
+    import hashlib
+    try:
+        if not os.path.isfile(p):
+            return ""
+        with open(p, "rb") as f:
+            return hashlib.sha256(f.read(_SCRIPT_LIMIT + 1)).hexdigest()
+    except OSError:
+        return ""
+
+
+_RUN_CMD = re.compile(r"(?:^|[;&|(\s`])(?:/[^\s;&|]*/)?(?:env[ \t]+)?(?:(?:ba|z|da|k)?sh|python3?|source|\.)(?=[ \t])"
+                      r"([^\n;&|)<>]{0,300})", re.M)
+_RUN_DIRECT = re.compile(r"(?:^|[;&|(\s`])((?:\./|/)[^\s;&|)<>\"'$`]*(?:\.(?:sh|bash|zsh|ksh|py)\b|(?<=\./)[^\s;&|)<>\"'$`]+))",
+                         re.M)
+
+
+def _run_targets(text):
+    """Script files a script's text runs by name: bash/sh/zsh/python/source/. X (also /bin/bash, env bash, options such
+    as -e and -o pipefail before X) and a ./x or /abs/x.sh run directly. Literal words only (a $ or ` is skipped)."""
+    out, text = [], text[:_SCRIPT_LIMIT]
+    for m in _RUN_CMD.finditer(text):
+        words, i = m.group(1).split(), 0
+        while i < len(words):
+            w = words[i]
+            i += 1
+            if w in ("-o", "+o", "-O", "+O", "-W", "-X"):
+                i += 1
+            elif not w.startswith(("-", "+")):
+                w = w.strip("\"'")
+                if w and not re.search(r"[$`]", w):
+                    out.append(w)
+                break
+        if len(out) >= 40:
+            break
+    out += [m.group(1) for m in _RUN_DIRECT.finditer(text)][:40]
+    return out
+
+
+def _script_verdict(script, cwd, kind, ctx, depth):
+    """Findings for the script file a command runs, cached by the sha256 of its bytes (and of this guard file) in
+    Foreman's state folder, where the guard refuses direct writes: a script run again costs a hash, not a parse (the
+    hook runs before every Bash call: a 20 KB script took seconds to parse cold). One cold read has a time budget
+    (FM_GUARD_SCRIPT_BUDGET, CPU seconds, default _BUDGET). Past it the whole file gets the literal scan instead
+    (_literal_scan): a hit is refused, none is allowed unread and noted in _UNREAD; either is cached. The file's own
+    size over the limit is refused (_script_text)."""
+    if re.search(r"[$`*?\[]", script):
+        return []
+    p = os.path.realpath(os.path.join(cwd, os.path.expanduser(script)))
+    import hashlib
+    import signal
+    import time
+    lex = os.path.normpath(os.path.join(cwd, os.path.expanduser(script)))  # as named: a link is followed at each check
+    nested = bool(_IN_SCRIPT)
+    data = None
+    if os.path.isfile(p):  # a FIFO or a device would block the open below, and the hook with it
+        try:
+            with open(p, "rb") as f:
+                data = f.read(_SCRIPT_LIMIT + 1)
+        except OSError:
+            pass
+    if nested:  # the outer verdict is only as good as this file's bytes, or as its absence
+        _DEPS.append((lex, hashlib.sha256(data).hexdigest() if data is not None else ""))
+    if data is None:
+        return []
+    digest = hashlib.sha256(data).hexdigest()
+    key = None
+    if len(data) <= _SCRIPT_LIMIT:  # over it: refused below, nothing to cache
+        key = "|".join((p, digest, hashlib.sha256(repr(
+            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.confine,
+             ctx.unbriefed, kind, _guard_hash())).encode()).hexdigest()[:16]))
+    path = _script_cache_path(ctx)
+    hit = None if nested or key is None else _cache_load(path).get(key)
+    if hit and all(_file_digest(dp) == dd for dp, dd in hit.get("n", [])):  # the scripts it read, unchanged
+        if hit.get("u"):
+            _UNREAD.append((p, hit["u"]))
+        return [tuple(f) for f in hit["f"]]
+    found, unread = [], None
+    if not nested:
+        _TEXTS.clear()
+        _DEPS.clear()
+    _IN_SCRIPT.append(1)
+    old = None
+    try:
+        text, why, got = _script_text(script, cwd, shebang=kind == "exec", data=data)
+        if text is not None:
+            _TEXTS.append((p, text))
+        if not nested:
+            def over(*_):
+                raise _OverBudget()
+            try:
+                old = signal.signal(signal.SIGPROF, over)  # CPU time, not wall: a busy machine mustn't trip it
+                signal.setitimer(signal.ITIMER_PROF, _script_budget())
+            except ValueError:  # not the main thread: no clock (ponytail: only the main thread is time-boxed)
+                old = None
+        if why:
+            found.append(("system", why))
+        elif text is not None and (got or kind) == "py":
+            for spawned in _spawned_commands(text):  # only a command written out: computed ones ("$_")
+                if '"$_"' not in spawned:  # flag every demo script that builds a path (replay: 27 false denials)
+                    found += check_bash(spawned, ctx, depth + 1)
+        elif text is not None:
+            _check_script(text, ctx, depth, found)
+    except _OverBudget:
+        if nested:
+            raise  # the outermost read owns the clock and decides
+        unread = f"read past its {_script_budget():g} s budget; only scanned for literals"
+        # never an empty verdict for a script not fully read: the whole text by plain regexes, and the scripts it runs
+        # (bash X, source X, ./X: up to 8 files, one level of those too)
+        todo, seen = list(_TEXTS), set()
+        while todo and len(seen) < 8:
+            sp, st = todo.pop(0)
+            if sp in seen:
+                continue
+            seen.add(sp)
+            found += [("system", f"{sp} line {n}: {line[:80]} ({why}; the script was too long to parse in time)")
+                      for n, line, why in _literal_scan(st, ctx)]
+            for target in _run_targets(st)[:8]:  # ponytail: 8 files; a script past that, or named by a variable, is unread
+                lex = os.path.normpath(os.path.join(cwd, os.path.expanduser(target)))
+                tp, raw = os.path.realpath(lex), None
+                if tp not in seen and os.path.isfile(tp):
+                    try:
+                        with open(tp, "rb") as f:
+                            raw = f.read(_SCRIPT_LIMIT + 1)
+                    except OSError:
+                        pass
+                _DEPS.append((lex, hashlib.sha256(raw).hexdigest() if raw is not None else ""))  # absent: stays absent
+                if raw is not None and len(raw) <= _SCRIPT_LIMIT:
+                    todo.append((tp, raw.decode("utf-8", "replace")))
+    finally:
+        _IN_SCRIPT.pop()
+        if old is not None:
+            signal.setitimer(signal.ITIMER_PROF, 0)
+            signal.signal(signal.SIGPROF, old)
+    if nested:
+        return found  # the owner's read decides what is cached
+    if unread:
+        _UNREAD.append((p, unread))
+    if key:
+        _cache_store(path, key, {"p": p, "f": found, "u": unread, "at": time.time(),
+                                 "n": [[dp, dd] for dp, dd in dict.fromkeys(_DEPS)]})
+    return found
+
+
+def _script_target(name, argv0, args):
+    """(kind, path): the script file a command runs: `sh` for source, `.` and a shell's script word, `py` for python,
+    `exec` for a path-named command. None where the code comes from -c, a module, stdin or -n (syntax check only), or
+    the command isn't one that runs a script file. Options are read as the program reads them: -n counts only
+    before the script word, and a value-taking option (-o, -W, -X) takes its value."""
+    if name in ("source", "."):
+        return ("sh", next((a for a in args if a != "--"), None))
+    py = name.startswith("python")
+    if not (py or _SH_NAME.match(name)):
+        return ("exec", argv0) if "/" in argv0 else (None, None)
+    i = 0
+    while i < len(args):
+        a, i = args[i], i + 1
+        if a == "--":
+            return (("py" if py else "sh"), args[i] if i < len(args) else None)
+        if a == "-" or not a.startswith(("-", "+")):
+            return (None, None) if a == "-" else (("py" if py else "sh"), a)
+        if a.startswith("--"):
+            if a in ("--rcfile", "--init-file", "--check-hash-based-pycs"):
+                i += 1
+            continue
+        for j, ch in enumerate(a[1:], 1):
+            if py and ch in "cm" or not py and ch in "cs":
+                return (None, None)  # code from -c, a module, or stdin
+            if not py and ch == "n" and a[0] == "-":
+                return (None, None)  # -n: reads the script for syntax only
+            if py and ch in "WXQ" or not py and ch in "oO" and j == len(a) - 1:
+                if not (py and j < len(a) - 1):  # -Wonce: the value is attached; -W once: the next word
+                    i += 1
+                if not py and args[i - 1:i] == ["noexec"]:
+                    return (None, None)
+                break
+    return (None, None)
+
+
 def _env_channels(argv, name):
     """[(why, code or None)] for variables a command sets that make git (or any program) run a command, or that point
     git at config, templates or programs from elsewhere (None: refused, it can't be read here)."""
     out = []
     for var, val in _assignments(argv):
-        if var in _GIT_EXEC_ENV and val.strip():
+        if var == "ENV" and not (name == "sh" or name == "bash" and "--posix" in argv):
+            continue  # ENV=production make: only an sh (or bash --posix) reads a startup file from it
+        if var in _CODE_VARS and val.strip():  # T-0275
+            hit = _CODE_VARS[var](val)
+            if hit is not False:
+                out.append((f"{var}={_clip(val)} loads code into the next program", hit))
+        elif var in _GIT_EXEC_ENV and val.strip():
             out.append((f"{var} set to a command", val))
         elif var in _GIT_CONFIG_SOURCES and val not in ("", "/dev/null"):
             out.append((f"{var} points git at config, templates or programs from elsewhere", None))
@@ -2743,6 +3516,29 @@ def write_targets(cmd):
     return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
+def _checkout_files(base, rest):
+    """The files `git checkout` restores when it names only files (after `--`, or every word an existing path and
+    no commit), else [] (a branch, -b/-B/--orphan, `.`, a pathspec magic word or a word that is also a commit: the
+    whole tree). T-1195."""
+    if "--" in rest:
+        if any(a.startswith("--p") for a in rest[:rest.index("--")]):  # --pathspec-from-file, or a prefix of it
+            return []
+        files = rest[rest.index("--") + 1:]
+    else:
+        if any(a.startswith("-") and a != "-" for a in rest):  # -b, -B, --orphan, --pathspec-from-file, -p ...
+            return []
+        files = rest
+        if not files or any(not os.path.exists(os.path.join(base, a))
+                            or _git(base, "rev-parse", "--verify", "-q", f"{a}^{{commit}}") for a in files):
+            return []
+    # git expands globs in a pathspec (and GIT_GLOB_PATHSPECS / GIT_ICASE_PATHSPECS change how), so a word with a
+    # glob character names files the guard can't list
+    if any(f.startswith(":") or f.startswith("-") or os.path.normpath(f) == "." or re.search(r"[*?\[\\]", f)
+           for f in files):
+        return []
+    return files
+
+
 def _write_targets(name, args):
     """Paths a command writes (a directory means anything under it). Archives, clones and -t target dirs included:
     the guard can't see an archive's members, so the destination itself is what's checked."""
@@ -2791,6 +3587,10 @@ def _write_targets(name, args):
             read_only = True
         if not read_only and (sub in _GIT_WORKTREE_WRITES or (  # rewrites its checkout (and repository)
                 sub == "fetch" and ({"-u", "--update-head-ok"} & set(rest)))):  # fetch can move HEAD then
+            if sub == "checkout" and not trees and not any(  # --icase/--glob-pathspecs change what a word matches
+                    a.endswith("pathspecs") and a not in ("--literal-pathspecs", "--noglob-pathspecs")
+                    for a in args[:i]) and (files := _checkout_files(base, rest)):
+                return [os.path.join(base, f) for f in files] + outs  # T-1195: named files, not the whole tree
             return ([os.path.join(base, t) for t in trees] or [base]) + outs
         return outs
     if name == "sed" and any(a == "--in-place" or a.startswith("-i") for a in args):

@@ -31,9 +31,9 @@ class _CardCase(HookCase):
         with open(os.path.join(self.project().dir, "map.json"), "w", encoding="utf-8") as f:
             f.write(raw if raw is not None else json.dumps({"lib": [x["name"] for x in cards], "lib_cards": cards}))
 
-    def edit(self, rel, env=None):
+    def edit(self, rel, env=None, sid="sess-1"):
         path = os.path.join(self.repo, rel)
-        proc = self.hook("PreToolUse", {"tool_name": "Edit", "tool_input": {"file_path": path, "old_string": "x",
+        proc = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": sid, "tool_input": {"file_path": path, "old_string": "x",
                                                                           "new_string": "y"}}, env=env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertNotIn('"deny"', proc.stdout)
@@ -59,7 +59,13 @@ class EditCards(_CardCase):
         self.assertEqual(len(self.injected()), 1)
         self.assertEqual(self.edit("README.md"), "", "no card matches a markdown file")
         self.fm("task", "new", "Second", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
-        self.assertIn("Mutable default arguments", self.edit("app.py"), "a new task gets the card again")
+        pointer = self.edit("app.py")
+        self.assertNotIn("Mutable default arguments", pointer, "a new task in the same session gets only a pointer")
+        self.assertTrue(pointer.startswith("Foreman: stack card python") and "fm lib show python Foreman: " in pointer + " Foreman: ", pointer)
+        self.assertNotIn("\n- ", pointer, "one line, not the bullets")
+        self.assertEqual(self.edit("app.py"), "", "the pointer comes once per card per task")
+        self.fm("task", "new", "Third", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
+        self.assertIn("Mutable default arguments", self.edit("app.py", sid="sess-2"), "a new session gets the full note again")
 
     def test_a_framework_card_beats_its_language_card_and_ties_go_by_name(self):
         self.map([card("python", "lang", 9, "ext:.py"), card("pytest", "python", 2, "file:conftest.py")])

@@ -559,6 +559,7 @@ def cmd_lease(args):
     me = _sid(fmcli.session()) or "user"
     with c.lock(_dir()):
         data = _leases()
+        before = len(data)
         if args.action == "drop" and not args.target:  # T-1134: bare drop releases all this session holds here
             data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["session"] == me)}
             _write_leases(data)
@@ -592,9 +593,11 @@ def cmd_lease(args):
                            advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))
             _write_leases(data)
     rows = [v for v in data.values() if v["project"] == p.slug]
-    return fmcli.out(args, {"leases": rows}, "\n".join(
-        f"{v['file']}::{v['symbol']}  {_who(v)}"
-        + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held.")
+    dropped = before - len(data) if args.action == "drop" else None  # T-1205: what this drop released, then what's left
+    return fmcli.out(args, {"leases": rows, **({"dropped": dropped} if dropped is not None else {})},
+                     (f"Dropped {dropped} lease(s).\n" if dropped is not None else "") + ("\n".join(
+                         f"{v['file']}::{v['symbol']}  {_who(v)}"
+                         + f", {int((v['until'] - time.time()) // 60) + 1} min left" for v in rows) or "No leases held."))
 
 
 REMOTE_S = 60  # a remote's tiles are refreshed (detached, over the user's own ssh) when older than this
