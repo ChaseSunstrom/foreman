@@ -113,22 +113,61 @@ class Fallback(ForemanTestCase):
 
 
 class Ablate(_Case):
-    """T-1067: fm task finish --ablate runs the hunk ablation with the linked tests, no --run needed."""
-    def finish(self):
-        return self.fm("task", "finish", self.tid, "--audit", "self", "--docs", "none: test", "--lesson", "x",
-                       "--ablate", "--run", "true", check=False)
+    """T-1067: fm task finish --ablate runs the hunk ablation after the real checks; it never fails the close."""
+    def setUp(self):
+        super().setUp()
+        self.fm("task", "set", self.tid, "--section", "Regression test", "--text", "none: scratch repo")
 
-    def test_names_the_untested_hunk(self):
-        self.fm("check", "affected", "python3 {tests}")
+    def finish(self, *extra, tmpl=True, env=None):
+        if tmpl:
+            self.fm("check", "affected", "python3 {tests}")
+        return self.fm("task", "finish", self.tid, "--audit", "self", "--docs", "none: test", "--lesson", "x",
+                       "--ablate", "--run", "true", *extra, check=False,
+                       env=dict(env or {}, PYTHONDONTWRITEBYTECODE="1"))  # a .pyc would change the audited tree
+
+    def case(self):
         self.write("calc.py", AFTER)
         self.write("test_calc.py", "import calc\nassert calc.f() == 2\n")
+
+    def test_names_the_untested_hunk(self):
+        self.case()
         p = self.finish()
-        self.assertIn("1/2 hunks proven", p.stdout + p.stderr)
-        self.assertIn("unproven: calc.py", p.stdout + p.stderr)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("1/2 hunks proven", p.stdout)
+        self.assertIn("unproven: calc.py", p.stdout)
+        self.assertNotIn("hunks proven", self.fm("task", "show", self.tid).stdout)  # no permanent evidence line
 
     def test_no_linked_tests_is_one_line_not_a_failure(self):
-        self.fm("check", "affected", "python3 {tests}")
         self.write("calc.py", AFTER)
         p = self.finish()
-        self.assertIn("no linked tests", p.stdout + p.stderr)
-        self.assertNotIn("hunks proven", p.stdout + p.stderr)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped: no linked tests", p.stdout)
+
+    def test_no_affected_template_skips(self):
+        self.case()
+        p = self.finish(tmpl=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped", p.stdout)
+
+    def test_red_baseline_skips(self):
+        with open(os.path.join(self.repo, ".gitignore"), "w") as f:
+            f.write("data.txt\n")
+        self.write("data.txt", "x")  # ignored: not in the scratch worktree
+        self.write("calc.py", AFTER)
+        self.write("test_calc.py", "import calc\nassert calc.f() == 2\nassert open('data.txt')\n")
+        p = self.finish()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("ablation skipped", p.stdout)
+
+    def test_deadline_reports_not_run(self):
+        self.case()
+        p = self.finish(env={"FM_ABLATE_BUDGET": "-1"})
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn("0/0 hunks proven, 2 not run", p.stdout)
+
+    def test_json_carries_the_ablation(self):
+        self.case()
+        p = self.finish("--json", "--why-not-caught", "none: test")
+        res, end = json.JSONDecoder().raw_decode(p.stdout)
+        self.assertEqual(p.stdout[end:].strip(), "", p.stdout[end:])
+        self.assertEqual((res["ablation"]["total"], res["ablation"]["proven"]), (2, 1))
