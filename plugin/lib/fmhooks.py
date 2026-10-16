@@ -1149,7 +1149,7 @@ def _pre_tool_use(raw):
             return 2
     try:
         _record_asks(pl, p, guard)
-        decision = _ask_prompt(pl, p, guard) or _wait_loop(pl)
+        decision = _ask_prompt(pl, p, guard) or (_taint_check(pl, p) if tool == "Bash" else None) or _wait_loop(pl)
     except Exception:
         log_error("PreToolUse", _tb())
         decision = None
@@ -1909,11 +1909,60 @@ _INJECTION = re.compile(
     r"|\b(?:curl|wget)\b[^|\n]{0,200}\|\s*(?:sudo\s+)?(?:ba|z)?sh\b")
 
 
+_TAINT_LINE = re.compile(r"^\s*(?:\$\s+|>\s*)?((?:sudo\s+)?(?:curl|wget|npm|npx|pip3?|python3?|node|git|bash|sh|rm|chmod|"
+                         r"docker|brew|apt(?:-get)?|cargo|go|make|ssh|scp|sed|cat|echo|cd)\s+\S.*)$", re.M)
+
+
+def _taint_path(sid):
+    return os.path.join(c.state_dir(), "sessions", f"{sid}.taint.json") if sid and re.fullmatch(r"[\w-]{1,100}", sid) else None
+
+
+def _taint_store(pl, text):
+    """T-1053: command-like lines of a web/MCP result (a `$ ` line, or a command-led line, fenced or not), kept for the
+    session so a later Bash command built from them can be flagged. ponytail: a leading-word list, not a shell parser."""
+    path = _taint_path(pl.get("session_id"))
+    if not path:
+        return
+    try:
+        lines = [" ".join(c.redact(m.group(1)).split())[:200] for m in _TAINT_LINE.finditer(text[:200_000])][:20]
+        lines = [x for x in lines if len(x) >= 8]
+        if not lines:
+            return
+        try:
+            old = json.load(open(path))
+        except (OSError, ValueError):
+            old = []
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        json.dump((old + lines)[-200:], open(path, "w"))
+    except Exception:
+        log_error("PostToolUse", _tb())
+
+
+def _taint_check(pl, p):
+    """A Bash command holding a stored line asks (never blocks); a store error lets the command go on."""
+    try:
+        path = _taint_path(pl.get("session_id"))
+        if not path or not os.path.exists(path):
+            return None
+        cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
+        hit = next((x for x in json.load(open(path)) if x in cmd), None)
+        if not hit:
+            return None
+        if p:
+            c.log_event(p, "taint_flag", data={"line": c.fit(hit, 80)}, session=pl.get("session_id"))
+        return ("ask", f"Foreman: this command came from text a web/MCP result returned (\"{c.fit(hit, 80)}\"). "
+                       "Run it only if the user wants that.")
+    except Exception:
+        log_error("PreToolUse", _tb())
+        return None
+
+
 def _injection_note(pl, p, tool):
     """A fetched page, search result or MCP answer holding instruction-like text: one note (zero tokens) that it is
     data from outside, and an injection_flag event; the first 200 KB are scanned."""
     resp = pl.get("tool_response")
     text = resp if isinstance(resp, str) else json.dumps(resp, ensure_ascii=False) if resp is not None else ""
+    _taint_store(pl, text if isinstance(resp, str) else text.replace("\\n", "\n"))  # JSON-escaped newlines back
     m = _INJECTION.search(text[:200_000])
     if not m:
         return None
