@@ -3784,6 +3784,12 @@ def cmd_round(args):
     return out(args, {"tag": tag, "since": prev, "tasks": [b.id for b in done]}, "\n".join(lines))
 
 
+def cmd_release(args):
+    """T-1188: fm release VERSION, release.py's ritual as checkpointed steps (fmrelease.py)."""
+    import fmrelease
+    return fmrelease.run(resolve(args), args)
+
+
 def cmd_show(args):
     """T-0960: one verb for "show me X": a task id → fm task show, an existing FILE[:LINE] → fm why, other words →
     fm recall."""
@@ -5125,6 +5131,14 @@ def build_parser():
     s.add_argument("words", nargs="+")
     s = add("round", cmd_round, tier=("Project and settings", 960), help="close a round: tag HEAD round-N, list the tasks closed since the last (T-0960)")
     s.add_argument("action", choices=["close"])
+    s = add("release", cmd_release, tier=("Project and settings", 905), help="release Foreman as named steps with a checkpoint after each: "
+            "check, bump, changelog, commit, release-check, canary, --push, round close (T-1188)")
+    s.add_argument("version", help="MAJOR.MINOR.PATCH")
+    s.add_argument("--ui", metavar="VERSION", help="foreman-ui's new version (required when mods/foreman-ui changed since the last release)")
+    s.add_argument("--push", action="store_true", help="merge into origin's main and push; needs the active task's publish grant")
+    s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
+    s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
+    s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (tests)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
         help="fm doctor and fm demo in a temporary HOME: a clean checkout passes before a release (T-0960)")
     s = add("secrets", lazy("fmsecrets", "cmd_secrets"), tier=("Finding your way", 400), help="credentials in the working tree, Claude config and "
