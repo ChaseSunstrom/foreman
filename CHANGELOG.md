@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The UI harness marks a session one-off only on your own Foreman state; on a state of its own (the demo recorder) it is that state's working session, so the drive takes it to the close (T-1013: a recording stalled before its task closed).
 - A one-off session (`FOREMAN_ONEOFF=1`, or `claude -p` that `fm run` didn't start) records no evidence on the project's task and none of its edits count as the task's files: the UI harness ran the suite and closed the working session's step (T-1004, T-1007). The test helpers clear those variables, so a suite run from such a session behaves like any other.
 - The fleet drops a killed session even after a later SessionStart swept its by-pid records: the status line's snapshot carries its Claude Code pid and start time, and a snapshot whose process has ended or been reused isn't live (T-1003).
 - `fm approve-reads` (T-1005): flags that run a program or write are not reads, in any spelling: `git grep -O`/`--open-files-in-pager`, git's `--ext-diff`/`--textconv`/`--output`, `sort --compress-program`, `rg --pre`/`--pre-glob`/`--hostname-bin`/`-z`, a GNU abbreviation (`sort --comp=`, `--out=`), a bad letter in a cluster (`sort -uoFILE`, `tail -qf`), anything after `--` (`find -- . -delete`), `uniq IN OUT`, `file -C`, `tree -R`.
