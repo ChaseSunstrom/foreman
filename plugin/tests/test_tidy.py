@@ -259,6 +259,72 @@ class StalePlans(TidyCase):
         self.assertFalse(any(new in d for d in found), "a scope file the plan creates isn't missing")
 
 
+class DeferredTriage(TidyCase):
+    # T-1048: each deferred brief gets drop / do / ask proposed; nothing is applied
+    def defer(self, title, days, revisit=None, scope=None):
+        out = self.fm("task", "new", title, "--type", "FIX", "--tier", "S", *(["--scope", scope] if scope else [])).stdout
+        tid = re.search(r"T-\d{4}", out).group(0)
+        age(self.p, tid, days, status="deferred")
+        if revisit:
+            b = c.find_brief(self.p, tid)
+            b.meta["revisit"] = revisit
+            c.save_brief(self.p, b, touch=False)
+        return tid
+
+    def verdicts(self):
+        return {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+
+    def touch(self, rel, commit=False):
+        import subprocess
+        with open(os.path.join(self.repo, rel), "w") as f:
+            f.write("x\n")
+        if commit:
+            subprocess.run(["git", "-C", self.repo, "add", rel], check=True)
+            subprocess.run(["git", "-C", self.repo, "commit", "-qm", rel], check=True)
+
+    def test_edge_cases(self):
+        self.touch("live.py")
+        self.touch("src_a.py")
+        new = self.defer("creates a file", 120, scope="plugin/lib/fmnew.py")  # never existed: the plan creates it
+        noscope = self.defer("no scope", 120)
+        future = self.defer("future", 120, revisit="2999-01-01", scope="nothere.py")
+        glob = self.defer("glob", 120, scope="src_*.py")  # matches something: live
+        deadglob = self.defer("dead glob", 120, scope="zzz_*.py")  # matches nothing, never did
+        edge89 = self.defer("89", 89)
+        edge91 = self.defer("91", 91)
+        self.touch("w.py", commit=True)
+        os.remove(os.path.join(self.repo, "w.py"))
+        gone = self.defer("was tracked", 120, scope="w.py")
+        changed = self.defer("file changed", 5, revisit="when live.py changes @" + "0" * 8)
+        same = self.defer("file same", 5, revisit="when live.py changes @" + c.file_digest(os.path.join(self.repo, "live.py")))
+        self.assertEqual(self.verdicts(), {new: "ask", noscope: "drop", future: "ask", glob: "ask", deadglob: "ask",
+                                           edge89: "ask", edge91: "drop", gone: "drop", changed: "do", same: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertEqual(text.count("propose ask"), 0, "asks collapse into one line")
+        self.assertRegex(text, r"\d+ deferred briefs to decide: T-")
+        d = self.fm("digest").stdout
+        self.assertLess(d.index(f"Deferred: {changed} → do"), d.index("→ drop"), "do first, then drop, then ask")
+        self.assertIn("more: fm tidy", d)
+
+    def test_old_with_a_dead_scope_is_drop_a_due_one_is_do_and_the_rest_ask_and_nothing_changes(self):
+        with open(os.path.join(self.repo, "live.py"), "w") as f:
+            f.write("x\n")
+        self.touch("gone.py", commit=True)
+        os.remove(os.path.join(self.repo, "gone.py"))
+        dead = self.defer("dead", 120, scope="gone.py")
+        due = self.defer("due", 10, revisit="2020-01-01")
+        rest = self.defer("rest", 50, scope="live.py")
+        young = self.defer("young", 1, scope="live.py")  # nobody touched live.py, but nothing says it is ready
+        got = {t: v for t, v, _ in json.loads(self.fm("digest", "--json").stdout)["deferred_triage"]}
+        self.assertEqual(got, {dead: "drop", due: "do", rest: "ask", young: "ask"})
+        text = self.fm("tidy", env={"HOME": self.fake_home}).stdout
+        self.assertIn("deferred_triage", text)
+        self.assertIn(f'fm task drop {dead} "', text)
+        self.assertIn(f"Deferred: {dead} → drop", self.fm("digest").stdout)
+        for t in (dead, due, rest, young):
+            self.assertEqual(c.find_brief(self.p, t).status, "deferred")
+
+
 class TidyStateBackup(TidyCase):
     # T-0922: the briefs and the ledger are the record; tidy --apply keeps dated copies of them, the newest five
     def test_apply_keeps_dated_backups_of_the_record_and_only_five(self):

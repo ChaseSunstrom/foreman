@@ -6,6 +6,7 @@ oversize memory, contradictions) is reported for a decision. Nothing is deleted 
 except derived caches (old statusline snapshots).
 """
 import fcntl
+import glob
 import json
 import os
 import re
@@ -173,6 +174,36 @@ def stale_plans(p, briefs):
     return out
 
 
+DEFER_DROP_DAYS = 90
+
+
+def triage_deferred(p, briefs):
+    """T-1048: [(id, verdict, why)] for each deferred brief; proposes only, nothing is applied. do: its --until date or
+    file change came (nothing else says it is ready: a young brief with untouched files is not). drop: 90+ days old
+    with no scope file left (or none named) and no revisit trigger. ask: the rest."""
+    root, today, out = c.main_view(p).root, c.datetime.date.today().isoformat(), []
+    for b in briefs:
+        if b.status != "deferred":
+            continue
+        age, rv = c.age_days(b.meta.get("updated")) or 0, b.meta.get("revisit")
+        scope = b.meta.get("scope") or []
+        live = gone = False
+        for s in scope:  # like stale_plans: a path that never existed is a file the plan creates, not a dead one
+            if re.search(r"[*?\[]", s):
+                live = live or bool(glob.glob(os.path.join(root, s), recursive=True))
+            elif os.path.exists(os.path.join(root, s)):
+                live = True
+            elif c._git(root, "log", "-1", "--format=%ct", "--", s, timeout=30).strip():
+                gone = True
+        if rv and c.deferral_due(root, rv, today):
+            out.append((b.id, "do", f"its revisit trigger came ({rv})"))
+        elif age >= DEFER_DROP_DAYS and not live and not rv and (gone or not scope):
+            out.append((b.id, "drop", f"{int(age)}d old, " + ("its scope is gone" if gone else "no scope and no trigger")))
+        else:
+            out.append((b.id, "ask", f"{int(age)}d old" + (f", revisit {rv}" if rv else "")))
+    return out
+
+
 def check_project(p, apply, actions):
     out, slug = [], p.slug
     briefs = c.load_briefs(p)
@@ -207,6 +238,16 @@ def check_project(p, apply, actions):
     for tid, why in stale_plans(p, briefs).items():
         out.append(finding(slug, "stale_plan", "warn", f"{tid} re-plan: {why}", f're-read its Steps against the code, '
                            f'fix what no longer holds, then fm task log {tid} "plan re-read: <what changed, or still valid>"'))
+    asks = []
+    for tid, verdict, why in triage_deferred(p, briefs):
+        if verdict == "ask":
+            asks.append(tid)
+            continue
+        out.append(finding(slug, "deferred_triage", "warn" if verdict == "drop" else "info", f"{tid} deferred: propose {verdict} ({why})",
+                           f'fm task drop {tid} "{why}"' if verdict == "drop" else f"fm task set {tid} status=planned"))
+    if asks:
+        out.append(finding(slug, "deferred_triage", "info", f"{len(asks)} deferred briefs to decide: {', '.join(asks)}",
+                           "do each (fm task set ID status=planned) or drop it (fm task drop ID \"<why>\")"))
     for b in briefs:
         why = unblocked(p, b, status) if b.status == "blocked" else None
         if why:
