@@ -162,6 +162,48 @@ class UiView(ForemanTestCase):
         v = json.loads(self.fm("ui", "--json").stdout)
         self.assertEqual({k: v["closed"][0][k] for k in ("id", "status")}, {"id": "T-0003", "status": "dropped"})
 
+    def test_the_view_carries_a_structured_history_with_task_titles(self):
+        # T-1026: the pane's History draws id, event and the task's title in their own colours, filling its width
+        self.fm("task", "evidence", "T-0001", "--step", "2", "--run", "false", check=False)  # a red run exits 1
+        h = json.loads(self.fm("ui", "--json").stdout)["history"]
+        self.assertLessEqual(len(h), 60)
+        last = h[-1]
+        self.assertEqual((last["mark"], last["task"], last["text"], last["title"]),
+                         ("✗", "T-0001", "step 2 failed", "Login times out"))
+        self.assertRegex(last["time"], r"^\d\d:\d\d$")
+        self.assertTrue(any(x["text"] == "step 1 passed" for x in h), h)
+        self.assertTrue(any(x["text"] == "captured" and x["title"] == "Merge the date helpers" for x in h), h)
+        import fmwatch  # the newest 60 only, and a malformed time never takes the view down (review)
+        many = [{"event": "task_done", "task": "T-0001", "ts": f"2026-01-01T10:{i % 60:02d}:00Z"} for i in range(70)]
+        self.assertEqual(len(fmwatch._history(many + [{"event": "task_done", "ts": 5}], {})), 60)
+        self.assertIsNone(fmwatch._recent({"event": "note", "ts": 5}))
+
+    def test_the_view_lists_worktrees_with_their_agent_task_and_unmerged_commits(self):
+        # T-1023: the pane's Agents graph joins a builder's worktree to its subagent (Claude Code names the branch
+        # worktree-agent-<id>) and shows a lone or stale one
+        import subprocess
+        git = lambda *a, cwd=self.repo: subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *a],  # noqa: E731
+                                                       cwd=cwd, check=True, capture_output=True)
+        git("commit", "--allow-empty", "-qm", "base")
+        tree = os.path.join(self.tmp, "wt-agent")
+        git("worktree", "add", "-q", "-b", "worktree-agent-a1b2c3d4", tree)
+        git("commit", "--allow-empty", "-qm", "work", cwd=tree)
+        import fmcore as c
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, "T-0001")
+        b.meta["lane"] = tree  # what fm lane new records
+        c.save_brief(p, b)
+        w = json.loads(self.fm("ui", "--json").stdout)["worktrees"]
+        self.assertEqual([(x["branch"], x["agent"], x["task"], x["ahead"]) for x in w],
+                         [("worktree-agent-a1b2c3d4", "a1b2c3d4", "T-0001", 1)])
+        self.assertIsInstance(w[0]["age_s"], int)
+        # review (T-1023): a detached worktree's merge state is unknown, not 'nothing to merge'; the newest come first
+        loose = os.path.join(self.tmp, "wt-detached")
+        git("worktree", "add", "-q", "--detach", loose)
+        os.utime(os.path.join(tree, ".git"), (1, 1))  # made long ago
+        w = json.loads(self.fm("ui", "--json").stdout)["worktrees"]
+        self.assertEqual([(x["branch"], x["ahead"]) for x in w], [("", None), ("worktree-agent-a1b2c3d4", 1)])
+
     def test_outside_a_project_the_view_is_empty_not_an_error(self):
         elsewhere = os.path.join(self.tmp, "plain")
         os.makedirs(elsewhere)
@@ -194,6 +236,12 @@ class UiView(ForemanTestCase):
         self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: fixture")
         self.fm("task", "finish", "T-0001", "--audit", "self checklist")
         self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["today_done"], 1)
+
+    def test_the_view_counts_blocked_tasks_for_the_work_bar(self):
+        # T-1026: the pane shows done and left at a glance, blocked included
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["blocked_total"], 0)
+        self.fm("task", "block", "T-0001", "waits on a vendor")
+        self.assertEqual(json.loads(self.fm("ui", "--json").stdout)["blocked_total"], 1)
 
     def test_done_days_counts_closes_per_day_for_two_weeks(self):
         # T-0909: the pane's day bars; oldest first, today last, a day counts a task once

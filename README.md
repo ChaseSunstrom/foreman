@@ -5,9 +5,9 @@
 **The discipline layer for Claude Code.** Foreman makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until it's done or needs you, while a guard hook stops the commands you'd never want run in bypass mode.
 
 <p align="center">
-  <img src="demo/live.svg" width="960" alt="Claude Code with the foreman-ui mod: asked to fix calc.add, Claude plans task T-0001, edits the code, is refused a close until a red-then-green proof exists, proves it, closes and commits; the Foreman pane shows the task with its stage rail and progress, what is running now, the plan's steps and criteria, and live charts of the session's tool calls">
+  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman feature in a copy of this repo: the chat reads as a tree, each call a compact branch under the prompt with its diff or result; a scout subagent finds the code; the test fails first, the edit makes it pass, the task closes and commits; the live tree above the prompt shows the session and its subagent with their latest calls and time bars, and the Foreman pane beside it shows the work bar, the stage rail and steps, the Activity lanes, the Agents graph, History and the Today charts">
 </p>
-<p align="center"><sub>Claude Code with the foreman-ui mod, recorded as it fixes a seeded bug: one typed request, the rest is Claude working through Foreman. Sped up where the model thinks; <a href="demo/live.mp4">MP4</a>.</sub></p>
+<p align="center"><sub>A real session, recorded in a copy of this repo: one typed request (<code>fm lib stats --days N</code>: count only the last N days of card use, sending a scout subagent to find the code first), the rest is Claude working through Foreman, about 4 minutes, sped up where the model thinks. Its change is in Foreman now (T-1035). <a href="demo/live.mp4">MP4</a>.</sub></p>
 
 ## Why
 
@@ -20,7 +20,7 @@ Claude Code is fast. Left to itself it also fails in familiar ways: it edits bef
 | **Guards bypass mode** | A fail-closed guard stops recursive deletes outside the project, force-pushes, credential reads, `curl \| sh`, publishes and edits to Foreman itself. Before a git command throws away uncommitted work, Foreman saves that work first. |
 | **Stays on task** | One active task. New requests go to the inbox instead of being chased. `NOW:` switches tasks on purpose. |
 | **Never loses its place** | State lives on disk, so after `/compact` or in a new session Claude resumes at the exact step. |
-| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. `fm run` and `fm serve` keep it working headless. |
+| **Keeps going** | Drive mode works through the whole queue. In full auto, Claude decides and records its decisions instead of asking. When the queue drains it finds its own next work (`fm scout`: a newer Claude Code to adopt, dependencies with no stack card, doctor failures, a weekly brainstorm), so you never have to ask. `fm run` and `fm serve` keep it working headless. |
 | **Learns** | Lessons, tripwires and a self-improvement loop turn your corrections and Foreman's own friction into fixes. |
 
 ## Quick start
@@ -115,30 +115,38 @@ Work runs in the order CLEAN → PERFORMANCE → SECURITY → FIX → FEATURE, a
 - Each card gives the exact commands that verify the work, a failing-test recipe, the mistakes models actually make, and a review checklist.
 - Cards cost no context until they are read. `fm lib` picks the ones that match your repo's manifests and files, and the session start names them.
 - `fm lib show fastapi pytest --section verify` reads just the parts you need.
+- The first edit of a file a card covers brings that card's pitfalls (its Avoid section, under 700 characters) into Claude's context, once per card per task. A card is picked by what the file imports as well as by its type: a file that imports `@tauri-apps/api`, `fastapi`, `tokio` or `github.com/gin-gonic/gin` gets that framework's card beside its language's (at most two an edit; Python, JS/TS, Rust and Go imports, matched to the project's own dependencies). The audit brief carries the review checklists of the cards a task used, and `fm lib stats` shows which cards actually reach Claude. `fm lib inject off` turns it off; `fm doctor -v` counts how often it and the other enforced checks fired this week.
 - `fm lib search` also finds installed plugins' skills, disabled ones included, so a big skill pack can stay off and still be found.
 - `fm lib source add <git URL>` indexes a third-party skills repo read-only: a shallow, markdown-only checkout in Foreman's state, with no hooks, filters, submodules or symlinks, and nothing run. `fm lib source defaults` adds six vetted ones (wshobson/agents, anthropics/skills, trailofbits/skills, VoltAgent subagents, K-Dense scientific skills, morluto/rea): about 870 skills and agents, searchable next to the cards at no context cost.
 
 **Verifies.**
 - `fm check` runs the project's gates and reuses a pass on an identical tree.
 - `fm task evidence --run` records a command's real exit code and output.
+- Test first at edit time: in a fix or feature task that has changed no test and recorded no failing run, the first edit of a source file brings one line saying to write and run the failing test first. Once per task, never a block.
 - `fm task prove` shows a test failing on the start tree and passing now. `--hunks` reverts each hunk to show the tests notice it.
-- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs.
+- `fm task finish` closes a task in one call, but only with fresh evidence and the audits, docs note and lesson its size needs. It counts its warnings in one line first (a leftover `breakpoint()` or conflict marker among them) and ends by saying where the work landed: committed and pushed, or not.
 - The suite runs in CI on every push.
 
 **Protects.**
 - The guard reads every Bash command and file edit before it runs, including the commands fm stores and runs later.
-- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back.
-- `fm sensitive on` keeps a repo's content from leaving the machine.
+- Work snapshots save uncommitted work before `git reset --hard`, `checkout -- .`, `clean -f` and the like. `fm snapshots` lists them, each with the command that brings it back; `fm oops` shows the newest and `fm oops --apply` restores it.
+- `fm sensitive on` keeps a repo's content from leaving the machine; `fm sensitive suggest` lists what hints a repo needs it (`.env*`, `*.pem`, secret or prod in a path) and changes nothing.
+- `fm posture lite` (yours to type: `! fm posture lite`; Claude may not lower it) keeps only the guard and the evidence gate in a repo where the rest of Foreman is in the way (no injected notes, no drive); `fm posture full` brings it back.
 
 **Shows you what happened.**
 - `fm tour --since main` ranks a whole branch, or a night's run, by review risk and says which files are safe to skim.
 - `fm why FILE:LINE` traces a line back to the task and the words you asked in.
 - `fm at T-0042 -- pytest` runs any command as of a task's start.
-- `fm digest` sums up the week.
+- `fm show X` takes a task id, a FILE:LINE or plain words and shows the task, the line's history or related past work.
+- `fm digest` sums up the week; `fm outcomes --readme` gives the track record in one sentence; `fm round close` tags a round and lists what it closed.
 
-**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
+**Runs unattended.** Drive mode, full autonomy, `fm run` (one fresh `claude -p` session per task), `fm serve` (Remote Control on a server), `fm scout` (finds work nobody asked for), `fm night` (budgeted background jobs) and `fm notify` for when it's done.
 
-**Improves itself.** `fm friction` digests Foreman's own friction, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
+**Stays light.** Only the guard (on tool calls that can change something) and the write validators (after a write) run synchronously; everything else that records runs async or once per turn, and nothing is injected unless it changes what Claude should do next. `fm doctor` reports each hook's p95 latency, and the pane's hooks tank shows it live (about 20 ms here).
+
+**Learns a fix once.** When a command fails and a later one on the same program gets past it, Foreman keeps the pair with no one asking. The next time any session meets that failure, in this project or another on the machine, Claude gets the fix in the failure's context (`Foreman: known fix for this failure … Try that before anything else`), and a command that failed before is flagged before it runs again. A look around (`ls`, `cat`, `git status`) or a retry that happens to pass teaches nothing. A fix that keeps missing stops being offered, and a failure met three times with no fix becomes a task to remove its cause. Project fixes travel with the repo: `fm sync on` mirrors them into `.foreman/fixes.md`, so clones, other machines and teammates' sessions get them through git; a fix that only came with the repo is offered as a hint to check (never as an instruction, never before a command runs) until you adopt it with `fm fix trust N`. A sensitive project's fixes stay in that project. A code edit between the failure and the pass makes it a code fix, so nothing is kept. `fm fix list` shows them, `fm fix add "<error>" --do "<what works>"` teaches one the hooks can't see, `fm fix rm N` forgets one. A hook only ever says a fix; it never runs one. The UI harness answers Claude Code's folder-trust prompt itself, for folders Foreman made only.
+
+**Improves itself.** `fm friction` digests Foreman's own friction (`--minutes`: an estimate of the minutes it cost this week), `fm burden --by-verb` lists the verbs nobody calls, `/foreman:improve` builds candidate changes in a worktree and keeps only the ones that score at least as well on the eval suite, and lessons come back as tripwires on related work.
 
 ## Seeing what's going on
 
@@ -155,7 +163,7 @@ The `foreman-ui` mod draws Foreman live inside the session.
 - audits, queue and inbox counts, and what waits on you;
 - `[f]` dashboard and `[n]` next.
 
-**Tool rows.** Every running tool call is an animated row: a spinner, the verb, the file or command, `+N −M` for edits, an activity comet and the elapsed time. A subagent row also counts its tool calls and shows its latest one. Finished rows go back to Claude Code, which draws diffs and output as usual. Successful `fm` bookkeeping commands fold to one quiet `⚙ fm …  ✓ …` line, while failures keep their full row. Finished reads and background-task notifications also fold to one quiet line.
+**The chat.** Every row reads like a section of the pane: a mark, a bold label in the row's colour, its subject, a rule fading out in that colour and the facts on the right, with a blank line above it and no box. Your prompts (`❯ You`), Claude's replies (`● Claude`), commands, edits, subagents and every other tool (skills, MCP calls, artifacts …) get one (a tool's result of up to three lines sits in its row; a longer one keeps Claude Code's own block under it, which expands; a failed call keeps Claude Code's row); a review's findings list each one with what came of it (fixed, skipped), where it is and the short claim. While a call runs, a comet runs along its rule beside the elapsed time. A command shows its lines, its output (failures first when it failed), the files it changed and a commit. An edit's diff keeps a line of context either side of each change, breaks between hunks with `┄`, and washes only the words that changed in a changed line, never the whole width. Successful `fm` bookkeeping commands fold to one quiet `⚙ fm …  ✓ …` line, while failures keep their full row; finished reads and background-task notifications also fold to one quiet line.
 
 **Turns.** The working spinner names the Foreman step it's on. The line closing each turn says what the turn did (`4 tools · 2 edits +30 −4 · ✓ T-0012 step 3/5`). When Claude stops with Foreman work waiting, the prompt offers `/foreman:next` as ghost text (never while a question waits on you). The footer says when Foreman needs you and shows `full auto` and `drive off` as modes.
 
@@ -163,7 +171,6 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **Your project's own timings.** Sizes read as words (`FIX · small`, `· medium`, `· large`) and carry this project's history:
 - The band shows how long you've been on the task and what that type and size usually takes (`12m on it · usually ~25m`). That is the median from first focus to done, once three such tasks have closed.
-- Queue rows show their usual time, and the gates card shows what a full run costs.
 - The band shows the whole queue (done today, queued, in the inbox, what's next), so it never looks nearly finished while work waits.
 
 **Prompts and background work.**
@@ -173,26 +180,26 @@ The `foreman-ui` mod draws Foreman live inside the session.
 
 **The mascot.** The pane's top-right corner has Claude Code's own Claude from the welcome screen. Its `mascot` setting picks blue, orange, purple, green or off. It dances while Claude works, blinks while idle and cheers when a task closes, with a mini Claude in its own color beside it for each running subagent.
 
-**The dashboard.** `/fm` (or `[f]`) opens a dashboard pane that reads top-down by urgency:
-- what needs you: a yes Foreman is waiting for, and any plan waiting for approval, shown in full beside its Approve button;
-- the task: type, size, id and title, a stage rail from plan to close with a comet on the stage being worked, the steps bar, the current step, and time on the task against the usual for its type and size (a ┃ marks the usual; past it the bar turns amber);
-- **Now**: each call running this moment with a moving bar (a question waiting on you reads as waiting, not running). Live cards hold their place: one that empties stays dimmed ("idle · last: …") for 8 s and gives rows back one a second, so the pane doesn't jump as calls come and go;
-- **Plan**: the steps (one glows green as it gets done), the done-when criteria with the check that proves each, audits and what is left before done;
-- **Skills**: the skills invoked (✦) and stack cards read with `fm lib show` (▤) this week as chips with their age, the most used, and this repo's suggested cards not read yet, dimmed as `fm lib show NAME` (folded, its head still counts them; gone when there is nothing to show);
-- **Pulse**: swim lanes of the session's tool calls by kind (edit, run, read, agent, web) over the last 1 to 30 minutes, tasks closed per day for 14 days, and context, spend, hook-latency and guard gauges;
-- queue and inbox, with type chips, usual times and Start/Drop (one *Up next* card with the capture box when both are empty);
-- then the quieter cards: gates, brainstorm, files, fleet, spend, bench, research and activity (newest first), each folding to its head line with ▾/▸;
-- Next, Drive and Autonomy controls.
+**The dashboard.** `/fm` (or `[f]`) opens one panel beside the chat that fills the dock exactly, no more and no less. Each section sits under a titled divider drawn in its own colour (with a blank row above it on a tall dock), says only what it must, and draws its numbers as pictures. Activity and Today keep a fixed height, the lists take the rows they hold, and History takes what's left; rows History can't fill give Activity every lane and the Today charts more height first, so nothing jumps as work comes and goes and a new project's pane isn't half empty. Top to bottom:
+- the head: project, mode and the mascot; a bar of the work, done today against what's left (now, queued, inbox, blocked), each part counted beside it; and the one thing that needs you, most urgent first: a paused Foreman hook, a question waiting for your answer, a yes Foreman is waiting for, a plan waiting for approval (✓ approve, or *show* to read it in the task block), a task that just closed (a green sweep, grade, proof and time, for six seconds), failing gates, halved spend caps, a decision due for another look, what closed since your last message; otherwise *nothing needs you*;
+- the task: type, id and size, criteria proved and time on it against the usual, the title, a bar with a segment per step (*3 of 5 steps done · 2 left*), the stage rail from plan to close, and the steps around the current one (one glows green as it gets done). With nothing active: what's next and how many closed today, or a plan waiting for your yes;
+- **Activity**: one braille lane per kind of tool call (edit, run, read, agent, skill, web) plotting the session's calls over the last 30 minutes; at the end of each lane, what runs there now (a background shell its command) or the count and the last thing it touched;
+- **Agents**, while there are any: a node graph rooted at this session, its calls on the root's bar, with a branch (`├─`, `└─`) to each subagent (running, or finished in the last half hour), each brainstorm and each lone git worktree (whether it holds commits to merge), and a builder's worktree hanging under its agent; every node's bar sits in one column on an axis of its own: each bar runs from start to end (or now) with a dot where a tool call or an answer landed, then the name and how it stands (time, quiet, ✓ calls), and ■ stop for a subagent quiet ten minutes;
+- **Up next**: plans waiting for your yes (each with ✓ approve), the queue, the inbox with Start and Drop, and a capture box (Enter runs `fm capture` without interrupting Claude);
+- **Sessions**, when there are others: each with its context and task, and one steer for all;
+- **History**: what happened, newest first, one line each: the time, the id, the event in its colour (red for a failure, green for a pass or a close) and the task's title;
+- **Closed per day** for 14 days beside **Today**: four tanks for context, spend against the day's cap, hook latency and gates passed, each with its value over it;
+- Next, Drive, Autonomy, Mute and Refresh.
 
-When a task closes, its done card tops the pane for six seconds: a green sweep, the grade and lenses, the criteria it proved and its time against the usual. The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`.
+**The live tree.** The band above the prompt stays put while the chat scrolls, so while work runs it holds one tree of everything happening now: this session at the root (its task and step, a comet along its rule), its latest calls under it, then a branch per subagent with its own latest calls and what it is on, each call spinning while it runs, then ✓ or ✗ with its time. It keeps one height for the whole turn, with a blank row under it, so the chat above never shifts as calls come and go, and every node has a time bar in one column, as in the pane's Agents graph. It fits the band: the agents keep one call each before the session's older calls go, then the least recent agents fold into a count. It stays two minutes after the last call, then shrinks to one line for the session. With the panel open the band shows only that tree (the prompt hint still says when Foreman needs you). The charts move at about 30 fps while Claude works and stand still when idle; the `motion` setting picks `full`, `calm` (8 fps) or `off`. Toasts mark finished steps and tasks, needed yeses (with a soft chime) and guard refusals. The mod only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.
 
-Every card shares the animated look: borders that breathe while Claude works, true-color bars and recency fades. Queue rows have step bars, and inbox rows show their age. A quick-capture box takes an idea on Enter and runs `fm capture` without interrupting Claude. Other cards show live subagents with their tool counts, files touched this session with +/− bars, the last `fm check` gates, and activity with a hook-latency sparkline. Toasts mark finished steps and tasks, needed yeses (with a soft chime; Sound off in the pane) and guard refusals. The mod only renders `fm ui --json` and runs `fm` on your presses; rules and gates stay in fm and the classic hooks.
+**The chat as a tree.** The scrolling transcript reads the same way: each turn is one tree, your prompt at the root, every call Claude makes a branch (`├─`) on a rail down the left, its replies on branches too, and the turn's closing line (`└─ ✻ worked 22s · 6 tools · 1 edit`) the tip. Finished calls are compact so the chat scrolls far less: a passing command shows its description, one line of the command and a line count (its output only when it is a line or two), a failure shows its failures in full, a diff shows four changed lines and a count of the rest, reads and searches sit on one line. The `chat` setting `full` brings back the long rows.
 
 **The status line.** Under the prompt is one clean true-color layout:
 - a session line: model, folder, branch, context and rate-limit bars, cost, lines changed;
 - a Foreman line: task, stage, step bar, audits, queue, autonomy, guard.
 
-When the mod's card is above the prompt, the Foreman line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Foreman lines.
+When the mod's card is above the prompt, the Foreman line shrinks to a chip on the session line. `"statusline_layout": "stack"` in the install manifest brings back the old stack of your original line, claude-hud and the Foreman lines. `NO_COLOR` set drops the colour from Foreman's own lines. In tmux, `set -g status-right '#(cd #{pane_current_path} && fm state --line)'` puts the same task, step and queue in the status bar for the pane you're in (it never creates a project).
 
 Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, and an optional OpenTelemetry → telegraf → InfluxDB → Grafana setup in `plugin/observability/`. `/tui fullscreen`, `/focus` and `Ctrl+O` help too.
 
@@ -205,8 +212,12 @@ Also: per-subagent rows, terminal titles and desktop notifications, `fm watch`, 
 - `fm agents list` shows what's wired, and `fm agents uninstall X` takes out exactly what install added.
 - Codex also gets the drive and done-gate (its Stop hook).
 - Two things stay Claude Code only: Gemini's AfterAgent would discard the answer it blocks, and the `fm ask` permission prompt needs Claude Code to show it.
+
+**MCP:** `fm mcp` serves the project to any MCP client over stdio, read-only: its state, next action, recall, research and briefs, the stack library (`lib_suggest`, `lib_search`, `lib_show`) and the instruments (`outline`, `sym`, `impact`, `why`, `fail` on given text, `logs`, `data`, `trace`). Paths must resolve inside the project, values can't start with `-`, each is length-capped, each call has a timeout, and everything sent is redacted. `fm mcp register claude` prints the `claude mcp add` line. `fm mcp new NAME --wrap 'CMD' [--sub a,b]` writes a stdlib-only MCP server for any CLI, plus a test that drives it over stdio. The server runs argv, never a shell; each argument is a plain value or one of the subcommands; it has a timeout and an output cap; and it refuses to wrap destructive commands (`rm`, `git push`, a shell…). Register it with `fm mcp register claude DIR`.
 - A config with comments (JSONC) is left alone with a note.
 - The files that load the hooks are protected core, like Claude Code's settings: `~/.codex/hooks.json` and `config.toml`, `~/.gemini/settings.json`, and opencode's `opencode.json` and `plugins/`, including their project-level copies. An agent that edits them, or runs `fm agents uninstall`, needs your yes.
+
+**Knowledge out:** `fm recall --export-rules` writes the lessons from finished tasks to `.claude/rules/foreman-lessons/`, one rule file per task scoped by `paths:` to the files it touched, so Claude Code loads a lesson only with its files, even without Foreman. `fm decide --export-adr DIR` writes one ADR file per recorded decision. `fm task defer ID --until "when PATH changes"` brings a task back in `fm next` once that file changes.
 
 **Desktop app:** [Foreman Desktop](https://github.com/ChaseSunstrom/foreman-desktop) (Tauri 2 + Svelte 5; `install.sh --desktop` installs its newest release) shows every project, agent session and device in one animated window.
 - Live project dashboards with Start, Drop, Approve-plan, capture, drive and autonomy controls.
@@ -238,6 +249,8 @@ A blocked command says how to authorize it for the current task. For anything th
 
 **Trust mode.** To let Claude edit those too (the guard and Claude Code's settings, never Foreman state), type `/fm-trust on` yourself. The foreman-ui mod only accepts it from your own prompt (or your phone), never from Claude, a scheduled prompt or a skill, and the guard refuses any attempt by Claude to turn it on. The band shows `⚠ trust on` while it lasts. `/fm-trust off` (or `fm trust off`) ends it. Other questions come as a prompt too.
 
+**Fewer dialogs outside bypass mode.** In Claude Code's default mode every Bash command off your allow list asks. Type `! fm approve-reads on` and Foreman answers that dialog for commands that only read (`ls`, `cat`, `grep`, `git status` or `git log`, `find` without `-exec` or `-delete`, …): every part of the command has to be one of those without a writing flag, with no redirect except to `/dev/null` and no `$` (a variable can print a secret). Anything else still asks. Only you can turn it on (the guard refuses it from Claude); `fm approve-reads off` ends it.
+
 **Sensitive repos.** To opt a repo out (client code, anything with production credentials), tell Claude "this repo is sensitive" (it runs `fm sensitive on`). That writes this to the repo's `.claude/settings.local.json`, kept out of commits via `.git/info/exclude`, and Foreman shows the repo as sensitive at session start:
 
 ```json
@@ -259,7 +272,7 @@ In a repo on your server, ask Claude to "serve this repo". Claude asks you once 
 - "Stop serving" (`fm serve stop`) undoes it, and uninstall stops every unit.
 - Claude Code has to trust the repo first: open `claude` there once.
 
-`fm run` is the other option. It works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context. It waits out a usage limit (up to six hours by default) before retrying.
+`fm run` is the other option. It works the queue in fresh `claude -p` sessions, one task each, so a long queue never piles up in one context. It waits out a usage limit (up to six hours by default) before retrying. A task that makes no progress is blocked with the reason, so the next run moves on, and the machine is kept from sleeping while it runs (systemd-inhibit, where there is one). To run `fm night` every night, `fm night --print-timer` prints a systemd timer and a crontab line to paste. `fm run --sandbox` starts each session under Claude Code's own sandbox (bubblewrap on Linux, Seatbelt on macOS): Bash writes only the checkout, Foreman's state and the git dir, and a host without a sandbox fails the session rather than running it open.
 
 ## When not to use Foreman
 
@@ -324,7 +337,7 @@ install.sh            one-liner bootstrap
 setup-plugins.sh      curated plugin setup (safe to re-run; --dry-run to preview)
 configure-repo.sh     one-time for forks: point everything at your GitHub repo
 reset-claude.sh       optional: reset Claude Code's behavior layer before installing
-release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL]
+release.py            release Foreman: python3 release.py VERSION [--canary] [--push URL] (fm release-check first)
 .claude-plugin/       local marketplace "foreman"
 plugin/               the Foreman plugin (fm, hooks, skills, rules, agents, tests, evals)
 demo/                 the README's recordings (Claude Code with the mod; fm demo) and the scripts that make them

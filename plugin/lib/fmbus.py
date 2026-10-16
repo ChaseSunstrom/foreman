@@ -289,13 +289,44 @@ def live():
     d = os.path.join(c.state_dir(), "sessions")
     cut = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=LIVE_S)).strftime(
         "%Y-%m-%dT%H:%M:%SZ")
-    out = []
+    out, gone = [], _gone()
     for n in os.listdir(d) if os.path.isdir(d) else []:
         if n.endswith(".json"):
             s = _snapshot(n[:-5])
-            if s and str(s.get("ts", "")) >= cut:
+            if s and str(s.get("ts", "")) >= cut and s.get("session_id") not in gone and _owner_alive(s):
                 out.append(s)
     return sorted(out, key=lambda s: str(s.get("ts")), reverse=True)
+
+
+def _owner_alive(s):
+    """T-1003: the claude pid the statusline recorded in the snapshot still runs with the same start (older snapshots
+    carry none: alive)."""
+    pid = s.get("claude_pid")
+    if not isinstance(pid, int):
+        return True
+    info = _proc(pid)
+    return bool(info) and info[1] == s.get("claude_start")
+
+
+def _gone():
+    """T-1001: sessions whose every recorded process (SessionStart's record_pid) has ended or is a reused pid: a killed
+    session leaves no SessionEnd, and its snapshot read as live for LIVE_S."""
+    d = os.path.join(c.state_dir(), "sessions", "by-pid")
+    alive, seen = set(), set()
+    for n in os.listdir(d) if os.path.isdir(d) else []:
+        try:
+            with open(os.path.join(d, n)) as f:
+                rec = json.load(f)
+            pid = int(n)
+        except (OSError, ValueError):
+            continue
+        if not rec.get("sid"):
+            continue
+        seen.add(rec["sid"])
+        info = _proc(pid)
+        if info and info[1] == rec.get("start"):
+            alive.add(rec["sid"])
+    return seen - alive
 
 
 # ---------------------------------------------------------------- leases

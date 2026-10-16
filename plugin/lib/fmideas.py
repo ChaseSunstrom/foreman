@@ -4,6 +4,7 @@ A Claude Code subagent can't have zero tools (an empty `tools:` list means every
 fresh `claude -p` session with no built-in tools and no MCP servers, in a scratch directory outside any project.
 """
 import glob
+import hashlib
 import json
 import os
 import re
@@ -111,7 +112,8 @@ def run_child(feature, system, prompt, model, timeout, project=None, detail="", 
 
 def run_children(jobs, timeout, feature):
     """T-0295: [(argv, stdin, detail)] run in parallel in one scratch folder under one deadline, each recorded:
-    [(text or None, error)]. OSError when one can't start (the started ones are stopped)."""
+    [(text or None, error)]; both set is a partial answer (T-0959). OSError when one can't start (the started ones are
+    stopped)."""
     with _child_cwd(feature) as cwd:
         procs = []
         try:
@@ -135,8 +137,10 @@ def run_children(jobs, timeout, feature):
                 so, se = pr.communicate(timeout=max(1, deadline - time.time()))
                 text, usd = fmbudget.result(so)  # T-0227: the text, and what it cost
                 fmbudget.record(feature, usd, detail=detail)
+                why = f"exit {pr.returncode}: {_tail(se or so, 200)}"
+                # T-0959: text and an error is a partial answer (it printed, then failed): kept, flagged by the error
                 out.append((text, None) if pr.returncode == 0 and text.strip() else
-                           (None, f"exit {pr.returncode}: {_tail(se or so, 200)}"))
+                           (text, why) if text.strip() else (None, why))  # both set: partial
             except subprocess.TimeoutExpired:
                 pr.kill()
                 pr.communicate()
@@ -397,14 +401,16 @@ def _run_round(lenses, pack, system, args, out_dir, prefix, fmcli):
         raise fmcli.UsageError(str(e))
     for i, (lens, (out, why)) in enumerate(zip(lenses, answers), 1):
         ok, why = out is not None, why or ""
+        partial = ok and bool(why)
         slug = re.sub(r"[^a-z0-9]+", "-", lens.lower()).strip("-") or "lens"
         path = os.path.join(out_dir, f"{prefix}{i:02d}-{slug}.md")
         text = c.redact(out.strip()) if ok else ""
         if ok and not _TITLE.search(text):  # an answer that isn't ideas (a refusal, a question) is a failed lens
-            ok, why = False, f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
+            ok, partial, why = False, False, (f"{why}; " if why else "") + f"no ideas in the required format: {c.fit(c.plain(text), 150)}"
         with open(path, "w", encoding="utf-8") as f:
-            f.write(f"# Brainstorm — lens: {lens}\n\n" + (text if ok else f"FAILED: {why}") + "\n")
-        results.append({"lens": lens, "file": path, "ok": ok, "error": why,
+            f.write(f"# Brainstorm — lens: {lens}\n\n" + (f"PARTIAL ({why})\n\n" if partial else "")
+                    + (text if ok else f"FAILED: {why}") + "\n")
+        results.append({"lens": lens, "file": path, "ok": ok, "partial": partial, "error": why,
                         "titles": [c.plain(t).strip() for t in _TITLE.findall(text)],
                         "categories": {c.plain(t).strip(): cat.strip().lower() for t, cat in _CATEGORY.findall(text)}})
     return results
@@ -417,6 +423,7 @@ def cmd_ideas(args):
     c.refuse_if_paused()  # T-0591
     p = fmcli.resolve(args)
     pack = sys.stdin.read() if args.pack == "-" else open(args.pack, encoding="utf-8").read()
+    pack_sha = hashlib.sha256(pack.encode()).hexdigest()  # T-0959: the pack as given, for the manifest
     pack += user_voice(p)
     lenses = list(dict.fromkeys(args.lens or DEFAULT_LENSES))
     if "oblique provocation" in lenses:  # T-0628: its provocations are the project's own lessons
@@ -519,13 +526,16 @@ def cmd_ideas(args):
     with open(os.path.join(out_dir, "ideas.json"), "w", encoding="utf-8") as f:  # T-0607: for fm taste's keep rates
         json.dump({"lenses": {r["lens"]: r["titles"] for r in results if r["ok"]}, "crossbred": bred,
                    "kills": kills, "created": c.now()}, f)
+    with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as f:  # T-0959: what made this run
+        json.dump({"pack_sha256": pack_sha, "model": args.model, "lenses": lenses, "seen": args.seen or [],
+                   "rounds": rounds, "created": c.now()}, f)
     failed = [f"{r['lens']} (round {r['round']})" for r in results if not r["ok"]]
     with c.lock(p.dir):
         c.log_event(p, "ideas", data={"dir": out_dir, "lenses": lenses, "rounds": rounds, "ideas": len(titles) - known,
                                       "failed": failed}, session=fmcli.session())
     fmcli.out(args, {"dir": out_dir, "rounds": rounds, "ideas": len(titles) - known, "results": results, "yield": lens_yield},
               f"Brainstorm ideas in {out_dir} ({len(titles) - known} new distinct over {rounds} round(s); index: ideas.md):\n"
-              + "\n".join(f"  {'ok  ' if r['ok'] else 'FAIL'} {'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
+              + "\n".join(f"  {('part' if r['partial'] else 'ok  ') if r['ok'] else 'FAIL'}{'r' + str(r['round']) + ' ' if args.rounds > 1 else ''}"
                           f"{r['lens']}: {r['file'] if r['ok'] else r['error']}" for r in results)
               + (f"\n  dry after round {rounds}: it added {len(by_round[-1])} new" if rounds < args.rounds else ""))
     if failed:

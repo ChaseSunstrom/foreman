@@ -25,10 +25,11 @@ phrases = ["apple banana cherry", "delta echo foxtrot", "golf hotel india", "jul
 vary = " " + phrases[stdin.count(chr(10) + '- ') // 2 % 5] if os.environ.get("STUB_VARY") else ""
 cat = "speed" if "user" in lens or "deepen" in lens else "looks"
 print(f"- **Idea for {lens}{vary}** — FEATURE — value 4 — effort S — risk low — category: {cat}")
+sys.exit(2 if lens == os.environ.get("STUB_PARTIAL_LENS") else 0)
 '''
 
 
-class Ideas(ForemanTestCase):
+class Stubbed(ForemanTestCase):
     def setUp(self):
         super().setUp()
         bindir = os.path.join(self.tmp, "bin")
@@ -45,6 +46,9 @@ class Ideas(ForemanTestCase):
 
     def calls(self):
         return [json.loads(l) for l in read_text(self.log).splitlines()]
+
+
+class Ideas(Stubbed):
 
     def test_super_brainstorm_rounds_build_on_earlier_ideas_until_dry(self):
         # T-0071: each round sees every idea so far and is asked only for new ones; a round with nothing new ends it
@@ -196,3 +200,81 @@ class ChildCommand(ForemanTestCase):
         cap = f"{fmbudget.effective()[0]['run']:g}"
         for argv in (fmideas.child_cmd("haiku", "s"), fmresearch._child("haiku", "WebFetch", "s")):
             self.assertEqual(argv[argv.index("--max-budget-usd") + 1], cap)
+
+
+class BoardIdeas(Stubbed):
+    """T-0959: a child's partial answer kept, a run manifest, cache-bust causes, friction minutes, unused verbs."""
+
+    def test_a_child_that_fails_after_printing_keeps_its_text_flagged_partial(self):
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "reliability", "--lens", "bold bets", "--json",
+                                 env=dict(self.env, STUB_PARTIAL_LENS="reliability")).stdout)
+        r = next(r for r in res["results"] if r["lens"] == "reliability")
+        self.assertTrue(r["ok"] and r["partial"])
+        self.assertEqual(r["titles"], ["Idea for reliability"])
+        self.assertIn("exit 2", r["error"])
+        self.assertIn("PARTIAL", read_text(r["file"]))
+        self.assertIn("Idea for reliability", read_text(r["file"]))
+        self.assertFalse(next(r for r in res["results"] if r["lens"] == "bold bets")["partial"])
+
+    def test_ideas_writes_a_run_manifest_beside_ideas_json(self):
+        import hashlib
+        seen = os.path.join(self.tmp, "old.md")
+        with open(seen, "w") as f:
+            f.write("- An older idea\n")
+        res = json.loads(self.fm("ideas", "--pack", self.pack, "--lens", "reliability", "--seen", seen,
+                                 "--model", "haiku", "--json", env=self.env).stdout)
+        self.assertTrue(os.path.isfile(os.path.join(res["dir"], "ideas.json")))
+        m = json.loads(read_text(os.path.join(res["dir"], "manifest.json")))
+        self.assertEqual(m["pack_sha256"], hashlib.sha256(read_text(self.pack).encode()).hexdigest())
+        self.assertEqual((m["model"], m["lenses"], m["seen"]), ("haiku", ["reliability"], [seen]))
+        self.assertTrue(m["created"].startswith("20"))
+
+    def test_cost_labels_each_cache_bust_ttl_or_context_edit(self):
+        import datetime
+        import re
+        folder = os.path.join(self.tmp, "cfg", "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(self.repo)))
+        os.makedirs(folder)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        rows = ((20, 0, 40000), (19, 40000, 2000), (18, 1000, 45000), (8, 1000, 46000))  # 1 min gap, then 10 min
+        with open(os.path.join(folder, "sess-a.jsonl"), "w") as f:
+            for n, (ago, r, w) in enumerate(rows):
+                ts = (now - datetime.timedelta(minutes=ago)).strftime("%Y-%m-%dT%H:%M:%SZ")
+                f.write(json.dumps({"type": "assistant", "timestamp": ts, "sessionId": "sess-a", "message": {
+                    "id": f"m{n}", "role": "assistant", "content": [], "usage": {
+                        "cache_read_input_tokens": r, "cache_creation_input_tokens": w, "input_tokens": 0,
+                        "output_tokens": 500}}}) + "\n")
+        env = {"CLAUDE_CONFIG_DIR": os.path.join(self.tmp, "cfg")}
+        s = json.loads(self.fm("cost", "--sessions", "--json", env=env).stdout)["sessions"][0]
+        self.assertEqual((s["busts"], s["bust_causes"]), (2, {"context edit": 1, "ttl": 1}))
+        self.assertIn("2 busts (1 context edit, 1 ttl)", self.fm("cost", "--sessions", env=env).stdout)
+
+    def events(self, *rows):
+        with open(os.path.join(c.state_dir(), "events.jsonl"), "a") as f:
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+
+    def test_friction_minutes_estimates_minutes_lost_per_week(self):
+        now, old = c.now(), c.iso(time.time() - 10 * 86400)
+        self.events({"ts": now, "kind": "guard_block", "category": "x"}, {"ts": now, "kind": "guard_block"},
+                    {"ts": old, "kind": "guard_block"}, {"ts": now, "kind": "tool_fail", "tool": "Bash", "ms": 60000},
+                    {"ts": now, "kind": "hook_ms", "ms": 30000}, {"ts": now, "kind": "hook_ms", "ms": 30000})
+        d = json.loads(self.fm("friction", "--minutes", "--json").stdout)
+        self.assertEqual(d["minutes"], 3.5)  # 2 blocks x 30 s + (60 s + 30 s retry) + 60 s of hooks
+        self.assertEqual(d["by_kind"], {"guard blocks": 1.0, "failed tool calls": 1.5, "hook time": 1.0})
+        self.assertIn("3.5 min lost per week", self.fm("friction", "--minutes").stdout)
+
+    def test_burden_by_verb_lists_fm_verbs_never_called(self):
+        self.events({"ts": c.now(), "kind": "tool", "tool": "Bash", "target": "fm queue"})
+        d = json.loads(self.fm("burden", "--by-verb", "--json").stdout)
+        self.assertIn("orders", d["unused"])
+        self.assertNotIn("queue", d["unused"])
+
+    def test_rotated_event_logs_count_too(self):
+        logs = os.path.join(c.state_dir(), "logs")
+        os.makedirs(logs, exist_ok=True)
+        with open(os.path.join(logs, "events-20990101-000000.jsonl"), "w") as f:  # fm tidy rotated it today
+            f.write(json.dumps({"ts": c.now(), "kind": "tool", "tool": "Bash", "target": "fm orders"}) + "\n")
+            f.write(json.dumps({"ts": c.now(), "kind": "guard_block"}) + "\n")
+        self.events({"ts": c.now(), "kind": "guard_block"})
+        self.assertNotIn("orders", json.loads(self.fm("burden", "--by-verb", "--json").stdout)["unused"])
+        self.assertEqual(json.loads(self.fm("friction", "--minutes", "--json").stdout)["by_kind"]["guard blocks"], 1.0)

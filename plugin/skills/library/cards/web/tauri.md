@@ -3,7 +3,7 @@ name: tauri
 title: Tauri
 area: web
 tags: [tauri, desktop, rust, webview, ipc, security]
-detect: [dep:@tauri-apps/api, dep:@tauri-apps/cli, dep:tauri, file:src-tauri/tauri.conf.json]
+detect: [dep:@tauri-apps/api, dep:@tauri-apps/cli, dep:tauri, dep:tauri-build, dep:tauri-plugin-*, dep:@tauri-apps/plugin-*, file:src-tauri/tauri.conf.json]
 related: [rust, playwright, react, vue, svelte]
 ---
 Tauri desktop apps: a Rust core, a system webview frontend, typed commands over IPC, and a capability-based permission model.

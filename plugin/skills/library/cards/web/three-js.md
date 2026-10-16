@@ -3,7 +3,7 @@ name: three-js
 title: Three.js
 area: web
 tags: [threejs, webgl, 3d, graphics, typescript, rendering]
-detect: [dep:three, dep:@react-three/fiber]
+detect: [dep:three, dep:@react-three/fiber, dep:troika-three-text]
 related: [react, playwright, vitest]
 ---
 Three.js scenes: a renderer, scene, camera and an animation loop, with explicit GPU resource disposal.

@@ -31,21 +31,24 @@ TEST_FILE = c.TESTISH  # T-0295: one test-file pattern
 LFS_DRIVER = {"clean": "git-lfs clean -- %f", "smudge": "git-lfs smudge -- %f", "process": "git-lfs filter-process"}
 
 
-def _git(root, *args, timeout=120):
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}  # nothing points it at another repo
+def _safe_git(root, *args, timeout=120):
+    """fmcore's _git (T-0961: the one runner; the CompletedProcess) with the session's configured commands off."""
     # T-0280 review: a replay runs in bypass mode in a worktree that shares the repo's config, so git run after it
     # (grading, judging, cleanup) must not run a command the session configured: no fsmonitor, no hooks — and
     # (T-0290) no filter driver, from any config file (a session may have written one anywhere), whatever
     # .gitattributes names it — but git-lfs, so LFS repos still check out content: its driver is always git-lfs's own
     # fixed commands, never the configured values (T-0299: a prefix check let `git-lfs smudge -- %f; <cmd>` run)
-    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in subprocess.run(
-        ["git", "-C", root, "config", "--get-regexp", r"^filter\."], capture_output=True, text=True, timeout=timeout,
-        env=env).stdout.split("\n")) if m}
+    found = c._git(root, "config", "--get-regexp", r"^filter\.", timeout=timeout, proc=True)
+    if found.returncode not in (0, 1) or found.returncode == 1 and found.stderr.strip():  # git's quiet 1: no filter
+        # configured; anything else (a timeout is 124, an error says why) fails closed
+        return subprocess.CompletedProcess(args, found.returncode or 1, "", "refused: couldn't list git's filter "
+                                           f"drivers to turn them off ({found.stderr.strip()[:200]})")
+    drivers = {m.group(1) for m in (re.match(r"filter\.(.+)\.\w+ ", ln) for ln in found.stdout.split("\n")) if m}
     neutral = [x for d in sorted(drivers - {"lfs"}) for k in ("clean=", "smudge=", "process=", "required=false")
                for x in ("-c", f"filter.{d}.{k}")]
     neutral += [x for k, v in LFS_DRIVER.items() for x in ("-c", f"filter.lfs.{k}={v}")]
-    return subprocess.run(["git", "-C", root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral,
-                           *args], capture_output=True, text=True, timeout=timeout, env=env)
+    return c._git(root, "-c", "core.fsmonitor=", "-c", "core.hooksPath=/dev/null", *neutral, *args, timeout=timeout,
+                  proc=True)
 
 
 @contextlib.contextmanager
@@ -53,16 +56,16 @@ def _worktree(root, rev):
     """A detached worktree of the repo at rev in a temporary folder: (folder, worktree). Always removed."""
     tmp = tempfile.mkdtemp(prefix="fm-bench-")
     wt = os.path.join(tmp, "repo")
-    r = _git(root, "worktree", "add", "--detach", "-q", wt, rev)
+    r = _safe_git(root, "worktree", "add", "--detach", "-q", wt, rev)
     if r.returncode:
         shutil.rmtree(tmp, ignore_errors=True)
         raise OSError(f"git worktree add {rev[:10]}: {r.stderr.strip()[:200]}")
     try:
         yield tmp, wt
     finally:
-        _git(root, "worktree", "remove", "--force", wt)
+        _safe_git(root, "worktree", "remove", "--force", wt)
         shutil.rmtree(tmp, ignore_errors=True)
-        _git(root, "worktree", "prune")
+        _safe_git(root, "worktree", "prune")
 
 
 # Credentials a replay never needs (claude's own login stays): forge, cloud and package-registry tokens.
@@ -95,7 +98,7 @@ def has_guard(plugin):
 
 def _grade(wt, case, env, timeout=900):
     """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored."""
-    r = _git(wt, "checkout", case["commit"], "--", *case["tests"])
+    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"])
     if r.returncode:  # grading without the hidden tests would grade whatever the session left
         return [("restore the hidden tests", r.returncode, r.stderr.strip()[-200:])]
     out = []
@@ -119,10 +122,10 @@ def _prompt(b):
 
 def _commit(p, tid):
     """(sha, parent) of the one commit naming the task, or (None, why not)."""
-    commits = _git(p.root, "log", "--format=%H", "-F", f"--grep=({tid})").stdout.split()
+    commits = _safe_git(p.root, "log", "--format=%H", "-F", f"--grep=({tid})").stdout.split()
     if len(commits) != 1:
         return None, f"{len(commits)} commits name it (one is needed)"
-    base = _git(p.root, "rev-parse", "-q", "--verify", f"{commits[0]}^").stdout.strip()
+    base = _safe_git(p.root, "rev-parse", "-q", "--verify", f"{commits[0]}^").stdout.strip()
     return (commits[0], base) if base else (None, "a root commit")
 
 
@@ -140,7 +143,7 @@ def build(p, ids=None, last=30, judged=False):
             skipped.append(f"{b.id}: {base}")
             continue
         # added or changed files only (a deleted test can't be restored), NUL-separated (no quoted names)
-        files = _git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha).stdout.split("\0")
+        files = _safe_git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha).stdout.split("\0")
         tests = sorted(f for f in files if f and TEST_FILE.search(f))
         verify = [v for _, v in b.verify_cmds() if v]
         prompt = _prompt(b)
@@ -165,14 +168,14 @@ def build_commits(p, rng, verify, last=30):
     """T-0222: (cases, skipped) from a repo's own commits: one that adds or changes test files and source becomes a
     case (prompt: its message; verify: the given command, {tests} → its test files), validated fail-to-pass."""
     cases, skipped = [], []
-    for sha in _git(p.root, "rev-list", "--no-merges", f"--max-count={last}", rng).stdout.split():
+    for sha in _safe_git(p.root, "rev-list", "--no-merges", f"--max-count={last}", rng).stdout.split():
         cid = f"C-{sha[:10]}"
-        base = _git(p.root, "rev-parse", "-q", "--verify", f"{sha}^").stdout.strip()
-        files = [f for f in _git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha)
+        base = _safe_git(p.root, "rev-parse", "-q", "--verify", f"{sha}^").stdout.strip()
+        files = [f for f in _safe_git(p.root, "show", "--name-only", "--diff-filter=AM", "-z", "--format=", sha)
                  .stdout.split("\0") if f]
         tests = sorted(f for f in files if TEST_FILE.search(f))
         src = [f for f in files if not TEST_FILE.search(f) and not DOC_FILE.search(f)]
-        msg = _git(p.root, "log", "-1", "--format=%B", sha).stdout.strip()
+        msg = _safe_git(p.root, "log", "-1", "--format=%B", sha).stdout.strip()
         if not base or not tests or not src:
             skipped.append(f"{cid}: " + ("a root commit" if not base else "no test files" if not tests else "tests only"))
             continue
@@ -240,11 +243,14 @@ def _seed(plugin, wt, env):
         subprocess.run([fm, *args], cwd=wt, env=env, capture_output=True, timeout=60)
 
 
-def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False):
+def _session(wt, env, plugins, prompt, model, budget, timeout, resume=None, keep=False, settings=None):
     """(claude's JSON result, error) for one headless turn with the plugin dirs given; `keep` keeps the session so a
-    later turn can --resume it (T-0243)."""
+    later turn can --resume it (T-0243); `settings`: a --settings JSON (T-0963's bare arm)."""
     c.refuse_if_paused()  # T-0591
-    cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)], "--setting-sources",
+    if not plugins and not settings:
+        raise ValueError("a bypass-mode session needs the guard: a plugin with it, or its hook as --settings")
+    cmd = ["claude", "-p", prompt, *[x for d in plugins for x in ("--plugin-dir", d)],
+           *(["--settings", settings] if settings else []), "--setting-sources",
            "project,local", "--output-format", "json", "--permission-mode", "bypassPermissions",
            "--max-budget-usd", f"{budget:g}"] + ([] if keep else ["--no-session-persistence"]) \
         + (["--resume", resume] if resume else []) + (["--model", model] if model else [])
@@ -280,8 +286,8 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
     left in the worktree against the base) and final reply, against the case's rubric and the user's taste."""
     import fmideas
     import fmsecond
-    _git(wt, "add", "-A")
-    diff = _git(wt, "diff", "--cached", "--no-ext-diff", "--no-textconv", case["base"]).stdout
+    _safe_git(wt, "add", "-A")
+    diff = _safe_git(wt, "diff", "--cached", "--no-ext-diff", "--no-textconv", case["base"]).stdout
     t = fmideas.taste(p, 5)
     fence = lambda s: re.sub(r"</?(?:diff|reply)>", "", s)  # the fences can't be closed from inside
     prompt = "\n".join([f"Task: {case['prompt']}", "", "Rubric:"] + [f"- {r}" for r in case.get("rubric") or []]
@@ -298,15 +304,35 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
     return (int(m.group(1)), reasons, None) if m else (None, reasons, "the judge gave no score")
 
 
-def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=()):
+def _bare_guard(plugin):
+    """T-0963: the plugin's guard alone, as --settings hooks for a session that loads no plugin: bypass mode stays
+    guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Foreman's but the guard."""
+    # T-0963 security review: the plugin's own PreToolUse entries, every matcher and its onFailure kept, the root
+    # resolved, so the bare arm is guarded exactly as a session with the plugin is
+    with open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8") as f:
+        entries = json.load(f)["hooks"]["PreToolUse"]
+    root = shlex.quote(plugin)
+    for e in entries:
+        for h in e.get("hooks") or []:
+            h["command"] = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
+    return json.dumps({"hooks": {"PreToolUse": entries}})
+
+
+def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False):
     t0 = time.monotonic()
     with _worktree(p.root, case["base"]) as (tmp, wt):
         state = os.path.join(tmp, "state")
         env = _env(plugin, state)
-        _seed(plugin, wt, env)
-        prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full autonomy; "
-                  f"finish the work with Foreman, deciding with your defaults.)")
-        res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout)
+        if bare:  # no fm on PATH, no Foreman project, only the guard
+            env.update(FOREMAN_QUIET="1", PATH=os.environ.get("PATH", ""))
+            prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away; finish the work, "
+                      f"deciding with your defaults.)")
+            res, error = _session(wt, env, [], prompt, model, budget, timeout, settings=_bare_guard(plugin))
+        else:
+            _seed(plugin, wt, env)
+            prompt = (f"Task: {case['prompt']}\n\n(Unattended benchmark run: the user is away and granted full "
+                      f"autonomy; finish the work with Foreman, deciding with your defaults.)")
+            res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout)
         score, reasons = None, []
         if case.get("judge"):  # T-0231: no hidden tests; a judge grades the change against the rubric
             graded = []
@@ -324,9 +350,9 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=()):
             **({"score": score, "judge": reasons} if case.get("judge") else {})}
 
 
-def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=()):
+def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extra=(), bare=False):
     """T-0221: a case run `runs` times: pass rate, mean cost, turns and time; the first attempt's details kept."""
-    tries = [run_case(p, case, plugin, model, budget, timeout, extra) for _ in range(max(1, runs))]
+    tries = [run_case(p, case, plugin, model, budget, timeout, extra, bare) for _ in range(max(1, runs))]
     rate = sum(t["pass"] for t in tries) / len(tries)
 
     def mean(k):
@@ -467,10 +493,11 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
             "cost_usd": round(cost, 4), "seconds": round(time.monotonic() - t0), "error": error, "transcript": talk}
 
 
-def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=()):
+def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
+            bare=False):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
     Ctrl-C keeps what was paid for). Refuses a plugin without the guard here, so no caller can skip it (replays run in
-    bypass mode)."""
+    bypass mode). `bare` (T-0963): no plugin loaded, only the plugin's guard as a settings hook."""
     fmbudget.check("bench", fmbudget.estimate("bench", len(cases) * max(1, runs), min(budget, 0.5)),
                    "fewer cases (--max) or --runs")
     if not has_guard(plugin):
@@ -478,13 +505,13 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
                          f"replays run in bypass mode, so they never run without it")
     results = []
     res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results,
-           **({"extra": list(extra)} if extra else {})}
+           **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {})}
     os.makedirs(_results_dir(p), exist_ok=True)
-    _git(p.root, "worktree", "prune")  # a killed earlier run's worktree
+    _safe_git(p.root, "worktree", "prune")  # a killed earlier run's worktree
     for case in cases:
         print(f"bench {label}: {case['id']} …", flush=True) if not quiet else None
         try:
-            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs, extra))
+            results.append(run_case_n(p, case, plugin, model, budget, timeout, runs, extra, bare))
         except (OSError, subprocess.SubprocessError, ValueError) as e:  # one case, not the run's paid results
             results.append({"id": case["id"], "pass": False, "verify": [], "cost_usd": None, "turns": None,
                             "seconds": 0, "error": f"{type(e).__name__}: {c.fit(str(e), 160)}"})
@@ -595,7 +622,7 @@ def stranger(p, plugin, model=None, budget=3.0, timeout=20):
                 f.write(text)
         for args in (["init", "-q"], ["add", "-A"], ["-c", "user.name=t", "-c", "user.email=t@t", "-c",
                                                       "commit.gpgsign=false", "commit", "-qm", "toy"]):
-            _git(repo, *args)
+            _safe_git(repo, *args)
         env = _env(plugin, state)
         res, error = _session(repo, env, [plugin], STRANGER.format(readme=c.fit(readme, 16000)), model, budget, timeout)
         fmbudget.record("bench", res.get("total_cost_usd"), project=p.slug, detail="stranger")
@@ -700,7 +727,23 @@ def _contest(p, args):
                 f"  {'✓' if x['pass'] else '✗'} {x['id']} · score {x.get('score')}/5 · "
                 + next(y["title"] for y in cases if y["id"] == x["id"]) for x in res["cases"]))
             return 0 if all(x["pass"] for x in res["cases"]) else 1
-        if args.bench_cmd == "duel":
+        if args.bench_cmd == "duel" and args.vs == "none":  # T-0963: Foreman against Claude with no plugins
+            if args.plugin:
+                raise fmcli.UsageError("a rival plugin or --vs none, not both")
+            a = run_arm(p, cases, plugin, f"duel-none-foreman-{stamp}", **arm)
+            b = run_arm(p, cases, plugin, f"duel-none-bare-{stamp}", bare=True, **arm)
+            ok, lines = gate(b, a, args.cost_tolerance)  # bare Claude is the reference Foreman has to beat
+            sa, sb = (sum(_rate(x) for x in r["cases"]) for r in (a, b))
+            why = "; ".join(x[2:] for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
+            cost_only = all("cost" in x for x in lines if x.startswith("✗ ") and x != "✗ not proposed")
+            verdict = ("Foreman helps: more passes than Claude with no plugins" if ok and sa > sb else
+                       "no difference on these cases: Claude with no plugins does as well" if ok else
+                       f"Foreman passes more, at a cost: {why}" if sa > sb and cost_only else
+                       f"Foreman hurts here against Claude with no plugins: {why}")
+            data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
+        elif args.bench_cmd == "duel":
+            if not args.plugin:
+                raise fmcli.UsageError("name a rival plugin, or --vs none for Claude with no plugins")
             rival, name = _contender(args.plugin)
             if not rival:
                 raise fmcli.UsageError(f"{args.plugin}: not an installed plugin (its id, or its folder) — a duel runs "
@@ -716,10 +759,10 @@ def _contest(p, args):
                        f"{name} hurts here: {why}")  # the pane shows the verdict without the gate's lines
             data = {"without": a["label"], "with": b["label"], "gate": {"ok": ok, "lines": lines}, "verdict": verdict}
         else:  # versions: the same cases on Foreman at REV (a worktree of its repo) and on this one
-            top = _git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel").stdout.strip()
+            top = _safe_git(c.PLUGIN_ROOT, "rev-parse", "--show-toplevel").stdout.strip()
             source = os.path.abspath(args.source or top)
             sha = "" if args.rev.startswith("-") else \
-                _git(source, "rev-parse", "-q", "--verify", args.rev + "^{commit}").stdout.strip()
+                _safe_git(source, "rev-parse", "-q", "--verify", args.rev + "^{commit}").stdout.strip()
             if not top or not sha:
                 raise fmcli.UsageError(f"{args.rev}: no such revision in {source}")
             old = f"version-{sha[:10]}-{stamp}"
@@ -817,7 +860,7 @@ def cmd_bench(args):
             raise fmcli.UsageError(str(e))
         stamp, by_model = time.strftime("%Y%m%d-%H%M%S"), {}
         os.makedirs(_results_dir(p), exist_ok=True)
-        _git(p.root, "worktree", "prune")
+        _safe_git(p.root, "worktree", "prune")
         for m in models:
             results = []
             for case in cases:

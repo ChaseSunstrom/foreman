@@ -943,6 +943,7 @@ _EXEC_API = re.compile(r"\bsubprocess\b|\bos\.(?:system|popen|exec\w*|spawn\w*)\
 _FM_INTERNALS = re.compile(r"\b(?:import|from)\s+fm[a-z]+\b|(?:__import__|import_module)\s*\(\s*['\"]fm[a-z]+")
 _FM_ENTRY = r"(?:fmcli|fmhooks|fmsetup|fmtidy|fmideas|fmserve|fmplugins)"
 _FM_MUTATORS = re.compile(r"\b(?:save_brief|write_meta|update_meta|write_atomic|log_event|regen_views|init_project|"
+                          r"add_rule|drop_rule|add_veto|drop_veto|"  # T-0971 review: the user's rules and vetoes
                           r"checkpoint|mutate|cmd_\w+|task_\w+|_resolve_approvals|_activate_fallback|"
                           r"restore_default_state)\s*\(|"
                           rf"\bgetattr\s*\(\s*{_FM_ENTRY}\b|"
@@ -1270,20 +1271,25 @@ def _proved_writes(cmd, ctx):
     return list(dict.fromkeys(_resolve(_expand(t, ctx), b) for t in targets for b in bases))
 
 
-_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*'\w+'\s*$")
+_SOURCE_WRITE = re.compile(r"(?:cat\s+>>?\s*|tee\s+(?:-a\s+)?)([\w./~@+-]+)\s*(?:>\s*/dev/null\s*)?<<-?\s*"
+                           r"(?:'\w+'|\"\w+\")\s*$")  # a quoted marker: the body is data, never expanded
+# T-0981: Foreman's code and tests, in the checkout or in a builder worktree's copy of it
+_SOURCE_DIRS = re.compile(r"(?:\.claude/worktrees/[\w.-]+/)?plugin/(?:" + "|".join(_CORE_DIRS) + r"|tests)/")
 
 
 def _writes_unrun_source(line, cmd, ctx):
-    """T-0761: a data heredoc writing one file of Foreman's own code that the command never names again is a source
-    edit (a core path write the user's yes gates), not interpreter code run here. Run or imported by name, it is."""
+    """T-0761: a data heredoc writing one file of Foreman's own code (T-0981: or its tests, or a worktree's copy) that
+    the command never names again is a source edit (a core path write the user's yes gates), not interpreter code run
+    here. Run or imported by name, it is."""
     m = _SOURCE_WRITE.fullmatch(line.strip())
     if not m:
         return False
     path = _resolve(_expand(m.group(1), ctx), ctx.cwd)
     stem = re.escape(os.path.splitext(os.path.basename(path))[0])
     real = os.path.realpath(path)  # a symlink in plugin/lib to a scratch script isn't Foreman's code
-    return any(_strictly_under(real, os.path.realpath(os.path.join(ctx.foreman_home, "plugin", d)))
-               for d in _CORE_DIRS) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
+    home = os.path.realpath(ctx.foreman_home)
+    rel = os.path.relpath(real, home) if _strictly_under(real, home) else ""
+    return bool(_SOURCE_DIRS.match(rel)) and len(re.findall(rf"\b{stem}\b", _drop_data_heredocs(cmd))) == 1
 
 
 def _run_dir(starter, cwd):
@@ -1471,6 +1477,63 @@ def fm_calls(cmd):
         elif re.match(r"^python[0-9.]*$", name) and args[:1] and args[0].endswith("/fm"):
             calls.append(args[1:])
     return calls
+
+
+# T-0974: programs that only read, each with the flags that would make it write, run something or never end. A command
+# passes read_only() only when every part is one of these without those flags.
+_READS = {
+    "ls": (), "cat": (), "head": (), "tail": ("-f", "-F", "--follow"), "wc": (), "pwd": (), "which": (), "file": ("-C", "--compile"),
+    "stat": (), "du": (), "df": (), "tree": ("-o", "-R"), "grep": (), "egrep": (), "fgrep": (),
+    "rg": ("--pre", "--pre-glob", "--hostname-bin", "-z", "--search-zip"),
+    "sort": ("-o", "--output", "--compress-program"), "uniq": (), "cut": (), "nl": (), "diff": (), "cmp": (), "realpath": (),
+    "file": ("-C", "--compile"), "basename": (), "dirname": (), "echo": (), "printf": (), "true": (), "date": ("-s", "--set"), "tr": (),
+    "column": (), "find": ("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
+                                     "-fprintf", "-fls"),
+}
+_GIT_READS = {"status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "describe", "shortlog", "grep"}
+_GIT_BAD = ("-o", "--output", "--ext-diff", "--textconv", "--open-files-in-pager", "-O")
+
+
+def _bad_flag(args, bad):
+    """True when an argument is one of the bad flags: a long option counts when it abbreviates one (GNU and git accept
+    --comp=), a single-dash cluster when it holds a bad short letter anywhere (-uo, -oFILE, -nOcat); a bad flag with a
+    longer single-dash name (find -exec) matches exactly."""
+    for a in args:  # past a '--' too: it ends getopt's options, not find's expression (find -- . -delete)
+        if a == "--":
+            continue
+        if a.startswith("--"):
+            if any(b.startswith("--") and b.startswith(a.partition("=")[0]) for b in bad):
+                return True
+        elif a.startswith("-") and any(a == b or len(b) == 2 and b[1] in a[1:] for b in bad if b[:1] == "-" and b[1:2] != "-"):
+            return True
+    return False
+
+
+def read_only(cmd):
+    """T-0974: True when the whole command only reads: every part a _READS program (or a reading git subcommand)
+    without its writing flags, nothing redirected but to /dev/null, nothing substituted, expanded, backgrounded or
+    assigned.
+    Conservative on purpose: anything it doesn't know gets Claude Code's own dialog."""
+    if not cmd.strip() or any(x in cmd.strip() for x in ("`", "$", "<(", ">(", "\n")):  # review: $VAR can print a secret
+        return False
+    parts = _split(_tokens(cmd))
+    for x in parts:
+        if x.procsub or x.feeds or x.depth or any(r != "/dev/null" for r in x.redirs) or x.op not in ("", ";", "&&", "||", "|"):
+            return False
+        argv = x.argv
+        if not argv or "=" in argv[0] or "/" in argv[0]:
+            return False
+        if argv[0] == "git":
+            sub = argv[1] if len(argv) > 1 else ""
+            if sub not in _GIT_READS or _bad_flag(argv[2:], _GIT_BAD if sub == "grep" else _GIT_BAD[:4]):
+                return False
+            continue
+        bad = _READS.get(argv[0])
+        if bad is None or _bad_flag(argv[1:], bad):
+            return False
+        if argv[0] == "uniq" and len([a for a in argv[1:] if not a.startswith("-")]) > 1:  # uniq IN OUT writes OUT
+            return False
+    return bool(parts)
 
 
 def lone_fm_ask(cmd):
@@ -2257,7 +2320,11 @@ def check_bash(cmd, ctx, depth=0, tails=True):
         computed = bool(re.search(r"[$`]", name))  # `| $GREP pat` is common: any word after it counts as its script
         # ponytail: a bare `$` name inside a substitution reading is the read-to-the-end tail of "$(a) | $(b)" in
         # quotes, not a pipe; a real `| $(echo bash)` nested inside another $( ) slips by (top level is refused)
-        if c.piped and not (name == "$" and depth) and _reads_stdin_code("bash" if computed else name, args, via_xargs, any_word=computed) and not (
+        # T-0982: inside a substitution reading (depth > 0: a "$( )" tail read to the end, odd quotes and all), a
+        # "name" holding a quote or a redirect is debris of the quote-blind fallback split, e.g. awk's program
+        # $1<1200'. The top-level command is still read whole, so a real | python3 there is still refused
+        debris = bool(depth and re.search(r"['\"<>]", name))
+        if c.piped and not debris and not (name == "$" and depth) and _reads_stdin_code("bash" if computed else name, args, via_xargs, any_word=computed) and not (
                 # T-0715: echo 'rm -rf ~' | bash; T-0716: | (sh), | $SH (a computed name may be a shell); a
                 any(_name(x.argv) in _FETCHERS for x in chain) or _FETCH_WORD.search(_mask_quotes(cmd))):  # download
             # piped in is pipe-shell's (below), which the user can grant for an installer
@@ -2317,9 +2384,19 @@ def check_bash(cmd, ctx, depth=0, tails=True):
                 target = plugin_mark(_one_plugin([a for a in rest[1:] if not a.startswith('-')])) \
                     if rest[0] in ("install", "enable") else ""
                 found.append(("plugin", f"fm plugins {rest[0]} changes Claude Code's plugins{target}"))
-            if sub == "pause" and "off" in rest[:2]:  # T-0591: the user's stop is lifted by the user
+            if sub == "posture" and "lite" in rest:  # review: a flag before the word (--json lite) counts too  # T-0963 review: lowering the hooks is the user's call
+                found.append(("self-authorize", "fm posture lite turns Foreman's hooks off but the guard's: the user "
+                                                "decides that (they can type ! fm posture lite)"))
+            if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
                 found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
                                                 "runs unattended, so only they lift it (they can type ! fm pause off)"))
+            if sub == "approve-reads" and "on" in rest:  # T-0974: it answers Claude Code's dialogs for the user
+                found.append(("self-authorize", "fm approve-reads on lets Foreman answer Claude Code's permission "
+                                                "dialogs for reads: the user turns it on (they can type ! fm "
+                                                "approve-reads on)"))
+            if sub == "rule" and "rm" in rest:  # T-0971: a flag before the word counts too; `add rm` is a rare miss
+                found.append(("self-authorize", "fm rule rm is the user's to run: their rule stops what they said to "
+                                                "stop, so only they lift it (they can type ! fm rule rm N)"))
             if sub == "agents" and "uninstall" in rest[:2]:  # T-0340: it takes the guard out of another agent
                 found.append(("core", "fm agents uninstall removes Foreman's guard from another coding agent"))
             if sub == "serve" and _fm_subcommand(rest, takes_value=("--permission-mode",))[0] not in ("status", "stop"):
@@ -2581,6 +2658,20 @@ def _tree_targets(name, args):
             (name in ("cp", "install") and recursive):
         return _write_targets(name, args)
     return []
+
+
+def write_targets(cmd):
+    """T-0971 review: the paths a Bash command writes, as the guard reads them (redirects and the writers it knows),
+    unresolved; [] when it can't be parsed."""
+    out = []
+    try:
+        for x in _split(_tokens(cmd)):
+            if x.argv:
+                stripped, _ = _strip_wrappers(x.argv)
+                out += list(x.redirs) + (_write_targets(os.path.basename(stripped[0]), stripped[1:]) if stripped else [])
+    except Exception:
+        return []
+    return [t for t in out if isinstance(t, str) and t and t != "/dev/null"]
 
 
 def _write_targets(name, args):
@@ -2853,7 +2944,7 @@ def _fm_words(rest):
 
 
 def _fm_stored(sub, rest, fm_args):
-    """T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
+    r"""T-0901: the commands an fm call stores, or runs from a word the hook would otherwise never read: a verify
     (`--ac "x :: CMD"`, `--verify`, `fm task ac … "x :: CMD"`, an Acceptance criteria text's `verify with \`CMD\``,
     an intake `DONE-WHEN: x :: CMD`), `fm task assume --check`, `--same`, `--stack-check`, `fm check add`/`affected`
     ({tests} and {names} read as one word), `fm smoke set cmd`, `fm notify` ($1 read as NOTIFY_PROBE), and the CMD of

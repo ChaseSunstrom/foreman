@@ -8,6 +8,7 @@ import copy
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import time
@@ -196,12 +197,30 @@ def _compact_cmd():
     return os.path.join(c.PLUGIN_ROOT, "hooks", "compact")  # the running plugin's copy, wherever it lives
 
 
+def _compact_mode(h):
+    """"on", "shadow" (T-0963) or None for one hook entry of settings.json."""
+    cmd = h.get("command") if isinstance(h, dict) else None
+    return "on" if cmd == _compact_cmd() else "shadow" if cmd == shlex.quote(_compact_cmd()) + " --shadow" else None
+
+
+def _shadow_total():
+    """T-0963: what shadow mode's records add up to, by command family."""
+    fams = {}
+    for r in c.tail_jsonl(os.path.join(c.state_dir(), "outputs", "shadow.jsonl"), 100000):
+        if not isinstance(r, dict):
+            continue
+        n = r.get("saved_chars") if isinstance(r.get("saved_chars"), int) else 0
+        fams[str(r.get("cmd_family"))] = fams.get(str(r.get("cmd_family")), 0) + n
+    top = sorted(fams.items(), key=lambda kv: -kv[1])[:3]
+    return (f"would have cut {sum(fams.values()):,} characters so far" +
+            (" — " + ", ".join(f"{k} {v:,}" for k, v in top) if top else ""))
+
+
 def _without_compact(settings):
     """settings without Foreman's compact-output hook (and any hooks objects it leaves empty); True when it was there."""
     hooks = settings.get("hooks") if isinstance(settings.get("hooks"), dict) else {}
     groups = hooks.get("PostToolUse") or []
-    keep = [g for g in groups if not any(isinstance(h, dict) and h.get("command") == _compact_cmd()
-                                         for h in (g.get("hooks") or []))]
+    keep = [g for g in groups if not any(_compact_mode(h) for h in (g.get("hooks") or []))]
     if len(keep) == len(groups):
         return False
     if keep:
@@ -218,21 +237,23 @@ def cmd_compact_output(args):
     to the model as head, failure lines and tail with the full text in a file. Off is no hook at all (no cost)."""
     P = paths()
     s = _load(P["settings"], {})
-    on = any(isinstance(h, dict) and h.get("command") == _compact_cmd()
-             for g in ((s.get("hooks") or {}).get("PostToolUse") or []) for h in (g.get("hooks") or []))
+    mode = next((m for g in ((s.get("hooks") or {}).get("PostToolUse") or []) for h in (g.get("hooks") or [])
+                 for m in [_compact_mode(h)] if m), None) or "off"
     if args.state in (None, "status"):
-        print(f"compact output: {'on' if on else 'off'}" + (" (new sessions shorten Bash outputs over 6,000 characters)"
-                                                            if on else " (fm compact-output on to shorten big outputs)"))
+        print(f"compact output: {mode}" + {
+            "on": " (new sessions shorten Bash outputs over 6,000 characters)",
+            "shadow": " (outputs pass untouched; " + _shadow_total() + ")",
+            "off": " (fm compact-output on to shorten big outputs, shadow to measure first)"}[mode])
         return 0
-    if (args.state == "on") == on:
+    if args.state == mode:
         print(f"compact output: already {args.state}")
         return 0
     _backup(P)
-    if args.state == "on":
+    _without_compact(s)  # one mode at a time
+    if args.state != "off":
+        cmd = _compact_cmd() if args.state == "on" else shlex.quote(_compact_cmd()) + " --shadow"
         s.setdefault("hooks", {}).setdefault("PostToolUse", []).append(
-            {"matcher": "Bash", "hooks": [{"type": "command", "command": _compact_cmd(), "timeout": 10}]})
-    else:
-        _without_compact(s)
+            {"matcher": "Bash", "hooks": [{"type": "command", "command": cmd, "timeout": 10}]})
     c.write_atomic(P["settings"], json.dumps(s, indent=2) + "\n")
     print(f"compact output: {args.state} in {P['settings']} (backup in {P['backups']}); new sessions pick it up")
     return 0

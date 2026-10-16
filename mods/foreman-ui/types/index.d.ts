@@ -77,8 +77,11 @@ export type FmView = {
   latency?: number[] // the latest hook run times (ms), oldest first
   checks?: FmChecks | null // the last fm check run
   today_done?: number // tasks closed as done today
+  blocked_total?: number // T-1026: tasks blocked, for the work bar
   done_days?: number[] // T-0909: tasks closed per day, the last 14 days, today last
   brainstorm?: FmBrainstorm | null // the newest brainstorm (T-0124)
+  worktrees?: FmWorktree[] | null // T-1023: git worktrees beside the main checkout
+  history?: FmHistory[] | null // T-1026: what happened, structured, newest last
   budget?: FmBudget | null // T-0228: today's spend on child runs and subagents
   bench?: FmBench | null // T-0228: bench cases, the newest run, evolve generations
   research?: FmResearchAsk[] // T-0228: the newest fm research ask notes
@@ -89,7 +92,11 @@ export type FmView = {
   resume_after_reload?: { session: string; at: string; task?: string } | null
   typical?: Record<string, number> // median minutes focus → done per "TYPE/TIER" (3+ closed tasks)
 }
+export type FmHistory = { time: string; mark: string; task: string | null; text: string; title: string | null } // T-1026
 // A brainstorm while fm ideas runs (answers in of expected) or after (count, the first ideas).
+// T-1023: a git worktree: its branch, the task whose lane it is, the subagent it was made for (worktree-agent-<id>), its
+// age and the commits it holds that HEAD doesn't
+export type FmWorktree = { path: string; branch: string; task: string | null; agent: string | null; age_s: number | null; ahead: number | null }
 export type FmBrainstorm = { name: string; running: boolean; answers: number; expected?: number; count: number; ideas: string[]; age_h?: number; grounded?: boolean }
 export type FmCheck = { cmd: string; exit: number; s: number; note?: string | null }
 export type FmChecks = { at: string; results: FmCheck[] }
@@ -105,6 +112,7 @@ export type LiveAgent = {
   tools: number
   last: string
   done: boolean
+  calls?: number[] // T-1023: when each of its tool calls ran, for the Agents graph
 }
 // A background shell Claude started (or ctrl+b moved there), until its notification or a stop.
 export type LiveShell = { id: string; command: string; startedAt: number }
@@ -128,7 +136,7 @@ declare module 'claude-code' {
       shells: LiveShell[]
       away: string[]
       resumed: string | null // the resume record (its `at`) this session already acted on
-      folded: string[] // T-0914: the quieter cards folded to their head line
+      reviewing: string | null // T-0989: the waiting plan shown in the Task section, by id
     }
   }
 }

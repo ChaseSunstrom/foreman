@@ -372,7 +372,17 @@ def _batch(p, head, skip, n):
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
     return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
-                                              else []) + (["--model", model] if model else [])
+                                              else []) + (["--model", model] if model else []) + (
+        ["--settings", json.dumps({"sandbox": _sandbox(p)})] if getattr(args, "sandbox", False) else [])
+
+
+def _sandbox(p):
+    """T-0975: Claude Code's own sandbox for a headless session: Bash writes only its checkout plus what fm needs (its
+    state; the git dir, where a lane's commits land), and no unsandboxed fallback, so a host without bubblewrap fails
+    the session instead of running it open."""
+    git_dir = c._git(p.root, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    return {"enabled": True, "failIfUnavailable": True, "allowUnsandboxedCommands": False,
+            "filesystem": {"allowWrite": [c.state_dir()] + ([git_dir] if git_dir else [])}}
 
 
 def _run_lanes(p, batch, args, models, log):
@@ -618,8 +628,24 @@ def cmd_notify(args):
     fmcli.out(args, {"notify": cmd}, f"fm run notifies with: {cmd}" if cmd else "No notify command: fm notify '<cmd>'")
 
 
+def _inhibit():
+    """T-0955: re-exec fm run under systemd-inhibit so the machine doesn't sleep mid-run, once (the env guard). A host
+    whose logind can't answer --list runs uninhibited rather than not at all."""
+    if os.environ.get("FOREMAN_INHIBITED") or not shutil.which("systemd-inhibit"):
+        return
+    try:
+        if subprocess.run(["systemd-inhibit", "--list", "--no-pager"], capture_output=True, timeout=10).returncode:
+            return
+    except (OSError, subprocess.TimeoutExpired):
+        return
+    os.execvpe("systemd-inhibit", ["systemd-inhibit", "--what=sleep:idle", "--who=Foreman", "--why=fm run",
+                                   sys.executable, os.path.abspath(sys.argv[0]), *sys.argv[1:]],
+               dict(os.environ, FOREMAN_INHIBITED="1"))
+
+
 def cmd_run(args):
     import fmcli
+    _inhibit()
     p = fmcli.resolve(args)
     if c.read_meta(p).get("serve"):
         raise c.PolicyError(f"fm serve is running Remote Control for {p.slug}; a second writer would collide. Send "
@@ -634,7 +660,17 @@ def cmd_run(args):
     if os.path.exists(log) and os.path.getsize(log) > RUN_LOG_MAX:
         os.replace(log, log + ".1")
 
-    def fail(msg):
+    def block(tid, msg):  # T-0955: blocked with the reason, so the next fm run takes the next task instead; fm task
+        try:  # block itself, so the pause snapshot and the eval case (T-0734) come with it
+            r = _fm(p.root, "task", "block", tid, f"fm run: {msg}", timeout=120)
+            if r.returncode:
+                print(f"fm run: couldn't block {tid}: {(r.stderr or r.stdout).strip()[-200:]}", file=sys.stderr)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"fm run: couldn't block {tid}: {e}", file=sys.stderr)
+
+    def fail(msg, quarantine=None):
+        if quarantine:
+            block(quarantine, msg)
         print(f"fm run: {msg} (log: {log})", file=sys.stderr)
         _notify(p, f"fm run stopped: {msg}")
         sys.exit(1)
@@ -678,8 +714,12 @@ def cmd_run(args):
                     fails += not hit  # a usage limit is waited out, never a failure
                     skip.add(tid)  # not this run again; an empty lane frees the task for the next
                     freed = not _lane_has_work(p, path) and _fm(p.root, "lane", "rm", tid).returncode == 0
+                    stuck = freed and not hit and after.status not in ("blocked", "dropped", "deferred")
                     print(f"{tid} not finished in its lane ({after.status}, exit {code}); "
-                          + ("lane removed, back in the queue" if freed else f"lane kept with its work: {path}"), flush=True)
+                          + ("no progress: blocked" if stuck else "lane removed, back in the queue" if freed
+                             else f"lane kept with its work: {path}"), flush=True)
+                    if stuck:  # T-0968: an empty lane is no progress, quarantined as a single session's is
+                        block(tid, f"no progress in its lane (exit {code})")
             if fails >= FAILS_MAX:
                 fail(f"{fails} sessions in a row ended unfinished; stopping")
             if limited:
@@ -745,11 +785,11 @@ def cmd_run(args):
             print(f"{b.id} {after.status}{how}")
             _notify(p, f"{b.id} {after.status}: {b.title[:80]}")
         elif _fingerprint(after) == before:
-            fail(f"{b.id}: no progress in a fresh session; stopping")
+            fail(f"{b.id}: no progress in a fresh session; stopping", quarantine=b.id)
         else:
             sessions[b.id] = sessions.get(b.id, 0) + 1
             if sessions[b.id] >= SESSIONS_PER_TASK:
-                fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping")
+                fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping", quarantine=b.id)
     _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
           + ("; the queue has nothing else runnable" if finished < args.max else f"; stopped at --max {args.max}"))

@@ -8,6 +8,7 @@ import json
 import os
 import re
 import sys
+import time
 
 LIMIT, HEAD, TAIL, HITS, WIDE = 6000, 40, 60, 40, 400
 SAVE_MAX = 2_000_000  # T-0824: characters of full text kept per output (head and tail): a runaway can't fill the disk
@@ -47,6 +48,21 @@ def compact(text, path):
     return "\n".join(cut)
 
 
+def shadow(pl, out, err, folder):
+    """Append {ts, cmd_family, saved_chars} to outputs/shadow.jsonl and print nothing: the output passes untouched."""
+    cut = sum(len(t) - len(n) for t, n in ((out, compact(out, "PATH")), (err, compact(err, "PATH"))) if n is not None)
+    words = [w for w in str((pl.get("tool_input") or {}).get("command") or "").split() if not re.match(r"^\w+=", w)]
+    rec = {"ts": int(time.time()), "cmd_family": os.path.basename(words[0])[:40] if words else "?",
+           "saved_chars": max(cut, 0)}
+    try:
+        os.makedirs(folder, mode=0o700, exist_ok=True)
+        with open(os.path.join(folder, "shadow.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec) + "\n")
+    except OSError:
+        pass
+    return 0
+
+
 def main():
     try:
         pl = json.loads(sys.stdin.read() or "{}")
@@ -63,6 +79,8 @@ def main():
     # isn't mirrored (that case passes through below); import its logic if sandboxed sessions need compacting
     state = os.path.abspath(os.path.expanduser(os.environ["FOREMAN_STATE"])) if os.environ.get("FOREMAN_STATE") \
         else os.path.join(home, "state")
+    if "--shadow" in sys.argv[1:]:  # T-0963: fm compact-output shadow: what it would cut, never a rewrite
+        return shadow(pl, out, err, os.path.join(state, "outputs"))
     sid = re.sub(r"[^\w-]", "", str(pl.get("session_id") or "session"))[:100] or "session"
     folder = os.path.join(state, "outputs", sid)
     full = out + (("\n[stderr]\n" + err) if err else "")

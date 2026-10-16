@@ -1,5 +1,6 @@
 """Hook handler tests: run plugin/hooks/hook <Event> with JSON payloads against an isolated FOREMAN_HOME."""
 import datetime
+import glob
 import json
 import os
 import time
@@ -74,6 +75,14 @@ class SessionStart(HookCase):
         self.assertIsNone(first(other), "another session was here minutes ago: two drivers on one task")
         self.fm("drive", "off")
         self.assertIsNone(first(self.run_ss("resume")))
+
+    def test_the_env_file_gets_the_exports_once(self):
+        # T-0988: every start and compaction appended them again; each Bash call's prelude ran them 8 times
+        self.fm("init")
+        for source in ("startup", "compact", "compact"):
+            self.run_ss(source)
+        with open(self.env_file) as f:
+            self.assertEqual(f.read().count("export FOREMAN_PROJECT="), 1)
 
     def test_a_state_fallback_in_use_is_named(self):
         self.fm("init")
@@ -967,6 +976,9 @@ class PreToolUse(HookCase):
             with self.subTest(cmd=ok["command"]):
                 self.assertEqual(self.pre("Bash", ok).returncode, 0)
         self.assertEqual(self.pre("Bash", {"command": "while true; do curl -s x; sleep 30; done"}).returncode, 2)
+        # T-0987 (a Haiku session held itself 9 minutes this way): a for-loop poll is the same wait
+        poll = 'for i in $(seq 1 110); do grep -q "^EXIT" f.log && break; sleep 5; done; tail f.log'
+        self.assertEqual(self.pre("Bash", {"command": poll}).returncode, 2)
 
     def test_every_refusal_names_its_fix(self):
         # T-0440: a refusal that names no allowed form costs a guess; every category names the next action
@@ -1189,7 +1201,7 @@ class PreToolUse(HookCase):
         again = self.pre("Edit", {"file_path": path, "old_string": "a", "new_string": "b"})
         self.assertEqual(self.ctx_of(again), "")
         inside = os.path.join(self.repo, "src", "auth", "login.py")
-        self.assertEqual(self.ctx_of(self.pre("Write", {"file_path": inside, "content": "x"})), "")
+        self.assertNotIn("scope", self.ctx_of(self.pre("Write", {"file_path": inside, "content": "x"})))
 
 
 class PostToolUse(HookCase):
@@ -1495,6 +1507,30 @@ class Stop(HookCase):
         self.fm("autonomy", "standard")
         self.assertNotIn("PushNotification", (parse(self.stop("Waiting.", session="sess-2")) or {}).get("reason", ""))
 
+    def test_a_oneoff_session_leaves_the_task_untouched_through_every_hook(self):
+        # T-1007 (after T-1004): a one-off's Bash run closed the working session's step; no hook of a one-off may write
+        # the task's brief or attribute its edits to the task
+        self.fm("init")
+        tid = self.task()
+        briefs = lambda: {f: open(f, "rb").read() for f in glob.glob(os.path.join(self.project().dir, "tasks", "*.md"))}  # noqa: E731
+        before = briefs()
+        oneoff = {"FOREMAN_ONEOFF": "1", "CLAUDE_ENV_FILE": self.env_file}
+        path = os.path.join(self.repo, "app.py")
+        ok = {"stdout": "1 passed", "stderr": "", "interrupted": False}
+        for event, payload in (
+                ("SessionStart", {"source": "startup"}),
+                ("UserPromptSubmit", {"prompt": "fix the login timeout"}),
+                ("PreToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest"}}),
+                ("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "pytest"}, "tool_response": ok}),
+                ("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x = 1\n"}}),
+                ("PostToolUse", {"tool_name": "Write", "tool_input": {"file_path": path, "content": "x = 1\n"},
+                                 "tool_response": {"filePath": path}}),
+                ("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})):
+            self.hook(event, dict(payload, session_id="sess-oneoff"), env=oneoff)
+        self.assertEqual(briefs(), before)
+        touched = [e for e in c.ledger_tail(self.project(), 200) if e.get("event") == "touched" and e.get("task") == tid]
+        self.assertEqual(touched, [], "a one-off's edits aren't the task's files")
+
     def test_a_oneoff_headless_session_never_drives(self):
         # T-0775: an ad-hoc claude -p got the queue in its context and the drive's push, focused a queued task and
         # edited the main checkout until it timed out; only fm run's sessions (FOREMAN_DRIVE_TASK) work the queue
@@ -1517,6 +1553,12 @@ class Stop(HookCase):
         p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Step done.",
                                "session_id": "sess-1"}, env={"FOREMAN_DRIVE_TASK": tid})
         self.assertEqual(self.decision(p), "block", "fm run's session still drives its task")
+        # T-0995: an interactive session marked one-off (the UI harness) is the same: it planned three tasks and took
+        # the working session's focus when the drive pushed it after its one prompt
+        harness = {"FOREMAN_ONEOFF": "1", "CLAUDE_ENV_FILE": self.env_file}
+        self.assertIn("one-off", self.ctx_of(self.hook("SessionStart", {"source": "startup"}, env=harness)))
+        p = self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "ok", "session_id": "sess-9"}, env=harness)
+        self.assertIsNone(self.decision(p))
         # T-0820: a bench replay's claude -p measures Foreman at work, not a one-off answer
         import fmbench
         bench = dict(fmbench._env(c.PLUGIN_ROOT, os.path.join(self.home, "state")), CLAUDE_CODE_ENTRYPOINT="sdk-cli",

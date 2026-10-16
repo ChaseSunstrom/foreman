@@ -133,7 +133,7 @@ class Session(_Stubbed):
 
     def test_a_failed_review_is_recorded_and_claims_the_day(self):
         self.transcript("old-session", ["export the report as CSV please"])
-        p = self.fm("second", "session", "--if-due", env=dict(self.env, PATH="/nonexistent"), check=False)
+        p = self.fm("second", "session", "--if-due", env=dict(self.env, PATH="/nonexistent", HOME=self.tmp), check=False)
         self.assertNotEqual(p.returncode, 0)
         import fmcore as c
         proj = c.find_project(self.repo)

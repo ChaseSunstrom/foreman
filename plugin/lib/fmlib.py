@@ -1,8 +1,10 @@
 """fm lib (T-0933): the stack library. Short, checkable cards per language, framework, service, tool and practice
 (skills/library/cards/<area>/<name>.md) that cost no context until read. They are found from a repo's own manifests,
 files and extensions, and searched together with installed plugins' skills. Stdlib only; run by fm commands and
-fm map; the write hook imports it only for lint_card on a card it just wrote (T-0947)."""
+fm map; the write hook imports it for lint_card on a card it just wrote (T-0947), the edit hook for the card that
+matches a file (card_for, from map.json alone, and the one card's Avoid section: T-0949)."""
 import collections
+import datetime
 import fnmatch
 import glob
 import json
@@ -76,6 +78,55 @@ def cards(root=CARDS):
             out.append(dict(meta, path=path, dir=os.path.basename(os.path.dirname(path)),
                             stem=os.path.splitext(os.path.basename(path))[0]))
     return out
+
+
+# T-0977: card names that are everyday words too ("make it work", "go ahead"): never matched in a prompt
+_COMMON = {"act", "ada", "apex", "bloc", "boost", "bun", "c", "chi", "chroma", "cobra", "commander", "crystal", "d",
+           "dart", "echo", "ent", "envoy", "expo", "express", "flux", "gin", "go", "ink", "just", "lightning", "lit",
+           "make", "nom", "perf", "polly", "prefect", "r", "railway", "ray", "render", "room", "rr", "sharp", "solid",
+           "spark", "swift", "tilt", "vault", "viper", "whisper", "yolo", "wat", "neon", "mise", "search", "forms",
+           "sessions", "money", "inventory", "bookings", "dialogs", "toasts", "animation", "configuration", "spikes"}
+
+
+def _names_path():
+    return os.path.join(c.state_dir(), "lib-names.json")
+
+
+def _name_index():
+    """{phrase: card} for whole-word matching in a prompt, cached by the card count so a prompt never parses the
+    1,078 cards (hyphenated names also match with spaces: react-hook-form, "react hook form")."""
+    stamp = sum(len(os.listdir(os.path.join(CARDS, d))) for d in os.listdir(CARDS)) if os.path.isdir(CARDS) else 0
+    try:
+        with open(_names_path(), encoding="utf-8") as f:
+            got = json.load(f)
+        if got.get("stamp") == stamp:
+            return got["names"]
+    except (OSError, ValueError, AttributeError, KeyError):
+        pass
+    names = {}
+    for x in cards():
+        if x["name"] not in _COMMON and len(x["name"]) > 2:
+            names[x["name"]] = x["name"]
+            names[x["name"].replace("-", " ")] = x["name"]
+    try:
+        c.write_atomic(_names_path(), json.dumps({"stamp": stamp, "names": names}))
+    except OSError:
+        pass
+    return names
+
+
+def cards_named(text, n=3):
+    """T-0977: the cards a request names outright, in the order it names them, at most n. One alternation, longest
+    phrase first, so react-hook-form wins over react at the same place."""
+    names = _name_index()
+    if not names:
+        return []
+    pat = re.compile(r"(?<![\w.-])(" + "|".join(map(re.escape, sorted(names, key=len, reverse=True))) + r")(?![\w-])")
+    out = []
+    for m in pat.finditer((text or "").lower()):
+        if names[m.group(1)] not in out:
+            out.append(names[m.group(1)])
+    return out[:n]
 
 
 def lint(root=CARDS):
@@ -209,6 +260,8 @@ def _deps_of(path):
         out = []  # line by line, no backtracking regex: a committed go.mod of one 400 KB line once hung fm map
         for line in text.splitlines():
             parts = line.split()
+            if parts[-2:] == ["//", "indirect"]:  # T-1021: a dependency's dependency, not the project's
+                continue
             if 2 <= len(parts) <= 4 and len(line) < 500:
                 mod = parts[1] if parts[0] == "require" and len(parts) >= 3 else parts[0]
                 if "/" in mod and "." in mod.split("/")[0]:
@@ -322,7 +375,7 @@ def suggest(root, files=None, n=None):
         score, why, specific = match(x, sig, lang_ext)
         if score and specific:
             rows.append({"name": x["name"], "area": x["area"], "score": score, "why": why, "summary": x["summary"],
-                         "focus": score / len(x["detect"])})  # a card about this one thing beats one listing ten
+                         "focus": score / len(x["detect"]), "detect": x["detect"]})  # a card about this one thing beats one listing ten
     rows.sort(key=lambda r: (-r["score"], -r["focus"], r["name"]))
     return rows[:n] if n else rows
 
@@ -549,9 +602,178 @@ def search(query, n=15):
     return rows[:n]
 
 
-def names_for_map(root, files):
-    """The top cards for fm map's session line."""
-    return [r["name"] for r in suggest(root, files, n=8)]
+def for_map(root, files):
+    """The top cards for fm map: the session line's names, and for the edit-time card (T-0949) each one's area, score
+    and file/ext signals, so the hook matches a path from map.json alone. A non-language card's ext signal that a
+    language card also has is kept as lext:, so the edit hook ranks it after that language's card. T-0980: the repo's
+    language cards (up to 3) are kept past the top 8, or a repo whose top cards are tools never gets its language's."""
+    lang_ext = {s for x in cards() if x["area"] == "lang" for s in x.get("detect") or [] if s.startswith("ext:")}
+    rows = suggest(root, files, n=80)
+    # T-1036: and every detected card known by a dependency, with its dep: signals, so an edit of a file that imports
+    # it gets that card (only language cards had ever fired: dep: signals never reached the map)
+    keep = rows[:8] + [r for r in rows[8:] if r["area"] == "lang"][:3] + \
+        [r for r in rows[8:] if r["area"] != "lang" and any(s.startswith("dep:") for s in r["detect"])][:40]
+    return [{"name": r["name"], "area": r["area"], "score": r["score"],
+             "detect": ["l" + s if s in lang_ext and r["area"] != "lang" else s for s in r["detect"]
+                        if s.startswith(("file:", "ext:", "dep:"))]}
+            for r in keep]
+
+
+_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+AVOID_MAX = 700
+
+
+def card_for(p, path):
+    """T-0949: the map's best card for a file being edited, or None: a card whose file or ext signal matches it; a
+    framework card matched by its own signal first, then the language card, then a card that only shares the
+    language's ext (lext:); within each, the higher score, then the name. Reads map.json only; anything malformed in
+    it matches nothing."""
+    rel = os.path.relpath(path, p.root).replace(os.sep, "/")
+    if rel.startswith("../"):
+        return None
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return None
+    rows = m.get("lib_cards") if isinstance(m, dict) else None
+    base, ext = os.path.basename(rel), os.path.splitext(rel)[1].lower()
+
+    def hit(s):
+        kind, _, val = s.partition(":") if isinstance(s, str) else ("", "", "")
+        return (kind in ("ext", "lext") and ext and ext == val.lower()) or \
+            (kind == "file" and fnmatch.fnmatchcase(rel if "/" in val else base, val))
+    found = [x for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str) and _NAME.fullmatch(x["name"])
+             and isinstance(x.get("detect"), list) and any(hit(s) for s in x["detect"])] if isinstance(rows, list) else []
+    score = lambda x: x["score"] if isinstance(x.get("score"), (int, float)) else 0
+    own = lambda x: any(hit(s) for s in x["detect"] if not str(s).startswith("lext:"))
+    found.sort(key=lambda x: (1 if x.get("area") == "lang" else 0 if own(x) else 2, -score(x), x["name"]))
+    return found[0]["name"] if found else None
+
+
+# T-1036: what a file imports, by language family: Python modules, JS/TS packages, Rust crates, Go import paths
+_PY_FROM = re.compile(r"(?m)^[ \t]*from[ \t]+([A-Za-z_][\w.]*)[ \t]+import\b")
+_PY_IMPORT = re.compile(r"(?m)^[ \t]*import[ \t]+([A-Za-z_][\w.]*(?:[ \t]*,[ \t]*[A-Za-z_][\w.]*)*)")
+_JS = re.compile(r"""(?:\bfrom|\bimport|\brequire\(|\bimport\()[ \t]*['"]([^'"\s]+)['"]""")
+_RS = re.compile(r"(?m)^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:use|extern[ \t]+crate)[ \t]+([A-Za-z_]\w*)")
+_GO = re.compile(r"""(?ms)^import[ \t]*(?:\(([^)]*)\)|"([^"]+)")""")
+_FAMILY = {".py": "py", ".pyi": "py", ".js": "js", ".jsx": "js", ".mjs": "js", ".cjs": "js", ".ts": "js", ".tsx": "js",
+           ".mts": "js", ".cts": "js", ".svelte": "js", ".vue": "js", ".astro": "js", ".rs": "rs", ".go": "go"}
+_PY_ALIAS = {"yaml": "pyyaml", "sklearn": "scikit-learn", "bs4": "beautifulsoup4", "pil": "pillow", "cv2": "opencv-python",
+             "dateutil": "python-dateutil", "jwt": "pyjwt", "attr": "attrs", "dotenv": "python-dotenv", "magic": "python-magic",
+             "serial": "pyserial", "usb": "pyusb", "zmq": "pyzmq", "multipart": "python-multipart"}
+HEAD_BYTES = 65536  # an import is near the top; a big or generated file is never read past this
+
+
+def imports_of(path, text=""):
+    """(family, modules) a file imports, from its first 64 KB on disk plus `text` (an edit's new text, a write's
+    content): normalised as each ecosystem names its dependencies; relative imports and the standard library left out."""
+    fam = _FAMILY.get(os.path.splitext(path)[1].lower())
+    if not fam:
+        return None, set()
+    head = ""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(HEAD_BYTES).decode("utf-8", "replace")
+    except OSError:
+        pass
+    src = head + "\n" + (text or "")[:HEAD_BYTES]
+    mods = set()
+    if fam == "py":
+        for m in _PY_FROM.findall(src):
+            mods.add(m.split(".")[0].lower())
+        for group in _PY_IMPORT.findall(src):
+            mods.update(x.strip().split(".")[0].split()[0].lower() for x in group.split(",") if x.strip())
+    elif fam == "js":
+        for m in _JS.findall(src):
+            m = m[5:] if m.startswith("node:") else m
+            if m.startswith((".", "/")) or not m:
+                continue
+            parts = m.split("/")
+            mods.add(("/".join(parts[:2]) if m.startswith("@") else parts[0]).lower())
+    elif fam == "rs":
+        mods.update(m.lower() for m in _RS.findall(src) if m not in ("crate", "self", "super", "std", "core", "alloc"))
+    else:
+        for block, one in _GO.findall(src):
+            mods.update(m.lower() for m in (re.findall(r'"([^"]+)"', block) if block else [one]))
+    return fam, mods
+
+
+def _dep_hit(sig, fam, mods):
+    """Whether a card's dep: signal names something the file imports; a * in it is a glob, as detection reads it."""
+    if not (isinstance(sig, str) and sig.startswith("dep:")) or not mods:
+        return False
+    dep = sig[4:].strip().lower()
+    same = (lambda m, d: fnmatch.fnmatchcase(m, d)) if "*" in dep else (lambda m, d: m == d)
+    if fam == "py":
+        return any(same(_norm(m), _norm(dep)) or same(_norm(_PY_ALIAS.get(m, "")), _norm(dep)) for m in mods)
+    if fam == "rs":
+        return any(same(m, dep.replace("-", "_")) for m in mods)
+    if fam == "go":
+        return any(same(m, dep) or m.startswith(dep.rstrip("*") + "/") for m in mods)
+    return any(same(m, dep) for m in mods)
+
+
+def cards_for(p, path, text=""):
+    """T-1036: the cards for a file being edited, best first: the map's cards for what it imports (the higher score,
+    then the name), then the card its extension or name picks (card_for). The hook drops the ones this task already
+    had and injects at most two of the rest, so a card left out now comes with the next edit. Nothing for a file
+    outside the project."""
+    if os.path.relpath(path, p.root).replace(os.sep, "/").startswith("../"):
+        return []
+    try:
+        with open(os.path.join(p.dir, "map.json"), encoding="utf-8") as f:
+            m = json.load(f)
+    except (OSError, ValueError):
+        return []
+    rows = m.get("lib_cards") if isinstance(m, dict) else None
+    rows = [x for x in rows if isinstance(x, dict) and isinstance(x.get("name"), str) and _NAME.fullmatch(x["name"])
+            and isinstance(x.get("detect"), list)] if isinstance(rows, list) else []
+    fam, mods = imports_of(path, text)
+    score = lambda x: x["score"] if isinstance(x.get("score"), (int, float)) else 0
+    out = [x["name"] for x in sorted((x for x in rows if any(_dep_hit(s, fam, mods) for s in x["detect"])),
+                                     key=lambda x: (-score(x), x["name"]))]
+    best = card_for(p, path)
+    if best and best not in out:
+        out.append(best)
+    return out
+
+
+def card_review(name):
+    """T-1036: a card's Review checklist, for the audit brief of a task that used the card; None without one."""
+    paths = glob.glob(os.path.join(CARDS, "*", name + ".md")) if _NAME.fullmatch(name) else []
+    if not paths:
+        return None
+    with open(paths[0], encoding="utf-8") as f:
+        m = re.search(r"(?ms)^## Review\n(.*?)(?=^## |\Z)", f.read())
+    return m.group(1).strip() if m and m.group(1).strip() else None
+
+
+def card_avoid(name):
+    """T-0949: the edit-time note for one card (its Avoid section), or None when there is no such card or section."""
+    paths = glob.glob(os.path.join(CARDS, "*", name + ".md")) if _NAME.fullmatch(name) else []
+    if not paths:
+        return None
+    with open(paths[0], encoding="utf-8") as f:
+        return avoid_note(name, f.read())
+
+
+def avoid_note(name, text, limit=AVOID_MAX):
+    """A card's Avoid bullets under a one-line head, at most limit chars: cut after the last whole bullet that fits,
+    with '…'; None without an Avoid section or when not even one bullet fits."""
+    m = re.search(r"(?ms)^## Avoid\n(.*?)(?=^## |\Z)", text)
+    items = [b.strip() for b in re.split(r"\n(?=- )", m.group(1).strip())] if m and m.group(1).strip() else []
+    if not items:
+        return None
+    out = f"Foreman: stack card {name}, what to avoid in this edit (fm lib show {name} for the rest):"
+    full = out + "".join("\n" + b for b in items)
+    if len(full) <= limit:
+        return full
+    for b in items:
+        if len(out) + len(b) + 3 > limit:  # the bullet's newline, then "\n…"
+            break
+        out += "\n" + b
+    return out + "\n…" if "\n" in out else None
 
 
 def sections(text, wanted=None):
@@ -587,6 +809,35 @@ def cmd_lib(args):
     words = " ".join(args.words or [])
     if args.action == "source":
         return cmd_source(args)
+    if args.action == "stats":  # T-1036: which cards reach Claude, from the ledger's card_injected events
+        p = c.find_project(os.getcwd(), create=False) if not getattr(args, "project", None) else fmcli.resolve(args)
+        counts, last = {}, {}
+        days = getattr(args, "days", None)  # T-1035: the README demo's change
+        since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ") if days is not None else ""
+        for e in c.ledger_tail(p, 20000) if p else []:
+            d = e.get("data") or {}
+            if str(e.get("ts") or "") < since:  # ts is ISO UTC, so the strings compare in time order
+                continue
+            if e.get("event") == "enforce" and d.get("kind") == "card_injected" and isinstance(d.get("card"), str):
+                counts[d["card"]] = counts.get(d["card"], 0) + 1
+                last[d["card"]] = e.get("ts")
+        rows = [{"card": k, "injected": n, "last": last[k]} for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))]
+        if getattr(args, "json", False):
+            return fmcli.out(args, rows, None)
+        if not rows:
+            return print("No card has reached Claude here yet (the first edit of a file a card covers, or that imports "
+                         "what a card covers, gets its Avoid section).")
+        return print("\n".join(f"{r['injected']:>4}  {r['card']}" for r in rows) + f"\n{len(rows)} card(s) used of "
+                     f"{len(cards())} in the library.")
+    if args.action == "inject":  # T-0949: the edit-time card, on unless turned off here
+        if words not in ("", "on", "off"):
+            raise fmcli.UsageError("fm lib inject takes on or off")
+        p = fmcli.resolve(args) if words else c.find_project(os.getcwd(), create=False)  # a status never creates one
+        on = c.update_meta(p, lib_inject=words == "on").get("lib_inject") if words else \
+            not p or c.read_meta(p).get("lib_inject") is not False
+        return print(f"Edit-time stack cards: {'on' if on else 'off'} (the first edit of a file a card covers gets its "
+                     f"Avoid section, once per card per task; FOREMAN_NO_CARDS=1 turns it off for one session).")
     if args.action == "check":
         problems, notes = lint()
         n = len(cards())

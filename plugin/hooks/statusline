@@ -123,7 +123,7 @@ def progress(c, p):
 
 def snapshot(c, data, p):
     sid = re.sub(r"[^\w-]", "", str(data.get("session_id") or ""))[:80]
-    if not sid:
+    if not sid or os.environ.get("FOREMAN_ONEOFF") == "1":  # T-1001: a one-off (the UI harness) isn't in the fleet
         return
     cw, cost = data.get("context_window") or {}, data.get("cost") or {}
     snap = {"ts": c.now(), "session_id": sid, "project": p.slug if p else None, "cwd": data.get("cwd"),
@@ -132,6 +132,14 @@ def snapshot(c, data, p):
             "lines_added": cost.get("total_lines_added"), "lines_removed": cost.get("total_lines_removed"),
             "rate_limits": data.get("rate_limits"), "cache_hit_ratio": (data.get("prompt_cache") or {}).get("hit_ratio"),
             "tmux_pane": os.environ.get("TMUX_PANE")}  # T-0708: fm bus send --wake types into it
+    try:  # T-1003: live() drops the snapshot once this process is gone, whatever happened to the by-pid records
+        import fmbus
+        pid = fmbus.claude_pid()
+        info = fmbus._proc(pid) if pid else None
+        if info:
+            snap["claude_pid"], snap["claude_start"] = pid, info[1]
+    except Exception:  # never fail the line
+        pass
     c.write_atomic(os.path.join(c.state_dir(), "sessions", f"{sid}.json"), json.dumps(snap) + "\n")
 
 
@@ -169,8 +177,9 @@ def bar(frac, width, color=None):
 
 def render(segs, width):
     """Join (text, style) segments, cut to `width` visible cells with an ellipsis; styles never count."""
-    out, used = [], 0
+    out, used, plain = [], 0, bool(os.environ.get("NO_COLOR"))  # T-0962: no-color.org
     for text, style in segs:
+        style = "" if plain else style
         room = width - used
         if room <= 0:
             break
@@ -252,7 +261,7 @@ def foreman_segs(st, mode):
                 ("  ", ""), (a["stage"], fg(DIM)), (" ", "")]
         if a["total"]:
             segs += bar(a["done"] / a["total"], 10, lambda t: mix(ACCENT2, OK, t)) + \
-                [(f" {a['done']}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
+                [(f" step {a.get('n', a['done'])}/{a['total']}", BOLD), (f" {a['step'][:34]}…" if len(a["step"]) > 35 else f" {a['step']}" if a["step"] else "", "")]
         need = a["audits"][1]
         if need:
             segs += [sep, (f"audits {a['audits'][0]}/{need}", fg(OK if a["audits"][0] >= need else DIM))]

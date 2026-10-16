@@ -23,6 +23,7 @@ with open(os.path.join(_LOCKOUT, "claude"), "w") as _f:
              "\nexit 97\n")
 os.chmod(os.path.join(_LOCKOUT, "claude"), 0o755)
 os.environ["PATH"] = _LOCKOUT + os.pathsep + os.environ.get("PATH", "")
+os.environ["FOREMAN_NATIVE_BIN"] = os.path.join(_LOCKOUT, "none")  # T-0992: nor fmcore's ~/.local/bin fallback
 atexit.register(shutil.rmtree, _LOCKOUT, True)
 # T-0744: every test sees a calm host unless it says otherwise; the machine's real load (a full run beside other work)
 # turned lanes and ambient runs off and failed tests only then
@@ -61,10 +62,13 @@ class ForemanTestCase(unittest.TestCase):
         self.home = os.path.join(self.tmp, "fhome")
         os.makedirs(self.home)
         self._env = {k: os.environ.get(k) for k in ("FOREMAN_HOME", "FOREMAN_SESSION_ID", "FOREMAN_PROJECT",
-                                                     "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND")}
+                                                     "FOREMAN_STATE", "XDG_STATE_HOME", "FOREMAN_NO_BACKGROUND",
+                                                     "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT", "FOREMAN_DRIVE_TASK")}
         os.environ["FOREMAN_HOME"] = self.home
         os.environ["FOREMAN_NO_BACKGROUND"] = "1"  # a detached child writing into a test's folder races its cleanup
-        for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE"):
+        # T-1004: a suite run from a one-off or headless session (the UI harness) sees what a working session sees
+        for k in ("FOREMAN_SESSION_ID", "FOREMAN_PROJECT", "FOREMAN_STATE", "FOREMAN_ONEOFF", "CLAUDE_CODE_ENTRYPOINT",
+                  "FOREMAN_DRIVE_TASK"):
             os.environ.pop(k, None)
         os.environ["XDG_STATE_HOME"] = os.path.join(self.tmp, "xdg")  # a state fallback never reaches the real one
         self.repo = git_repo(self.tmp)
@@ -78,7 +82,7 @@ class ForemanTestCase(unittest.TestCase):
         self._tmp.cleanup()
 
     def fm(self, *args, cwd=None, check=True, env=None, input=None):
-        e = dict(os.environ, FOREMAN_HOME=self.home)
+        e = dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_INHIBITED="1")  # fm run never takes a real inhibitor lock
         e.pop("CLAUDE_CODE_SESSION_ID", None)  # tests may run inside a live Claude Code session
         e.update(env or {})
         p = subprocess.run([sys.executable, FM, *args], cwd=cwd or self.repo, env=e,

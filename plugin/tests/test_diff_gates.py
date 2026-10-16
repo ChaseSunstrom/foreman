@@ -197,3 +197,21 @@ class DiffGates(ForemanTestCase):
         self.assertEqual(read(offset=1, limit=50), "")
         self.assertIn("fm outline", read())
         self.assertEqual(read(), "", "once per session")
+
+
+class LiveVerify(ForemanTestCase):
+    """T-0943: a verify command that reaches a live service is a manual check, not an unattended criterion."""
+
+    def test_live_service_commands_are_named_and_local_ones_are_not(self):
+        live = ["aws iam simulate-principal-policy --policy-source-arn x", "gcloud run services list",
+                "az group list", "kubectl get pods -n prod", "psql -h db.example.com -c 'select 1'",
+                "mysql --host=db -e 'select 1'", "terraform apply -auto-approve", "helm upgrade app ./chart",
+                "set -o pipefail; kubectl get ns | grep prod"]
+        for cmd in live:
+            self.assertTrue(any("live service" in x for x in c.lint_verify(cmd, self.repo)), cmd)
+        for cmd in ["terraform validate", "terraform plan -out p", "psql -c 'select 1'", "helm lint ./chart",
+                    "kubectl kustomize overlays/prod", "python3 -m pytest -q", "aws --version"]:
+            self.assertFalse(any("live service" in x for x in c.lint_verify(cmd, self.repo)), cmd)
+        p = self.fm("task", "new", "t", "--type", "FEATURE", "--tier", "S", "--ac", "a :: kubectl get pods")
+        self.assertIn("live service", p.stderr)  # a warning: the criterion is still recorded
+        self.assertIn("kubectl get pods", self.fm("task", "show", "T-0001").stdout)

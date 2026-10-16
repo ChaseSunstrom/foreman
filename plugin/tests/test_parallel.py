@@ -167,6 +167,22 @@ class Parallel(ForemanTestCase):
                 fmserve._run_lanes(p, batch, SimpleNamespace(timeout=1), {}, os.path.join(self.tmp, "run.log"))
         lanes_freed()
 
+    def test_a_lane_with_no_progress_is_blocked(self):
+        # T-0968: a lane session that changes nothing is quarantined like a single session (T-0955), not retried
+        # by every later run
+        import fmcore as c
+        self.task("one", "work-T-0001.txt")
+        self.task("two", "work-T-0002.txt")
+        self.stub("claude", f'echo "start $FOREMAN_DRIVE_TASK $PWD" >> {self.log}\nsleep 1\n')  # does nothing
+        self.fm("run", "--parallel", "2", env=self.env(), check=False)
+        p = c.find_project(self.repo)
+        for t in ("T-0001", "T-0002"):
+            self.assertEqual(c.find_brief(p, t).status, "blocked", t)
+            self.assertIn("no progress", c.find_brief(p, t).section("Log"))
+        before = len(self.sessions())
+        self.fm("run", "--parallel", "2", env=self.env(), check=False)
+        self.assertEqual(len(self.sessions()), before, "the next run starts nothing")
+
     def test_a_committed_mirror_doesnt_count_as_the_users_changes(self):
         # T-0174 review: fm keeps a tracked .foreman/ current from every lane session, in the main checkout
         self.fm("sync", "on")

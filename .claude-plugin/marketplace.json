@@ -5,20 +5,20 @@
   },
   "metadata": {
     "description": "Foreman: a discipline layer for Claude Code (intake, planning, focus, evidence, guard, memory hygiene).",
-    "version": "1.2.30"
+    "version": "1.2.31"
   },
   "plugins": [
     {
       "name": "foreman",
       "source": "./plugin",
       "description": "Plans, sequences, tracks and verifies work from terse prompts: evidence-gated briefs, focus lock, exact resume, a bypass-mode guard, drive mode and memory hygiene.",
-      "version": "1.2.30"
+      "version": "1.2.31"
     },
     {
       "name": "foreman-ui",
       "source": "./mods/foreman-ui",
-      "description": "Foreman inside Claude Code (mods): a docked dashboard pane that reads top-down by urgency (what needs you, the task with its stage rail and progress, what runs now, live charts of the session), a band above the prompt, toasts and one-press approve/next/drive/inbox actions. Needs a Claude Code build with function-hook plugins.",
-      "version": "0.8.0"
+      "description": "Foreman inside Claude Code (mods): one docked panel that fits the screen and never jumps (what needs you, the task with its stage rail and progress, what runs now, live charts of the session, the queue), a band above the prompt when it's closed, toasts and one-press approve/next/drive/inbox actions. Needs a Claude Code build with function-hook plugins.",
+      "version": "0.16.0"
     }
   ]
 }

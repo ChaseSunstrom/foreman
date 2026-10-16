@@ -741,3 +741,27 @@ class RunCommand(unittest.TestCase):
                 f.write("import unittest\nclass T(unittest.TestCase):\n    def test_a(self):\n        self.fail('no')\n")
             code, out = c.run_command(d, "python3 -m unittest test_x 2>&1 | tail -3")
             self.assertEqual(code, 1, out)
+
+
+class NativeClaude(unittest.TestCase):
+    def test_the_native_install_is_found_when_path_lacks_it(self):
+        # T-0990: the npm claude was removed; the native one is in ~/.local/bin, which fm's shells didn't have
+        import tempfile
+        with tempfile.TemporaryDirectory() as home:
+            local = os.path.join(home, ".local", "bin")
+            os.makedirs(local)
+            exe = os.path.join(local, "claude")
+            with open(exe, "w") as f:
+                f.write("#!/bin/sh\n")
+            os.chmod(exe, 0o755)
+            empty = os.path.join(home, "empty")  # never the host's PATH: its claude comes and goes
+            os.makedirs(empty)
+            env = {"HOME": home, "PATH": empty}
+            self.assertEqual(c.claude_path(env)["PATH"].split(os.pathsep)[0], local)
+            other = os.path.join(home, "other")
+            os.makedirs(other)
+            os.symlink(exe, os.path.join(other, "claude"))
+            env = {"HOME": home, "PATH": other + ":" + empty}
+            self.assertEqual(c.claude_path(env)["PATH"], other + ":" + empty, "one on PATH already wins")
+            os.remove(exe)
+            self.assertEqual(c.claude_path({"HOME": home, "PATH": empty})["PATH"], empty)

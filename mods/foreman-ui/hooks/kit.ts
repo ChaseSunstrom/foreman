@@ -10,7 +10,9 @@ export const C = {
   edit: 0xffaf5f,
   agent: 0xd787ff,
   web: 0x87d7af,
+  skill: 0xf5a3c7,
   dim: 0x6c7686,
+  muted: 0x9aa3b0, // T-1026: secondary text that still reads; dim is for the least of it
   add: 0xa8d5a2, // diff text: softer than ok/err, which stay on the +/- signs (T-0143: 'weird in contrast')
   del: 0xe0a3a3,
   track: 0x30363f,
@@ -70,6 +72,41 @@ export function progressCells(width: number, fraction: number, from: number, to:
   for (let i = 0; i < width; i++) {
     const base = i < done ? mix(from, to, width > 1 ? i / (width - 1) : 1) : C.track
     out.push(['━', frame === null ? base : mix(base, C.white, glow(i, width, frame) * (i < done ? 0.55 : 0.35))])
+  }
+  return cells(out)
+}
+
+/** T-1026: parts of a whole side by side, a share of `width` each: any part above zero keeps a cell, the biggest
+ * absorbs the rounding; nothing at all, the bare track. */
+export function stackCells(parts: readonly { n: number; color: number }[], width: number): string {
+  const total = parts.reduce((s, p) => s + Math.max(0, p.n), 0)
+  let cum = 0 // cumulative edges, so the rounding never piles up on one part
+  const w = parts.map(p => {
+    const from = Math.round((cum / Math.max(1, total)) * width)
+    cum += Math.max(0, p.n)
+    return Math.round((cum / Math.max(1, total)) * width) - from
+  })
+  parts.forEach((p, i) => {
+    if (p.n > 0 && !w[i]) (w[i] = 1), (w[w.indexOf(Math.max(...w))]! -= 1)
+  })
+  const out: [string, number][] = parts.flatMap((p, i) => Array.from({ length: Math.max(0, w[i]!) }, (): [string, number] => ['━', p.color]))
+  while (out.length < width) out.push(['━', C.track])
+  return cells(out.slice(0, width))
+}
+
+/** T-1026: a task's steps as one bar, a segment each with a gap between when there's room: done ones green, the
+ * current one in the accent (a comet sweeps it while `frame`), the ones left on the track. */
+export function stepCells(steps: readonly { done: boolean; current: boolean }[], width: number, frame: number | null): string {
+  const n = Math.max(1, steps.length)
+  const gaps = width / n >= 3
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) {
+    const k = Math.floor((i * n) / width)
+    const s = steps[k]
+    if (gaps && k < n - 1 && Math.floor(((i + 1) * n) / width) !== k) out.push([' ', C.track])
+    else if (s?.done) out.push(['━', C.ok])
+    else if (s?.current) out.push(['━', frame === null ? C.accent : mix(C.accent, C.white, glow(i, width, frame) * 0.5)])
+    else out.push(['━', C.track])
   }
   return cells(out)
 }
@@ -206,21 +243,61 @@ export function laneCells(lanes: readonly { color: number; slots: readonly numbe
   return cells(out)
 }
 
-/** Column bars `rows` tall in eighth blocks, one column per value with a gap between, coloured from→to by height; a
+/** T-1026: a section divider: a line in the section's colour fading into the track, so sections read apart. */
+export function ruleCells(width: number, color: number): string {
+  const out: [string, number][] = []
+  for (let i = 0; i < width; i++) out.push(['─', mix(mix(C.track, color, 0.85), C.track, width > 1 ? i / (width - 1) : 0)])
+  return cells(out)
+}
+
+/** T-1023: one row of the Agents Gantt, `width` cells over [t0, t0 + span]: plain before the run started and after it
+ * ended, a bar tinted in its colour between (to `now` while it runs), with braille dots where its tool calls (or a
+ * brainstorm's answers) landed, two time slots a cell; a running bar's newest cell glows while `frame`. */
+export function ganttCells(row: { start: number; end: number | null; marks: readonly number[]; color: number; dim?: boolean },
+  t0: number, span: number, width: number, now: number, frame: number | null): string {
+  const slots = width * 2
+  const at = (t: number) => Math.floor(((t - t0) / Math.max(1, span)) * slots)
+  const from = Math.min(slots - 1, Math.max(0, at(row.start))) // a run that starts now still shows
+  const to = Math.min(slots - 1, at(row.end ?? now))
+  const counts = Array(slots).fill(0) as number[]
+  for (const m of row.marks) {
+    const k = Math.min(slots - 1, at(m))
+    if (k >= 0) counts[k]! += 1
+  }
+  const max = Math.max(1, ...counts)
+  const rise = (n: number) => (n > 0 ? Math.max(1, Math.min(4, Math.ceil((4 * n) / max))) : 0)
+  const bar = mix(0x22262d, row.color, row.dim ? 0.16 : 0.3)
+  const out: [string, number, number][] = []
+  for (let i = 0; i < width; i++) {
+    if (2 * i + 1 < from || 2 * i > to) {
+      out.push([' ', C.track, DEFAULT_BG])
+      continue
+    }
+    const l = rise(counts[2 * i] ?? 0)
+    const r = rise(counts[2 * i + 1] ?? 0)
+    const bits = DOTS_L.slice(0, l).reduce((b, x) => b | x, 0) | DOTS_R.slice(0, r).reduce((b, x) => b | x, 0)
+    const glow = frame !== null && row.end === null && i === Math.floor(to / 2)
+    const fg = glow ? mix(row.color, C.white, 0.2 + 0.25 * ((Math.sin(frame / 2) + 1) / 2)) : row.color
+    out.push([bits ? String.fromCharCode(0x2800 + bits) : glow ? '▏' : ' ', fg, glow ? mix(bar, row.color, 0.35) : bar])
+  }
+  return cells(out)
+}
+
+/** Column bars `rows` tall in eighth blocks, `bw` columns per value with a gap between, coloured from→to by height; a
  * zero shows as a dim floor. The newest (last) value is the brightest. */
-export function barCells(values: readonly number[], rows: number, from: number, to: number): string {
+export function barCells(values: readonly number[], rows: number, from: number, to: number, bw = 1): string {
   const max = Math.max(1, ...values)
-  const width = values.length * 2 - 1
+  const width = values.length * (bw + 1) - 1
   const out: [string, number][] = []
   for (let r = 0; r < rows; r++) {
     for (let x = 0; x < width; x++) {
-      const v = x % 2 ? -1 : values[x / 2]!
+      const v = x % (bw + 1) === bw ? -1 : values[Math.floor(x / (bw + 1))]!
       const eighths = v > 0 ? Math.max(1, Math.round((v / max) * rows * 8)) : 0
       const level = Math.max(0, Math.min(8, eighths - (rows - 1 - r) * 8))
       if (v < 0) out.push([' ', C.track])
       else if (!level) out.push(r === rows - 1 && v === 0 ? ['▁', C.track] : [' ', C.track])
       else {
-        const newest = x === width - 1
+        const newest = Math.floor(x / (bw + 1)) === values.length - 1
         out.push([SPARK[level - 1]!, newest ? mix(to, C.white, 0.25) : mix(from, to, v / max)])
       }
     }
@@ -391,6 +468,64 @@ export function ago(days: number | undefined): string {
 export const SIZE: Record<string, string> = { S: 'small', M: 'medium', L: 'large' }
 export const sizeWord = (tier: string) => SIZE[tier] ?? tier
 
+/** T-0989, T-1000, T-1002: the pane's row budget. One panel that fills the dock exactly: the head (its third row the
+ * attention row) and the controls take 4 rows; every section but a `bare` one (the task under the head) gets a titled
+ * divider, and on a tall dock (40 rows up) a blank row above it, under the head and above the controls. Sections take
+ * the rows they hold: each its `min` (2) first, then up to its `cap` in order; a `fixed` one its height, and the
+ * `stretch` one (the history) what it holds of the rest; rows still spare go to the `grow` ones (more lanes, taller
+ * charts) up to their allowance, then pad the history (or the task). When sections get no rows the least important
+ * (last) of them is dropped and the rest placed again, so its divider goes to the others. */
+export type Part = { key: string; want: number; cap?: number; min?: number; fixed?: number; stretch?: boolean; bare?: boolean; grow?: number }
+export function layout(rows: number, parts: Part[]): { gap: number; rows: Record<string, number> } {
+  const h = Math.max(0, Math.floor(rows))
+  const gap = h >= 40 ? 1 : 0
+  let shown = parts.filter(p => p.want > 0 || p.fixed)
+  let out: Record<string, number> = {}
+  for (let pass = 0; pass < parts.length + 1; pass++) {
+    const titled = shown.filter(p => !p.bare).length
+    let r = Math.max(0, h - 4 - 2 * gap - titled * (1 + gap))
+    out = {}
+    for (const p of shown) if (p.fixed) r -= out[p.key] = Math.min(p.fixed, r)
+    const flex = shown.filter(p => !p.fixed && !p.stretch)
+    for (const p of flex) r -= out[p.key] = Math.max(0, Math.min(p.want, p.cap ?? p.want, p.min ?? 2, r)) // each its minimum first
+    for (const p of flex) { // then up to its cap, in order
+      const more = Math.max(0, Math.min(Math.min(p.want, p.cap ?? p.want) - out[p.key]!, r))
+      out[p.key] = out[p.key]! + more
+      r -= more
+    }
+    const stretch = shown.find(p => p.stretch)
+    if (stretch) r -= out[stretch.key] = Math.min(stretch.want, r) // what it holds
+    for (const p of shown) if (p.grow) { // spare rows: more of the charts, up to each one's `grow`
+      const more = Math.min(p.grow, r)
+      out[p.key] = (out[p.key] ?? 0) + more
+      r -= more
+    }
+    const spare = stretch ?? shown.find(p => p.bare) // then blank rows under the history, or under the task
+    if (spare) out[spare.key] = (out[spare.key] ?? 0) + r
+    const empty = shown.filter(p => !out[p.key])
+    if (!empty.length) break
+    const last = empty.at(-1)! // the least important goes first; its divider frees rows for the others
+    shown = shown.filter(p => p !== last)
+  }
+  return { gap, rows: Object.fromEntries(parts.map(p => [p.key, out[p.key] ?? 0])) }
+}
+
+/** T-1002: level gauges as tanks side by side, `rows` tall and `width` wide each, `gap` apart: each fills from the
+ * bottom in eighths to its fraction, in its colour, over a dim slot that shows where full is. */
+export function tankCells(levels: readonly { frac: number; color: number }[], rows: number, width: number, gap: number): string {
+  const out: [string, number, number][] = []
+  const slot = mix(C.track, 0x1a1d24, 0.35)
+  for (let r = 0; r < rows; r++) {
+    levels.forEach((l, i) => {
+      if (i) for (let g = 0; g < gap; g++) out.push([' ', C.track, DEFAULT_BG])
+      const eighths = l.frac > 0 ? Math.max(1, Math.round(Math.min(1, l.frac) * rows * 8)) : 0
+      const level = Math.max(0, Math.min(8, eighths - (rows - 1 - r) * 8))
+      for (let x = 0; x < width; x++) out.push(level >= 8 ? ['█', l.color, slot] : level ? [SPARK[level - 1]!, l.color, slot] : [' ', l.color, slot])
+    })
+  }
+  return cells(out)
+}
+
 // The mascot: Claude Code's own welcome-screen Claude, in block glyphs (9 wide, 3 rows), padded to 11 so it can sway.
 const POSES: Record<string, [string, string, string]> = {
   rest: [' ▐▛███▜▌ ', '▝▜█████▛▘', '  ▘▘ ▝▝  '],
@@ -482,6 +617,54 @@ export function changedLines(hunks: unknown): { n: number; sign: '+' | '-'; text
       else if (l.startsWith('+')) out.push({ n: n++, sign: '+', text: tidy(l.slice(1)) })
       else (o++, n++)
     }
+  }
+  return out
+}
+
+export type DiffRow = { kind: 'hunk' } | { kind: 'ctx'; n: number; text: string } | { kind: '+' | '-'; n: number; text: string; mid?: [number, number] }
+
+/** T-1031: a patch as rows to draw: `context` lines either side of each change, a break where lines are skipped, and
+ * for a changed line (a run of removals followed by as many additions) the whole words that differ, as `mid`. */
+export function diffRows(hunks: unknown, context = 1): DiffRow[] {
+  const out: DiffRow[] = []
+  const tidy = (t: string) => clean(t).slice(0, 240)
+  for (const h of Array.isArray(hunks) ? (hunks as { oldStart?: unknown; newStart?: unknown; lines?: unknown }[]) : []) {
+    let o = typeof h?.oldStart === 'number' ? h.oldStart : 1
+    let n = typeof h?.newStart === 'number' ? h.newStart : 1
+    const rows: DiffRow[] = []
+    for (const l of Array.isArray(h?.lines) ? h.lines : []) {
+      if (typeof l !== 'string' || l.startsWith('\\')) continue // '\ No newline at end of file'
+      if (l.startsWith('-')) rows.push({ kind: '-', n: o++, text: tidy(l.slice(1)) })
+      else if (l.startsWith('+')) rows.push({ kind: '+', n: n++, text: tidy(l.slice(1)) })
+      else rows.push({ kind: 'ctx', n: (o++, n++), text: tidy(l.slice(1)) })
+    }
+    const near = (i: number) => rows.slice(Math.max(0, i - context), i + context + 1).some(r => r.kind !== 'ctx')
+    let last = -1
+    rows.forEach((r, i) => {
+      if (r.kind === 'ctx' && !near(i)) return
+      if ((last >= 0 ? last < i - 1 : out.length > 0) && out.at(-1)?.kind !== 'hunk') out.push({ kind: 'hunk' })
+      out.push(r)
+      last = i
+    })
+  }
+  for (let i = 0; i < out.length; ) { // pair a run of k removals with the k additions after it
+    let k = 0
+    while (out[i + k]?.kind === '-') k++
+    let m = 0
+    while (out[i + k + m]?.kind === '+') m++
+    if (k && k === m)
+      for (let j = 0; j < k; j++) {
+        const a = out[i + j] as { text: string; mid?: [number, number] }
+        const b = out[i + k + j] as { text: string; mid?: [number, number] }
+        let p = 0
+        while (p < a.text.length && p < b.text.length && a.text[p] === b.text[p]) p++
+        let s = 0
+        while (s < a.text.length - p && s < b.text.length - p && a.text[a.text.length - 1 - s] === b.text[b.text.length - 1 - s]) s++
+        while (p > 0 && /\w/.test(a.text[p - 1]!)) p-- // whole words
+        while (s > 0 && /\w/.test(a.text[a.text.length - s]!)) s--
+        if (p + s >= 3) (a.mid = [p, a.text.length - s]), (b.mid = [p, b.text.length - s])
+      }
+    i += Math.max(1, k + m)
   }
   return out
 }

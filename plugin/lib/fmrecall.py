@@ -288,7 +288,9 @@ def render(hits, tier=None):
 
 # ---------------------------------------------------------------- failure memory (T-0046)
 
-_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing")
+_ERROR_LINE = re.compile(r"(?i)error|exception|fail|traceback|not found|denied|refused|cannot|can't|no such|missing|"
+                         r"unrecognized|unknown|invalid|unexpected|illegal|not allowed|not permitted")
+_USAGE_TAIL = re.compile(r"(?i)^(try|run|see|use) .{0,40}(--help|-h\b|help\b).{0,40}$")  # T-1032: a pointer, not the error
 REPEATS = 3  # the same failure this often in one task: a thrash note
 # T-0211: errors that say an API isn't what Claude assumed: a missing module or export, a library attribute, keyword or
 # method that doesn't exist. Another guess rarely fixes these; the real docs do.
@@ -303,7 +305,8 @@ FAILURES_KEEP = 1000  # records; the file is trimmed to this when it passes 1 MB
 def failure_signature(text):
     """The telling line of a failure (the last one that names an error), with paths cut to their last part and
     numbers and hex zeroed, so the same failure matches across files, lines and runs."""
-    lines = [x.strip() for x in (text or "").splitlines() if x.strip() and not x.startswith("Exit code")]
+    lines = [x.strip() for x in (text or "").splitlines()
+             if x.strip() and not x.startswith("Exit code") and not _USAGE_TAIL.match(x.strip())]
     pick = next((x for x in reversed(lines) if _ERROR_LINE.search(x)), lines[-1] if lines else "")
     s = re.sub(r"(?:[\w.~-]*/)+([\w.-]+)", r"\1", pick.lower())
     s = re.sub(r"0x[0-9a-f]+|\d+", "0", s)
@@ -339,6 +342,9 @@ def note_failure(p, task, text):
                                             f"assumed. Read the real one before another guess: context7 "
                                             f"(resolve-library-id, then get-library-docs), the installed package's "
                                             f"own source, or fm research ask \"<library> <symbol> in <version>\"."]))
+    if "No such file" in (text or "") and re.search(r"plugin/bin/fm\w*\.py", text or ""):  # T-0984
+        hint = " ".join(filter(None, [hint, "Foreman: its modules are in plugin/lib/ (plugin/bin/ holds only the fm "
+                                            "launcher)."]))
     if task and same >= REPEATS and not hinted:  # R1 thrash: once per task and failure, when it becomes a pattern
         hint = " ".join(filter(None, [hint, f"Foreman: this failure has now come up {same} times in {task}; stop "
                                              f"retrying variations, diagnose the cause first "
@@ -546,8 +552,15 @@ def cmd_recall(args):
             raise fmcli.UsageError("--retire needs --why \"<why it no longer helps>\"")
         c.update_meta(p, retired_lessons=dict(retired_lessons(p), **{args.retire: c.redact(args.why)[:200]}))
         write_tripwires(p)
+        if os.path.isdir(os.path.join(p.root, ".claude", "rules", "foreman-lessons")):
+            export_rules(p)  # a retired lesson leaves the exported rules too
         c.log_event(p, "lesson_retired", data={"lesson": args.retire, "why": c.redact(args.why)[:200]})
         return fmcli.out(args, {"retired": args.retire}, f"Retired {args.retire}: recall and tripwires leave it out.")
+    if getattr(args, "export_rules", False):
+        path, n, files = export_rules(p)
+        return fmcli.out(args, {"path": path, "lessons": n, "paths": files},
+                         f"{n} lesson(s) → {os.path.relpath(path, p.root)}/, each loaded only with its task's files "
+                         f"({len(files)} in all)")
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
@@ -595,6 +608,43 @@ def write_tripwires(p):
         for f in _files(b):
             index.setdefault(f, []).append([b.id, c.fit(c.defang(c.plain(lesson)), 200)])
     c.write_atomic(os.path.join(p.dir, "tripwires.json"), json.dumps(index))
+
+
+RULES_MAX = 60  # newest tasks exported; each is its own rule file, loaded only with its files
+RULES_HOT = 5  # a file more exported tasks touched than this (a changelog, the CLI) scopes nothing
+
+
+def export_rules(p):
+    """T-0958: finished tasks' live lessons as Claude Code rules, one file per task under
+    .claude/rules/foreman-lessons/, each with paths: frontmatter of the files that task touched, so a lesson loads only
+    with its files. Lessons are redacted; a task with no touched file, or only files most tasks touch, isn't exported
+    (it would load every session); stale files there are removed. (folder, lessons, files)."""
+    retired, tasks = retired_lessons(p), []
+    for b in c.load_briefs(p, include_archive=True):
+        texts = [x.lstrip("- ").strip() for x in b.section("Lessons").splitlines() if x.strip()]
+        live = [t for i, t in enumerate(texts, 1) if b.status == "done" and f"{b.id}.{i}" not in retired
+                and not t.lower().startswith("none")]
+        if live and _files(b):
+            tasks.append((b.id, live, _files(b)))
+    tasks = sorted(tasks, key=lambda t: c.id_num(t[0]))[-RULES_MAX:]
+    hot = {f for f, n in collections.Counter(f for _, _, fs in tasks for f in set(fs)).items() if n > RULES_HOT}
+    folder = os.path.join(p.root, ".claude", "rules", "foreman-lessons")
+    os.makedirs(folder, exist_ok=True)
+    keep, n, files = set(), 0, set()
+    for tid, live, fs in tasks:
+        scope = [f for f in fs if f not in hot]
+        if not scope:
+            continue
+        keep.add(f"{tid}.md")
+        n += len(live)
+        files.update(scope)
+        c.write_atomic(os.path.join(folder, f"{tid}.md"), "---\npaths:\n" + "".join(f"  - {json.dumps(f)}\n" for f in scope)
+                       + f"---\n# Lessons from {tid} (fm recall --export-rules; regenerated, don't edit)\n\n"
+                       + "".join(f"- {c.fit(c.defang(c.redact(c.plain(t))), 300)}\n" for t in live))
+    for old in os.listdir(folder):
+        if re.fullmatch(r"T-\d+\.md", old) and old not in keep:
+            os.remove(os.path.join(folder, old))
+    return folder, n, sorted(files)
 
 
 def tripwire(p, rel, active=None):
