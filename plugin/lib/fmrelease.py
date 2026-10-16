@@ -52,8 +52,9 @@ def _dump(path, data):
 
 
 def _setver(path, v):
-    text = open(path, encoding="utf-8").read()
-    open(path, "w", encoding="utf-8").write(re.sub(r'"version": "[^"]*"', lambda _: f'"version": "{v}"', text, 1))
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    c.write_atomic(path, re.sub(r'"version": "[^"]*"', lambda _: f'"version": "{v}"', text, 1))
 
 
 def _grant(p):
@@ -65,6 +66,8 @@ def _grant(p):
 def _spend(p, tid):
     with c.lock(p.dir):
         b = c.find_brief(p, tid)
+        if "publish" not in (b.meta.get("allow") or []):  # another release spent it since _grant looked
+            _err("the publish grant was already spent; nothing was pushed")
         b.meta["allow"] = [x for x in b.meta.get("allow") or [] if x != "publish"]
         b.append_log("publish grant used by fm release --push")
         c.save_brief(p, b)
@@ -108,25 +111,26 @@ def _bump(ctx):
 def _changelog(ctx):
     import datetime
     path = os.path.join(ctx["root"], "CHANGELOG.md")
-    text = open(path, encoding="utf-8").read()
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
     if re.search(rf"(?m)^## {re.escape(ctx['version'])} ", text):
         return  # a resumed run
     if "## Unreleased\n" not in text:
         _err("CHANGELOG.md has no '## Unreleased' heading")
     head = f"## Unreleased\n\n## {ctx['version']} — {datetime.date.today().isoformat()}\n"
-    open(path, "w", encoding="utf-8").write(text.replace("## Unreleased\n", head, 1).replace(head + "\n", head, 1))
+    c.write_atomic(path, text.replace("## Unreleased\n", head, 1).replace(head + "\n", head, 1))
 
 
 def _commit(ctx):
     root, v = ctx["root"], ctx["version"]
-    if _git(root, "log", "-1", "--format=%s").strip() == f"Foreman {v}":
-        return
-    files = ["plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "CHANGELOG.md"]
-    if ctx["ui"]:
-        files.append("mods/foreman-ui/.claude-plugin/plugin.json")
-    _git(root, "add", *files)
-    b = c.active_brief_fast(ctx["p"], ctx["p"].lane)
-    _git(root, "commit", "-qm", f"Foreman {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []))
+    if _git(root, "log", "-1", "--format=%s").strip() != f"Foreman {v}":
+        files = ["plugin/.claude-plugin/plugin.json", ".claude-plugin/marketplace.json", "CHANGELOG.md"]
+        if ctx["ui"]:
+            files.append("mods/foreman-ui/.claude-plugin/plugin.json")
+        b = c.active_brief_fast(ctx["p"], ctx["p"].lane)
+        # only these files: whatever else was staged between a stop and the resume stays out of the release
+        _git(root, "commit", "-qm", f"Foreman {v}", *(["--trailer", f"Foreman-Task: {b.id}"] if b else []), "--", *files)
+    ctx["state"]["sha"] = _git(root, "rev-parse", "HEAD").strip()  # what a later --push merges, not a moved HEAD
 
 
 def _canary(ctx):
@@ -153,7 +157,7 @@ def _push(ctx):
     b = _grant(p)
     if not b:
         _err("--push needs the active task's publish grant (fm ask ID publish)")
-    sha = _git(root, "rev-parse", "HEAD").strip()
+    sha = ctx["state"].get("sha") or _err(f"no release commit recorded for {v}: fm release --abandon, then release again")
     _git(root, "fetch", "-q", remote, "main")
     _spend(p, b.id)  # the yes covers this one push: spent before it, as fm pr train does
     with tempfile.TemporaryDirectory() as tmp:
@@ -170,6 +174,8 @@ def _push(ctx):
 def _round(ctx):
     import argparse
     import fmcli
+    if any(t.startswith("round-") for t in _git(ctx["root"], "tag", "--points-at", "HEAD").split()):
+        return  # a resume after the tag was made but before its checkpoint
     fmcli.cmd_round(argparse.Namespace(**{**vars(ctx["args"]), "action": "close"}))
 
 
@@ -184,13 +190,23 @@ def _changed(state):
 
 def run(p, args):
     state_path = os.path.join(p.dir, "release.json")
-    state = _json(state_path) if os.path.isfile(state_path) else None
+    try:
+        state = _json(state_path) if os.path.isfile(state_path) else None
+        if state is not None and not (isinstance(state, dict) and isinstance(state.get("version"), str)):
+            raise ValueError
+    except ValueError:
+        if not args.abandon:
+            _err(f"{state_path} is unreadable: fm release --abandon forgets it")
+        state = {"version": "(unreadable)"}
     if state:
         state.setdefault("skipped", [])
     if args.abandon:
-        if state:
+        if state and args.dry_run:
+            print(f"would abandon the release of {state['version']} (--dry-run: nothing changed)")
+        elif state:
             os.remove(state_path)
-        print(f"abandoned the release of {state['version']}" if state else "no release in progress")
+        if not args.dry_run:
+            print(f"abandoned the release of {state['version']}" if state else "no release in progress")
         return 0
     v = args.version
     if not v:
@@ -213,6 +229,8 @@ def run(p, args):
             _err(f"the release of {state['version']} is unfinished: fm release {state['version']} --resume, or fm release --abandon")
         if state["version"] == v and not _unfinished(state) and args.push and "push" not in state["done"]:
             resume = True  # released but never pushed: only the push is left
+        if state["version"] == v and _unfinished(state) and _changed(state):
+            resume = True  # the same release stopped after its bump: starting over would say "isn't newer"
     if resume:
         if not state or state["version"] != v:
             _err(f"no unfinished release of {v} to resume" + (f" (the one in progress is {state['version']})" if state else ""))
@@ -229,13 +247,18 @@ def run(p, args):
         state = {"version": v, "old": cur, "done": [], "skipped": [], "ui": args.ui, "push": bool(args.push),
                  "remote": args.remote, "no_check": bool(args.no_check)}
     state["remote"] = state.get("remote") or "origin"
+    if state["remote"].startswith("-"):
+        _err(f"--remote {state['remote']!r} reads as a git option; name a remote or a URL")
     if state["push"]:
         if state["no_check"] or state["skipped"]:
             _err("a release with skipped gates (--no-check) can't --push; nothing was changed")
         if not _grant(p):
             _err("--push needs the active task's publish grant (fm ask ID publish); nothing was changed")
+        url = _git(root, "remote", "get-url", state["remote"], ok=True).strip() or state["remote"]
+        if os.environ.get("FOREMAN_RELEASE_FM") and not os.path.isdir(url):
+            _err("FOREMAN_RELEASE_FM (a stub fm for the gates, for tests) can't --push to a real remote; nothing was changed")
     ctx = {"root": root, "version": v, "ui": state["ui"], "push": state["push"], "remote": state["remote"],
-           "old": state["old"], "p": p, "args": args}
+           "old": state["old"], "p": p, "args": args, "state": state}
 
     def tree(_):
         if _git(root, "status", "--porcelain").strip():

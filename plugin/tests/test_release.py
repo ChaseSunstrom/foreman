@@ -11,6 +11,10 @@ import fmcore as c
 
 STUB = '''import json, os, sys
 verb = sys.argv[1]
+once = os.path.join(os.environ.get("STUB_FAIL_ONCE", "/nonexistent"), verb)
+if os.path.exists(once):  # this gate fails once, then passes
+    os.remove(once)
+    sys.exit(1)
 if verb == "projects":
     print(json.dumps({"projects": [{"project": "app", "root": os.environ["STUB_ROOT"], "exists": True}]}))
 elif verb == "sentinel":
@@ -155,6 +159,69 @@ class Release(ForemanTestCase):
         self.assertNotIn("publish", c.find_brief(p, tid).meta.get("allow") or [])
         self.assertIn("grant_spent", read_text(os.path.join(p.dir, "ledger.jsonl")))
         self.assertEqual(sh(self.repo, "branch", "--show-current").strip(), "work")
+
+    def fail_once(self, verb):
+        d = os.path.join(self.tmp, "failonce")
+        os.makedirs(d, exist_ok=True)
+        open(os.path.join(d, verb), "w").close()
+        self.env["STUB_FAIL_ONCE"] = d
+
+    def test_a_later_push_merges_the_release_commit_not_later_work(self):
+        origin = self.origin()
+        self.rel("9.9.9")
+        put(self.repo, "later.txt", "x\n")
+        sh(self.repo, "add", "later.txt")
+        sh(self.repo, "commit", "-qm", "later, never gated")
+        self.tid(grant=True)
+        self.rel("9.9.9", "--push")
+        self.assertNotIn("later, never gated", sh(origin, "log", "--format=%s", "main"))
+        self.assertEqual(sh(origin, "log", "-1", "--format=%s", "main").strip(), "Foreman 9.9.9")
+
+    def test_a_failed_gate_resumes_at_that_gate_and_a_plain_rerun_resumes_too(self):
+        self.fail_once("check")
+        self.assertNotEqual(self.rel("9.9.9", check=False).returncode, 0)
+        self.assertEqual(self.subject(), "Foreman 1.0.0")
+        self.assertIn("resuming at step 2", self.rel("9.9.9", "--resume").stdout)
+        self.assertEqual(self.subject(), "Foreman 9.9.9")
+        self.rel("--abandon")
+        self.fail_once("release-check")  # stopped after the bump and commit
+        self.assertNotEqual(self.rel("9.9.10", check=False).returncode, 0)
+        self.assertIn("resuming at step 6", self.rel("9.9.10").stdout)  # not "9.9.10 isn't newer than 9.9.10"
+
+    def test_stubbed_gates_never_push_to_a_real_remote(self):
+        self.origin()
+        sh(self.repo, "remote", "set-url", "origin", "https://example.invalid/foreman.git")
+        self.tid(grant=True)
+        r = self.rel("9.9.9", "--push", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("FOREMAN_RELEASE_FM", r.stderr + r.stdout)
+        self.assertEqual(self.subject(), "Foreman 1.0.0")
+
+    def test_a_remote_that_looks_like_an_option_is_refused(self):
+        self.tid(grant=True)
+        r = self.rel("9.9.9", "--push", "--remote=--upload-pack=touch x", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertEqual(self.subject(), "Foreman 1.0.0")
+
+    def test_abandon_with_dry_run_keeps_the_state_and_a_corrupt_state_can_be_abandoned(self):
+        self.fail_once("check")
+        self.rel("9.9.9", check=False)
+        state = os.path.join(c.find_project(self.repo).dir, "release.json")
+        self.rel("--abandon", "--dry-run")
+        self.assertTrue(os.path.isfile(state))
+        put(os.path.dirname(state), "release.json", "{torn")
+        self.assertIn("abandon", self.rel("9.9.9", check=False).stderr)  # a clear error, not a traceback
+        self.rel("--abandon")
+        self.assertFalse(os.path.isfile(state))
+
+    def test_the_commit_takes_only_the_release_files(self):
+        self.fail_once("check")
+        self.rel("9.9.9", check=False)  # stopped at step 2: the tree step, done, isn't rerun on resume
+        put(self.repo, "staged.txt", "x\n")
+        sh(self.repo, "add", "staged.txt")
+        self.rel("9.9.9", "--resume")
+        self.assertEqual(self.subject(), "Foreman 9.9.9")
+        self.assertNotIn("staged.txt", sh(self.repo, "show", "--name-only", "--format=", "HEAD"))
 
     def test_a_release_without_push_can_be_pushed_later_and_only_pushes(self):
         origin = self.origin()

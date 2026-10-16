@@ -4,7 +4,8 @@
 A thin wrapper over `fm release` (T-1188), which owns the steps (clean tree, gates, version bumps, changelog, commit,
 release-check, canary, push, round close), their checkpoints and --resume. Flags that map: --no-check, --push URL
 (= fm release --push --remote URL, behind the active task's publish grant), --root (the directory fm runs in).
---canary is accepted for old habits: the canary is always a step now. Run `fm release --help` for the rest.
+--canary is accepted for old habits: the canary is always a step now. Any other flag (--resume, --ui V, --dry-run)
+goes to fm release as is; `fm release --help` lists them.
 """
 import argparse
 import os
@@ -22,9 +23,9 @@ def main():
     ap.add_argument("--no-check", action="store_true", help="skip the gates (a release with skipped gates can't push)")
     ap.add_argument("--canary", action="store_true", help="accepted; the canary is always a step")
     ap.add_argument("--push", metavar="URL", help="merge into URL's main from a temporary worktree and push")
-    a = ap.parse_args()
+    a, rest = ap.parse_known_args()
     argv = [*FM, "release", a.version] + (["--no-check"] if a.no_check else []) + (
-        ["--push", "--remote", a.push] if a.push else [])
+        ["--push", "--remote", a.push] if a.push else []) + rest
     sys.exit(subprocess.run(argv, cwd=a.root).returncode)
 
 
