@@ -151,6 +151,14 @@ def count_tests(tails):
     return (passed, total) if seen else None
 
 
+def per_request(case, failed):
+    """T-1242 review: each request of a multi-request case with its failing hidden tests, by the test files it added
+    (a file several requests share counts against each of them)."""
+    mods = lambda r: {os.path.splitext(os.path.basename(t))[0] for t in r["tests"]}
+    hit = lambda name, ms: any(name == m or name.startswith(m + ".") or f".{m}." in f".{name}" for m in ms)
+    return [{"title": r["title"], "failed": sum(hit(f, mods(r)) for f in failed)} for r in case["requests"]]
+
+
 def _compactions(sid):
     """T-1242: how many times the kept session compacted (its compact_boundary entries); its file is removed after, or
     moved into FOREMAN_BENCH_SESSIONS when that names a folder (to read how a run went)."""
@@ -428,7 +436,7 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare
                       f"autonomy; finish the work with Foreman, deciding with your defaults.)")
             res, error = _session(wt, env, [plugin, *extra], prompt, model, budget, timeout, keep=bool(compact_at))
         compactions = _compactions(res.get("session_id")) if compact_at else None
-        capped = bool(marathon and error and error.startswith("hit the $"))
+        capped = bool(marathon and not bare and error and error.startswith("hit the $"))  # review: Foreman's arm
         error = None if capped else error  # a marathon runs until its cap: the asked work is graded either way
         score, reasons, failed = None, [], []
         if case.get("judge"):  # T-0231: no hidden tests; a judge grades the change against the rubric
@@ -446,6 +454,7 @@ def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare
             "seconds": round(time.monotonic() - t0), "error": error, "tests": count_tests(t for _, _, t in graded),
             **({"compactions": compactions} if compact_at else {}), **({"capped": capped} if marathon else {}),
             **({"failed": sorted(set(failed))[:60]} if failed else {}),
+            **({"requests": per_request(case, failed)} if case.get("requests") else {}),
             **({"score": score, "judge": reasons} if case.get("judge") else {})}
 
 
