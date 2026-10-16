@@ -450,6 +450,21 @@ def pick(p, b, main, args):
                      f"criteria, fm task finish" + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
 
 
+def hot_files(p, b, days=30, times=2):
+    """T-1161: a warning per scope file that conflicted at fm lane merge `times`+ times in the last `days` days."""
+    scope = b.meta.get("scope") or []
+    if not scope:
+        return []
+    seen = {}
+    for e in c.ledger_events(p, ["lane_conflict"], since=c.iso(time.time() - days * 86400)):
+        if e.get("task") != b.id:  # a lane's own retries (fm lane resume) aren't a trend
+            for f in (e.get("data") or {}).get("files") or []:
+                seen.setdefault(f, set()).add(e.get("task"))
+    return [f"Warning: {f} conflicted {len(t)} times (in {len(t)} lanes) at lane merge in the last {days} days: merge "
+            f"this lane first, or keep its edits to that file small" for f, t in sorted(seen.items())
+            if len(t) >= times and any(c.glob_match(f, s) for s in scope)]
+
+
 def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -498,6 +513,9 @@ def builder_brief(p, b, args, resume_branch=None):
     if skipped:
         parts += ["## Claims", "Not pre-claimed, already held live (ask the holder with `fm bus send`): "
                   + "; ".join(f"{f} by {w}" for f, w in skipped), ""]
+    warns = hot_files(p, b)
+    if warns:
+        parts += ["## Warning", *warns, ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
@@ -519,7 +537,8 @@ def builder_brief(p, b, args, resume_branch=None):
     model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
-    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
+    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},
+                     "".join(f"{w}\n" for w in warns) +
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
@@ -635,8 +654,11 @@ def merge(p, b, main, unverified=None):
     _, old = fmcli.mutate(p, b.id, based, "lane_merge_base", {"branch": branch, "base": pre_merge})
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
-        brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
+        clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U", "-z").stdout.split("\0") if f]
+        brief = _conflict_brief(p, b, main, branch, clashed)  # T-0446: what clashed, and how to resolve it on the branch
         _git(main, "merge", "--abort")
+        if clashed:  # T-1161: after the abort, so a failed ledger write can't leave main mid-merge
+            c.log_event(p, "lane_conflict", task=b.id, data={"files": clashed[:50], "branch": branch})
 
         def restore(x):  # the aborted merge takes its base back: the task still starts where it did
             for k in keys:
@@ -651,10 +673,9 @@ def merge(p, b, main, unverified=None):
     return files
 
 
-def _conflict_brief(p, b, main, branch):
+def _conflict_brief(p, b, main, branch, files):
     """T-0446: while a lane's merge is still in conflict, write what clashed (files, their conflict hunks, the tasks
     on each side) and the steps that resolve it on the lane's branch, where the guard lets the builder's task edit."""
-    files = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
     if not files:
         return None
     hunks = _git(main, "diff", "--", *files).stdout
