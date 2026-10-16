@@ -509,11 +509,10 @@ def conflict(pl, p, path):
     if not path.startswith(p.root.rstrip("/") + "/"):
         return None
     rel = os.path.relpath(path, p.root)
+    # T-1138: a lane's pre-claim (lane-<id>) is advisory: lanes edit separate worktrees and the merge settles overlaps;
+    # blocking stalled a parallel builder on a 5,000-line shared file. Explicit leases (fm lease take) still deny.
     held = [v for v in _leases().values() if v["project"] == p.slug and v["file"] == rel and v["session"] != sid
-            and not v.get("advisory")]
-    if any(v["session"].startswith("lane-") for v in held):  # T-1068: a lane's pre-claim is its own task's
-        act = c.active_brief(c.load_briefs(p), p.lane)
-        held = [v for v in held if not (act and v["session"] == f"lane-{act.id}")]
+            and not v.get("advisory") and not v["session"].startswith("lane-")]
     if not held:
         return None
     text = _lines(path) or ""
