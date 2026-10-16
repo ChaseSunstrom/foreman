@@ -4947,7 +4947,10 @@ def build_parser():
                                                   "fm pr threads ID: review comments to steps; fm pr train: merge in order")
     s.add_argument("id", help="a task id, or threads / train")
     s.add_argument("more", nargs="*", help="threads: the task id")
-    s.add_argument("--pr", type=int, help="threads: the PR number (default: the PR of branch foreman/ID)")
+    s.add_argument("--pr", type=int, help="threads, --post: the PR number (default: the PR of branch foreman/ID; "
+                                          "--post: the current branch's)")
+    s.add_argument("--post", action="store_true", help="comment the description on the PR: needs the task's "
+                                                       "publish grant, spent by the post (T-1167)")
     s.add_argument("--task", help="train: the task whose publish grant covers the merges (default: the active one)")
     s = add("second", lazy("fmsecond", "cmd_second"), tier=("Finding your way", 430),
             help="an independent second read: plan (another model), debate (rebut a review), session (what was missed)")
