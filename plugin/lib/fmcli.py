@@ -4277,6 +4277,9 @@ def cmd_next(args):
     dead = fmlanes.stopped(p)  # T-1028
     over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
              + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
+    idle = fmlanes.stalled(p)  # T-1156
+    over += (" · builder(s) stalled, live but no edit, commit or event: "
+             + "; ".join(f"{i} ({round(m)} min)" for i, m in idle.items()) + " (check its lane or stop it)") if idle else ""
     hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
               and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
     if hollow:

@@ -8,6 +8,7 @@ import functools
 import io
 import os
 import re
+import time
 
 import fmcore as c
 
@@ -42,6 +43,11 @@ def cmd_lane(args):
                          + ("; ".join(f"{b.id} {b.status} {c.fit(b.title, 50)}" for b in tasks) or "no task")
                          + (f" — fm lane rm {tasks[0].id} frees it" if gone and tasks else "")
                          + (f" — ANDON: {c.fit(rows[-1]['andon'], 120)}" if andon else ""))
+        idle = stalled(p, briefs)
+        for r, ln in zip(rows, lines):
+            if r["tasks"] and r["tasks"][0]["id"] in idle:
+                r["stalled_min"] = round(idle[r["tasks"][0]["id"]])
+                lines[lines.index(ln)] = ln + f" — STALLED {r['stalled_min']} min: no edit, commit or event; check or stop it"
         listed = {r["path"] for r in rows}
         for b in briefs:  # review: a task whose lane folder is gone is still held; say how to free it
             if b.meta.get("lane") and b.meta["lane"] not in listed and b.status not in c.CLOSED:
@@ -162,6 +168,37 @@ def stopped(p, briefs=None):
     return [b.id for b in (c.load_briefs(p) if briefs is None else briefs)
             if b.meta.get("builder_proc") and b.meta.get("lane") and b.status not in c.CLOSED
             and fmbus.proc_state(b.meta["builder_proc"]) == "stopped"]
+
+
+def stalled(p, briefs=None):
+    """T-1156: {task id: minutes} for live builders whose lane shows no file change (tracked or untracked, not ignored), no
+    commit and no ledger event for FM_STALL_MIN minutes (default 15): a hang, not slow work."""
+    import fmbus
+    try:
+        limit = float(os.environ.get("FM_STALL_MIN") or 15)
+    except ValueError:
+        limit = 15
+    now, out, events = time.time(), {}, None
+    for b in (c.load_briefs(p) if briefs is None else briefs):
+        path = b.meta.get("lane")
+        if (not b.meta.get("builder_proc") or not path or b.status in c.CLOSED or not os.path.isdir(path)
+                or fmbus.proc_state(b.meta["builder_proc"]) != "alive"):
+            continue
+        newest = 0.0
+        files = _git(path, "ls-files", "-co", "--exclude-standard").stdout.splitlines()
+        for f in files[:20000]:  # ponytail: a lane past 20000 files is judged on these
+            try:
+                newest = max(newest, os.stat(os.path.join(path, f)).st_mtime)
+            except OSError:
+                pass
+        newest = max(newest, float(_git(path, "log", "-1", "--format=%ct").stdout.strip() or 0))
+        events = c.ledger_tail(p, 500) if events is None else events
+        for e in events:
+            if e.get("task") == b.id and (t := c.parse_ts(e.get("ts"))):
+                newest = max(newest, t.timestamp())
+        if (idle := (now - newest) / 60) >= limit:
+            out[b.id] = idle
+    return out
 
 
 def _ignored(path):
