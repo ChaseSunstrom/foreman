@@ -1,6 +1,6 @@
 import type { EngineInterface, RenderElement, ResolveInput } from 'claude-code'
 import type { LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
+import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, diffRows, elapsed, ganttCells, hex, spin, miniClawd, mix, outputSummary, progressCells, ruleCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { DiffRow, LabelRun } from './kit'
 import { DIFF_LINES, OUT_LINES, TREE_MS, cfg, took } from './state'
 import type { FeedItem, ToolUseRender } from './state'
@@ -531,6 +531,7 @@ export type TreeIn = {
   frame: number | null
   width: number
   rows: number // at most this many rows
+  turnMs?: number // how long this turn has run, on the root while it is live
 }
 
 /** T-1033 ('a tree/graph … each agent's commands/changes under it and yours too, all on the same screen … so the chat
@@ -554,6 +555,21 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
   while (size() > t.rows && k2 > 0) k2--
   while (size() > t.rows && k1 > 0) k1--
   const lines = mix(C.track, C.muted, 0.35)
+  // T-1039: each node's time bar in one column on a shared axis, as the pane's Agents graph ('more like a tree similar
+  // to the agents in the panel'): from the earliest thing shown (at least a minute back) to now
+  const starts = [...mine.slice(-Math.max(1, k1)).map(x => x.at), ...agents.slice(0, n).map(a => a.startedAt)]
+  const t0 = Math.min(t.now - 60000, ...starts)
+  const span = Math.ceil(Math.max(60000, t.now - t0) / 60000) * 60000
+  const gw = Math.max(8, Math.min(30, Math.floor(t.width * 0.22)))
+  const RW = 18 // review: every row ends in a cell this wide, so the bars before it share one column
+  const right = (text: string) => (
+    <Box flexShrink={0} width={RW} flexDirection="row" justifyContent="flex-end"><Text wrap="truncate-end" color={hex(C.muted)}>{text}</Text></Box>
+  )
+  const { Raster } = ui
+  const bar = (key: string, row: { start: number; end: number | null; marks: readonly number[]; color: number }, live: boolean) =>
+    e.surface === 'terminal'
+      ? <Box flexShrink={0}><Raster key={`tree-bar-${key}`} columns={gw} rows={1} cells={ganttCells(row, t.now - span, span, gw, t.now, live ? t.frame : null)} /></Box>
+      : null
   const call = (x: FeedItem, prefix: string, key: string) => {
     const done = x.end !== undefined
     const mark = !done ? (t.frame === null ? '▸' : spin(t.frame + x.at)) : x.ok === false ? '✗' : '✓'
@@ -564,23 +580,26 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
         <Box flexShrink={0}><Text color={hex(!done ? x.color : x.ok === false ? C.err : C.ok)}>{mark}</Text></Box>
         <Box flexShrink={0}><Text weight="bold" color={hex(x.color)}>{`${x.icon} ${done ? PAST[x.verb] ?? x.verb : x.verb}`}</Text></Box>
         <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(x.target)}</Text></Box>
-        <Box flexShrink={0}><Text color={hex(C.muted)}>{time}</Text></Box>
+        {bar(key, { start: x.at, end: x.end ?? null, marks: [], color: x.color }, !done)}
+        {right(time)}
       </Box>
     )
   }
   const rest = agents.length - n
   const branches = [...(k1 ? mine.slice(-k1) : []).map(x => ({ kind: 'call' as const, x })), ...agents.slice(0, n).map(a => ({ kind: 'agent' as const, a })),
     ...(rest ? [{ kind: 'more' as const }] : [])]
-  let facts = [mine.length ? `${mine.length} call${mine.length === 1 ? '' : 's'}` : '',
+  const facts = [mine.length ? `${mine.length} call${mine.length === 1 ? '' : 's'}` : '',
     agents.length ? `${agents.length} agent${agents.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ')
-  // sectionHead's own sums: its subject shows when it is 8 short of the room; cut the task to that, the facts go first
-  const fit = () => Math.max(30, t.width - 2) - 2 - 'this session'.length - 1 - (facts ? facts.length + 1 : 0) - 8
-  if (fit() < 16) facts = ''
-  const task = t.task.length > fit() ? `${t.task.slice(0, Math.max(1, fit() - 1))}…` : t.task // narrow: cut, never dropped
-  const { head } = sectionHead(ui, e, {
-    key: 'tree-root', color: C.accent, mark: t.live ? (t.frame === null ? '●' : spin(t.frame)) : '●', label: 'this session',
-    subject: task, frame: t.live ? t.frame : null, width: t.width, meta: facts ? [{ text: facts }] : [],
-  })
+  // the root, as the pane's: the session in bold, its task and step (cut, never dropped), every call it made on its bar
+  const head = (
+    <Box key="tree-root" flexDirection="row" gap={1} height={1} overflow="hidden">
+      <Box flexShrink={0}><Text weight="bold" color={hex(C.accent)}>{t.live ? (t.frame === null ? '●' : spin(t.frame)) : '●'}</Text></Box>
+      <Box flexShrink={0}><Text weight="bold" color={hex(C.accent)}>this session</Text></Box>
+      <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{t.task}</Text></Box>
+      {bar('root', { start: Math.min(t.now, ...mine.map(x => x.at)), end: null, marks: mine.map(x => x.at), color: C.accent }, t.live)}
+      {right([facts || 'starting', ...(t.live && t.turnMs ? [elapsed(t.turnMs)] : [])].join(' · '))}
+    </Box>
+  )
   const out: RenderElement[] = [head]
   branches.forEach((b, i) => {
     const last = i === branches.length - 1
@@ -602,8 +621,8 @@ export function liveTree(ui: UI, e: ResolveInput, t: TreeIn): RenderElement[] {
         <Box flexShrink={0}><Text color={hex(color)}>{a.done ? '✓' : t.frame === null ? '◆' : spin(t.frame + a.startedAt)}</Text></Box>
         <Box flexShrink={0}><Text weight="bold" color={hex(color)}>{`◆ ${a.type}`}</Text></Box>
         <Box flexGrow={1} flexShrink={1}><Text wrap="truncate-end" color={hex(0xd0d5dd)}>{clean(a.description || a.last)}</Text></Box>
-        <Box flexShrink={0}><Text color={hex(C.muted)}>{[`${a.tools} call${a.tools === 1 ? '' : 's'}`,
-          ...(took >= 1000 ? [elapsed(took)] : [])].join(' · ')}</Text></Box>
+        {bar(`agent-${a.id}`, { start: a.startedAt, end: a.done ? a.lastAt ?? t.now : null, marks: a.calls ?? [], color }, !a.done)}
+        {right([`${a.tools} call${a.tools === 1 ? '' : 's'}`, ...(took >= 1000 ? [elapsed(took)] : [])].join(' · '))}
       </Box>,
     )
     const shown = k2 ? calls.slice(-k2) : [] // slice(-0) is the whole list

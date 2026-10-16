@@ -180,6 +180,8 @@ let checkpointed = false
 let economyOn = false
 let happyUntil = 0 // the mascot jumps for a few seconds after a task closes
 let bgLive = 0 // background shells still running: the clock keeps a calm pace for the waiting row
+let treeTall = 0 // T-1039: the band tree's height this turn: it grows when it must and never shrinks mid-turn
+let treeDrawn = false // T-1039 review: the band drew the live tree, so the spinner line would repeat it
 let calm = 0
 const turns = new Set<string>()
 const agentCalls = new Map<string, string>() // running Agent call → its description
@@ -582,7 +584,7 @@ export const register: Register = (on, options) => {
     // Claude Code 2.1.299: turn.start fires for subagents too (with agentId); their progress is the Subagents card's,
     // and resetting here would wipe the main turn's counts mid-turn (T-0944)
     if (e.agentId) return next(e)
-    if (!turns.size) turnStartedAt = await $.clock.now()
+    if (!turns.size) (turnStartedAt = await $.clock.now()), (treeTall = 0)
     turns.add(e.turnId)
     const a = (await read($, view))?.active
     turn = { tools: 0, edits: 0, add: 0, del: 0, agents: 0, stepsDone: a ? a.steps.filter(s => s.done).length : -1, task: a?.id ?? '' }
@@ -824,6 +826,10 @@ export const register: Register = (on, options) => {
   // animated mark, the task and step, what the turn is doing, how long it has run. The desktop keeps its own row.
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    if (treeDrawn && !e.props.message) { // T-1039: the band's tree root says the task, step and time; a message still shows
+      const { Box } = $.ui.resolve(e)
+      return <Box key="fm-working" />
+    }
     const a = (await read($, view))?.active
     const cur = a?.steps.find(s => s.current)
     const f = await read($, frame)
@@ -928,6 +934,7 @@ export const register: Register = (on, options) => {
     const treeAt = await $.clock.now()
     const treeSubs = await read($, agents)
     const lastCall = feed.at(-1)
+    treeDrawn = false // until a tree is drawn below
     const treeLive = !!lastCall && (e.props.isWorking || treeSubs.some(x => !x.done) || treeAt - (lastCall.end ?? lastCall.at) < TREE_MS)
     if (idle && !bgs.length && !doneSince.length && !v.mode?.trust && !treeLive) return next(e)
     const { Box, Button, Text } = $.ui.resolve(e)
@@ -948,16 +955,26 @@ export const register: Register = (on, options) => {
     const usual = a ? v.typical?.[`${a.type}/${a.tier}`] : undefined
     const bandNow = await $.clock.now()
     const cut = 'truncate-end' as const
-    const tree = (rows: number) => (
-      <Box key="fm-band-tree" flexDirection="column">
-        {liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f, width: e.props.bodyColumns, rows,
-          task: a ? `${a.id} · step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}${cur ? ` ${cur.text}` : ''}` : 'no task in focus' })}
-      </Box>
-    )
+    // T-1039 ('sticky so the text doesn't scroll the chat'): one height for the turn, padded, with a blank row under it
+    const tree = (rows: number, sticky = true) => {
+      treeDrawn = sticky
+      const els = liveTree($.ui.resolve(e), e, { feed, subs: treeSubs, live: working, now: treeAt, frame: f,
+        width: e.props.bodyColumns, rows: sticky ? Math.max(1, rows - 1) : rows, turnMs: turnStartedAt ? treeAt - turnStartedAt : 0,
+        task: a ? `${a.id} · step ${Math.min(a.steps.length, done + 1)}/${a.steps.length}${cur ? ` ${cur.text}` : ''}` : 'no task in focus' })
+      if (!sticky) return <Box key="fm-band-tree" flexDirection="column">{els}</Box>
+      treeTall = Math.min(Math.max(1, rows - 1), Math.max(treeTall, els.length, 5))
+      return (
+        <Box key="fm-band-tree" flexDirection="column">
+          {els}
+          {Array.from({ length: Math.max(0, treeTall - els.length) }, (_, i) => <Text key={`tree-pad-${i}`}> </Text>)}
+          <Box key="tree-gap" height={1} />
+        </Box>
+      )
+    }
     // T-0989: with the pane shown it is the one panel: its attention row has what the band would say. T-1033: the band
     // then carries only what the pane can't, the live tree of the session and its subagents, under the chat
     if ((await $.ui.panes().catch(() => [])).some(p => p.id === PANE && p.isShown)) // idle: the root alone, one summary line
-      return treeLive ? tree(Math.max(3, e.props.maxRows)) : lastCall ? tree(1) : next(e)
+      return treeLive ? tree(Math.max(3, e.props.maxRows)) : lastCall ? tree(1, false) : next(e)
     // the card's own rows, so the tree under it never pushes the band past maxRows (review)
     const cardRows = 2 + (a ? 2 : 1) + (queued > 0 || inboxN > 0 ? 1 : 0) + (doneSince.length ? 1 : 0) + (bgs.length ? 1 : 0) +
       (!working && v.next ? 1 : 0) + (paused.length ? 2 : 0) + asks.length + Math.min(2, plans.length) + 1
