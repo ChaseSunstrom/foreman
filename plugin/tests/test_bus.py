@@ -249,6 +249,24 @@ class Conductor(Base):
                        env=dict(os.environ, FOREMAN_HOME=self.home, FOREMAN_ONEOFF="1"))
         self.assertFalse(os.path.exists(os.path.join(self.home, "state", "sessions", "sess-oneoff.json")))
 
+    def test_a_snapshot_naming_a_dead_or_reused_claude_pid_isnt_listed(self):
+        # T-1003: a later SessionStart swept the by-pid records, so the snapshot has to carry its own pid
+        import subprocess
+        self.snap("live0002", claude_pid=os.getpid(), claude_start=self.start_of(os.getpid()))
+        self.snap("reuse002", claude_pid=os.getpid(), claude_start="1")
+        gone = subprocess.Popen(["true"])
+        gone.wait()
+        self.snap("dead0002", claude_pid=gone.pid, claude_start="1")
+        out = self.fm("conductor").stdout
+        self.assertIn("live0002", out)
+        self.assertNotIn("dead0002", out)
+        self.assertNotIn("reuse002", out)
+
+    @staticmethod
+    def start_of(pid):
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[19]
+
     def test_it_lists_live_sessions_and_its_steer_reaches_them(self):
         self.snap("sess-x", context_pct=41)
         self.snap("sess-y", ts="2020-01-01T00:00:00Z")
