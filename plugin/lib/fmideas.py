@@ -125,10 +125,7 @@ def _reap(pr):
     """T-1044: the child's whole process group killed (never only the leader: a grandchild holding the pipes hung the
     runner and outlived it), its pipes drained, its registry entry gone."""
     if pr.returncode is None:  # once it's been waited for, its pid may be another process's by now
-        try:
-            os.killpg(pr.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        c.kill_group(pr)
     try:
         pr.communicate(timeout=5)
     except subprocess.TimeoutExpired:  # a grandchild that left the group (setsid) holds the pipes: not ours to wait on
