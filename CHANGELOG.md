@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task finish --why-not-caught` captures no "Catch it earlier" task when the task itself edited a test file; it says the catch landed with it (T-1009, first written by the recorded demo session).
 - `fm doctor`'s self-docs check (which also refuses the close of a task that changes `fmcli.py`) holds `fm help`'s tiers to every command once: `fm approve-reads` shipped with none, and only the full suite noticed, after the commit (T-1010, T-1011).
 - The UI harness marks a session one-off only on your own Foreman state; on a state of its own (the demo recorder) it is that state's working session, so the drive takes it to the close (T-1013: a recording stalled before its task closed).
 - A one-off session (`FOREMAN_ONEOFF=1`, or `claude -p` that `fm run` didn't start) records no evidence on the project's task and none of its edits count as the task's files: the UI harness ran the suite and closed the working session's step (T-1004, T-1007). The test helpers clear those variables, so a suite run from such a session behaves like any other.
