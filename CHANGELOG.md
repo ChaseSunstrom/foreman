@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: `git checkout -- FILE`, `git checkout REV -- FILE` and `git checkout FILE` are judged as writes to those files, not the whole tree. A branch, `-b`, `.`, a glob or pathspec-magic word, `--pathspec-from-file`, `--icase-pathspecs`/`--glob-pathspecs` and `GIT_ICASE_PATHSPECS`/`GIT_GLOB_PATHSPECS` still count as tree writes (T-1195).
 - The guard reads what a command runs: script files (`bash x.sh`, `source`, a script run by its path, `python x.py`), hidden exec vectors (`tar -I`, `ssh`, `rsync -e`, `git -c core.*`, `find -exec`, env-loaded code) and the scripts those run, and refuses a dangerous one naming the file and line. Over its time budget it falls back to a literal scan, and verdicts are cached by content hash (T-0275).
 - A stack card's "what to avoid" note is injected once per session; a later task in the same session gets one line pointing at `fm lib show NAME` instead of the whole note again (the changelogs card had been injected 28 times, about 18k characters, in one session) (T-1193).
 - `fm release` runs the canary last, after the push and round close, with up to four project sentinels at once; it never fails a release, so it no longer holds the push (1.2.34's canary took over 3 minutes per project, one at a time, across 12 projects) (T-1199).
