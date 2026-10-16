@@ -19,6 +19,7 @@
 - The guard's "driving Foreman's modules" refusal for a test written with `cat <<EOF` and run in the same command now says to write it in one command and run it in the next (each half passes), the cause of 12 of 31 such refusals in four days (T-1171).
 - `fm lane merge` records the files that conflicted, and `fm lane brief` warns when a new lane's scope includes a file two or more other lanes conflicted on in the last 30 days (T-1161).
 - `fm inbox spec FILE` captures each unchecked `- [ ]` item of a SPEC.md or checklist once, quoted as untrusted data (T-1165).
+- Builder briefs list the defect classes reviewers confirmed in the last 30 days (class, count, one example) under "Defects this project keeps shipping", so builders check for them before reporting (T-1164).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
