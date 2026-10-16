@@ -5226,8 +5226,8 @@ def build_parser():
 
     s = add("taste", lazy("fmideas", "cmd_taste"), help="what your choices say you want: kept, dropped (and why), "
                                                          "steered, corrected, vetoes to propose; brainstorms use it")
-    s.add_argument("action", nargs="?", choices=["adopt", "decline"],
-                   help="the user's yes or no to the proposed vetoes (all, or N)")
+    s.add_argument("action", nargs="?", choices=["adopt", "decline", "compile"],
+                   help="the user's yes or no to the proposed vetoes (all, or N); compile N: a proposal as a rule (T-1063)")
     s.add_argument("which", nargs="?", type=int, metavar="N")
     s.add_argument("-n", type=int, default=8)
     s.add_argument("--overwrites", action="store_true", help="files the user's own commits reworked soon after an "
