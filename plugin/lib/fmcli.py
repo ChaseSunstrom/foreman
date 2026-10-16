@@ -7,6 +7,7 @@ import collections
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 
@@ -905,6 +906,7 @@ def task_finish(p, args):
               for kind, n, cmd, code, output in results if code]
     if failed:
         raise c.PolicyError(f"{b.id} not finished; failing (recorded):\n  - " + "\n  - ".join(failed))
+    _close_affected(p, need_brief(p, b.id), runs, args)  # T-1117: what it changed must not break what's linked to it
     if args.commit:  # T-0720: a credential found now leaves the task open to fix it, not done and uncommitted
         _commit_task(p, need_brief(p, b.id), args.commit, dry=True)
     args.task_cmd = "done"
@@ -930,8 +932,130 @@ def task_finish(p, args):
             print(fmledger.receipt(p))
         except OSError as e:  # the close has landed; an unreadable archive must not make it look failed
             print(f"Ledger: unreadable ({e.strerror or e})")
+    started = None
+    if not rc:
+        try:
+            started = _sentinel(p)
+        except (OSError, subprocess.SubprocessError):
+            pass  # the close has landed; the next close tries again
+    if not rc and not getattr(args, "json", False):
+        if started == "started":
+            print("Full gates: running in the background (a red result becomes an urgent baseline task)")
         print(_landed(p, b))  # T-0956: the close's last line
     return rc
+
+
+def _known_flaky(p):
+    """The test names the flake ledger (c.note_flakes) has seen fail and then pass on the same tree."""
+    try:
+        with open(os.path.join(p.dir, "flakes.json"), encoding="utf-8") as f:
+            flaky = json.load(f).get("flaky")
+        return set(flaky) if isinstance(flaky, dict) else set()
+    except (OSError, ValueError, AttributeError):
+        return set()
+
+
+def _close_affected(p, b, runs, args):
+    """T-1117: the tests linked (fm map) to what this task changed run at its close (one rerun for a flake), and a
+    failure refuses it unless the last full gate run of another task already had it (then it's noted: that run's
+    baseline task owns it). An environment failure, or a runner whose failing tests can't be named, is said, not
+    refused; --skip-affected REASON waives it on the record. No affected-tests command, nothing linked, or the same
+    command already passed in this finish: nothing to run."""
+    try:
+        cmd, tests, _ = affected(p, b)
+    except UsageError:
+        return
+    if not cmd or (runs.get(cmd) or (1,))[0] == 0:
+        return
+    waive = (getattr(args, "skip_affected", None) or "").strip()
+    if waive:
+        mutate(p, b.id, lambda x: x.append_log(f"affected tests waived: {c.plain(waive)[:200]}"), "close_affected",
+               {"cmd": c.fit(cmd, 200), "waived": c.fit(waive, 200)})
+        return
+    guard_stored(p, b, cmd)
+    env, timeout = _skip_env(red_first_tests(p, b, [cmd])), (args.timeout if args.timeout > 0 else None)
+    code, output = c.run_command(p.root, cmd, timeout, env=env)
+    if code and code != 124:
+        code, output = c.run_command(p.root, cmd, timeout, env=env)  # a flake passes the second time
+    names = c.failing_tests(output) if code else []
+    c.log_event(p, "close_affected", task=b.id, data={"cmd": c.fit(cmd, 200), "exit": code, "failing": names[:20]},
+                session=session())
+    say = (lambda m: None) if getattr(args, "json", False) else print
+    if not code:
+        return
+    if code == 124:
+        raise c.PolicyError(f"{b.id} not finished: the tests linked to its changes timed out ({cmd}). Rerun with a "
+                            f"longer --timeout, or waive on the record: --skip-affected \"<why>\"")
+    env_why = failure_class(output)
+    if env_why:
+        say(f"{b.id}: the linked tests couldn't run here ({env_why}): {cmd}; not held against the close")
+        return
+    before = set()
+    for e in reversed(c.ledger_tail(p, 3000)):  # another task's run: this task's own red run proves nothing
+        if e.get("event") == "check_run" and e.get("task") != b.id:
+            before = {n for r in (e.get("data") or {}).get("results") or [] for n in r.get("failing") or []}
+            break
+    if names and set(names) <= before:
+        say(f"{b.id}: the linked tests fail, but were already red in the last full run ({', '.join(names[:4])}): "
+            f"its baseline task owns them")
+        return
+    raise c.PolicyError(f"{b.id} not finished: the tests linked to its changes fail"
+                        + (f" ({', '.join(names[:6])})" if names else " (the runner names no test)")
+                        + f": {cmd} → {c.run_result(code, output)}. Fix them; if they were red before this task, a "
+                        "full fm check records that and the close goes through; or waive on the record: "
+                        "--skip-affected \"<why>\"")
+
+
+def _sentinel(p):
+    """T-1117: after a close, the full gates run in the background when the last full run is older than SENTINEL_CLOSES
+    closes or SENTINEL_MIN minutes, so a break the linked tests miss is found without anyone remembering to look. One
+    at a time (sentinel.pid); it carries the tree it was started on, so a run that ends after the next task's edits
+    began captures no baseline. FOREMAN_SENTINEL=off skips it, =sync runs it inline (tests)."""
+    mode = os.environ.get("FOREMAN_SENTINEL", "")
+    if mode == "off" or (os.environ.get("FOREMAN_NO_BACKGROUND") and mode != "sync"):
+        return None
+    pidf = os.path.join(p.dir, "sentinel.pid")
+    try:
+        with open(pidf) as f:
+            pid = int(f.read().strip() or 0)
+        if pid and time.time() - os.path.getmtime(pidf) < 3600:
+            os.kill(pid, 0)
+            return None  # one is running
+    except (OSError, ValueError):
+        pass
+    events, last, closes = c.ledger_tail(p, 5000), None, 0
+    for e in reversed(events):
+        if e.get("event") == "check_run":
+            last = c.parse_ts(e.get("ts"))
+            break
+        closes += e.get("event") == "task_done"
+    if last and closes < SENTINEL_CLOSES and time.time() - last.timestamp() < SENTINEL_MIN * 60:
+        return None
+    if c.host_strain():
+        return None
+    env = dict(os.environ, FOREMAN_SENTINEL_RUN="1", FOREMAN_SENTINEL_TREE=c.worktree_id(p.root) or "")
+    argv = [os.path.join(c.PLUGIN_ROOT, "bin", "fm"), "check"]
+    if mode == "sync":
+        c.write_atomic(pidf, str(os.getpid()))
+        try:
+            subprocess.run(argv, cwd=p.root, env=env, stdin=subprocess.DEVNULL, capture_output=True)
+        finally:
+            _unlink(pidf)
+        return "ran"
+    pr = subprocess.Popen(["sh", "-c", 'echo $$ > "$1"; "$2" check; rm -f "$1"', "sentinel", pidf, argv[0]],
+                          cwd=p.root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                          stderr=subprocess.DEVNULL, start_new_session=True)
+    return "started" if pr.pid else None
+
+
+def _unlink(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+
+
+SENTINEL_CLOSES, SENTINEL_MIN = 3, 60
 
 
 def _ledger_head(p):
@@ -3136,8 +3260,17 @@ def cmd_check(args):
         pass  # failure memory is a hint; the gate's verdict stands either way
     c.log_event(p, "check_run", task=act.id if act else None, session=session(),
                 data={"tree": tree, "env": c.env_id(), "results": [{"cmd": cmd, "exit": code, "s": round(s, 1), "note": notes.get(cmd),
-                                                                     **skipped.get(cmd, {})} for cmd, code, _, s in results],
-                      **({"skip_tests": sorted(skip)} if skip else {})})
+                                                                     **({"failing": c.failing_tests(out_)[:50]} if code else {}),
+                                                                     **skipped.get(cmd, {})} for cmd, code, out_, s in results],
+                      **({"skip_tests": sorted(skip)} if skip else {}),
+                      **({"sentinel": True} if os.environ.get("FOREMAN_SENTINEL_RUN") else {})})
+    try:  # T-1117: a red gate is someone's task without anyone deciding so
+        sentinel = os.environ.get("FOREMAN_SENTINEL_RUN") and os.environ.get("FOREMAN_SENTINEL_TREE") == tree
+        sure = not wrote and (not act or bool(sentinel))  # mid-task red may be its own; a sentinel only on its tree
+        base_lines = _baseline(p, [r for r in results if r[0] not in skipped and  # red-first work: only a failure fm
+                                   (sure or str(notes.get(r[0]) or "").startswith("pre-existing"))])  # check knows predates it
+    except Exception as e:  # the verdict stands; the capture is a convenience
+        base_lines = [f"baseline capture failed: {e}"]
     if args.evidence:  # one run, one verdict: a later passing gate can't hide an earlier failing one
         shown = [r for r in results if r[1]] or results
         result = (f"✗ exit 1 · {failed} of {len(results)} failed: " if failed else
@@ -3152,13 +3285,41 @@ def cmd_check(args):
         lines.append(f"{'✗' if code else '✓'} {cmd} → {c.run_result(code, output)} ({secs:.1f} s)"
                      + (f" — {notes[cmd]}" if cmd in notes else ""))
         lines += ["    " + l for l in output.rstrip().splitlines()[-10:]] if code else []
-    lines += [f"! {x}" for x in flaky + ([left_out] if left_out else [])]
+    lines += [f"! {x}" for x in flaky + ([left_out] if left_out else []) + base_lines]
     if wrote:
         lines.append("! the gates changed the working tree: one of them writes files (a check should only read)")
     out(args, {"results": [{"cmd": cmd, "exit": code, "seconds": round(s, 1), "note": notes.get(cmd)}
                            for cmd, code, _, s in results], "failed": failed, "wrote": wrote, "skipped_tests": skip},
         "\n".join(lines))
     return 1 if failed else 0
+
+
+def _baseline(p, results):
+    """T-1117: a full-gate run that is red captures one urgent FIX naming the failing tests (one open task per gate and
+    failing set; an environment failure isn't the code's, and a gate that names no failing test, a linter or fm doctor,
+    says what's wrong itself); a green gate names an open baseline task it turned green. The caller passes only the
+    runs it can vouch for: an unchanged tree, and no task mid-work unless the failure predates it."""
+    import fmeco
+    lines, open_ = [], [b for b in c.load_briefs(p) if b.meta.get("baseline") and b.status not in c.CLOSED]
+    for cmd, code, output, _ in results:
+        if not code:
+            lines += [f"baseline is green again: {b.id} (fm task finish {b.id} once its criterion runs green)"
+                      for b in open_ if f"`{cmd}`" in b.section("Raw request")]
+            continue
+        names = c.failing_tests(output)
+        if not names or failure_class(output) or set(names) <= _known_flaky(p):  # a flake under load isn't a baseline
+            continue
+        head = f"Baseline red: `{cmd}` fails {', '.join(names[:6])}{' …' if len(names) > 6 else ''}."
+        text = head + " Captured by fm check: the gates are red, so fix this before new work (it may not be this task's doing)."
+        same = next((b for b in open_ if head in b.section("Raw request")), None)
+        b, new = (same, False) if same else fmeco.capture_once(p, text, "FIX", "baseline")
+        if new:
+            mutate(p, b.id, lambda x: x.meta.update(priority="urgent", baseline=True), "baseline_red",
+                   {"cmd": c.fit(cmd, 200), "failing": names[:20]})
+            lines.append(f"baseline red: captured {b.id} (urgent): {c.fit(text, 160)}")
+        else:
+            lines.append(f"baseline still red: {b.id}")
+    return lines
 
 
 # ponytail: a denylist over declared checks only (criteria's verify commands); an allowlist if one ever slips through
@@ -3580,12 +3741,12 @@ def _runnable(template, tests):
     return tests
 
 
-def affected(p):
+def affected(p, b=None):
     """(command, tests, changed files) for the tests linked (fm map) to files changed since the task started, with the
     project's template; command None when no test is linked. fm check --affected and the ambient runner (T-0705)."""
     import fmmap
     import shlex
-    act = c.active_brief(c.load_briefs(p), p.lane)
+    act = b or c.active_brief(c.load_briefs(p), p.lane)  # T-1117 review: the closing task's base, active or not
     base = (c.task_base(p.root, act) if act else None) or "HEAD"
     changed = set(fmmap.changed(p.root, base))
     m = fmmap.load(p)
@@ -4305,6 +4466,8 @@ def build_parser():
     t.add_argument("--result", default="no findings", help="the self audit's result (S)")
     t.add_argument("--lens", action="append", help="M/L: '<lens>: <result>' per audit lens (repeatable)")
     t.add_argument("--docs", help="Docs impact: the docs updated, or none: why")
+    t.add_argument("--skip-affected", metavar="WHY", help="T-1117: close without the linked tests' verdict (a runner "
+                                                         "fm can't read, a known-red suite), logged with WHY")
     t.add_argument("--lesson")
     t.add_argument("--timeout", type=float, default=600)
     t.add_argument("--commit", metavar="MESSAGE", help="then commit the task's own files with this message")
