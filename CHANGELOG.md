@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm lease take` with a path relative to the repo root, run from a subdirectory, leases that file instead of a doubled path (T-1148).
 
 ## 1.2.32 — 2026-10-16
 - `fm doctor` no longer warns about a hook error whose traceback line the code doesn't have any more (a half-written edit, a fixed bug); it says how many were stale (T-1139).
