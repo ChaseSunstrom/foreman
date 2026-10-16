@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm approve-reads on` (yours to type; T-0974): in Claude Code's default permission mode, Foreman's PermissionRequest hook answers the dialog for a command that only reads (a conservative allowlist: every part a reading program without its writing flags, no redirect but to /dev/null, nothing substituted, backgrounded or assigned). Anything else still asks.
 - The fleet drops a session whose Claude process has ended at once (a killed session sends no SessionEnd and read as live for 15 minutes), and one-off sessions (`FOREMAN_ONEOFF=1`, the UI harness) never join it (T-1001).
 - The pane fills the dock exactly with no gaps (T-1000): sections take the rows they hold, Live keeps its height and draws the session's tool lanes in rows nothing runs in, and the Pulse charts at the bottom stretch into the rest (14-day bars as tall as the section, then gauges, then the newest news). Every More line has a picture: a context meter per session, a +/− bar for files, one stacked bar for spend by feature, a bar per skill, pass meters for bench and research. Plans waiting for a yes sort first in the queue.
 - Ambient tests (T-0994): a pass no longer counts as the current step's evidence (it closed steps mid-work: 'look at it live' and 'docs' on T-0989); the pass-again note names the `fm task evidence` line for when the step is done. `fm check --affected` and ambient runs leave out tests the template's runner can't run (a `.tsx` test handed to a Python runner ran nothing and read as a pass).

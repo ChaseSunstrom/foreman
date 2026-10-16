@@ -1479,6 +1479,44 @@ def fm_calls(cmd):
     return calls
 
 
+# T-0974: programs that only read, each with the flags that would make it write, run something or never end. A command
+# passes read_only() only when every part is one of these without those flags.
+_READS = {
+    "ls": (), "cat": (), "head": (), "tail": ("-f", "-F", "--follow"), "wc": (), "pwd": (), "which": (), "file": (),
+    "stat": (), "du": (), "df": (), "tree": ("-o",), "grep": (), "egrep": (), "fgrep": (), "rg": ("--pre",),
+    "sort": ("-o", "--output"), "uniq": (), "cut": (), "nl": (), "diff": (), "cmp": (), "realpath": (),
+    "basename": (), "dirname": (), "echo": (), "printf": (), "true": (), "date": ("-s", "--set"), "tr": (),
+    "column": (), "find": ("-exec", "-execdir", "-ok", "-okdir", "-delete", "-fprint", "-fprint0",
+                                     "-fprintf", "-fls"),
+}
+_GIT_READS = {"status", "log", "diff", "show", "blame", "rev-parse", "ls-files", "describe", "shortlog", "grep"}
+
+
+def read_only(cmd):
+    """T-0974: True when the whole command only reads: every part a _READS program (or a reading git subcommand)
+    without its writing flags, nothing redirected but to /dev/null, nothing substituted, expanded, backgrounded or
+    assigned.
+    Conservative on purpose: anything it doesn't know gets Claude Code's own dialog."""
+    if not cmd.strip() or any(x in cmd.strip() for x in ("`", "$", "<(", ">(", "\n")):  # review: $VAR can print a secret
+        return False
+    parts = _split(_tokens(cmd))
+    for x in parts:
+        if x.procsub or x.feeds or x.depth or any(r != "/dev/null" for r in x.redirs) or x.op not in ("", ";", "&&", "||", "|"):
+            return False
+        argv = x.argv
+        if not argv or "=" in argv[0] or "/" in argv[0]:
+            return False
+        if argv[0] == "git":
+            sub = argv[1] if len(argv) > 1 else ""
+            if sub not in _GIT_READS or any(a == "--output" or a.startswith("--output=") or a == "-o" for a in argv):
+                return False
+            continue
+        bad = _READS.get(argv[0])
+        if bad is None or any(a == b or a.startswith(b + "=") for a in argv[1:] for b in bad):
+            return False
+    return bool(parts)
+
+
 def lone_fm_ask(cmd):
     """The arguments of `fm ask …` when it is the whole command (nothing chained, piped, redirected or substituted):
     a permission prompt then approves exactly that request."""
@@ -2333,6 +2371,10 @@ def check_bash(cmd, ctx, depth=0, tails=True):
             if sub == "pause" and "off" in rest:  # T-0591: the user's stop is lifted by the user
                 found.append(("self-authorize", "fm pause off is the user's to run: they paused everything Foreman "
                                                 "runs unattended, so only they lift it (they can type ! fm pause off)"))
+            if sub == "approve-reads" and "on" in rest:  # T-0974: it answers Claude Code's dialogs for the user
+                found.append(("self-authorize", "fm approve-reads on lets Foreman answer Claude Code's permission "
+                                                "dialogs for reads: the user turns it on (they can type ! fm "
+                                                "approve-reads on)"))
             if sub == "rule" and "rm" in rest:  # T-0971: a flag before the word counts too; `add rm` is a rare miss
                 found.append(("self-authorize", "fm rule rm is the user's to run: their rule stops what they said to "
                                                 "stop, so only they lift it (they can type ! fm rule rm N)"))
