@@ -4347,8 +4347,11 @@ class _Parser(argparse.ArgumentParser):
         unknown = [t.partition("=")[0] for t in _ARGV if re.match(r"--?[A-Za-z]", t) and t.partition("=")[0] not in flags]
         near = [m for t in unknown for m in difflib.get_close_matches(t, flags, n=1)][:1]  # a mistyped flag shifts the
         bad = re.search(r"invalid choice: '([^']*)' \(choose from (.+)\)", message)    # positionals: name it first
+        choices = re.findall(r"'?([\w-]+)'?", bad.group(2)) if bad else []
         if bad and not near:
-            near = difflib.get_close_matches(bad.group(1), re.findall(r"'?([\w-]+)'?", bad.group(2)), n=1)
+            near = difflib.get_close_matches(bad.group(1), choices, n=1)
+        if len(choices) > 12:  # T-1170: every command's name is 2 KB of output for one typo
+            message = message.replace(bad.group(0), f"unknown '{bad.group(1)}' (fm help lists them)")
         super().error(message + (f" — did you mean {near[0]}?" if near else ""))
 
 

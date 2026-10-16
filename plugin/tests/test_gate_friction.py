@@ -63,3 +63,12 @@ class Typos(ForemanTestCase):
             p = self.fm(*argv, check=False)
             self.assertNotEqual(p.returncode, 0)
             self.assertIn(f"did you mean {want}", p.stderr, argv)
+
+    def test_an_unknown_command_skips_the_list_of_every_command(self):
+        # T-1170: argparse's "choose from" named all ~170 commands (2 KB of output for one typo)
+        p = self.fm("tsk", check=False)
+        self.assertIn("did you mean task", p.stderr)
+        self.assertIn("fm help", p.stderr)
+        self.assertNotIn("choose from", p.stderr)
+        self.assertLess(len(p.stderr), 400)
+        self.assertIn("choose from", self.fm("loop", "bogus", check=False).stderr, "a short list still helps")
