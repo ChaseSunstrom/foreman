@@ -1576,5 +1576,25 @@ class Robustness(GuardCase):
             g.check("Bash", "not-a-dict", self.ctx())
 
 
+class StdinRmAndEvalSubst(GuardCase):
+    """T-1123: rm fed targets on stdin (not only rm -r), and eval of a substitution printing a dangerous command."""
+    def test_rows(self):
+        self.run_table([
+            ("echo {fhome}/plugin/lib/fmguard.py | xargs rm", "rm-outside"),
+            ("echo /etc/passwd | xargs rm -f", "rm-outside"),
+            ("cat list | xargs rm", "rm-outside"),
+            ("find {repo} -name '*.o' | xargs rm", None),
+            ("find /etc -name '*.o' | xargs rm", "rm-outside"),
+            ("cat list | xargs rm -rf", "rm-outside"),
+            ("find /etc -name x | xargs rm -rf", "rm-outside"),
+            ("eval \"eval \\\"eval \\\\\\\"eval \\\\\\\\\\\\\\\"eval 'eval ls'\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"", "rm-outside"),
+            ("rm {repo}/a.txt", None),
+            ('eval "$(printf \'rm -rf ~\')"', "rm-outside"),
+            ('eval "$(echo rm -rf ~)"', "rm-outside"),
+            ('eval "$(echo ls)"', None),
+            ('eval "$(printf \'%s\' ls)"', None),
+        ], self.bash)
+
+
 if __name__ == "__main__":
     unittest.main()
