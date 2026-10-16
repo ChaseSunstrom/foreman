@@ -463,6 +463,22 @@ def lessons(p):
     return rows
 
 
+def consolidate(p, floor=0.6):
+    """T-1071: groups of live lessons whose words overlap (Jaccard >= floor): [{"ids": [...], "texts": [...]}].
+    Proposes only; the user retires the extras (fm recall --lessons --retire)."""
+    live = [(r["id"], r["text"], set(_tokens(r["text"]))) for r in lessons(p) if not r.get("retired")]
+    groups, seen = [], set()
+    for i, (a, ta, sa) in enumerate(live):
+        if a in seen:
+            continue
+        grp = [(a, ta)] + [(b, tb) for b, tb, sb in live[i + 1:] if b not in seen and sa and sb
+                           and len(sa & sb) / len(sa | sb) >= floor]
+        if len(grp) > 1:
+            seen.update(g[0] for g in grp)
+            groups.append({"ids": [g[0] for g in grp], "texts": [g[1] for g in grp]})
+    return groups
+
+
 def retired_lessons(p):
     """T-0743: {lesson id: why} the user or a session retired; recall and tripwires leave them out."""
     v = c.read_meta(p).get("retired_lessons")
@@ -613,6 +629,17 @@ def cmd_recall(args):
         return fmcli.out(args, {"path": path, "lessons": n, "paths": files},
                          f"{n} lesson(s) → {os.path.relpath(path, p.root)}/, each loaded only with its task's files "
                          f"({len(files)} in all)")
+    if getattr(args, "lessons", False) and getattr(args, "consolidate", False):  # T-1071
+        groups = consolidate(p)
+        text = "\n".join(f"- {' + '.join(g['ids'])}: keep \"{c.fit(c.plain(max(g['texts'], key=len)), 160)}\"; retire the "
+                         f"others with fm recall --lessons --retire ID --why merged" for g in groups) \
+            or "No near-duplicate lessons."
+        if groups and getattr(args, "capture", False):
+            with c.lock(p.dir):
+                made = fmcli._create(p, "Consolidate near-duplicate lessons", "CLEAN", "S", "captured", raw=text, source="night")
+                c.log_event(p, "capture", task=made.id, data={"source": "night", "type": "CLEAN"})
+                c.regen_views(p)
+        return fmcli.out(args, {"groups": groups}, text)
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
