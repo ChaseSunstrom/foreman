@@ -48,23 +48,47 @@ class Checks(unittest.TestCase):
         url = "https://github.com/anthropics/claude-code/issues/25990"
         issues = [{"id": "zsh-heredoc", "pattern": r"can't create temp file for here document", "issue_url": url,
                    "fixed_in": "2.1.47", "note": "sandboxed zsh heredocs"}]
-        err = "(eval):1: can't create temp file for here document: read-only file system"
-        r = d.check_upstream([err, "other", err], (2, 1, 40), issues)
+        text = "(eval):1: can't create temp file for here document: read-only file system"
+        before, after = "2026-10-01T00:00:00Z", "2026-10-03T00:00:00Z"
+        update = c.parse_ts("2026-10-02T00:00:00Z").timestamp()  # the installed Claude Code arrived
+        err = (after, text)
+        r = d.check_upstream([err, (after, "other"), err], (2, 1, 40), issues, update)
         self.assertEqual(r.status, "WARN")
         self.assertIn(url, r.detail)
         self.assertIn("seen 2×", r.detail)
         self.assertIn("fixed in 2.1.47", r.detail)
         self.assertIn("claude update", r.detail)
-        r = d.check_upstream([err, err], (2, 1, 50), issues)
+        r = d.check_upstream([err, err], (2, 1, 50), issues, update)
         self.assertEqual(r.status, "WARN")
         self.assertIn("recurs", r.detail)
         self.assertNotIn("claude update", r.detail)
-        self.assertEqual(d.check_upstream([err], (2, 1, 40), issues).status, "PASS")  # once is not a pattern
-        self.assertEqual(d.check_upstream([], (2, 1, 40), issues).status, "PASS")
-        self.assertEqual(d.check_upstream([err, err], (2, 1, 40), []).status, "PASS")
-        r = d.check_upstream([err.upper(), err], (2, 1, 40), [dict(issues[0], fixed_in=None)])
+        # review: errors from before the update that fixed them don't recur; when the update time is unknown, say so
+        self.assertEqual(d.check_upstream([(before, text)] * 3 + [err], (2, 1, 50), issues, update).status, "PASS")
+        r = d.check_upstream([(before, text)] * 2, (2, 1, 50), issues, 0)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("seen 2× in 7 days (possibly before an update)", r.detail)
+        r = d.check_upstream([err, err], (), issues, update)
+        self.assertIn("installed version unknown", r.detail)
+        self.assertNotIn("claude update", r.detail)
+        self.assertEqual(d.check_upstream([err], (2, 1, 40), issues, update).status, "PASS")  # once is not a pattern
+        self.assertEqual(d.check_upstream([], (2, 1, 40), issues, update).status, "PASS")
+        self.assertEqual(d.check_upstream([err, err], (2, 1, 40), [], update).status, "PASS")
+        r = d.check_upstream([(after, text.upper()), err], (2, 1, 40), [dict(issues[0], fixed_in=None)], update)
         self.assertEqual(r.status, "WARN")  # case doesn't hide it; an open issue has no fix to name
         self.assertIn("no fix released", r.detail)
+        # review: a bad entry is a finding, never a crashed doctor run
+        r = d.check_upstream([err, err], (2, 1, 40), [{"id": "broken", "pattern": "("}, "junk"] + issues, update)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("broken", r.detail)
+        self.assertIn(url, r.detail)
+
+    def test_the_installed_claude_code_arrived_when_its_binary_did(self):
+        binary = self.write("versions/2.1.301", "#!/bin/sh\n")
+        os.chmod(binary, 0o755)
+        os.makedirs(os.path.join(self.t, "bin"))
+        os.symlink(binary, os.path.join(self.t, "bin", "claude"))
+        self.assertEqual(d._cc_installed_at(os.path.join(self.t, "bin")), os.stat(binary).st_ctime)
+        self.assertEqual(d._cc_installed_at(os.path.join(self.t, "none")), 0)  # not found: unknown
 
     def test_the_shipped_upstream_list_is_well_formed(self):
         issues = json.load(open(os.path.join(PLUGIN, "lib", "upstream-issues.json"), encoding="utf-8"))
@@ -398,8 +422,8 @@ class HookErrors(ForemanTestCase):
                     f"{ago(3)} SubagentStop Traceback (most recent call last):\n"
                     "ReferenceError: classifyHandoffIfNeeded is not defined\n")
         with open(os.path.join(p.dir, "failures.jsonl"), "a") as f:
-            f.write(json.dumps({"sig": "agent failed: classifyhandoffifneeded is not defined", "task": None,
-                                "at": c.now()}) + "\n")
+            rec = {"sig": "agent failed: classifyhandoffifneeded is not defined", "task": None, "at": c.now()}
+            f.write(json.dumps(rec) + "\n" + json.dumps(dict(rec, hinted=True)) + "\n[1]\n")  # neither is a new error
         r = d.check_upstream(version=(2, 1, 40))
         self.assertEqual(r.status, "WARN")
         self.assertIn("issues/22087 (seen 2×)", r.detail)

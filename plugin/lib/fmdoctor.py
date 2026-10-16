@@ -611,38 +611,69 @@ def recent_hook_errors(days=1):
 
 
 def _recent_errors(days=7):
-    """T-1076: error texts of the last `days`: each hook error and every project's failure signatures."""
-    out = ["\n".join(e) for e in recent_hook_errors(days)]
+    """T-1076: (ts, text) of the last `days`: each hook error and every project's failure signatures (not the
+    hinted copy fmrecall adds to a repeat)."""
+    out = [(e[0].split(" ", 1)[0], "\n".join(e)) for e in recent_hook_errors(days)]
     for p, _ in c.all_projects():
-        out += [r.get("sig") or "" for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
-                if (c.age_days(r.get("at")) or 99) < days]
+        out += [(r.get("at"), str(r.get("sig") or "")) for r in c.tail_jsonl(os.path.join(p.dir, "failures.jsonl"), 1000)
+                if isinstance(r, dict) and not r.get("hinted") and (c.age_days(r.get("at")) or 99) < days]
     return out
 
 
-def check_upstream(errors=None, version=None, issues=None):
+def _cc_installed_at(path=None):
+    """When the installed Claude Code arrived: the inode-change time of the file `claude` resolves to (npm pins
+    mtimes to 1985; ctime is when it was unpacked); 0 when unknown."""
+    # ponytail: a later chmod or restore of the binary moves it too; that only hides older errors, never adds one
+    try:
+        found = shutil.which("claude", path=path)
+        return os.stat(os.path.realpath(found)).st_ctime if found else 0
+    except OSError:
+        return 0
+
+
+def _after(ts, since):
+    t = c.parse_ts(ts)
+    return bool(t) and t.timestamp() >= since
+
+
+def check_upstream(errors=None, version=None, issues=None, since=None):
     """T-1076: an error seen twice or more in 7 days that matches a known Claude Code issue (lib/upstream-issues.json),
-    with the version that fixes it. Stubs: `errors` texts, `version` tuple (() unknown), `issues` entries."""
+    with the version that fixes it. Stubs: `errors` (ts, text) pairs, `version` tuple (() unknown), `issues` entries,
+    `since` when the installed version arrived (epoch; 0 unknown): only later errors can say a fix didn't hold."""
     if errors is None:
         errors = _recent_errors()
     if version is None:
         import fmhooks
         version = fmhooks._cc_version()
+    if since is None:
+        since = _cc_installed_at()
     if issues is None:
         issues = _load_json(os.path.join(PLUGIN, "lib", "upstream-issues.json"))
         if not isinstance(issues, list):
             return Result("upstream issues", "WARN", "plugin/lib/upstream-issues.json is missing or unreadable")
     found = []
     for i in issues:
-        n = sum(bool(re.search(i["pattern"], e, re.I)) for e in errors)
-        if n < 2:
-            continue
-        seen, fix = f"matches {i['issue_url']} (seen {n}×)", i["fixed_in"]
-        if not fix:
-            found.append(f"{seen}; no fix released yet: {i['note']}")
-        elif version and version >= tuple(map(int, fix.split("."))):
-            found.append(f"{seen}; should be fixed in {fix} yet recurs")
-        else:
-            found.append(f"{seen}; fixed in {fix}: claude update")
+        try:  # a bad entry is a finding, never a crashed doctor run
+            hits = [ts for ts, text in errors if re.search(i["pattern"], text, re.I)]
+            if len(hits) < 2:
+                continue
+            url, fix = i["issue_url"], i["fixed_in"]
+            if not fix:
+                found.append(f"matches {url} (seen {len(hits)}×); no fix released yet: {i['note']}")
+            elif not version:
+                found.append(f"matches {url} (seen {len(hits)}×); fixed in {fix}; installed version unknown "
+                             f"(claude --version)")
+            elif version < tuple(map(int, fix.split("."))):
+                found.append(f"matches {url} (seen {len(hits)}×); fixed in {fix}: claude update")
+            elif not since:
+                found.append(f"matches {url}, seen {len(hits)}× in 7 days (possibly before an update); should be "
+                             f"fixed in {fix} yet recurs")
+            elif sum(_after(ts, since) for ts in hits) >= 2:
+                found.append(f"matches {url} (seen {sum(_after(ts, since) for ts in hits)}× since this Claude Code "
+                             f"was installed); should be fixed in {fix} yet recurs")
+        except (KeyError, TypeError, ValueError, AttributeError, re.error) as e:
+            name = i.get("id") if isinstance(i, dict) else c.fit(str(i), 40)
+            found.append(f"entry {name} in upstream-issues.json is unusable ({type(e).__name__}: {e})")
     return Result("upstream issues", "WARN" if found else "PASS", "; ".join(found) or
                   f"no error seen twice in 7 days matches the {len(issues)} known Claude Code issue(s)")
 
