@@ -248,3 +248,23 @@ class OtherProjects(ForemanTestCase):
         self.fm("share", "on", cwd=self.b)
         self.fm("sensitive", "on", cwd=self.b)
         self.assertEqual(self.others()["hits"], [])
+
+
+class Consolidate(ForemanTestCase):
+    """T-1071: fm recall --lessons --consolidate groups near-duplicate lessons and proposes one; it retires nothing."""
+
+    def done(self, title, lesson):
+        self.fm("task", "new", title, "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        tid = c.load_briefs(c.find_project(self.repo))[-1].id
+        self.fm("task", "finish", tid, "--audit", "self", "--run", "true", "--lesson", lesson)
+        return tid
+
+    def test_two_near_identical_lessons_group_and_an_unrelated_one_stays_out(self):
+        self.fm("init")
+        a = self.done("One", "Quote every shell path before passing it to subprocess calls")
+        b = self.done("Two", "Quote every shell path before passing it to subprocess calls always")
+        z = self.done("Three", "Rotate the staging database credentials monthly")
+        out = json.loads(self.fm("recall", "--lessons", "--consolidate", "--json").stdout)
+        self.assertEqual([sorted(g["ids"]) for g in out["groups"]], [[f"{a}.1", f"{b}.1"]])
+        self.assertNotIn(f"{z}.1", json.dumps(out))
+        self.assertNotIn("retired", self.fm("recall", "--lessons").stdout)
