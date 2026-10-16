@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Tests point `FOREMAN_GUARD_CASES` at a temp file by default, so a test that runs `fm guard wrong` from a temp repo can no longer write cases into the real `guard_cases.jsonl` (the subdirectory matrix had added three) (T-1197).
 - `fm guard wrong` stores the case in the corpus of the Foreman checkout it runs in (with a cwd relative to that checkout), so a builder's worktree no longer writes into the main checkout's tests mid-gates (T-1175).
 - `fm task finish` refuses a task that added a `plugin/<entry>` MASTER.md's File map doesn't list, naming the entry, instead of leaving it to release-check in the full gates (T-1179).
 - The Stop drive no longer offers a builder lane for a RESEARCH task or a release, and doesn't offer a task whose `fm check --evidence` gate run is still going (T-1176).
