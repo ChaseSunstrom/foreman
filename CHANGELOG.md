@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Deferred-work triage (T-1048): `fm tidy` and `fm digest` propose do (its revisit date or watched file came), drop (90+ days, its scope gone from git history, no revisit trigger) or ask for each deferred brief, applying nothing; the digest lists do and drop first.
 - Mutation-test the guard (T-1066): `fm bench guard --mutate` drops (or `--weaken`s) one guard rule site at a time (every shape: appends, list returns, `+=`, comprehensions, `Block`s), runs the guard's tests on a throwaway copy in its own process group, and lists the rules no test catches (exit 1 when any); categories with no site are named. Its first full run found 13 untested sites, now being pinned (T-1120). `--coverage` keeps the command-corpus view.
 - `fm task finish --commit` keeps the files the task names as its own (its scope and its `scope:` log reasons) even when another task touched them meanwhile: a doc edited in the same command as the finish has no touched record yet and was left uncommitted (T-1122).
 - `fm ui` runs in under half the time (0.67 s → 0.30 s on 910 briefs), which the pane pays on every state change: a process parses each unchanged brief once and reads an unchanged ledger once, handing out fresh copies (T-1082).
