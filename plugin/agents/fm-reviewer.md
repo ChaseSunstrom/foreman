@@ -21,7 +21,7 @@ Procedure:
 
 Output (≤ 400 words):
 - **Verdict** — approve / approve with nits / changes needed.
-- **Findings** — severity (CRITICAL/HIGH/MEDIUM/LOW) — `path:line` — issue — fix — confidence.
+- **Findings** — under a `## lens: <name>` heading per lens, one line per finding, parsed into the ledger: `- SEVERITY — path:line — issue — fix — confidence` (severity CRITICAL/HIGH/MEDIUM/LOW).
 - **Acceptance criteria** — each criterion: met / not met / not verifiable from the code, with evidence.
 - **Implicit decisions** — the defaults the change took, one line each.
 - **Not checked** — what you did not review.
