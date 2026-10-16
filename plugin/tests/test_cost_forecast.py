@@ -4,8 +4,10 @@ import os
 import time
 
 from helpers import ForemanTestCase
+from test_hooks import HookCase, parse
 
 import fmcore as c
+import fmcost
 
 
 class CostForecast(ForemanTestCase):
@@ -38,3 +40,68 @@ class CostForecast(ForemanTestCase):
     def test_no_snapshot_says_so(self):
         self.fm("init")
         self.assertIn("no usage snapshot", self.fm("cost", "--forecast").stdout)
+
+
+class TaskCostCap(HookCase):
+    """T-1083: fm cost --task forecasts from finished same-type, same-tier tasks; a cap hit asks for a checkpoint."""
+
+    def day(self, n, hour=0):
+        return time.strftime("%Y-%m-%dT", time.gmtime(time.time() - n * 86400)) + f"{hour:02d}:00:00Z"
+
+    def history(self, active):
+        p = self.project()
+        folder = fmcost.transcripts_dir(p.root)
+        os.makedirs(folder, exist_ok=True)
+        events, lines = [], []
+        for i, (tid, tokens) in enumerate([("T-0901", 100000), ("T-0902", 100000), (active, 300000)]):
+            if tid != active:
+                c.save_brief(p, c.Brief.parse(f"---\nid: {tid}\ntype: FEATURE\ntier: M\nstatus: done\n---\n# old {tid}\n"))
+            events.append({"ts": self.day(3 - i), "task": tid, "event": "touched"})
+            lines.append({"type": "assistant", "timestamp": self.day(3 - i, 1), "sessionId": "s",
+                          "message": {"id": f"m{i}", "usage": {"input_tokens": tokens}, "content": []}})
+        with open(os.path.join(p.dir, "ledger.jsonl"), "a") as f:
+            f.writelines(json.dumps(e) + "\n" for e in events)
+        with open(os.path.join(folder, "s.jsonl"), "w") as f:
+            f.writelines(json.dumps(x) + "\n" for x in lines)
+
+    def setUp(self):
+        super().setUp()
+        os.environ["CLAUDE_CONFIG_DIR"] = os.path.join(self.tmp, "claude")
+        self.addCleanup(os.environ.pop, "CLAUDE_CONFIG_DIR", None)
+
+    def stop_reason(self):
+        return (parse(self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Working.",
+                                         "session_id": "sess-1"})) or {}).get("reason", "")
+
+    def test_the_forecast_is_the_median_of_finished_same_tier_tasks(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        d = self.fm_json("cost", "--task", t)
+        self.assertAlmostEqual(d["forecast"], 100000, delta=5000)
+        self.assertAlmostEqual(d["spent"], 300000, delta=5000)
+        self.assertIn("forecast", self.fm("cost", "--task", t).stdout)
+
+    def test_a_cap_hit_asks_for_a_checkpoint_and_no_cap_changes_nothing(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.assertNotIn("cost cap", self.stop_reason())
+        self.fm("task", "set", t, "cost_cap=200k")
+        self.assertIn("cost cap", self.stop_reason())
+        self.assertNotIn(t, self.stop_reason(), "the second Stop doesn't push the capped task")
+        self.assertNotIn(t, self.stop_reason())
+        self.fm("task", "set", t, "cost_cap=250k")  # a changed cap lifts the hold: still hit, said again
+        self.assertIn("cost cap", self.stop_reason())
+
+    def test_the_brief_readers_show_the_cost_line(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.assertNotIn("Cost:", self.fm("task", "show", t).stdout, "no cap, no cache: nothing")
+        self.fm("task", "set", t, "cost_cap=2M")
+        line = [x for x in self.fm("task", "show", t).stdout.splitlines() if x.startswith("Cost:")][0]
+        self.assertRegex(line, r"forecast ≈ 100k \(median of 2 FEATURE M\), cap 2\.0M, spent 300k")
+        self.assertIn("Cost: forecast", self.fm("focus", t).stdout)
+        self.fm("task", "set", t, "cost_cap=2M")  # uncapped readers use the cache
+        self.assertIn("Cost: forecast", self.fm("task", "show", t).stdout)

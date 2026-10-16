@@ -2496,11 +2496,14 @@ def _drive(p, sd, briefs, pl, g):
     if waiting and not full:
         return None  # an `fm ask` is open: the user's reply decides it
     scope = os.environ.get("FOREMAN_DRIVE_TASK")  # fm run: one task per fresh session; the next gets its own
+    d = g["drive"].setdefault(sid, {"count": 0})
+    # T-1083: a task whose cap was hit isn't pushed or offered again until its cost_cap changes
+    capped = {b.id for b in briefs if b.meta.get("cost_cap") and (d.get("capped") or {}).get(b.id) == b.meta["cost_cap"]}
+    waiting += [x for x in capped if x not in waiting]
     work = next((w for w in ([sd["active"]] if sd["active"] else []) + sd["queue"]
                  if w["id"] not in waiting and (not scope or w["id"] == scope)), None)
     if not work and full and not scope:  # T-0097: in full autonomy the user's captured requests are work too
         work = next((w for w in sd["inbox"] if w["id"] not in waiting), None)
-    d = g["drive"].setdefault(sid, {"count": 0})
     if d.get("hold"):
         return None  # the user asked for planning only this turn
     import fmloop  # T-1057
@@ -2535,6 +2538,16 @@ def _drive(p, sd, briefs, pl, g):
                   "fm capture --source self each defect or gap, then plan and work the first. If everything holds, "
                   "say so in one line and stop.")
     wb = next(b for b in briefs if b.id == work["id"])
+    if wb.meta.get("cost_cap"):  # T-1083: a cap hit asks for a checkpoint, once; the cap value hit is remembered
+        try:
+            import fmcost
+            cap, spent = fmcost.parse_tokens(wb.meta["cost_cap"]), fmcost.cached_costs(p)[wb.id]
+        except Exception:  # fails open: a cap that can't be read never traps the drive
+            cap = spent = 0
+        if cap and spent >= cap:
+            d.setdefault("capped", {})[wb.id] = wb.meta["cost_cap"]
+            return (f"Foreman drive: cost cap hit on {wb.id}: {fmcost._human(spent)} spent of its {fmcost._human(cap)} "
+                    f"cap. fm checkpoint, then tell the user (raise it with fm task set {wb.id} cost_cap=…).")
     if c.waits_on_user(wb, waiting, "full" if full else "standard"):
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it

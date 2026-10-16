@@ -221,9 +221,94 @@ def unexplained_line(u):
     return ""
 
 
+def _timeline(p, days):
+    return sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(days + 2))
+                   if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
+
+
+def task_costs(p, days):
+    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums)."""
+    folder = transcripts_dir(p.root)
+    if not os.path.isdir(folder):
+        return collections.Counter()
+    timeline, out = _timeline(p, days), collections.Counter()
+    for ts, _sid, usage in scan(folder, _since(days))[0]:
+        out[_task_at(timeline, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+    return out
+
+
+def parse_tokens(v):
+    """'200k', '2M' or '150000' as a count; None when it isn't one."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmM]?)", str(v).strip())
+    return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+
+def forecast_task(p, b, costs=None, days=90):
+    """T-1083: (median cost, how many) of finished tasks of b's type and tier (two or more), else None."""
+    costs = task_costs(p, days) if costs is None else costs
+    xs = [costs[x.id] for x in c.load_briefs(p) if x.status == "done" and x.id != b.id and x.type == b.type
+          and x.tier == b.tier and costs.get(x.id)]
+    return (round(statistics.median(xs)), len(xs)) if len(xs) >= 2 else None
+
+
+CACHE_GROWTH = 1_000_000  # bytes of new transcript before the cached figures are stale…
+CACHE_AGE_S = 300  # …or this long
+
+
+def cached_costs(p, compute=True):
+    """task_costs(p, 90) kept in the session dir, keyed by the transcripts' total size: redone only when they grew
+    over ~1 MB or the figures are 5 min old. compute=False: the cache as it is (None when there is none)."""
+    path = os.path.join(c.state_dir(), "sessions", f"cost-{p.slug}.json")
+    try:
+        with open(path) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        old = None
+    if not compute:
+        return collections.Counter(old["costs"]) if old else None
+    size = sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(transcripts_dir(p.root)) for n in ns
+               if n.endswith(".jsonl"))
+    if old and size - old["size"] <= CACHE_GROWTH and time.time() - old["ts"] < CACHE_AGE_S:
+        return collections.Counter(old["costs"])
+    costs = task_costs(p, 90)
+    try:
+        c.write_atomic(path, json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+    except OSError:
+        pass  # a cache: never worth failing for
+    return costs
+
+
+def cost_line(p, b):
+    """T-1083: 'Cost: forecast ≈ N (median of K FEATURE M), cap C, spent S' for a brief's readers; '' with neither a
+    forecast nor a cap. Only a task with a cap pays for fresh figures; the rest read the cache, or say nothing."""
+    cap = parse_tokens(b.meta.get("cost_cap"))
+    try:
+        costs = cached_costs(p, compute=bool(cap))
+        fc = forecast_task(p, b, costs) if costs else None
+    except Exception:  # a report: never stops the command it rides on
+        return ""
+    if not cap and not fc:
+        return ""
+    return "Cost: " + ", ".join(filter(None, [
+        f"forecast ≈ {_human(fc[0])} (median of {fc[1]} {b.type} {b.tier})" if fc else "",
+        f"cap {_human(cap)}" if cap else "", f"spent {_human(costs.get(b.id, 0))}" if costs else ""]))
+
+
+def _task(args, p, fmcli):
+    b = fmcli.need_brief(p, args.task)
+    costs = task_costs(p, 90)
+    spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
+    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
+            + (f", forecast {_human(fc[0])} (median of {fc[1]} finished {b.type} {b.tier} tasks)" if fc
+               else ", no forecast (needs two finished tasks of the same type and tier)"))
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "task", None):
+        return _task(args, p, fmcli)
     if getattr(args, "by_model", False):
         return _by_model(p, args, fmcli)
     if getattr(args, "forecast", False):
@@ -235,8 +320,7 @@ def cmd_cost(args):
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
-    timeline = sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(args.days + 2))
-                       if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
+    timeline = _timeline(p, args.days)
     for ts, sid, usage in msgs:
         w = 0.0
         for k, weight in WEIGHTS.items():
