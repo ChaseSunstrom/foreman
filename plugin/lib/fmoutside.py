@@ -249,6 +249,9 @@ def _calls(p, args, fmcli):
 
 def cmd_deps(args):
     import fmcli
+    if (getattr(args, "words", None) or [""])[0] == "check":  # T-1049: the install check on one command
+        import fmdeps
+        return fmdeps.cmd_deps(args)
     p = fmcli.resolve(args)
     if getattr(args, "calls", False):  # T-0594: local only, no registry lookups
         return _calls(p, args, fmcli)
