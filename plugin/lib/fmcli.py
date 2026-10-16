@@ -3788,7 +3788,9 @@ def cmd_round(args):
     if c._git(top, "tag", tag, "HEAD", timeout=10, fail=None) is None:
         raise UsageError(f"git couldn't tag HEAD {tag}")
     lines = [f"Tagged HEAD {tag}: {len(done)} task(s) closed since {prev or 'the first commit'}."]
-    lines += [f"  {b.id} {c.fit(b.title, 90)}" for b in done]
+    lines += [f"  {b.id} {c.fit(b.title, 90)}" for b in done[-20:]]  # T-1200: a first round once listed 744
+    if len(done) > 20:
+        lines.append(f"  … and {len(done) - 20} earlier (--json lists every one)")
     return out(args, {"tag": tag, "since": prev, "tasks": [b.id for b in done]}, "\n".join(lines))
 
 
