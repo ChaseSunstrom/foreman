@@ -2529,6 +2529,16 @@ def _drive(p, sd, briefs, pl, g):
                   "fm capture --source self each defect or gap, then plan and work the first. If everything holds, "
                   "say so in one line and stop.")
     wb = next(b for b in briefs if b.id == work["id"])
+    if wb.meta.get("cost_cap") and d.get("capped") != wb.id:  # T-1083: a cap hit asks for a checkpoint, once
+        try:
+            import fmcost
+            cap, spent = fmcost.parse_tokens(wb.meta["cost_cap"]), fmcost.task_costs(p, 30)[wb.id]
+        except Exception:  # fails open: a cap that can't be read never traps the drive
+            cap = spent = 0
+        if cap and spent >= cap:
+            d["capped"] = wb.id
+            return (f"Foreman drive: cost cap hit on {wb.id}: {fmcost._human(spent)} spent of its {fmcost._human(cap)} "
+                    f"cap. fm checkpoint, then tell the user (raise it with fm task set {wb.id} cost_cap=…).")
     if c.waits_on_user(wb, waiting, "full" if full else "standard"):
         return None  # waiting on the user's approval (AUTONOMY standard)
     bg = pl.get("background_tasks")  # T-0115: the engine's own in-flight list, when this build sends it

@@ -221,9 +221,51 @@ def unexplained_line(u):
     return ""
 
 
+def _timeline(p, days):
+    return sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(days + 2))
+                   if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
+
+
+def task_costs(p, days):
+    """T-1083: input-equivalent tokens per task over the window (what fm cost's by-task table sums)."""
+    folder = transcripts_dir(p.root)
+    if not os.path.isdir(folder):
+        return collections.Counter()
+    timeline, out = _timeline(p, days), collections.Counter()
+    for ts, _sid, usage in scan(folder, _since(days))[0]:
+        out[_task_at(timeline, ts[:19]) or "(no task)"] += sum((usage.get(k) or 0) * w for k, w in WEIGHTS.items())
+    return out
+
+
+def parse_tokens(v):
+    """'200k', '2M' or '150000' as a count; None when it isn't one."""
+    m = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmM]?)", str(v).strip())
+    return round(float(m[1]) * {"": 1, "k": 1e3, "m": 1e6}[m[2].lower()]) if m else None
+
+
+def forecast_task(p, b, costs=None, days=90):
+    """T-1083: the median cost of finished tasks of b's type and tier (two or more), else None."""
+    costs = task_costs(p, days) if costs is None else costs
+    xs = [costs[x.id] for x in c.load_briefs(p) if x.status == "done" and x.id != b.id and x.type == b.type
+          and x.tier == b.tier and costs.get(x.id)]
+    return round(statistics.median(xs)) if len(xs) >= 2 else None
+
+
+def _task(args, p, fmcli):
+    b = fmcli.need_brief(p, args.task)
+    costs = task_costs(p, 90)
+    spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
+    text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
+            + (f", forecast {_human(fc)} (median of finished {b.type} {b.tier} tasks)" if fc
+               else ", no forecast (needs two finished tasks of the same type and tier)"))
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc}, text)
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "task", None):
+        return _task(args, p, fmcli)
     if getattr(args, "by_model", False):
         return _by_model(p, args, fmcli)
     if getattr(args, "forecast", False):
@@ -235,8 +277,7 @@ def cmd_cost(args):
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
-    timeline = sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(args.days + 2))
-                       if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
+    timeline = _timeline(p, args.days)
     for ts, sid, usage in msgs:
         w = 0.0
         for k, weight in WEIGHTS.items():

@@ -14,7 +14,7 @@ import time
 import fmcore as c
 
 EDITABLE = {"type", "tier", "priority", "scope", "depends_on", "source", "status", "branch", "explore", "approved", "title",
-            "confidence"}
+            "confidence", "cost_cap"}
 LIST_FIELDS = {"scope", "depends_on"}
 SETTABLE_STATUS = {"captured", "planned", "active", "verifying", "blocked", "deferred"}
 
@@ -2193,6 +2193,11 @@ def task_set(p, args):
                                  f"reuses, or why nothing fits (fm recall, fm map)>\"")
         if k == "confidence" and not (v.isdigit() and 0 <= int(v) <= 100):  # T-0619
             raise UsageError("confidence is a whole percent, 0-100: how likely the task holds on its first finish")
+        if k == "cost_cap":  # T-1083: tokens, like fm cost; stored as the count
+            import fmcost
+            if (n := fmcost.parse_tokens(v)) is None:
+                raise UsageError("cost_cap is a token count: 200k, 2M or 150000")
+            v = str(n)
         if k == "priority" and v not in ("normal", "urgent"):
             raise UsageError("priority must be normal or urgent")
         changes[k] = _list_value(v) if k in LIST_FIELDS else (v == "true" if k in ("explore", "approved") else v)
@@ -4703,6 +4708,7 @@ def build_parser():
     s.add_argument("--by-model", action="store_true", help="tasks finished per model and type/tier, with their grades")
     s.add_argument("--forecast", action="store_true", help="when the 5-hour and weekly usage windows fill at the "
                    "pace so far (T-0973)")
+    s.add_argument("--task", metavar="ID", help="one task: spent, its cap and the forecast from similar tasks (T-1083)")
     s.add_argument("--sessions", action="store_true",
                    help="per session: turns, context per turn, the cache read/write/output split and cache busts")
     s = add("burden", lazy("fmcost", "cmd_burden"), help="Foreman's own cost on real sessions per version: bookkeeping "
