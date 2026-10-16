@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm logs a stage event whenever a task's stage changes (from every task write and fm focus), and pane splits use those real stage times (T-1137).
 - `fm check affected --for .tsx "<cmd>"` gives each test-file extension its own affected command, so a changed `.tsx` test runs in `fm check --affected` and at close beside the Python ones; this repo now runs the mod's tests that way (T-1135).
 - Pane: a `palette: 'cb'` option (a colourblind-safe blue and orange ok/error pair; errors keep their glyph) and a history scrubber (`b` steps back, `l` returns to live) (T-1081).
 - A lane's pre-claim of its scope files is advisory: it no longer blocks another builder's edit in its own worktree (the merge settles overlaps); an explicit `fm lease take` still does (T-1138).

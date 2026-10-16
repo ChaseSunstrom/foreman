@@ -54,6 +54,10 @@ class Splits(ForemanTestCase):
         st = [(e["data"]["from"], e["data"]["to"]) for e in evs if e["event"] == "stage" and e["task"] == "T-0001"]
         self.assertEqual(st[-1], ("executing", "verifying"))
         self.assertEqual(len(st), len(set(st)), "one event per transition")
+        self.fm("task", "new", "u", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s")
+        self.fm("focus", "T-0002")  # focus saves outside mutate: its move is logged too
+        evs = [json.loads(x) for x in open(os.path.join(p.dir, "ledger.jsonl"))]
+        self.assertIn("executing", [e["data"]["to"] for e in evs if e["event"] == "stage" and e["task"] == "T-0002"])
 
     def test_splits_prefer_stage_events(self):
         import fmwatch
