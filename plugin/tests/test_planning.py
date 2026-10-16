@@ -152,6 +152,20 @@ class CalibrationLedger(Base):
         self.fm("focus", t)
         self.assertNotEqual(self.fm("task", "set", t, "predict_minutes=300", check=False).returncode, 0)
 
+    def test_an_overnight_gap_is_not_work_time(self):
+        import fmoutcomes
+        h = 3600
+        self.assertEqual(fmoutcomes.active_minutes([0, 600, 600 + 10 * h, 600 + 10 * h + 300]), 15)
+
+    def test_garbage_verdicts_are_skipped_and_the_gap_says_to_ask_the_user(self):
+        import fmoutcomes
+        c.update_meta(self.p, plan_verdicts=["x", [1], None, ["bad", True, 1], [c.now(), True]])
+        self.assertEqual(fmoutcomes.plan_window(self.p), [True])
+        c.update_meta(self.p, plan_verdicts="junk")
+        self.assertFalse(fmoutcomes.misses(self.p))
+        m = self.new("M work", "FEATURE", "M")
+        self.assertIn("ask", " ".join(c.plan_gaps(c.find_brief(self.p, m), "slow")))
+
     def test_old_verdicts_are_ignored(self):
         import fmoutcomes
         for _ in range(5):
