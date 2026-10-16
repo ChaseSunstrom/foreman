@@ -1440,8 +1440,9 @@ export const register: Register = (on, options) => {
     const treeNode = (w: NonNullable<typeof v.worktrees>[number]): Gantt => ({
       key: `tree-${w.branch || w.path}`, glyph: '⎇', color: w.ahead ? C.accent2 : C.dim, dim: true, live: false, marks: [],
       start: clockNow - (w.age_s ?? 0) * 1000, end: null, name: w.task ? `${w.task}  ${w.branch}` : w.branch || w.path,
-      status: w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
-      statusColor: w.ahead ? C.accent2 : C.warn,
+      status: w.stopped ? `stopped · fm lane resume ${w.task}`
+        : w.ahead === null ? (w.branch ? 'unknown' : 'detached') : w.ahead ? `${w.ahead} to merge` : 'merged',
+      statusColor: w.ahead && !w.stopped ? C.accent2 : C.warn,
     })
     const gantt: Gantt[] = recentSubs.map(s => {
       const quiet = s.done ? 0 : clockNow - (s.lastAt ?? s.startedAt)
