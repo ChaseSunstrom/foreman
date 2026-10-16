@@ -7,9 +7,10 @@ import os
 import re
 import shutil
 import subprocess
-import signal
 import tempfile
 import time
+
+import fmcore as c
 
 
 def _cats(v, cats):
@@ -133,10 +134,7 @@ def _sh(cmd, cwd, timeout):
     except subprocess.TimeoutExpired:
         return None, ""
     finally:
-        try:
-            os.killpg(p.pid, signal.SIGKILL)
-        except OSError:
-            pass
+        c.kill_group(p)
         p.communicate()
 
 
