@@ -5,9 +5,9 @@
 **The discipline layer for Claude Code.** Foreman makes Claude plan before it edits, prove its work with commands it actually ran, stay on one task at a time, and keep going through the queue until it's done or needs you, while a guard hook stops the commands you'd never want run in bypass mode.
 
 <p align="center">
-  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman feature in a copy of this repo: it plans the task, writes the test first, makes it pass, is held to a red-then-green proof before the close, then closes and commits; the Foreman pane beside it shows the stage rail and steps, the Activity lanes filling with each tool call, the done strip at the close, History, and the closes-per-day and Today charts">
+  <img src="demo/live.svg" width="960" alt="Claude Code 2.1.301 with the foreman-ui mod, working a real Foreman feature in a copy of this repo: the chat reads as a tree, each call a compact branch under the prompt with its diff or result; a scout subagent finds the code; the test fails first, the edit makes it pass, the task closes and commits; the live tree above the prompt shows the session and its subagent with their latest calls and time bars, and the Foreman pane beside it shows the work bar, the stage rail and steps, the Activity lanes, the Agents graph, History and the Today charts">
 </p>
-<p align="center"><sub>A real session, recorded in a copy of this repo: one typed request (<code>fm task finish --why-not-caught</code> skips its follow-up when the task already changed a test), the rest is Claude working through Foreman, about 5 minutes, sped up where the model thinks. Its change is in Foreman now (T-1009). <a href="demo/live.mp4">MP4</a>.</sub></p>
+<p align="center"><sub>A real session, recorded in a copy of this repo: one typed request (<code>fm lib stats --days N</code>: count only the last N days of card use, sending a scout subagent to find the code first), the rest is Claude working through Foreman, about 4 minutes, sped up where the model thinks. Its change is in Foreman now (T-1035). <a href="demo/live.mp4">MP4</a>.</sub></p>
 
 ## Why
 

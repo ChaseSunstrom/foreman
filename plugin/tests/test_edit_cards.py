@@ -286,6 +286,19 @@ class ImportCards(_CardCase):
         rows = json.loads(self.fm("lib", "stats", "--json").stdout)
         self.assertEqual({r["card"]: r["injected"] for r in rows}, {"react": 1, "typescript": 1})
 
+    def test_fm_lib_stats_days_counts_only_recent_injections(self):
+        # T-1035: the change the README's recorded session made, in a clone of this repo
+        self.map([card("typescript", "lang", 5, "ext:.ts", "ext:.tsx"), card("react", "web", 3, "dep:react")])
+        self.put("App.tsx", "import React from 'react'\n")
+        self.edit("App.tsx")
+        old = (datetime.now(timezone.utc) - timedelta(days=9)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        with open(os.path.join(self.project().dir, "ledger.jsonl"), "a", encoding="utf-8") as f:
+            f.write(json.dumps({"ts": old, "event": "enforce", "data": {"kind": "card_injected", "card": "old"}}) + "\n")
+        def stats(*a):
+            return {r["card"] for r in json.loads(self.fm("lib", "stats", "--json", *a).stdout)}
+        self.assertEqual(stats(), {"react", "typescript", "old"})
+        self.assertEqual(stats("--days", "7"), {"react", "typescript"})
+
     def test_audit_prep_of_an_l_task_that_used_a_card_runs(self):
         # T-1036: a walrus in the checklist comprehension bound r in cmd_audit's scope and broke its L-tier path
         tid = self.task(title="Big one", type_="FEATURE", tier="L", focus=False)

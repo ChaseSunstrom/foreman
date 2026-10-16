@@ -4,6 +4,7 @@ files and extensions, and searched together with installed plugins' skills. Stdl
 fm map; the write hook imports it for lint_card on a card it just wrote (T-0947), the edit hook for the card that
 matches a file (card_for, from map.json alone, and the one card's Avoid section: T-0949)."""
 import collections
+import datetime
 import fnmatch
 import glob
 import json
@@ -811,8 +812,13 @@ def cmd_lib(args):
     if args.action == "stats":  # T-1036: which cards reach Claude, from the ledger's card_injected events
         p = c.find_project(os.getcwd(), create=False) if not getattr(args, "project", None) else fmcli.resolve(args)
         counts, last = {}, {}
+        days = getattr(args, "days", None)  # T-1035: the README demo's change
+        since = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ") if days is not None else ""
         for e in c.ledger_tail(p, 20000) if p else []:
             d = e.get("data") or {}
+            if str(e.get("ts") or "") < since:  # ts is ISO UTC, so the strings compare in time order
+                continue
             if e.get("event") == "enforce" and d.get("kind") == "card_injected" and isinstance(d.get("card"), str):
                 counts[d["card"]] = counts.get(d["card"], 0) + 1
                 last[d["card"]] = e.get("ts")
