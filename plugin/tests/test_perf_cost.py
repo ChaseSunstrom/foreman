@@ -5,6 +5,7 @@ import json
 import os
 import shlex
 import time
+import unittest
 
 from helpers import read_text
 from test_hooks import HookCase, parse
@@ -267,3 +268,40 @@ class UnexplainedSpend(HookCase):
         env = self.setup_spend([("known", 59, 40000), ("stray", 10, 1000)])  # the stray is under 20% and 100k
         out = self.fm("cost", env=env).stdout + self.fm("digest", env=env).stdout
         self.assertNotIn("Unexplained", out)
+
+
+class TaskAt(unittest.TestCase):
+    def test_a_turn_goes_to_the_newest_event_at_or_before_it(self):
+        # T-1116: a bisect replaced the per-turn linear scan (4 s of fm cost's 6.8 s on a real ledger)
+        import fmcost
+        line = [("2026-10-01T00:00:00", "T-1"), ("2026-10-01T00:00:00", "T-2"), ("2026-10-02T00:00:00", "T-3")]
+        self.assertIsNone(fmcost._task_at(line, "2026-09-30T23:59:59"))
+        self.assertEqual(fmcost._task_at(line, "2026-10-01T00:00:00"), "T-2")  # same second: the later event
+        self.assertEqual(fmcost._task_at(line, "2026-10-01T12:00:00"), "T-2")
+        self.assertEqual(fmcost._task_at(line, "2026-10-03T00:00:00"), "T-3")
+        self.assertIsNone(fmcost._task_at([], "2026-10-03T00:00:00"))
+        big = [(f"2026-10-{d:02d}T{h:02d}:{m:02d}:{s:02d}", "T-1") for d in range(1, 3) for h in range(24)
+               for m in range(60) for s in range(0, 60, 2)]  # 172,800 events
+        start = time.perf_counter()
+        for _ in range(2000):  # a linear scan: ~340M steps; a bisect: ~36k
+            fmcost._task_at(big, "2026-10-02T23:59:59")
+        self.assertLess(time.perf_counter() - start, 1.0)
+
+
+class TranscriptPrefilter(unittest.TestCase):
+    def test_old_files_and_lines_are_skipped_but_a_nested_old_stamp_hides_nothing(self):
+        # T-1116: fm cost parsed 559 MB of transcripts twice; files and lines wholly before the cutoff are skipped now
+        import tempfile
+        import fmcost
+        with tempfile.TemporaryDirectory() as d:
+            new = {"type": "assistant", "timestamp": "2026-10-10T00:00:00.000Z", "sessionId": "s",
+                   "message": {"id": "m2", "usage": {"input_tokens": 5}, "content": [
+                       {"type": "tool_use", "id": "u", "name": "Bash", "input": {"timestamp": "2020-01-01T00:00:00"}}]}}
+            old = dict(new, timestamp="2026-09-01T00:00:00.000Z", message={"id": "m1", "usage": {"input_tokens": 7}})
+            with open(os.path.join(d, "a.jsonl"), "w") as f:
+                f.write(json.dumps(old, separators=(",", ":")) + "\n" + json.dumps(new, separators=(",", ":")) + "\n")
+            with open(os.path.join(d, "stale.jsonl"), "w") as f:
+                f.write(json.dumps(dict(new, message={"id": "m3", "usage": {"input_tokens": 9}})) + "\n")
+            os.utime(os.path.join(d, "stale.jsonl"), (0, 0))  # not written since the cutoff: never opened
+            msgs, _ = fmcost.scan(d, "2026-10-01T00:00:00")
+            self.assertEqual([u["input_tokens"] for _, _, u in msgs], [5])

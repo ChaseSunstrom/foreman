@@ -1,5 +1,6 @@
 """fm cost / fm usage (T-0064, T-0056): where the tokens went — per session, per task and per tool — read from Claude
 Code's own transcripts, and which Foreman skills, playbooks and commands actually get used. Read-only; stdlib only."""
+import bisect
 import collections
 import datetime
 import json
@@ -40,37 +41,58 @@ def _human(n):
     return f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n / 1e3:.0f}k" if n >= 1e3 else f"{n:.0f}"
 
 
-def scan(folder, since):
-    """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
-    repeats on each of its content blocks: counted once per message id."""
-    msgs, tools, names = {}, collections.Counter(), {}
+_TS = re.compile(r'"timestamp":\s*"([^"]{19})')
+
+
+def _entries(folder, since):
+    """(file path, entry) for each transcript line on or after the cutoff. T-1116: a file not written since the
+    cutoff is skipped unopened, and a line is parsed only when one of its timestamps reaches the cutoff (the newest
+    counts: a nested older one can't hide the entry's own)."""
+    try:
+        cut = datetime.datetime.strptime(since[:19], "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc).timestamp()
+    except ValueError:
+        cut = 0
     for dirpath, _, files in os.walk(folder):
         for n in files:
-            if not n.endswith(".jsonl"):
-                continue
+            path = os.path.join(dirpath, n)
             try:
-                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
+                if not n.endswith(".jsonl") or os.path.getmtime(path) < cut:
+                    continue
+                with open(path, encoding="utf-8", errors="replace") as f:
                     for line in f:
+                        stamps = _TS.findall(line)
+                        if stamps and max(stamps) < since[:19]:
+                            continue
                         try:
                             e = json.loads(line)
                         except ValueError:
                             continue
-                        ts = str(e.get("timestamp") or "")
-                        m = e.get("message") if isinstance(e, dict) else None
-                        if not isinstance(m, dict) or ts[:19] < since:
-                            continue
-                        content = m.get("content") if isinstance(m.get("content"), list) else []
-                        for x in content:
-                            if not isinstance(x, dict):
-                                continue
-                            if x.get("type") == "tool_use":
-                                names[x.get("id")] = x.get("name") or "?"
-                            elif x.get("type") == "tool_result":
-                                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
-                        if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
-                            msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
+                        if isinstance(e, dict):
+                            yield path, e
             except OSError:
                 continue
+
+
+def scan(folder, since):
+    """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
+    repeats on each of its content blocks: counted once per message id."""
+    msgs, tools, names = {}, collections.Counter(), {}
+    for path, e in _entries(folder, since):
+        n = os.path.basename(path)
+        ts = str(e.get("timestamp") or "")
+        m = e.get("message")
+        if not isinstance(m, dict) or ts[:19] < since:
+            continue
+        content = m.get("content") if isinstance(m.get("content"), list) else []
+        for x in content:
+            if not isinstance(x, dict):
+                continue
+            if x.get("type") == "tool_use":
+                names[x.get("id")] = x.get("name") or "?"
+            elif x.get("type") == "tool_result":
+                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
+        if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
+            msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
     return list(msgs.values()), tools
 
 
@@ -101,53 +123,42 @@ def timing(folder, since):
     stretch between two entries goes to what ended it: a tool result to its tool, a reply to the model; a prompt ends
     time spent waiting on the person, and a gap over IDLE_S is time away: neither counts."""
     model, tools, shell = 0.0, collections.Counter(), collections.Counter()
-    for dirpath, _, files in os.walk(folder):
-        for n in files:
-            if not n.endswith(".jsonl"):
-                continue
-            rows = []
-            try:
-                with open(os.path.join(dirpath, n), encoding="utf-8", errors="replace") as f:
-                    for line in f:
-                        try:
-                            e = json.loads(line)
-                            ts = str(e.get("timestamp") or "")
-                            t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
-                        except (ValueError, AttributeError):
-                            continue
-                        if ts[:19] >= since:
-                            rows.append((t, e))
-            except OSError:
-                continue
-            names, cmds, prev = {}, {}, None
-            for t, e in sorted(rows, key=lambda r: r[0]):
-                m = e.get("message") if isinstance(e.get("message"), dict) else {}
-                content = [x for x in (m.get("content") if isinstance(m.get("content"), list) else []) if isinstance(x, dict)]
-                for x in content:
-                    if x.get("type") == "tool_use":
-                        names[x.get("id")] = x.get("name") or "?"
-                        cmds[x.get("id")] = (x.get("input") or {}).get("command") if isinstance(x.get("input"), dict) else None
-                results = [x for x in content if x.get("type") == "tool_result"]
-                if prev is not None and 0 < t - prev <= IDLE_S:
-                    if e.get("type") == "assistant":
-                        model += t - prev
-                    for x in results:
-                        name, share = names.get(x.get("tool_use_id"), "?"), (t - prev) / len(results)
-                        tools[name] += share
-                        if name == "Bash":
-                            shell[_program(cmds.get(x.get("tool_use_id")))] += share
-                prev = t
+    by_file = collections.defaultdict(list)
+    for path, e in _entries(folder, since):
+        ts = str(e.get("timestamp") or "")
+        try:
+            t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            continue
+        if ts[:19] >= since:
+            by_file[path].append((t, e))
+    for rows in by_file.values():
+        names, cmds, prev = {}, {}, None
+        for t, e in sorted(rows, key=lambda r: r[0]):
+            m = e.get("message") if isinstance(e.get("message"), dict) else {}
+            content = [x for x in (m.get("content") if isinstance(m.get("content"), list) else []) if isinstance(x, dict)]
+            for x in content:
+                if x.get("type") == "tool_use":
+                    names[x.get("id")] = x.get("name") or "?"
+                    cmds[x.get("id")] = (x.get("input") or {}).get("command") if isinstance(x.get("input"), dict) else None
+            results = [x for x in content if x.get("type") == "tool_result"]
+            if prev is not None and 0 < t - prev <= IDLE_S:
+                if e.get("type") == "assistant":
+                    model += t - prev
+                for x in results:
+                    name, share = names.get(x.get("tool_use_id"), "?"), (t - prev) / len(results)
+                    tools[name] += share
+                    if name == "Bash":
+                        shell[_program(cmds.get(x.get("tool_use_id")))] += share
+            prev = t
     return model, tools, shell
 
 
 def _task_at(timeline, ts):
-    """The task of the newest ledger event at or before ts (events carry the task they were recorded for)."""
-    task = None
-    for t, tid in timeline:
-        if t > ts:
-            break
-        task = tid
-    return task
+    """The task of the newest ledger event at or before ts (events carry the task they were recorded for); timeline is
+    sorted by time. T-1116: a bisect, not a scan per turn."""
+    i = bisect.bisect_right(timeline, ts, key=lambda r: r[0])
+    return timeline[i - 1][1] if i else None
 
 
 def _forecast(args, fmcli):
@@ -224,7 +235,8 @@ def cmd_cost(args):
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
-    timeline = sorted((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_tail(p, 20000) if e.get("task"))
+    timeline = sorted(((str(e.get("ts", ""))[:19], e["task"]) for e in c.ledger_events(p, since=_since(args.days + 2))
+                       if e.get("task")), key=lambda r: r[0])  # T-1116: every month the window reaches; stable by time
     for ts, sid, usage in msgs:
         w = 0.0
         for k, weight in WEIGHTS.items():
