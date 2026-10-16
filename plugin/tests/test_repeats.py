@@ -1,5 +1,6 @@
 """fm repeats: procedures and commands a project keeps repeating, and what to turn them into (T-0023)."""
 import json
+import os
 
 from helpers import ForemanTestCase, git_repo
 
@@ -101,9 +102,39 @@ class Repeats(ForemanTestCase):
         gate = next(x for x in paths if x.endswith(".sh") and "unittest" in open(x).read())
         self.assertIn("fm check add", open(gate).read())
         p = c.find_project(self.repo)
-        self.assertEqual(len([b for b in c.load_briefs(p) if script in b.section("Raw request")]), 1)
+        rel = os.path.relpath(script, p.dir)
+        self.assertEqual(len([b for b in c.load_briefs(p) if rel in b.section("Raw request")]), 1)
         self.assertEqual(self.fm_json("repeats", "--forge")["drafts"], [], "a second run files nothing new")
-        self.assertEqual(len([b for b in c.load_briefs(p) if script in b.section("Raw request")]), 1)
+        self.assertEqual(len([b for b in c.load_briefs(p) if rel in b.section("Raw request")]), 1)
+
+    def test_forge_repairs_a_missing_draft_without_a_new_task_and_files_a_real_task(self):
+        import os
+        d = self.fm_json("repeats", "--forge")["drafts"][0]
+        self.assertEqual(os.stat(d["path"]).st_mode & 0o111, 0, "a draft is never executable")
+        p = c.find_project(self.repo)
+        n = len(c.load_briefs(p))
+        b = c.find_brief(p, d["task"])
+        self.assertTrue(b.title.startswith("Adopt forge draft: "))
+        self.assertIn("Forge draft: research/forge-", b.section("Raw request"))
+        self.assertEqual(len(b.steps()), 1)
+        self.assertTrue(b.acceptance())
+        os.remove(d["path"])
+        again = self.fm_json("repeats", "--forge")["drafts"]
+        self.assertEqual(again, [{"path": d["path"], "task": d["task"]}])
+        self.assertTrue(os.path.exists(d["path"]))
+        self.assertEqual(len(c.load_briefs(p)), n)
+
+    def test_forge_keeps_long_shared_prefixes_apart_and_redacts_and_quotes(self):
+        prefix = "./deploy-to-the-staging-cluster.sh --target"  # one 40+ character prefix, two shapes
+        for i in range(1, 4):
+            tid = self.fm_json("task", "new", f"Deploy {i}", "--type", "FIX", "--tier", "S", "--step", "s")["id"]
+            for tail in ("alpha && ./a", "beta && ./b --token ghp_" + "a1B2" * 9):
+                self.fm("task", "evidence", tid, "--step", "1", f"{prefix} {tail}", "ok")
+        paths = [d["path"] for d in self.fm_json("repeats", "--forge")["drafts"] if "deploy" in d["path"]]
+        self.assertEqual(len(paths), 2)
+        self.assertEqual(len(set(paths)), 2)
+        self.assertFalse(any("ghp_" in open(x).read() for x in paths))
+        self.assertTrue(any("[REDACTED" in open(x).read() for x in paths))
 
     def test_forge_skips_dismissed_shapes(self):
         self.fm("repeats", "dismiss", "npm run build && npm run lint")
