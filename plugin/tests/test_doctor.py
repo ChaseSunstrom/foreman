@@ -410,6 +410,25 @@ class HookErrors(ForemanTestCase):
             f.write(f"{c.now()} Stop\x1b]0;x\x07 ValueError: bad \x1b[2Jtitle\n")
         self.assertNotIn("\x1b", d.check_hook_errors().detail)
 
+    def test_an_error_from_code_changed_since_is_stale(self):
+        # T-1139: NameError BATCH_AT came from a half-written edit; the line it names no longer reads that way
+        log = os.path.join(self.home, "state", "logs", "hooks.log")
+        os.makedirs(os.path.dirname(log), exist_ok=True)
+        src = os.path.join(d.PLUGIN, "lib", "fmdoctor.py")
+        with open(src) as f:
+            first = f.readline().rstrip("\n")
+        frame = f"  File \"{src}\", line 1, in <module>\n"
+        with open(log, "w") as f:
+            f.write(f"{c.now()} PostToolUse Traceback (most recent call last):\n{frame}    if n == BATCH_AT and x:\n"
+                    "NameError: name 'BATCH_AT' is not defined\n")
+        r = d.check_hook_errors()
+        self.assertEqual(r.status, "PASS", r.detail)
+        self.assertIn("changed since", r.detail)
+        with open(log, "a") as f:  # the same line as the file has now: a live error
+            f.write(f"{c.now()} PostToolUse Traceback (most recent call last):\n{frame}    {first.strip()}\n"
+                    "ValueError: still broken\n")
+        self.assertEqual(d.check_hook_errors().status, "WARN")
+
     def test_upstream_reads_a_week_of_hook_errors_and_failures(self):
         # T-1076: hooks.log entries and every project's failure signatures of the last 7 days, matched case-blind
         self.fm("init")
