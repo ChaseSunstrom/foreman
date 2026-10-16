@@ -291,10 +291,10 @@ def _next_runnable(p, skip, told, fit=False):
     return None
 
 
-def _ahead_of_pace():
+def _ahead_of_pace(p=None):
     try:
         import fmbudget
-        return fmbudget.degrade()
+        return fmbudget.degrade(p)
     except Exception:  # an unreadable snapshot never changes the order
         return None
 
@@ -773,7 +773,7 @@ def cmd_run(args):
             print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
             capped = True
             break
-        b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace()))
+        b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace(p)))
         if not b:
             break
         batch = _batch(p, b, skip, min(args.parallel, PARALLEL_MAX, args.max - finished))

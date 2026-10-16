@@ -2966,7 +2966,7 @@ def _decide_ask(p, args):
         import fmideas
         answer, why = fmideas.taste_default(p, options)
     rejected = ", ".join(o for o in options if o != answer)
-    autonomy = "standard" if c.panicked() else c.read_meta(p).get("autonomy", "standard")
+    autonomy = "standard" if c.panicked() else c.effective_autonomy(p)  # T-1080 review: a spent risk budget asks
     data = {"q": q, "default": answer, "why": why, "options": options}
     if args.urgent:
         return out(args, dict(data, urgent=True), f"Urgent: ask the user now, one AskUserQuestion with \"{answer}\" "
@@ -4259,9 +4259,12 @@ def cmd_autonomy(args):
     p = resolve(args)
     if not args.level:
         level = c.read_meta(p).get("autonomy", "standard")
-        slow = c.effective_autonomy(p) == "slow"  # T-1061
-        return out(args, {"autonomy": level, "slow": slow}, f"{p.slug}: autonomy {level}"
-                   + (" (slow: recent closes missed their plan, M needs approval; fm digest)" if slow else "") + ".")
+        eff = c.effective_autonomy(p)  # T-1061, T-1080
+        import fmrisk
+        risky = fmrisk.slowed(p)
+        why = risky if risky else "recent closes missed their plan, M needs approval; fm digest"
+        return out(args, {"autonomy": level, "effective": eff, "slow": eff == "slow", "risk": risky},
+                   f"{p.slug}: autonomy {level}" + (f" (now {eff}: {why})" if eff != level else "") + ".")
     c.update_meta(p, autonomy=args.level)
     with c.lock(p.dir):
         c.log_event(p, "autonomy", data={"level": args.level}, session=session())
@@ -4328,7 +4331,7 @@ HELP_TIERS = [
     ("Finding your way", "help demo show recall fix explain edit sub surprise vetoes rule why snapshots oops at outline impact map lib tour secrets quiet audit second research mission ideas "
                          "landscape deps oracle pr export instruments sym fail logs data trace suspects whyred bisect "
                          "record graph spec rewrite"),
-    ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget sync share notify compact-output complete wiring "
+    ("Project and settings", "init adopt inbox autonomy drive loop posture pause sensitive trust standing approve-reads budget risk sync share notify compact-output complete wiring "
                              "plugins docs doctor verify-ledger outbound sandbox release-check canary ci-watch tidy rollback round"),
     ("Reports", "digest outcomes cost burden dream usage repeats friction taste evals replay bench evolve"),
     ("Running elsewhere", "lane page serve run session claude agents night scout orders mcp ui projects sweep machine watch "
@@ -5170,6 +5173,11 @@ def build_parser():
     s.add_argument("--max-retries", type=int, default=3)
     s.add_argument("--interval", type=float, default=30, help="seconds between polls")
     s.add_argument("--max-polls", type=int, default=120)
+    s = add("risk", lazy("fmrisk", "cmd_risk"), help="today's risk budget: destructive guard blocks, failed closes and "
+                                                      "reverts spend points; past the cap autonomy steps down a notch")
+    s.add_argument("action", nargs="?", choices=["show", "set"], default="show")
+    s.add_argument("--day", type=float, help="set: the daily cap in points (the user's to set)")
+    s.add_argument("--because", help="set: why (logged)")
     s = add("canary", lazy("fmeco", "cmd_canary"), help="Claude Code's version against the last seen; on a change the "
                                                          "hook fixtures, a hook smoke and fm replay run, a failure is a brief")
     s.add_argument("--if-changed", action="store_true", help="only when the version changed (each session start)")

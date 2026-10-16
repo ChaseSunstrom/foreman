@@ -64,10 +64,10 @@ def jobs(p):
     age = c.age_days(meta.get("landscape_at"))
     if age is None or age >= fmoutside.LANDSCAPE_DAYS:
         out.append(("landscape", ["landscape", "--if-due"], fmbudget.estimate("research", 4, 0.2)))
-    lesion = None if fmbudget.degrade() else next_lesion(p)
+    lesion = None if fmbudget.degrade(p) else next_lesion(p)
     if lesion:  # T-0734: a model nobody has ablated Foreman's rules and skills on yet
         out.append((f"model lesion {lesion}", ["evolve", "--target", lesion, "--drop"], fmbudget.estimate("bench", 3, 0.5)))
-    big = None if fmbudget.degrade() else next(  # T-0730: optional, so it waits while usage runs ahead of pace
+    big = None if fmbudget.degrade(p) else next(  # T-0730: optional, so it waits while usage runs ahead of pace
         (b for b in c.order_queue(c.load_briefs(p))[0] if b.tier == "L" and not b.section("Plan review").strip()), None)
     if big:  # a queued L task's plan read by another model while nobody is waiting on it
         out.append((f"pre-plan {big.id}", ["second", "plan", big.id], fmbudget.estimate("second-plan", 1, 0.05)))

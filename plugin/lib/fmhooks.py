@@ -2655,7 +2655,7 @@ def _drive(p, sd, briefs, pl, g):
         # round is progress, so it resets the cap); usage ahead of pace pauses it until a later Stop
         if looping and not scope and not waiting and not _headless():
             key = [int(fmloop.state(p).get("round") or 0), len(briefs)]
-            if d.get("loop") == key or _pace():
+            if d.get("loop") == key or _pace(p):
                 return None
             d.update(loop=key, count=1, marks=_marks(p))
             _event({"kind": "drive_loop", "session_id": sid, "project": p.slug, "round": key[0] + 1})
@@ -2707,7 +2707,7 @@ def _drive(p, sd, briefs, pl, g):
         if _headless() or d.get("count", 0) >= DRIVE_MAX:
             return None
         offered = d.get("offered") or []
-        pace = _pace()  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
+        pace = _pace(p)  # T-0449: while usage runs ahead of pace, no side work (each would be a builder or a plan)
         offer = _side_work(sd, briefs, work, full, offered) if len(offered) < OFFERS_MAX and not pace else None
         if offer:  # T-0401: a concrete next task, a new one each Stop, instead of one generic push and then idling
             d.update(offered=offered + [offer["id"]], count=d.get("count", 0) + 1, marks=_marks(p))
@@ -2801,11 +2801,11 @@ def _step_boundary(p, tid):
     return None
 
 
-def _pace():
-    """fmbudget.degrade(), imported only on the Stop path that offers side work; unreadable usage drops nothing."""
+def _pace(p=None):
+    """fmbudget.degrade(p), imported only on the Stop path that offers side work; unreadable usage drops nothing."""
     try:
         import fmbudget
-        return fmbudget.degrade()
+        return fmbudget.degrade(p)
     except Exception:
         return None
 
