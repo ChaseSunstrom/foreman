@@ -378,7 +378,8 @@ def _batch(p, head, skip, n):
 
 def _claude_cmd(p, b, args, models):
     model = models.get(b.tier)
-    return ["claude", "-p", _prompt(p, b)] + (["--permission-mode", args.permission_mode] if args.permission_mode
+    return ["claude", "-p", _prompt(p, b)] + (["--output-format", "json"] if getattr(args, "max_usd", None) is not None
+                                              else []) + (["--permission-mode", args.permission_mode] if args.permission_mode
                                               else []) + (["--model", model] if model else []) + (
         ["--settings", json.dumps({"sandbox": _sandbox(p)})] if _sandbox_wanted(p, args) and _sandbox_available()
         else [])
@@ -760,9 +761,18 @@ def cmd_run(args):
     models = _models(p, args)
     finished, skip, told, sessions, fails = 0, set(), set(), {}, 0  # fails: unfinished sessions in a row (T-0434)
     budget, step = args.wait * 3600, WAIT_FIRST  # usage-limit waiting left for this run, and the next wait
+    cap, run_usd, capped = getattr(args, "max_usd", None), 0.0, False
+    if cap is not None:
+        if not cap >= 0:
+            raise fmcli.UsageError("--max-usd must be a number ≥ 0")
+        args.parallel = 1  # lanes' sessions aren't measured, so a capped run goes one at a time
     while finished < args.max:
         if c.panicked():  # T-0436: before the first session and between every two
             fail(c.PAUSED)
+        if cap is not None and run_usd >= cap:  # T-1046: measured from each session's JSON result
+            print(f"fm run: spend cap reached (${run_usd:.2f} of ${cap:.2f}); no more tasks started", flush=True)
+            capped = True
+            break
         b = _next_runnable(p, skip, told, fit=args.fit or bool(_ahead_of_pace()))
         if not b:
             break
@@ -825,6 +835,16 @@ def cmd_run(args):
             se.seek(0)
             streams = (so.read(), se.read())
         output = streams[0] + streams[1]
+        if cap is not None:  # the result line's cost, counted even when the session didn't finish its task
+            for line in reversed(streams[0].strip().splitlines()):
+                try:
+                    usd = float(json.loads(line).get("total_cost_usd") or 0)
+                except (ValueError, AttributeError, TypeError):
+                    continue
+                run_usd += usd
+                import fmbudget
+                fmbudget.record("run", usd, project=p.slug, detail=b.id)
+                break
         with open(log, "a", encoding="utf-8") as f:
             f.write(f"== {c.now()} {b.id} exit {code}{' (' + why + ')' if why else ''}\n{c.redact(output)}\n")
         if why == "stalled":  # T-0447: stopped; it resumes from its brief in a fresh session if it moved at all
@@ -872,4 +892,5 @@ def cmd_run(args):
                 fail(f"{b.id} still not done after {SESSIONS_PER_TASK} sessions; stopping", quarantine=b.id)
     _notify(p, f"fm run finished: {finished} task(s) done")
     print(f"fm run: {finished} task{'s' if finished != 1 else ''} done"
-          + ("; the queue has nothing else runnable" if finished < args.max else f"; stopped at --max {args.max}"))
+          + ("; spend cap reached" if capped else "; the queue has nothing else runnable" if finished < args.max
+             else f"; stopped at --max {args.max}"))

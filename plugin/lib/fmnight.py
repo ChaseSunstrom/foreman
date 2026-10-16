@@ -189,7 +189,8 @@ def cmd_night(args):
             break
         fmserve.beat(p, "night", JOB_TIMEOUT, j["name"])
         try:
-            r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"]], cwd=p.root,
+            left = ["--max-usd", f"{max(0.0, limit - (fmbudget.spent()[0] - start)):.4f}"] if j["name"] == "queue" else []
+            r = subprocess.run([sys.executable, os.path.join(c.PLUGIN_ROOT, "bin", "fm"), *j["argv"], *left], cwd=p.root,
                                env=dict(os.environ, FOREMAN_NO_BACKGROUND="1"), capture_output=True, text=True,
                                timeout=JOB_TIMEOUT)
             code, tail = r.returncode, (r.stdout + r.stderr).strip().splitlines()[-1:]
