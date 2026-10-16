@@ -398,6 +398,12 @@ def _whats_new_note(log=None, headless=False):
             old = f.read().strip()
     except OSError:
         old = None
+    if old and rev != "?" and old != rev:
+        try:
+            import fmtidy
+            fmtidy.snapshot_upgrade(old)  # T-1085: the record as it was before this version touched it
+        except Exception:
+            log_error("SessionStart", _tb())
     if rev == "?" or old == rev or headless:
         return None
     if old is None:
