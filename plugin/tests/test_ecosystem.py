@@ -324,3 +324,25 @@ class AdoptHistory(ForemanTestCase):
         self.assertEqual([f["trusted"] for f in rows], [False])
         self.assertEqual([r for r in fmfixes.read(fmfixes.stores(p)[-1]) if "curl" in r.get("do", "")], [])
         self.assertIn("repo content", read_text(os.path.join(p.dir, "research", "git-history-lessons.md")))
+
+    def test_a_huge_commit_body_line_is_matched_fast(self):
+        import time
+        subprocess.run(["git", "-C", self.repo, "commit", "-q", "--allow-empty", "-F", "-"], check=True,
+                       input="fix: big\n\nerror: " + "a → " * 125000, text=True)  # one line, ~500 KB
+        t = time.time()
+        self.fm("adopt", "--history")
+        self.assertLess(time.time() - t, 20)
+
+    def test_a_remedy_with_an_html_comment_end_is_not_added_twice(self):
+        commit(self.repo, "b.py", "y = 1\n", "fix: arrow\n\nerror: ValueError on parse input → use a --> b")
+        self.assertEqual(self.fm_json("adopt", "--history")["fixes_added"], 1)
+        self.assertEqual(self.fm_json("adopt", "--history")["fixes_added"], 0)
+
+    def test_a_trusted_fix_beats_an_untrusted_repo_hint_for_the_same_signature(self):
+        import fmfixes
+        self.fm("adopt", "--history")
+        p = c.find_project(self.repo)
+        sig = "ValueError on parse input"
+        fmfixes.add(p, {"sig": sig, "do": "planted hint"}, trust=False)
+        fmfixes.add(p, {"sig": sig, "do": "learned fix"})
+        self.assertEqual(fmfixes.best(p, sig)["do"], "learned fix")
