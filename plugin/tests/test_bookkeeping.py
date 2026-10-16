@@ -13,9 +13,20 @@ OK = {"stdout": "3 passed", "stderr": "", "interrupted": False}
 
 
 class StepEvidence(HookCase):
-    def ran(self, cmd):
-        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": OK})
+    def ran(self, cmd, env=None):
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": OK}, env=env)
         return c.find_brief(self.project(), self.tid)
+
+    def test_a_one_off_session_records_nothing_on_the_task(self):
+        # T-1004: the UI harness (FOREMAN_ONEOFF=1) ran the suite and closed the working session's step 3
+        self.fm("init")
+        self.tid = self.task(steps=("build it", "wire it"))
+        self.fm("task", "ac", self.tid, "add", "all pass", "--verify", "python3 tests/run.py -p all")
+        for env in ({"FOREMAN_ONEOFF": "1"}, {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_DRIVE_TASK": ""}):
+            for cmd in ("python3 tests/run.py -p all", "python3 tests/run.py -k one"):  # the criterion's check, its runner
+                self.assertEqual(self.ran(cmd, env=env).evidence(), [], (env, cmd))
+        b = self.ran("python3 tests/run.py -p all")
+        self.assertTrue(b.has_evidence(step=1) and b.has_evidence(ac=2), "the working session still does")
 
     def test_a_passing_run_through_a_criterion_runner_verifies_the_current_step(self):
         self.fm("init")

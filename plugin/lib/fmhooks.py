@@ -1794,7 +1794,7 @@ def post_tool_use(pl, ok=True):
     if not ok:
         rec["error"] = str(pl.get("error") or "").split("\n")[0][:120]
     _event(rec)
-    if p and tool == "Bash":
+    if p and tool == "Bash" and not _oneoff():  # T-1004: a one-off session owns no task; its runs prove nothing here
         try:
             _auto_evidence(pl, p, ok)
         except Exception:
