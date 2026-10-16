@@ -2966,6 +2966,14 @@ def subagent_stop(pl):
                           "transcript": pl.get("agent_transcript_path"),
                           "summary_chars": len(pl.get("last_assistant_message") or "")},
                     session=pl.get("session_id"))
+        if re.search(r"(?:^|:)fm-reviewer$", str(pl["agent_type"])):  # T-1181: its findings, without a typed fm task finding
+            import fmlanes
+            msg = pl.get("last_assistant_message") or ""
+            named = re.search(r"\bT-\d{4,}\b", msg)
+            tid = act.id if act else named.group(0) if named else None
+            for lens, sev, file, text in fmlanes.reviewer_findings(msg):
+                c.log_event(p, "finding", task=tid, session=pl.get("session_id"),
+                            data={"lens": lens, "severity": sev, "file": file, "text": text, "verdict": "reported"})
         chars = len((pl.get("last_assistant_message") or "").strip())
         if re.search(r"(?:^|:)fm-(?:builder|reviewer)$", str(pl["agent_type"])) and chars < HOLLOW_CHARS:
             # T-0963: async, so it can't block; fm next names it so the main thread reads the transcript first
