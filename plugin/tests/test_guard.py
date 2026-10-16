@@ -1622,5 +1622,49 @@ class Robustness(GuardCase):
             g.check("Bash", "not-a-dict", self.ctx())
 
 
+class StdinRmAndEvalSubst(GuardCase):
+    """T-1123: rm fed targets on stdin (not only rm -r), and eval of a substitution printing a dangerous command."""
+    def test_rows(self):
+        self.run_table([
+            ("echo {fhome}/plugin/lib/fmguard.py | xargs rm", "rm-outside"),
+            ("echo /etc/passwd | xargs rm -f", "rm-outside"),
+            ("cat list | xargs rm", "rm-outside"),
+            ("find {repo} -name '*.o' | xargs rm", None),
+            ("find /etc -name '*.o' | xargs rm", "rm-outside"),
+            ("cat list | xargs rm -rf", "rm-outside"),
+            ("find /etc -name x | xargs rm -rf", "rm-outside"),
+            ("eval \"eval \\\"eval \\\\\\\"eval \\\\\\\\\\\\\\\"eval 'eval ls'\\\\\\\\\\\\\\\"\\\\\\\"\\\"\"", "rm-outside"),
+            ("echo 'src /etc' | xargs rm -rf", "rm-outside"),
+            ("echo -e '\\x2fetc' | xargs rm -rf", "rm-outside"),
+            ("printf '%.0s/etc\\n' x | xargs rm -rf", "rm-outside"),
+            ("printf 'src\\n' | xargs rm -rf", "rm-outside"),
+            ("echo . | cat /etc/list | xargs rm -rf", "rm-outside"),
+            ("echo src | sed 's|src|/etc|' | xargs rm -rf", "rm-outside"),
+            ("echo x | xargs -a /etc/list rm -rf", "rm-outside"),
+            ("find . | sed 's|.|/etc|' | xargs rm -rf", "rm-outside"),
+            ("echo /etc | xargs rm -rf src", "rm-outside"),
+            ("echo /etc | xargs rm src", "rm-outside"),
+            ("echo x | xargs -I{{}} rm -rf {{}}", "rm-outside"),
+            ("echo a/etc | xargs -n1da rm -rf", "rm-outside"),
+            ("echo a/etc | xargs -da rm -rf", "rm-outside"),
+            ("echo a/etc | xargs -d a rm -rf", "rm-outside"),
+            ("echo /etc | xargs -0 rm -rf", "rm-outside"),
+            ("echo a/etc | xargs -rd/ rm -rf", "rm-outside"),
+            ("echo a/etc | xargs -n1 -rd / rm -rf", "rm-outside"),
+            ("echo src | xargs -n1 -r rm -rf", None),
+            ("echo src | xargs rm -rf", None),
+            ("echo {repo}/a | xargs rm", None),
+            ('eval "$(echo -e \'rm -rf ~\')"', "rm-outside"),
+            ('eval "$(command echo ls)"', "rm-outside"),
+            ('eval "$(/bin/echo ls)"', "rm-outside"),
+            ('eval "$(echo \'a)b\')"', "rm-outside"),
+            ('eval "$(printf \'%s\' ls)"', "rm-outside"),
+            ("rm {repo}/a.txt", None),
+            ('eval "$(printf \'rm -rf ~\')"', "rm-outside"),
+            ('eval "$(echo rm -rf ~)"', "rm-outside"),
+            ('eval "$(echo ls)"', None),
+        ], self.bash)
+
+
 if __name__ == "__main__":
     unittest.main()
