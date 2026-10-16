@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `fm ui` no longer crashes when a subagent's outline list is the newest file in the sessions folder: that crash blanked the band and the pane (T-1097).
+- foreman-ui 0.17.0 (T-1090): every node of the live tree above the prompt holds its own words: this session shows the last thing Claude said it is doing, and each subagent its own (the first line of each model step, streaming in as it is written; tapped from `turn.step` per subagent, each chunk passed on unchanged), fewer lines each as agents multiply; a builder's node names its worktree; a fading rule separates the tree from the chat.
 - The forever loop (T-1057): `fm loop on` turns an empty queue into the next improvement round (review what shipped, brainstorm past the newest earlier runs, ground, queue, build), enforced by `fm next` and the Stop drive rather than left to the session; a round's yield is the tasks it made unless `fm loop yield N` says otherwise, two dry rounds in a row or `fm loop off` end it (with a decision on record), and usage ahead of pace pauses it. The pane and band show `∞ round N`.
 
 ## 1.2.31 — 2026-10-16

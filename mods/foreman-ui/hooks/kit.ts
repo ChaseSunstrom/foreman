@@ -575,6 +575,16 @@ const ESC_SEQ =
 export const clean = (t: string) =>
   t.replace(ESC_SEQ, '').replace(/\t/g, '  ').replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
 
+/** T-1090: a node's narration line in the live tree: the first thing a model step said, one line, markdown marks
+ * dropped, at most 200 characters ('' when it said nothing) */
+export function narration(text: string): string {
+  // review: only markdown's own marks (bold, code ticks, a heading's #s, a quote's >, a list bullet), never a name's _ or #
+  const line = text.split('\n').map(l => clean(l).replace(/\*\*|`/g, '').replace(/^\s*(?:#+|>+)\s*/, '')
+    .replace(/^\s*(?:[-•*]|\d+\.)\s+/, '').trim())
+    .find(Boolean) ?? ''
+  return line.length > 200 ? `${line.slice(0, 199)}…` : line
+}
+
 export function tone(line: string): Tone {
   if (/\b0 (?:errors?|fail(?:s|ed|ures?)?)\b/i.test(line)) return 'ok' // ' 0 fail' read as a failure (live render)
   if (/\b(?:error|errors|failed|failure|failures|fatal|panic(?:ked)?|traceback|exception)\b|✗|✘|\bFAIL\b/i.test(line)) return 'err'

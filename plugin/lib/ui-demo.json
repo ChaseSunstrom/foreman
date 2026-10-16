@@ -1,4 +1,5 @@
-{"loop": {"on": true, "round": 3, "dry": 0}, 
+{
+ "loop": {"on": true, "round": 3, "dry": 0},
  "v": 1, "project": "demo-1a2b3c", "root": "~/src/demo",
  "mode": {"autonomy": "standard", "drive": true, "sensitive": false, "trust": false, "standing": []},
  "active": {
