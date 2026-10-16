@@ -89,4 +89,19 @@ class TaskCostCap(HookCase):
         self.assertNotIn("cost cap", self.stop_reason())
         self.fm("task", "set", t, "cost_cap=200k")
         self.assertIn("cost cap", self.stop_reason())
-        self.assertNotIn("cost cap", self.stop_reason(), "said once")
+        self.assertNotIn(t, self.stop_reason(), "the second Stop doesn't push the capped task")
+        self.assertNotIn(t, self.stop_reason())
+        self.fm("task", "set", t, "cost_cap=250k")  # a changed cap lifts the hold: still hit, said again
+        self.assertIn("cost cap", self.stop_reason())
+
+    def test_the_brief_readers_show_the_cost_line(self):
+        self.fm("init")
+        t = self.task("Current", type_="FEATURE", tier="M")
+        self.history(t)
+        self.assertNotIn("Cost:", self.fm("task", "show", t).stdout, "no cap, no cache: nothing")
+        self.fm("task", "set", t, "cost_cap=2M")
+        line = [x for x in self.fm("task", "show", t).stdout.splitlines() if x.startswith("Cost:")][0]
+        self.assertRegex(line, r"forecast ≈ 100k \(median of 2 FEATURE M\), cap 2\.0M, spent 300k")
+        self.assertIn("Cost: forecast", self.fm("focus", t).stdout)
+        self.fm("task", "set", t, "cost_cap=2M")  # uncapped readers use the cache
+        self.assertIn("Cost: forecast", self.fm("task", "show", t).stdout)

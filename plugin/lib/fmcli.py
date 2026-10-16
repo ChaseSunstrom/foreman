@@ -490,7 +490,8 @@ def cmd_task(args):
             return out(args, s, fmrecall.render_story(s))
         if args.json:
             return print(json.dumps(dict(c.brief_detail(b), meta=b.meta, blockers=b.done_blockers()), indent=2))
-        return print(b.render(), end="")
+        import fmcost
+        return print(b.render() + (f"\n{line}\n" if (line := fmcost.cost_line(p, b)) else ""), end="")  # T-1083
     if sub == "set":
         return task_set(p, args)
     if sub == "step":
@@ -2387,7 +2388,8 @@ def cmd_focus(args):
         record = "\n".join(filter(None, [fmoutcomes.track_line(p, target.type, target.tier),  # T-0641
                                           fmoutcomes.caution(p, target.meta.get("scope") or []),  # T-0620
                                           step_order(target), step_contracts(p, target),  # T-0623, T-0666
-                                          _preflight(p, target) if first_focus else ""]))  # T-0633
+                                          _preflight(p, target) if first_focus else "",  # T-0633
+                                          __import__("fmcost").cost_line(p, target)]))  # T-1083
     except Exception:  # a report: it never stops a focus
         record = ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"

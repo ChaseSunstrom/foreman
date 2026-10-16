@@ -244,11 +244,54 @@ def parse_tokens(v):
 
 
 def forecast_task(p, b, costs=None, days=90):
-    """T-1083: the median cost of finished tasks of b's type and tier (two or more), else None."""
+    """T-1083: (median cost, how many) of finished tasks of b's type and tier (two or more), else None."""
     costs = task_costs(p, days) if costs is None else costs
     xs = [costs[x.id] for x in c.load_briefs(p) if x.status == "done" and x.id != b.id and x.type == b.type
           and x.tier == b.tier and costs.get(x.id)]
-    return round(statistics.median(xs)) if len(xs) >= 2 else None
+    return (round(statistics.median(xs)), len(xs)) if len(xs) >= 2 else None
+
+
+CACHE_GROWTH = 1_000_000  # bytes of new transcript before the cached figures are stale…
+CACHE_AGE_S = 300  # …or this long
+
+
+def cached_costs(p, compute=True):
+    """task_costs(p, 90) kept in the session dir, keyed by the transcripts' total size: redone only when they grew
+    over ~1 MB or the figures are 5 min old. compute=False: the cache as it is (None when there is none)."""
+    path = os.path.join(c.state_dir(), "sessions", f"cost-{p.slug}.json")
+    try:
+        with open(path) as f:
+            old = json.load(f)
+    except (OSError, ValueError):
+        old = None
+    if not compute:
+        return collections.Counter(old["costs"]) if old else None
+    size = sum(os.path.getsize(os.path.join(d, n)) for d, _, ns in os.walk(transcripts_dir(p.root)) for n in ns
+               if n.endswith(".jsonl"))
+    if old and size - old["size"] <= CACHE_GROWTH and time.time() - old["ts"] < CACHE_AGE_S:
+        return collections.Counter(old["costs"])
+    costs = task_costs(p, 90)
+    try:
+        c.write_atomic(path, json.dumps({"size": size, "ts": time.time(), "costs": dict(costs)}))
+    except OSError:
+        pass  # a cache: never worth failing for
+    return costs
+
+
+def cost_line(p, b):
+    """T-1083: 'Cost: forecast ≈ N (median of K FEATURE M), cap C, spent S' for a brief's readers; '' with neither a
+    forecast nor a cap. Only a task with a cap pays for fresh figures; the rest read the cache, or say nothing."""
+    cap = parse_tokens(b.meta.get("cost_cap"))
+    try:
+        costs = cached_costs(p, compute=bool(cap))
+        fc = forecast_task(p, b, costs) if costs else None
+    except Exception:  # a report: never stops the command it rides on
+        return ""
+    if not cap and not fc:
+        return ""
+    return "Cost: " + ", ".join(filter(None, [
+        f"forecast ≈ {_human(fc[0])} (median of {fc[1]} {b.type} {b.tier})" if fc else "",
+        f"cap {_human(cap)}" if cap else "", f"spent {_human(costs.get(b.id, 0))}" if costs else ""]))
 
 
 def _task(args, p, fmcli):
@@ -256,9 +299,9 @@ def _task(args, p, fmcli):
     costs = task_costs(p, 90)
     spent, fc, cap = costs[b.id], forecast_task(p, b, costs), parse_tokens(b.meta.get("cost_cap"))
     text = (f"{b.id} [{b.type} {b.tier}]: spent {_human(spent)}" + (f", cap {_human(cap)}" if cap else "")
-            + (f", forecast {_human(fc)} (median of finished {b.type} {b.tier} tasks)" if fc
+            + (f", forecast {_human(fc[0])} (median of {fc[1]} finished {b.type} {b.tier} tasks)" if fc
                else ", no forecast (needs two finished tasks of the same type and tier)"))
-    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc}, text)
+    return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
 
 
 def cmd_cost(args):
