@@ -1569,3 +1569,30 @@ test('the pane is one panel of fixed sections sized from the dock, never from wh
   expect(big.task).toBeGreaterThan(big.live)
   expect(layout(30).also).toBe(0) // a short dock gives up the extras before the task or the queue
 })
+
+test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
+  const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
+  const steps = Array.from({ length: 12 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
+  const { calls } = world(on, [{
+    ...VIEW,
+    approvals: [{ task: 'T-0007', allow: ['core'], why: 'edit the guard' }], // the attention row is taken
+    queue: [...VIEW.queue!, second],
+    active: { ...VIEW.active!, steps },
+    signals: [{ level: 'amber', text: 'usage ahead of pace' }],
+  }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(32) })
+  for (const id of ['T-0009', 'T-0010']) expect(await ui.find({ key: `approve-${id}` })).toBeDefined()
+  await ui.press({ key: 'approve-T-0010' })
+  expect(calls).toContainEqual(['fm', 'task', 'set', 'T-0010', 'approved=true'])
+  expect(await ui.find({ type: 'Text', text: /\d+ more not shown/ })).toBeDefined() // 12 steps in a short Task section
+  await ui.unmount()
+})
+
+test('review (T-0989): with nothing urgent, a signal the band used to show takes the attention row', async ($, on) => {
+  world(on, [{ ...CALM, checks: undefined, signals: [{ level: 'amber', text: 'usage ahead of pace' }] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const calm = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await calm.find({ type: 'Text', text: /◐ usage ahead of pace/ })).toBeDefined()
+  await calm.unmount()
+})

@@ -1,6 +1,6 @@
 import type { EngineInterface, ResolveInput } from 'claude-code'
-import type { FileChurn, LiveAgent } from '../types'
-import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, churnCells, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, mix, outputSummary, tint, progressCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
+import type { LiveAgent } from '../types'
+import { C, MASCOT_COLORS, TONE_COLOR, activityCells, agentColor, barCells, changedLines, clawd, clean, elapsed, hex, miniClawd, mix, outputSummary, tint, progressCells, shortPath, sparkCells, sparkText, stageCells, stageLabels, textBar, textComet, toolFace } from './kit'
 import type { LabelRun } from './kit'
 import { DIFF_LINES, OUT_LINES, cfg, took } from './state'
 import type { ToolUseRender } from './state'
@@ -46,7 +46,7 @@ export function meter(
   )
 }
 
-/** A sparkline (Raster on the terminal, block characters elsewhere) and a lines-added/removed bar. */
+/** A sparkline: a Raster on the terminal, block characters elsewhere. */
 export function spark(ui: UI, e: ResolveInput, key: string, values: readonly number[], width: number) {
   if (e.surface === 'terminal') {
     const { Raster } = ui
@@ -54,15 +54,6 @@ export function spark(ui: UI, e: ResolveInput, key: string, values: readonly num
   }
   const { Text } = ui
   return <Text color={hex(C.accent2)}>{sparkText(values, width)}</Text>
-}
-
-export function churn(ui: UI, e: ResolveInput, key: string, f: FileChurn, max: number) {
-  if (e.surface === 'terminal') {
-    const { Raster } = ui
-    return <Raster key={key} columns={10} rows={1} cells={churnCells(f.add, f.del, max, 10)} />
-  }
-  const { Text } = ui
-  return <Text color={hex(C.ok)}>{'━'.repeat(Math.max(1, Math.round((10 * (f.add + f.del)) / Math.max(1, max))))}</Text>
 }
 
 // T-0909: the pane's charts. On the terminal a Raster (and, while `motion` is given, a closure that redraws it for the
@@ -102,37 +93,6 @@ export function miniRail(ui: UI, e: ResolveInput, n: number, current: number, f:
   return <Raster key="fm-band-rail" columns={n * 2 - 1} rows={1} cells={stageCells(n, current, n * 2 - 1, f)} />
 }
 
-/** The swim lanes of the session's tool calls: a label column, then one braille row per lane. */
-export function lanes(ui: UI, e: ResolveInput, rows: { label: string; color: number; slots: number[] }[], width: number, f: number | null, motion?: Motion) {
-  const { Box, Text } = ui
-  if (e.surface !== 'terminal')
-    return (
-      <Box key="lanes" flexDirection="column">
-        {rows.map(r => (
-          <Text key={`lane-${r.label}`} color={hex(r.color)}>
-            {r.label.padEnd(6)}
-            {sparkText(r.slots.filter((_, i) => i % 2 === 0).map((x, i) => x + (r.slots[2 * i + 1] ?? 0)), width)}
-          </Text>
-        ))}
-      </Box>
-    )
-  const { Raster } = ui
-  const lanesData = rows.map(r => ({ color: r.color, slots: r.slots }))
-  if (f !== null) motion?.set('lanes', { columns: width, rows: rows.length, draw: t => laneCells(lanesData, width, t) })
-  return (
-    <Box key="lanes" flexDirection="row" gap={1}>
-      <Box key="lane-labels" flexDirection="column" flexShrink={0}>
-        {rows.map(r => (
-          <Text key={`lane-${r.label}`} color={hex(r.color)}>
-            {r.label.padEnd(5)}
-          </Text>
-        ))}
-      </Box>
-      <Raster key="lanes" columns={width} rows={rows.length} cells={laneCells(lanesData, width, f)} />
-    </Box>
-  )
-}
-
 /** Column bars, `rows` tall (Raster), or a sparkline elsewhere. */
 export function bars(ui: UI, e: ResolveInput, key: string, values: readonly number[], rows: number, from: number, to: number) {
   if (e.surface !== 'terminal') {
@@ -141,17 +101,6 @@ export function bars(ui: UI, e: ResolveInput, key: string, values: readonly numb
   }
   const { Raster } = ui
   return <Raster key={key} columns={values.length * 2 - 1} rows={rows} cells={barCells(values, rows, from, to)} />
-}
-
-/** Time on the task against its usual, with the usual marked. */
-export function eta(ui: UI, e: ResolveInput, width: number, elapsedMin: number, usualMin: number) {
-  if (e.surface !== 'terminal') {
-    const { Text } = ui
-    const [a, b] = textBar(width, Math.min(1, elapsedMin / Math.max(1, usualMin)))
-    return <Text key="eta-bar" color={hex(elapsedMin > usualMin ? C.warn : C.accent2)}>{a + b}</Text>
-  }
-  const { Raster } = ui
-  return <Raster key="eta-bar" columns={width} rows={1} cells={etaCells(width, elapsedMin, usualMin)} />
 }
 
 /** The mascot: Claude Code's own Claude, dancing while work runs, with a mini Claude per running subagent. */

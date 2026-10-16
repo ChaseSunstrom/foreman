@@ -7,7 +7,6 @@ export type ToolUseRender = RenderInput<'ToolUse'>
 
 export const PANE = 'foreman'
 
-export const LIST = 6
 export const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
 export const DIFF_LINES = 8 // a finished edit's row: this many changed lines
 export const FRAME_MS = 120
@@ -15,8 +14,6 @@ export const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost tur
 export const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
 export const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
 export const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
-export const HOLD_MS = 8000 // T-0938: a volatile card keeps its tallest recent height this long, then gives a row back
-export const STEP_MS = 1000 // per this long
 export const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 export const FRESH = [
   'Foreman task boundary: a task just closed.',
@@ -37,7 +34,6 @@ export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '',
 // T-0909: what the pane charts live. Every tool call's lane and start (the swim lanes, the last hour), and each call
 // still running with how it reads (the "now" card); neither needs to survive a reload.
 export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'web'
-export const LANES: Lane[] = ['edit', 'run', 'read', 'agent', 'web']
 export const ticks: { at: number; lane: Lane }[] = []
 export const running = new Map<string, { icon: string; verb: string; target: string; color: number; at: number; agent: boolean }>()
 export const laneOf = (icon: string): Lane =>

@@ -17,7 +17,6 @@ import {
   replyBlocks,
   clean,
   ago,
-  churnCells,
   clawd,
   elapsed,
   fade,
@@ -55,7 +54,7 @@ const shells = atom({ plugin: 'foreman-ui', key: 'shells' } as const, [])
 const away = atom({ plugin: 'foreman-ui', key: 'away' } as const, []) // tasks done since the person last wrote
 const resumed = atom({ plugin: 'foreman-ui', key: 'resumed' } as const, null) // T-0145: the resume record acted on
 const reviewing = atom({ plugin: 'foreman-ui', key: 'reviewing' } as const, null as string | null) // T-0989: a waiting plan shown in the Task section
-import { agentOut, agentRow, bars, churn, editChanges, editRow, eta, lanes, mascotTree, meter, miniRail, more, rail, shellRow, spark } from './rows'
+import { agentOut, agentRow, bars, editChanges, editRow, mascotTree, meter, miniRail, rail, shellRow, spark } from './rows'
 import type { Motion } from './rows'
 
 // Foreman inside Claude Code. A pure renderer over `fm ui --json` plus what the session's own tool calls show it:
@@ -1285,10 +1284,10 @@ export const register: Register = (on, options) => {
         const q = plans[0]!
         return row(
           C.warn,
-          `⚠ ${q.id} plan awaits your yes: ${q.title}`,
+          `⚠ ${q.id} plan awaits your yes${a ? `: ${q.title}` : ' (below)'}${plans.length > 1 ? ` · ${plans.length - 1} more` : ''}`,
           null,
           <Box key="attention-plan" flexDirection="row" gap={1} flexShrink={0}>
-            <Button key={`approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
+            <Button key={`att-approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
             {a && (
               <Button key={`review-${q.id}`} label={shownPlan === q.id ? 'hide' : 'show'} plain dimColor
                 onPress={() => update($, reviewing, x => (x === q.id ? null : q.id))} />
@@ -1305,11 +1304,13 @@ export const register: Register = (on, options) => {
           c.minutes !== null ? elapsed(c.minutes * 60000) : '',
           c.usual !== undefined ? `usually ${about(c.usual)}` : '',
         ].filter(Boolean)
-        return row(C.ok, `✔ ${c.id} done${closeCard(c)}${facts.length ? ` · ${facts.join(' · ')}` : ''}`,
+        return row(C.ok, `✔ ${c.id} done${closeCard(c)}${facts.length ? ` · ${facts.join(' · ')}` : ''}${c.title ? ` · ${c.title}` : ''}`,
           <Box key="attention-sweep" flexShrink={0}>{meter(ui, e, 'closed-sweep', 8, cfg.motion === 'off' ? 1 : sweep(clockNow), C.ok, null)}</Box>)
       }
       if (failing) return row(C.err, `✗ gates failing: ${checks!.results.filter(r => r.exit).map(r => r.cmd).join(' · ')}`)
       if (doneSince.length) return row(C.ok, `✔ since your last message: ${doneSince.length} done · ${doneSince.slice(-6).join(' ')}`)
+      const sl = signalLine(v) // T-0472: usage ahead of pace, tasks blocked …: the band's glyph, here while the pane is open
+      if (sl) return row(sl.level === 'red' ? C.err : C.warn, `${sl.level === 'red' ? '●' : '◐'} ${sl.text}`)
       return row(C.dim, '✓ nothing needs you')
     })()
 
@@ -1385,6 +1386,7 @@ export const register: Register = (on, options) => {
         detail: [
           `${proved}/${a.criteria.length} proved`,
           ...(a.audits.need ? [`audits ${a.audits.done}/${a.audits.need}`] : []),
+          ...(a.steps.length - nSteps + crit.length - nCrit > 0 ? [`${a.steps.length - nSteps + crit.length - nCrit} more not shown`] : []),
         ].join(' · '),
         body: [
           ...(railRows ? [<Box key="fm-pane-rail" flexDirection="column">{rail(ui, e, a.stages, stageIdx, W, ft, blit)}</Box>] : []),
@@ -1464,7 +1466,7 @@ export const register: Register = (on, options) => {
                 ? `done · ${s.tools} tool${s.tools === 1 ? '' : 's'}` // its last action is stale once it ends (T-0146)
                 : clockNow - (s.lastAt ?? s.startedAt) >= QUIET_MS
                   ? `quiet ${elapsed(clockNow - (s.lastAt ?? s.startedAt))}`
-                  : `${s.tools} tools · ${elapsed(clockNow - s.startedAt)}`}
+                  : `${s.tools} tools${s.last ? ` · ${s.last.slice(0, 30)}` : ''} · ${elapsed(clockNow - s.startedAt)}`}
             </Text>
           </Box>
           {!s.done && clockNow - (s.lastAt ?? s.startedAt) >= STOP_MS && (
@@ -1578,6 +1580,9 @@ export const register: Register = (on, options) => {
             {q.id} {q.title}
             {q.waits ? `  (${q.waits})` : ''}
           </Text>
+          {q.plan && (
+            <Button key={`approve-${q.id}`} label="✓ approve" plain onPress={() => act($, ['task', 'set', q.id, 'approved=true'], `✓ ${q.id} plan approved`)} />
+          )}
           {v.typical?.[`${q.type}/${q.tier}`] !== undefined && (
             <Box key={`q-typ-${q.id}`} flexShrink={0}>
               <Text color={dim}>{about(v.typical[`${q.type}/${q.tier}`]!)}</Text>
@@ -1668,7 +1673,7 @@ export const register: Register = (on, options) => {
             `${skillUses} use${skillUses === 1 ? '' : 's'} · 7d`,
             ...(sk.recent[0] ? [`last ${sk.recent[0].name} ${since(Math.max(0, clockNow - Date.parse(sk.recent[0].at)))}`] : []),
             ...(topSkills.length ? [`top ${topSkills.map(([n, k]) => `${n} ×${k}`).join(', ')}`] : []),
-            ...(sk.unread.length ? [`${sk.unread.length} cards unread`] : []),
+            ...(sk.unread.length ? [`${sk.unread.length} cards unread: fm lib show ${sk.unread[0]}`] : []),
           ].join(' · '))]
         : []),
       ...(bs
@@ -1684,7 +1689,7 @@ export const register: Register = (on, options) => {
       ...(v.bench?.evolve ?? []).slice(0, 1).map((x, i) =>
         one(`more-evolve-${i}`, '', C.dim, `${x.kept ? '✓ kept' : '✗ dropped'} ${shortPath(x.target ?? '', 34)} · ${x.why ?? ''}`)),
       ...(v.research ?? []).slice(0, 1).map(r =>
-        one(`more-research-${r.name}`, 'research', C.accent2, `${r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')} · ✓${r.verified} ✗${r.not_found} ?${r.unchecked}${(r.conflicts ?? 0) > 0 ? ` · ⟷${r.conflicts} conflicts` : ''}${(r.single ?? 0) > 0 ? ` · ${r.single} single-source` : ''}`,
+        one(`more-research-${r.name}`, 'research', C.accent2, `${(v.research ?? []).length > 1 ? `${(v.research ?? []).length} asks, newest ` : ''}${r.name.replace(/^ask-/, '').replace(/-\d{8}-\d{4}$/, '')} · ✓${r.verified} ✗${r.not_found} ?${r.unchecked}${(r.conflicts ?? 0) > 0 ? ` · ⟷${r.conflicts} conflicts` : ''}${(r.single ?? 0) > 0 ? ` · ${r.single} single-source` : ''}`,
           r.not_found ? C.warn : C.dim)),
     ]
 
