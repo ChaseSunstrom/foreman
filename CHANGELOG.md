@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- The mod's T-1090 review test streams the long line only on the session's own turn: 1,178 ms → 104 ms, so it no longer times out under load (T-1132).
+- A daily risk budget: destructive guard blocks, failed closes and reverts spend points, and past the cap autonomy steps down a notch until tomorrow (`fm risk`; only the user moves the cap) (T-1080).
+- `fm digest` and the pane's idle line say what Foreman learned: fixes new, worked and missed, rules to propose from corrections, interventions per closed task (T-1045).
+- The pane is swept over 30 terminal sizes in its tests; no row spills past it (T-1050).
 - `fm night` works unblocked queued S/M tasks through `fm run` under the night's remaining budget, and `fm digest` names the tasks it closed; `fm run --max-usd X` stops starting tasks once its measured spend reaches X (T-1046).
 - `fm ci-watch`: after a push, polls the GitHub Actions run for that exact commit through gh; a failure's log tail becomes one FIX brief (quoted as data), and it keeps watching pushed fixes up to `--max-retries`, then says it gave up (T-1052).
 - `fm export cursor` and `fm export gemini` write `.cursor/rules/foreman.mdc` (alwaysApply) and `GEMINI.md` with the AGENTS.md body; every export gains a Known fixes section (trusted fixes only, redacted, at most 15, none in a sensitive project) (T-1043).

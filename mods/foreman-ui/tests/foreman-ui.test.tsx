@@ -2268,8 +2268,9 @@ test('review (T-1090): the tap is cheap on a long one-line step, the session kee
   on('turn.step', async function* ($, e) {
     steps++
     const said = e.agentId ? `Agent ${e.agentId} is on it.` : 'This session plans the work.'
-    for (let i = 0; i < 2000; i++) yield { kind: 'text', index: 0, text: i ? 'x' : said } as never // a long single line
-    return { turnId: e.turnId, index: e.index, answer: said + 'x'.repeat(1999), toolUses: [] } as never
+    const long = e.agentId ? 20 : 2000 // T-1132: the session's own turn is the long single line; agents need a short one
+    for (let i = 0; i < long; i++) yield { kind: 'text', index: 0, text: i ? 'x' : said } as never
+    return { turnId: e.turnId, index: e.index, answer: said + 'x'.repeat(long - 1), toolUses: [] } as never
   })
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.turn.start({ text: 'go', turnId: 't1' })
