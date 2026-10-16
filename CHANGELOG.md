@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Guard: `python -c` code that names Foreman's modules only in its strings is parsed like a quoted heredoc and no longer refused as driving Foreman; real imports, dynamic code, code it can't read as one literal word, and a run folder it can't check stay refused (T-1194).
 - `fm lease drop` says how many leases it released ("Dropped 2 lease(s).") before listing what's left, so a "No leases held." after a drop no longer reads as if nothing had been taken (T-1205).
 - The guard's note for a script it couldn't parse in time says a literal scan of it found nothing to refuse, not that it ran unread (T-1202).
 - `fm round close` lists the newest 20 tasks closed in the round and counts the rest (`--json` still lists every one); the first round of 1.2.34 had printed 744 lines into the release output (T-1200).
