@@ -405,6 +405,14 @@ def cmd_replay(args):
             lines.append(f"    … {len(keys) - SHOW} more")
     lines.append(f"  {fresh} new to the corpus" + (" · accepted as the baseline" if args.accept else
                  " · fm replay --accept takes these verdicts as the baseline" if blocked or allowed or not old else ""))
+    cases, broken = load_cases()  # T-1182: the gate holds the labelled cases too (fm guard wrong)
+    bad = drift(cases)
+    res.update(cases=len(cases), drifted=len(bad), broken=broken)
+    if cases or broken:
+        lines.append(f"  guard cases: {len(cases)} labelled, {len(bad)} drifted"
+                     + (f", {broken} broken line(s)" if broken else ""))
+        lines += [f"    should {k['should']}, guard {k['got']}: {c.fit(c.redact(' '.join(k['cmd'].split())), 120)}"
+                  for k in bad[:SHOW]]
     fmcli.out(args, res, "\n".join(lines))
-    if (blocked or allowed) and not args.accept:
+    if ((blocked or allowed) and not args.accept) or bad or broken:
         raise SystemExit(1)
