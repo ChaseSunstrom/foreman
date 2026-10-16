@@ -137,18 +137,18 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
-def duel(state):
-    """The newest fm bench duel --vs none: each case's pass, cost, turns and time for both arms (T-1222)."""
+def duel(state, model=None):
+    """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
+    arms (T-1222)."""
     res = os.path.join(state, "bench", "results")
-    mine = sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")))
-    if not mine:
+    for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json")), reverse=True):
+        bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
+        with open(path, encoding="utf-8") as f:
+            fm_ = json.load(f)
+        if os.path.isfile(bare_path) and (not model or fm_.get("model") == model):
+            break
+    else:
         return None
-    stamp = mine[-1].rsplit("duel-none-foreman-", 1)[1]
-    bare_path = os.path.join(res, "duel-none-bare-" + stamp)
-    if not os.path.isfile(bare_path):
-        return None
-    with open(mine[-1], encoding="utf-8") as f:
-        fm_ = json.load(f)
     with open(bare_path, encoding="utf-8") as f:
         bare = json.load(f)
     pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
@@ -186,7 +186,7 @@ def main():
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
              "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
-             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(x.partition("=")[2]))
+             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(*x.partition("=")[2].split("@", 1)))
                                                      for x in (a.duel or [f"quality={state}"])) if d]
              or old.get("duels") or []}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

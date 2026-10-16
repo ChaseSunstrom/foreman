@@ -159,8 +159,8 @@ def line(title, note, rows, key, label_key):
     return figure(title, note, "".join(out), table([label_key, key], [[r[label_key], r[key]] for r in rows]))
 
 
-def tiles(pairs):
-    return '<div class="tiles">' + "".join(f'<div class="tile"><span>{esc(label)}</span>'
+def tiles(pairs, cls=""):
+    return f'<div class="tiles{" " + cls if cls else ""}">' + "".join(f'<div class="tile"><span>{esc(label)}</span>'
                                            f'<strong>{fmt(v) if isinstance(v, (int, float)) else esc(v)}</strong></div>'
                                            for label, v in pairs) + "</div>"
 

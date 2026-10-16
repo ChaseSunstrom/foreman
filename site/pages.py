@@ -92,9 +92,10 @@ def _duel(s, name):
     time_f, time_b = sum(c["foreman"]["seconds"] for c in cs), sum(c["bare"]["seconds"] for c in cs)
     pct = lambda a, b: round((a / b - 1) * 100) if b else 0
     n = len(cs)
-    head = tiles([("Tasks passed, with Foreman", f"{won} of {n}"), ("Tasks passed, Claude Code", f"{lost} of {n}"),
-                  (f"Cost of the {n}, with Foreman", f"${cost_f:.2f}"), (f"Cost of the {n}, Claude Code", f"${cost_b:.2f}"),
-                  (f"Time for the {n}, with Foreman", f"{time_f:.0f} s"), (f"Time for the {n}, Claude Code", f"{time_b:.0f} s")])
+    head = tiles([("Tasks passed, with Foreman", f"{won} of {n}"), (f"Cost of the {n}, with Foreman", f"${cost_f:.2f}"),
+                  (f"Time for the {n}, with Foreman", f"{time_f:.0f} s"), ("Tasks passed, Claude Code", f"{lost} of {n}"),
+                  (f"Cost of the {n}, Claude Code", f"${cost_b:.2f}"), (f"Time for the {n}, Claude Code", f"{time_b:.0f} s")],
+                 "three")
     if won > lost:
         verdict = f"Foreman passed {won - lost} more of the {len(cs)} tasks."
     elif won == lost:
@@ -311,8 +312,8 @@ PAGES = [
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
      "lede": "Two benchmarks, run for real on this machine and published as they came out: a set of commands that "
-             "destroy work or leak secrets, and real coding tasks graded by hidden tests or a judge, run once with "
-             "Foreman and once with Claude Code on its own.",
+             "destroy work or leak secrets, and sixteen fully specified coding tasks graded by hidden tests, each run "
+             "three times with Foreman and three times with Claude Code on its own.",
      "blocks": [
          ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
           "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
@@ -333,6 +334,11 @@ PAGES = [
           "is recorded and proven to fail. Grading restores the reference tests, so editing an existing test can't "
           "pass. <code>bench/spec-suite/make.py --suite hard</code> builds it.</p>"),
          ("chart", lambda s: _duel(s, "hard")),
+         ("text", "The harder tasks with a smaller model", "<p>The same eight harder tasks with Haiku on both sides, "
+          "where mistakes should be likelier and a test run at the end should matter more. Haiku sessions cost about "
+          "a cent each, so Foreman's fixed cost (its skill and agent listings, its hooks and the test run at the end) "
+          "weighs more here.</p>"),
+         ("chart", lambda s: _duel(s, "hard-haiku")),
          ("text", "What the duels changed in Foreman", "<p>Reading the sessions turn by turn showed where Foreman's "
           "extra cost went: not into its context (about 2,000 tokens), but into turns spent on its own commands. A "
           "first run on these tasks cost Foreman 8 to 13 turns where Claude Code used 4. The fixes moved Foreman's "
@@ -351,10 +357,11 @@ PAGES = [
           "checked exact wording their requests never stated. Both sides also worked inside Foreman's own code, which "
           "the guard protects. The transcripts did show where Foreman spent extra turns on its own commands; those "
           "were cut before this run.</p>"),
-         ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Eight tasks, three runs each, one "
-          "model (Sonnet): enough to see a direction, not a precise rate.</li><li><strong>Small tasks.</strong> Each "
-          "is one module; larger, multi-file work is where planning should matter more, and a public benchmark is "
-          "next.</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
+         ("text", "Method and limits", "<ul><li><strong>Small sample.</strong> Sixteen tasks, three runs each, two "
+          "models: enough to see a direction, not a precise rate.</li><li><strong>Both sides passed everything."
+          "</strong> Fully specified tasks this size are within reach of today's models without help, so these runs "
+          "measure cost and time more than quality; larger, multi-file work and a public benchmark are next."
+          "</li><li><strong>Reproduce it.</strong> <code>fm bench duel --vs none</code> runs the quality "
           "benchmark on your own finished tasks; <code>python3 site/bench_safety.py</code> reruns the safety set."
           "</li><li><strong>Other plugins.</strong> <code>fm bench duel PLUGIN</code> runs the same cases with another "
           "plugin beside Foreman.</li></ul>")]},

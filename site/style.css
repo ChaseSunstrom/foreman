@@ -235,6 +235,13 @@ footer .fine { flex-basis: 100%; }
 .data table { border-collapse: collapse; margin-top: 8px; font-variant-numeric: tabular-nums; display: block; overflow-x: auto; }
 .data th, .data td { text-align: left; padding: 4px 14px 4px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 28px; }
+.tiles.three { grid-template-columns: repeat(3, 1fr); }
+@media (max-width: 600px) {
+  .tiles.three { gap: 8px; }
+  .tiles.three .tile { padding: 10px 10px 12px; }
+  .tiles.three .tile span { font-size: .74rem; line-height: 1.3; }
+  .tiles.three .tile strong { font-size: 1.35rem; }
+}
 .tile { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 14px 16px; }
 .tile span { display: block; color: var(--ink-2); font-size: .92rem; }
 .tile strong { display: block; font: 700 2.2rem/1.05 "Barlow Condensed", sans-serif; margin-top: 4px; }
