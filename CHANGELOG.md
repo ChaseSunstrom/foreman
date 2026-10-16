@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Bench grading restores the reference commit's whole test folders, not only the hidden test files, so an arm that edits or guts an existing test to make its change pass is graded by the real one (T-1231)
 - The stop-time close runs only in unattended runs, never while paused, and isn't retried after a timeout (T-1231 review). It reads the gates without building the map and prefers a test gate. When the tests fail, it tells the agent once with the failure, so the run fixes its work instead of ending on it.
 - `fm bench run`, `duel`, `versions`, `court` and `soak` run a snapshot of the plugin folder taken at start, so editing Foreman during a run can't change what its later sessions load (T-1231)
 - Foreman does its own bookkeeping in a one-request unattended run (T-1231):

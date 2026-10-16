@@ -116,8 +116,11 @@ def has_guard(plugin):
 
 
 def _grade(wt, case, env, timeout=900):
-    """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored."""
-    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"])
+    """[(cmd, exit code, last lines)] of the case's verify commands, with its hidden tests restored. T-1237 review: and
+    every other file in their folders as the reference commit has them, so an arm that edited or gutted an existing
+    test to make its change pass is graded by the real one."""
+    folders = sorted({os.path.dirname(t) for t in case["tests"]} - {""})
+    r = _safe_git(wt, "checkout", case["commit"], "--", *case["tests"], *folders)
     if r.returncode:  # grading without the hidden tests would grade whatever the session left
         return [("restore the hidden tests", r.returncode, r.stderr.strip()[-200:])]
     out = []
