@@ -1676,3 +1676,21 @@ class StdinRmAndEvalSubst(GuardCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelativeFromState(GuardCase):
+    def test_a_relative_heredoc_path_refused_from_inside_state_says_where_the_shell_is(self):
+        # T-1125: the shell was left in state/ by an earlier cd, so 'CHANGELOG.md' resolved to state/CHANGELOG.md;
+        # the refusal was right but read as a false positive, because it never said the shell's cwd
+        st = os.path.join(self.fhome, "state")
+        cmd = "python3 - <<'EOF'\np='CHANGELOG.md'\nopen(p,'w').write('x')\nEOF"
+        r = self.bash(cmd, cwd=st)
+        self.assertBlocked(r, "state-direct")
+        msg = g.message(r, self.ctx(cwd=st))
+        self.assertIn(f"The shell is in {st}", msg)
+        self.assertIn("absolute path", msg)
+        self.assertIsNone(self.bash(cmd, cwd=self.fhome), "from the project root it is an ordinary file")
+        state_write = self.sub("python3 - <<'EOF'\nopen('{fhome}/state/x.json','w').write('x')\nEOF")
+        r = self.bash(state_write, cwd=self.fhome)
+        self.assertBlocked(r, "state-direct")
+        self.assertNotIn("The shell is in", g.message(r, self.ctx(cwd=self.fhome)), "only when the shell is in state/")

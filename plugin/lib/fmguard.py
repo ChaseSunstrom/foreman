@@ -161,7 +161,11 @@ def _hint(detail, cat=""):
 
 
 def message(block, ctx):
-    return _message(block, ctx) + _hint(block.detail if isinstance(block.detail, str) else "", block.category)
+    detail = block.detail if isinstance(block.detail, str) else ""
+    where = ""  # T-1125: a shell left inside state/ by an earlier cd turns a relative path into a state write
+    if detail.endswith("(written from interpreter code)") and _under(ctx.cwd or "", os.path.join(ctx.foreman_home, "state")):
+        where = f" The shell is in {ctx.cwd}, so a relative path lands there: use an absolute path or cd out first."
+    return _message(block, ctx) + where + _hint(detail, block.category)
 
 
 def _message(block, ctx):
