@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm release` runs the canary last, after the push and round close, with up to four project sentinels at once; it never fails a release, so it no longer holds the push (1.2.34's canary took over 3 minutes per project, one at a time, across 12 projects) (T-1199).
 
 ## 1.2.34 — 2026-10-16
 - `fm release VERSION [--ui V] [--push] [--dry-run] [--resume] [--abandon]` runs the release as nine named steps (clean tree, gates, bump, changelog, commit, release-check, canary, push, round close) with a checkpoint after each. A stopped release resumes at the step that failed, `--push` merges the gated release commit (never later work) behind the active task's publish grant, and `release.py` is now a thin wrapper over it (T-1188).

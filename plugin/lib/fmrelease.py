@@ -22,9 +22,10 @@ STEPS = [("tree", "the working tree is clean"),
          ("changelog", "CHANGELOG.md's Unreleased entries are headed VERSION"),
          ("commit", "commit 'Foreman VERSION' with the Foreman-Task trailer"),
          ("release-check", "fm release-check: doctor and demo in a temporary HOME"),
-         ("canary", "fm sentinel in every local project (reported, never fatal)"),
          ("push", "--push: merge into the remote's main (--no-ff) from a temporary worktree, push; spends the publish grant"),
-         ("round", "fm round close: tag HEAD round-N")]
+         ("round", "fm round close: tag HEAD round-N"),
+         # T-1199: never fatal, so it never holds the push; 12 projects one by one held 1.2.34's for ~35 min
+         ("canary", "fm sentinel in every local project, 4 at a time (reported, never fatal)")]
 GATES = ("check", "release-check", "canary")
 MARK = r"^Foreman [0-9]+\.[0-9]+\.[0-9]+"  # a release commit's subject
 SEMVER = r"\d+\.\d+\.\d+"
@@ -140,16 +141,20 @@ def _canary(ctx):
                                            ).stdout or "{}").get("projects", [])
     except (ValueError, OSError, subprocess.TimeoutExpired):
         listed = []
-    print(f"canary: fm sentinel in {len(listed)} project(s)")
-    for x in listed:
-        if not x.get("exists"):
-            continue
+    print(f"canary: fm sentinel in {len(listed)} project(s)", flush=True)
+
+    def one(x):
         try:
             r = subprocess.run([*FM, "sentinel"], cwd=x["root"], capture_output=True, text=True, timeout=1800)
             first = (r.stdout.strip().splitlines() or ["(no output)"])[0]
-            print(f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}")
+            return f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}"
         except (OSError, subprocess.TimeoutExpired) as e:
-            print(f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})")
+            return f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
+
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(4) as pool:
+        for line in pool.map(one, [x for x in listed if x.get("exists")]):  # in project order, as each is ready
+            print(line, flush=True)
 
 
 def _push(ctx):
@@ -278,7 +283,7 @@ def run(p, args):
         name = STEPS[i][0]
         if i not in todo and not (name == "push" and not state["push"]):
             continue
-        print(f"step {i + 1}/{len(STEPS)} {name}")
+        print(f"step {i + 1}/{len(STEPS)} {name}", flush=True)  # a log file shows where a long run is
         if name == "push" and not state["push"]:
             print("  (no --push: nothing published; fm release V --push does it later)")
             continue  # not recorded: a later --push still has it to do

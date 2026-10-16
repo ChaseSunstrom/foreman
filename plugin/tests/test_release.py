@@ -9,15 +9,24 @@ from helpers import ForemanTestCase, read_json, read_text
 
 import fmcore as c
 
-STUB = '''import json, os, sys
+STUB = '''import json, os, sys, time
 verb = sys.argv[1]
 once = os.path.join(os.environ.get("STUB_FAIL_ONCE", "/nonexistent"), verb)
 if os.path.exists(once):  # this gate fails once, then passes
     os.remove(once)
     sys.exit(1)
 if verb == "projects":
-    print(json.dumps({"projects": [{"project": "app", "root": os.environ["STUB_ROOT"], "exists": True}]}))
+    n = int(os.environ.get("STUB_N", "1"))
+    print(json.dumps({"projects": [{"project": "app" + (str(i) if n > 1 else ""), "root": os.environ["STUB_ROOT"],
+                                    "exists": True} for i in range(n)]}))
 elif verb == "sentinel":
+    log = os.environ.get("STUB_LOG")
+    if log:
+        with open(log, "a") as f:
+            f.write("start\\n")
+        time.sleep(0.5)
+        with open(log, "a") as f:
+            f.write("end\\n")
     print("1 proof fails now")
 '''
 
@@ -88,6 +97,9 @@ class Release(ForemanTestCase):
         out = self.rel("9.9.9", "--dry-run").stdout
         for name in ("tree", "check", "bump", "changelog", "commit", "release-check", "canary", "push", "round"):
             self.assertIn(name, out)
+        # T-1199: the canary is never fatal, so it never holds the push: it runs last
+        self.assertLess(out.index("push:"), out.index("canary:"))
+        self.assertLess(out.index("round:"), out.index("canary:"))
         self.assertEqual(sh(self.repo, "status", "--porcelain"), "")
         self.assertEqual(read_json(os.path.join(self.repo, "plugin/.claude-plugin/plugin.json"))["version"], "1.0.0")
 
@@ -231,7 +243,7 @@ class Release(ForemanTestCase):
         self.tid(grant=True)
         out = self.rel("9.9.9", "--push").stdout
         self.assertNotIn("step 3/", out)
-        self.assertIn("step 8/9 push", out)
+        self.assertIn("step 7/9 push", out)
         self.assertEqual(sh(origin, "log", "-1", "--format=%s", "main").strip(), "Foreman 9.9.9")
         self.assertEqual(sh(self.repo, "tag", "--list").split().count("round-1"), 1, "no second round")
 
@@ -246,6 +258,14 @@ class Release(ForemanTestCase):
         sh(self.repo, "commit", "-qam", "more")
         r = self.rel("9.9.10")
         self.assertIn("couldn't run", r.stdout)
+
+    def test_the_canary_runs_sentinels_side_by_side_and_reports_in_project_order(self):
+        log = os.path.join(self.tmp, "sentinels.log")
+        self.env.update(STUB_N="4", STUB_LOG=log)
+        out = self.rel("9.9.9").stdout
+        self.assertGreaterEqual(read_text(log).split("end")[0].count("start"), 2, "two sentinels ran at once")
+        lines = [ln.strip() for ln in out.splitlines() if ": 1 proof fails now" in ln]
+        self.assertEqual([ln.split(":")[0][2:] for ln in lines], ["app0", "app1", "app2", "app3"])
 
     def test_an_unfinished_release_of_another_version_blocks_a_new_one_until_abandoned(self):
         put(self.repo, "CHANGELOG.md", "# Changelog\n")  # step 4 fails with the bump already written
