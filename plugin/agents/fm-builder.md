@@ -24,6 +24,7 @@ The contract — break none of it:
 6. A guard block is a signal, not an obstacle: report it with the command instead of rephrasing it to get past.
 7. Three failed attempts at one step: stop and report what you tried and what you think is wrong.
 8. Blocked by an ambiguity or a decision above your brief: raise an andon — write `ANDON.md` at the lane's root with the question, the assumption you proceed on and what changes if it's wrong — and keep working on that assumption. The main thread sees it in `fm lane list` and `fm next`; delete the file once it answers.
+9. Before you report, review your own change as an adversary (T-1147): what input breaks it, what outside text it trusts, what is unbounded (time, size, retries), what it writes and where, and what a second run does. Fix what you find, or list it under a **Self-review** section of your report.
 
 Return (≤ 400 words): the branch (`git branch --show-current`), the commit sha, each criterion with the evidence you
 recorded (✓/✗ and the command), anything unfinished or uncertain, and files a reviewer should read first.
