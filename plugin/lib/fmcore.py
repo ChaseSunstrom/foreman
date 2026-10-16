@@ -698,8 +698,8 @@ def write_atomic(path, text):
     fd, tmp = tempfile.mkstemp(dir=d, prefix=f".{os.path.basename(path)}.", suffix=".tmp")
     try:
         os.fchmod(fd, mode)
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
+        with os.fdopen(fd, "wb") as f:
+            f.write(text if isinstance(text, bytes) else text.encode("utf-8"))  # bytes as they are (T-1099)
             f.flush()
             os.fsync(f.fileno())
         os.replace(tmp, path)

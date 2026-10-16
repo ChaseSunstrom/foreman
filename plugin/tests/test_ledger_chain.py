@@ -190,6 +190,84 @@ class Chain(ForemanTestCase):
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertIn("ledger-2026-01.jsonl:2", r.stdout + r.stderr)
 
+    # T-1099: the roll reads bytes, keeps time order and takes the ledger's own flock
+    def roll(self):
+        with mock.patch.object(fmtidy, "LEDGER_ROLL_BYTES", 0), mock.patch.object(c, "now", return_value=MARCH):
+            fmtidy._roll_ledger(self.p, True, [])
+
+    def archived(self):
+        with open(os.path.join(self.p.dir, "archive", "ledger-2026-01.jsonl"), "rb") as f:
+            return f.read().splitlines()
+
+    def test_roll_survives_a_bad_byte(self):
+        bad, deep = b'{"ts": "2026-01-15T00:00:00Z", "event": "note", "data": "\xff"}', b"[" * 100000  # RecursionError
+        with open(self.ledger, "wb") as f:
+            f.write(bad + b"\n" + deep + b"\n" + json.dumps({"ts": MARCH, "event": "note"}).encode() + b"\n")
+        self.roll()
+        self.assertEqual(self.archived(), [bad, deep], "the bad byte is archived byte for byte")
+        self.assertEqual(json.loads(self.lines()[0])["ts"], MARCH)
+
+    # T-1099 review: a roll that dies at any point loses no line, archives none twice and leaves a green chain
+    def crash_roll(self, target, name, again=()):
+        self.put([])
+        for ts in ("2026-01-15T00:00:00Z", "2026-01-16T00:00:00Z", MARCH):
+            with mock.patch.object(c, "now", return_value=ts):
+                c.log_event(self.p, "note")
+        with mock.patch.object(target, name, side_effect=OSError(5, "crash")), self.assertRaises(OSError):
+            self.roll()
+        c.log_event(self.p, "note", data={"after": 1})  # lands before the next roll
+        self.roll()
+        self.assertEqual([json.loads(x)["ts"] for x in self.archived()], ["2026-01-15T00:00:00Z", "2026-01-16T00:00:00Z"])
+        self.assertEqual([json.loads(x)["data"] for x in self.lines()], [{}, {"after": 1}, *again],
+                         "ledger_rolled only when lines left the live file")
+        self.assertFalse(os.path.exists(self.ledger + ".rolling"))
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_crash_before_the_rewrite_archives_nothing_twice(self):
+        self.crash_roll(c, "write_atomic", [{"2026-01": 2}])  # the live file still had them: rolled again, appended once
+
+    def test_crash_mid_rewrite_is_restored_from_the_sidecar(self):
+        self.crash_roll(os, "ftruncate")
+
+    def test_crash_after_the_rewrite_drops_the_stale_sidecar(self):
+        self.crash_roll(os, "remove")
+
+    def test_unparseable_ts_rolls_with_its_neighbours(self):
+        self.put(["not json"])  # a leading line with no ts goes with the first line that has one
+        old = ["2026-01-15T00:00:00Z", "not a time", "2099-01-01T00:00:00Z", "2026-01-16T00:00:00Z"]  # 2099: a clock ahead
+        for ts in old + [MARCH]:
+            with mock.patch.object(c, "now", return_value=ts):
+                c.log_event(self.p, "note")
+        self.roll()
+        self.assertEqual(self.archived()[0], b"not json")
+        self.assertEqual([json.loads(x)["ts"] for x in self.archived()[1:]], old)
+        self.assertEqual(json.loads(self.lines()[0])["ts"], MARCH)
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_roll_waits_for_a_writer_and_keeps_its_line(self):
+        self.put([])
+        with mock.patch.object(c, "now", return_value="2026-01-15T00:00:00Z"):
+            for _ in range(3):
+                c.log_event(self.p, "note")
+        with open(self.ledger, "a+b") as f:  # a writer mid-log_event: holds the ledger's flock
+            c.fcntl.flock(f, c.fcntl.LOCK_EX)
+            t = threading.Thread(target=self.roll)
+            t.start()
+            t.join(0.3)
+            self.assertTrue(t.is_alive(), "the roll waits for the ledger's flock")
+            prev = c.ledger_hash(c._last_line(f))
+            f.write((json.dumps({"prev": prev, "ts": MARCH, "event": "note", "data": {"racer": 1}}) + "\n").encode())
+        t.join(5)
+        self.assertEqual(len(self.archived()), 3)
+        self.assertEqual(json.loads(self.lines()[0])["data"], {"racer": 1}, "the writer's line survives the roll")
+        r = self.verify()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+
+MARCH = "2026-03-02T00:00:00Z"
+
 
 class Receipt(ForemanTestCase):
     def test_finish_names_the_head(self):
