@@ -1,9 +1,10 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, hex, laneCells, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stageCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
-import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, stable, summaryText, toasts } from '../hooks/register'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
+import type { Part } from '../hooks/kit'
 
 const VIEW: FmView = {
   v: 1,
@@ -59,12 +60,14 @@ const PANE = {
   requestId: 'foreman',
   props: { title: 'Foreman', isFocused: true, bodyColumns: 70, placement: 'dock', scroll: { offset: 0, bodyRows: 60 }, view: {} },
 } as const
+const tall = (bodyRows: number) => ({ ...PANE, props: { ...PANE.props, scroll: { offset: 0, bodyRows } } }) // a taller dock
 
 const decode = (b64: string) => {
   const bin = atob(b64)
   const view = new DataView(new Uint8Array([...bin].map(c => c.charCodeAt(0))).buffer)
-  const out: { ch: string; fg: number }[] = []
-  for (let i = 0; i < bin.length; i += 12) out.push({ ch: String.fromCodePoint(view.getUint32(i, true)), fg: view.getUint32(i + 4, true) })
+  const out: { ch: string; fg: number; bg: number }[] = []
+  for (let i = 0; i < bin.length; i += 12)
+    out.push({ ch: String.fromCodePoint(view.getUint32(i, true)), fg: view.getUint32(i + 4, true), bg: view.getUint32(i + 8, true) })
   return out
 }
 
@@ -126,11 +129,12 @@ function world(on: On, views: FmView[]) {
   on('turn.start', async ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', async () => ({ text: '' }))
   // hold: ms the call stays open, as a permission dialog keeps it; result: what the tool answers
-  const answer: { deny: string; hold: number; result: object } = { deny: '', hold: 0, result: {} }
+  const answer: { deny: string; hold: number; result: object; throws?: boolean } = { deny: '', hold: 0, result: {} }
   const tools: string[] = [] // every tool the plugin or the test called, with its task id when it has one
   on('tool.call', async ($, e) => {
     tools.push(`${e.tool}${(e as { task_id?: string }).task_id ? ` ${(e as { task_id?: string }).task_id}` : ''}`)
     if (answer.hold) await clock.sleep(answer.hold)
+    if (answer.throws) throw new Error('the tool crashed')
     return answer.deny ? { deny: answer.deny } : { result: answer.result }
   })
   const submitted: string[] = [] // prompts the plugin submitted (each a turn of its own)
@@ -194,6 +198,23 @@ test('kit: swim lanes rise with how busy each slot was; quiet slots are a faint 
   expect(lanes[1]!.ch).toBe('⣀') // nothing ran: the floor
   expect(lanes[3]!.ch).toBe(String.fromCharCode(0x2800 | 0x40 | 0x04 | 0x80 | 0x20)) // 2 of 4 both sides
   expect(lanes[0]!.fg).not.toBe(lanes[2]!.fg) // the busier slot is brighter
+})
+
+test('kit: a Gantt row is blank outside its run, a tinted bar inside, with dots where its calls landed (T-1023)', () => {
+  const row = { start: 25_000, end: 75_000, marks: [30_000, 30_500, 60_000], color: C.agent }
+  const cells = decode(ganttCells(row, 0, 100_000, 10, 100_000, null))
+  const plain = 0x01000000 // the terminal's own background
+  expect(cells.length).toBe(10)
+  expect(cells.slice(0, 2).every(x => x.ch === ' ' && x.bg === plain)).toBe(true) // before it started
+  expect(cells.slice(8).every(x => x.ch === ' ' && x.bg === plain)).toBe(true) // after it ended
+  expect(cells.slice(2, 8).every(x => x.bg !== plain)).toBe(true) // the bar
+  expect(cells[3]!.ch).not.toBe(' ') // two calls at 30 s
+  expect(cells[6]!.ch).not.toBe(' ') // one at 60 s
+  expect(cells[5]!.ch).toBe(' ') // inside the bar, no call
+  const fresh = decode(ganttCells({ ...row, start: 100_000, end: null, marks: [] }, 0, 100_000, 10, 100_000, null))
+  expect(fresh[9]!.bg).not.toBe(plain) // review (T-1023): a bar that starts now still shows
+  const running = decode(ganttCells({ ...row, end: null }, 0, 100_000, 10, 100_000, null))
+  expect(running.slice(8).every(x => x.bg !== plain)).toBe(true) // a running bar reaches now
 })
 
 test('kit: day bars grow in eighths with a floor for zero; the eta bar marks the usual time and goes amber past it (T-0909)', () => {
@@ -336,38 +357,37 @@ const NEWS: FmView = {
   vetoes: ['never push without asking', "don't touch the lockfile"],
 }
 
-test('the pane shows spend, the bench and evolve, research asks, and the task ledger', async ($, on) => {
-  world(on, [NEWS])
+test('the pane shows the task ledger and spend as a tank; halved caps take the attention row; the bench, research and vetoes stay out (T-1002)', async ($, on) => {
+  world(on, [{ ...NEWS, checks: undefined, queue: CALM.queue }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(120) })
   const missing: string[] = []
-  for (const key of ['card-budget', 'card-bench', 'card-research'])
-    if (!(await ui.find({ key }))) missing.push(key)
   for (const text of [
-    /\$2\.40 of \$15 · subagents 120k · waiting: weekly usage 85%/,
-    /caps halved: weekly usage 85%/,
+    /^\s*\$2\.40\s*$/,
+    /◐ spend caps halved: weekly usage 85%, subagents wait/,
     /✗ H1\. the cache is shared/,
     /\? H2\. the input is truncated/,
-    /oracle: 6 examples · 1 open question: is the delimiter configurable\?/,
+    /oracle: 6 examples, open: is the delimiter configurable\?/,
     /batch of T-0012, T-0013/,
     /≈ 1 inconclusive run: a sharper check is next/,
     /\? 1 unverified assumption: the delimiter is always a comma/,
-    /✗ dropped .*SKILL\.md · tighter verify lines/,
-    /judged 3\.5\/5 · 2 repeats/,
-    /✓ duel: no difference on these cases/,
-    /tomllib-since-which-version/,
-    /⟷2 conflicts/,
-    /3 single-source/,
-    /◆ revisit: keep the 60s token TTL \(auth\.py changed\)/,
-    /✋ you said: never push without asking · 1 more/,
   ])
     if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
   expect(missing).toEqual([])
-  expect((await ui.find({ key: 'in-age-T-0011' }))?.props.flexShrink).toBe(0) // the title truncates, the age never wraps
+  for (const text of [/judged 3\.5\/5/, /tomllib/, /never push without asking/, /120k tokens/]) // T-1002: clutter, fm has them
+    expect(await ui.find({ type: 'Text', text })).toBeUndefined()
   await ui.unmount()
 })
 
-test('the Skills card: recent skills and cards with their age, top uses, unread suggestions; folded it still counts unread (T-0939)', async ($, on) => {
+test('a decision due for another look takes a calm attention row (T-1002)', async ($, on) => {
+  world(on, [{ ...NEWS, checks: undefined, queue: CALM.queue, budget: { ...NEWS.budget!, halved: null, subagents_paused: null } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: /◆ revisit: keep the 60s token TTL \(auth\.py changed\)/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('skill calls get their own lane in Activity, with the last skill used; the week\'s list stays in fm (T-0939, T-1002)', async ($, on) => {
   const skills = {
     recent: [
       { name: 'python', kind: 'card', at: '2026-10-15T12:00:00Z' },
@@ -379,15 +399,12 @@ test('the Skills card: recent skills and cards with their age, top uses, unread 
   } as const
   world(on, [{ ...VIEW, skills: { ...skills, recent: [...skills.recent], suggested: [...skills.suggested], unread: [...skills.unread] } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Skill', skill: 'foreman:brainstorm' } as never)
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'card-skills' })).toBeDefined()
-  const missing: string[] = []
-  for (const text of [/4 uses · 7d · 2 unread/, /▤ python \S+ ago/, /✦ foreman:brainstorm \S+ ago/, /foreman:brainstorm ×3 · python ×1/, /fm lib show typescript · fm lib show semver/])
-    if (!(await ui.find({ type: 'Text', text }))) missing.push(String(text))
-  expect(missing).toEqual([])
-  await ui.press({ key: 'fold-skills' })
-  expect(await ui.find({ type: 'Text', text: /fm lib show typescript/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /2 unread/ })).toBeDefined()
+  expect(await ui.find({ key: 'lane-skill' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'foreman:brainstorm' })).toBeDefined()
+  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'lane-r-skill')).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /this week/ })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -407,29 +424,29 @@ test('a quiet day shows no spend, bench or research cards', async ($, on) => {
   await ui.unmount()
 })
 
-test('pane is organized cards; a waiting plan shows what a yes approves, and its buttons run fm', async ($, on) => {
+test('the pane is one panel of sections, no boxes inside; a waiting plan shows what a yes approves, and its buttons run fm (T-0989)', async ($, on) => {
   const { calls } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...PANE })
-    for (const key of ['card-task', 'card-queue', 'card-inbox', 'card-activity']) expect(await ui.find({ key })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /▸ 2\. raise the timeout/ })).toBeDefined()
-    // T-0181: 'the AC and audits thing not matching': criteria in the steps' column under their own label
-    expect(await ui.find({ type: 'Text', text: /○ 1\. slow wifi logs in/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: 'done when' })).toBeDefined()
-    expect(await ui.find({ key: 'fm-pane-audits' })).toBeDefined()
-    // 'the top of the panels with foreman etc look weird and the buttons aren't pannelled': both are panels; cards
-    // are quiet grey like the chat's, the task card in the accent
-    expect((await ui.find({ key: 'fm-pane-head' }))?.props.borderStyle).toBe('round')
-    expect((await ui.find({ key: 'fm-pane-controls' }))?.props.borderStyle).toBe('round')
-    expect((await ui.find({ key: 'card-inbox' }))?.props.borderColor).toBe(hex(C.dim))
-    // T-0909: the stage list is a rail with short names on the terminal; elsewhere its text twin
+    for (const key of ['fm-pane-head', 'fm-pane-attention', 'task', 'activity', 'queue', 'history', 'today', 'fm-pane-controls'])
+      expect(await ui.find({ key })).toBeDefined()
+    expect((await ui.findAll({ type: 'Box' })).filter(b => b.props.borderStyle)).toEqual([]) // one panel: the dock's frame
+    expect(await ui.find({ type: 'Text', text: /▸ +2 +raise the timeout/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /slow wifi logs in/ })).toBeUndefined() // T-1002: the steps and rail say it
+    expect(await ui.find({ type: 'Text', text: /0\/1 proved/ })).toBeDefined()
     if (surface === 'terminal') {
       expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'stage-rail')).toBe(true)
       expect(await ui.find({ type: 'Text', text: 'build' })).toBeDefined()
     } else expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
+    // a task is active: the attention row asks for the yes; 'show' puts the plan in the Task section
+    expect(await ui.find({ type: 'Text', text: /T-0009 plan awaits your yes: CSV export/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /csv module vs pandas/ })).toBeUndefined()
+    await ui.press({ key: 'review-T-0009' })
     expect(await ui.find({ type: 'Text', text: /csv module vs pandas: csv module/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /write the exporter/ })).toBeDefined()
+    await ui.press({ key: 'review-T-0009' })
+    expect(await ui.find({ type: 'Text', text: /csv module vs pandas/ })).toBeUndefined()
     await ui.press({ key: 'approve-T-0009' })
     expect(calls).toContainEqual(['fm', 'task', 'set', 'T-0009', 'approved=true'])
     expect((await ui.find({ key: 'autonomy' }))?.props.hotkey).toBeUndefined()
@@ -452,7 +469,7 @@ test('a running edit is an animated row with its delta; a finished one is the en
     expect(await ui.find({ type: 'Text', text: /✎ Editing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /login\.py/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+2 −1' })).toBeDefined()
-    expect((await ui.find({ type: 'Box', key: 'fm-tool' }))?.props.borderStyle).toBe('round') // T-0179: a panel from the start
+    expect((await ui.find({ type: 'Box', key: 'fm-tool' }))?.props.borderStyle).toBeUndefined() // T-1031: a section, as in the pane
     const first = JSON.stringify(await ui.drawn())
     await clock.advance(240)
     expect(JSON.stringify(await ui.drawn())).not.toBe(first) // the spinner and the comet move
@@ -522,18 +539,22 @@ test('a guard refusal of a tool call becomes a toast', async ($, on) => {
   expect(toasted.some(t => t.startsWith('⛔ Foreman: blocked core'))).toBe(true)
 })
 
-test('every card shares the look: queue step bars, inbox age, gates, fading activity and a latency sparkline', async ($, on) => {
-  world(on, [VIEW])
+test('Today: closes per day beside four tanks, each with its value over it and its name under it (T-1002)', async ($, on) => {
+  const { clock } = world(on, [{ ...VIEW, done_days: [0, 1, 0, 2, 0, 0, 0, 0, 3, 0, 0, 1, 0, 2], today_done: 2 }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000) // the poll reads the context
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'foreman-ui', surface, ...PANE })
-    for (const key of ['card-task', 'card-queue', 'card-inbox', 'card-gates', 'card-activity']) expect(await ui.find({ key })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '2/3 passed · 19:40' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /✗/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: '2d' })).toBeDefined()
+    for (const text of [/^\s*30%\s*$/, /^\s*31ms\s*$/, /^\s*2\/3\s*$/, /context\s+spend\s+hooks\s+gates/, /2 today/])
+      expect(await ui.find({ type: 'Text', text })).toBeDefined()
     const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
-    if (surface === 'terminal') expect(rasters).toEqual(expect.arrayContaining(['q-bar-T-0008', 'fm-latency', 'fm-pane-bar']))
-    else expect(await ui.find({ type: 'Text', text: /[▁▂▃▄▅▆▇█]{6}/ })).toBeDefined()
+    if (surface === 'terminal') {
+      expect(rasters).toEqual(expect.arrayContaining(['done-days', 'fm-tank-cells']))
+      const tanks = decode(String((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'fm-tank-cells')!.props.cells))
+      expect(tanks.some(c => c.ch === '█' && c.fg === C.ok)).toBe(true) // context at 30%: green
+      expect(tanks.some(c => c.ch === '█' && c.fg === C.err)).toBe(true) // a gate failing: the gates tank is red
+    } else expect(await ui.find({ type: 'Text', text: /context 30%/ })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /\b2d\b/ })).toBeUndefined() // T-1002: no ages, no step meters in the queue
     await ui.unmount()
   }
 })
@@ -548,7 +569,7 @@ test('quick capture files an idea without interrupting Claude', async ($, on) =>
   await ui.unmount()
 })
 
-test('the pane: a fleet deck with a remote tile, one steer for all, and the parts of a split task', async ($, on) => {
+test('the pane: a fleet line with a remote session, one steer for all, and the parts of a split task', async ($, on) => {
   // T-0711: the cockpit's first slice
   const fleet = [
     { session: 'sess-abcdef12', project: 'demo-1a2b3c', task: 'T-0007', title: 'Login times out', context_pct: 31, mail: 1 },
@@ -558,11 +579,13 @@ test('the pane: a fleet deck with a remote tile, one steer for all, and the part
   const { calls } = world(on, [{ ...CALM, fleet, active: { ...CALM.active!, children } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /▍Fleet/ })).toBeDefined()
+  expect(await ui.find({ key: 'more-fleet-0' })).toBeDefined() // a row per session
+  expect(await ui.find({ type: 'Text', text: /T-0007 Login times out  ✉1/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /T-0341 Calendar tools  jarvis-d7aeca/ })).toBeDefined() // another project's session names it
   expect(await ui.find({ type: 'Text', text: /JARVIS/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /jarvis-d7aeca · T-0341 Calendar tools/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /ctx 31% · mail 1/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /T-0012 Login times out — part 1: auth\.py/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^ +31%$/ })).toBeDefined() // each session's context, coloured by how full
+  expect(await ui.find({ type: 'Text', text: /^ +38%$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /part T-0012 Login times out — part 1: auth\.py/ })).toBeDefined()
   await ui.input({ key: 'steer', text: 'freeze the public API' })
   expect(calls).toContainEqual(['fm', 'conductor', 'steer', 'freeze the public API'])
   await ui.unmount()
@@ -578,17 +601,15 @@ test('a write the guard refuses never reaches the files card', async ($, on) => 
   await ui.unmount()
 })
 
-test('edits fill the files card with per-file +/- bars', async ($, on) => {
+test('edits show on the edit lane: how many, and the latest file (T-1002)', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'Edit', file_path: '/repo/src/login.py', old_string: 'a', new_string: 'b\nc', replace_all: false })
   await $.tool.call({ tool: 'Write', file_path: '/repo/README.md', content: 'x\ny\nz' })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'card-files' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '+2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '+3' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /login\.py/ })).toBeDefined()
-  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'file-bar-0')).toBe(true)
+  expect(await ui.find({ key: 'lane-edit' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'README.md' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /2 calls, last/ })).toBeDefined()
   await ui.unmount()
 })
 
@@ -765,14 +786,14 @@ test('the band shows the whole queue: today, queued, inbox and what is next', as
   await ui.unmount()
 })
 
-test('a paused hook shows in the band and the pane (T-0087)', async ($, on) => {
+test('a paused hook shows in the band and, before anything else, in the pane (T-0087)', async ($, on) => {
   world(on, [{ ...VIEW, health: { hook_p95_ms: 31, guard_blocks: 0, hook_errors: 3, paused_hooks: ['Stop'] } }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
   expect(await ui.find({ type: 'Text', text: /⚠ Foreman's Stop hook is paused: it failed 3 times in a row/ })).toBeDefined()
   await ui.unmount()
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await pane.find({ type: 'Text', text: /paused: Stop/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /⚠ Stop hook is paused after failing 3 times in a row/ })).toBeDefined() // above the plan waiting
   await pane.unmount()
 })
 
@@ -834,8 +855,8 @@ test('finished reads are one quiet line; background notifications too', async ($
   const said = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage', props: {
     text: 'make it smarter\nand better', origin: { kind: 'composer' }, isExpanded: false } })
   const box = await said.find({ type: 'Box', key: 'fm-user' })
-  expect(box?.props.borderStyle).toBe('round')
-  expect(box?.props.borderColor).toBe(hex(C.accent2))
+  expect(box?.props.borderStyle).toBeUndefined() // T-1031: a section headed in the user's colour
+  expect((await said.find({ type: 'Text', text: /You/ }))?.props.color).toBe(hex(C.accent2))
   expect(await said.find({ type: 'Text', text: /make it smarter\nand better/ })).toBeDefined()
   await said.unmount()
 })
@@ -852,7 +873,9 @@ test('a background shell shows while Claude waits on it, and leaves on its notif
   expect(await ui.find({ type: 'Text', text: /waiting on 2 background shells/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /cargo test --workspace/ })).toBeDefined()
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await pane.find({ type: 'Text', text: /▍Background shells/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /2 running/ })).toBeDefined() // the Activity divider
+  expect(await pane.find({ type: 'Text', text: /◷ cargo test --workspace/ })).toBeDefined() // at the end of the run lane
+  expect(await pane.find({ type: 'Text', text: /\+1$/ })).toBeDefined() // and the other one counted
   await pane.unmount()
   const text = '<task-notification><task-id>bx1</task-id><status>completed</status></task-notification>'
   await $.prompt.submit({ text, origin: { kind: 'task-notification' }, wait: false })
@@ -896,8 +919,7 @@ test('sizes carry this project history: usually ~N beside the chip, time on task
   expect(await ui.find({ type: 'Text', text: /12m 00s on it · usually ~25m/ })).toBeDefined()
   await ui.unmount()
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await pane.find({ type: 'Text', text: '~8m' })).toBeDefined() // T-0008 CLEAN small in the queue
-  expect(await pane.find({ type: 'Text', text: /a full run ≈ 2m 37s/ })).toBeDefined() // 140.2 + 5.8 + 11.0 s
+  expect(await pane.find({ type: 'Text', text: /12m 00s of ~25m/ })).toBeDefined()
   await pane.unmount()
 })
 
@@ -999,7 +1021,7 @@ test('kit: a command output, short: failures first, else the tail, each line ton
   expect(bad.failures).toBe(true)
 })
 
-test('a finished shell command is a Foreman row in the chat: status, command, time, its output formatted inline', async ($, on) => {
+test('a finished shell command is a Foreman row in the chat: status, command, time, its output formatted inline', { options: { chat: 'full' } }, async ($, on) => {
   // T-0137: 'in the actual claude code chat … not just results, but tool calls'; no Output card in the pane
   const { clock } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1035,7 +1057,7 @@ test('a finished shell command is a Foreman row in the chat: status, command, ti
   await pane.unmount()
 })
 
-test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', async ($, on) => {
+test('a finished edit is a Foreman row: the path, +added −removed, and its changed lines as coloured text', { options: { chat: 'full' } }, async ($, on) => {
   // T-0141: 'the text output and formatting is not formatted/clean, especially with the tool calls like update'
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
@@ -1054,10 +1076,10 @@ test('a finished edit is a Foreman row: the path, +added −removed, and its cha
   expect((await row.find({ type: 'Text', text: /^old one$/ }))?.props.color).toBe(hex(C.del))
   expect((await row.find({ type: 'Text', text: /^new two$/ }))?.props.color).toBe(hex(C.add))
   expect(await row.find({ type: 'Text', text: /^ ?12 $/ })).toBeDefined() // 'new two' is line 12 of the new file
-  expect(await row.find({ type: 'Text', text: /keep/ })).toBeUndefined() // unchanged context stays out
+  expect((await row.find({ type: 'Text', text: /^keep$/ }))?.props.color).toBe(hex(C.dim)) // T-1031: a line of context, quiet
   expect(JSON.stringify(await row.drawn())).not.toContain('backgroundColor')
   // T-0179 steer: 'the command changes … I want in panels too'
-  expect((await row.find({ type: 'Box', key: 'fm-edit' }))?.props.borderColor).toBe(hex(tint(C.edit)))
+  expect((await row.find({ type: 'Text', text: /Edited/ }))?.props.color).toBe(hex(C.edit)) // T-1031: the label in the edit colour
   await row.unmount()
   const many = await mount('e2', { ...base, output: patch(['-gone', ...Array.from({ length: 20 }, (_, i) => `+add ${i}`)]) })
   expect(await many.find({ type: 'Text', text: /… 13 more changed lines/ })).toBeDefined()
@@ -1191,14 +1213,17 @@ test('with the pane open the band stops repeating it; trust is a word beside the
   await ui.unmount()
 })
 
-test('with the dashboard open, the band only says what needs the person', async ($, on) => {
+test('with the pane open it is the one panel: no band, the attention row has what needs the person (T-0989)', async ($, on) => {
   const { panes } = world(on, [VIEW]) // a plan waits for a yes
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   panes.shown = true
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band() })
-  expect(await ui.find({ key: 'fm-band-head' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /plan awaits approval/ })).toBeDefined()
+  expect(await ui.find({ key: 'fm-band' })).toBeUndefined()
+  expect(await ui.find({ text: 'engine' })).toBeDefined()
   await ui.unmount()
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /T-0009 plan awaits your yes/ })).toBeDefined()
+  await pane.unmount()
 })
 
 test('the pane: nothing stale, nothing cut without saying so, controls that read as actions', async ($, on) => {
@@ -1214,17 +1239,16 @@ test('the pane: nothing stale, nothing cut without saying so, controls that read
     await $.tool.call({ tool: 'Edit', file_path: p, old_string: 'a', new_string: 'b', replace_all: false } as never)
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /Reading/ })).toBeUndefined() // a finished agent's last action is stale
-  expect(await pane.find({ type: 'Text', text: /done · 1 tool/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /Cache gate results/ })).toBeUndefined() // an old brainstorm is one line
-  expect(await pane.find({ type: 'Text', text: /152 ideas · 9h ago/ })).toBeDefined()
-  expect((await pane.find({ type: 'Box', key: 'q-typ-T-0008' }))?.props.flexShrink).toBe(0) // '~8m' never splits
-  expect(await pane.find({ type: 'Text', text: /^src\/a\.py$/ })).toBeDefined() // project-relative
-  expect(await pane.find({ type: 'Text', text: /scratch/ })).toBeUndefined() // outside the project: not this card's
-  expect(await pane.find({ type: 'Text', text: /… 11 more in the inbox/ })).toBeDefined() // 17, 6 shown
+  expect(await pane.find({ type: 'Text', text: /Cache gate results/ })).toBeUndefined() // a finished brainstorm stays in fm
+  expect(await pane.find({ key: 'gantt-ag1' })).toBeDefined() // a finished subagent stays on the Agents graph for the window
+  expect(await pane.find({ type: 'Text', text: /… \d+ more/ })).toBeDefined() // 17 in the inbox: what doesn't fit is counted
   expect(await pane.find({ type: 'Button', text: 'turn drive off' })).toBeDefined()
   expect(await pane.find({ type: 'Button', text: 'switch to standard' })).toBeDefined()
   expect(await pane.find({ type: 'Button', text: 'mute' })).toBeDefined()
   await pane.unmount()
+  const roomy = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(120) })
+  expect(await roomy.find({ type: 'Text', text: /… 8 more in the inbox/ })).toBeDefined() // 17, 9 listed
+  await roomy.unmount()
 })
 
 test('a grounded brainstorm is one line, however recent', async ($, on) => {
@@ -1234,7 +1258,7 @@ test('a grounded brainstorm is one line, however recent', async ($, on) => {
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /Replay the guard/ })).toBeUndefined()
-  expect(await pane.find({ type: 'Text', text: /121 ideas · grounded/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: /121 ideas/ })).toBeUndefined() // T-1002: only a running one shows
   await pane.unmount()
 })
 
@@ -1249,7 +1273,7 @@ test('a long task title gives way before the task id: the id never wraps', async
   await ui.unmount()
 })
 
-test('a shell row with a description reads like the running row: the description as its title, the command under it', async ($, on) => {
+test('a shell row with a description reads like the running row: the description as its title, the command under it', { options: { chat: 'full' } }, async ($, on) => {
   world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const cmd = "python3 - <<'EOF'\nprint(1)\nprint(2)\nprint(3)\nEOF"
@@ -1279,7 +1303,8 @@ test('under a shell row the engine\'s result block is replaced; file changes, a 
     props: { tool_use_id: 'g1', tool: 'Bash', input: { command: 'sed -i s/1/2/ src/app.py && git commit -qam x' },
       isRunning: false, isErrored: false, isInterrupted: false, output } })
   expect(await row.find({ type: 'Text', text: /src\/app\.py/ })).toBeDefined()
-  expect((await row.find({ type: 'Text', text: /^a = 2$/ }))?.props.color).toBe(hex(C.add))
+  expect((await row.findAll({ type: 'Text', text: /^a = $/ })).map(t => t.props.color)).toEqual([hex(C.del), hex(C.add)]) // T-1031: shared parts plain
+  expect((await row.find({ type: 'Text', text: /^2$/ }))?.props.backgroundColor).toBeDefined() // the changed word washed
   expect(await row.find({ type: 'Text', text: /1 more file changed/ })).toBeDefined()
   expect(await row.find({ type: 'Text', text: /committed abc1234 on main/ })).toBeDefined()
   expect(await row.find({ type: 'Text', text: /timed out after 2m/ })).toBeDefined()
@@ -1303,22 +1328,21 @@ test('a reply opens with a Foreman mark; Foreman report lines are coloured; the 
   expect(await msg.find({ type: 'Box', key: 'gap-1' })).toBeDefined() // the blank line before 'Changed:' stays (live)
   // T-0179: each message is a panel ('can we have each message … look like a panel'); the closing report is accented
   const panel = await msg.find({ type: 'Box', key: 'fm-reply' })
-  expect(panel?.props.borderStyle).toBe('round')
-  expect(panel?.props.borderColor).toBe(hex(C.accent))
+  expect(panel?.props.borderStyle).toBeUndefined() // T-1031: a section with a fading rule, as in the pane
+  expect(await msg.find({ type: 'Raster', key: 'fm-reply-rule' })).toBeDefined()
   await msg.unmount()
   const more = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'a second block', isFirstOfReply: false } })
   expect(await more.find({ type: 'Box', key: 'fm-reply-mark' })).toBeUndefined()
-  const plain = await more.find({ type: 'Box', key: 'fm-reply' })
-  expect(plain?.props.borderStyle).toBe('round') // every block is one, in a quiet grey
-  expect(plain?.props.borderColor).toBe(hex(C.dim))
+  expect(await more.find({ type: 'Box', key: 'fm-reply' })).toBeDefined()
+  expect(await more.find({ type: 'Raster', key: 'fm-reply-rule' })).toBeUndefined() // a later block of the same reply: no second head
   await more.unmount()
   // T-0182 live: the newest reply kept a frozen spinner frame ('· ok') once its turn ended; it settles on ●
   await $.turn.start({ text: 'go', turnId: 'tz' })
   const newest = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'ok', isFirstOfReply: true } })
   await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 'tz', reason: 'answer' })
-  expect(await newest.find({ type: 'Text', text: '● ' })).toBeDefined()
+  expect(await newest.find({ type: 'Text', text: '●' })).toBeDefined()
   await newest.unmount()
   const long = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'x'.repeat(12000), isFirstOfReply: true } })
@@ -1334,7 +1358,7 @@ test('a long shell command wraps under itself, not under the status mark', async
       isErrored: false, isInterrupted: false, output: { stdout: 'src/a.py:1: x', stderr: '', interrupted: false } } })
   expect((await row.find({ type: 'Box', key: 'fm-shell-head' }))?.props.flexDirection).toBe('row')
   expect(await row.find({ type: 'Text', text: /^grep -rn pattern src \| head -40/ })).toBeDefined() // its own column
-  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.borderColor).toBe(hex(tint(C.accent2))) // T-0179
+  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.borderStyle).toBeUndefined() // T-1031: no box
   expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.width).toBe('100%') // live: a short one hugged its text
   await row.unmount()
 })
@@ -1357,15 +1381,14 @@ test('a folded group with a shell command unfolds, so the command gets its own r
   await reads.unmount()
 })
 
-test('the pane shows a brainstorm while it runs, then its ideas', async ($, on) => {
+test('the pane shows a brainstorm while it runs, with its newest idea', async ($, on) => {
   // T-0124: 'I want to be able to see brainstorm ideas'
   const running = { name: 'brainstorm-20261003', running: true, answers: 3, expected: 12, count: 41, ideas: ['Faster gates', 'A mascot'] }
   world(on, [{ ...CALM, brainstorm: running }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await pane.find({ type: 'Text', text: /▍Brainstorm/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /3\/12 answers · 41 ideas so far/ })).toBeDefined()
-  expect(await pane.find({ type: 'Text', text: /Faster gates/ })).toBeDefined()
+  expect(await pane.find({ type: 'Text', text: 'ideas: A mascot' })).toBeDefined() // at the end of the agent lane
+  expect(await pane.find({ type: 'Text', text: '3/12' })).toBeDefined()
   await pane.unmount()
   // and in the chat: the running fm ideas call carries the same progress under its row
   const props = { tool_use_id: 'i1', tool: 'Bash', input: { command: 'fm ideas --pack p.md --rounds 2' }, isRunning: true,
@@ -1375,34 +1398,43 @@ test('the pane shows a brainstorm while it runs, then its ideas', async ($, on) 
   await row.unmount()
 })
 
-test('the pane reads top-down: what needs you, the hero with its rail, progress and time against the usual, then the plan and the pulse (T-0909)', async ($, on) => {
+test('the pane reads top-down: head with the attention row, task, Activity, Up next, History, Today, controls (T-0909, T-0989, T-1002)', async ($, on) => {
   world(on, [{
     ...VIEW,
     approvals: [{ task: 'T-0007', allow: ['core'], why: 'edit the guard' }],
     typical: { 'FIX/M': 20 },
     active: { ...VIEW.active!, on_task_s: 1800 },
     done_days: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 3],
+    today_done: 3,
   }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   const drawn = JSON.stringify(await ui.drawn())
   const at = (key: string) => drawn.indexOf(`"${key}"`)
-  const order = ['card-asks', 'fm-pane-head', 'card-task', 'card-pulse', 'card-queue', 'card-inbox', 'card-activity', 'fm-pane-controls']
+  const order = ['fm-pane-head', 'fm-pane-attention', 'task', 'activity', 'queue', 'history', 'today', 'fm-pane-controls']
   expect(order.map(at).every(i => i >= 0)).toBe(true)
   expect([...order.map(at)].sort((x, y) => x - y)).toEqual(order.map(at))
+  let rows = 4 + (await ui.find({ key: 'task' }))?.props.height as number // head 3 (attention its third row), controls
+  for (const key of ['head', 'controls']) if (await ui.find({ key: `gap-${key}` })) rows += 1
+  for (const key of ['activity', 'agents', 'queue', 'sessions', 'history', 'today']) {
+    const h = (await ui.find({ key: `${key}-body` }))?.props.height as number | undefined
+    if (h) rows += h + 1 + ((await ui.find({ key: `gap-${key}` })) ? 1 : 0) // its rows, its titled divider, the gap above
+  }
+  expect(rows).toBe(60) // T-1000, T-1002: the whole dock, no more, no less, dividers and spacing included
   const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
-  expect(rasters).toEqual(expect.arrayContaining(['stage-rail', 'fm-pane-bar', 'eta-bar', 'done-days', 'fm-latency']))
-  expect(await ui.find({ type: 'Text', text: /30m 00s on it · usually ~20m/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /6 closed · 14d/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /↳ pytest -q/ })).toBeDefined() // an unproved criterion names its check
-  expect(await ui.find({ type: 'Text', text: /1 left before done: step 2 not done/ })).toBeDefined()
-  // live at 70 columns the label and count wrapped ('audit'/'s', '0/'/'1'): they never shrink, the blocker truncates
-  expect((await ui.find({ key: 'fm-pane-audits-head' }))?.props.flexShrink).toBe(0)
-  expect(await ui.find({ key: 'card-fleet' })).toBeUndefined() // one session alone is this one
+  expect(rasters).toEqual(expect.arrayContaining(['stage-rail', 'done-days', 'fm-tank-cells', 'lane-r-run', 'lane-r-web']))
+  expect(await ui.find({ type: 'Text', text: /⚠ needs you: T-0007 core — edit the guard/ })).toBeDefined() // above the plan
+  expect(await ui.find({ type: 'Text', text: /30m 00s of ~20m/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /3 today/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /↳ pytest -q|left before done/ })).toBeUndefined() // T-1002: fewer words
+  expect(await ui.find({ key: 'more-fleet-0' })).toBeUndefined() // one session alone is this one
   await ui.unmount()
+  const short = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(32) }) // about a 40-row terminal's dock
+  expect((await short.findAll({ type: 'Raster' })).some(r => r.key === 'done-days')).toBe(true) // the charts, not '… 2 more'
+  await short.unmount()
 })
 
-test('a running call shows under Now with a moving bar; the pulse charts the session in swim lanes (T-0909)', async ($, on) => {
+test('a running call shows at the end of its lane; the lanes chart the session tool calls and never move (T-0909, T-1002)', async ($, on) => {
   const { answer, clock } = world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'Read', file_path: '/repo/src/a.py' })
@@ -1411,85 +1443,285 @@ test('a running call shows under Now with a moving bar; the pulse charts the ses
   void $.tool.call({ tool: 'Bash', command: 'make test', description: 'run the tests' })
   await clock.advance(100)
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'card-now' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /❯ Running/ })).toBeDefined()
+  const before = (await ui.find({ key: 'activity-body' }))?.props.height
+  expect(await ui.find({ type: 'Text', text: /1 running/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'run the tests' })).toBeDefined()
   const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
-  expect(rasters).toEqual(expect.arrayContaining(['now-bar-0', 'lanes', 'stage-rail']))
-  for (const lane of ['edit', 'run', 'read']) expect(await ui.find({ type: 'Text', text: lane })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /3 tool calls · last 1 min/ })).toBeDefined()
+  expect(rasters).toEqual(expect.arrayContaining(['lane-r-run', 'lane-r-read', 'lane-r-edit', 'stage-rail']))
   await clock.advance(1000)
   await ui.unmount()
-  await clock.advance(20000) // past the hold (T-0938)
   const after = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await after.find({ key: 'card-now' })).toBeUndefined() // it finished
+  expect(await after.find({ type: 'Text', text: /3 calls, last 1m ago/ })).toBeDefined()
+  expect(await after.find({ type: 'Text', text: 'run the tests' })).toBeDefined() // now the lane's last call, quiet
+  expect(await after.find({ type: 'Text', text: /running/ })).toBeUndefined() // it finished
+  expect((await after.find({ key: 'activity-body' }))?.props.height).toBe(before) // nothing moved
   await after.unmount()
 })
 
-test('a card that shrinks keeps its tallest recent height for the hold, then eases down a row at a time (T-0938)', async ($, on) => {
-  const { answer, clock } = world(on, [VIEW])
-  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  answer.hold = 1000
-  void $.tool.call({ tool: 'Bash', command: 'make a', description: 'quick one' })
-  await clock.advance(10) // the quick one has read its hold
-  answer.hold = 30000
-  void $.tool.call({ tool: 'Bash', command: 'make b', description: 'slow one' })
-  await clock.advance(100)
-  const h = async (quick: boolean) => {
-    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-    const box = await ui.find({ key: 'card-now' })
-    expect(!!(await ui.find({ type: 'Text', text: 'quick one' }))).toBe(quick)
-    expect(await ui.find({ type: 'Text', text: 'slow one' })).toBeDefined()
-    await ui.unmount()
-    return box?.props.minHeight as number | undefined
-  }
-  expect(await h(true)).toBe(5) // border, head, two calls
-  await clock.advance(2000) // the quick one ended; the card keeps its two rows
-  expect(await h(false)).toBe(5)
-  await clock.advance(5000) // 7 s since it was last drawn two calls tall
-  expect(await h(false)).toBe(5) // still inside the hold
-  await clock.advance(2000)
-  expect(await h(false)).toBe(4) // the hold is over: a row a second given back, down to what it shows
-})
-
-test('kit: a held height gives its rows back one a second after the hold; growing takes effect at once (T-0938)', () => {
-  expect(stable('t', 6, 1000)).toBe(6)
-  expect(stable('t', 3, 2000)).toBe(6)
-  expect(stable('t', 3, 8999)).toBe(6)
-  expect([9000, 10000, 11000, 12000].map(t => stable('t', 3, t))).toEqual([5, 4, 3, 3])
-  expect(stable('t', 7, 12500)).toBe(7)
-})
-
-test('Now, Subagents and Shells linger dimmed after their last item ends, then go (T-0938)', async ($, on) => {
-  const { answer, clock } = world(on, [VIEW])
-  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
-  answer.hold = 1000
-  void $.tool.call({ tool: 'Bash', command: 'make test', description: 'run the tests' })
-  await clock.advance(100)
-  const first = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await first.find({ key: 'card-now' })).toBeDefined()
-  await first.unmount()
-  await clock.advance(3000)
-  const idle = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await idle.find({ key: 'card-now' })).toBeDefined() // it lingers
-  expect(await idle.find({ type: 'Text', text: /idle · last: .*run the tests · \d+s ago/ })).toBeDefined()
-  await idle.unmount()
-  await clock.advance(20000)
-  const gone = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await gone.find({ key: 'card-now' })).toBeUndefined()
-  await gone.unmount()
-})
-
-test('a quiet project folds queue and inbox into one Up next card with the capture box (T-0909)', async ($, on) => {
+test('a quiet project: nothing active, the news under the gauges, an empty queue with the capture box (T-0909)', async ($, on) => {
   world(on, [{ ...VIEW, active: null, queue: [], inbox: [], inbox_total: 0 }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'card-queue' })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /queue and inbox empty/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /0 queued$/ })).toBeDefined()
   expect(await ui.find({ key: 'capture' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Nothing active/ })).toBeDefined()
-  expect(await ui.find({ key: 'card-task' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: 'T-0011 captured' })).toBeDefined() // in History
   await ui.unmount()
+})
+
+test('History lists the newest first, one short line each, as many as fit (T-1002)', async ($, on) => {
+  const recent = Array.from({ length: 24 }, (_, i) => `  10:${String(i).padStart(2, '0')}  ✓ T-0007 step ${i + 1}: pytest -q → exit 0 · 3 passed`)
+  world(on, [{ ...CALM, recent }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const rows = (await ui.find({ key: 'history-body' }))?.props.height as number
+  expect(rows).toBeGreaterThan(2)
+  for (let i = 0; i < rows; i++) expect(await ui.find({ type: 'Text', text: `T-0007 step ${24 - i} passed` })).toBeDefined() // newest first, none squeezed out
+  expect(await ui.find({ type: 'Text', text: `T-0007 step ${24 - rows} passed` })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /pytest -q/ })).toBeUndefined() // the command stays in the ledger
+  await ui.unmount()
+})
+
+test('History from fm ui: the id, a coloured event and the task title across the row; dividers are gradients (T-1026)', async ($, on) => {
+  const history = [
+    { time: '10:00', mark: '⚑', task: 'T-0011', text: 'captured', title: 'Merge date helpers' },
+    { time: '10:05', mark: '✗', task: 'T-0007', text: 'step 1 failed', title: 'Login times out' },
+    { time: '10:09', mark: '✓', task: 'T-0007', text: 'step 1 passed', title: 'Login times out' },
+  ]
+  world(on, [{ ...CALM, history }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failed = await ui.find({ type: 'Text', text: 'step 1 failed' })
+  expect(failed?.props.color).toBe(hex(C.err))
+  expect(await ui.find({ type: 'Text', text: / Merge date helpers$/ })).toBeDefined()
+  const rows = await ui.findAll({ type: 'Text', text: /^step 1 (passed|failed)$/ })
+  expect(rows.map(r => (r as { text?: string }).text ?? r.props.children)).toEqual(['step 1 passed', 'step 1 failed']) // newest first
+  const rules = (await ui.findAll({ type: 'Raster' })).map(r => String(r.key)).filter(k => k.endsWith('-rule'))
+  expect(rules).toEqual(expect.arrayContaining(['activity-rule', 'queue-rule', 'history-rule']))
+  const rule = decode(String((await ui.findAll({ type: 'Raster' })).find(r => r.key === 'activity-rule')!.props.cells))
+  expect(rule[0]!.fg).not.toBe(rule.at(-1)!.fg) // a gradient, not one gray
+  await ui.unmount()
+})
+
+test('what is done and what is left: a bar of the work under the head, a segment per step under the title (T-1026)', async ($, on) => {
+  world(on, [{ ...CALM, today_done: 3, blocked_total: 2 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (const text of ['3 done today', '5 left', / 1 now$/, /· 1 queued$/, /· 1 inbox$/, /· 2 blocked$/, /1 of 2 steps done · 1 left/])
+    expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  const rasters = await ui.findAll({ type: 'Raster' })
+  const work = decode(String(rasters.find(r => r.key === 'work-bar')!.props.cells))
+  expect(work.filter(c => c.fg === C.ok).length).toBeGreaterThan(work.length / 3) // 3 of the 8 are done
+  const steps = decode(String(rasters.find(r => r.key === 'task-steps')!.props.cells))
+  expect(steps[0]!.fg).toBe(C.ok) // step 1 done
+  expect(steps.at(-1)!.fg).not.toBe(C.ok) // step 2 not yet
+  await ui.unmount()
+})
+
+test('stackCells: a share each, at least a cell for any non-zero part, the track when there is nothing; stepCells: a segment per step', () => {
+  const read = (s: string) => decode(s).map(c => c.fg)
+  const bar = read(stackCells([{ n: 50, color: C.ok }, { n: 1, color: C.accent }], 20))
+  expect(bar.length).toBe(20)
+  expect(bar.filter(x => x === C.accent).length).toBe(1)
+  expect(read(stackCells([{ n: 0, color: C.ok }], 6))).toEqual(Array(6).fill(C.track))
+  const seg = decode(stepCells([{ done: true, current: false }, { done: false, current: true }, { done: false, current: false }], 14, null))
+  expect(seg.length).toBe(14)
+  expect(seg.filter(c => c.ch === ' ').length).toBe(2) // a gap between steps
+  expect([seg[0]!.fg, seg.at(-1)!.fg]).toEqual([C.ok, C.track])
+})
+
+test('chat rows read like the pane: a bold label, a rule fading in the row colour, no box (T-1031)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const tool = (id: string, props: object) => $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: id,
+    props: { tool_use_id: id, isRunning: false, isErrored: false, isInterrupted: false, ...props } })
+  const patch = { filePath: '/repo/a.py', structuredPatch: [{ oldStart: 1, newStart: 1, lines: ['-x = 1', '+x = 2'] }] }
+  const findings = [
+    { file: 'src/a.py', line: 12, summary: 'Off by one', short_summary: 'Off by one in the loop', failure_scenario: 'n=0', outcome: 'fixed' },
+    { file: 'src/b.py', line: 3, summary: 'Leaks', short_summary: 'File handle leaks', failure_scenario: 'x', verdict: 'PLAUSIBLE', outcome: 'skipped' },
+  ]
+  const rows = [
+    await tool('s1', { tool: 'Bash', input: { command: 'ls', description: 'List files' }, output: { stdout: 'a', stderr: '', interrupted: false } }),
+    await tool('e1', { tool: 'Edit', input: { file_path: '/repo/a.py', old_string: 'x = 1', new_string: 'x = 2' }, output: patch }),
+    await tool('g1', { tool: 'Skill', input: { skill: 'foreman:next' }, output: 'Launching skill: foreman:next' }),
+    await tool('r1', { tool: 'ReportFindings', input: { findings: [...findings, null, { outcome: 'constructor', file: 'c.py' }], level: 'medium' },
+      output: '2 findings reported.' }),
+    await tool('a1', { tool: 'Agent', input: { subagent_type: 'Explore', description: 'Find the loop' },
+      output: { status: 'completed', content: [{ type: 'text', text: 'It is in src/a.py' }], totalToolUseCount: 3, totalDurationMs: 4000, totalTokens: 9000 } }),
+    await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage',
+      props: { text: 'make it nicer', origin: { kind: 'composer' }, isExpanded: false } }),
+    await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage', props: { text: 'Done.', isFirstOfReply: true } }),
+  ]
+  for (const r of rows) {
+    expect((await r.findAll({ type: 'Box' })).filter(b => b.props.borderStyle)).toEqual([])
+    const rule = (await r.findAll({ type: 'Raster' })).find(x => String(x.key).endsWith('-rule'))
+    expect(rule).toBeDefined()
+    const cells = decode(String(rule!.props.cells))
+    expect(cells[0]!.fg).not.toBe(cells.at(-1)!.fg) // it fades
+  }
+  const [, , skill, review, , said, reply] = rows
+  expect(await skill!.find({ type: 'Text', text: /Skill/ })).toBeDefined()
+  expect(await skill!.find({ type: 'Text', text: /foreman:next/ })).toBeDefined()
+  expect(await skill!.find({ type: 'Text', text: /Launching skill/ })).toBeUndefined() // loaded: the head says it
+  expect(await review!.find({ type: 'Text', text: /Off by one in the loop/ })).toBeDefined()
+  expect((await review!.find({ type: 'Text', text: /^fixed/ }))?.props.color).toBe(hex(C.ok))
+  expect(await review!.find({ type: 'Text', text: /src\/a\.py:12/ })).toBeDefined()
+  expect(await review!.find({ type: 'Text', text: /1 fixed · 1 skipped/ })).toBeDefined()
+  expect(await said!.find({ type: 'Text', text: /make it nicer/ })).toBeDefined()
+  expect(await reply!.find({ type: 'Box', key: 'fm-reply-mark' })).toBeDefined()
+  for (const r of rows) await r.unmount()
+  const result = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'g1',
+    props: { tool_use_id: 'g1', tool: 'Skill', output: 'Launching skill: foreman:next', isErrored: false } } as never)
+  expect(await result.find({ type: 'Text', text: 'engine' })).toBeUndefined() // drawn once, in the row
+  await result.unmount()
+  const long = { content: [{ type: 'text', text: Array.from({ length: 200 }, (_, i) => `row ${i}`).join('\n') }] }
+  const mcp = await tool('m1', { tool: 'mcp__db__query', input: {}, output: long })
+  expect(await mcp.find({ type: 'Text', text: /row 0/ })).toBeUndefined() // too long for the row: only its head
+  await mcp.unmount()
+  const mcpResult = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'm1',
+    props: { tool_use_id: 'm1', tool: 'mcp__db__query', output: long, isErrored: false } } as never)
+  expect(await mcpResult.find({ type: 'Text', text: 'engine' })).toBeDefined() // the engine's block, which expands
+  await mcpResult.unmount()
+})
+
+test('a diff shows a line of context, breaks between hunks and washes only the changed words (T-1031)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const structuredPatch = [
+    { oldStart: 10, newStart: 10, lines: [' alpha', '-const x = 1', '+const x = 2', ' beta', ' gamma', ' delta'] },
+    { oldStart: 40, newStart: 40, lines: [' zeta', '+added', ' eta'] },
+  ]
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'd1',
+    props: { tool_use_id: 'd1', tool: 'Edit', input: { file_path: '/repo/a.py', old_string: 'a', new_string: 'b' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { filePath: '/repo/a.py', structuredPatch } } })
+  expect(await row.find({ type: 'Text', text: /^alpha$/ })).toBeDefined() // context either side of a change
+  expect(await row.find({ type: 'Text', text: /^beta$/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /^gamma$/ })).toBeUndefined() // but no more
+  expect(await row.find({ type: 'Text', text: /┄/ })).toBeDefined() // a break between the hunks
+  expect((await row.find({ type: 'Text', text: /^2$/ }))?.props.backgroundColor).toBeDefined() // the changed word
+  expect((await row.find({ type: 'Text', text: /^const x = $/ }))?.props.backgroundColor).toBeUndefined()
+  await row.unmount()
+})
+
+test('diffRows: context within one line of a change, a break where lines are skipped, the differing span of a changed line', () => {
+  const rows = diffRows([{ oldStart: 1, newStart: 1, lines: [' a', ' b', '-let total = 1;', '+let count = 1;', ' c', ' d', ' e', '+f'] }])
+  expect(rows.map(r => r.kind)).toEqual(['ctx', '-', '+', 'ctx', 'hunk', 'ctx', '+'])
+  const minus = rows[1] as { text: string; mid?: [number, number] }
+  expect(minus.text.slice(...minus.mid!)).toBe('total') // whole words
+  const plus = rows[2] as { text: string; mid?: [number, number] }
+  expect(plus.text.slice(...plus.mid!)).toBe('count')
+  expect(diffRows([{ oldStart: 1, newStart: 1, lines: ['-abc', '+xyz'] }]).every(r => !('mid' in r && r.mid))).toBe(true) // nothing shared
+})
+
+test('the band is a live tree: the session and each subagent, their latest calls under them (T-1033)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q', description: 'Run the tests' })
+  await $.tool.call({ tool: 'Edit', file_path: '/repo/src/auth.py', old_string: 'a', new_string: 'b' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/b.py', agentId: 'ag1' } as never)
+  await $.tool.call({ tool: 'Grep', pattern: 'login_retry', agentId: 'ag1' } as never)
+  for (const shown of [false, true]) { // the pane closed (under the card) and docked (the band's whole job)
+    panes.shown = shown
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+    for (const text of [/this session/, /Run the tests/, /auth\.py/, /login_retry/, /b\.py/])
+      expect(await ui.find({ type: 'Text', text })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: /^[├└]─/ })).toBeDefined() // a branch off the session
+    expect(await ui.find({ type: 'Text', text: /^[│ ] {2}[├└]─/ })).toBeDefined() // a call under the subagent
+    const tree = await ui.find({ key: 'fm-band-tree' })
+    expect(tree).toBeDefined()
+    if (shown) expect(await ui.find({ key: 'fm-band' })).toBeUndefined() // no repeat of the pane
+    await ui.unmount()
+  }
+})
+
+test('the tree fits the band: older calls go first, then a count of the rest (T-1033)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  panes.shown = true
+  for (let i = 0; i < 6; i++) await $.tool.call({ tool: 'Bash', command: `echo ${i}`, description: `step ${i}` })
+  for (const ag of ['ag1', 'ag2', 'ag3', 'ag4', 'ag5'])
+    for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Read', file_path: `/repo/${ag}-${i}.py`, agentId: ag } as never)
+  const small = { ...band(true), props: { ...band(true).props, maxRows: 8 } }
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...small })
+  const rows = (await ui.find({ key: 'fm-band-tree' }))!.children as unknown[]
+  expect(rows.length).toBeLessThanOrEqual(8)
+  expect(await ui.find({ type: 'Text', text: /step 5/ })).toBeDefined() // the newest call stays
+  expect(await ui.find({ type: 'Text', text: /step 0/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /more/ })).toBeDefined() // what doesn't fit is counted
+  await ui.unmount()
+})
+
+test('with no work for a while the docked band steps aside again (T-1033)', async ($, on) => {
+  const { panes, clock } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
+  panes.shown = true
+  await clock.advance(10 * 60000)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(false) })
+  const tree = await ui.find({ key: 'fm-band-tree' }) // shrunk to one summary line: the session, no branches
+  expect(tree?.children).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /this session/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^[├└]─/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a call that threw shows ✗ in the tree; a new session starts with an empty one (T-1033 review)', async ($, on) => {
+  const { panes, answer } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  answer.throws = true
+  await $.tool.call({ tool: 'Bash', command: 'boom', description: 'Blow up' }).catch(() => undefined)
+  answer.throws = false
+  panes.shown = true
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await ui.find({ type: 'Text', text: '✗' })).toBeDefined()
+  await ui.unmount()
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const fresh = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await fresh.find({ type: 'Text', text: /Blow up/ })).toBeUndefined()
+  await fresh.unmount()
+})
+
+test('the tree is sticky: one height all turn with a blank row under it, time bars in one column; no repeat spinner line (T-1039)', async ($, on) => {
+  const { panes } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.turn.start({ text: 'go', turnId: 't1' })
+  panes.shown = true
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'first look' })
+  const height = async () => {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+    const tree = await ui.find({ key: 'fm-band-tree' })
+    const n = (tree!.children as unknown[]).length
+    const bars = (await ui.findAll({ type: 'Raster' })).map(r => String(r.key)).filter(k => k.startsWith('tree-bar-'))
+    await ui.unmount()
+    return { n, bars }
+  }
+  const first = await height()
+  expect(first.n).toBeGreaterThanOrEqual(6) // at least five rows and the blank one under them
+  expect(first.bars.length).toBeGreaterThanOrEqual(2) // the root's and the call's
+  for (let i = 0; i < 3; i++) await $.tool.call({ tool: 'Bash', command: `echo ${i}`, description: `more ${i}` })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/x.py', agentId: 'ag9' } as never)
+  const later = await height()
+  expect(later.n).toBe(Math.max(first.n, later.n)) // it grows when it must, never shrinks mid-turn
+  const again = await height()
+  expect(again.n).toBe(later.n) // and holds still between redraws
+  const spinner = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner', props: { mode: 'tool-use' } } as never)
+  expect(await spinner.find({ type: 'Text', text: /step|T-0007/ })).toBeUndefined() // the tree's root says it
+  await spinner.unmount()
+  const shown = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true) })
+  expect(await shown.find({ key: 'tree-gap' })).toBeDefined() // a blank row under it
+  const widths = (await shown.findAll({ type: 'Box' })).filter(b => b.props.width === 18).length
+  expect(widths).toBeGreaterThanOrEqual(3) // every row ends in the same cell, so the bars line up
+  await shown.unmount()
+  // review: when the band can't draw the tree (a tall card), the spinner line stays
+  panes.shown = false
+  const cramped = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...band(true), props: { ...band(true).props, maxRows: 4 } })
+  await cramped.unmount()
+  const back = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'Spinner', props: { mode: 'tool-use' } } as never)
+  expect(await back.find({ type: 'Text', text: /step|T-0007/ })).toBeDefined()
+  await back.unmount()
 })
 
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
@@ -1497,13 +1729,13 @@ test('a step that just got done glows, then settles (T-0909)', async ($, on) => 
   const { clock } = world(on, [VIEW, doneTwo])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect((await ui.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /2  raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
   await ui.press({ key: 'refresh' }) // the next snapshot: step 2 is done now
-  expect((await ui.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: /2  raise the timeout/ }))?.props.backgroundColor).toBeDefined()
   await ui.unmount()
   await clock.advance(3000)
   const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect((await later.find({ type: 'Text', text: /2\. raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
+  expect((await later.find({ type: 'Text', text: /2  raise the timeout/ }))?.props.backgroundColor).toBeUndefined()
   await later.unmount()
 })
 
@@ -1536,19 +1768,20 @@ test('a question waiting on you shows as waiting, not as running work, and is no
   void $.tool.call({ tool: 'AskUserQuestion', questions: [] })
   await clock.advance(100)
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /⚠ Waiting for your answer/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /0 running/ })).toBeDefined()
-  expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'now-bar-0' || r.key === 'lanes')).toBe(false)
+  expect(await ui.find({ type: 'Text', text: /⚠ waiting for your answer/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /running/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /calls, last/ })).toBeUndefined() // not charted
   await clock.advance(5000)
   await ui.unmount()
 })
 
-test('off the terminal the lanes are labelled sparklines over the whole window (T-0909)', async ($, on) => {
+test('off the terminal each lane is a labelled sparkline and the rail its text twin (T-0909)', async ($, on) => {
   world(on, [VIEW])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /^run\s+[▁▂▃▄▅▆▇█ ]+$/ })).toBeDefined()
+  expect(await ui.find({ key: 'lane-run' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^[▁▂▃▄▅▆▇█ ]+$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /◉ executing/ })).toBeDefined()
   await ui.unmount()
 })
@@ -1584,40 +1817,347 @@ test('motion off: nothing moves while work runs; the pane is still (T-0912)', { 
   expect(spinning).toBe(false) // the head shows ▍, not a spinner
 })
 
-test('a close takes the top of the pane for a moment: the done card with grade, proof and time, then it settles (T-0913)', async ($, on) => {
+test('a close takes the attention row for a moment: done with grade, proof and time, then it settles (T-0913)', async ($, on) => {
   const working = { ...VIEW, typical: { 'FIX/M': 25 }, active: { ...VIEW.active!, on_task_s: 22 * 60 } }
-  const closed = { ...VIEW, active: null, closed: [{ id: 'T-0007', status: 'done', title: 'Login times out', grade: 'strong', lenses: ['edge'] }] }
-  const { clock } = world(on, [working, closed])
+  const closed = { ...CALM, active: null, closed: [{ id: 'T-0007', status: 'done', title: 'Login times out', grade: 'strong', lenses: ['edge'] }] }
+  const { clock } = world(on, [{ ...working, queue: CALM.queue }, closed])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /T-0007 done/ })).toBeUndefined()
   await ui.press({ key: 'refresh' })
-  expect(await ui.find({ key: 'card-closed' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /✔ T-0007 done · strong · edge/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /1 criterion proven · 22m 00s · usually ~25m/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /✔ T-0007 done · strong · edge · 1 criterion proven · 22m 00s · usually ~25m/ })).toBeDefined()
   expect((await ui.findAll({ type: 'Raster' })).some(r => r.key === 'closed-sweep')).toBe(true)
-  const drawn = JSON.stringify(await ui.drawn())
-  expect(drawn.indexOf('"card-closed"')).toBeLessThan(drawn.indexOf('"fm-pane-head"'))
   await clock.advance(6500)
-  expect(await ui.find({ key: 'card-closed' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /T-0007 done/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /✗ gates failing: bench/ })).toBeDefined() // what the done row stood in front of
   await ui.unmount()
 })
 
-test('a quiet card folds to its head line with ▾/▸, and stays folded after a reload (T-0914)', async ($, on) => {
-  world(on, [VIEW])
+const PLAN = (w: { task: number; queue: number; sessions: number }): Part[] => [
+  { key: 'task', want: w.task, cap: 20, min: Math.min(w.task, 4), bare: true },
+  { key: 'activity', want: 1, fixed: 7 },
+  { key: 'today', want: 1, fixed: 6 },
+  { key: 'queue', want: w.queue, cap: 12, min: 3 },
+  { key: 'sessions', want: w.sessions, cap: 5 },
+  { key: 'history', want: 24, stretch: true },
+]
+/** The rows a placed plan draws: the head and the controls (4), a blank row under the head and over the controls on a
+ * tall dock, and for each titled section its divider and the blank row above it. */
+const drawn = (parts: Part[], placed: ReturnType<typeof layout>) => {
+  const shown = parts.filter(p => placed.rows[p.key]! > 0)
+  return 4 + 2 * placed.gap + shown.reduce((n, p) => n + placed.rows[p.key]! + (p.bare ? 0 : 1 + placed.gap), 0)
+}
+
+test('the pane fills the dock exactly: titled dividers, room above each, the history takes what is left (T-1000, T-1002)', () => {
+  for (let rows = 24; rows <= 120; rows++)
+    for (const w of [{ task: 2, queue: 1, sessions: 0 }, { task: 9, queue: 4, sessions: 3 }, { task: 40, queue: 30, sessions: 5 }]) {
+      const parts = PLAN(w)
+      const placed = layout(rows, parts)
+      expect(drawn(parts, placed)).toBe(rows) // no more, no less
+      for (const p of parts) if (!p.stretch && !p.fixed && !p.bare) expect(placed.rows[p.key]!).toBeLessThanOrEqual(p.want) // no blank rows inside
+      expect(layout(rows, parts)).toEqual(placed) // pure
+    }
+  const roomy = layout(50, PLAN({ task: 9, queue: 4, sessions: 0 }))
+  expect(roomy.gap).toBe(1) // a tall dock gets a blank row above each divider
+  expect(roomy.rows.history!).toBeGreaterThanOrEqual(5)
+  expect(layout(34, PLAN({ task: 9, queue: 4, sessions: 0 })).gap).toBe(0) // a short one packs them
+  const crowded = layout(40, PLAN({ task: 40, queue: 30, sessions: 5 }))
+  expect(crowded.rows.task!).toBeGreaterThan(crowded.rows.queue!) // the task first
+  expect(crowded.rows.activity!).toBe(7) // the charts keep their size
+})
+
+test('spare rows go to more lanes and taller Today charts before History pads with blanks; History with nothing steps aside', () => {
+  const parts = (history: number): Part[] => [
+    { key: 'task', want: 6, cap: 20, bare: true },
+    { key: 'activity', want: 1, fixed: 4, grow: 2 },
+    { key: 'today', want: 1, fixed: 5, grow: 3 },
+    { key: 'queue', want: 2, cap: 12 },
+    { key: 'history', want: history, stretch: true },
+  ]
+  for (const rows of [30, 44, 60, 90]) {
+    const short = layout(rows, parts(3))
+    expect(drawn(parts(3), short)).toBe(rows)
+    if (rows >= 44) expect([short.rows.activity, short.rows.today]).toEqual([6, 8]) // the charts first
+    const none = layout(rows, parts(0))
+    expect(none.rows.history).toBe(0) // no title over nothing
+    expect(drawn(parts(0), none)).toBe(rows)
+  }
+  const full = layout(44, parts(40))
+  expect([full.rows.activity, full.rows.today]).toEqual([4, 5]) // a long History keeps them at their size
+})
+
+test('a task block with rows to spare (a new project, no History yet) lists what proves it done', async ($, on) => {
+  world(on, [{ ...CALM, recent: [] }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeDefined() // the activity line
-  await ui.press({ key: 'fold-activity' })
-  expect(await ui.find({ key: 'card-activity' })).toBeDefined() // the head stays
-  expect(await ui.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
-  for (const key of ['fold-pulse', 'fold-gates']) expect(await ui.find({ key })).toBeDefined()
-  expect(await ui.find({ key: 'fold-task' })).toBeUndefined() // the task, what needs you and the queue never fold
+  expect(await ui.find({ type: 'Text', text: 'done when' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /slow wifi logs in/ })).toBeDefined()
+  expect(await ui.find({ key: 'history' })).toBeUndefined()
   await ui.unmount()
-  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true }) // a reload reads the store
-  const again = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
-  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeUndefined()
-  await again.press({ key: 'fold-activity' })
-  expect(await again.find({ type: 'Text', text: /13:12/ })).toBeDefined()
-  await again.unmount()
+})
+
+test('on a phone the pane draws every section in text at 36 columns, no wider than the screen (T-1017)', async ($, on) => {
+  world(on, [{ ...VIEW, done_days: [0, 1, 0, 2, 0, 0, 0, 0, 3, 0, 0, 1, 0, 2], today_done: 2 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Bash', command: 'ls', description: 'list' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'mobile', ...PANE, props: { ...PANE.props, bodyColumns: 36 } })
+  for (const key of ['fm-pane-head', 'task', 'activity', 'queue', 'today', 'fm-pane-controls']) expect(await ui.find({ key })).toBeDefined()
+  expect(await ui.findAll({ type: 'Raster' })).toEqual([])
+  expect(await ui.find({ key: 'steer' })).toBeUndefined()
+  const drawn = (await ui.findAll({ type: 'Text' })).map(t => t.props.children).filter((x): x is string => typeof x === 'string')
+  expect(drawn.filter(x => x.length > 34 && /^[\s─⣀▁▂▃▄▅▆▇█]+$/.test(x))).toEqual([]) // rules and charts fit the screen
+  await ui.unmount()
+})
+
+test('Agents: a Gantt row per subagent (its worktree joined), per lone worktree and per brainstorm; none, no section (T-1023)', async ($, on) => {
+  const worktrees = [
+    { path: '/repo/.claude/worktrees/agent-ag1', branch: 'worktree-agent-ag1', task: 'T-0012', agent: 'ag1', age_s: 60, ahead: 2 },
+    { path: '/repo/.claude/worktrees/old', branch: 'old-lane', task: null, agent: null, age_s: 9000, ahead: 0 },
+  ]
+  const brainstorm = { name: 'brainstorm-x', running: true, answers: 3, expected: 12, count: 41, ideas: ['A mascot'] }
+  const { clock } = world(on, [{ ...CALM, worktrees, brainstorm }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await clock.advance(2000) // the poll records when the answers came in
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag1' } as never)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'agents' })).toBeDefined()
+  const rasters = (await ui.findAll({ type: 'Raster' })).map(r => r.key)
+  expect(rasters).toEqual(expect.arrayContaining(['gantt-session', 'gantt-ag1', 'gantt-tree-worktree-agent-ag1', 'gantt-tree-old-lane', 'gantt-ideas']))
+  const order = rasters.filter(k => String(k).startsWith('gantt-'))
+  expect(order.indexOf('gantt-tree-worktree-agent-ag1')).toBe(order.indexOf('gantt-ag1') + 1) // hangs under its agent
+  for (const text of ['this session', /old-lane/, 'merged', 'ideas: A mascot', '3/12', /2 running, 2 worktrees/, /T-0012/])
+    expect(await ui.find({ type: 'Text', text })).toBeDefined()
+  for (const text of [/^├─/, /^└─/, /^│ └─|^ {2}└─/]) expect(await ui.find({ type: 'Text', text })).toBeDefined() // the lines
+  await ui.unmount()
+})
+
+test('review (T-1023): finished agents age out at render, rank above lone worktrees; unknown merge state says so', async ($, on) => {
+  const worktrees = [{ path: '/repo/.claude/worktrees/d', branch: '', task: null, agent: null, age_s: 30, ahead: null }]
+  const { clock } = world(on, [{ ...CALM, worktrees }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag1' } as never)
+  await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 't9', reason: 'answer', agentId: 'ag1' })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const keys = (await ui.findAll({ type: 'Raster' })).map(r => r.key).filter(k => String(k).startsWith('gantt-'))
+  expect(keys).toEqual(['gantt-session', 'gantt-ag1', 'gantt-tree-/repo/.claude/worktrees/d']) // the finished agent first
+  expect(await ui.find({ type: 'Text', text: /detached/ })).toBeDefined() // not 'nothing to merge'
+  expect(await ui.find({ type: 'Text', text: 'merged' })).toBeUndefined()
+  await ui.unmount()
+  await clock.advance(31 * 60 * 1000)
+  const later = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await later.find({ key: 'gantt-ag1' })).toBeUndefined() // out of the window, nothing else spawned since
+  await later.unmount()
+})
+
+test('review (T-1023): on a 40-column dock a quiet subagent keeps its stop button', async ($, on) => {
+  const { clock } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/a.py', agentId: 'ag2' } as never)
+  await clock.advance(11 * 60 * 1000)
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE, props: { ...PANE.props, bodyColumns: 40 } })
+  const bar = (await ui.findAll({ type: 'Raster' })).find(r => r.key === 'gantt-ag2')!
+  expect(1 + 1 + (bar.props.columns as number) + 1 + 6 + 1 + 6).toBeLessThanOrEqual(38) // glyph, bar, a name, the button
+  expect(await ui.find({ type: 'Text', text: /^quiet 11m 00s {2}Explore/ })).toBeDefined() // the time gives way with the name
+  await ui.unmount()
+})
+
+test('Agents: nothing running, recent or left in a worktree, no section (T-1023)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await ui.find({ key: 'agents' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('review (T-0989): every waiting plan keeps an approve button, hidden steps are counted', async ($, on) => {
+  const second = { ...VIEW.queue![1]!, id: 'T-0010', title: 'JSON export' }
+  const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
+  const { calls } = world(on, [{
+    ...VIEW,
+    approvals: [{ task: 'T-0007', allow: ['core'], why: 'edit the guard' }], // the attention row is taken
+    queue: [...VIEW.queue!, second],
+    active: { ...VIEW.active!, steps },
+    signals: [{ level: 'amber', text: 'usage ahead of pace' }],
+  }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(40) })
+  for (const id of ['T-0009', 'T-0010']) expect(await ui.find({ key: `approve-${id}` })).toBeDefined()
+  await ui.press({ key: 'approve-T-0010' })
+  expect(calls).toContainEqual(['fm', 'task', 'set', 'T-0010', 'approved=true'])
+  expect(await ui.find({ type: 'Text', text: /^… \d+ more$/ })).toBeDefined() // 20 steps in a capped task block
+  await ui.unmount()
+})
+
+test('review (T-1002): a long plan to approve is counted, not cut; a short task block keeps the current step in view', async ($, on) => {
+  const long = { ...VIEW.queue![1]!, plan: { ...VIEW.queue![1]!.plan!,
+    steps: Array.from({ length: 10 }, (_, i) => ({ n: i + 1, text: `plan step ${i + 1}`, done: false, current: i === 0 })),
+    criteria: Array.from({ length: 3 }, (_, i) => ({ n: i + 1, text: `plan check ${i + 1}`, verify: 'true', checked: false })) } }
+  world(on, [{ ...VIEW, active: null, queue: [long] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const plan = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(30) })
+  const rows = (await plan.find({ key: 'task' }))?.props.height as number
+  expect(rows).toBeLessThan(16) // the plan doesn't fit
+  expect(await plan.find({ type: 'Text', text: /^… \d+ more$/ })).toBeDefined() // and says so
+  await plan.unmount()
+})
+
+test('review (T-1002): the current step stays in view however short the task block, and the count is of what is hidden', async ($, on) => {
+  const steps = Array.from({ length: 20 }, (_, i) => ({ n: i + 1, text: `step ${i + 1}`, done: i < 5, current: i === 5 }))
+  const plans = [2, 3, 4].map(n => ({ ...VIEW.queue![1]!, id: `T-00${20 + n}`, title: `plan ${n}` }))
+  world(on, [{ ...VIEW, queue: [...VIEW.queue!, ...plans], active: { ...VIEW.active!, steps } }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  for (const h of [24, 30, 40]) {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...tall(h) })
+    expect(await ui.find({ type: 'Text', text: /step 6$/ })).toBeDefined() // the current one
+    const shown = (await ui.findAll({ type: 'Text', text: /\d+  step \d+$/ })).length
+    const more = await ui.find({ type: 'Text', text: /^… \d+ more$/ })
+    expect([h, shown > 0, more?.props.children ?? more?.text]).toEqual([h, true, `… ${20 - shown} more`])
+    await ui.unmount()
+  }
+})
+
+test('review (T-1002): on a narrow dock Today keeps its four tanks whole and lets the days go', async ($, on) => {
+  world(on, [{ ...VIEW, done_days: [0, 1, 0, 2, 0, 0, 0, 0, 3, 0, 0, 1, 0, 2], today_done: 2 }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  for (const cols of [44, 70]) {
+    const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE, props: { ...PANE.props, bodyColumns: cols } })
+    const rasters = await ui.findAll({ type: 'Raster' })
+    const tanks = rasters.find(r => r.key === 'fm-tank-cells')!
+    const pad = ((await ui.find({ key: 'fm-tanks' }))?.props.paddingLeft as number | undefined) ?? 0
+    const days = rasters.find(r => r.key === 'done-days')
+    const used = pad + (tanks.props.columns as number) + (days ? (days.props.columns as number) + 4 : 0)
+    expect(used).toBeLessThanOrEqual(cols - 2)
+    expect(!!days).toBe(cols >= 70)
+    await ui.unmount()
+  }
+})
+
+test('review (T-0989): with nothing urgent, a signal the band used to show takes the attention row', async ($, on) => {
+  world(on, [{ ...CALM, checks: undefined, signals: [{ level: 'amber', text: 'usage ahead of pace' }] }])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const calm = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await calm.find({ type: 'Text', text: /◐ usage ahead of pace/ })).toBeDefined()
+  await calm.unmount()
+})
+
+test('the chat is a tree: your prompt the root, each row a branch on one rail, finished calls compact, the turn line the tip (T-1040)', async ($, on) => {
+  // 'it needs to be more of like a tree similar to the agents in the panel … so the text doesn't scroll the chat' / 'the full
+  // claude code chat here, like what is above the banner, the scrolling stuff'
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const mount = (component: string, props: object, requestId?: string) =>
+    $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component, ...(requestId ? { requestId } : {}), props } as never)
+  const you = await mount('UserMessage', { text: 'fix the loop\nand the docs', origin: { kind: 'composer' }, isExpanded: false })
+  expect(await you.find({ type: 'Box', key: 'fm-user-rail' })).toBeDefined() // the root's rail runs under its text
+  expect(await you.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  await you.unmount()
+  const shell = (id: string, extra: object) => mount('ToolUse', { tool_use_id: id, tool: 'Bash', isRunning: false,
+    isInterrupted: false, isErrored: false, input: { command: 'python3 -m unittest', description: 'Run the tests' }, ...extra }, id)
+  const stdout = Array.from({ length: 30 }, (_, i) => `test ${i} ... ok`).join('\n') + '\nRan 30 tests\nOK'
+  const ok = await shell('t1', { output: { stdout, stderr: '', interrupted: false } })
+  expect(await ok.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await ok.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  expect(await ok.find({ type: 'Text', text: /Run the tests/ })).toBeDefined()
+  expect((await ok.find({ type: 'Text', text: /python3 -m unittest/ }))?.props.wrap).toBe('truncate-end') // what ran, one line
+  expect(await ok.find({ type: 'Text', text: /Ran 30 tests/ })).toBeUndefined() // a passing run's output stays folded
+  expect(await ok.find({ type: 'Text', text: /32 lines/ })).toBeDefined()
+  await ok.unmount()
+  const tiny = await shell('t2', { output: { stdout: 'OK', stderr: '', interrupted: false } })
+  expect(await tiny.find({ type: 'Text', text: /│ OK$/ })).toBeDefined() // one or two lines say more than a count
+  await tiny.unmount()
+  const bad = await shell('t3', { isErrored: true, output: 'Exit code 101\ncompiling\nerror[E0425]: cannot find value `x`\ntest result: FAILED' })
+  expect(await bad.find({ type: 'Text', text: /error\[E0425\]/ })).toBeDefined() // a failure in full
+  await bad.unmount()
+  // live: the engine refuses its own row under a Box with a width ('engine node under a Box with prop "width"')
+  const engineRow = await mount('ToolUse', { tool_use_id: 'q1', tool: 'AskUserQuestion', isRunning: false, isErrored: false,
+    isInterrupted: false, input: {}, output: {} }, 'q1')
+  expect(await engineRow.find({ text: 'engine' })).toBeDefined()
+  expect((await engineRow.find({ type: 'Box', key: 'fm-branch' }))?.props.width).toBeUndefined()
+  expect((await engineRow.find({ type: 'Box', key: 'fm-branch-row' }))?.props.width).toBeUndefined()
+  expect(await engineRow.find({ type: 'Text', text: '├─ ' })).toBeUndefined() // its own blank line comes first: rail only
+  expect(await engineRow.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await engineRow.unmount()
+  const lines = Array.from({ length: 10 }, (_, i) => `+line ${i}`)
+  const edit = await mount('ToolUse', { tool_use_id: 'e1', tool: 'Edit', isRunning: false, isErrored: false, isInterrupted: false,
+    input: { file_path: '/repo/a.py', old_string: 'x', new_string: 'y' }, output: { filePath: '/repo/a.py', oldString: 'x',
+      newString: 'y', originalFile: null, userModified: false, replaceAll: false,
+      structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] } }, 'e1')
+  expect(await edit.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^line 3$/ })).toBeDefined()
+  expect(await edit.find({ type: 'Text', text: /^line 4$/ })).toBeUndefined() // a diff of four changed lines, then a count
+  expect(await edit.find({ type: 'Text', text: /6 more changed lines/ })).toBeDefined()
+  await edit.unmount()
+  const read = await mount('ToolUse', { tool_use_id: 'r1', tool: 'Read', isRunning: false, isErrored: false, isInterrupted: false,
+    input: { file_path: '/repo/a.py' }, output: { type: 'text', file: { filePath: '/repo/a.py', content: 'x', numLines: 1, startLine: 1, totalLines: 1 } } }, 'r1')
+  expect(await read.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  expect(await read.find({ type: 'Text', text: /^│$/ })).toBeUndefined() // a one-line call sits tight, no rail gap above it
+  await read.unmount()
+  const first = await mount('AssistantMessage', { text: 'Fixed the loop.', isFirstOfReply: true })
+  expect(await first.find({ type: 'Text', text: '├─ ' })).toBeDefined()
+  await first.unmount()
+  const later = await mount('AssistantMessage', { text: 'a second block', isFirstOfReply: false })
+  expect(await later.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await later.find({ type: 'Box', key: 'fm-rail' })).toBeDefined() // the same branch's rail goes on
+  await later.unmount()
+  await $.turn.start({ text: 'go', turnId: 'tt' })
+  await $.tool.call({ tool: 'Bash', command: 'pytest -q' })
+  await $.turn.complete({ answer: '', durationMs: 4100, isAborted: false, turnId: 'tt', reason: 'answer' })
+  // review: a long command with no description stays one line in the tree; a Bash row's diff is cut to four lines too
+  const long = await shell('t4', { input: { command: 'x'.repeat(400) }, output: { stdout: '', stderr: '', interrupted: false,
+    bashEditDiff: { hunks: [{ path: '/repo/b.py', hunks: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] }] } } })
+  expect((await long.find({ type: 'Text', text: /^ +x{300}/ }))?.props.wrap).toBe('truncate-end')
+  expect(await long.find({ type: 'Text', text: /6 more changed lines/ })).toBeDefined()
+  await long.unmount()
+  // review: the engine's folded group and result block hang on the rail; so does a reply too long for a Markdown element
+  const group = await mount('ToolGroup', { calls: [{ tool: 'Read' }, { tool: 'Grep' }], isActive: false, isExpanded: false })
+  expect(await group.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await group.unmount()
+  const result = await mount('ToolResult', { tool_use_id: 'x1', tool: 'mcp__srv__op', output: 'a\nb\nc\nd\ne', isErrored: false }, 'x1')
+  expect(await result.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await result.unmount()
+  const huge = await mount('AssistantMessage', { text: 'y'.repeat(12000), isFirstOfReply: true })
+  expect(await huge.find({ text: 'engine' })).toBeDefined()
+  expect(await huge.find({ type: 'Box', key: 'fm-rail' })).toBeDefined()
+  await huge.unmount()
+  const tip = await mount('TurnDuration', { word: 'Baked', durationMs: 4100 })
+  expect(await tip.find({ type: 'Text', text: '└─ ' })).toBeDefined()
+  await tip.unmount()
+  const quiet = await mount('TurnDuration', { word: 'Baked', durationMs: 900 }) // a turn with no calls: our line, not the engine's
+  expect(await quiet.find({ type: 'Text', text: '└─ ' })).toBeDefined()
+  expect(await quiet.find({ type: 'Text', text: /worked 0\.9s/ })).toBeDefined()
+  expect(await quiet.find({ text: 'engine' })).toBeUndefined()
+  await quiet.unmount()
+})
+
+test('chat full keeps the long rows: no branches, the command and its output in full (T-1040)', { options: { chat: 'full' } }, async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const stdout = Array.from({ length: 30 }, (_, i) => `test ${i} ... ok`).join('\n') + '\nRan 30 tests\nOK'
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'f1',
+    props: { tool_use_id: 'f1', tool: 'Bash', input: { command: 'python3 -m unittest', description: 'Run the tests' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { stdout, stderr: '', interrupted: false } } })
+  expect(await row.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: /python3 -m unittest/ })).toBeDefined()
+  const plain = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'f2',
+    props: { tool_use_id: 'f2', tool: 'Bash', input: { command: 'one\ntwo\nthree\nfour\nfive' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { stdout: 'ok', stderr: '', interrupted: false } } })
+  expect(await plain.find({ type: 'Text', text: /^four$/ })).toBeUndefined() // as before T-1040: two lines under the title
+  expect(await plain.find({ type: 'Text', text: /2 more command lines/ })).toBeDefined()
+  await plain.unmount()
+  expect(await row.find({ type: 'Text', text: /Ran 30 tests/ })).toBeDefined()
+  await row.unmount()
+})
+
+test('off the terminal no tree is drawn and nothing is compacted (T-1040 review)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'desktop', isInteractive: true })
+  const lines = Array.from({ length: 10 }, (_, i) => `+line ${i}`)
+  const edit = await $.ui.mount({ plugin: 'foreman-ui', surface: 'desktop', component: 'ToolUse', requestId: 'd1',
+    props: { tool_use_id: 'd1', tool: 'Edit', isRunning: false, isErrored: false, isInterrupted: false,
+      input: { file_path: '/repo/a.py', old_string: 'x', new_string: 'y' }, output: { filePath: '/repo/a.py', oldString: 'x',
+        newString: 'y', originalFile: null, userModified: false, replaceAll: false,
+        structuredPatch: [{ oldStart: 1, oldLines: 0, newStart: 1, newLines: 10, lines }] } } } as never)
+  expect(await edit.find({ type: 'Text', text: '├─ ' })).toBeUndefined()
+  expect(await edit.find({ type: 'Text', text: /^line 6$/ })).toBeDefined() // the full row's eight changed lines
+  await edit.unmount()
 })

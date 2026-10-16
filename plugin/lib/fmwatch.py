@@ -71,12 +71,12 @@ def gather(p):
             "tools": [e for e in mine if e.get("kind") in ("tool", "tool_fail")][-12:],
             "subagents": list(running.values())[-5:], "guard": [e for e in mine if e.get("kind") == "guard_block"][-5:],
             "session": _latest_session(p.slug),
-            "recent": [line for line in map(_recent, ledger) if line][-8:]}
+            "recent": [line for line in map(_recent, ledger) if line][-24:]}  # T-1002: the pane's History fills
 
 
 def _recent(e):
     """One line for a ledger event worth seeing (evidence, audits, captures, decisions, approvals, done)."""
-    d, t, ts = e.get("data") or {}, e.get("task") or "", (e.get("ts") or "")[11:16]
+    d, t, ts = e.get("data") or {}, e.get("task") or "", str(e.get("ts") or "")[11:16]  # T-1026 review: a bad ts
     kind = e.get("event")
     if kind == "evidence":
         what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
@@ -102,6 +102,37 @@ def _recent(e):
     return f"  {ts}  {text}"
 
 
+def _history(events, by_id, n=60):
+    """T-1026: the pane's History, structured: when, a mark, the task, a short event and the task's title, newest last."""
+    out = []
+    for e in events:
+        d, t, kind = e.get("data") or {}, e.get("task") or "", e.get("event")
+        if kind == "evidence":
+            what = f"step {d['step']}" if d.get("step") else f"criterion {d['ac']}" if d.get("ac") else "check"
+            red, odd = str(d.get("result", "")).lstrip().startswith("✗"), d.get("inconclusive")
+            mark, text = ("≈", f"{what} inconclusive") if odd else ("✗", f"{what} failed") if red else ("✓", f"{what} passed")
+        elif kind == "surprise":
+            mark, text = "!", "surprise: " + c.fit(c.plain(str(d.get("text", ""))), 80)
+        elif kind == "audit":
+            mark, text = "◇", f"audit {d.get('lens')}"
+        elif kind in ("capture", "intake"):
+            mark, text = "⚑", "captured" if t else "intake"
+        elif kind == "decision":
+            mark, text = "◆", c.fit(c.plain(str(d.get("decision", ""))), 120)
+        elif kind == "approval_requested":
+            mark, text = "?", "asked: " + "+".join(d.get("allow") or [])
+        elif kind in ("approval_granted", "approval_declined"):
+            mark, text = ("✔", "granted") if kind == "approval_granted" else ("✖", "declined")
+        elif kind == "task_done":
+            mark, text = "■", "done"
+        else:
+            continue
+        b = by_id.get(t)
+        out.append({"time": str(e.get("ts") or "")[11:16], "mark": mark, "task": t or None, "text": text,
+                    "title": c.plain(b.title)[:120] if b else None})
+    return out[-n:]
+
+
 def _pct(vals, q):
     vals = sorted(vals)
     return vals[min(len(vals) - 1, int(len(vals) * q))]
@@ -125,7 +156,7 @@ def render(d, width=100):
     if sd.get("asks"):
         out.append("Waiting on you: reply yes = " + "; ".join(f"{'+'.join(x['allow'])} for {x['task']}"
                                                                 for x in sd["asks"]))
-    out += ["", "Recent:"] + (d["recent"] or ["  (nothing yet)"])
+    out += ["", "Recent:"] + (d["recent"][-8:] or ["  (nothing yet)"])
     out += ["", "Tool timeline:"]
     for e in d["tools"]:
         ms = f"{e['ms']}ms" if e.get("ms") is not None else "-"
@@ -377,6 +408,35 @@ def _ledger_lines(b):
             "inconclusive": len(b.inconclusive()), "unverified": [c.plain(x)[:200] for x in b.unverified()][:5]}
 
 
+def _worktrees(p, briefs):
+    """T-1023: the git worktrees beside the main checkout, for the pane's Agents graph: the branch, the task whose lane
+    it is, the Claude Code subagent it was made for (its branch is worktree-agent-<id>), its age and the commits it
+    holds that HEAD doesn't."""
+    import re
+    root = c.git_root(p.root)
+    if not root:
+        return []
+    lanes = {os.path.realpath(b.meta["lane"]): b.id for b in briefs if b.meta.get("lane")}
+    out = []
+    for block in c._git(root, "worktree", "list", "--porcelain").strip().split("\n\n")[1:]:
+        f = dict(line.split(" ", 1) for line in block.splitlines() if " " in line)
+        path, branch = f.get("worktree"), (f.get("branch") or "").removeprefix("refs/heads/")
+        if not path:
+            continue
+        try:  # the .git file a worktree gets once, when it's made
+            age = int(time.time() - os.stat(os.path.join(path, ".git")).st_mtime)
+        except OSError:
+            age = None
+        m = re.fullmatch(r"worktree-agent-([0-9a-f]+)", branch)
+        out.append({"path": path, "branch": branch, "task": lanes.get(os.path.realpath(path)),
+                    "agent": m.group(1) if m else None, "age_s": age, "ahead": None})
+    out = sorted(out, key=lambda w: w["age_s"] if w["age_s"] is not None else 1 << 40)[:12]  # newest first, then capped
+    for w in out:  # one git call each, only for those listed; a detached one's merge state stays unknown (None)
+        n = c._git(root, "rev-list", "--count", f"HEAD..refs/heads/{w['branch']}").strip() if w["branch"] else ""
+        w["ahead"] = int(n) if n.isdigit() else None
+    return out
+
+
 def view(p):
     """The `fm ui --json` view model (v1; its TS twin is mods/foreman-ui/types/index.d.ts): one snapshot for a
     surface to render, built from gather() so it shows what fm watch shows."""
@@ -437,6 +497,7 @@ def view(p):
         "next": c.plain(c.next_for(p, briefs)[2]),
         "queue": [item(s) for s in sd["queue"]][:20],
         "inbox": [item(s) for s in sd["inbox"]][:10], "inbox_total": len(sd["inbox"]),
+        "blocked_total": len(sd["blocked"]),  # T-1026: the pane's work bar
         "approvals": [{"task": a.get("task"), "allow": list(a.get("allow") or []), "why": c.plain(a.get("why") or "")}
                       for a in meta.get("pending_approvals") or [] if isinstance(a, dict) and a.get("task")],
         "closed": [{"id": b.id, "status": b.status, "title": c.plain(b.title)[:120],  # T-0473: the close-out card
@@ -452,6 +513,7 @@ def view(p):
         "resume_after_reload": resume if resume_age is not None and resume_age * 1440 < 10 else None,
         "typical": typical(events),
         "brainstorm": bs,
+        "worktrees": _guarded(lambda: _worktrees(p, briefs)) or [],  # T-1023
         "budget": _guarded(_budget),  # T-0228
         "bench": _guarded(lambda: _bench(p, events)),
         "research": _guarded(lambda: _research_asks(events)) or [],
@@ -459,6 +521,7 @@ def view(p):
         "revisit": _guarded(lambda: [{"date": dt, "decision": c.plain(x)[:200], "why": c.plain(w)}  # T-0247
                                      for dt, x, w in c.fired_decisions(p)]) or [],
         "recent": d["recent"],
+        "history": _guarded(lambda: _history(events, by_id)) or [],  # T-1026
         "skills": _guarded(lambda: _skills(p))
         or {"recent": [], "counts": {}, "suggested": [], "unread": []},  # T-0939
         "health": {"hook_p95_ms": round(_pct(lat, 0.95)) if lat else None, "guard_blocks": len(d["guard"]),
@@ -524,6 +587,9 @@ def cmd_ui(args):
     """fm ui --json: the view model for the foreman-ui mod and any other surface; {"v": 1, "project": null} outside a
     project (never creates one)."""
     import fmcli
+    if getattr(args, "demo", False):  # T-0962: a canned view (ui-demo.json) for building a surface without a project
+        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "ui-demo.json"), encoding="utf-8") as f:
+            return print(json.dumps(json.load(f)))
     try:
         p = fmcli.resolve(args, create=False)
     except fmcli.UsageError:

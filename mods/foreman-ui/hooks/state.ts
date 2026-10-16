@@ -7,7 +7,6 @@ export type ToolUseRender = RenderInput<'ToolUse'>
 
 export const PANE = 'foreman'
 
-export const LIST = 6
 export const OUT_LINES = 12 // a finished command's row: this many output lines (failures first, else the tail)
 export const DIFF_LINES = 8 // a finished edit's row: this many changed lines
 export const FRAME_MS = 120
@@ -15,8 +14,6 @@ export const IDLE_FRAMES = Math.round((15 * 60 * 1000) / FRAME_MS) // a lost tur
 export const QUIET_MS = 2 * 60 * 1000 // a running subagent with no tool call this long shows how long it has been quiet
 export const STOP_MS = 10 * 60 * 1000 // and from here offers Stop
 export const SHELL_MAX_MS = 2 * 3600 * 1000 // a background command runs at most 2 h; past that its notice was lost
-export const HOLD_MS = 8000 // T-0938: a volatile card keeps its tallest recent height this long, then gives a row back
-export const STEP_MS = 1000 // per this long
 export const CHECKPOINT_AT = 85 // context percent at which Foreman checkpoints once, so a compaction resumes exactly
 export const FRESH = [
   'Foreman task boundary: a task just closed.',
@@ -32,14 +29,24 @@ export const starts = new Map<string, number>() // tool_use_id → when it start
 export const took = new Map<string, number>() // tool_use_id → how long it ran (ms), for the finished row
 
 /** userConfig and the session's folder, set by register (rows read them). */
-export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '', motion: 'full' as 'full' | 'calm' | 'off' }
+export const cfg = { freshAt: 40, freshTokens: 200000, mascot: 'blue', root: '', motion: 'full' as 'full' | 'calm' | 'off',
+  chat: 'tree' as 'tree' | 'full' }
+/** T-1040: in the tree chat a finished call shows this much: a passing command's output only when it is this short,
+ * this many changed lines of a diff */
+export const TINY_OUT = 2
+export const DIFF_TREE = 4
+export const diffCap = (tree: boolean) => (tree ? DIFF_TREE : DIFF_LINES) // the caller passes treeOn(e): terminal only
 
 // T-0909: what the pane charts live. Every tool call's lane and start (the swim lanes, the last hour), and each call
 // still running with how it reads (the "now" card); neither needs to survive a reload.
-export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'web'
-export const LANES: Lane[] = ['edit', 'run', 'read', 'agent', 'web']
-export const ticks: { at: number; lane: Lane }[] = []
+export type Lane = 'edit' | 'run' | 'read' | 'agent' | 'skill' | 'web'
+export const ticks: { at: number; lane: Lane; what?: string }[] = []
 export const running = new Map<string, { icon: string; verb: string; target: string; color: number; at: number; agent: boolean }>()
+// T-1033: the band's live tree: every call (the session's own, agent null, and each subagent's) with how it ended
+export type FeedItem = { id: string; agent: string | null; icon: string; verb: string; target: string; color: number
+  at: number; end?: number; ok?: boolean }
+export const feed: FeedItem[] = []
+export const TREE_MS = 2 * 60 * 1000 // the band's full tree stays this long after the last call
 export const laneOf = (icon: string): Lane =>
-  icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' || icon === '✦' ? 'agent' : icon === '◍' || icon === '⬡' ? 'web' : 'read'
+  icon === '✎' ? 'edit' : icon === '❯' ? 'run' : icon === '◆' ? 'agent' : icon === '✦' ? 'skill' : icon === '◍' || icon === '⬡' ? 'web' : 'read'
 export const TIMELINE_MS = 30 * 60 * 1000 // the lanes' window

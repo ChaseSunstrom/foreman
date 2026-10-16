@@ -370,6 +370,8 @@ def check_global(apply, actions, plugins=False):
     def stale(d):
         out = []
         for f in os.listdir(d) if os.path.isdir(d) else []:
+            if f == "shadow.jsonl":  # T-0963 review: fm compact-output shadow's measurement, not a cache
+                continue
             try:  # T-0839: a heartbeat its watcher removes between listdir and here
                 if time.time() - os.path.getmtime(os.path.join(d, f)) > SNAPSHOT_MAX_DAYS * 86400:
                     out.append(os.path.join(d, f))

@@ -86,6 +86,14 @@ class RoundF(ForemanTestCase):
         self.assertEqual(sum(bool(n) and "come up" in n for n in notes), 1)
         self.assertIn("3 times", notes[2])
 
+    def test_lib_hint_when_a_bin_module_path_is_missing(self):
+        # T-0984 (written by the recorded demo session, T-0979): Foreman's modules live in plugin/lib/
+        n = fmrecall.note_failure(self.p, "T-0009", "python3: can't open file 'plugin/bin/fmcore.py': [Errno 2] No such "
+                                                    "file or directory")
+        self.assertIn("plugin/lib/", n)
+        self.assertNotIn("plugin/lib/", fmrecall.note_failure(self.p, "T-0009", "cat: other.txt: No such file or directory")
+                         or "")
+
     def test_the_weekly_check_runs_once_a_week_even_with_nothing_to_show(self):
         self.hook("SessionStart", {"source": "startup"})
         self.assertIsNotNone(c.read_meta(self.p).get("digest_offered"))

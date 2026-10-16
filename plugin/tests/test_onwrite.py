@@ -118,7 +118,7 @@ class OnWrite(HookCase):
             groups = json.load(f)["hooks"]["PostToolUse"]
         sync = [g for g in groups if not any(h.get("async") for h in g["hooks"])]
         self.assertEqual([(g["matcher"], g["hooks"][0]["args"]) for g in sync],
-                         [("Write|Edit|MultiEdit|NotebookEdit", ["PostToolUseValidate"])])
+                         [("Write|Edit|MultiEdit|NotebookEdit|WebFetch|WebSearch|mcp__.*", ["PostToolUseValidate"])])  # T-0972: outside text too
         rest = [g for g in groups if g not in sync]
         self.assertEqual([(g.get("matcher"), g["hooks"][0]["args"]) for g in rest], [(None, ["PostToolUse"])])
 

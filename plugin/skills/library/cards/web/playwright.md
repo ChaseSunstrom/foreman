@@ -3,7 +3,7 @@ name: playwright
 title: Playwright
 area: web
 tags: [playwright, e2e, browser-testing, testing, typescript, ui]
-detect: [dep:@playwright/test, dep:playwright, file:playwright.config.*]
+detect: [dep:@playwright/test, dep:playwright, dep:playwright-core, file:playwright.config.*]
 related: [testing-library, cypress, msw, nextjs]
 ---
 Playwright Test: real-browser end-to-end tests with auto-waiting locators and web-first assertions.

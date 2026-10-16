@@ -20,6 +20,19 @@ from collections import Counter, defaultdict
 
 PLUGIN_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+
+def claude_path(env):
+    """T-0990: env with ~/.local/bin (Claude Code's native install) on PATH when claude isn't on it already, so fm's
+    gates, fm run and doctor find it from a shell that predates the install. FOREMAN_NATIVE_BIN overrides the folder
+    (T-0992: the tests point it at nothing, so a test that replaces PATH can't reach the paid binary)."""
+    local = env.get("FOREMAN_NATIVE_BIN") or os.path.join(env.get("HOME") or os.path.expanduser("~"), ".local", "bin")
+    if not shutil.which("claude", path=env.get("PATH")) and os.access(os.path.join(local, "claude"), os.X_OK):
+        env["PATH"] = local + os.pathsep + env.get("PATH", "")
+    return env
+
+
+claude_path(os.environ)
+
 TYPES = ["RESEARCH", "CLEAN", "PERFORMANCE", "SECURITY", "FIX", "FEATURE"]
 RANK = {t: i for i, t in enumerate(TYPES)}
 RUNNABLE = {"planned", "active", "verifying"}
@@ -463,10 +476,36 @@ def env_id():
     return hashlib.sha1("\0".join(os.environ.get(k, "") for k in keys).encode()).hexdigest()[:8]
 
 
-def run_result(code, output):
-    """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed."""
+NEVER_RAN = "(never ran: "  # T-0985: a run whose own command, file or test module didn't exist
+
+
+def never_ran(cmd, code, output):
+    """T-0985: why a failed run never reached its check, or None: the command wasn't found (127), or the file or
+    module the failure names is one the command itself names (a wrong path, not a failing test)."""
+    if not code or not cmd:
+        return None
+    if code == 127:
+        return "command not found"
+    for pat in (r"No module named '([\w.]+)'", r"can't open file '([^']+)'", r"([^\s:'\"]+): No such file or directory",
+                r"file or directory not found: (\S+)", r"No such file or directory: '([^']+)'"):
+        for m in re.finditer(pat, output or ""):
+            name = m.group(1)
+            if name and (name in cmd or os.path.basename(name) in cmd or name.replace(".", "/") in cmd):
+                return f"no {c_short(name)}"
+    return None
+
+
+def c_short(name):
+    return name if len(name) <= 60 else "…" + name[-59:]
+
+
+def run_result(code, output, cmd=None):
+    """The evidence result for a run: `exit N · <last two output lines>`, marked ✗ when it failed; T-0985: given the
+    command, a run that never reached its check says so (it doesn't lock the criterion)."""
     lines = [l.strip() for l in output.splitlines() if l.strip()]
     timed = f" ({lines[-1]})" if code == 124 and lines and lines[-1].startswith("timed out after") else ""
+    why = never_ran(cmd, code, output)
+    timed += f" {NEVER_RAN}{why})" if why else ""
     return f"{'✗ ' if code else ''}exit {code}{timed} · {' / '.join(lines[-2:])[:200] or '(no output)'}"
 
 
@@ -742,6 +781,20 @@ def log_event(p, event, task=None, data=None, session=None):
 def ledger_tail(p, n=200):
     """The last n ledger events."""
     return tail_jsonl(os.path.join(p.dir, "ledger.jsonl"), n)
+
+
+def global_events(since):
+    """T-0959 review: the global events since an ISO time, from the files fm tidy rotated into state/logs (it keeps 3)
+    as well as the live events.jsonl, so a report over a week isn't a report over the day since the last rotation."""
+    logs = os.path.join(state_dir(), "logs")
+    try:
+        rotated = sorted(os.path.join(logs, f) for f in os.listdir(logs) if f.startswith("events-") and f.endswith(".jsonl"))
+    except OSError:
+        rotated = []
+    for path in rotated + [os.path.join(state_dir(), "events.jsonl")]:
+        for e in tail_jsonl(path, 200000):
+            if isinstance(e, dict) and str(e.get("ts") or "") >= since:
+                yield e
 
 
 def tail_jsonl(path, n=200):
@@ -1084,8 +1137,9 @@ class Brief:
         return [l for l in self.section("Verification evidence").splitlines() if _INCONCLUSIVE in l
                 and (step is None or ((m := _EV_RE.match(l)) and (m.group(1), int(m.group(2))) == ("step", step)))]
 
-    def has_evidence(self, step=None, ac=None):
-        lines = self.evidence()
+    def has_evidence(self, step=None, ac=None, checked=False):
+        """With checked (T-0985: the edit lock), a run that never reached its check doesn't count."""
+        lines = [l for l in self.evidence() if not (checked and NEVER_RAN in l)]
         if step is None and ac is None:
             return bool(lines)
         want = ("step", step) if step is not None else ("ac", ac)
@@ -1192,7 +1246,7 @@ class Brief:
     def edit_ac(self, n, text=None, verify=None):
         """T-0333: criterion n's text and/or verify command replaced; its checkbox stays as it was. T-0342: only while
         it has no evidence (the T-0305 decision: an edit could weaken a failing check until it passes), and logged."""
-        if self.has_evidence(ac=n):
+        if self.has_evidence(ac=n, checked=True):
             raise PolicyError(f"{self.id} criterion {n} already has evidence, so its check stays as it is (an edit could "
                               f"weaken a failing one). Add a criterion (fm task ac {self.id} add …), or drop the task "
                               f"with a reason and recreate it with the right check (fm task new … --redo {self.id} keeps its "
@@ -2029,6 +2083,92 @@ def drop_veto(p, n):
     return True
 
 
+RULE_MAX = 300      # T-0971: a user rule's pattern, in characters
+RULE_SCAN = 200_000  # T-0971 review: rules read the whole call (the time budget bounds a slow pattern); longer fails closed
+RULE_SCAN_NO_ALARM = 4000  # off the main thread there's no alarm: past this, block rules fail closed
+RULE_BUDGET = 0.25  # seconds all of a call's rules get (of PreToolUse's 5 s)
+
+
+def _rules_path(p):
+    return os.path.join(p.dir, "rules.json")
+
+
+def rules(p):
+    """T-0971: the user's fm rule list: {pattern, on (bash|path), action (block|warn), why, at}, oldest first."""
+    try:
+        with open(_rules_path(p), encoding="utf-8") as f:
+            v = json.load(f)
+    except (OSError, ValueError):
+        return []
+    return [x for x in v if isinstance(x, dict) and isinstance(x.get("pattern"), str) and x.get("on") in ("bash", "path")
+            and x.get("action") in ("block", "warn")] if isinstance(v, list) else []
+
+
+def add_rule(p, pattern, on, action, why):
+    """Store a rule; ValueError for a pattern that is empty, too long or not a regex (it's compiled here, not later)."""
+    if not pattern or len(pattern) > RULE_MAX:
+        raise ValueError(f"a rule's pattern is 1 to {RULE_MAX} characters")
+    try:
+        re.compile(pattern)
+    except re.error as e:
+        raise ValueError(f"not a regular expression: {e}")
+    rec = {"pattern": pattern, "on": on, "action": action, "why": fit(plain(str(why or "").strip()), 200), "at": now()}
+    with lock(p.dir, timeout=2):
+        write_atomic(_rules_path(p), json.dumps(rules(p) + [rec]))
+    return rec
+
+
+def drop_rule(p, n):
+    """Remove the n-th rule (1 = the oldest, as fm rule list numbers them); False when there is none."""
+    with lock(p.dir, timeout=2):
+        v = rules(p)
+        if not 1 <= n <= len(v):
+            return False
+        write_atomic(_rules_path(p), json.dumps(v[:n - 1] + v[n:]))
+    return True
+
+
+def rule_hits(p, on, text):
+    """The rules on `on` whose pattern is found in the first RULE_SCAN characters of text: [(n, rule, timed_out)].
+    Matching is time-boxed (RULE_BUDGET for all of them, SIGALRM: CPython's regex engine checks signals); a rule it
+    couldn't finish is returned with timed_out=True and every rule after it is not tried."""
+    import signal
+    todo = [(n, r) for n, r in enumerate(rules(p), 1) if r["on"] == on]
+    if not todo or not text:
+        return []
+    hits = []
+
+    def expire(*_):
+        raise TimeoutError
+
+    try:
+        old = signal.signal(signal.SIGALRM, expire)
+    except ValueError:  # not the main thread: no alarm to bound a slow pattern
+        old = None
+    if len(text) > (RULE_SCAN if old is not None else RULE_SCAN_NO_ALARM):  # too long to read safely: a block rule
+        if old is not None:                                                  # can't be shown not to match, so it does
+            signal.signal(signal.SIGALRM, old)
+        return [(n, r, True) for n, r in todo if r["action"] == "block"][:1]
+    try:
+        if old is not None:
+            signal.setitimer(signal.ITIMER_REAL, RULE_BUDGET)
+        cur = todo[0]
+        try:
+            for cur in todo:
+                try:
+                    if re.search(cur[1]["pattern"], text):
+                        hits.append((*cur, False))
+                except re.error:  # edited by hand past add_rule's compile check
+                    continue
+        except TimeoutError:
+            hits.append((*cur, True))
+    finally:
+        if old is not None:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+    return hits
+
+
 def veto_hits(p, text):
     """The recorded vetoes whose every key word starts a word of text (a command, or an edit's tool and path)."""
     have = re.findall(r"[a-z0-9]+", (text or "").lower())
@@ -2144,8 +2284,14 @@ def hints_reset(p):
 
 
 def file_digest(path):
+    """A regular file's short content hash (OSError for anything else: a FIFO would block, a folder isn't a file).
+    Runs on every prompt for each watched file, so only the first 16 MB are read; the size covers the rest."""
+    if not os.path.isfile(path):
+        raise OSError(f"{path} isn't a regular file")
+    size = os.path.getsize(path)
     with open(path, "rb") as f:
-        return hashlib.sha256(f.read()).hexdigest()[:12]
+        head = f.read(16 << 20)
+    return hashlib.sha256(head + (b"" if size <= len(head) else str(size).encode())).hexdigest()[:12]
 
 
 def revisit_tag(root, trigger):
@@ -2161,6 +2307,22 @@ def revisit_tag(root, trigger):
     if not path.startswith(top + os.sep) or not os.path.isfile(path):
         raise ValueError(f"--revisit: {m.group(2)} is not a file in this project")
     return f"[revisit: when {os.path.relpath(path, top)} changes @{file_digest(path)}]"
+
+
+def deferral_due(root, revisit, today):
+    """T-0450 a date that came; T-0958 "when PATH changes @hash" (fm task defer --until): the file changed or is gone.
+    A path outside the project is never read."""
+    m = _REVISIT_TAG.fullmatch(f"[revisit: {revisit}]") if revisit else None
+    if not m or m.group(1):
+        return str(revisit or "9999") <= today
+    top = os.path.realpath(root)
+    path = os.path.realpath(os.path.join(top, m.group(2)))
+    if not path.startswith(top + os.sep):
+        return False
+    try:
+        return file_digest(path) != m.group(3)
+    except OSError:
+        return True
 
 
 def fired_decisions(p):
@@ -2286,11 +2448,13 @@ def next_for(p, briefs=None):
                    f"--revisited \"<its words>\"; changed: fm decide \"<new>\" --reverses \"<its words>\"")
     today = datetime.date.today().isoformat()  # T-0450: a deferral whose revisit date came
     due = [x for x in (briefs if briefs is not None else load_briefs(p))
-           if x.status == "deferred" and str(x.meta.get("revisit") or "9999") <= today]
+           if x.status == "deferred" and deferral_due(p.root, x.meta.get("revisit"), today)]
     if due:
-        action += (f" · deferred {due[0].id} is due back (revisit {due[0].meta['revisit']})"
+        rv = due[0].meta["revisit"]
+        again = f'"{re.sub(r" @[0-9a-f]+$", "", rv)}"' if rv.startswith("when ") else "<date>"  # T-0986: same trigger
+        action += (f" · deferred {due[0].id} is due back (revisit {rv})"
                    + (f" and {len(due) - 1} more" if len(due) > 1 else "")
-                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until <date>")
+                   + f": fm focus {due[0].id} to take it up, or fm task defer {due[0].id} \"<why>\" --until {again}")
     d = read_meta(p).get("ask_digest")
     if isinstance(d, dict) and d.get("asks"):  # T-0461
         n = len(d["asks"])
@@ -2524,6 +2688,7 @@ def status_dict(sd):
     a = sd["active"]
     return {"active": a and {"id": a["id"], "type": a["type"], "tier": a["tier"], "stage": a["stage"],
                              "done": a["steps_done"], "total": a["steps_total"],
+                             "n": a["step"]["n"] if a.get("step") else a["steps_done"],  # T-0962: the current step
                              "step": plain(a["step"]["text"]) if a.get("step") else "",
                              "audits": [a["audits"]["done"], a["audits"]["required"]]},
             "queue": len(sd["queue"]), "inbox": len(sd["inbox"]), "autonomy": sd["autonomy"],
@@ -2583,17 +2748,23 @@ def glob_match(rel, pattern):
 
 # ---------------------------------------------------------------- checkpoint / resume
 
-def _git(root, *args, timeout=2, fail=""):
-    """git's stdout, or "" on any failure. Paths come raw (no quoting of spaces or non-ASCII), undecodable bytes are
-    replaced, and GIT_* variables can't point it at another repository."""
+def _git(root, *args, timeout=2, fail="", proc=False):
+    """git's stdout, or `fail` on any failure; with `proc`, the CompletedProcess (returncode 124 on a timeout and 127
+    when git can't run, the error as stderr, so neither reads as git's own 1, "no match"). Paths come raw (no
+    quoting of spaces or non-ASCII), undecodable bytes are
+    replaced, and GIT_* variables can't point it at another repository. Foreman's one git runner (T-0961); fmguard
+    keeps its own, it is hook-hot."""
     import subprocess
     env = dict({k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, GIT_TERMINAL_PROMPT="0")
+    cmd = ["git", "-c", "core.quotePath=false", "-C", root, *args]
     try:  # never interactive: no terminal prompt, no stdin to wait on
-        r = subprocess.run(["git", "-c", "core.quotePath=false", "-C", root, *args], capture_output=True, text=True,
-                           errors="replace", timeout=timeout, env=env, stdin=subprocess.DEVNULL)
-        return r.stdout if r.returncode == 0 else fail
-    except (OSError, subprocess.SubprocessError):
-        return fail
+        r = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout, env=env,
+                           stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:
+        r = subprocess.CompletedProcess(cmd, 124, "", f"timed out after {e.timeout:g} s")
+    except (OSError, subprocess.SubprocessError) as e:
+        r = subprocess.CompletedProcess(cmd, 127, "", str(e))
+    return r if proc else r.stdout if r.returncode == 0 else fail
 
 
 def git_summary(root):
@@ -2739,7 +2910,29 @@ def lint_verify(cmd, root):
         problems.append("run.py -k matches a substring, so a pattern with a space matches nothing: repeat -k")
     if re.search(r"(?<!\|)\|(?!\|)", cmd or "") and "pipefail" not in cmd:
         problems.append("its exit status is the last piped program's (add set -o pipefail or drop the pipe)")
+    live = sorted({m.group(1) for seg in re.split(r"&&|\|\||;|\|", cmd or "") for m in [_LIVE.match(seg.strip())] if m})
+    if live:  # T-0943: fm check and fm lane merge would run it unattended, against whatever credentials are ambient
+        problems.append(f"it reaches a live service ({', '.join(live)}): keep it a manual check (fm task evidence ID "
+                        f"--ac N CMD RESULT), or point it at a sandbox")
+    if _STATE_READ.search(cmd or ""):  # T-0963: it passes when the records say so, not when the code works
+        problems.append("it reads Foreman's state (.foreman, state/tasks or briefs), not the code: check the behaviour")
     return problems
+
+
+_STATE_READ = re.compile(r"(?:^|[\s'\"=:/])\.foreman(?:/|\b)|\bforeman/state/(?:projects/[^/\s]+/)?(?:tasks|briefs)\b"
+                         r"|\bstate/projects/[^/\s]+/(?:tasks|briefs)\b|\bstate/(?:tasks|briefs)/T-\d+|\$\{?FOREMAN_STATE\b")  # a task file, not a repo's own state/
+
+
+# T-0943: commands that act on or read a live account, cluster or database (local checks like terraform validate or
+# plan, helm lint, kubectl kustomize, a psql without a host stay quiet)
+_LIVE = re.compile(r"(?:\w+=\S*\s+)*(aws|gcloud|az|kubectl|psql|mysql|mongosh|redis-cli|terraform|tofu|helm|pulumi)\b"
+                   r"(?=\s+(?!--?(?:version|help)\b)\S)(?:(?<=aws)|(?<=gcloud)|(?<=az)"
+                   r"|(?<=kubectl)(?=.*\b(?:get|apply|delete|describe|logs|exec|rollout|scale|patch|create|edit|"
+                   r"port-forward|top|drain|cordon)\b)"
+                   r"|(?<=psql)(?=.*(?:\s-h\s*\S|--host|postgres(?:ql)?://))|(?<=mysql)(?=.*(?:\s-h\s*\S|--host|mysql://))"
+                   r"|(?<=mongosh)(?=.*(?:mongodb(?:\+srv)?://|--host))|(?<=redis-cli)(?=.*(?:\s-h\s*\S|redis://))"
+                   r"|(?<=terraform)(?=\s+(?:apply|destroy|import|refresh)\b)|(?<=tofu)(?=\s+(?:apply|destroy|import)\b)"
+                   r"|(?<=helm)(?=\s+(?:install|upgrade|uninstall|rollback)\b)|(?<=pulumi)(?=\s+(?:up|destroy|refresh)\b))")
 
 
 def unrunnable(cmd, root):

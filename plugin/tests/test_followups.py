@@ -127,6 +127,6 @@ class Lfs(ForemanTestCase):
                        check=True)
         with open(os.path.join(repo, "a.txt"), "w") as f:
             f.write("changed\n")
-        fmbench._git(repo, "add", "-A")
-        fmbench._git(repo, "checkout", "HEAD", "--", "a.txt")
+        fmbench._safe_git(repo, "add", "-A")
+        fmbench._safe_git(repo, "checkout", "HEAD", "--", "a.txt")
         self.assertFalse(os.path.exists(marker))

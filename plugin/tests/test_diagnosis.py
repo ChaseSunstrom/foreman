@@ -54,6 +54,17 @@ class WhyNotCaught(Base):
         kids = [b for b in c.load_briefs(self.p) if b.meta.get("source") == "followup"]
         self.assertTrue(any("empty CSV" in b.title for b in kids), [b.title for b in kids])
 
+    def test_no_followup_when_the_task_already_changed_a_test_file(self):
+        # T-1009 (written by the recorded demo session, T-0998): the close that adds the catching test needs no
+        # 'Catch it earlier' task; T-1007 → T-1008 and T-1013 → T-1014 were captured only to be dropped
+        self.fm("task", "new", "Fix it", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        self.fm("task", "set", "T-0001", "--section", "Regression test", "--text", "none: a typo")
+        c.log_event(self.p, "touched", task="T-0001", data={"file": os.path.join(self.p.root, "tests/test_x.py")})
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--docs", "none: internal",
+                    "--lesson", "none: trivial", "--why-not-caught", "no test feeds an empty CSV")
+        self.assertFalse([b for b in c.load_briefs(self.p) if b.meta.get("source") == "followup"])
+        self.assertIn("the catch landed with it: tests/test_x.py", r.stdout)
+
 
 class Ladder(Base):
     def test_the_next_rung_follows_failed_runs_and_open_hypotheses(self):

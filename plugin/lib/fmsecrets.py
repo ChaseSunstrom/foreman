@@ -83,14 +83,13 @@ def staged_leaks(root, files):
     return None if r.returncode else scan_diff(r.stdout.decode("utf-8", "replace"))
 
 
-def _git(root, *args):
-    return subprocess.run(["git", "-C", root, "-c", "core.quotePath=false", *args], capture_output=True, text=True,
-                          errors="replace", timeout=300).stdout
-
-
 def _tree(root):
     out = []
-    for rel in filter(None, _git(root, "ls-files", "-co", "--exclude-standard", "-z").split("\0")):
+    listed = c._git(root, "ls-files", "-co", "--exclude-standard", "-z", timeout=300, proc=True)
+    if listed.returncode:  # a failed listing is a finding, never a clean "no credentials found"
+        return [{"where": "tree", "path": ".", "kind": "couldn't list the files to scan",
+                 "note": c.fit(c.plain(listed.stderr.strip()), 200) or f"git exit {listed.returncode}"}]
+    for rel in filter(None, listed.stdout.split("\0")):
         path = os.path.join(root, rel)
         if rel in PROJECT_CONFIG or os.path.islink(path) or not os.path.isfile(path) or os.path.getsize(path) > 2_000_000:
             continue  # the project's Claude config is read as config, below

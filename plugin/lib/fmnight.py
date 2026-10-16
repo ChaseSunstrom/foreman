@@ -3,10 +3,13 @@ the landscape scan when due, the sentinel (T-0888), one research-debt question, 
 kept fm evolve candidate — each an existing fm command, kept while the night's estimate fits --max-usd and today's
 remaining budget. Refused when usage is high, when usage is unknown the limit halves, a sensitive project runs
 nothing, and the night stops as soon as real spend passes the limit or usage climbs (T-0298 review). Never merges;
-the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up."""
+the morning's fm digest says what ran. Scheduling (cron, a systemd timer) is the user's to set up;
+--print-timer prints both, ready to paste."""
 import fcntl
 import glob
 import os
+import re
+import shlex
 import subprocess
 import sys
 import time
@@ -18,7 +21,7 @@ import fmserve
 STALE_H = 12  # a statusline snapshot older than this says nothing about tonight's usage
 JOB_TIMEOUT = 3 * 3600  # seconds one night job may take
 _LEASE = None  # T-0921: the open lock file of a running night
-NAMES = ("dream", "cold files", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
+NAMES = ("scout", "dream", "cold files", "sentinel", "smoke", "pre-plan", "model lesion", "second session", "landscape", "research debt", "court", "evolve candidate")
 
 
 def current_model(p):
@@ -46,7 +49,8 @@ def jobs(p):
     """[(name, fm argv, USD estimate)] of what tonight could do, cheapest and most useful first."""
     import fmbench
     import fmoutside
-    meta, out = c.read_meta(p), [("dream", ["dream"], 0.0)]  # T-0665: free: the day's failures as tripwire candidates
+    meta, out = c.read_meta(p), [("scout", ["scout", "--slow"], 0.0)]  # T-0950: free to look: work nobody asked for
+    out.append(("dream", ["dream"], 0.0))  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
     if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
@@ -93,9 +97,31 @@ def _usage():
     return fmbudget.usage_high(), fresh
 
 
+def timer(p):
+    """T-0955: a systemd user service + timer and a crontab line that run fm night here nightly; printed, never
+    installed (scheduling stays the user's)."""
+    unit = f"foreman-night-{p.slug}"
+    cmd = f"{shlex.quote(sys.executable)} {shlex.quote(os.path.join(c.PLUGIN_ROOT, 'bin', 'fm'))} night"
+    # systemd and cron start with a bare environment: this state dir, and the tools on your PATH (claude, git)
+    path = ":".join(d for d in os.environ.get("PATH", "").split(":") if d and not re.search(r"[\x00-\x1f\"%\s]", d))
+    home = c.foreman_home()
+    return "\n".join([
+        f"# ~/.config/systemd/user/{unit}.service", "[Unit]", f"Description=Foreman night ({p.slug})", "",
+        "[Service]", "Type=oneshot", f"WorkingDirectory={p.root}", f'Environment="FOREMAN_HOME={home}"',
+        f'Environment="PATH={path}"', f"ExecStart={cmd}", "",
+        f"# ~/.config/systemd/user/{unit}.timer", "[Unit]", f"Description=Foreman night ({p.slug}), nightly", "",
+        "[Timer]", "OnCalendar=*-*-* 02:30", "Persistent=true", "", "[Install]", "WantedBy=timers.target", "",
+        f"# then: systemctl --user daemon-reload && systemctl --user enable --now {unit}.timer",
+        "# or, without systemd, a crontab -e line:",
+        f"30 2 * * * cd {shlex.quote(p.root)} && FOREMAN_HOME={shlex.quote(home)} PATH={shlex.quote(path)} {cmd}"])
+
+
 def cmd_night(args):
     import fmcli
     p = fmcli.resolve(args)
+    if getattr(args, "print_timer", False):
+        print(timer(p))
+        return 0
     if c.panicked():
         raise c.PolicyError(c.PAUSED)
     if not getattr(args, "dry_run", False):  # T-0921: one night at a time (a cron firing while a manual one runs)

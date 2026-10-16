@@ -26,3 +26,80 @@ class Harness(unittest.TestCase):
         self.assertNotEqual(p.returncode, 0)
         self.assertIn("not inside tmux", p.stderr)
 
+
+class OneOff(unittest.TestCase):
+    def test_a_session_with_its_own_state_is_a_working_session(self):
+        # T-1013: the demo recorder runs its session on a state of its own; marked one-off (T-0995) it was never driven
+        # to close its task, and the recording timed out with nothing written
+        import argparse
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("shot_t1013", SHOT)
+        shot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shot)
+        seen = []
+        shot.tmux = lambda *args, check=True: seen.append(args)
+        a = argparse.Namespace(dir=".", cols=10, rows=5, model=None)
+        saved = os.environ.pop("FOREMAN_STATE", None)
+        try:
+            shot.start(a, cmd="true")  # the user's own state: a one-off, never driven
+            shared = " ".join(seen[-1])
+            os.environ["FOREMAN_STATE"] = "/tmp/fm-demo-state"
+            shot.start(a, cmd="true")
+            own = " ".join(seen[-1])
+        finally:
+            os.environ.pop("FOREMAN_STATE", None)
+            if saved is not None:
+                os.environ["FOREMAN_STATE"] = saved
+        self.assertIn("FOREMAN_ONEOFF=1", shared)
+        self.assertNotIn("FOREMAN_STATE=", shared)
+        self.assertIn("FOREMAN_STATE=/tmp/fm-demo-state", own)
+        self.assertNotIn("FOREMAN_ONEOFF", own)
+
+
+
+class Trust(unittest.TestCase):
+    """T-1032: the harness stalled at Claude Code's folder-trust prompt on every new folder (each demo recording); it
+    answers it itself, but only for a folder Foreman made (a temp or scratch folder, its own repo): trusting a cloned
+    repo would let that repo's hooks run."""
+
+    def load(self):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("shot_t1032", SHOT)
+        shot = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(shot)
+        return shot
+
+    def test_it_answers_for_a_folder_foreman_made_and_never_for_others(self):
+        import tempfile
+        import types
+        shot = self.load()
+        sent, screens = [], []
+
+        def tmux(*args, check=True):
+            if args[0] == "capture-pane":
+                return types.SimpleNamespace(stdout=screens.pop(0) if screens else "❯ ", returncode=0)
+            sent.append(args)
+            return types.SimpleNamespace(stdout="", returncode=0)
+        shot.tmux = tmux
+        from unittest import mock
+        nap = mock.patch.object(shot.time, "sleep", lambda s: None)  # review: never the whole test process's sleep
+        nap.start()
+        self.addCleanup(nap.stop)
+        dialog = "Quick safety check: Is this a project you created or one you trust?\n❯ No, exit\n  Yes, I trust this folder"
+        with tempfile.TemporaryDirectory() as d:
+            screens[:] = [dialog, "❯ "]
+            self.assertTrue(shot.answer_trust(d, wait=2))
+            self.assertTrue(any("Enter" in a for a in sent), sent)
+        sent.clear()
+        screens[:] = [dialog]
+        self.assertFalse(shot.answer_trust("/srv/someone-elses-clone", wait=2))
+        self.assertEqual(sent, [])
+        screens[:] = ["❯ "]  # no dialog: nothing pressed
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(shot.answer_trust(d, wait=1))
+        self.assertEqual(sent, [])
+        with tempfile.TemporaryDirectory() as d:  # a repo cloned into /tmp with its own Claude Code config
+            os.makedirs(os.path.join(d, ".claude"))
+            screens[:] = [dialog]
+            self.assertFalse(shot.answer_trust(d, wait=2))
+        self.assertEqual(sent, [])

@@ -1,5 +1,5 @@
 """T-0705 (Frontier 05, first slice): ambient verification. Affected tests run after each edit, out of the model's
-turns; only a flip reaches it, once, and a pass is the step's evidence."""
+turns; only a flip reaches it, once; a pass never closes a step (T-0994)."""
 import os
 import subprocess
 
@@ -41,7 +41,7 @@ class Ambient(HookCase):
         self.edit("def add(a, b):\n    return a - b\n")
         self.assertNotIn("Ambient", self.note())
 
-    def test_a_flip_is_reported_once_and_a_pass_is_the_steps_evidence(self):
+    def test_a_flip_is_reported_once_and_a_pass_never_closes_the_step(self):
         self.fm("check", "ambient", "on")
         self.edit("def add(a, b):\n    return a - b\n")
         first = self.note()
@@ -51,6 +51,19 @@ class Ambient(HookCase):
         self.edit("def add(a, b):\n    return a - b  # still wrong\n")
         self.assertNotIn("Ambient", self.note(), "still failing is not a flip")
         self.edit(GOOD)
-        self.assertIn("pass again", self.note())
+        back = self.note()
+        self.assertIn("pass again", back)
+        # T-0994: a pass mid-step says nothing about the step being done (it closed T-0989's 'docs' step); the note
+        # says how to record it when it is
+        self.assertIn(f"fm task evidence {self.tid} --step 1 --run", back)
         b = c.find_brief(self.project(), self.tid)
-        self.assertTrue(b.has_evidence(step=1), b.evidence())
+        self.assertFalse(b.has_evidence(step=1), b.evidence())
+
+    def test_a_test_the_runner_cant_run_is_left_out(self):
+        # T-0994: a .tsx test went to 'python3 plugin/tests/run.py widget.test', which ran nothing and read as a pass
+        import json
+        self.write("widget.test.tsx", "test('x', () => {})\n")
+        self.write("calc.py", "def add(a, b):\n    return a + b  # touched\n")
+        out = json.loads(self.fm("check", "--affected", "--json").stdout)
+        self.assertIn("test_calc.py", out["tests"])
+        self.assertNotIn("widget.test.tsx", out["tests"])

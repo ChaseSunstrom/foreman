@@ -22,6 +22,16 @@ class Init(ForemanTestCase):
         self.assertIsNone(st["active"])
         self.assertEqual((st["queue"], st["inbox"]), ([], []))
 
+    def test_an_unknown_task_id_names_the_ones_that_exist(self):
+        # T-0987 (T-0978: a model took a task id from another checkout): the refusal says which ids are here
+        self.fm("init")
+        self.fm("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "x", "--focus")
+        self.fm("capture", "Two")
+        err = self.fm("task", "show", "T-0983", check=False).stderr
+        self.assertIn("no task T-0983", err)
+        self.assertIn("active T-0001", err)
+        self.assertIn("T-0002", err)
+
     def test_commands_auto_register_git_repo(self):
         self.fm("capture", "something")
         self.assertIsNotNone(c.find_project(self.repo))
@@ -735,6 +745,21 @@ class AuditPrep(ForemanTestCase):
         self.assertEqual(sorted(sum(lenses, [])), sorted(["intent", "adversary", "edge", "operator", "maintainer"]))
         self.assertTrue(all(lenses), "no empty group")
 
+    def test_long_compacted_diff_tells_the_reviewer_to_read_in_parts(self):
+        # T-0983 (written by the recorded demo session, T-0979): a diff over ~1500 compacted lines doesn't fit one Read
+        self.fm("init")
+        self.fm("task", "new", "Add it", "--type", "FEATURE", "--tier", "M", "--step", "add it")
+        self.fm("task", "ac", "T-0001", "add", "works", "--verify", "true")
+        for sec in ("Interpretation", "Approach (options → choice → why)"):
+            self.fm("task", "set", "T-0001", "--section", sec, "--text", "planned")
+        self.fm("focus", "T-0001")
+        with open(os.path.join(self.repo, "big.py"), "w") as f:
+            f.write("".join(f"X{i} = {i}\n" for i in range(1600)))
+        self.assertIn("read it in parts", self.fm("audit", "prep", "--print", "T-0001").stdout)
+        with open(os.path.join(self.repo, "big.py"), "w") as f:
+            f.write("X = 1\n")
+        self.assertNotIn("read it in parts", self.fm("audit", "prep", "--print", "T-0001").stdout)
+
     def test_brief_asks_for_report_findings_fields_and_prep_names_the_tool(self):
         # T-0780: findings reach the host review UI; the ranked lines still parse (_FINDING)
         self.fm("init")
@@ -1180,3 +1205,27 @@ class InboxList(ForemanTestCase):
         self.assertIn("Add a dark theme", r.stdout)
         self.assertEqual(json.loads(self.fm("inbox", "--json").stdout)["inbox"][0]["id"], "T-0001")
         self.assertIn("{gh}", self.fm("inbox", "--help").stdout)  # the tracker source is still there
+
+
+class AffectedPairs(ForemanTestCase):
+    """T-0952: a test that historically changes with a file runs when only that file changes, so a hooks.json edit
+    runs the wiring tests even though no test is named after it."""
+
+    def test_a_co_changed_test_is_affected(self):
+        import fmcli
+        self.fm("init")
+        self.fm("check", "affected", "python3 -m pytest -q {tests}")
+        os.makedirs(os.path.join(self.repo, "hooks"))
+        os.makedirs(os.path.join(self.repo, "tests"))
+        for i in range(3):
+            for rel, body in (("hooks/hooks.json", f'{{"n": {i}}}\n'), ("tests/test_wiring.py", f"N = {i}\n")):
+                with open(os.path.join(self.repo, rel), "w") as f:
+                    f.write(body)
+            for args in (["add", "-A"], ["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", f"wire {i}"]):
+                subprocess.run(["git", "-C", self.repo, *args], check=True)
+        self.fm("task", "new", "edit the hooks", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s",
+                "--focus")
+        with open(os.path.join(self.repo, "hooks", "hooks.json"), "w") as f:
+            f.write('{"n": 9}\n')
+        _, tests, _ = fmcli.affected(c.find_project(self.repo, create=False))
+        self.assertIn("tests/test_wiring.py", tests)

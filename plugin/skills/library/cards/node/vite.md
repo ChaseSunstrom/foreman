@@ -3,7 +3,7 @@ name: vite
 title: Vite
 area: node
 tags: [vite, bundler, dev-server, frontend, esm, build]
-detect: [dep:vite, file:vite.config.ts, file:vite.config.js, file:vite.config.mjs]
+detect: [dep:vite, dep:@vitejs/plugin-*, file:vite.config.ts, file:vite.config.js, file:vite.config.mjs]
 related: [vitest, tsconfig, eslint, rollup, esbuild]
 ---
 Vite projects: dev server, production build through Rollup, env handling, plugins and `vite.config`.

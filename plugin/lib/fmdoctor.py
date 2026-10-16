@@ -668,6 +668,38 @@ def _fm_commands():
 _FM_MENTION = re.compile(r"(?:^|[\s;|&(])fm\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
 
 
+# T-0954: zero-width, bidi and tag characters hide instructions from the person reading the file; a ZWJ between two
+# non-ASCII characters is an emoji sequence, not hidden text
+_INVISIBLE = re.compile(  # emoji glue (a ZWJ or VS15/16 after a non-ASCII character) is fine; a run of it isn't
+    "[\u00ad\u061c\u180e\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff\ufe00-\ufe0d"
+    "\U000e0000-\U000e007f\U000e0100-\U000e01ef]"
+    "|(?:^|[\x00-\x7f])[\u200d\ufe0e\ufe0f]|[\u200d\ufe0e\ufe0f]{2}|\u200d(?:$|[\x00-\x7f])", re.M)
+
+
+def instruction_files(plugin=PLUGIN):
+    """The files Claude reads as instructions: the user's CLAUDE.md, CLAUDE.local.md and rules; Foreman's rules,
+    skills (with their references and cards), agents, commands and output styles."""
+    claude = os.path.join(os.path.expanduser("~"), ".claude")
+    mine = [os.path.join(claude, "CLAUDE.md"), os.path.join(claude, "CLAUDE.local.md")] + glob.glob(
+        os.path.join(claude, "rules", "*.md"))
+    return mine + sorted(set(glob.glob(os.path.join(plugin, "skills", "**", "*.md"), recursive=True)
+                             + [x for d in ("rules", "agents", "commands", "output-styles")
+                                for x in glob.glob(os.path.join(plugin, d, "*.md"))]))
+
+
+def check_invisible_text(paths):
+    """WARN with file:line for each line of an instruction file holding invisible characters."""
+    hits = []
+    for path in dict.fromkeys(paths):
+        text = _read(path) or ""
+        for n, line in enumerate((text[1:] if text.startswith("\ufeff") else text).split("\n"), 1):
+            if _INVISIBLE.search(line):
+                hits.append(f"{path.replace(os.path.expanduser('~'), '~', 1)}:{n}")
+    return Result("invisible text", "WARN" if hits else "PASS",
+                  ("zero-width, bidi or tag characters (hidden instructions?) at " + ", ".join(hits[:8])
+                   + (f" and {len(hits) - 8} more" if len(hits) > 8 else "")) if hits else "instruction files clean")
+
+
 def check_self_docs(home=None, plugin=PLUGIN):
     """Foreman's own docs vs its code: fm commands named in docs exist, MASTER.md lists every command, skill and
     agent, and README's install flags match install.sh --help."""
@@ -679,8 +711,11 @@ def check_self_docs(home=None, plugin=PLUGIN):
         if "playbooks" not in d:  # ported third-party procedures don't talk about fm
             docs += [os.path.join(d, f) for f in files if f.endswith(".md")]
     for path in docs:
-        text = re.sub(r"```.*?```", "", _read(path) or "", flags=re.S)  # fences would shift backtick pairing
-        for span in re.findall(r"`([^`\n]+)`", text):
+        raw = _read(path) or ""
+        text = re.sub(r"```.*?```", "", raw, flags=re.S)  # fences would shift backtick pairing
+        fenced = [ln for block in re.findall(r"```[^\n]*\n(.*?)```", raw, flags=re.S)  # T-0954: usage examples
+                  for ln in block.splitlines() if re.match(r"\s*(?:\$\s+)?fm\s", ln)]
+        for span in re.findall(r"`([^`\n]+)`", text) + fenced:
             for m in _FM_MENTION.finditer(span):
                 top, sub = m.group(1), m.group(2)
                 if top not in cmds:
@@ -692,6 +727,12 @@ def check_self_docs(home=None, plugin=PLUGIN):
     missing = [n for n in sorted(cmds) if n not in listed]
     if missing:
         bad.append("MASTER.md lacks fm " + ", ".join(missing))
+    import fmcli  # T-1011: fm help's tiers name every command once (a new verb with none passed every check but the suite)
+    tiered = [w for _, names in fmcli.HELP_TIERS for w in names.split()]
+    if [n for n in sorted(cmds) if n not in tiered]:
+        bad.append("fm help's tiers lack " + ", ".join(n for n in sorted(cmds) if n not in tiered))
+    bad += [f"fm help's tiers list {n} twice" for n in sorted({w for w in tiered if tiered.count(w) > 1})]
+    bad += [f"fm help's tiers: {n} isn't an fm command" for n in sorted(set(tiered) - set(cmds))]
     for kind, folder, strip in (("skill", "skills", ""), ("agent", "agents", ".md")):
         for name in sorted(os.listdir(os.path.join(plugin, folder))) if os.path.isdir(os.path.join(plugin, folder)) else []:
             name = name[:-len(strip)] if strip and name.endswith(strip) else name
@@ -995,6 +1036,63 @@ def _check_supply(claude, accept):
         f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
 
 
+ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")
+
+
+def check_enforce(p, days=7):
+    """T-0949: how often the enforced steps fired in this project over the last days: write validators that blocked
+    (T-0947; their first events carry no kind), lane merges refused red or waived (T-0948), cards injected at edit
+    time. Information, never a failure."""
+    if not p:
+        return Result("enforcement", "PASS", "none: not in a Foreman project")
+    counts = dict.fromkeys(ENFORCE_KINDS, 0)
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
+    try:
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            lines = [l for l in f if b'"enforce"' in l or b'"lane_unverified"' in l or b'"lib' in l]
+    except OSError:
+        lines = []
+    read = named = 0  # T-0977: stack cards read (fm lib show) and named at prompt time
+    for line in lines:
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(e, dict) or str(e.get("ts", ""))[:19] < since or not isinstance(e.get("data") or {}, dict):
+            continue  # a hand-edited line with odd data is skipped, never a crash
+        if e.get("event") in ("lib", "lib_named"):
+            n = len((e.get("data") or {}).get("cards") or [])
+            read, named = (read + n, named) if e["event"] == "lib" else (read, named + n)
+            continue
+        kind = "lane_unverified" if e.get("event") == "lane_unverified" else \
+            (e.get("data") or {}).get("kind", "validator_block") if e.get("event") == "enforce" else None
+        if kind in counts:
+            counts[kind] += 1
+    return Result("enforcement", "PASS", f"last {days} days: " + ", ".join(f"{k} {n}" for k, n in counts.items())
+                  + f", cards named {named}, cards read {read}")
+
+
+def check_idle_stops(p, days=7):
+    """T-0957: stops with open work that nothing kept going (the drive was off, paused or done nudging). Information:
+    many of them mean the drive gave up early or the user keeps stopping it."""
+    if not p:
+        return Result("idle stops", "PASS", "none: not in a Foreman project")
+    since = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(time.time() - days * 86400))
+    try:  # bytes first, as check_enforce does: prompt events make the ledger large
+        with open(os.path.join(p.dir, "ledger.jsonl"), "rb") as f:
+            lines = [ln for ln in f if b'"idle_stop"' in ln]
+    except OSError:
+        lines = []
+    n = 0
+    for ln in lines:
+        try:
+            e = json.loads(ln)
+        except ValueError:
+            continue
+        n += isinstance(e, dict) and e.get("event") == "idle_stop" and str(e.get("ts", ""))[:19] >= since
+    return Result("idle stops", "PASS", f"last {days} days: {n} idle stop{'s' if n != 1 else ''} with open work")
+
+
 def run_all(full=False, accept_supply=False):
     home = c.foreman_home()
     claude = os.path.join(os.path.expanduser("~"), ".claude")
@@ -1007,7 +1105,8 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply), check_worktree_base(settings)]
+               check_supply(claude, accept_supply), check_worktree_base(settings),
+               check_invisible_text(instruction_files())]
     try:
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
@@ -1033,6 +1132,8 @@ def run_all(full=False, accept_supply=False):
     results.append(check_running_code(os.path.join(here.dir, "ledger.jsonl") if here else "",
                                       os.path.join(claude, "plugins", "installed_plugins.json")))
     results.append(check_product(here))
+    results.append(check_enforce(here))
+    results.append(check_idle_stops(here))
     results.append(check_version_skew(c.all_projects()))
     results += [check_self_docs(home), check_file_map(home, os.path.join(home, "MASTER.md")), check_backup(home), check_validate(home),
                 check_git_hygiene(home), check_core_integrity(home), check_statusline(settings, manifest, os.path.join(PLUGIN, "hooks", "statusline")),

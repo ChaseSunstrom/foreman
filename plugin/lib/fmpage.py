@@ -96,6 +96,40 @@ def embed(data):
     return json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
 
 
+def save_picks(p, args, catalogue):
+    """T-0962: the Build/Veto picks read back from the Artifact ({cluster id: add|veto}) into state picks.json, every
+    id checked against the catalogue the page showed."""
+    import sys
+    import fmcli
+    if not args.catalogue:
+        raise fmcli.UsageError("--picks needs --catalogue NAME: the cluster ids it checks against")
+    try:
+        if args.picks == "-":
+            picks = json.load(sys.stdin)
+        else:
+            with open(args.picks, encoding="utf-8") as f:
+                picks = json.load(f)
+    except (OSError, ValueError) as e:
+        raise fmcli.UsageError(f"--picks: can't read {args.picks}: {e}")
+    if not isinstance(picks, dict):
+        raise fmcli.UsageError('--picks must be a JSON object {"cluster-id": "add" | "veto"}')
+    known = {str(r["id"]) for r in catalogue}
+    unknown = sorted(k for k in picks if k not in known)
+    if unknown:
+        raise fmcli.UsageError(f"--picks: unknown cluster id(s) {', '.join(map(repr, unknown))}; "
+                               f"{args.catalogue} has {', '.join(sorted(known)) or 'none'}")
+    bad = sorted(k for k, v in picks.items() if v not in ("add", "veto"))
+    if bad:
+        raise fmcli.UsageError(f"--picks: each choice must be add or veto, not {picks[bad[0]]!r} ({bad[0]})")
+    name = os.path.basename(args.catalogue).removesuffix(".json")
+    path = os.path.join(p.dir, "picks.json")
+    c.write_atomic(path, json.dumps({"catalogue": name, "at": c.now(), "picks": picks}, indent=1) + "\n")
+    by = {ch: sorted(k for k, v in picks.items() if v == ch) for ch in ("add", "veto")}
+    return fmcli.out(args, {"path": path, "catalogue": name, **by},
+                     f"Picks for {name}: {len(by['add'])} add ({', '.join(by['add']) or '-'}), "
+                     f"{len(by['veto'])} veto ({', '.join(by['veto']) or '-'}); saved to {path}")
+
+
 def cmd_page(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -105,6 +139,8 @@ def cmd_page(args):
             raise fmcli.UsageError("--url must be the https://claude.ai/... link the Artifact tool returned")
         meta = c.update_meta(p, page_url=args.url)
     catalogue = load_catalogue(p, args.catalogue) if args.catalogue else []
+    if getattr(args, "picks", None):
+        return save_picks(p, args, catalogue)
     data = {"eyebrow": f"Foreman · {time.strftime('%Y-%m-%d')} · {p.slug}" + (f" · {os.path.basename(args.catalogue).removesuffix('.json')}" if args.catalogue else ""),
             "title": f"{os.path.basename(p.root.rstrip('/')).replace('-', ' ').title()} Board",  # a name, stable
             "lede": "What Foreman is working on, what waits, and what just closed.",
