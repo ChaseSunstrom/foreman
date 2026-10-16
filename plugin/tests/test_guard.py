@@ -1409,12 +1409,60 @@ class PluginChanges(GuardCase):
             ("tar -xzf dump.tgz -C {home}", "core"),  # ~/.claude/settings.json, Foreman and its state are under it
             (f"cp notes.txt {fh}", None),
             ("git -C {repo} checkout -b feature", None),
+            # T-1195: checkout of named files writes those files; a branch, -b, `.` or a path that's also a commit
+            # rewrites the whole tree
+            ("git -C {repo} checkout -- src/a.py", None),
+            ("git -C {repo} checkout HEAD -- src/a.py src/b.py", None),
+            ("git -C {repo} checkout -- .claude/settings.json", "core"),
+            ("git -C {repo} checkout HEAD~1 -- src/a.py .claude/settings.json", "core"),
+            (f"git -C {fh} checkout -- ':(top)plugin/lib/fmguard.py'", "core"),  # pathspec magic: whole tree
+            (f"git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            # T-1195 review: git expands globs and takes directories, so those are tree writes, as are an
+            # environment that changes pathspec matching and --pathspec-from-file
+            (f"git -C {fh} checkout -- '*.py'", "core"),
+            (f"git -C {fh} checkout HEAD -- 'plugin/lib/*'", "core"),
+            (f"git -C {fh} checkout -- 'plugin/lib/fmguar?.py'", "core"),
+            (f"git -C {fh} checkout -- 'plugin/lib/fmguard.p[y]'", "core"),
+            ("git -C {repo} checkout -- .claude", "core"),
+            (f"git -C {fh} checkout HEAD -- plugin/lib", "core"),
+            (f"GIT_GLOB_PATHSPECS=1 git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            (f"GIT_ICASE_PATHSPECS=1 git -C {fh} checkout -- plugin/lib/fmguard.py", "core"),
+            (f"git --icase-pathspecs -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"git --glob-pathspecs -C {fh} checkout -- 'plugin/lib/fmguar?.py'", "core"),
+            ("git --literal-pathspecs checkout -- src/a.py", None),
+            ("git --noglob-pathspecs checkout -- src/a.py", None),
+            (f"export GIT_ICASE_PATHSPECS=1; git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"GIT_ICASE_PATHSPECS=1 env git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"env GIT_GLOB_PATHSPECS=1 git -C {fh} checkout -- PLUGIN/LIB/FMGUARD.PY", "core"),
+            (f"git -C {fh} checkout --pathspec-from-file=list.txt", "core"),
+            (f"git -C {fh} checkout --pathspec-from-file=list.txt -- src/a.py", "core"),
+            (f"git -C {fh} checkout -- docs/a.md .", "core"),
+            (f"git -C {fh} checkout -- .", "core"),
+            (f"git -C {fh} checkout feature", "core"),
+            (f"git -C {fh} checkout -B feature", "core"),
+            (f"git -C {fh} checkout .", "core"),
             # round-5 audits: credential files and the project's own Claude Code settings are roots too
             ("cp -r payload/. {home}/.docker/", "credentials"),
             ("tar -xf evil.tar -C {repo}/.claude", "core"),
             ("cp -r evil/. {repo}/.claude/", "core"),
             ("git -ccore.hooksPath=/tmp/e commit -m x", "system"),
         ], self.bash)
+
+    def test_checkout_of_a_word_that_is_a_path_and_a_commit_is_a_tree_write(self):
+        # T-1195: `git checkout main` beside a main/ folder is the branch
+        with tempfile.TemporaryDirectory() as t:
+            repo = git_repo(t, "r")
+            os.makedirs(os.path.join(repo, "main"))
+            self.assertEqual(g._checkout_files(repo, ["README.md"]), ["README.md"])
+            self.assertEqual(g._checkout_files(repo, ["main"]), [])
+            self.assertEqual(g._checkout_files(repo, ["README.md", "main"]), [])
+            # globs, pathspec files and magic are whole-tree; a literal file or folder after -- is itself
+            for rest in (["--", "*.json"], ["HEAD", "--", ".claude/*"], ["--", "a?.py"], ["--", "a[b].py"],
+                         ["--", "a\\b"], ["--pathspec-from-file=x", "--", "a"], ["--pathspec-f=x", "--", "a"],
+                         ["--", "--pathspec-from-file=x"], ["--", ":(glob)a"], ["--"]):
+                with self.subTest(rest=rest):
+                    self.assertEqual(g._checkout_files(repo, rest), [])
+            self.assertEqual(g._checkout_files(repo, ["HEAD", "--", ".claude"]), [".claude"])
 
     def test_a_new_skill_agent_or_command_needs_the_users_yes(self):
         # round-2 intent audit: a new project or user skill/agent/command is always-on context in every session there
