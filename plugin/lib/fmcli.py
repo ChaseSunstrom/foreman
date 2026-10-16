@@ -5737,8 +5737,28 @@ def _options_first(parser, argv):
     return argv[:k + 1] + head[first:] + head[:first] + argv[k + 1 + len(head):]
 
 
+# T-1180: what builders and small models guess, run as what they meant (one quiet note says which); first match wins
+ALIASES = [(("task", "list"), ["queue"]), (("task", "ls"), ["queue"]), (("task", "all"), ["queue"]),
+           (("tasks",), ["queue"]), (("list",), ["queue"]), (("ls",), ["queue"]),
+           (("task", "get"), ["task", "show"]), (("task", "view"), ["task", "show"]),
+           (("task", "info"), ["task", "show"]), (("task", "cat"), ["task", "show"]),
+           (("lane", "ls"), ["lane", "list"]), (("inbox", "list"), ["inbox"]), (("inbox", "ls"), ["inbox"])]
+
+
+def _alias(argv):
+    """argv with a guessed command replaced by the real one, and the real one's words (None when nothing matched)."""
+    lead = 2 if argv[:1] in (["-p"], ["--project"]) else 0  # fm -p PROJECT task list
+    for guess, real in ALIASES:
+        if tuple(argv[lead:lead + len(guess)]) == guess:
+            return argv[:lead] + real + argv[lead + len(guess):], " ".join(real)
+    return argv, None
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    argv, aliased = _alias(list(argv))
+    if aliased:
+        print(f"(ran `fm {aliased}`)", file=sys.stderr)
     global _ARGV
     _ARGV = list(argv)  # T-0273: what _Parser.error reads for a mistyped flag
     parser = build_parser()
