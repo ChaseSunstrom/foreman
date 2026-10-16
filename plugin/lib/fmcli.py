@@ -3068,9 +3068,8 @@ def cmd_check(args):
     import time
     act = c.active_brief(c.load_briefs(p), p.lane)
     tree = c.worktree_id(p.root)
-    skip = red_first_tests(p, act) if any("tests/run.py" in x for x in checks) else {}  # T-1101
-    env = {**os.environ, "FOREMAN_SKIP_TESTS": ",".join(sorted(skip))} if skip else None
-    left_out = _left_out(skip)
+    skip = red_first_tests(p, act, checks)  # T-1101
+    env, left_out = _skip_env(skip), _left_out(skip)
     cached = None if args.fresh else _cached_pass(p, checks, tree, skip)
     if cached:  # the same gates already passed on this exact tree: rerunning them only costs time
         results, notes = [(cmd, 0, f"cached pass ({cached})", 0.0) for cmd in checks], {}
@@ -3088,10 +3087,10 @@ def cmd_check(args):
     before = _last_check_results(p, act.id if act else None)
     results, notes, skipped, reruns = [], {}, {}, []
     for cmd in _gate_order(p, checks):  # T-0047: timed; a failure is rerun once (flaky) and compared with the last run before the task
-        skip = None if args.fresh else _paths_unchanged(p, cmd, check_paths.get(cmd), tree)
-        if skip:  # T-0126: recorded as a pass carrying its real run's time and tree
-            results.append((cmd, 0, skip[0], 0.0))
-            skipped[cmd] = {"since": skip[1], "tree": skip[2]}
+        gate_skip = None if args.fresh else _paths_unchanged(p, cmd, check_paths.get(cmd), tree)
+        if gate_skip:  # T-0126: recorded as a pass carrying its real run's time and tree
+            results.append((cmd, 0, gate_skip[0], 0.0))
+            skipped[cmd] = {"since": gate_skip[1], "tree": gate_skip[2]}
             continue
         guard_stored(p, act, cmd)  # T-0901 review: a stored gate (fm smoke set cmd adds one too)
         t0 = time.monotonic()
@@ -3496,10 +3495,16 @@ def _run_py_names(cmd):
     return (m.group(1), re.findall(r"(?:^|[\s/'\"])(test_\w+)", m.group(2))) if m else None
 
 
-def red_first_tests(p, act):
+def red_first_tests(p, act, gates):
     """T-1101: {module: task id} for the test files that are only another open task's red-first tests: its step-1
-    run of `tests/run.py NAME` failed, no run naming NAME passed since, the file is new (not at HEAD), and this task's
-    scope and evidence don't name it. fm check leaves them out of run.py (FOREMAN_SKIP_TESTS) and says so."""
+    run of a gate's own `tests/run.py NAME` (the same folder, inside the repo) failed, no run naming NAME passed since,
+    the file is new (not at HEAD), and this task's scope and evidence don't name it. fm check leaves them out of
+    run.py (FOREMAN_SKIP_TESTS) and says so."""
+    # ponytail: one skip list for every run.py gate; per-gate lists if two suites ever share module names
+    folder = lambda h: os.path.relpath(os.path.join(p.root, h[0]), p.root)  # noqa: E731
+    folders = {f for g in gates if (h := _run_py_names(g)) and not (f := folder(h)).startswith("..")}
+    if not folders:
+        return {}
     cmd = lambda l: l.split("`", 2)[1] if l.count("`") >= 2 else ""  # noqa: E731
     mine = " ".join((act.meta.get("scope") or []) + [cmd(l) for l in act.evidence()]) if act else ""
     found = {}
@@ -3511,8 +3516,8 @@ def red_first_tests(p, act):
             hit = _run_py_names(cmd(line))
             if hit and "` → ✗ exit" not in line:
                 green.update(hit[1])
-            elif hit and (m := c._EV_RE.match(line)) and m.groups() == ("step", "1"):
-                red.update({n: os.path.relpath(os.path.join(p.root, hit[0], n + ".py"), p.root) for n in hit[1]})
+            elif hit and folder(hit) in folders and (m := c._EV_RE.match(line)) and m.groups() == ("step", "1"):
+                red.update({n: os.path.join(folder(hit), n + ".py") for n in hit[1]})
         for n, path in red.items():
             if n not in green and n not in mine and os.path.isfile(os.path.join(p.root, path)):
                 found.setdefault(n, (b.id, path))
@@ -3523,6 +3528,13 @@ def red_first_tests(p, act):
         return {}
     tracked = set(tracked.splitlines())
     return {n: tid for n, (tid, path) in found.items() if path not in tracked}
+
+
+def _skip_env(skip):
+    """The environment for a gate: FOREMAN_SKIP_TESTS only as fm check sets it, never inherited (a user's export, or
+    an outer fm check's while the suite runs fm check)."""
+    env = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
+    return dict(env, FOREMAN_SKIP_TESTS=",".join(sorted(skip))) if skip else env
 
 
 def _left_out(skip):
@@ -3604,9 +3616,8 @@ def _check_affected(p, args):
     if not tests:
         return out(args, {"tests": [], "changed": sorted(changed)},
                    f"No tests linked to the {len(changed)} changed file(s); run the full gates: fm check") or 0
-    skip = red_first_tests(p, act) if "tests/run.py" in cmd else {}  # T-1101: as the full gates do
-    env = {**os.environ, "FOREMAN_SKIP_TESTS": ",".join(sorted(skip))} if skip else None
-    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=env)
+    skip = red_first_tests(p, act, [cmd])  # T-1101: as the full gates do
+    code, output = c.run_command(p.root, cmd, args.timeout if args.timeout > 0 else None, env=_skip_env(skip))
     out(args, {"tests": tests, "exit": code, "changed": sorted(changed), "skipped_tests": skip},
         f"{'✗' if code else '✓'} affected tests only ({len(tests)}): {cmd} → {c.run_result(code, output)}"
         + (f"\n! {_left_out(skip)}" if skip else "")

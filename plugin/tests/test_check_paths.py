@@ -91,7 +91,7 @@ class CheckSkip(ForemanTestCase):
         self.write("tests/test_green.py", GREEN)
         self.write("tests/test_red.py", RED)  # task B's new test
         git = ["git", "-C", self.repo]
-        subprocess.run(git + ["add", "." if commit_red else "tests/run.py", "tests/test_green.py"], check=True)
+        subprocess.run(git + ["add", "tests" if commit_red else "tests/run.py", "tests/test_green.py"], check=True)
         subprocess.run(git + ["commit", "-qm", "suite"], check=True)
 
     def task(self, title, *extra):
@@ -100,13 +100,13 @@ class CheckSkip(ForemanTestCase):
         self.fm("focus", tid)
         return tid
 
-    def red_elsewhere(self, *a_extra, commit_red=False):
+    def red_elsewhere(self, *a_extra, commit_red=False, b_cmd="python3 tests/run.py test_red"):
         """Task B recorded test_red failing at step 1 and was checkpointed; task A is active: A's fm check."""
         self.fm("init")
         self.suite(commit_red)
         self.fm("check", "add", "python3 tests/run.py")
         b = self.task("B builds red")
-        self.fm("task", "evidence", b, "--step", "1", "--run", "python3 tests/run.py test_red", check=False)
+        self.fm("task", "evidence", b, "--step", "1", "--run", b_cmd, check=False)
         self.fm("checkpoint")
         self.task("A", *a_extra)
         return b, self.fm("check", check=False)
@@ -114,10 +114,11 @@ class CheckSkip(ForemanTestCase):
     def test_run_py_leaves_out_the_named_modules(self):
         self.suite()
         run = os.path.join(self.repo, "tests", "run.py")
-        r = subprocess.run([sys.executable, run], capture_output=True, text=True)
+        clean = {k: v for k, v in os.environ.items() if k != "FOREMAN_SKIP_TESTS"}
+        r = subprocess.run([sys.executable, run], capture_output=True, text=True, env=clean)
         self.assertEqual(r.returncode, 1, r.stderr)
         r = subprocess.run([sys.executable, run], capture_output=True, text=True,
-                           env=dict(os.environ, FOREMAN_SKIP_TESTS="test_red"))
+                           env=dict(clean, FOREMAN_SKIP_TESTS="test_red"))
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("test_red", r.stderr, "it says what it left out")
 
@@ -133,6 +134,30 @@ class CheckSkip(ForemanTestCase):
         _, r = self.red_elsewhere(commit_red=True)
         self.assertEqual(r.returncode, 1, "other tests may live in it: only a new file is one task's alone")
         self.assertNotIn("skipped", r.stdout)
+
+    def test_a_pass_with_tests_left_out_isnt_reused_once_they_count_again(self):
+        b, r = self.red_elsewhere()
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.fm("task", "drop", b, "not needed")
+        r = self.fm("check", check=False)
+        self.assertNotIn("passed on this exact tree already", r.stdout)
+        self.assertEqual(r.returncode, 1, "the red file runs again (and fails) once B is gone")
+
+    def test_a_look_alike_tests_folder_proves_nothing_about_the_gates_own(self):
+        os.makedirs(os.path.join(self.repo, "other", "tests"))
+        shutil.copy(os.path.join(HERE, "run.py"), os.path.join(self.repo, "other", "tests", "run.py"))
+        self.write("other/tests/test_red.py", RED)  # B's new file, under another folder
+        _, r = self.red_elsewhere(commit_red=True, b_cmd="python3 other/tests/run.py test_red")
+        self.assertEqual(r.returncode, 1, "tests/test_red.py is the gate's own, committed file")
+        self.assertNotIn("skipped", r.stdout)
+
+    def test_an_inherited_skip_list_skips_nothing(self):
+        self.fm("init")
+        self.suite()
+        self.fm("check", "add", "python3 tests/run.py")
+        self.task("A")
+        r = self.fm("check", check=False, env={"FOREMAN_SKIP_TESTS": "test_red"})
+        self.assertEqual(r.returncode, 1, "only fm check's own red-first list leaves a file out")
 
 
 if __name__ == "__main__":
