@@ -113,6 +113,15 @@ class Deps(ForemanTestCase):
         self.assertIn('fm research ask "', out)
         self.assertIn("requests", out)
 
+    def test_capture_queues_each_migration_once(self):
+        # T-1166: each dependency a major behind becomes one inbox brief, never twice for the same target major
+        res = json.loads(self.fm("deps", "--capture", "--json", env=self.env).stdout)
+        self.assertEqual(sorted(x["name"] for x in res["captured"]), ["django", "left-pad", "requests"])
+        state = self.fm("state", env=self.env).stdout
+        self.assertIn("Migrate requests from 2.x to 3.1.0", state)
+        again = json.loads(self.fm("deps", "--capture", "--json", env=self.env).stdout)
+        self.assertEqual(again["captured"], [])
+
     def test_research_asks_the_migration(self):
         bindir = os.path.join(self.tmp, "bin")
         os.makedirs(bindir)
