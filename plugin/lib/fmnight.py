@@ -52,8 +52,8 @@ def jobs(p):
     meta, out = c.read_meta(p), [("scout", ["scout", "--slow"], 0.0)]  # T-0950: free to look: work nobody asked for
     out.append(("dream", ["dream"], 0.0))  # T-0665: free: the day's failures as tripwire candidates
     out.append(("cold files", ["map", "--cold", "--capture"], 0.0))  # T-0660: free: hot files nobody has read
-    out.append(("compost", ["tidy", "--apply"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
-    out.append(("consolidate", ["recall", "--lessons", "--consolidate"], 0.0))  # T-1071: free: a merge proposal, retires nothing
+    out.append(("compost", ["tidy", "--apply", "--lanes-only"], 0.0))  # T-1071: free: worktrees and branches of closed tasks
+    out.append(("consolidate", ["recall", "--lessons", "--consolidate", "--capture", "--from-night"], 0.0))  # T-1071: free: a merge proposal, retires nothing
     if any(e.get("event") == "task_done" for e in c.ledger_tail(p, 5000)):  # T-0888: free: closed tasks' checks on HEAD
         out.append(("sentinel", ["sentinel", "--bisect"], 0.0))
     smoke = meta.get("smoke") or {}

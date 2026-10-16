@@ -268,3 +268,20 @@ class Consolidate(ForemanTestCase):
         self.assertEqual([sorted(g["ids"]) for g in out["groups"]], [[f"{a}.1", f"{b}.1"]])
         self.assertNotIn(f"{z}.1", json.dumps(out))
         self.assertNotIn("retired", self.fm("recall", "--lessons").stdout)
+
+    def test_a_negated_pair_is_not_grouped(self):
+        self.fm("init")
+        self.done("One", "Commit the generated lockfile after every dependency change in this repo")
+        self.done("Two", "Never commit the generated lockfile after every dependency change in this repo")
+        self.assertEqual(json.loads(self.fm("recall", "--lessons", "--consolidate", "--json").stdout)["groups"], [])
+
+    def test_capture_files_one_task_once_and_names_the_keeper(self):
+        self.fm("init")
+        a = self.done("One", "Quote every shell path before passing it to subprocess calls")
+        self.done("Two", "Quote every shell path before passing it to subprocess calls always")
+        self.assertIn("keep T-", self.fm("recall", "--lessons", "--consolidate").stdout)
+        for _ in range(2):
+            self.fm("recall", "--lessons", "--consolidate", "--capture")
+        made = [b for b in c.load_briefs(c.find_project(self.repo)) if b.title == "Consolidate near-duplicate lessons"]
+        self.assertEqual(len(made), 1)
+        self.assertEqual(made[0].meta.get("source"), "followup")
