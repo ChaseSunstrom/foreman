@@ -240,8 +240,8 @@ class Reopen(Base):
         self.fm("task", "new", "Waits on a person", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
         self.fm("task", "block", "T-0004", "needs the owner's phone")
         self.fm("task", "drop", "T-0001", "done elsewhere")
-        later = time.time() + 5
-        os.utime(os.path.join(self.repo, "lib", "shim.py"), (later, later))
+        time.sleep(1.1)
+        self.commit("shim fixed upstream", "lib/shim.py", "X = 2\n")  # T-1106: a real change, not a new mtime
         self.assertRegex(self.fm("next").stdout, r"2 blocked task\(s\) waited on changed.*fm tidy --apply")
         self.fm("tidy", "--apply")
         self.assertEqual(c.find_brief(self.p, "T-0002").status, "planned")
