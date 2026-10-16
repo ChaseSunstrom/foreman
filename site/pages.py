@@ -112,7 +112,8 @@ def _duel(s, name):
         if x.get("score") is not None:
             return f"{mark} judge {x['score']} of 5"
         return f"{mark} {x['passed']} of {x['runs']} runs" if x.get("runs", 1) > 1 else f"{mark} hidden tests"
-    rows = "".join(f"<tr><td>{c['case']}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>" for c in cs)
+    rows = "".join(f"<tr><td>{esc(c['case'])}</td><td>{cell(c['foreman'])}</td><td>{cell(c['bare'])}</td></tr>"
+                   for c in cs)
     table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
              f'</thead><tbody>{rows}</tbody></table></div>')
     return (head + f"<p><strong>{verdict}</strong></p>" + table

@@ -214,6 +214,49 @@ class Site(unittest.TestCase):
             self.assertGreaterEqual(left, 0, label)
             self.assertLessEqual(x + (0 if anchor == "end" else len(label) * 6.5), 640, label)
 
+    def _site(self, name):
+        import importlib.util
+        import sys
+        sys.path.insert(0, os.path.join(self.ROOT, "site"))
+        try:
+            spec = importlib.util.spec_from_file_location(name, os.path.join(self.ROOT, "site", name + ".py"))
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+        finally:
+            sys.path.pop(0)
+
+    def test_a_task_name_in_the_duel_table_is_escaped(self):
+        # site review: the case name (from an agent-written title) was the one unescaped value
+        pages = self._site("pages")
+        side = {"pass": True, "cost": 0.1, "seconds": 10, "runs": 1, "passed": 1, "turns": 3, "score": None}
+        html = pages._duel({"duels": [{"name": "q", "cases": [{"case": "<b>x</b> & y", "foreman": side,
+                                                               "bare": side}]}]}, "q")
+        self.assertNotIn("<b>x</b>", html)
+        self.assertIn("&lt;b&gt;x&lt;/b&gt; &amp; y", html)
+
+    def test_the_build_refuses_to_wipe_the_repo_its_source_or_home(self):
+        # site review: build.py OUT ran shutil.rmtree on whatever it was given (python3 site/build.py . wiped the repo)
+        build = self._site("build")
+        for bad in (self.ROOT, os.path.join(self.ROOT, "site"), os.path.expanduser("~"), "/", os.path.dirname(self.ROOT)):
+            self.assertFalse(build.safe_out(bad), bad)
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertTrue(build.safe_out(os.path.join(tmp, "_site")))
+        self.assertTrue(build.safe_out(os.path.join(self.ROOT, "_site")))
+
+    def test_a_new_duel_keeps_the_saved_ones(self):
+        # site review: stats.py --duel long=DIR alone replaced quality, hard and hard-haiku with nothing
+        stats = self._site("stats")
+        merged = stats.merge_duels([{"name": "quality", "cases": [1]}, {"name": "long", "cases": [1]}],
+                                   [{"name": "long", "cases": [2]}, {"name": "marathon", "cases": [3]}])
+        self.assertEqual([(d["name"], d["cases"]) for d in merged],
+                         [("quality", [1]), ("long", [2]), ("marathon", [3])])
+
+    def test_a_line_chart_with_no_rows_says_so(self):
+        build = self._site("build")
+        self.assertIn("No data", build.line("Releases", "note", [], "n", "day"))
+
     def test_the_benchmarks_page_opens_with_why_use_foreman(self):
         # T-1241: a reader saw equal pass rates and asked why anyone would use Foreman; the page answers first
         import sys

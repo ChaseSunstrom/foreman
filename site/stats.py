@@ -2,7 +2,8 @@
 """Aggregates of Foreman's own history for the site's charts (T-1220): python3 site/stats.py [--state DIR] [--no-bench]
 
 Reads this repo's Foreman state (the ledger, the task briefs) and git, and writes site/data/stats.json. Only counts,
-categories and timings are written: never a task title, a path, a command or a session id. CI has no Foreman state, so
+categories and timings are written, plus the benchmark repos' short task names and the titles of work a marathon found
+there (toy repos, published on purpose): never this repo's task titles, a path, a command or a session id. CI has no Foreman state, so
 this runs here and its output is committed; site/build.py only reads it."""
 import argparse
 import collections
@@ -137,6 +138,12 @@ def bench():
     return {k: {"p50": v["p50"], "p95": v["p95"], "budget": v["budget"]} for k, v in data.items() if "p95" in v}
 
 
+def merge_duels(old, new):
+    """Site review: the duels named now replace the saved ones of the same name; the others stay, in order."""
+    fresh = {d["name"]: d for d in new}
+    return [fresh.pop(d["name"], d) for d in old] + list(fresh.values())
+
+
 def duel(state, model=None, kind=""):
     """The newest fm bench duel --vs none (with that model, if given): each case's pass, cost, turns and time for both
     arms (T-1222). `kind` (T-1242): "long", the newest run with forced compaction; "marathon", the newest whose
@@ -192,10 +199,9 @@ def main():
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
              "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
-             "duels": [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
+             "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
-                                                     for x in (a.duel or [f"quality={state}"])) if d]
-             or old.get("duels") or []}
+                                                     for x in (a.duel or [f"quality={state}"])) if d])}
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     with open(OUT, "w", encoding="utf-8") as f:
         json.dump(stats, f, indent=1)
