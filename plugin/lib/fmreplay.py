@@ -246,21 +246,30 @@ def score(args, fmcli):
 
 
 def cases_path():
-    return os.environ.get("FOREMAN_GUARD_CASES") or os.path.join(c.PLUGIN_ROOT, "tests", "fixtures", "guard_cases.jsonl")
+    return os.environ.get("FOREMAN_GUARD_CASES") or os.path.join(_plugin_here(), "tests", "fixtures", "guard_cases.jsonl")
+
+
+def _plugin_here():
+    """T-1175: the plugin/ of the checkout cwd is in (a builder's worktree), else PLUGIN_ROOT's."""
+    return _checkout_plugin(os.getcwd()) or c.PLUGIN_ROOT
 
 
 def repo_root():
     return os.path.dirname(c.PLUGIN_ROOT)
 
 
+def _corpus_root():
+    return os.path.dirname(_plugin_here())  # the checkout whose corpus cases_path() is
+
+
 def resolve_cwd(cwd):
     """A stored cwd back to a folder: relative ones are in Foreman's repo, '' is the home folder (the guard's default)."""
-    return os.path.join(repo_root(), cwd) if cwd and not os.path.isabs(cwd) else cwd or os.path.expanduser("~")
+    return os.path.join(_corpus_root(), cwd) if cwd and not os.path.isabs(cwd) else cwd or os.path.expanduser("~")
 
 
 def _store_cwd(cwd):
     """cwd as stored: relative to the repo root when inside it, so the committed corpus isn't machine-specific."""
-    cwd, root = os.path.realpath(cwd), os.path.realpath(repo_root())
+    cwd, root = os.path.realpath(cwd), os.path.realpath(_corpus_root())
     if cwd == os.path.realpath(os.path.expanduser("~")):
         return ""  # the guard's default folder
     return os.path.relpath(cwd, root) if cwd == root or cwd.startswith(root + os.sep) else cwd
