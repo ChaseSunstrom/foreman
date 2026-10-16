@@ -3,9 +3,10 @@ what a guard change now blocks (a likely false positive) or now lets through (a 
 last accepted. The baseline holds hashes and verdicts, never a command."""
 import json
 import os
+import subprocess
 import unittest
 
-from helpers import ForemanTestCase
+from helpers import FM, ForemanTestCase
 
 import fmguard as g
 
@@ -81,6 +82,33 @@ class Replay(ForemanTestCase):
         # negating blue's guard changes what check(1) returns, which the red test notices: both weakened mutants die
         res = fmmutate.run(weaken=True, **kw)
         self.assertEqual((res["killed"], res["survived"]), (2, []), res)
+
+    def test_mutation_uses_the_checkout_it_runs_in(self):
+        # T-1121: run from a builder's worktree, it mutated the main checkout's guard (the fm on PATH), not the lane's
+        lane = os.path.join(self.tmp, "lane")
+        os.makedirs(os.path.join(lane, "plugin", "lib"))
+        with open(os.path.join(lane, "plugin", "lib", "fmguard.py"), "w") as f:
+            f.write("def check(x):\n    out = []\n    out.append(('core', 'one'))\n    return out\n")
+        r = subprocess.run([FM, "bench", "guard", "--mutate", "--tests", "true", "--json"], cwd=lane, capture_output=True,
+                           text=True, env=dict(os.environ, FOREMAN_HOME=self.home))
+        self.assertEqual(json.loads(r.stdout)["total"], 1, r.stdout + r.stderr)
+
+    def test_flip_mode_flips_operators_inside_check_functions(self):
+        # T-1121: the old mutate_guard.py's operator flips, folded into fm bench guard --mutate --flip
+        import sys
+        import fmmutate
+        d = os.path.join(self.tmp, "flipfix")
+        os.makedirs(d)
+        with open(os.path.join(d, "rules.py"), "w") as f:
+            f.write("def check(x):\n    return x == 1\n\n\ndef check_big(y):\n    return y > 5\n\n\n"
+                    "def helper(z):\n    return z == 0\n")
+        with open(os.path.join(d, "t.py"), "w") as f:  # tests check only; helper isn't a check function
+            f.write("import rules\nassert rules.check(1) and not rules.check(2)\n")
+        res = fmmutate.run(os.path.join(d, "rules.py"), "flipfix/rules.py", d, "flipfix", [sys.executable, "flipfix/t.py"],
+                           [], flip=True)
+        self.assertEqual(res["tried"], 2, res)  # check's == and check_big's >, never helper's
+        self.assertEqual([(m["line"], m["category"]) for m in res["survived"]], [(6, "flip")], res)
+        self.assertIn("> → <=", res["survived"][0]["stmt"])
 
     def test_mutation_sees_every_rule_shape_and_reports_the_unmutated(self):
         import fmmutate
