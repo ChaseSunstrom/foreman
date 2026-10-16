@@ -28,6 +28,7 @@ import sys
 import threading
 import time
 
+import fmcore
 import fmmodels as m
 
 PLUGIN = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -37,8 +38,8 @@ TYPES = ("FIX", "FEATURE", "CLEAN", "PERFORMANCE", "SECURITY", "RESEARCH")
 REPAIRS, ROUNDS = 2, 3
 CAP = 3000            # characters of a run's head, and of its tail, the model sees
 READ_LINES, READ_MAX, LINE_MAX, READ_BYTES = 200, 400, 500, 16 << 20
-SECRET_ENVS = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
 RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
+MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
 
 TOOLS = [
     {"name": "read", "description": "Read a file's numbered lines, or list a folder, inside the project.",
@@ -131,7 +132,7 @@ def slot(run, profile, messages, check, what):
     """Ask for one JSON slot; on a bad answer quote the error back, at most REPAIRS times."""
     err = None
     for _ in range(REPAIRS + 1):
-        r = m.complete(profile, messages)
+        r = m.complete(profile, messages, max_tokens=MAX_TOKENS)
         run.usage(r)
         v = m.extract_json(r["text"])
         if v is None and r["tool_calls"]:
@@ -154,7 +155,9 @@ class Run:
         self.tid = self.plan = self.request = self.journal = None
         self.done, self.msgs, self.turns, self.tokens = set(), {}, 0, [0, 0]
         self.baseline = self.model_name = self.close_notes = self.plan_msgs = None
-        self.sensitive, self.escalate = False, None
+        self.sensitive, self.escalate, self.cap = False, getattr(args, "escalate", None), CAP
+        self.no_commit, self.max_steps = bool(getattr(args, "no_commit", False)), getattr(args, "max_steps", None)
+        self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
 
     # -- output and journal
     def emit(self, event, text, **data):
@@ -166,20 +169,32 @@ class Run:
     def log(self, **rec):
         if self.journal:
             with open(self.journal, "a", encoding="utf-8") as f:
-                f.write(json.dumps(dict(rec, ts=time.time())) + "\n")
+                f.write(json.dumps(fmcore.redact_obj(dict(rec, ts=time.time()))) + "\n")
+
+    def redact(self, text):
+        """text without the values of the model key variables, then fmcore.redact's patterns."""
+        for k in self.secret_envs:
+            v = (os.environ.get(k) or "").strip()
+            if len(v) >= 6:
+                text = text.replace(v, "[REDACTED]")
+        return fmcore.redact(text)
+
+    def env(self):
+        """The environment for everything fm code starts: without the model API keys, so a command the model chose
+        can't print one into its own transcript or the journal."""
+        return {k: v for k, v in os.environ.items() if k not in self.secret_envs}
 
     def offsite_ok(self, p, profile):
         """A sensitive repo's content never goes to a model off this machine (fm sensitive on, T-0784)."""
         import urllib.parse
-        import fmcore
         self.sensitive = self.sensitive if p is None else bool(fmcore.read_meta(p).get("sensitive"))
         try:
             host = urllib.parse.urlsplit(profile.get("base_url") or "").hostname or ""
         except ValueError:
             host = ""
         if profile.get("key_env"):
-            SECRET_ENVS.add(profile["key_env"])
-        if self.sensitive and not m._loopback(host):
+            self.secret_envs.add(profile["key_env"])
+        if self.sensitive and not m.is_loopback(host):
             raise CodeError(f"this repo is marked sensitive (fm sensitive on), so its code can't go to {profile['name']} "
                             "off this machine: use a local model (fm code models), or fm sensitive off")
 
@@ -191,18 +206,18 @@ class Run:
     def fm(self, *a, stdin=None, timeout=FM_TIMEOUT):
         try:
             p = subprocess.run([sys.executable, FM, *a], cwd=self.root, input=stdin, capture_output=True, text=True,
-                               timeout=timeout, env=_child_env())
+                               timeout=timeout, env=self.env())
         except subprocess.TimeoutExpired:
             return 124, f"fm {a[0]} {a[1] if len(a) > 1 else ''} took over {timeout} s"
         return p.returncode, (p.stdout + p.stderr).strip()
 
     def hook(self, event, tool, tool_input, response=None):
-        pl = {"session_id": f"fm-code-{self.tid}", "cwd": self.root, "hook_event_name": event, "tool_name": tool,
+        pl = {"session_id": f"fm-code-{self.tid or 'plan'}", "cwd": self.root, "hook_event_name": event, "tool_name": tool,
               "tool_input": tool_input}
         if response is not None:
             pl["tool_response"] = response
         return subprocess.run([sys.executable, HOOK, event], input=json.dumps(pl), capture_output=True, text=True,
-                              timeout=120, cwd=self.root, env=_child_env())
+                              timeout=120, cwd=self.root, env=self.env())
 
     def guard(self, tool, tool_input):
         """None when Foreman's guard lets this tool call run, else why not. Fails closed."""
@@ -230,6 +245,15 @@ class Run:
         if full != self.root and not full.startswith(self.root + os.sep):
             raise ValueError(f"{rel} is outside the project")
         return full
+
+    def hidden(self, full):
+        """Why the model may not see this file (a credential, Git's own files), or None."""
+        import fmguard
+        if os.path.relpath(full, self.root).split(os.sep)[0] == ".git":
+            return "Git's own files are not read"
+        ctx = fmguard.Ctx(cwd=self.root, project_root=self.root, home=os.path.expanduser("~"),
+                          foreman_home=fmcore.foreman_home())
+        return "it looks like a credential, which never goes to the model" if fmguard._is_credential(full, ctx) else None
 
     def act(self, name, a):
         """(result text, step finished)."""
@@ -260,9 +284,14 @@ class Run:
 
     def read(self, rel, start, lines):
         full = self.path(rel)
+        why = self.hidden(full)
+        if why:
+            return f"refused: {rel}: {why}"
         if os.path.isdir(full):
             names = sorted(n + "/" * os.path.isdir(os.path.join(full, n)) for n in os.listdir(full) if n != ".git")
             return "\n".join(names[:300]) + (f"\n… {len(names) - 300} more" if len(names) > 300 else "")
+        if not os.path.isfile(full):
+            return f"refused: {rel} is not a regular file (a pipe or a device would never end)"
         if os.path.getsize(full) > READ_BYTES:
             raise ValueError(f"{rel} is over {READ_BYTES >> 20} MB: search it instead")
         start, lines = max(start, 1), min(max(lines, 1), READ_MAX)
@@ -277,16 +306,28 @@ class Run:
         return "\n".join(out) or "(empty, or no lines there)"
 
     def search(self, pattern, glob):
-        cmd = ["git", "grep", "-n", "-I", "--untracked", "-E", "-e", pattern, "--"] + ([glob] if glob else [])
-        try:
-            p = subprocess.run(cmd, cwd=self.root, capture_output=True, text=True, timeout=30, errors="replace")
+        try:  # untracked pipes and devices are left out: git grep would wait on them forever
+            files = subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard"], cwd=self.root,
+                                   capture_output=True, text=True, timeout=30, errors="replace").stdout.split("\0")
+            odd = [f":(exclude,literal){f}" for f in files if f and not os.path.isfile(os.path.join(self.root, f))]
+            p = subprocess.run(["git", "grep", "-n", "-z", "-I", "--untracked", "-E", "-e", pattern, "--",
+                                glob or "."] + odd[:500], cwd=self.root, capture_output=True, text=True, timeout=30,
+                               errors="replace")
         except subprocess.TimeoutExpired:
             return "error: the search took over 30 s; narrow it"
         if p.returncode == 1:
             return "no match"
         if p.returncode:
             return f"error: {p.stderr.strip()[:300]}"
-        hits = [h[:LINE_MAX] for h in p.stdout.splitlines()]
+        hits, seen = [], {}
+        for h in p.stdout.splitlines():
+            path, _, rest = h.partition("\0")
+            if path not in seen:
+                seen[path] = self.hidden(os.path.realpath(os.path.join(self.root, path)))
+            if not seen[path]:
+                hits.append(f"{path}:{rest.replace(chr(0), ':', 1)}"[:LINE_MAX])
+        if not hits:
+            return "no match" + (" (matches in credential files are never shown)" if seen else "")
         return "\n".join(hits[:80]) + (f"\n… {len(hits) - 80} more matches" if len(hits) > 80 else "")
 
     def edit(self, rel, old, new):
@@ -317,7 +358,7 @@ class Run:
         why = self.guard("Bash", {"command": cmd})
         if why:
             return f"refused by Foreman's guard: {why}"
-        code, out = run_bounded(cmd, self.root, RUN_TIMEOUT)
+        code, out = run_bounded(cmd, self.root, RUN_TIMEOUT, self.env(), self.cap)
         self.after("Bash", {"command": cmd}, {"stdout": out, "stderr": "", "interrupted": code is None})
         return (f"timed out after {RUN_TIMEOUT} s" if code is None else f"exit {code}") + (f"\n{out}" if out else "")
 
@@ -330,25 +371,28 @@ class Run:
             self.add(name, {"role": "system", "content": ACT_PROMPT + ("" if profile.get("tools") else TEXT_ACTIONS)})
             self.add(name, {"role": "user", "content": prompt})
         msgs = self.msgs[name]
-        last = msgs[-1]
-        if last.get("role") == "assistant":  # killed between the model's answer and its result
-            lost = ("interrupted: the harness stopped before this action's result was recorded; check whether it "
-                    "happened before doing it again")
-            answered = {x.get("tool_call_id") for x in msgs if x.get("role") == "tool"}
-            for tc in last.get("tool_calls") or []:
-                if tc.get("id") not in answered:
-                    self.add(name, {"role": "tool", "tool_call_id": tc.get("id"), "content": lost})
-            if not last.get("tool_calls"):
-                self.add(name, {"role": "user", "content": lost})
+        lost = ("not run (interrupted): the harness stopped before this action's result was recorded; it may have "
+                "partly happened, so check before doing it again")
+        answered = {x.get("tool_call_id") for x in msgs if x.get("role") == "tool"}
+        for tc in [tc for x in msgs if x.get("role") == "assistant" for tc in x.get("tool_calls") or []]:
+            if tc.get("id") not in answered:  # killed between the model's answer and its results
+                self.add(name, {"role": "tool", "tool_call_id": tc.get("id"), "content": lost})
+        if msgs[-1].get("role") == "assistant":
+            self.add(name, {"role": "user", "content": lost})
         tools = TOOLS if profile.get("tools") else None
         while True:
-            if self.turns >= self.args.max_steps:
-                raise Blocked(f"fm code: the model used all {self.args.max_steps} turns (--max-steps) before {name} "
-                              "was done")
+            if self.turns >= self.max_steps:
+                raise CodeError(f"stopped: the model used all {self.max_steps} turns (--max-steps) before {name} was "
+                                f"done; fm code --resume {self.tid} --max-steps N carries on")
             self.turns += 1
-            r = m.complete(profile, msgs, tools=tools)
+            r = m.complete(profile, trim(msgs), tools=tools, max_tokens=MAX_TOKENS)
             self.usage(r)
             calls = r["tool_calls"]
+            if r["stop"] == "length":  # a cut-off call may be missing its end: nothing in it runs
+                self.add(name, {"role": "assistant", "content": r["text"]})
+                self.add(name, {"role": "user", "content": "Your reply was cut off at the output limit, so nothing in "
+                                                           "it was run. Use edit for a change, or a smaller action."})
+                continue
             if calls:
                 self.add(name, {"role": "assistant", "content": r["text"], "tool_calls": calls})
                 finished = False
@@ -376,6 +420,7 @@ class Run:
 
     def do(self, name, a):
         result, fin = self.act(name, a)
+        result = self.redact(result)
         target = next((str(a.get(k)) for k in ("file", "path", "cmd", "pattern", "summary") if isinstance(a, dict)
                        and a.get(k) is not None), "")
         state = "refused" if result.startswith("refused") else "error" if result.startswith("error") else "ok"
@@ -390,13 +435,13 @@ class Run:
         for n, cr in enumerate(self.plan["criteria"], 1):
             why = self.guard("Bash", {"command": cr["verify"]})
             if why:
-                raise Blocked(f"fm code: Foreman's guard refuses criterion {n}'s verify command: {_one_line(why, 200)}")
+                raise Blocked(f"fm code: Foreman's guard refused criterion {n}'s verify command: {_one_line(why, 200)}")
             code, out = self.fm("task", "evidence", self.tid, "--ac", str(n), f"--run={cr['verify']}",
                                 timeout=VERIFY_TIMEOUT + 60)
             self.emit("verify", f"{label} {n}: {cr['verify']} → {'pass' if code == 0 else f'exit {code}'}",
                       criterion=n, exit=code)
             if code:
-                failed.append((n, cr["verify"], _cut(out)))
+                failed.append((n, cr["verify"], _cut(self.redact(out), self.cap)))
         self.log(kind="verify", label=label, failed=[n for n, *_ in failed])
         return failed
 
@@ -410,41 +455,51 @@ def _one_line(s, n):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
-def _cut(s):
-    return s if len(s) <= 2 * CAP else f"{s[:CAP]}\n… ({len(s) - 2 * CAP} characters cut) …\n{s[-CAP:]}"
+def _cut(s, cap=CAP):
+    return s if len(s) <= 2 * cap else f"{s[:cap]}\n… ({len(s) - 2 * cap} characters cut) …\n{s[-cap:]}"
 
 
-def _child_env():
-    """The environment for everything fm code starts: without the model API keys, so a command the model chose can't
-    print one into its own transcript or the journal."""
-    return {k: v for k, v in os.environ.items() if k not in SECRET_ENVS}
+def _is_result(msg):
+    return msg.get("role") == "tool" or msg.get("role") == "user" and str(msg.get("content")).startswith("Result of ")
 
 
-def run_bounded(cmd, cwd, timeout):
+def trim(msgs, keep=KEEP_RESULTS):
+    """What the model is sent: the conversation with every tool result but the last `keep` cut to a one-line stub.
+    The stored conversation (and the journal) keep them whole."""
+    old = [i for i, x in enumerate(msgs) if _is_result(x)][:-keep]
+    out = list(msgs)
+    for i in old:
+        first = str(msgs[i].get("content") or "").split("\n", 1)[0]
+        out[i] = dict(msgs[i], content=f"(older result cut: {_one_line(first, 80)})")
+    return out
+
+
+def run_bounded(cmd, cwd, timeout, env=None, cap=CAP):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, so nothing it started in the background outlives it."""
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-                         stderr=subprocess.STDOUT, start_new_session=True, env=_child_env())
+                         stderr=subprocess.STDOUT, start_new_session=True, env=env)
     head, tail, total = bytearray(), bytearray(), [0]
 
     def pump():
         for chunk in iter(lambda: p.stdout.read1(65536), b""):
             total[0] += len(chunk)
-            take = chunk[:max(CAP - len(head), 0)]
+            take = chunk[:max(cap - len(head), 0)]
             head.extend(take)
             tail.extend(chunk[len(take):])
-            del tail[:-CAP]
+            del tail[:-cap]
     t = threading.Thread(target=pump, daemon=True)
     t.start()
     try:
         code = p.wait(timeout)
     except subprocess.TimeoutExpired:
         code = None
-    try:
-        os.killpg(p.pid, signal.SIGKILL)
-    except (ProcessLookupError, PermissionError):
-        pass
-    p.wait()
+    finally:
+        try:
+            os.killpg(p.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        p.wait()
     t.join(5)
     gap = total[0] - len(head) - len(tail)
     out = head.decode("utf-8", "replace") + (f"\n… ({gap} bytes cut) …\n" if gap > 0 else "") + \
@@ -492,11 +547,13 @@ def cmd_code(args):
         profile = m.resolve(args.model or run.model_name)
         run.model_name = profile["name"]
         run.offsite_ok(p, profile)
-        run.escalate = m.resolve(args.escalate) if args.escalate else None  # a bad name fails now, not 3 rounds in
+        run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
+        run.max_steps = run.max_steps or 40
+        run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
             run.offsite_ok(None, run.escalate)
         if args.resume is None:
-            _plan(run, profile)
+            _plan(run, profile, args.dry_plan)
             if args.dry_plan:
                 return run.emit("plan", json.dumps(run.plan, indent=2), plan=run.plan)
             _make_task(run, profile)
@@ -520,13 +577,37 @@ def cmd_code(args):
         raise SystemExit(1)
 
 
-def _plan(run, profile):
+def _plan(run, profile, dry=False):
     msgs = [{"role": "system", "content": PLAN_PROMPT + _files(run.root)}, {"role": "user", "content": run.request}]
     run.plan = slot(run, profile, msgs, check_plan, "plan")
+    why = None if dry else _plan_problem(run)  # --dry-plan runs nothing
+    if why:  # one re-plan
+        msgs.append({"role": "user", "content": f"{why} Reply with only the corrected plan as a JSON object."})
+        run.plan = slot(run, profile, msgs, check_plan, "plan")
+        why = _plan_problem(run)
+        if why and why.startswith("refused"):
+            raise CodeError(why)
     run.plan_msgs = msgs
     pl = run.plan
     run.emit("plan", f"plan: {pl['type']} {pl['tier']} {pl['title']} (criteria: {len(pl['criteria'])}, "
                      f"steps: {len(pl['steps'])})", plan=pl)
+
+
+def _plan_problem(run):
+    """Why the plan's verify commands can't stand, or None: one the guard refuses; for FIX and FEATURE, one that
+    passes before any work (it proves nothing)."""
+    for n, cr in enumerate(run.plan["criteria"], 1):
+        why = run.guard("Bash", {"command": cr["verify"]})
+        if why:
+            return f"refused by Foreman's guard: criterion {n}'s verify `{cr['verify']}`: {_one_line(why, 300)}"
+    if run.plan["type"] not in ("FIX", "FEATURE"):
+        return None
+    for n, cr in enumerate(run.plan["criteria"], 1):
+        code, _ = run_bounded(cr["verify"], run.root, VERIFY_TIMEOUT, run.env(), 200)
+        if code == 0:
+            return (f"Criterion {n}'s verify `{cr['verify']}` already passes before any work, so it proves nothing: "
+                    "give a verify that fails now and passes once the work is done.")
+    return None
 
 
 def _make_task(run, profile):
@@ -544,8 +625,9 @@ def _make_task(run, profile):
     run.tid = made["id"]
     os.makedirs(run.jdir, exist_ok=True)
     run.journal = os.path.join(run.jdir, f"{run.tid}.jsonl")
-    run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile["name"],
-            messages=run.plan_msgs)
+    run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile["name"], messages=run.plan_msgs,
+            options={"no_commit": run.no_commit, "escalate": run.escalate and run.escalate["name"],
+                     "max_steps": run.max_steps})
     run.emit("task", f"task {run.tid} created and focused", task=run.tid)
 
 
@@ -594,7 +676,7 @@ def _finish(run, profile):
               f"--docs={notes['docs']}", f"--lesson={notes['lesson']}"]
         if pl["type"] == "FIX":
             a += [f"--why-not-caught={notes['why_not_caught']}"]
-    if not run.args.no_commit:
+    if not run.no_commit:
         a += ["--commit", f"{pl['title']} ({run.tid})"]
     code, out = run.fm(*a)
     if code:
@@ -634,6 +716,10 @@ def _load(run, tid):
     start = recs[0]
     run.journal, run.tid, run.plan, run.request = path, start["task"], start["plan"], start["request"]
     run.model_name, run.close_notes = start.get("model"), None
+    opts = start.get("options") or {}
+    run.no_commit = run.no_commit or bool(opts.get("no_commit"))
+    run.escalate = run.args.escalate or opts.get("escalate")
+    run.max_steps = run.args.max_steps or opts.get("max_steps")
     for r in recs[1:]:
         k = r.get("kind")
         if k == "msg":
@@ -649,7 +735,7 @@ def _load(run, tid):
 
 def _models(args, fmcli):
     try:
-        default, conf = m._config()
+        default, conf = m.configured()
         profs = m.profiles()
     except m.ModelError as e:
         raise fmcli.UsageError(str(e))

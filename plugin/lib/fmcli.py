@@ -5630,7 +5630,8 @@ def build_parser():
     s.add_argument("request", nargs="*", help="what to do (or: models)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
-    s.add_argument("--max-steps", type=int, default=40, help="model turns for the whole run (default 40)")
+    s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
+                                                 "run's own unless given)")
     s.add_argument("--dry-plan", action="store_true", help="print the plan and stop: no task, no change")
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
