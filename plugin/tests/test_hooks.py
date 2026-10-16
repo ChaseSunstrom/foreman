@@ -702,6 +702,13 @@ class NoTaskGate(HookCase):
         self.assertNotEqual(out.get("permissionDecision"), "deny", out)
         self.assertIn("keys are lowercased", out["additionalContext"])
 
+    def test_rules_written_before_the_first_request_go_with_every_request(self):
+        # T-1242 review: "NEVER touch tests/." above "## Request 1" reached no task and no compaction note
+        import fmhooks
+        reqs = fmhooks._requests("Task: NEVER touch tests/.\n\n## Request 1\nAdd half().\n\n## Request 2\nAdd third().")
+        self.assertEqual([r.splitlines()[0] for r in reqs], ["Add half().", "Add third()."], "titles stay the request's")
+        self.assertTrue(all("NEVER touch tests/." in r for r in reqs))
+
     def test_a_marathon_run_is_sent_to_find_more_work_after_the_asked_work(self):
         # T-1242: FOREMAN_MARATHON=N: once the asked work is closed, N passes of finding and doing work nobody asked for
         act = self.first_task_session("True")
@@ -712,6 +719,8 @@ class NoTaskGate(HookCase):
         self.assertIn("pass 1 of 2", reasons[0])
         self.assertIn("fm capture", reasons[0])
         self.assertIn("pass 2 of 2", reasons[1])
+        self.assertNotEqual(reasons[0].split("This pass, ")[1][:40], reasons[1].split("This pass, ")[1][:40],
+                            "each pass looks a different way")
         self.assertNotIn("marathon", reasons[2].lower(), "N passes, then it ends")
 
     def test_a_bench_replay_never_asks_for_a_push_notification(self):

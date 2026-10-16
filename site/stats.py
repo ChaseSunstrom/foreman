@@ -160,18 +160,30 @@ def duel(state, model=None, kind=""):
         return None
     with open(bare_path, encoding="utf-8") as f:
         bare = json.load(f)
+    try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
+        with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
+            known = {x["id"]: x for x in json.load(f)}
+    except (OSError, ValueError, TypeError, KeyError):
+        known = {}
+    titles = {k: x.get("title") or "" for k, x in known.items()}
+
+    def per_request(x):  # T-1242: from the failing hidden tests when the run predates its own per-request count
+        case = known.get(x["id"]) or {}
+        if x.get("requests") or not case.get("requests"):
+            return x.get("requests")
+        sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+        import fmbench
+        return fmbench.per_request(case, x.get("failed") or [])
     pick = lambda x: {"pass": bool(x.get("pass")), "cost": round(x.get("cost_usd") or 0, 3), "score": x.get("score"),
                       "runs": x.get("runs") or 1, "passed": round((x.get("pass_rate") or 0) * (x.get("runs") or 1)),
                       "seconds": x.get("seconds") or 0, "turns": x.get("turns") or 0, "error": bool(x.get("error")),
                       "tests": x.get("tests"), "compactions": x.get("compactions"), "capped": x.get("capped"),
+                      "requests": per_request(x),
+                      "each": [{k: a.get(k) for k in ("tests", "compactions")} for a in x.get("attempts") or []],
                       "found": [t for t in ((x.get("diag") or {}).get("titles") or {}).values()
                                 if t.endswith("(discovered)")]}
     b = {x["id"]: x for x in bare.get("cases", [])}
-    try:  # T-1231: a commit case's id is its sha; its title names the module the task adds
-        with open(os.path.join(state, "bench", "cases.json"), encoding="utf-8") as f:
-            titles = {x["id"]: x.get("title") or "" for x in json.load(f)}
-    except (OSError, ValueError, TypeError, KeyError):
-        titles = {}
+
     def name(cid):  # kit.lru → "lru"; otherwise the title's first words
         t = titles.get(cid, "")
         mod = re.findall(r"\bkit\.(\w+)", t)

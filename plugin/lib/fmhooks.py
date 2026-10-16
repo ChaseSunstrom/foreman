@@ -389,7 +389,7 @@ def session_start(pl):
                                      "else.")
     if pl.get("source") == "compact":
         try:
-            note = _requests_note(p, sid)
+            note = _requests_note(p, sid, cap=min(REQUEST_TEXT_CAP, 9000 - len(out["additionalContext"])))
             if note:
                 out["additionalContext"] += "\n\n" + note
         except Exception:
@@ -669,9 +669,11 @@ REQUEST_HEAD = re.compile(r"(?im)^#{1,3}\s*request\s+\d+\b[^\n]*$")
 
 
 def _requests(text):
-    """T-1242: the requests of a prompt written as "## Request k" sections, in order; [] when there are fewer than two."""
-    parts = REQUEST_HEAD.split(re.sub(r"(?i)^\s*task:\s*", "", text or ""))[1:]
-    parts = [x.strip() for x in parts if x.strip()]
+    """T-1242: the requests of a prompt written as "## Request k" sections, in order; [] when there are fewer than two.
+    Review: what comes before the first heading ("NEVER touch tests/.") goes with every request, after its own text."""
+    pre, *parts = REQUEST_HEAD.split(re.sub(r"(?i)^\s*task:\s*", "", text or ""))
+    pre = pre.strip()
+    parts = [x.strip() + (f"\n\nFor every request: {pre}" if pre else "") for x in parts if x.strip()]
     return parts if len(parts) > 1 else []
 
 
@@ -686,7 +688,7 @@ def _queue_requests(p, sid, reqs):
         if c.active_brief_fast(p, getattr(p, "lane", None)):
             return ""  # a parallel edit's hook queued them a moment ago
         for k, text in enumerate(reqs, 1):
-            if time.monotonic() - t0 > 3.5:
+            if time.monotonic() - t0 > 3.2:  # review: room left for this task and the focus within the hook's 5 s
                 break
             r = c.parse_intake(text)
             type_ = r.items[0].type if r.items else "FEATURE"
@@ -695,16 +697,24 @@ def _queue_requests(p, sid, reqs):
             cmd = [fm, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_, "--tier",
                    "M" if type_ == "SECURITY" else "S", f"--raw={text}", "--step=do what the request asks", "--json",
                    *[f"--ac={d}" for d in done], *([f"--depends={made[-1]}"] if made else [])]
-            r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True, timeout=3,
-                               env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+            try:
+                r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True,
+                                   timeout=max(0.5, 4.0 - (time.monotonic() - t0)),
+                                   env=dict(os.environ, FOREMAN_SESSION_ID=sid))
+            except subprocess.TimeoutExpired:
+                break  # a task it may have made has no first_brief event: the agent's own queue picks it up
             tid = re.search(r'"id": "(T-\d+)"', r.stdout)
             if r.returncode or not tid:
                 log_error("PreToolUse", f"queue requests: {r.stderr.strip()[-300:]}")
                 break
             made.append(tid[1])
             c.log_event(p, "first_brief", task=tid[1], session=sid)  # the Stop hook may close it (_close_first_brief)
-        if not made or subprocess.run([fm, "focus", made[0]], cwd=p.root, capture_output=True, timeout=3,
-                                      env=dict(os.environ, FOREMAN_SESSION_ID=sid)).returncode:
+        try:
+            if not made or subprocess.run([fm, "focus", made[0]], cwd=p.root, capture_output=True,
+                                          timeout=max(0.5, 4.6 - (time.monotonic() - t0)),
+                                          env=dict(os.environ, FOREMAN_SESSION_ID=sid)).returncode:
+                return None
+        except subprocess.TimeoutExpired:
             return None
     left = len(reqs) - len(made)
     return (f"Foreman queued this session's {len(reqs)} requests as tasks, in order: {', '.join(made)}"
@@ -767,11 +777,23 @@ def _requests_note(p, sid, cap=REQUEST_TEXT_CAP):
             + (f"\n\nAlso open: {', '.join(rest)} (fm task show ID)." if rest else ""))
 
 
-MARATHON_NOTE = ("Foreman marathon, pass {k} of {n}: the asked work is done. Find one more improvement this repo needs, "
-                 "from code you have read: a bug, an edge case its tests miss, an error that says too little. Capture it "
-                 "(fm capture \"<what and why>\" --source discovered), plan it as an S task with a test that fails "
-                 "first, make it pass without breaking the suite, and close it with fm task finish --run \"<the test "
-                 "command>\" --commit \"<message>\". If nothing is worth doing, say so in one line and stop.")
+# T-1242: one way of looking per pass, so a marathon doesn't reread the same code and find nothing (the first one found
+# one improvement in five passes, each "nothing in the code I've read")
+MARATHON_LENSES = (
+    "pick a module and run it on inputs its tests don't cover (empty, huge, negative, unicode, malformed) in a quick "
+    "python3 -c; a crash or a wrong answer is the work",
+    "read the README and the docstrings against what the code does; where they disagree, the code or the doc is wrong",
+    "find an error that doesn't say what was wrong or where (a bare exception, a message with no value or line); make "
+    "it say so",
+    "find a public function with no test of its own; write its tests from what it promises, and fix what they catch",
+    "find logic written twice that one helper can hold without changing behaviour, or a slow path on large input",
+)
+MARATHON_NOTE = ("Foreman marathon, pass {k} of {n}: the asked work is done. Find one more improvement this repo needs. "
+                 "This pass, {lens}. Read the code you need first, including modules you haven't read this session. "
+                 "Capture what you find (fm capture \"<what and why>\" --source discovered), plan it as an S task with a "
+                 "test that fails first, make it pass without breaking the suite, and close it with fm task finish "
+                 "--run \"<the test command>\" --commit \"<message>\". Only if this way of looking finds nothing real, "
+                 "say so in one line and stop.")
 
 
 def _marathon(p, sid):
@@ -785,7 +807,7 @@ def _marathon(p, sid):
     if k >= n or not any(e.get("event") in ("first_brief", "task_new") for e in mine):
         return None
     c.log_event(p, "marathon_pass", session=sid, data={"pass": k + 1, "of": n})
-    return MARATHON_NOTE.format(k=k + 1, n=n)
+    return MARATHON_NOTE.format(k=k + 1, n=n, lens=MARATHON_LENSES[k % len(MARATHON_LENSES)])
 
 
 def _tracked(p):

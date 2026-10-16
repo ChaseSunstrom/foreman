@@ -80,11 +80,6 @@ class DirtyAtFocus(ForemanTestCase):
         self.assertEqual(sorted(self.committed()), ["a, b.txt", "x #y.txt"])
 
 
-if __name__ == "__main__":
-    import unittest
-    unittest.main()
-
-
 
 class EditedUnderAnotherTask(ForemanTestCase):
     """T-1235: a file edited before this task was focused (under another task) and not touched since: finish committed
@@ -111,3 +106,8 @@ class EditedUnderAnotherTask(ForemanTestCase):
     def test_with_commits_an_untouched_uncommitted_file(self):
         self.finish("--with", "other.py")
         self.assertEqual(sorted(self.committed()), ["clean.py", "other.py"])
+
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

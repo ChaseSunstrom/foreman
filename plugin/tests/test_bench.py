@@ -264,6 +264,29 @@ class Bench(ForemanTestCase):
         self.assertEqual(fmbench.count_tests(["Ran 5 tests in 0.0s / OK"]), (5, 5))
         self.assertIsNone(fmbench.count_tests(["ok"]))
 
+    def test_compactions_are_counted_from_entries_not_quotes(self):
+        # T-1242 review: a transcript line quoting "compact_boundary" (reading fmbench.py, say) counted as one
+        import fmbench
+        cfg = os.path.join(self.tmp, "cfg")
+        os.makedirs(os.path.join(cfg, "projects", "p"))
+        with open(os.path.join(cfg, "projects", "p", "s-9.jsonl"), "w") as f:
+            f.write(json.dumps({"type": "system", "subtype": "compact_boundary"}) + "\n")
+            f.write(json.dumps({"type": "user", "message": {"content": 'it counts "compact_boundary" lines'}}) + "\n")
+        old = os.environ.get("CLAUDE_CONFIG_DIR")
+        os.environ["CLAUDE_CONFIG_DIR"] = cfg
+        try:
+            self.assertEqual(fmbench._compactions("s-9"), 1)
+        finally:
+            os.environ.pop("CLAUDE_CONFIG_DIR") if old is None else os.environ.update(CLAUDE_CONFIG_DIR=old)
+
+    def test_failures_are_counted_per_request(self):
+        import fmbench
+        case = {"requests": [{"title": "INI", "tests": ["tests/test_ini.py"]},
+                             {"title": "Invoice", "tests": ["tests/test_invoice.py", "tests/test_text.py"]}]}
+        self.assertEqual(fmbench.per_request(case, ["test_ini.ParseTest.test_a", "tests.test_ini.ParseTest.test_b",
+                                                    "test_text.WrapTest.test_c"]),
+                         [{"title": "INI", "failed": 2}, {"title": "Invoice", "failed": 1}])
+
     def test_grading_names_the_hidden_tests_that_failed(self):
         import fmbench
         import fmcore as c

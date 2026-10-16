@@ -253,6 +253,21 @@ class Site(unittest.TestCase):
         self.assertEqual([(d["name"], d["cases"]) for d in merged],
                          [("quality", [1]), ("long", [2]), ("marathon", [3])])
 
+    def test_the_long_session_section_shows_each_run_and_each_request(self):
+        pages = self._site("pages")
+        side = lambda t, f: {"pass": True, "cost": 0.1, "seconds": 400, "runs": 2, "passed": 2, "turns": 60,
+                             "score": None, "each": [{"tests": [t, 105], "compactions": 3}, {"tests": [105, 105],
+                                                                                           "compactions": 4}],
+                             "requests": [{"title": "Add <ini>", "failed": f}], "found": ["Fix a crash (discovered)"]}
+        html = pages._long({"duels": [{"name": "marathon", "marathon": 5, "cases": [
+            {"case": "x", "foreman": side(100, 5), "bare": side(105, 0)}]}]}, "marathon")
+        self.assertIn("100, 105 of 105", html)
+        self.assertIn("3, 4", html)
+        self.assertIn("✗ 5 failing", html)
+        self.assertIn("Add &lt;ini&gt;", html)
+        self.assertIn("Fix a crash", html)
+        self.assertNotIn("(discovered)", html)
+
     def test_a_line_chart_with_no_rows_says_so(self):
         build = self._site("build")
         self.assertIn("No data", build.line("Releases", "note", [], "n", "day"))
