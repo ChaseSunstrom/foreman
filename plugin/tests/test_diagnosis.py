@@ -79,6 +79,33 @@ class Ladder(Base):
         self.assertIn("differential", self.fm("next").stdout)
 
 
+class Refuted(Base):
+    def test_a_ruled_out_reason_is_kept_shown_and_seen_by_related_tasks_and_the_resume(self):
+        # T-1075: what was refuted and why survives the task and reaches the next session and the debugger
+        self.fm("task", "new", "Fix cache", "--type", "FIX", "--tier", "S", "--ac", "ok :: true", "--step", "s",
+                "--scope", "src/cache.py", "--focus")
+        self.fm("task", "hypo", "T-0001", "add", "the cache is stale", "--probe", "ls")
+        self.fm("task", "hypo", "T-0001", "mark", "1", "ruled-out", "--why", "mtime is fresh after the write")
+        self.assertIn("why: mtime is fresh", c.find_brief(self.p, "T-0001").section("Hypotheses"))
+        self.assertIn("why: mtime is fresh", self.fm("task", "hypo", "T-0001", "ruled").stdout)
+        self.fm("task", "new", "Fix cache again", "--type", "FIX", "--tier", "S", "--scope", "src/cache.py")
+        self.fm("task", "new", "Unrelated", "--type", "FIX", "--tier", "S", "--scope", "docs/x.md")
+        out = self.fm("task", "hypo", "T-0002", "ruled", "--write").stdout
+        self.assertIn("T-0001 H1", out)
+        self.assertIn("the cache is stale", out)
+        path = os.path.join(self.p.dir, "handoffs", "T-0002-ruled-out.md")
+        self.assertIn("mtime is fresh", open(path, encoding="utf-8").read())
+        self.assertNotIn("stale", self.fm("task", "hypo", "T-0003", "ruled").stdout)
+        self.fm("checkpoint")
+        self.assertIn("ruled out: T-0001 H1 the cache is stale",
+                      c.find_brief(self.p, "T-0001").section("Resume here"))
+
+    def test_the_debugger_reads_the_ruled_out_file_first(self):
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "..", "agents", "fm-debugger.md"), encoding="utf-8") as f:
+            self.assertIn("ruled-out.md", f.read())
+
+
 class Bisect(Base):
     def test_the_first_bad_commit_is_named(self):
         self.write("ok.txt", "ok\n")
