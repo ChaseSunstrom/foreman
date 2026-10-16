@@ -245,6 +245,15 @@ def _bump(fid=None, sig=None, **counts):
         return st
 
 
+def learned(p, since):
+    """T-1045: {fixes_new, worked, missed} since an ISO time: fixes recorded then, and the worked/misses counts of the
+    fixes used then. ponytail: the stats keep totals and a last-used time, so a fix used in the window counts all its history."""
+    st = _load(_stats_path())
+    used = [x for x in (st.get("fixes") or {}).values() if str(x.get("last", ""))[:19] >= since]
+    return {"fixes_new": sum(str(r.get("at", "")) >= since[:10] for r in known(p, st)),
+            "worked": sum(x.get("worked", 0) for x in used), "missed": sum(x.get("misses", 0) for x in used)}
+
+
 def _losing(st, fid):
     x = (st.get("fixes") or {}).get(fid) or {}
     return x.get("misses", 0) >= x.get("worked", 0) + 2

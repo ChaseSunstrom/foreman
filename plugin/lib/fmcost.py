@@ -640,9 +640,27 @@ def cmd_digest(args):
                                                         for r in (e.get("data") or {}).get("ran") or []) or "nothing ran")
         + (f"; skipped {', '.join((e.get('data') or {}).get('skipped'))}" if (e.get("data") or {}).get("skipped") else "")
         for e in nights[-5:]] if nights else []
-    fmcli.out(args, {"done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
+    learn = learned(p, args.days, len(done))
+    lines += [learn["line"]]
+    fmcli.out(args, {"learned": learn, "done": [b.id for b in done], "grades": dict(grades), "lessons": lessons, "review": review, "decided": decided,
                      "blocked": [b.id for b in blocked], "stale_plans": stale, "deferred_triage": triage, "failures": dict(fails.most_common(5)), "tokens": tokens},
               "\n".join(lines))
+
+
+def learned(p, days, closed):
+    """T-1045: what Foreman learned in the window, for the digest and the pane's idle line: fixes new/worked/missed,
+    rules proposed from corrections, and interventions (corrections plus guard blocks) per closed task."""
+    import fmfixes, fmideas
+    since = _since(days)
+    d = fmfixes.learned(p, since)
+    n = len(c.ledger_events(p, ("correction",), since=since)) \
+        + sum(1 for e in c.global_events(since) if e.get("kind") == "guard_block" and e.get("project") == p.slug)
+    d.update(rules=len(fmideas.correction_clusters(p)), interventions=n,
+             interventions_per_task=round(n / closed, 1) if closed else None)
+    d["line"] = (f"Learned: {d['fixes_new']} new fix(es), {d['worked']} worked, {d['missed']} missed · "
+                 f"{d['rules']} rule(s) to propose" + (f" · {d['interventions_per_task']:g} interventions per closed task"
+                                                     if closed else f" · {n} interventions, no closed task"))
+    return d
 
 
 def cmd_evals(args):
