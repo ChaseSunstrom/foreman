@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A brainstorm's `ideas.md` states its distinct idea count at the top, and `fm ideas --seen` reads only its idea sections: the per-lens, coverage and kill bullets were read back as idea titles, and a bullet count overstated a run (409 bullets for ~290 ideas) (T-1056).
 - The pane flags a stopped builder (T-1119): its worktree node in the Agents graph reads "stopped · fm lane resume T-…" in the warning colour, from `fm ui`'s new `stopped` mark on that worktree.
 - `fm task set` applies every `--section`/`--text` pair given in one call (only the last one landed, silently) and refuses a section without its own text (T-1124).
 - One `c.kill_group(proc)` kills a child's whole process group for run_command, the bench, fm serve, guard mutation and the claude -p helpers; the bench's own copy had no guard, so a run that ended just as its timeout hit crashed it (T-1094).
