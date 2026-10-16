@@ -1,0 +1,6 @@
+{"id": "b02bc1cbe553882a1089", "cmd": "git reset --hard HEAD~1", "cwd": "/tmp", "should": "block", "why": "a hard reset outside a project's own tree"}
+{"id": "00a31079e30acbab87b0", "cmd": "git push --force origin main", "cwd": ".", "should": "block", "why": "force push to the default branch"}
+{"id": "38f247b397fe72aa88c7", "cmd": "rm -rf ~", "cwd": ".", "should": "block", "why": "deleting the home folder"}
+{"id": "9748fc8d7f55aa394421", "cmd": "ls", "cwd": ".", "should": "allow", "why": "plain read"}
+{"id": "3069bfeb200a2c7e3f4d", "cmd": "S=/tmp/zz; mkdir -p $S/a", "cwd": ".", "should": "allow", "why": "scratch dir through a variable"}
+{"id": "2bedfe473782909f1ab2", "cmd": "cat >> tests/test_x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {})\nEOF", "cwd": "plugin", "should": "allow", "why": "quoted heredoc written with cat, nothing run"}
