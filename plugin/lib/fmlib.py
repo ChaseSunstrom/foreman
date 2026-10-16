@@ -181,11 +181,13 @@ _UNTRUSTED = re.compile(
     r"|\b(ignore|disregard|forget)\b[^\n]{0,30}\b(previous|prior|above|earlier|all)\b[^\n]{0,20}\binstructions?\b"
     r"|--no-verify\b|--no-gpg-sign\b|\b(disable|skip|turn off|bypass)\s+(all\s+|the\s+|your\s+)?(tests?|checks?|lint\w*|hooks?|guards?|verification)\b"
     r"|\brm\s+-\w*[rf]\w*\s+(-\w+\s+)*(~|/|\$HOME)(\s|$|`)|\bchmod\s+-R?\s*777\b|\bsudo\s+rm\b", re.I)
-_NEGATED = re.compile(r"\b(avoid|never|don'?t|do not|doesn'?t|must not|should not|shouldn'?t|not|without|instead of)\b|\bbad\b", re.I)
+_GOVERNED = re.compile(r"\b(avoid|never|don'?t|do not|must not)\s+(run(ning)?\s+|us(e|ing)\s+)?[`'\"]*$", re.I)
+_BULLET = re.compile(r"^\s*[-*]\s*[`'\"]?[^`'\"]*$")  # an Avoid bullet whose first quoted span holds the match: the heading governs it
 
 
 def _untrusted(text):
-    """T-1037: imperative instructions of the kinds above; a line that also says avoid/never/don't is a warning, not an order."""
+    """T-1037: imperative instructions of the kinds above. A match is a warning, not an order, only when a negation
+    directly governs it (never run X, avoid X) or it opens a bullet under Avoid; a stray 'not' elsewhere changes nothing."""
     out, section, fenced = [], "", False
     for line in text.splitlines():
         if line.startswith("## "):
@@ -193,10 +195,12 @@ def _untrusted(text):
         elif line.lstrip().startswith("```"):
             fenced = not fenced
             continue
-        # the Avoid section lists bad habits and Test first's code blocks are examples: neither is an order
-        if section == "Avoid" or (fenced and section == "Test first") or _NEGATED.search(line):
+        if fenced and section == "Test first":  # example test code, not an order
             continue
-        out += [m.group(0)[:60] for m in _UNTRUSTED.finditer(line)]
+        for m in _UNTRUSTED.finditer(line):
+            before = line[:m.start()]
+            if not (_GOVERNED.search(before) or (section == "Avoid" and _BULLET.match(before))):
+                out.append(m.group(0)[:60])
     return out
 
 
