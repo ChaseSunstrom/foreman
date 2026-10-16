@@ -450,6 +450,20 @@ def pick(p, b, main, args):
                      f"criteria, fm task finish" + ("\ncleanup pending:\n  " + "\n  ".join(pending) if pending else ""))
 
 
+def hot_files(p, b, days=30, times=2):
+    """T-1161: a warning per scope file that conflicted at fm lane merge `times`+ times in the last `days` days."""
+    scope = b.meta.get("scope") or []
+    if not scope:
+        return []
+    seen = {}
+    for e in c.ledger_events(p, ["lane_conflict"], since=c.iso(time.time() - days * 86400)):
+        for f in (e.get("data") or {}).get("files") or []:
+            seen[f] = seen.get(f, 0) + 1
+    return [f"Warning: {f} conflicted {n} times at lane merge in the last {days} days: merge this lane first, or keep "
+            f"its edits to that file small" for f, n in sorted(seen.items())
+            if n >= times and any(c.glob_match(f, s) for s in scope)]
+
+
 def builder_brief(p, b, args, resume_branch=None):
     """T-0234: a self-contained brief for one S/M task worked by a foreman:fm-builder subagent in its own worktree
     (Agent isolation "worktree"; its `fm focus` binds the task there), and the Agent call that launches it. The main
@@ -498,6 +512,9 @@ def builder_brief(p, b, args, resume_branch=None):
     if skipped:
         parts += ["## Claims", "Not pre-claimed, already held live (ask the holder with `fm bus send`): "
                   + "; ".join(f"{f} by {w}" for f, w in skipped), ""]
+    warns = hot_files(p, b)
+    if warns:
+        parts += ["## Warning", *warns, ""]
     parts.append(CONTRACT.format(id=b.id, base=base))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
@@ -519,7 +536,8 @@ def builder_brief(p, b, args, resume_branch=None):
     model = (', model: "sonnet"' if b.tier == "S" else "") + f', effort: "{"medium" if b.tier == "S" else "high"}"'
     agent = (f'Agent — subagent_type: "foreman:fm-builder", isolation: "worktree"{model}, prompt: "Read {path} and work '
              f'the task it describes."')
-    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id]},
+    return fmcli.out(args, {"id": b.id, "path": path, "agent": agent, "out": out + [b.id], "warnings": warns},
+                     "".join(f"{w}\n" for w in warns) +
                      f"{b.id}: builder brief {path}\n  launch: {agent}\n  then: review its branch (one fm-reviewer on "
                      f"git diff HEAD...<branch>), fm lane merge {b.id}, fm lane rm {b.id} (takes it back), "
                      f"fm focus {b.id} here, re-run its criteria, fm task finish {b.id} "
@@ -636,6 +654,9 @@ def merge(p, b, main, unverified=None):
     r = _git(main, "merge", "--no-ff", "-m", f"Merge {b.id}: {b.title}", branch)
     if r.returncode:
         brief = _conflict_brief(p, b, main, branch)  # T-0446: what clashed, and how to resolve it on the branch
+        clashed = [f for f in _git(main, "diff", "--name-only", "--diff-filter=U").stdout.split("\n") if f]
+        if clashed:  # T-1161: fm lane brief warns about files that keep clashing
+            c.log_event(p, "lane_conflict", task=b.id, data={"files": clashed[:50], "branch": branch})
         _git(main, "merge", "--abort")
 
         def restore(x):  # the aborted merge takes its base back: the task still starts where it did
