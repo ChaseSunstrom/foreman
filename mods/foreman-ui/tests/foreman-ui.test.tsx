@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
+import { activityCells, agentColor, barCells, bucketize, C, changedLines, clawd, diffRows, clean, elapsed, etaCells, ganttCells, hex, laneCells, layout, miniClawd, nodeAt, outputSummary, progressCells, shortPath, sizeWord, stackCells, stageCells, stepCells, stageLabels, stageText, textBar, tint, tone, toolFace } from '../hooks/kit'
 import { askNote, closeCard, guardReason, lastLine, readSummary, signalLine, summaryText, toasts } from '../hooks/register'
 import type { FmView } from '../types'
 import type { Part } from '../hooks/kit'
@@ -468,7 +468,7 @@ test('a running edit is an animated row with its delta; a finished one is the en
     expect(await ui.find({ type: 'Text', text: /✎ Editing/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /login\.py/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: '+2 −1' })).toBeDefined()
-    expect((await ui.find({ type: 'Box', key: 'fm-tool' }))?.props.borderStyle).toBe('round') // T-0179: a panel from the start
+    expect((await ui.find({ type: 'Box', key: 'fm-tool' }))?.props.borderStyle).toBeUndefined() // T-1031: a section, as in the pane
     const first = JSON.stringify(await ui.drawn())
     await clock.advance(240)
     expect(JSON.stringify(await ui.drawn())).not.toBe(first) // the spinner and the comet move
@@ -854,8 +854,8 @@ test('finished reads are one quiet line; background notifications too', async ($
   const said = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage', props: {
     text: 'make it smarter\nand better', origin: { kind: 'composer' }, isExpanded: false } })
   const box = await said.find({ type: 'Box', key: 'fm-user' })
-  expect(box?.props.borderStyle).toBe('round')
-  expect(box?.props.borderColor).toBe(hex(C.accent2))
+  expect(box?.props.borderStyle).toBeUndefined() // T-1031: a section headed in the user's colour
+  expect((await said.find({ type: 'Text', text: /You/ }))?.props.color).toBe(hex(C.accent2))
   expect(await said.find({ type: 'Text', text: /make it smarter\nand better/ })).toBeDefined()
   await said.unmount()
 })
@@ -1075,10 +1075,10 @@ test('a finished edit is a Foreman row: the path, +added −removed, and its cha
   expect((await row.find({ type: 'Text', text: /^old one$/ }))?.props.color).toBe(hex(C.del))
   expect((await row.find({ type: 'Text', text: /^new two$/ }))?.props.color).toBe(hex(C.add))
   expect(await row.find({ type: 'Text', text: /^ ?12 $/ })).toBeDefined() // 'new two' is line 12 of the new file
-  expect(await row.find({ type: 'Text', text: /keep/ })).toBeUndefined() // unchanged context stays out
+  expect((await row.find({ type: 'Text', text: /^keep$/ }))?.props.color).toBe(hex(C.dim)) // T-1031: a line of context, quiet
   expect(JSON.stringify(await row.drawn())).not.toContain('backgroundColor')
   // T-0179 steer: 'the command changes … I want in panels too'
-  expect((await row.find({ type: 'Box', key: 'fm-edit' }))?.props.borderColor).toBe(hex(tint(C.edit)))
+  expect((await row.find({ type: 'Text', text: /Edited/ }))?.props.color).toBe(hex(C.edit)) // T-1031: the label in the edit colour
   await row.unmount()
   const many = await mount('e2', { ...base, output: patch(['-gone', ...Array.from({ length: 20 }, (_, i) => `+add ${i}`)]) })
   expect(await many.find({ type: 'Text', text: /… 13 more changed lines/ })).toBeDefined()
@@ -1302,7 +1302,8 @@ test('under a shell row the engine\'s result block is replaced; file changes, a 
     props: { tool_use_id: 'g1', tool: 'Bash', input: { command: 'sed -i s/1/2/ src/app.py && git commit -qam x' },
       isRunning: false, isErrored: false, isInterrupted: false, output } })
   expect(await row.find({ type: 'Text', text: /src\/app\.py/ })).toBeDefined()
-  expect((await row.find({ type: 'Text', text: /^a = 2$/ }))?.props.color).toBe(hex(C.add))
+  expect((await row.findAll({ type: 'Text', text: /^a = $/ })).map(t => t.props.color)).toEqual([hex(C.del), hex(C.add)]) // T-1031: shared parts plain
+  expect((await row.find({ type: 'Text', text: /^2$/ }))?.props.backgroundColor).toBeDefined() // the changed word washed
   expect(await row.find({ type: 'Text', text: /1 more file changed/ })).toBeDefined()
   expect(await row.find({ type: 'Text', text: /committed abc1234 on main/ })).toBeDefined()
   expect(await row.find({ type: 'Text', text: /timed out after 2m/ })).toBeDefined()
@@ -1326,22 +1327,21 @@ test('a reply opens with a Foreman mark; Foreman report lines are coloured; the 
   expect(await msg.find({ type: 'Box', key: 'gap-1' })).toBeDefined() // the blank line before 'Changed:' stays (live)
   // T-0179: each message is a panel ('can we have each message … look like a panel'); the closing report is accented
   const panel = await msg.find({ type: 'Box', key: 'fm-reply' })
-  expect(panel?.props.borderStyle).toBe('round')
-  expect(panel?.props.borderColor).toBe(hex(C.accent))
+  expect(panel?.props.borderStyle).toBeUndefined() // T-1031: a section with a fading rule, as in the pane
+  expect(await msg.find({ type: 'Raster', key: 'fm-reply-rule' })).toBeDefined()
   await msg.unmount()
   const more = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'a second block', isFirstOfReply: false } })
   expect(await more.find({ type: 'Box', key: 'fm-reply-mark' })).toBeUndefined()
-  const plain = await more.find({ type: 'Box', key: 'fm-reply' })
-  expect(plain?.props.borderStyle).toBe('round') // every block is one, in a quiet grey
-  expect(plain?.props.borderColor).toBe(hex(C.dim))
+  expect(await more.find({ type: 'Box', key: 'fm-reply' })).toBeDefined()
+  expect(await more.find({ type: 'Raster', key: 'fm-reply-rule' })).toBeUndefined() // a later block of the same reply: no second head
   await more.unmount()
   // T-0182 live: the newest reply kept a frozen spinner frame ('· ok') once its turn ended; it settles on ●
   await $.turn.start({ text: 'go', turnId: 'tz' })
   const newest = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'ok', isFirstOfReply: true } })
   await $.turn.complete({ answer: '', durationMs: 900, isAborted: false, turnId: 'tz', reason: 'answer' })
-  expect(await newest.find({ type: 'Text', text: '● ' })).toBeDefined()
+  expect(await newest.find({ type: 'Text', text: '●' })).toBeDefined()
   await newest.unmount()
   const long = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage',
     props: { text: 'x'.repeat(12000), isFirstOfReply: true } })
@@ -1357,7 +1357,7 @@ test('a long shell command wraps under itself, not under the status mark', async
       isErrored: false, isInterrupted: false, output: { stdout: 'src/a.py:1: x', stderr: '', interrupted: false } } })
   expect((await row.find({ type: 'Box', key: 'fm-shell-head' }))?.props.flexDirection).toBe('row')
   expect(await row.find({ type: 'Text', text: /^grep -rn pattern src \| head -40/ })).toBeDefined() // its own column
-  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.borderColor).toBe(hex(tint(C.accent2))) // T-0179
+  expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.borderStyle).toBeUndefined() // T-1031: no box
   expect((await row.find({ type: 'Box', key: 'fm-shell' }))?.props.width).toBe('100%') // live: a short one hugged its text
   await row.unmount()
 })
@@ -1527,6 +1527,89 @@ test('stackCells: a share each, at least a cell for any non-zero part, the track
   expect(seg.length).toBe(14)
   expect(seg.filter(c => c.ch === ' ').length).toBe(2) // a gap between steps
   expect([seg[0]!.fg, seg.at(-1)!.fg]).toEqual([C.ok, C.track])
+})
+
+test('chat rows read like the pane: a bold label, a rule fading in the row colour, no box (T-1031)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const tool = (id: string, props: object) => $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: id,
+    props: { tool_use_id: id, isRunning: false, isErrored: false, isInterrupted: false, ...props } })
+  const patch = { filePath: '/repo/a.py', structuredPatch: [{ oldStart: 1, newStart: 1, lines: ['-x = 1', '+x = 2'] }] }
+  const findings = [
+    { file: 'src/a.py', line: 12, summary: 'Off by one', short_summary: 'Off by one in the loop', failure_scenario: 'n=0', outcome: 'fixed' },
+    { file: 'src/b.py', line: 3, summary: 'Leaks', short_summary: 'File handle leaks', failure_scenario: 'x', verdict: 'PLAUSIBLE', outcome: 'skipped' },
+  ]
+  const rows = [
+    await tool('s1', { tool: 'Bash', input: { command: 'ls', description: 'List files' }, output: { stdout: 'a', stderr: '', interrupted: false } }),
+    await tool('e1', { tool: 'Edit', input: { file_path: '/repo/a.py', old_string: 'x = 1', new_string: 'x = 2' }, output: patch }),
+    await tool('g1', { tool: 'Skill', input: { skill: 'foreman:next' }, output: 'Launching skill: foreman:next' }),
+    await tool('r1', { tool: 'ReportFindings', input: { findings: [...findings, null, { outcome: 'constructor', file: 'c.py' }], level: 'medium' },
+      output: '2 findings reported.' }),
+    await tool('a1', { tool: 'Agent', input: { subagent_type: 'Explore', description: 'Find the loop' },
+      output: { status: 'completed', content: [{ type: 'text', text: 'It is in src/a.py' }], totalToolUseCount: 3, totalDurationMs: 4000, totalTokens: 9000 } }),
+    await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'UserMessage',
+      props: { text: 'make it nicer', origin: { kind: 'composer' }, isExpanded: false } }),
+    await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'AssistantMessage', props: { text: 'Done.', isFirstOfReply: true } }),
+  ]
+  for (const r of rows) {
+    expect((await r.findAll({ type: 'Box' })).filter(b => b.props.borderStyle)).toEqual([])
+    const rule = (await r.findAll({ type: 'Raster' })).find(x => String(x.key).endsWith('-rule'))
+    expect(rule).toBeDefined()
+    const cells = decode(String(rule!.props.cells))
+    expect(cells[0]!.fg).not.toBe(cells.at(-1)!.fg) // it fades
+  }
+  const [, , skill, review, , said, reply] = rows
+  expect(await skill!.find({ type: 'Text', text: /Skill/ })).toBeDefined()
+  expect(await skill!.find({ type: 'Text', text: /foreman:next/ })).toBeDefined()
+  expect(await skill!.find({ type: 'Text', text: /Launching skill/ })).toBeUndefined() // loaded: the head says it
+  expect(await review!.find({ type: 'Text', text: /Off by one in the loop/ })).toBeDefined()
+  expect((await review!.find({ type: 'Text', text: /^fixed/ }))?.props.color).toBe(hex(C.ok))
+  expect(await review!.find({ type: 'Text', text: /src\/a\.py:12/ })).toBeDefined()
+  expect(await review!.find({ type: 'Text', text: /1 fixed · 1 skipped/ })).toBeDefined()
+  expect(await said!.find({ type: 'Text', text: /make it nicer/ })).toBeDefined()
+  expect(await reply!.find({ type: 'Box', key: 'fm-reply-mark' })).toBeDefined()
+  for (const r of rows) await r.unmount()
+  const result = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'g1',
+    props: { tool_use_id: 'g1', tool: 'Skill', output: 'Launching skill: foreman:next', isErrored: false } } as never)
+  expect(await result.find({ type: 'Text', text: 'engine' })).toBeUndefined() // drawn once, in the row
+  await result.unmount()
+  const long = { content: [{ type: 'text', text: Array.from({ length: 200 }, (_, i) => `row ${i}`).join('\n') }] }
+  const mcp = await tool('m1', { tool: 'mcp__db__query', input: {}, output: long })
+  expect(await mcp.find({ type: 'Text', text: /row 0/ })).toBeUndefined() // too long for the row: only its head
+  await mcp.unmount()
+  const mcpResult = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolResult', requestId: 'm1',
+    props: { tool_use_id: 'm1', tool: 'mcp__db__query', output: long, isErrored: false } } as never)
+  expect(await mcpResult.find({ type: 'Text', text: 'engine' })).toBeDefined() // the engine's block, which expands
+  await mcpResult.unmount()
+})
+
+test('a diff shows a line of context, breaks between hunks and washes only the changed words (T-1031)', async ($, on) => {
+  world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const structuredPatch = [
+    { oldStart: 10, newStart: 10, lines: [' alpha', '-const x = 1', '+const x = 2', ' beta', ' gamma', ' delta'] },
+    { oldStart: 40, newStart: 40, lines: [' zeta', '+added', ' eta'] },
+  ]
+  const row = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', component: 'ToolUse', requestId: 'd1',
+    props: { tool_use_id: 'd1', tool: 'Edit', input: { file_path: '/repo/a.py', old_string: 'a', new_string: 'b' }, isRunning: false,
+      isErrored: false, isInterrupted: false, output: { filePath: '/repo/a.py', structuredPatch } } })
+  expect(await row.find({ type: 'Text', text: /^alpha$/ })).toBeDefined() // context either side of a change
+  expect(await row.find({ type: 'Text', text: /^beta$/ })).toBeDefined()
+  expect(await row.find({ type: 'Text', text: /^gamma$/ })).toBeUndefined() // but no more
+  expect(await row.find({ type: 'Text', text: /┄/ })).toBeDefined() // a break between the hunks
+  expect((await row.find({ type: 'Text', text: /^2$/ }))?.props.backgroundColor).toBeDefined() // the changed word
+  expect((await row.find({ type: 'Text', text: /^const x = $/ }))?.props.backgroundColor).toBeUndefined()
+  await row.unmount()
+})
+
+test('diffRows: context within one line of a change, a break where lines are skipped, the differing span of a changed line', () => {
+  const rows = diffRows([{ oldStart: 1, newStart: 1, lines: [' a', ' b', '-let total = 1;', '+let count = 1;', ' c', ' d', ' e', '+f'] }])
+  expect(rows.map(r => r.kind)).toEqual(['ctx', '-', '+', 'ctx', 'hunk', 'ctx', '+'])
+  const minus = rows[1] as { text: string; mid?: [number, number] }
+  expect(minus.text.slice(...minus.mid!)).toBe('total') // whole words
+  const plus = rows[2] as { text: string; mid?: [number, number] }
+  expect(plus.text.slice(...plus.mid!)).toBe('count')
+  expect(diffRows([{ oldStart: 1, newStart: 1, lines: ['-abc', '+xyz'] }]).every(r => !('mid' in r && r.mid))).toBe(true) // nothing shared
 })
 
 test('a step that just got done glows, then settles (T-0909)', async ($, on) => {
