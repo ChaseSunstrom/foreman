@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fmmodels`, Foreman Code's model layer: one stdlib client for OpenAI-compatible endpoints and Anthropic's Messages API. Profiles come from `$FOREMAN_HOME/models.json`, keyed clouds (Anthropic, OpenAI, OpenRouter, Groq, Gemini) and local servers (Ollama, LM Studio, llama.cpp, vLLM, probed in order). It retries on 429 and 5xx with one stop vocabulary, and the key never appears in an error and is never sent over plain http to a remote host (T-1211).
 
 ## 1.2.36 — 2026-10-16
 - The site has a page for every feature (planning, proof, the guard, permissions, review, builder lanes, drive and headless, stack cards, the panel, speed, learning, tools, Foreman Code, releases), each with charts drawn from Foreman's own record of building itself: tasks closed per day by type, task sizes, guard refusals by rule, review findings by lens, hook time against budgets, tests per release. `site/build.py` renders them from `site/pages.py` and `site/data/stats.json` (made by `site/stats.py` from Foreman's state: counts only), and the Pages workflow runs it (T-1220).
