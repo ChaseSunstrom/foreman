@@ -781,6 +781,9 @@ def _contest(p, args):
 
 def cmd_bench(args):
     import fmcli
+    if args.bench_cmd == "guard":
+        import fmreplay
+        return fmreplay.cmd_guard(args)
     if args.bench_cmd not in ("build", "list", "show", "compare", "models", "hygiene", "scorecard"):
         c.refuse_if_paused()  # T-0591: the commands that run claude sessions
     p = fmcli.resolve(args)

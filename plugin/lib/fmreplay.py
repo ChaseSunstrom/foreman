@@ -83,6 +83,37 @@ def verdicts(cmds, g=None):
     return out
 
 
+def mutate(cmds):
+    """T-1066: drop one guard rule (category) at a time: a mutant turns that category's verdicts to 'allow'. A rule some
+    command is blocked with is 'caught' (a case would notice its loss); one none is blocked with is 'untested'.
+    ponytail: a rule is a category, so two rules sharing one category are one mutant."""
+    import fmguard as g
+    seen = set(verdicts(cmds).values())
+    return ([x for x in g.CATEGORIES if x in seen], [x for x in g.CATEGORIES if x not in seen])
+
+
+def cmd_guard(args):
+    """fm bench guard --mutate: the rules no command notices; exit 1 when any (wild C10)."""
+    import fmcli
+    if not args.mutate:
+        raise fmcli.UsageError("fm bench guard needs --mutate")
+    if args.cmds:
+        try:
+            with open(args.cmds, encoding="utf-8") as f:
+                cmds = [(ln.strip(), os.getcwd()) for ln in f if ln.strip()]
+        except OSError as e:
+            raise fmcli.UsageError(f"--cmds {args.cmds}: {e}")
+    else:
+        cmds = corpus(args.days)
+    caught, untested = mutate(cmds)
+    lines = [f"Guard mutation on {len(cmds)} commands: {len(caught)} rules caught, {len(untested)} untested"]
+    if untested:
+        lines.append("  untested (no command is blocked by it): " + ", ".join(untested))
+    fmcli.out(args, {"commands": len(cmds), "caught": caught, "untested": untested}, "\n".join(lines))
+    if untested:
+        raise SystemExit(1)
+
+
 def _baseline_path():
     return os.path.join(c.state_dir(), "guard-replay.json")
 

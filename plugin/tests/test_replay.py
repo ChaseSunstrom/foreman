@@ -49,6 +49,18 @@ class Replay(ForemanTestCase):
         self.assertEqual(self.replay("--accept").returncode, 0)
         self.assertEqual(self.replay().returncode, 0)
 
+    def test_bench_guard_mutate_names_untested_rules(self):
+        cmds = os.path.join(self.tmp, "cmds.txt")
+        with open(cmds, "w") as f:
+            f.write("rm -rf /\n")
+        out = self.fm("bench", "guard", "--mutate", "--cmds", cmds, "--json", env={"HOME": self.uhome}, check=False)
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)  # some rule is untested
+        data = json.loads(out.stdout)
+        self.assertEqual(data["caught"], ["rm-outside"])
+        self.assertNotIn("rm-outside", data["untested"])
+        self.assertIn("git-destructive", data["untested"])
+        self.assertEqual(len(data["caught"]) + len(data["untested"]), 14)
+
 
 if __name__ == "__main__":
     unittest.main()
