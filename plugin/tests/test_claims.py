@@ -111,6 +111,17 @@ class ClaimsReview(Base):
         r = self.fm("lease", "take", os.path.join(self.repo, "new.py"), env=B, check=False)
         self.assertNotEqual(r.returncode, 0, "an absolute path is the same file")
 
+    def test_an_edits_lease_leaves_another_sessions_lease_intact(self):
+        import fmbus
+        p = self.project()
+        path = os.path.join(self.repo, "a.py")
+        with open(path, "w") as f:
+            f.write("def f():\n    return 2\n")
+        self.fm("lease", "take", "a.py::f", env=B)
+        fmbus.after_edit({"session_id": "sess-a", "tool_name": "Write", "tool_input": {}}, p, path)
+        held = {(v["session"], v["symbol"]) for v in fmbus._leases().values() if v["file"] == "a.py"}
+        self.assertEqual(held, {("sess-b", "f"), ("sess-a", "*")})
+
     def test_a_lane_claim_exempts_its_own_task_only(self):
         import fmbus
         p = self.project()
