@@ -197,6 +197,11 @@ class UiView(ForemanTestCase):
         self.assertEqual([(x["branch"], x["agent"], x["task"], x["ahead"]) for x in w],
                          [("worktree-agent-a1b2c3d4", "a1b2c3d4", "T-0001", 1)])
         self.assertIsInstance(w[0]["age_s"], int)
+        self.assertFalse(w[0]["stopped"])
+        import fmbus  # T-1119: a lane whose builder's process ended is flagged for the pane
+        b.meta["builder_proc"] = f"{fmbus.host_id()}|999999999|1"
+        c.save_brief(p, b)
+        self.assertTrue(json.loads(self.fm("ui", "--json").stdout)["worktrees"][0]["stopped"])
         # review (T-1023): a detached worktree's merge state is unknown, not 'nothing to merge'; the newest come first
         loose = os.path.join(self.tmp, "wt-detached")
         git("worktree", "add", "-q", "--detach", loose)
