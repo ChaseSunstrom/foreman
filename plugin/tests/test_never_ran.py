@@ -42,3 +42,12 @@ class NeverRanUnlocks(ForemanTestCase):
         self.fm("task", "evidence", "T-0001", "--ac", "1", "--run", "python3 -m unittest -k zz_no_match_x", check=False)
         r = self.edit()
         self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_a_missing_package_script_does_not_lock(self):
+        # T-1133: T-1045's `npm test` named a script the package doesn't have, and its criterion locked red
+        import fmcore as c
+        for out in ('npm error Missing script: "test"\nnpm error\nnpm error To see a list of scripts, run:\nnpm error   npm run',
+                    'npm ERR! Missing script: "test"', 'error Command "test" not found.',
+                    ' ERR_PNPM_NO_SCRIPT  Missing script: test'):
+            self.assertEqual(c.never_ran("cd web && npm test", 1, out), "no such script")
+        self.assertIsNone(c.never_ran("npm test", 1, "FAIL src/a.test.ts\nTests: 1 failed"), "a real failure locks")
