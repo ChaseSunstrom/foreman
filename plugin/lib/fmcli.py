@@ -1236,7 +1236,14 @@ def _save_dirty(p, b, snap):
     tasks = {os.path.relpath(f, p.root) for e in c.ledger_tail(p, c.TASK_WINDOW)
              if e.get("event") == "touched" and e.get("task") not in (None, b.id)
              and (f := (e.get("data") or {}).get("file")) and f.startswith(p.root.rstrip("/") + "/")}
-    paths = [x for x in (out or "").split("\0") if x and x not in tasks]
+    now = time.time()
+
+    def older(x):  # T-1177 (T-0192): a file written in the minute before the focus is the task starting, not the user's
+        try:
+            return os.path.getmtime(os.path.join(p.root, x)) < now - 60
+        except OSError:
+            return True  # deleted since HEAD: the user's deletion
+    paths = [x for x in (out or "").split("\0") if x and x not in tasks and older(x)]
     os.makedirs(os.path.dirname(_dirty_file(p, b.id)), exist_ok=True)
     c.write_atomic(_dirty_file(p, b.id), json.dumps({"paths": paths[:DIRTY_CAP], "truncated": len(paths) > DIRTY_CAP}))
 

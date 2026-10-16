@@ -7,9 +7,12 @@ from helpers import ForemanTestCase
 
 
 class DirtyAtFocus(ForemanTestCase):
-    def write(self, name, text):
-        with open(os.path.join(self.repo, name), "w") as f:
+    def write(self, name, text, old=False):
+        path = os.path.join(self.repo, name)
+        with open(path, "w") as f:
             f.write(text)
+        if old:  # the user's own work predates the task (T-1177: a file written as it starts is the task's)
+            os.utime(path, (os.path.getmtime(path) - 600,) * 2)
 
     def git(self, *a):
         return subprocess.run(["git", "-C", self.repo, *a], capture_output=True, text=True, check=True).stdout
@@ -21,7 +24,7 @@ class DirtyAtFocus(ForemanTestCase):
         self.write("clean.py", "b = 0\n")
         self.git("add", "-A")
         self.git("commit", "-qm", "files")
-        self.write("mine.py", "a = 1  # the user's own\n")  # dirty before the focus
+        self.write("mine.py", "a = 1  # the user's own\n", old=True)  # dirty before the focus
         self.fm("task", "new", "T", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
         self.write("mine.py", "a = 2\n")  # the task edits it too
         self.write("clean.py", "b = 1\n")
@@ -68,7 +71,7 @@ class DirtyAtFocus(ForemanTestCase):
         self.git("commit", "-qm", "odd")
         self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true")
         for n in ("a, b.txt", "x #y.txt"):
-            self.write(n, "1\n")
+            self.write(n, "1\n", old=True)
         self.fm("task", "new", "O", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
         for n in ("a, b.txt", "x #y.txt"):
             self.write(n, "2\n")
