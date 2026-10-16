@@ -84,6 +84,19 @@ class Night(ForemanTestCase):
         self.assertIn("compost", names)
         self.assertIn("consolidate", names)
 
+    def test_night_compost_touches_only_lanes(self):  # T-1071 review
+        import fmnight
+        p = c.find_project(self.repo)
+        argv = dict((n, a) for n, a, _ in fmnight.jobs(p))
+        self.assertEqual(argv["compost"], ["tidy", "--apply", "--lanes-only"])
+        self.assertIn("--capture", argv["consolidate"])
+        self.fm("task", "new", "Stuck", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s")
+        tid = c.load_briefs(p)[-1].id
+        self.fm("task", "block", tid, "waiting")
+        out = self.fm("tidy", "--apply", "--lanes-only", "--json").stdout
+        self.assertEqual(json.loads(out)["findings"], [])
+        self.assertEqual(c.find_brief(p, tid).status, "blocked")
+
     def test_high_usage_runs_nothing(self):
         sessions = os.path.join(c.state_dir(), "sessions")
         os.makedirs(sessions, exist_ok=True)

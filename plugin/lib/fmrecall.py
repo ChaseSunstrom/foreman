@@ -463,19 +463,26 @@ def lessons(p):
     return rows
 
 
+_NEG = re.compile(r"\b(?:not|no|never|without|cannot|\w+n't|dont)\b")
+
+
 def consolidate(p, floor=0.6):
     """T-1071: groups of live lessons whose words overlap (Jaccard >= floor): [{"ids": [...], "texts": [...]}].
     Proposes only; the user retires the extras (fm recall --lessons --retire)."""
-    live = [(r["id"], r["text"], set(_tokens(r["text"]))) for r in lessons(p) if not r.get("retired")]
+    # a negation flips a lesson's meaning, so only lessons that negate the same words can group
+    live = [(r["id"], r["text"], set(_tokens(r["text"])) | {"~" + w for w in _NEG.findall(r["text"].lower())})
+            for r in lessons(p) if not r.get("retired")]
     groups, seen = [], set()
     for i, (a, ta, sa) in enumerate(live):
         if a in seen:
             continue
         grp = [(a, ta)] + [(b, tb) for b, tb, sb in live[i + 1:] if b not in seen and sa and sb
+                           and {w for w in sa if w[0] == "~"} == {w for w in sb if w[0] == "~"}
                            and len(sa & sb) / len(sa | sb) >= floor]
         if len(grp) > 1:
             seen.update(g[0] for g in grp)
-            groups.append({"ids": [g[0] for g in grp], "texts": [g[1] for g in grp]})
+            groups.append({"ids": [g[0] for g in grp], "texts": [g[1] for g in grp],
+                           "keep": max(grp, key=lambda g: len(g[1]))[0]})
     return groups
 
 
@@ -631,15 +638,19 @@ def cmd_recall(args):
                          f"({len(files)} in all)")
     if getattr(args, "lessons", False) and getattr(args, "consolidate", False):  # T-1071
         groups = consolidate(p)
-        text = "\n".join(f"- {' + '.join(g['ids'])}: keep \"{c.fit(c.plain(max(g['texts'], key=len)), 160)}\"; retire the "
-                         f"others with fm recall --lessons --retire ID --why merged" for g in groups) \
-            or "No near-duplicate lessons."
+        text = "\n".join(f"- {' + '.join(g['ids'])}: keep {g['keep']} \"{c.fit(c.plain(max(g['texts'], key=len)), 160)}\"; "
+                         f"retire the others with fm recall --lessons --retire ID --why merged" for g in groups)
         if groups and getattr(args, "capture", False):
+            src = "night" if getattr(args, "from_night", False) else "followup"
             with c.lock(p.dir):
-                made = fmcli._create(p, "Consolidate near-duplicate lessons", "CLEAN", "S", "captured", raw=text, source="night")
-                c.log_event(p, "capture", task=made.id, data={"source": "night", "type": "CLEAN"})
-                c.regen_views(p)
-        return fmcli.out(args, {"groups": groups}, text)
+                if not any(b.title == "Consolidate near-duplicate lessons" and b.status not in c.CLOSED
+                           for b in c.load_briefs(p)):  # one open proposal at a time
+                    made = fmcli._create(p, "Consolidate near-duplicate lessons", "CLEAN", "S", "captured", raw=text,
+                                         source=src)
+                    c.log_event(p, "capture", task=made.id, data={"source": src, "type": "CLEAN"})
+                    c.regen_views(p)
+                c.log_event(p, "lessons_consolidate", data={"groups": len(groups)})
+        return fmcli.out(args, {"groups": groups}, (text + "\n" if text else "") + f"{len(groups)} group(s) of near-duplicate lessons.")
     if getattr(args, "lessons", False):
         rows = lessons(p)
         return fmcli.out(args, {"lessons": rows}, _render_lessons(rows))
