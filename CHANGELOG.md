@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A bare `fm lease drop` releases every lease this session holds in the project (builders ran it bare, as their brief says, and got only usage) (T-1134).
 - `fm draft`: while Claude waits, a headless session drafts the top queued S task on a throwaway `draft/T-x` branch, ready to review; swept when the queue's top or its brief changes; `fm night` can run it; never merged (T-1062).
 - Every self-change can be a pre-registered trial: `fm rule add` and `fm evolve` take `--moves METRIC --by DAYS`, and `fm digest` (and `fm trial`) grades due trials on before and after ledger rates, proposing a revert when the metric didn't move (T-1059).
 - `fm backtest --rule/--fix/--card`: how often a changed rule, known fix or card would have fired on recent real sessions, and how many of those calls errored (read-only) (T-1058).

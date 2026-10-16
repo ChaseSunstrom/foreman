@@ -37,6 +37,17 @@ class Claims(Base):
         self.fm("lease", "take", "c.py", "--minutes", "-1", env=A)
         self.assertEqual(self.fm("lease", "take", "c.py", env=B).returncode, 0, "expired")
 
+    def test_a_bare_drop_releases_every_lease_this_session_holds(self):
+        # T-1134: the brief says "fm lease drop when done"; five builders ran it bare and got only usage
+        self.fm("lease", "take", "a.py::f", "b.py", env=A)
+        self.fm("lease", "take", "c.py", env=B)
+        r = self.fm("lease", "drop", env=A)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        held = self.fm("lease", "list").stdout
+        self.assertNotIn("a.py", held)
+        self.assertNotIn("b.py", held)
+        self.assertIn("c.py", held, "another session's lease stays")
+
     def test_a_lane_brief_preclaims_its_concrete_scope_and_names_the_command(self):
         tid = self.task(title="Lane work", tier="S", focus=False, scope=["x.py", "lib/*.py"])
         path = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["path"]
