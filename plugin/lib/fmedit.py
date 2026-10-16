@@ -20,7 +20,7 @@ import tempfile
 
 import fmcore as c
 
-BLOCK = re.compile(r"^(?:@@ (.+?)(?: (all))?\n)?<<<\n(.*?)\n===\n(.*?)\n>>>$", re.S | re.M)
+BLOCK = re.compile(r"^(?:@@ (.+?)(?: (all))?\n)?<<<\n(.*?)\n===\n(?:(.*?)\n)?>>>$", re.S | re.M)  # T-1213: === then >>> deletes
 
 
 def parse_spec(text):
@@ -40,7 +40,7 @@ def parse_spec(text):
             head = (m.group(1).strip(), bool(m.group(2)))
         if head is None:
             raise ValueError("a <<< block comes before any @@ file header: name the file first")
-        out.append((head[0], m.group(3), m.group(4), head[1]))
+        out.append((head[0], m.group(3), m.group(4) or "", head[1]))
     if not out:
         raise ValueError("no edits: give JSON ([{\"file\", \"old\", \"new\"}]) or @@ file / <<< old / === new / >>> blocks")
     opened = len(re.findall(r"(?m)^<<<$", t))
