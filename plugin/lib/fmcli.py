@@ -3934,6 +3934,10 @@ def cmd_next(args):
     asks = unanswered_asks(p)
     over += (f" · {len(asks)} unanswered ask(s) from your last session wait for the user's yes (✋ in fm state; put "
              f"them to the user at the end, never act on them first; deferred after {ASK_DAYS} days)") if asks else ""
+    import fmlanes
+    dead = fmlanes.stopped(p)  # T-1028
+    over += (f" · builder(s) stopped, their Claude Code process ended: " + "; ".join(f"fm lane resume {i}" for i in dead)
+             + " (keeps the work, frees the worktree, writes a new brief)") if dead else ""
     hollow = [e for e in c.ledger_tail(p, 500) if e.get("event") == "hollow_return"
               and (age := c.age_days(e.get("ts"))) is not None and age < 1]  # T-0963: today's, so an old one doesn't nag forever
     if hollow:
@@ -5008,8 +5012,9 @@ def build_parser():
                                                             "agent's (T-0655)")
     s = add("lane", lazy("fmlanes", "cmd_lane"), help="a git worktree beside the repo with its own active task: "
                                                        "new <id>, list, rm <id> (never discards uncommitted work); "
-                                                       "brief <id>: an S/M task for a foreman:fm-builder subagent")
-    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max"])
+                                                       "brief <id>: an S/M task for a foreman:fm-builder subagent; "
+                                                       "resume <id>: take back a stopped builder's work")
+    s.add_argument("action", choices=["new", "list", "rm", "brief", "merge", "max", "resume"])
     s.add_argument("id", nargs="?", help="the task id; max: how many builders may be out at once (1-6)")
     s.add_argument("--spike", action="store_true", help="new: a throwaway lane fm lane merge refuses (T-0732)")
     s.add_argument("--unverified", metavar="REASON", help="merge: merge although the criteria's re-run is red, with the "

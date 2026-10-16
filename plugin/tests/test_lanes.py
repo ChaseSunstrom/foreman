@@ -184,6 +184,41 @@ class Lanes(ForemanTestCase):
             agent = json.loads(self.fm("lane", "brief", tid, "--json").stdout)["agent"]
             self.assertIn(f'effort: "{effort}"', agent)
 
+    def stopped_builder(self):
+        """T-1028: a builder whose launching claude process is gone, with work left in its lane."""
+        tid = first(self.fm("task", "new", "Built", "--type", "FEATURE", "--tier", "M", "--ac", "ok :: true", "--step", "s",
+                            "--interpretation", "x", "--approach", "x", "--json").stdout)["id"]
+        path = json.loads(self.fm("lane", "new", tid, "--json").stdout)["path"]
+        p = c.find_project(self.repo)
+        b = c.find_brief(p, tid)
+        b.meta["builder"] = c.now()
+        b.meta["builder_proc"] = "999999999:1"
+        c.save_brief(p, b)
+        with open(os.path.join(path, "wip.py"), "w") as f:
+            f.write("x = 1\n")
+        return tid, path
+
+    def test_a_builder_whose_claude_process_ended_is_flagged_with_the_resume_command(self):
+        tid, _ = self.stopped_builder()
+        self.assertIn(f"fm lane resume {tid}", self.fm("next").stdout)
+        import fmbus
+        self.assertFalse(fmbus.proc_alive(999999999, "1"))
+        self.assertTrue(fmbus.proc_alive(os.getpid(), fmbus._proc(os.getpid())[1]))
+
+    def test_resume_keeps_the_work_frees_the_folder_and_briefs_from_the_branch(self):
+        tid, path = self.stopped_builder()
+        self.fm("lane", "resume", tid)
+        self.assertFalse(os.path.isdir(path))
+        self.assertIn("WIP", self.git("log", "--format=%s", f"foreman/{tid}"))
+        self.assertIn("wip.py", self.git("show", "--name-only", "--format=", f"foreman/{tid}"))
+        meta = json.loads(self.fm("task", "show", tid, "--json").stdout)["meta"]
+        self.assertNotIn("lane", meta)
+        self.assertNotEqual(meta.get("builder_proc"), "999999999:1", "the dead process is no longer the builder's")
+        self.assertIn("builder", meta, "briefed again")
+        brief = read_text(os.path.join(c.find_project(self.repo).dir, "audits", f"{tid}.builder.md"))
+        self.assertIn(f"git merge foreman/{tid}", brief)
+        self.assertNotIn(f"fm lane resume {tid}", self.fm("next").stdout, "its new process is recorded")
+
 
 if __name__ == "__main__":
     unittest.main()

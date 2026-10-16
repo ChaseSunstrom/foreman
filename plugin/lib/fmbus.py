@@ -186,6 +186,19 @@ def claude_pid():
     return None
 
 
+def claude_proc():
+    """T-1028: {pid, start} of the session's Claude Code, to tell later whether it ended; None if not under one."""
+    pid = claude_pid()
+    info = pid and _proc(pid)
+    return {"pid": pid, "start": info[1]} if info else None
+
+
+def proc_alive(pid, start):
+    """T-1028: the process pid is still the one that began at `start` (a reused pid has another start time)."""
+    info = _proc(pid) if isinstance(pid, int) and pid > 1 else None
+    return bool(info) and info[1] == str(start)
+
+
 def _comm(pid):
     """A process's command name ("claude"), or ""."""
     try:
