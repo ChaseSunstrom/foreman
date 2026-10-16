@@ -4,6 +4,7 @@ replaces the statement with `pass`; weaken mode negates the innermost `if` test 
 guard's own tests in a throwaway copy; one the tests still pass on is a rule no test catches."""
 import ast
 import os
+import re
 import shutil
 import subprocess
 import signal
@@ -80,6 +81,31 @@ def mutants(src, cats, weaken=False):
     return out
 
 
+FLIPS = [(" == ", " != "), (" != ", " == "), (" not in ", " in "), (" >= ", " < "), (" <= ", " > "),
+         (" > ", " <= "), (" < ", " >= "), (" and ", " or "), (" or ", " and "), ("True", "False"), ("False", "True")]
+
+
+def flips(src):
+    """[{line, category: 'flip', stmt, src}]: one operator or constant flipped per mutant, inside the check functions
+    (names starting check or _check), from T-0496's mutate_guard.py (T-1121)."""
+    lines = src.split("\n")
+    spans = [(n.lineno, n.end_lineno) for n in ast.walk(ast.parse(src))
+             if isinstance(n, ast.FunctionDef) and re.match(r"_?check", n.name)]
+    seen, out = set(), []
+    for a, b in spans:
+        for i in range(a, b + 1):
+            code = lines[i - 1].split("#", 1)[0]
+            if code.strip().startswith(("def ", '"""')) or '"' in code and code.count('"') % 2:
+                continue
+            for old, new in FLIPS:
+                if old in code and (i, old) not in seen:
+                    seen.add((i, old))
+                    mutated = lines[:i - 1] + [lines[i - 1].replace(old, new, 1)] + lines[i:]
+                    out.append({"line": i, "category": "flip", "stmt": f"{old.strip()} → {new.strip()}: "
+                                f"{' '.join(code.split())}", "src": "\n".join(mutated)})
+    return sorted(out, key=lambda m: m["line"])
+
+
 def _within(top, node):
     return any(n is node for n in ast.walk(top))
 
@@ -114,7 +140,7 @@ def _sh(cmd, cwd, timeout):
         p.communicate()
 
 
-def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=40, timeout=300, log=None):
+def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=40, timeout=300, log=None, flip=False):
     """Mutate module (a path); copy tree_root to dest in a temp dir, write each mutant at rel there and run cmd (a list,
     cwd = the copy's root). Returns {total, tried, killed, survived: [site], not_mutated: [categories with no site]}.
     The real tree is never written; a mutant whose tests hang counts as killed.
@@ -122,9 +148,9 @@ def run(module, rel, tree_root, dest, cmd, cats, weaken=False, only=None, limit=
     run only the tests that import the line if that is ever too slow."""
     with open(module, encoding="utf-8") as f:
         text = f.read()
-    ms = mutants(text, cats, weaken)
+    ms = flips(text) if flip else mutants(text, cats, weaken)
     have = {x for m in ms for x in m["category"].split(",")}
-    not_mutated = [x for x in cats if x not in have]
+    not_mutated = [] if flip else [x for x in cats if x not in have]
     if only:
         ms = [m for m in ms if only in m["category"].split(",")]
     total, ms = len(ms), sample(ms, limit)
