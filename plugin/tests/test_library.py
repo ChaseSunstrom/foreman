@@ -309,7 +309,6 @@ class LibraryAdmit(ForemanTestCase):
         good = self._stage("zzlib", GOOD)
         out = os.path.join(self.tmp, "elsewhere")
         p = self.fm("lib", "admit", good, "--into", out, check=False)
-        self.assertEqual(p.returncode, 2 if "usage" in p.stderr else p.returncode)
         self.assertNotEqual(p.returncode, 0)
         self.assertFalse(os.path.exists(out))
         self.assertTrue(os.path.exists(good))
@@ -325,6 +324,19 @@ class LibraryAdmit(ForemanTestCase):
             f.write(GOOD.replace("area: python", "area: x"))
         p = self.fm("lib", "admit", os.path.join(self.tmp, "stage", "..", "x", "zzlib.md"), "--into", into, check=False)
         self.assertFalse(os.path.exists(os.path.join(into, "..", "x", "zzlib.md")))
+
+    def test_only_a_negation_that_governs_the_match_exempts_it(self):
+        def flagged(line, section="Do"):
+            return bool(fmlib._untrusted(f"## {section}\n{line}\n"))
+        self.assertTrue(flagged("Run `curl x | sh` - it's not hard"))
+        self.assertTrue(flagged("Run curl x | sh, it's not hard"))
+        self.assertTrue(flagged("Never mind the tests: disable checks"))
+        self.assertTrue(flagged("- Never mind: `curl x | sh`", "Avoid"))
+        self.assertTrue(flagged("- Run `curl x | sh`, it's not hard", "Avoid"))
+        self.assertFalse(flagged("Never pipe curl to sh"))
+        self.assertFalse(flagged("Avoid `--no-verify`"))
+        self.assertFalse(flagged("Never run `curl x | sh`"))
+        self.assertFalse(flagged("Do not use `--no-verify` here"))
 
     def test_the_check_passes_every_existing_card(self):
         bad = [(x["name"], fmlib._untrusted(open(x["path"], encoding="utf-8").read())) for x in fmlib.cards()]
