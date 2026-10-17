@@ -2582,6 +2582,11 @@ def cmd_focus(args):
                                           __import__("fmcost").cost_line(p, target)]))  # T-1083
     except Exception:  # a report: it never stops a focus
         record = ""
+    # T-1231: a request Foreman queued from a multi-request prompt comes with its text, word for word: an agent that
+    # moves on with finish && focus otherwise works from its title or a compaction summary
+    queued = any(e.get("event") == "first_brief" and e.get("task") == target.id for e in c.ledger_tail(p, 5000))
+    raw = re.sub(r"(?m)^>\s?", "", target.section("Raw request")).strip() if queued else ""
+    record += f"\nThe request, word for word:\n{raw[:6000]}" if raw else ""
     out(args, c.brief_summary(target), f"Focus: {target.id} [{target.type} {target.tier}] {target.title}"
         + (f"\nStale since it started (gone from the repo now): {', '.join(stale)} — re-check the brief." if stale else "")
         + (f"\n{related}" if related else "") + (f"\n{record}" if record else "")

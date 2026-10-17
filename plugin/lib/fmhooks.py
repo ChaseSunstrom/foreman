@@ -762,19 +762,15 @@ def _requests_note(p, sid, cap=REQUEST_TEXT_CAP):
            if e.get("event") == "first_brief" and e.get("session_id") == sid}
     left = sorted((b for b in c.load_briefs(p) if b.id in ids and b.status not in c.CLOSED),
                   key=lambda b: (b.status != "active", c.id_num(b.id)))
-    parts, used, rest = [], 0, []
-    for b in left:
-        block = f"### {b.id} ({b.status}) {b.title}\n" + _request_text(b, cap)
-        if parts and used + len(block) > cap:
-            rest.append(b.id)
-            continue
-        parts.append(block)
-        used += len(block)
     if not left:
         return None
-    return ("The requests still open in this session, word for word (a compaction summary keeps their names and drops "
-            "their rules: follow these, not the summary):\n\n" + "\n\n".join(parts)
-            + (f"\n\nAlso open: {', '.join(rest)} (fm task show ID)." if rest else ""))
+    # T-1231: the one being worked whole; the rest by title (fm focus prints each one's text when it starts). Every
+    # open request whole was 5-8 KB after each compaction, which brought the next compaction sooner
+    head, rest = left[0], left[1:]
+    return (f"The request being worked, word for word (a compaction summary keeps its name and drops its rules: follow "
+            f"this, not the summary):\n\n### {head.id} ({head.status}) {head.title}\n{_request_text(head, cap)}"
+            + ("\n\nStill open after it, in order (fm focus ID prints each one's text): "
+               + "; ".join(f"{b.id} {b.title}" for b in rest) if rest else ""))
 
 
 # T-1242: one way of looking per pass, so a marathon doesn't reread the same code and find nothing (the first one found
