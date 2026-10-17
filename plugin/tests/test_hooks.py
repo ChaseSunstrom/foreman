@@ -683,7 +683,7 @@ class NoTaskGate(HookCase):
         ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
         self.assertLess(len(ctx), 9500, "Claude Code moves a longer hook context to a file")
         self.assertIn("rule 1.", ctx, "the active request first, whole")
-        self.assertIn("fm task show", ctx, "the rest by id")
+        self.assertIn("fm focus ID", ctx, "the rest by id, with where their text is")
 
     def test_an_edit_between_requests_focuses_the_next_and_shows_its_text(self):
         # T-1242 smoke: after fm task finish nothing was active, the next write was refused, and the module was
@@ -708,6 +708,30 @@ class NoTaskGate(HookCase):
         reqs = fmhooks._requests("Task: NEVER touch tests/.\n\n## Request 1\nAdd half().\n\n## Request 2\nAdd third().")
         self.assertEqual([r.splitlines()[0] for r in reqs], ["Add half().", "Add third()."], "titles stay the request's")
         self.assertTrue(all("NEVER touch tests/." in r for r in reqs))
+
+    def test_focusing_a_queued_request_prints_its_text_and_the_compaction_note_stays_small(self):
+        # T-1231: the note after each compaction carried every open request (5-8 KB, three times a run), which itself
+        # brought the next compaction sooner; fm focus showed no request text, so a chained finish && focus moved on
+        # blind
+        self.fm("init")
+        self.fm("autonomy", "full")
+        body = lambda k: f"Add f{k}(): rule {k}.\n" + "- a rule line for this request\n" * 40
+        prompt = "Task: " + "\n\n".join(f"## Request {k}\n{body(k)}" for k in range(1, 5))
+        transcript = os.path.join(self.tmp, "t.jsonl")
+        with open(transcript, "w") as f:
+            f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
+        self.hook("UserPromptSubmit", {"prompt": prompt, "transcript_path": transcript})
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "f.py"),
+                                                                      "content": "x"}, "transcript_path": transcript})
+        briefs = sorted(c.load_briefs(self.project()), key=lambda b: c.id_num(b.id))
+        ctx = self.ctx_of(self.hook("SessionStart", {"source": "compact"}))
+        self.assertIn("rule 1.", ctx, "the active request whole")
+        self.assertNotIn("rule 3.\n- a rule line", ctx, "the others by title only")
+        self.assertIn(briefs[2].id, ctx)
+        self.fm("task", "drop", briefs[0].id, "--reason", "done")
+        out = self.fm("focus", briefs[1].id).stdout
+        self.assertIn("rule 2.", out)
+        self.assertIn("- a rule line for this request", out)
 
     def test_a_marathon_run_is_sent_to_find_more_work_after_the_asked_work(self):
         # T-1242: FOREMAN_MARATHON=N: once the asked work is closed, N passes of finding and doing work nobody asked for

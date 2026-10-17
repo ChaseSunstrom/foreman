@@ -1,17 +1,17 @@
 {
  "generated": "2026-10-16",
  "totals": {
-  "tasks_done": 729,
-  "evidence": 2676,
+  "tasks_done": 732,
+  "evidence": 2679,
   "proofs": 250,
-  "commits": 567,
-  "gate_runs": 554,
+  "commits": 569,
+  "gate_runs": 556,
   "subagents": 538,
   "lanes_merged": 131,
   "findings": 155,
   "guard_blocks": 295,
-  "captures": 519,
-  "lessons_shown": 722
+  "captures": 520,
+  "lessons_shown": 724
  },
  "daily": [
   {
@@ -104,25 +104,25 @@
   },
   {
    "day": "2026-10-16",
-   "FEATURE": 103,
-   "FIX": 65,
-   "CLEAN": 15,
+   "FEATURE": 104,
+   "FIX": 66,
+   "CLEAN": 16,
    "PERFORMANCE": 8,
    "SECURITY": 13,
    "RESEARCH": 4,
    "lanes": 86,
-   "evidence": 741
+   "evidence": 744
   }
  ],
  "tiers": {
-  "S": 383,
+  "S": 385,
   "M": 300,
-  "L": 46
+  "L": 47
  },
  "types": {
-  "FEATURE": 334,
-  "FIX": 238,
-  "CLEAN": 43,
+  "FEATURE": 335,
+  "FIX": 239,
+  "CLEAN": 44,
   "PERFORMANCE": 21,
   "SECURITY": 68,
   "RESEARCH": 25
@@ -160,15 +160,10 @@
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 554,
-  "median": 75.3
+  "runs": 556,
+  "median": 75.5
  },
  "releases": [
-  {
-   "version": "1.2.23",
-   "day": "2026-10-09",
-   "tests": 1163
-  },
   {
    "version": "1.2.24",
    "day": "2026-10-09",
@@ -243,6 +238,11 @@
    "version": "1.2.38",
    "day": "2026-10-16",
    "tests": 2255
+  },
+  {
+   "version": "1.2.39",
+   "day": "2026-10-16",
+   "tests": 2279
   }
  ],
  "cards": {
@@ -751,32 +751,125 @@
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 33.3333,
-      "turns": 7.6667,
-      "error": false
+      "seconds": 36.0,
+      "turns": 8.3333,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
-      "cost": 0.007,
+      "cost": 0.008,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 31.3333,
-      "turns": 8.0,
-      "error": false
+      "seconds": 34.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
      "case": "Round tax half to even",
      "foreman": {
       "pass": true,
-      "cost": 0.01,
+      "cost": 0.008,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 38.3333,
-      "turns": 14.3333,
-      "error": false
+      "seconds": 26.6667,
+      "turns": 11.3333,
+      "error": false,
+      "tests": [
+       92,
+       92
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
@@ -784,9 +877,40 @@
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 24.6667,
-      "turns": 10.6667,
-      "error": false
+      "seconds": 25.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       92,
+       92
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
@@ -797,32 +921,295 @@
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 45.3333,
-      "turns": 7.3333,
-      "error": false
+      "seconds": 46.0,
+      "turns": 8.3333,
+      "error": false,
+      "tests": [
+       90,
+       90
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
-      "cost": 0.01,
+      "cost": 0.011,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 44.6667,
-      "turns": 9.6667,
-      "error": false
+      "seconds": 46.6667,
+      "turns": 8.6667,
+      "error": false,
+      "tests": [
+       90,
+       90
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
      "case": "Typed invoice lines take prices",
      "foreman": {
       "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 29.6667,
+      "turns": 9.0,
+      "error": false,
+      "tests": [
+       71,
+       71
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 7.6667,
+      "error": false,
+      "tests": [
+       71,
+       71
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Add ledger.ini.parse",
+     "foreman": {
+      "pass": true,
       "cost": 0.009,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 38.0,
-      "turns": 8.6667,
-      "error": false
+      "seconds": 40.3333,
+      "turns": 8.0,
+      "error": false,
+      "tests": [
+       68,
+       68
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 35.0,
+      "turns": 7.0,
+      "error": false,
+      "tests": [
+       68,
+       68
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Export file names",
+     "foreman": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.0,
+      "turns": 6.0,
+      "error": false,
+      "tests": [
+       50,
+       50
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
@@ -831,67 +1218,83 @@
       "runs": 3,
       "passed": 3,
       "seconds": 21.3333,
-      "turns": 7.0,
-      "error": false
-     }
-    },
-    {
-     "case": "Add ledger.ini.parse",
-     "foreman": {
-      "pass": true,
-      "cost": 0.01,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 42.0,
-      "turns": 8.0,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
-      "cost": 0.008,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 35.6667,
-      "turns": 6.6667,
-      "error": false
-     }
-    },
-    {
-     "case": "Export file names",
-     "foreman": {
-      "pass": true,
-      "cost": 0.007,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 28.6667,
       "turns": 7.6667,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
-      "cost": 0.007,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 26.6667,
-      "turns": 8.6667,
-      "error": false
+      "error": false,
+      "tests": [
+       50,
+       50
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
      "case": "Wrap text with indents, paragraphs",
      "foreman": {
       "pass": true,
-      "cost": 0.015,
+      "cost": 0.011,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 63.3333,
-      "turns": 14.6667,
-      "error": false
+      "seconds": 48.6667,
+      "turns": 11.0,
+      "error": false,
+      "tests": [
+       46,
+       46
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      },
      "bare": {
       "pass": true,
@@ -899,32 +1302,125 @@
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 38.0,
+      "seconds": 36.6667,
       "turns": 9.0,
-      "error": false
+      "error": false,
+      "tests": [
+       46,
+       46
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     },
     {
      "case": "Group thousands in invoice amounts",
      "foreman": {
       "pass": true,
-      "cost": 0.01,
-      "score": null,
-      "runs": 3,
-      "passed": 3,
-      "seconds": 39.0,
-      "turns": 14.0,
-      "error": false
-     },
-     "bare": {
-      "pass": true,
       "cost": 0.009,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 35.0,
-      "turns": 12.3333,
-      "error": false
+      "seconds": 32.0,
+      "turns": 12.0,
+      "error": false,
+      "tests": [
+       36,
+       36
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       36,
+       36
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
      }
     }
    ],
@@ -938,12 +1434,12 @@
      "case": "8 requests in one session",
      "foreman": {
       "pass": true,
-      "cost": 0.092,
+      "cost": 0.099,
       "score": null,
       "runs": 3,
       "passed": 3,
-      "seconds": 383.0,
-      "turns": 61.6667,
+      "seconds": 405.3333,
+      "turns": 64.6667,
       "error": false,
       "tests": [
        105,
@@ -1011,16 +1507,16 @@
       "found": []
      },
      "bare": {
-      "pass": false,
-      "cost": 0.056,
+      "pass": true,
+      "cost": 0.062,
       "score": null,
       "runs": 3,
-      "passed": 1,
-      "seconds": 288.6667,
-      "turns": 33.6667,
+      "passed": 2,
+      "seconds": 284.3333,
+      "turns": 33.3333,
       "error": false,
       "tests": [
-       89,
+       105,
        105
       ],
       "compactions": 2,
@@ -1040,7 +1536,7 @@
        },
        {
         "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
-        "failed": 1
+        "failed": 0
        },
        {
         "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
@@ -1048,7 +1544,7 @@
        },
        {
         "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
-        "failed": 4
+        "failed": 0
        },
        {
         "title": "Round tax half to even, line by line, as the tax office requires",
@@ -1056,20 +1552,20 @@
        },
        {
         "title": "Add ledger.lexer.tokenize: split a formula into tokens",
-        "failed": 6
+        "failed": 0
        }
       ],
       "each": [
        {
         "tests": [
-         89,
+         105,
          105
         ],
         "compactions": 2
        },
        {
         "tests": [
-         64,
+         66,
          105
         ],
         "compactions": 2
@@ -1079,7 +1575,7 @@
          105,
          105
         ],
-        "compactions": 2
+        "compactions": 3
        }
       ],
       "found": []
