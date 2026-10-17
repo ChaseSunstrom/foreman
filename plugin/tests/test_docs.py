@@ -286,7 +286,7 @@ class Site(unittest.TestCase):
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
         self.assertEqual((kind, title), ("text", "Why use Foreman"))
-        for words in ("24 dangerous", "both sides pass", "more", "3 runs", "1 of 3", "compact"):
+        for words in ("24 dangerous", "both sides pass", "more", "6 of 6", "3 of 6", "compact"):
             self.assertIn(words, body)
 
     def test_the_site_builds_and_every_local_link_resolves(self):
