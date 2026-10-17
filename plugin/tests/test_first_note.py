@@ -40,6 +40,19 @@ class TestFirstNote(HookCase):
         self.assertEqual(self.edit("other.py"), "", "a second edit in the same task gets none")
         self.assertEqual(self.edit("app.py", tool="Write"), "")
 
+    def test_an_unattended_feature_task_is_told_to_run_the_test_not_record_it(self):
+        # T-1231: in the long duel every request's note became an fm task evidence call (up to 12 a session); a
+        # FEATURE needs no recorded red run, a FIX still does (its red-to-green proof)
+        headless = {"CLAUDE_CODE_ENTRYPOINT": "sdk-cli", "FOREMAN_BENCH": "1"}
+        for type_, recorded in (("FEATURE", False), ("FIX", True)):
+            tid = self.task(title=type_, type_=type_)
+            proc = self.hook("PreToolUse", {"tool_name": "Edit", "tool_input": {
+                "file_path": os.path.join(self.repo, f"{type_.lower()}.py"), "old_string": "x", "new_string": "y"}},
+                env=headless)
+            note = self.ctx_of(proc)
+            self.assertIn("failing test", note, type_)
+            self.assertEqual(f"fm task evidence {tid}" in note, recorded, type_)
+
     def test_a_feature_task_gets_it_and_a_new_task_gets_it_again(self):
         self.task(type_="FEATURE")
         self.assertIn("failing test", self.edit("lib/core.ts"))

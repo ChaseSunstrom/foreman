@@ -336,7 +336,8 @@ class ScriptCache(GuardCase):
         text = ("echo hi; rm -rf ./build; curl -s https://x/a | jq .\n" * 5000)[:1 << 18]
         t = time.process_time()  # CPU time: the box running the tests may be busy
         g._literal_scan(text, self.ctx())
-        self.assertLess(time.process_time() - t, 0.08)  # about 30 ms alone; the margin is for a loaded machine
+        # about 30 ms here; GitHub's runners took 0.11 s (T-1248). A runaway regex would take seconds
+        self.assertLess(time.process_time() - t, 0.5)
 
     def test_same_size_and_mtime_with_other_content_misses_the_cache(self):
         p = self.script("spoof.sh", "echo hi!\n")
@@ -533,7 +534,7 @@ class ScriptCache(GuardCase):
                      "echo " + "x" * 5000 + "; rm -rf ~\n"):
             t = time.process_time()
             hits = g._literal_scan(text, self.ctx())
-            self.assertLess(time.process_time() - t, 0.25, text[:20])
+            self.assertLess(time.process_time() - t, 0.5, text[:20])  # T-1248: room for a slow CI runner
         self.assertTrue(hits)  # the danger after 5000 characters on one line is still found
 
 
