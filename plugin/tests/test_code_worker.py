@@ -69,6 +69,29 @@ class Worker(CodeCase):
         reverts = [json.loads(x) for x in journal_text(self).splitlines() if '"revert"' in x]
         self.assertTrue(any(x.get("file") == ".claude/settings.json" for x in reverts), reverts)
 
+    def test_a_worker_cannot_change_the_files_the_verify_names(self):  # T-1271
+        spec = os.path.join(self.repo, "test_calc.py")
+        before = read_text(spec)
+        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "print(\'ok\')" > test_calc.py\n')
+        r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(spec), before)
+        self.assertIn("reverted test_calc.py", r.stdout)
+        self.assertIn("return a + b", self.calc())
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+
+    def test_a_folder_the_verify_names_is_protected_too(self):  # T-1271
+        os.makedirs(os.path.join(self.repo, "tests"))
+        t = os.path.join(self.repo, "tests", "test_x.py")
+        with open(t, "w") as f:
+            f.write("import unittest\n\n\nclass T(unittest.TestCase):\n    def test_t(self):\n        pass\n")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "tests"], cwd=self.repo, check=True)
+        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "assert 1" > tests/test_x.py\n')
+        r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify",
+                      "python3 test_calc.py && python3 -m unittest discover -s tests")
+        self.assertIn("def test_t", read_text(t))
+        self.assertIn("reverted tests/test_x.py", r.stdout)
+
     def test_a_hanging_worker_is_killed_at_the_timeout(self):
         pid = os.path.join(self.tmp, "pid")
         self.cli("hang", f"sleep 60 &\necho $! > {pid}\nsleep 60\n")
@@ -157,9 +180,9 @@ class Worker(CodeCase):
     def test_the_verify_runs_without_the_credentials_the_worker_never_got(self):
         seen = os.path.join(self.tmp, "seen")
         self.cli("leak", 'sed -i "s/a - b/a + b/" calc.py\n'
-                         f"cat >> test_calc.py <<EOF\nimport os\nopen('{seen}', 'w').write("
-                         "os.environ.get('GITHUB_TOKEN', 'none'))\nEOF\n")
-        self.code("make calc.add add", "--worker", "leak {prompt}", "--verify", VERIFY,
+                         f"cat > probe.py <<EOF\nimport os\nopen('{seen}', 'w').write("
+                         "os.environ.get('GITHUB_TOKEN', 'none'))\nEOF\n")  # a new file: --verify doesn't name it yet
+        self.code("make calc.add add", "--worker", "leak {prompt}", "--verify", VERIFY + " && python3 probe.py",
                   env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "GITHUB_TOKEN": "ghp_x1"})
         self.assertEqual(read_text(seen), "none")
 

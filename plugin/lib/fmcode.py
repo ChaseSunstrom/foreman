@@ -460,7 +460,7 @@ class Run:
         if name in self.done:
             return
         argv = worker_argv(self.worker, prompt)
-        before = _snapshot(self.root)
+        before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, worker_env(), self.cap, reap=True)
@@ -523,7 +523,9 @@ class Run:
         for r in sorted(changed) + sorted(hidden - changed):
             full = os.path.join(self.root, r)
             why = strict(full)
-            if not why and r in changed:
+            if not why and r in b["named"]:
+                why = "a worker never changes the check that judges it (--verify names it)"
+            elif not why and r in changed:
                 why = (f"the worker changed {len(changed)} files, over {JUDGE_MAX}, so none is kept" if
                        len(changed) > JUDGE_MAX else self.guard("Write", {"file_path": full, "content": ""}))
             elif not why and r.split(os.sep)[0] in WATCHED:
@@ -773,7 +775,24 @@ def _put(path, saved):
     os.chmod(path, saved[1])
 
 
-def _snapshot(root):
+def _named(root, verify, stats):
+    """The files (from the before-stats, so a deleted one counts) the user's --verify command names: a word that is a
+    file or a folder in the repo. ponytail: a file the test only imports (conftest.py, a helper) isn't named, so it
+    isn't protected; a word like `.` that names the whole repo is skipped."""
+    try:
+        words = shlex.split(verify or "")
+    except ValueError:
+        return set()
+    out = set()
+    for w in words:
+        rel = os.path.normpath(os.path.join(root, w))
+        rel = os.path.relpath(rel, root) if rel.startswith(root + os.sep) else None
+        if rel:
+            out |= {r for r in stats if r == rel or r.startswith(rel + os.sep)}
+    return out
+
+
+def _snapshot(root, verify=None):
     """What a worker turn is judged against: HEAD; each dirty or untracked file's content; Git's own config and hooks
     and the user's global Git config, which git status can't see; the index's hiding flags; a stat of every entry in
     the work tree but .git (a write changes its ctime, which a user process can't set back); and the content of each
@@ -791,7 +810,9 @@ def _snapshot(root):
     stats, strict = _stats(root), _strict(root)
     kept = {r: _read(os.path.join(root, r)) for r, s in stats.items() if s[1] <= KEEP_MAX and (
         r.split(os.sep)[0] in WATCHED or strict(os.path.join(root, r)))}
-    return {"head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
+    named = _named(root, verify, stats)
+    kept.update({r: _read(os.path.join(root, r)) for r in named})
+    return {"named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
             "own": {f: _read(f) for f in own | _files_under(hooks)}, "hooks_at": _read(hooks), "flags": _flags(root),
             "stats": stats, "kept": kept}
 
