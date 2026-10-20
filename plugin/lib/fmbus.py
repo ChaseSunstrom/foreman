@@ -32,6 +32,20 @@ def _sid(s):
     return re.sub(r"[^\w-]", "", str(s or ""))[:80]
 
 
+def _me(pl):
+    """Who an edit belongs to for leases: the hook's session, or, inside an fm code worker turn (its own Claude
+    session, one per turn), the fm code run that started it (T-1294): its judge and its next turn edit on."""
+    run = os.environ.get("FOREMAN_WORKER_OF") or ""  # fm code's private channel: only its own value names a run
+    return _sid(run if run.startswith("fm-code-") else pl.get("session_id"))
+
+
+def drop_session(sid):
+    """T-1294: drop every lease a session holds (an fm code run that ended), so its code is free at once."""
+    with c.lock(_dir()):
+        data = _leases()
+        _write_leases({k: v for k, v in data.items() if v["session"] != _sid(sid)})
+
+
 # ---------------------------------------------------------------- bus
 
 def send(to, text, kind="note", sender=None):
@@ -437,7 +451,7 @@ def _edits(tool, ti):
 
 def after_edit(pl, p, path):
     """PostToolUse: lease what this session's edit landed in (a Write leases the file)."""
-    sid, tool = _sid(pl.get("session_id")), pl.get("tool_name")
+    sid, tool = _me(pl), pl.get("tool_name")
     if not sid or not path.startswith(p.root.rstrip("/") + "/"):
         return
     rel = os.path.relpath(path, p.root)
@@ -505,7 +519,7 @@ def release(p, task_id):
 
 def conflict(pl, p, path):
     """PreToolUse: why another session's lease forbids this edit, or None."""
-    sid, tool = _sid(pl.get("session_id")), pl.get("tool_name")
+    sid, tool = _me(pl), pl.get("tool_name")
     if not path.startswith(p.root.rstrip("/") + "/"):
         return None
     rel = os.path.relpath(path, p.root)

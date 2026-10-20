@@ -496,7 +496,8 @@ class Run:
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
-            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, worker_env(), self.cap, reap=True)
+            env = dict(worker_env(), FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
+            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
             ended = True
         finally:
             reverts, lost = self.judge(before)
@@ -1040,6 +1041,13 @@ def cmd_code(args):
         run.log(kind="end", status="blocked", reason=str(e))
         run.emit("blocked", f"{run.tid} blocked: {e}", task=run.tid, reason=str(e))
         raise SystemExit(1)
+    finally:
+        if run.worker and run.tid:  # T-1294: the run's leases (its workers' edits) end with it
+            try:
+                import fmbus
+                fmbus.drop_session(f"fm-code-{run.tid}")
+            except Exception:  # leases are advisory: a bus problem never fails the run
+                pass
 
 
 def _plan(run, profile, dry=False):
