@@ -3,6 +3,8 @@
     fm code "<request>" [--model NAME] [--escalate NAME] [--max-steps 40] [--dry-plan] [--no-commit] [--json]
     fm code --resume [ID]          continue a run that crashed or was killed, from its journal
     fm code models                 the model profiles (fmmodels) and where each comes from
+    fm code tui [REQUEST]          the same run in a terminal UI (fmcodetui, T-1283)
+    fm code bench [--model P | --worker CLI] [--seeds a,b]   grade a model or CLI on seeded tasks (fmcodebench, T-1215)
 
 The model never drives. It fills a PLAN slot ({type, tier S|M, title, criteria: [{text, verify}], steps}), checked
 and repaired at most twice with the error quoted back; then, for each step, it picks one action at a time, as a native
@@ -976,6 +978,9 @@ def cmd_code(args):
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
+    if words[:1] == ["bench"]:
+        import fmcodebench
+        return fmcodebench.cmd(args, words[1:])
     if getattr(args, "tui", False):
         import fmcodetui
         return fmcodetui.main(args, words)

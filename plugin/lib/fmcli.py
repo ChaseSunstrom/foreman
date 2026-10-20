@@ -5660,7 +5660,7 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283)")
+                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283); fm code bench grades a model or worker on seeded tasks (T-1215)")
     s.add_argument("request", nargs="*", help="what to do (or: models)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
@@ -5678,6 +5678,8 @@ def build_parser():
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
+    s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
+    s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="fm code tui: one line per event, no screen (T-1283)")
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
