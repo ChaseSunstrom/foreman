@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm cost` shows Foreman's own share of what entered the context, by source: fm command output, hook notes, its rules, its output style and its lines in the skill and agent listings. On Foreman's own repo over three days it was 7.9%, led by fm output (3.5%) and Claude Code's per-turn reminder of the output style (2.1%) (T-1257)
 - A test run piped to `tail`, `head` or `grep` now counts as evidence when its output shows the test runner's own pass summary (unittest, pytest, jest, cargo, go or mocha), and a failure summary records a failure; before, every piped run needed a separate `fm task evidence` call, 5 to 12 a session in the long benchmarks (T-1256)
 - Every `fm bench` result records the Claude Code version it ran on, and the Benchmarks page names it under each duel; runs from before say it wasn't recorded (T-1255)
 - Benchmarks page: what one long session that passed every hidden test cost on each side, which is what you pay to get one. Foreman's sessions cost more each, but over the six long runs it came to $0.095 per fully correct session against Claude Code's $0.119: 20% less (T-1254)
