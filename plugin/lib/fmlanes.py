@@ -134,36 +134,16 @@ BUILDERS_MAX = 6  # T-1089: fm lane max N raises it for an unattended run; more 
 def builders_cap(p):
     v = c.read_meta(p).get("builders")
     return v if isinstance(v, int) and 1 <= v <= BUILDERS_MAX else BUILDERS
-CONTRACT = """## Your contract (foreman:fm-builder)
-- Start from the main checkout's commit {base}: Claude Code makes your worktree from the default branch, which can be
-  older. If `git rev-parse HEAD` isn't {base}: when `git merge-base --is-ancestor HEAD {base}` succeeds, run
-  `git merge --ff-only {base}`; otherwise stop and report the two commits (T-0379).
-- Then, in your worktree: `fm focus {id}`. Refused → stop and report why.
-- Stay in your worktree, the folder you start in (`pwd` prints it): never cd into the main checkout ({main}), name a
-  path under it or point `git -C` at it, and never touch other worktrees or Foreman's state except through fm. fm verbs
-  run from your worktree act on your lane (T-1196: builders hit 31 isolation refusals by leaving it).
-- Test-first; record each step: `fm task evidence {id} --step N --run "<cmd>"`; then
-  `fm check --affected --evidence {id}` (the tests linked to your files; the full gates run after the merge, T-0806).
-  Run checks from the worktree's root without `cd DIR &&` chains (isolation refuses those as too complex: T-0808).
-- Commit on your branch: `git add <the task's files>`, `git commit -m "<what> ({id})"`.
-- Never push, never merge another branch (the fast-forward above aside), never rebase, never close the task, never
-  launch agents.
-- Before editing, claim what you plan to change: `fm lease take FILE[::SYMBOL]...` (T-1068). It fails naming the
-  session and task that already claimed an overlap: work elsewhere or message it. `fm lease drop` when done.
-- Change files with the Edit and Write tools only, never with shell heredocs, `python3 - <<…` rewrites, `cat > f` or
-  sed: Claude Code's isolation refuses those as "too complex", and each refusal costs a turn (T-0399). Many spots at
-  once: Write the batch to a file (JSON [{{"file", "old", "new"}}]) and run fm edit --file F (T-1089).
-- Don't edit CHANGELOG.md: give the task's changelog line, in the style of the existing entries, in your final report;
-  the main thread adds it at finish (T-0428).
-- Claude Code may refuse a command because "this agent is isolated in the worktree" (make, gradle, expo, a long
-  pipeline, `fm task evidence`/`fm task log` in a lane): that's the harness, not a bug. Don't retry or rephrase it;
-  run what it allows, commit, and list each refused check in your report as one for the main thread to run after the
-  merge.
-- Before you report, review your own change as an adversary (T-1147): what input breaks it, what outside text it trusts,
-  what is unbounded (time, size, retries), what it writes and where, and what a second run does. Fix what you find, or
-  list it under a Self-review section of your report.
-- Return: branch, commit sha, each criterion ✓/✗ with its evidence, what's unfinished, files to read first, and the
-  weakest link: the criterion whose evidence you trust least, and why (T-0651)."""
+
+
+def contract(id, base, main):
+    """T-1290: the builder rules live once, in agents/fm-builder.md; the brief carries them with the real ids."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "agents", "fm-builder.md"), encoding="utf-8") as f:
+        rules = f.read().split("break none of it:\n")[1].split("\n\nReport in")[0]
+    rules = "\n".join(l for l in rules.splitlines() if not l.startswith("("))  # the note about this very copy
+    for k, v in (("<ID>", id), ("<BASE>", base), ("<MAIN>", main)):
+        rules = rules.replace(k, v)
+    return "## Your contract (foreman:fm-builder)\n" + rules
 
 
 def stopped(p, briefs=None):
@@ -580,7 +560,7 @@ def builder_brief(p, b, args, resume_branch=None):
     if keeps:
         parts += ["## Defects this project keeps shipping", "Reviewers confirmed these in the last 30 days; check your "
                   "diff for each before you report:", *keeps, ""]
-    parts.append(CONTRACT.format(id=b.id, base=base, main=p.root))
+    parts.append(contract(b.id, base, p.root))
     path =os.path.join(p.dir, "audits", f"{b.id}.builder.md")
     with c.lock(p.dir):
         os.makedirs(os.path.dirname(path), exist_ok=True)
