@@ -5658,7 +5658,7 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212)")
+                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283)")
     s.add_argument("request", nargs="*", help="what to do (or: models)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
@@ -5675,6 +5675,13 @@ def build_parser():
     s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
+    s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
+    s.add_argument("--plain", action="store_true", help="fm code tui: one line per event, no screen (T-1283)")
+    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
+    s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
+    s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
+    s.add_argument("--print-config", action="store_true", help="fm code tui: print its settings as tui.toml (the "
+                                                               "defaults with yours over them)")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
@@ -5813,6 +5820,8 @@ def _options_first(parser, argv):
     their values) standing right before `--` move in front of the positionals; anything else is left as typed, so a
     flag inside an unprotected message is still an error (its review)."""
     k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    if argv[k:k + 2] == ["code", "tui"]:  # T-1283: so `fm code tui --plain "fix it"` keeps its request after a flag
+        return argv[:k + 1] + ["--tui"] + argv[k + 2:]
     if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
         return argv
     sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]

@@ -275,6 +275,11 @@ def build(out):
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
     for f in ("live.mp4", "demo.svg"):
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
+    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
+    import fmcodetui
+    with open(os.path.join(ROOT, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
+        fmcodetui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
+                           (120, 34))
     os.makedirs(os.path.join(out, "features"), exist_ok=True)
     for p in P.PAGES:
         with open(os.path.join(out, "features", p["slug"] + ".html"), "w", encoding="utf-8") as f:
