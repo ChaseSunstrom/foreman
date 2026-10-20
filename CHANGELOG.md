@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The landing page applies the stored theme in its head, as the feature pages do, so a stored light choice on a dark OS no longer flashes dark (T-1244)
 
 ## 1.2.43 — 2026-10-20
 - `fm task finish` names a step whose last run failed ("its last run failed; record a passing run …", with the command) instead of saying it has no verify command or evidence (T-1272)
