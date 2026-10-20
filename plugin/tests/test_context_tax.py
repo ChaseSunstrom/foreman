@@ -15,6 +15,15 @@ POINTER = "its notes were shown earlier this session"
 
 
 class ContextTax(_CardCase):
+    def setUp(self):
+        super().setUp()
+        # a set-up install: without ~/.claude/rules/foreman.md every start adds a one-time setup note (CI's bare HOME)
+        home = os.path.join(self.tmp, "userhome")
+        os.makedirs(os.path.join(home, ".claude", "rules"))
+        open(os.path.join(home, ".claude", "rules", "foreman.md"), "w").close()
+        self.addCleanup(os.environ.__setitem__, "HOME", os.environ["HOME"])
+        os.environ["HOME"] = home
+
     def injects(self):
         path = os.path.join(c.state_dir(), "events.jsonl")
         with open(path, encoding="utf-8") as f:
