@@ -127,10 +127,11 @@ def plan_install(P):
         new_s["worktree"] = dict(wt or {}, baseRef="head")
         new_m["worktree_baseRef_set"] = True
         actions.append("worktree.baseRef = head (builder lanes start from your current branch, not the remote's)")
-    if "outputStyle" not in new_s:  # the user's own style always wins
-        new_s["outputStyle"] = OUTPUT_STYLE
-        new_m["outputStyle_set"] = True
-        actions.append(f"outputStyle = {OUTPUT_STYLE} (Foreman reply format; /output-style switches it)")
+    if new_m.get("outputStyle_set"):  # T-1279: older installs chose the style; the rules carry the format now
+        new_m.pop("outputStyle_set")
+        if new_s.get("outputStyle") == OUTPUT_STYLE:  # a style the user changed to since is left alone
+            new_s.pop("outputStyle")
+            actions.append("outputStyle removed (the reply format now comes from the rules; saves Claude Code's per-turn style reminder)")
 
     md = _read(P["claude_md"])
     new_md = md

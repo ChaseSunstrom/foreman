@@ -67,6 +67,13 @@ class Skills(unittest.TestCase):
             total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
         self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
 
+    def test_the_rules_carry_the_reply_format_and_stay_small(self):
+        # T-1279: the rules ride once a session; the output style's reminder rode every turn
+        path = os.path.join(PLUGIN, "rules", "foreman.md")
+        text = read_text(path)
+        self.assertIn("## Replies", text)
+        self.assertLess(os.path.getsize(path), 6800)
+
     def test_skill_references_exist(self):
         for name in SKILLS:
             body = read_text(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
