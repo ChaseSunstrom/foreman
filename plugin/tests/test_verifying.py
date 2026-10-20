@@ -77,7 +77,7 @@ class Independent(Base):
         import fmcli
         import fmlanes
         self.assertIn("reproducer", fmcli._REVIEW_OUT)
-        self.assertIn("weakest link", fmlanes.CONTRACT)
+        self.assertIn("weakest link", fmlanes.contract("T-9", "abc", "/m"))
 
 
 class Forge(Base):
