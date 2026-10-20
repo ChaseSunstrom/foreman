@@ -435,8 +435,9 @@ PAGES = [
           "llama.cpp, vLLM, OpenRouter, Groq, OpenAI, Gemini's compatible endpoint, and Anthropic's API.</li><li>"
           "<strong>Other CLIs as workers.</strong> claude, codex, gemini or aider do a step; the harness "
           "judges the diff and runs the checks itself.</li><li><strong>The same guard</strong> on every command and "
-          "edit, through the hook other harnesses use.</li><li><strong>A bench</strong> that grades any model as a "
-          "Foreman worker on seeded tasks.</li></ul>"),
+          "edit, through the hook other harnesses use.</li><li><strong>A bench</strong>: <code>fm code bench</code> grades any model or CLI as a "
+          "Foreman worker on five seeded tasks in throwaway repos, counting a task only when its own check passes "
+          "afterwards.</li></ul>"),
          ("chart", lambda s: tiles([("Model client tests", (s.get("code") or {}).get("model_tests", "?")),
                                     ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Building")]))]},
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",

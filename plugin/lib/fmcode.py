@@ -3,6 +3,8 @@
     fm code "<request>" [--model NAME] [--escalate NAME] [--max-steps 40] [--dry-plan] [--no-commit] [--json]
     fm code --resume [ID]          continue a run that crashed or was killed, from its journal
     fm code models                 the model profiles (fmmodels) and where each comes from
+    fm code tui [REQUEST]          the same run in a terminal UI (fmcodetui, T-1283)
+    fm code bench [--model P | --worker CLI] [--seeds a,b]   grade a model or CLI on seeded tasks (fmcodebench, T-1215)
 
 The model never drives. It fills a PLAN slot ({type, tier S|M, title, criteria: [{text, verify}], steps}), checked
 and repaired at most twice with the error quoted back; then, for each step, it picks one action at a time, as a native
@@ -494,7 +496,8 @@ class Run:
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
-            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, worker_env(), self.cap, reap=True)
+            env = dict(worker_env(), FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
+            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
             ended = True
         finally:
             reverts, lost = self.judge(before)
@@ -976,6 +979,9 @@ def cmd_code(args):
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
+    if words[:1] == ["bench"]:
+        import fmcodebench
+        return fmcodebench.cmd(args, words[1:])
     if getattr(args, "tui", False):
         import fmcodetui
         return fmcodetui.main(args, words)
@@ -1035,6 +1041,13 @@ def cmd_code(args):
         run.log(kind="end", status="blocked", reason=str(e))
         run.emit("blocked", f"{run.tid} blocked: {e}", task=run.tid, reason=str(e))
         raise SystemExit(1)
+    finally:
+        if run.worker and run.tid:  # T-1294: the run's leases (its workers' edits) end with it
+            try:
+                import fmbus
+                fmbus.drop_session(f"fm-code-{run.tid}")
+            except Exception:  # leases are advisory: a bus problem never fails the run
+                pass
 
 
 def _plan(run, profile, dry=False):

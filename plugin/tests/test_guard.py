@@ -987,6 +987,37 @@ class ScratchNames(GuardCase):
         self.assertEqual(fmguard.classify_write(os.path.join(link, "secrets.txt"), ctx()), [])
         self.assertEqual(fmguard.classify_write(os.path.join(link, "x.txt"), ctx(confine=(lane, base + "/main"))), [])
 
+    def test_a_state_fallback_named_through_a_link_is_state_at_its_real_path_too(self):
+        # T-1284: macOS's temp folder is a link (/tmp → /private/tmp, /var → /private/var): a hard reset or a write
+        # naming the real path was outside the fallback named through the link
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link = os.path.join(base, "private-tmp"), os.path.join(base, "tmp")
+        os.makedirs(real)
+        os.symlink(real, link)
+        ctx = fmguard.Ctx(cwd=real, project_root=None, home=os.path.join(base, "h"),
+                          foreman_home=os.path.join(base, "fh"), state_fallbacks=[os.path.join(link, "foreman-state-1")])
+        self.assertBlocked(fmguard.check("Bash", {"command": "git reset --hard HEAD~1"}, ctx), "core")
+        self.assertBlocked(fmguard.check("Write", {"file_path": os.path.join(real, "foreman-state-1", "x.json"),
+                                                   "content": "x"}, ctx), "state-direct")
+
+    def test_a_fallback_planted_as_a_link_never_makes_other_writes_state(self):
+        # T-1284 review: /tmp/foreman-state-<uid> has a predictable name in a shared /tmp; another user's link there to
+        # / (or anywhere) must not turn every write into ungrantable state-direct: only the parent folder is resolved
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        work = os.path.join(base, "work")
+        os.makedirs(work)
+        for target in ("/", work):
+            planted = os.path.join(base, f"foreman-state-{len(target)}")
+            os.symlink(target, planted)
+            ctx = fmguard.Ctx(cwd=work, project_root=None, home=os.path.join(base, "h"),
+                              foreman_home=os.path.join(base, "fh"), state_fallbacks=[planted])
+            with self.subTest(target=target):
+                self.assertNotIn("state-direct", fmguard.classify_write(os.path.join(work, "notes.txt"), ctx))
+
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
         for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",
@@ -1120,6 +1151,17 @@ class InterpreterWrites(GuardCase):
                     f"cat x.py - <<'EOF' | python3\n{body}EOF", f"python3 - <<'EOF'\n{body}EOF"):
             self.assertTrue(driving(cmd), cmd)  # still refused: the split is the only way through
         self.assertNotIn("in the next", str(self.bash(f"python3 - <<'EOF'\n{body}EOF")), "no file written: no hint")
+
+    def test_a_script_written_and_run_in_one_command_is_told_to_split(self):
+        # T-1289: still refused, and the refusal ends with the way forward, not only the --allow route
+        for cmd in ("printf 'echo hi\\n' > s.sh && bash s.sh", "cp a.sh s.sh && sh s.sh",  # (a heredoc body is read, so cat <<EOF > s.sh; sh s.sh is judged, not refused)
+
+                    "echo hi | tee s.sh && bash s.sh"):
+            blk = self.bash(cmd)
+            self.assertBlocked(blk, "system", cmd)
+            out = g.message(blk, self.ctx())
+            self.assertIn("written earlier in this command", out, cmd)
+            self.assertTrue(out.rstrip().endswith("run it in the next command (Edit/Write tool or cat > f <<'EOF')."), cmd)
 
     def test_a_literal_cd_chain_picks_the_folder_python_writes_in(self):
         # T-0774: 'cd <scratchpad> && python3 - <<EOF open("clusters.py","w")' was refused as a write in the Foreman

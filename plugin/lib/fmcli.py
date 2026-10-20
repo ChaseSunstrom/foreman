@@ -3259,7 +3259,11 @@ def cmd_research(args):
                for m in re.finditer(r"(?mi)^\W*noticed:?\**\s*(.+)$", text)] if args.from_agent else []
     noticed = [x for x in dict.fromkeys(noticed) if x and x.lower() not in ("none", "nothing", "n/a")][:10]
     with c.lock(p.dir):
-        c.write_atomic(path, c.defang(c.redact(text)))
+        new = c.defang(c.redact(text))
+        if args.append and os.path.isfile(path):  # T-1288: inside the lock, so two appends can't lose one
+            with open(path, encoding="utf-8", errors="replace") as f:
+                new = f.read().rstrip("\n") + "\n\n" + new
+        c.write_atomic(path, new)
         made = []
         for x in noticed:
             type_ = "FIX" if re.search(r"(?i)\b(bug|broken|drops?|crash|fails?|wrong|leak)\b", x) else "FEATURE"
@@ -4701,6 +4705,7 @@ def build_parser():
     r.add_argument("--file")
     r.add_argument("--from-agent", metavar="FILE", help="a subagent's output file: keeps its final report, not the "
                                                            "transcript")
+    r.add_argument("--append", action="store_true", help="add to the note NAME if it exists instead of replacing it")
     r.add_argument("--task")
     r.add_argument("--json", action="store_true")
     r = rsp.add_parser("list", help="saved research, newest first (T-0802)")
@@ -5660,7 +5665,7 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283)")
+                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283); fm code bench grades a model or worker on seeded tasks (T-1215)")
     s.add_argument("request", nargs="*", help="what to do (or: models)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
@@ -5678,6 +5683,8 @@ def build_parser():
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
+    s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
+    s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
     s.add_argument("--plain", action="store_true", help="fm code tui: one line per event, no screen (T-1283)")
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")

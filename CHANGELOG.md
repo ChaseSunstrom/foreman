@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.2.44 — 2026-10-20
+- `fm research add NAME --file PATH --append` adds to a research note instead of replacing it, and the guard's hint for a direct write to state names it, so following the hint no longer erases an existing note (T-1288)
+- Guard: the refusal of a script written and run in one command (`printf > s.sh && bash s.sh`) ends with the way forward, write it in one command and run it in the next, instead of an `--allow` route that didn't apply (T-1289)
+- `fm code --worker claude` works with Foreman installed: each worker turn runs in its own Claude Code session, whose Foreman hooks leased what it edited, so fm code's judge put the worker's fix back as another session's and every later turn was refused the same code (`fm code bench --worker claude` scored 0/2; now the operator seed closes in 21 s). A worker turn now carries `FOREMAN_WORKER_OF`, and its edits lease as the fm code run's own (T-1294)
+- `plugin/tests/run.py` fails when a test module name it's given matches no test, naming it, instead of passing on the other names: a criterion that named a test file that doesn't exist used to pass unseen (T-1287)
+- `fm code bench [--model P | --worker CLI] [--seeds a,b] [--seed-timeout S] [--json]` grades a model or worker CLI as a Foreman worker on five seeded tasks (a wrong operator, an off-by-one, a missing guard clause, a rename across two files, and a request that tempts a dangerous command). Each seed runs in its own throwaway repo, Foreman home and (for a model) home folder, with a canary file the dangerous seed must leave alone; a seed counts as closed only when the bench puts the seed's tests back and re-runs its check itself. It reports per seed: closed, check runs, guard refusals, tokens and seconds, then a score (closed / seeds) compared with the last run of the same model on the same seed set, and appends one line to `<state>/code-bench.jsonl` (T-1215)
+- Stack cards cover the 8 androidx dependencies `fm scout` found: new cards for DataStore, Macrobenchmark and the Car App Library, and the Compose and Android cards detect foundation, ui-test-* and activity-ktx (T-1251)
+- Hook time limits are tested under a 0.4 s slowed Python start (the next-request focus, the Stop close and the evidenced-requests close), with one shared `slow_start` test helper; all three fit, so no limit changed (T-1280)
+- The landing page applies the stored theme in its head, as the feature pages do, so a stored light choice on a dark OS no longer flashes dark (T-1244)
+
 ## 1.2.43 — 2026-10-20
 - `fm task finish` names a step whose last run failed ("its last run failed; record a passing run …", with the command) instead of saying it has no verify command or evidence (T-1272)
 - Secrets: one placeholder rule. The commit refusal and the close warning now agree on what a fake value is; for a token (`sk-`, `ghp_`, `AKIA…`) only a whole placeholder word (example, placeholder, changeme, dummy, redacted, your-key) or a run of x's excuses it, so a real key that happens to contain "your" or "fake" is still refused (T-1273)

@@ -23,6 +23,7 @@ class ContextTax(_CardCase):
         open(os.path.join(home, ".claude", "rules", "foreman.md"), "w").close()
         self.addCleanup(os.environ.__setitem__, "HOME", os.environ["HOME"])
         os.environ["HOME"] = home
+        self.long_paths = 0
 
     def injects(self):
         path = os.path.join(c.state_dir(), "events.jsonl")
@@ -33,12 +34,19 @@ class ContextTax(_CardCase):
         self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "python3 -m unittest"},
                                   "tool_response": {"stdout": "Ran 3 tests in 0.1s\n\nOK", "stderr": ""}})
 
+    def start(self, source):
+        """T-1284: a SessionStart, counting what its notes owe to this machine's temp folder: the project and brief
+        paths are measured as if under Linux's /tmp/tmpXXXXXXXX, so macOS's /private/var/folders/… costs nothing."""
+        out = self.hook("SessionStart", {"source": source}).stdout
+        text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else ""
+        self.long_paths += text.count(self.tmp) * (len(self.tmp) - len("/tmp/tmpXXXXXXXX"))
+
     def new_task(self, title):
         self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
 
     def test_a_replayed_session_stays_under_its_budget_and_says_a_one_liner_once(self):
         self.map([card("python", "lang", 5, "ext:.py")])
-        self.hook("SessionStart", {"source": "startup"})
+        self.start("startup")
         self.hook("UserPromptSubmit", {"prompt": "make the parser accept tabs"})
         notes = [self.edit("app.py") for _ in range(3)]
         self.ran_tests()
@@ -47,12 +55,12 @@ class ContextTax(_CardCase):
         self.new_task("Third")
         notes += [self.edit("app.py") for _ in range(2)]
         self.assertEqual(sum(POINTER in n for n in notes), 1, "the pointer was already in the context")
-        self.hook("SessionStart", {"source": "compact"})
+        self.start("compact")
         self.new_task("Fourth")
         self.assertIn(POINTER, self.edit("app.py"), "after a compaction it's no longer in the context")
         self.ran_tests()
         self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
-        used = {}
+        used = {"SessionStart": -self.long_paths}
         for e in self.injects():
             used[e["event"]] = used.get(e["event"], 0) + e["chars"]
         for event, cap in BUDGET.items():

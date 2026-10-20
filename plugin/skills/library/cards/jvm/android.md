@@ -3,7 +3,7 @@ name: android
 title: Android
 area: jvm
 tags: [android, kotlin, gradle, lifecycle, viewmodel, testing]
-detect: [dep:androidx.core:core-ktx, dep:androidx.appcompat:appcompat, dep:androidx.lifecycle:lifecycle-viewmodel-ktx, file:AndroidManifest.xml, file:gradle/libs.versions.toml]
+detect: [dep:androidx.core:core-ktx, dep:androidx.appcompat:appcompat, dep:androidx.lifecycle:lifecycle-viewmodel-ktx, dep:androidx.activity:activity-ktx, file:AndroidManifest.xml, file:gradle/libs.versions.toml]
 related: [jetpack-compose, hilt, room, kotlin-coroutines, gradle, junit5]
 ---
 Android apps in Kotlin: Gradle module setup, lifecycle-aware ViewModels, permissions, unit and instrumented tests.
