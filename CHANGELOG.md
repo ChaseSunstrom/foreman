@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm code --worker --verify`: a worker turn can't change the check that judges it. Edits to the files and folders the verify command names, or a new file in such a folder (a `conftest.py`), are put back and reported, and the task still closes on the real check (T-1271)
 
 ## 1.2.42 — 2026-10-20
 - `fm cost` counts as Foreman's own output only commands made of `fm` calls (a `fm … && python3 -m unittest` chain is the test run's output), and says which fm verbs it came from. Measured right, fm output is 0.9% of what entered the context, not 3.5%; Foreman's share is 6.8%, led by Claude Code's per-turn reminder of Foreman's output style (2.7%) and its rules (1.7%) (T-1276)

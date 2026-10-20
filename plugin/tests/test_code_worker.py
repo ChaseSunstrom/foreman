@@ -86,11 +86,15 @@ class Worker(CodeCase):
             f.write("import unittest\n\n\nclass T(unittest.TestCase):\n    def test_t(self):\n        pass\n")
         subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-qm", "tests"], cwd=self.repo, check=True)
-        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "assert 1" > tests/test_x.py\n')
+        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "assert 1" > tests/test_x.py\n'
+                          'echo "import sys" > tests/conftest.py\nmkdir -p tests/__pycache__\n'
+                          'echo x > tests/__pycache__/test_x.cpython-314.pyc\n')
         r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify",
                       "python3 test_calc.py && python3 -m unittest discover -s tests")
         self.assertIn("def test_t", read_text(t))
         self.assertIn("reverted tests/test_x.py", r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "tests", "conftest.py")), "a new file there is the check too")
+        self.assertNotIn("__pycache__", r.stdout, "a bytecode cache is no part of the check")
 
     def test_a_hanging_worker_is_killed_at_the_timeout(self):
         pid = os.path.join(self.tmp, "pid")
