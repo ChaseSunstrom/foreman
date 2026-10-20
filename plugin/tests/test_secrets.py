@@ -136,6 +136,17 @@ class Secrets(ForemanTestCase):
         self.fm("task", "finish", "T-0001", "--run", "true", "--audit", "self check", "--commit", "Add star")
         self.assertEqual(self.git("show", "--name-only", "--format=").split(), ["*"])
 
+    def test_one_placeholder_rule_for_the_commit_refusal_and_the_close_warning(self):
+        import sys
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "lib"))
+        import fmsecrets
+        fake = "sk-" + "fakefixture" + "A1b2C3d4E5f6"
+        real = "sk-" + "Zq8Lm2Xv9Rt4Wn7Bc3Hd6Jk"
+        self.assertEqual(fmsecrets.scan_text(f"k = '{fake}'\n"), [])
+        self.assertEqual(fmsecrets.scan_text(f"x {fake}\n"), [])
+        self.assertTrue(fmsecrets.scan_text(f"x {real}\n"))
+        self.assertTrue(fmsecrets.is_placeholder(fake) and not fmsecrets.is_placeholder(real))
+
 
 if __name__ == "__main__":
     unittest.main()

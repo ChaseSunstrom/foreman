@@ -29,13 +29,18 @@ DIFF_OPTS = ["-U0", "--no-color", "--no-ext-diff", "--no-textconv", "--text", "-
 PROJECT_CONFIG = (".mcp.json", os.path.join(".claude", "settings.json"), os.path.join(".claude", "settings.local.json"))
 
 
+def is_placeholder(value):
+    """T-1273: the one rule for a fake value; the commit refusal and the close warning both ask it."""
+    return bool(PLACEHOLDER.search(value))
+
+
 def scan_text(text, config=False):
     """[(line, kind)] for each line of text holding a secret (its first kind); allowlisted lines don't count."""
     lines, found = text.split("\n"), {}
     for rx, kind in KINDS + ([(BARE, "secret literal")] if config else []):
         for m in rx.finditer(text):
             n = text.count("\n", 0, m.start())
-            if n in found or ALLOW in lines[n] or rx in (LITERAL, BARE) and PLACEHOLDER.search(m.group(1)):
+            if n in found or ALLOW in lines[n] or rx in (LITERAL, BARE, TOKEN) and is_placeholder(m.group(1 if rx != TOKEN else 0)):
                 continue
             found[n] = kind or next(k for p, k in PREFIXES if m.group(0).startswith(p))
     return sorted((n + 1, k) for n, k in found.items())
