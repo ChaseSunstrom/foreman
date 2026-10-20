@@ -522,6 +522,9 @@ class Run:
         strict = _strict(self.root)
         for r in sorted(changed) + sorted(hidden - changed):
             full = os.path.join(self.root, r)
+            if r in tree and _vanished(self.root, r, tree[r]):  # T-1270
+                back(full, tree[r], "a worker never throws away your uncommitted work (a stash, clean or delete)")
+                continue
             why = strict(full)
             if not why and _under_named(r, b["named"]):
                 why = "a worker never changes the check that judges it (--verify names it)"
@@ -789,6 +792,18 @@ def _named(root, verify):
         if full.startswith(root + os.sep) and os.path.exists(full):
             out.add(os.path.relpath(full, root))
     return out
+
+
+def _vanished(root, r, before):
+    """T-1270: the user's uncommitted change to r (dirty or untracked before the turn) is gone: the file is, or it's
+    back at HEAD's bytes, as a git stash, git clean or rm leaves it. A worker's own edit leaves other bytes, so stays."""
+    if not before or before[0] in ("link", "other"):
+        return False
+    now = _read(os.path.join(root, r))
+    if now is None:
+        return True
+    head = _git(root, "show", f"HEAD:{r}")
+    return head.returncode == 0 and now[0] == head.stdout and before[0] != head.stdout
 
 
 def _under_named(r, named):
