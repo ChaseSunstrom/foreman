@@ -1683,9 +1683,10 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        note = " ".join(filter(None, [made, saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
-                                      _test_first_note(pl, p, act)]))
+        note = " ".join(_said_once(pl, list(filter(None, [
+            made, saved, slow, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act),
+            _tripwire_note(pl, p, act), _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
+            _test_first_note(pl, p, act)]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
@@ -1788,6 +1789,39 @@ def _test_first_note(pl, p, act):
     except Exception:
         log_error("PreToolUse", _tb())
         return None
+
+
+def _said_once(pl, parts):
+    """T-1258: the notes not already in the context: a one-line note given since the session's last start or
+    compaction (sessions/<sid>.said, which SessionStart clears with the session's other one-shot files) is dropped;
+    a longer note keeps its own once-rule. Any failure keeps every note."""
+    sid = pl.get("session_id")
+    if not parts or not (isinstance(sid, str) and re.fullmatch(r"[\w-]{1,100}", sid)):
+        return parts
+    import hashlib
+    path = os.path.join(c.state_dir(), "sessions", sid + ".said")
+    try:
+        with open(path, encoding="utf-8") as f:
+            said = set(f.read().split())
+    except OSError:
+        said = set()
+    out, new = [], []
+    for x in parts:
+        h = None if "\n" in x else hashlib.sha1(x.encode("utf-8", "replace")).hexdigest()[:12]
+        if h in said:
+            continue
+        out.append(x)
+        if h:
+            said.add(h)
+            new.append(h)
+    if new:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n".join(new) + "\n")
+        except OSError:
+            pass
+    return out
 
 
 def _card_injected(p, tid, name):
