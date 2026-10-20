@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Ambient test notes name up to three failing tests and the command in 220 characters, instead of the runner's timing and class counts; a pass note fits 200. In one long session these notes came to 23 KB over 92 edits (T-1275)
 - The edit-time lesson note reads "T-x's lesson for this file: …" and stops at 200 characters instead of 320; the old wording's frame alone was 49 characters (T-1274)
 
 ## 1.2.41 — 2026-10-20
