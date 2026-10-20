@@ -384,6 +384,8 @@ class Site(unittest.TestCase):
             self.assertGreaterEqual(len(features), 12)
             for path in pages:
                 page = read_text(path)
+                head = page.split("</head>")[0]  # T-1244: every page sets the stored theme before <body>
+                self.assertIn('getItem("fm-theme")', head, os.path.relpath(path, out))
                 for u in re.findall(r'(?:src|href|poster)="([^"]+)"', page):
                     u = u.split("#")[0].split("?")[0]
                     if u and ":" not in u and not u.startswith("//"):
