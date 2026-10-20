@@ -48,5 +48,44 @@ class Workflows(unittest.TestCase):
                 self.assertEqual(r.returncode, 0, r.stderr)
 
 
+# T-1245: the repo's own CI workflows (.github/workflows/*.yml), read as text (stdlib only): every action is pinned to a
+# 40-hex commit SHA, and pages.yml builds read-only while only its deploy job holds pages/id-token write.
+CI = os.path.join(HERE, "..", "..", ".github", "workflows")
+
+
+def ci_text(name):
+    with open(os.path.join(CI, name), encoding="utf-8") as f:
+        return f.read()
+
+
+def ci_jobs(text):
+    """(the text before `jobs:`, {job name: its text})."""
+    top, _, rest = text.partition("\njobs:\n")
+    parts = re.split(r"(?m)^  ([\w-]+):\s*$", rest)
+    return top, {parts[i]: parts[i + 1] for i in range(1, len(parts), 2)}
+
+
+class CiWorkflows(unittest.TestCase):
+    def test_every_uses_is_pinned(self):
+        for name in sorted(os.listdir(CI)):
+            if not name.endswith((".yml", ".yaml")):
+                continue
+            lines = [l for l in ci_text(name).splitlines() if re.match(r"\s*-?\s*uses:", l)]
+            self.assertTrue(lines, name)
+            for l in lines:
+                self.assertRegex(l, r"uses:\s*\S+@[0-9a-f]{40}\s+#\s*\S+", f"{name}: {l.strip()}")
+
+    def test_pages_permissions_split(self):
+        top, js = ci_jobs(ci_text("pages.yml"))
+        self.assertTrue({"build", "deploy"} <= set(js), list(js))
+        self.assertRegex(js["deploy"], r"(?m)^    needs:\s*build\s*$")
+        for w in ("pages: write", "id-token: write"):
+            self.assertNotIn(w, top)
+            self.assertNotIn(w, js["build"])
+            self.assertIn(w, js["deploy"])
+        self.assertIn("contents: read", js["build"])
+        self.assertNotRegex(top, r"(?m)^\s*\w[\w-]*:\s*write\b")
+
+
 if __name__ == "__main__":
     unittest.main()
