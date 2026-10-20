@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The edit-time lesson note reads "T-x's lesson for this file: …" and stops at 200 characters instead of 320; the old wording's frame alone was 49 characters (T-1274)
 
 ## 1.2.41 — 2026-10-20
 - A prompt of many requests queues every one of them on a slow machine too: the hook now makes the tasks inside its own process instead of starting `fm` once per task, which on CI (Linux, Python 3.12) fit only 4 of 8 into the hook's 5 seconds (T-1277)
