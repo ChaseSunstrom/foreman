@@ -987,6 +987,37 @@ class ScratchNames(GuardCase):
         self.assertEqual(fmguard.classify_write(os.path.join(link, "secrets.txt"), ctx()), [])
         self.assertEqual(fmguard.classify_write(os.path.join(link, "x.txt"), ctx(confine=(lane, base + "/main"))), [])
 
+    def test_a_state_fallback_named_through_a_link_is_state_at_its_real_path_too(self):
+        # T-1284: macOS's temp folder is a link (/tmp → /private/tmp, /var → /private/var): a hard reset or a write
+        # naming the real path was outside the fallback named through the link
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link = os.path.join(base, "private-tmp"), os.path.join(base, "tmp")
+        os.makedirs(real)
+        os.symlink(real, link)
+        ctx = fmguard.Ctx(cwd=real, project_root=None, home=os.path.join(base, "h"),
+                          foreman_home=os.path.join(base, "fh"), state_fallbacks=[os.path.join(link, "foreman-state-1")])
+        self.assertBlocked(fmguard.check("Bash", {"command": "git reset --hard HEAD~1"}, ctx), "core")
+        self.assertBlocked(fmguard.check("Write", {"file_path": os.path.join(real, "foreman-state-1", "x.json"),
+                                                   "content": "x"}, ctx), "state-direct")
+
+    def test_a_fallback_planted_as_a_link_never_makes_other_writes_state(self):
+        # T-1284 review: /tmp/foreman-state-<uid> has a predictable name in a shared /tmp; another user's link there to
+        # / (or anywhere) must not turn every write into ungrantable state-direct: only the parent folder is resolved
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        work = os.path.join(base, "work")
+        os.makedirs(work)
+        for target in ("/", work):
+            planted = os.path.join(base, f"foreman-state-{len(target)}")
+            os.symlink(target, planted)
+            ctx = fmguard.Ctx(cwd=work, project_root=None, home=os.path.join(base, "h"),
+                              foreman_home=os.path.join(base, "fh"), state_fallbacks=[planted])
+            with self.subTest(target=target):
+                self.assertNotIn("state-direct", fmguard.classify_write(os.path.join(work, "notes.txt"), ctx))
+
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
         for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",

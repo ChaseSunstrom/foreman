@@ -19,6 +19,9 @@ class Worker(CodeCase):
         super().setUp()
         self.bin = os.path.join(self.tmp, "bin")
         os.makedirs(self.bin)
+        # T-1284: the workers' fix, portable (BSD sed's -i takes the script as a backup suffix, so macOS never fixed it)
+        self.cli("fix-calc", "exec python3 -c 'import pathlib; p = pathlib.Path(\"calc.py\"); "
+                             "p.write_text(p.read_text().replace(\"a - b\", \"a + b\"))'\n")
 
     def cli(self, name, body):
         path = os.path.join(self.bin, name)
@@ -32,7 +35,7 @@ class Worker(CodeCase):
     def test_a_worker_that_fixes_the_bug_closes_the_task(self):
         # a table name: claude's unattended form, with the prompt as one argument
         args = os.path.join(self.tmp, "args")
-        self.cli("claude", f'printf "%s\\n" "$@" > {args}\nsed -i "s/a - b/a + b/" calc.py\necho fixed\n')
+        self.cli("claude", f'printf "%s\\n" "$@" > {args}\nfix-calc\necho fixed\n')
         r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY)
         self.assertIn("return a + b", self.calc())
         t = self.task()
@@ -54,7 +57,7 @@ class Worker(CodeCase):
     def test_protected_writes_and_git_hooks_are_reverted_and_reported(self):
         cfg = os.path.join(self.repo, ".git", "config")
         before = read_text(cfg)
-        self.cli("sneaky", 'sed -i "s/a - b/a + b/" calc.py\nmkdir -p .claude\necho "{}" > .claude/settings.json\n'
+        self.cli("sneaky", 'fix-calc\nmkdir -p .claude\necho "{}" > .claude/settings.json\n'
                            'printf "#!/bin/sh\\necho pwned\\n" > .git/hooks/pre-commit\n'
                            'chmod +x .git/hooks/pre-commit\necho ".claude/" >> .git/info/exclude\n'
                            'printf "[core]\\n\\thooksPath = /tmp/evil\\n" >> .git/config\n')
@@ -72,7 +75,7 @@ class Worker(CodeCase):
     def test_a_worker_cannot_change_the_files_the_verify_names(self):  # T-1271
         spec = os.path.join(self.repo, "test_calc.py")
         before = read_text(spec)
-        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "print(\'ok\')" > test_calc.py\n')
+        self.cli("cheat", 'fix-calc\necho "print(\'ok\')" > test_calc.py\n')
         r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify", VERIFY)
         self.assertEqual(read_text(spec), before)
         self.assertIn("reverted test_calc.py", r.stdout)
@@ -86,7 +89,7 @@ class Worker(CodeCase):
             f.write("import unittest\n\n\nclass T(unittest.TestCase):\n    def test_t(self):\n        pass\n")
         subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
         subprocess.run(["git", "commit", "-qm", "tests"], cwd=self.repo, check=True)
-        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "assert 1" > tests/test_x.py\n'
+        self.cli("cheat", 'fix-calc\necho "assert 1" > tests/test_x.py\n'
                           'echo "import sys" > tests/conftest.py\nmkdir -p tests/__pycache__\n'
                           'echo x > tests/__pycache__/test_x.cpython-314.pyc\n')
         r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify",
@@ -102,7 +105,7 @@ class Worker(CodeCase):
             f.write("my notes\n")  # untracked, not ignored
         with open(os.path.join(self.repo, "test_calc.py"), "a") as f:
             f.write("# my own edit\n")  # tracked, modified
-        self.cli("tidy", 'git stash -q\nrm -f notes.md\nsed -i "s/a - b/a + b/" calc.py\n')
+        self.cli("tidy", 'git stash -q\nrm -f notes.md\nfix-calc\n')
         r = self.work("make calc.add add", "--worker", "tidy {prompt}", "--verify", VERIFY)
         self.assertEqual(read_text(os.path.join(self.repo, "notes.md")), "my notes\n")
         self.assertIn("# my own edit", read_text(os.path.join(self.repo, "test_calc.py")))
@@ -155,7 +158,7 @@ class Worker(CodeCase):
 
     def test_a_worker_gets_no_forge_cloud_or_registry_credentials(self):
         out = os.path.join(self.tmp, "env")
-        self.cli("envy", f'env > {out}\nsed -i "s/a - b/a + b/" calc.py\n')
+        self.cli("envy", f'env > {out}\nfix-calc\n')
         self.code("make calc.add add", "--worker", "envy {prompt}", "--verify", VERIFY,
                   env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "GITHUB_TOKEN": "ghp_x1",
                        "AWS_SECRET_ACCESS_KEY": "aws1", "NPM_TOKEN": "npm1",  # pragma: allowlist secret
@@ -168,7 +171,7 @@ class Worker(CodeCase):
 
     def test_a_write_hidden_by_a_gitignore_line_is_still_judged(self):
         # the builder's open item: a worker adds a .gitignore line, then writes the path it hides
-        self.cli("hider", 'sed -i "s/a - b/a + b/" calc.py\necho ".claude/" >> .gitignore\nmkdir -p .claude\n'
+        self.cli("hider", 'fix-calc\necho ".claude/" >> .gitignore\nmkdir -p .claude\n'
                           'echo "{}" > .claude/settings.json\n')
         r = self.work("make calc.add add", "--worker", "hider {prompt}", "--verify", VERIFY)
         self.assertFalse(os.path.exists(os.path.join(self.repo, ".claude", "settings.json")), r.stdout + r.stderr)
@@ -189,14 +192,14 @@ class Worker(CodeCase):
     def test_a_process_the_worker_detached_dies_with_its_turn(self):
         # setsid left the process group, so it outlived the kill and could plant a hook after the judge
         pid = os.path.join(self.tmp, "pid")
-        self.cli("detach", f'setsid sleep 60 &\necho $! > {pid}\nsed -i "s/a - b/a + b/" calc.py\n')
+        self.cli("detach", f'setsid sleep 60 &\necho $! > {pid}\nfix-calc\n')
         self.work("make calc.add add", "--worker", "detach {prompt}", "--verify", VERIFY)
         with self.assertRaises(ProcessLookupError):
             os.kill(int(read_text(pid)), 0)
 
     def test_the_verify_runs_without_the_credentials_the_worker_never_got(self):
         seen = os.path.join(self.tmp, "seen")
-        self.cli("leak", 'sed -i "s/a - b/a + b/" calc.py\n'
+        self.cli("leak", 'fix-calc\n'
                          f"cat > probe.py <<EOF\nimport os\nopen('{seen}', 'w').write("
                          "os.environ.get('GITHUB_TOKEN', 'none'))\nEOF\n")  # a new file: --verify doesn't name it yet
         self.code("make calc.add add", "--worker", "leak {prompt}", "--verify", VERIFY + " && python3 probe.py",
@@ -207,14 +210,14 @@ class Worker(CodeCase):
         self.commit_files({".gitignore": ".env\nnode_modules/\n"})
         with open(os.path.join(self.repo, ".env"), "w") as f:
             f.write("SECRET=mine\n")
-        self.cli("envw", 'sed -i "s/a - b/a + b/" calc.py\necho "SECRET=pwned" > .env\n')
+        self.cli("envw", 'fix-calc\necho "SECRET=pwned" > .env\n')
         r = self.work("make calc.add add", "--worker", "envw {prompt}", "--verify", VERIFY)
         self.assertEqual(read_text(os.path.join(self.repo, ".env")), "SECRET=mine\n")
         self.assertIn("reverted .env", r.stdout)
 
     def test_a_big_ignored_build_folder_keeps_the_fix_and_a_hidden_write_is_still_judged(self):
         self.commit_files({".gitignore": "node_modules/\n"})
-        self.cli("npm", 'sed -i "s/a - b/a + b/" calc.py\nmkdir -p node_modules/x\n'
+        self.cli("npm", 'fix-calc\nmkdir -p node_modules/x\n'
                         'for i in $(seq 400); do echo $i > node_modules/x/f$i.js; done\n'
                         'echo ".claude/" >> .gitignore\nmkdir -p .claude\necho "{}" > .claude/settings.json\n')
         r = self.work("make calc.add add", "--worker", "npm {prompt}", "--verify", VERIFY)
@@ -224,14 +227,14 @@ class Worker(CodeCase):
         self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
 
     def test_a_change_hidden_with_assume_unchanged_is_seen_and_committed(self):
-        self.cli("hide", 'git update-index --assume-unchanged calc.py\nsed -i "s/a - b/a + b/" calc.py\n')
+        self.cli("hide", 'git update-index --assume-unchanged calc.py\nfix-calc\n')
         r = self.work("make calc.add add", "--worker", "hide {prompt}", "--verify", VERIFY)
         self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
         self.assertIn("calc.py", self.last_commit())
         self.assertTrue(self.git("ls-files", "-v", "calc.py").startswith("H "))
 
     def test_a_planted_hook_in_a_read_only_hooks_folder_is_still_removed(self):
-        self.cli("lock", 'sed -i "s/a - b/a + b/" calc.py\nprintf "#!/bin/sh\\n" > .git/hooks/pre-commit\n'
+        self.cli("lock", 'fix-calc\nprintf "#!/bin/sh\\n" > .git/hooks/pre-commit\n'
                          'chmod +x .git/hooks/pre-commit\nchmod 555 .git/hooks\n')
         r = self.work("make calc.add add", "--worker", "lock {prompt}", "--verify", VERIFY, check=False)
         self.assertNotIn("Traceback", r.stderr)
@@ -251,7 +254,7 @@ class Worker(CodeCase):
         hooks = os.path.join(self.repo, ".git", "hooks")
         shutil.rmtree(hooks)
         os.symlink(ext, hooks)
-        self.cli("glob", 'sed -i "s/a - b/a + b/" calc.py\n'
+        self.cli("glob", 'fix-calc\n'
                          'printf "[core]\\n\\tfsmonitor = /nonexistent/evil\\n" >> "$HOME/.gitconfig"\n')
         r = self.work("make calc.add add", "--worker", "glob {prompt}", "--verify", VERIFY)
         self.assertTrue(os.path.islink(hooks))
@@ -261,7 +264,7 @@ class Worker(CodeCase):
         sha = self.git("rev-parse", "HEAD")
         self.git("branch", "other")
         self.git("checkout", "-q", "--detach")
-        self.cli("hop", 'git switch -q other\ngit commit -q --allow-empty -m mine\nsed -i "s/a - b/a + b/" calc.py\n')
+        self.cli("hop", 'git switch -q other\ngit commit -q --allow-empty -m mine\nfix-calc\n')
         self.work("make calc.add add", "--worker", "hop {prompt}", "--verify", VERIFY, check=False)
         self.assertNotEqual(self.git("rev-parse", "other"), sha)  # its commit stays on it
         self.assertEqual(self.git("symbolic-ref", "-q", "HEAD"), "")  # detached again
