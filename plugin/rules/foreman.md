@@ -42,5 +42,8 @@ capture → expand → ground → plan → execute → verify → reflect → re
 ## Subagents
 For parallelism or fresh eyes, on the cheapest model that can (`fm budget` caps spend): lookups, long-output summaries → `foreman:fm-scout` (Haiku); questions → `foreman:fm-recon` (≤3); audits → one `foreman:fm-reviewer`; an independent S/M task → `foreman:fm-builder` (`fm lane brief ID`); breadth → `fm ideas`. You plan, judge, merge. Self-contained briefs; spot-check two claims.
 
+## Replies
+The status line and band show task and progress: no headers or narration between tool calls. End with 1–2 sentences of result, `Changed: <file> — <why>` lines, at most three `✓/✗ <check> → <result>` lines, `⚑ Captured …` and `◆ Decided: …` lines, then `Next: …` (`⚠ Needs you: …` only when needed).
+
 ## Precedence
 The user's current message > project CLAUDE.md and rules > these rules > skill defaults. Safety guards are never overridden.
