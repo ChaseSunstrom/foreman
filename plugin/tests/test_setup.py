@@ -73,17 +73,32 @@ class Install(SetupCase):
         self.assertTrue(m["statusline_hud"])
         self.assertTrue(any(b.startswith("settings.json.") for b in os.listdir(os.path.join(self.fhome, "backups"))))
 
-    def test_selects_the_foreman_output_style_only_when_none_is_set(self):
+    def test_install_no_longer_sets_the_output_style_and_takes_back_its_own(self):
+        # T-1279: the rules carry the reply format; the style's per-turn reminder cost 2.7% of the context
         self.run_fm("install-user")
-        self.assertEqual(self.load()["outputStyle"], fmsetup.OUTPUT_STYLE)
-        self.run_fm("uninstall-user")
         self.assertNotIn("outputStyle", self.load())
+        self.assertNotIn("outputStyle_set", read_json(self.manifest_path()))
+        # an older install set it and recorded that
+        s = self.load()
+        s["outputStyle"] = fmsetup.OUTPUT_STYLE
         with open(self.settings, "w") as f:
-            json.dump(dict(ORIGINAL, outputStyle="Concise"), f)
-        self.run_fm("install-user")
-        self.assertEqual(self.load()["outputStyle"], "Concise", "the user's own style stays")
-        self.run_fm("uninstall-user")
-        self.assertEqual(self.load()["outputStyle"], "Concise")
+            json.dump(s, f)
+        m = read_json(self.manifest_path())
+        m["outputStyle_set"] = True
+        with open(self.manifest_path(), "w") as f:
+            json.dump(m, f)
+        out = self.run_fm("install-user").stdout
+        self.assertNotIn("outputStyle", self.load())
+        self.assertIn("rules", out)
+        self.assertNotIn("outputStyle_set", read_json(self.manifest_path()))
+        # a style the user chose is never touched, even Foreman's when Foreman did not set it
+        for style in ("Concise", fmsetup.OUTPUT_STYLE):
+            with open(self.settings, "w") as f:
+                json.dump(dict(ORIGINAL, outputStyle=style), f)
+            self.run_fm("install-user")
+            self.assertEqual(self.load()["outputStyle"], style)
+            self.run_fm("uninstall-user")
+            self.assertEqual(self.load()["outputStyle"], style)
 
     def test_uninstall_on_a_bare_home_leaves_no_shell_behind(self):
         # T-0851 (newcomer walkthrough): settings.json was left as {}, an empty rules/ dir stayed, and the report read
