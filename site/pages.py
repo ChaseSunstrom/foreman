@@ -118,7 +118,7 @@ def _duel(s, name):
                    for c in cs)
     table = ('<div class="verdicts"><table><thead><tr><th>Task</th><th>With Foreman</th><th>Claude Code</th></tr>'
              f'</thead><tbody>{rows}</tbody></table></div>')
-    return (head + f"<p><strong>{verdict}</strong></p>" + table
+    return (head + f"<p><strong>{verdict}</strong></p>" + _ran_on(d) + table
             + pairs("Cost per task", "USD, as Claude Code reports it.", [(c["case"], c["foreman"]["cost"], c["bare"]["cost"]) for c in cs], unit="")
             + pairs("Time per task", "Seconds from the first prompt to the session ending.",
                     [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
@@ -177,6 +177,14 @@ def _why(s):
     return "".join(out)
 
 
+def _ran_on(d):
+    """T-1255: the Claude Code a duel ran on, so results from different releases aren't compared unawares."""
+    v = d.get("claude")
+    return (f'<p class="src">Ran on Claude Code {esc(v)}' if v else
+            '<p class="src">Its Claude Code version wasn\'t recorded (a run from before results named it)') + (
+        f", {esc(d['at'])}." if d.get("at") else ".") + "</p>"
+
+
 def _per_correct(f_total, f_pass, b_total, b_pass, pct, more):
     """T-1254: what one session that passed every hidden test cost on each side: all the runs' cost over the runs
     that passed, since a session that falls short has to be run again."""
@@ -230,7 +238,7 @@ def _long(s, name):
     work = ("<p>What Foreman found and did on its own after the asked work:</p><ul>"
             + "".join(f"<li>{esc(x.rsplit(' (discovered)', 1)[0])}</li>" for x in found) + "</ul>") if found else (
         "<p>Foreman found nothing more worth doing before its cap.</p>" if d.get("marathon") else "")
-    return head + f"<p><strong>{said}</strong></p>" + table + work
+    return head + f"<p><strong>{said}</strong></p>" + _ran_on(d) + table + work
 
 
 FLOW_CODE = """<div class="flow"><svg viewBox="0 0 760 210" role="img" aria-label="fm code: the harness runs every station; the model fills one slot at a time">

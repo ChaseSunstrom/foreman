@@ -190,7 +190,7 @@ def duel(state, model=None, kind=""):
         return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]).rstrip(",;.") or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
-    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases,
+    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "claude": fm_.get("claude"), "cases": cases,
             **({"compact_at": fm_.get("compact_at"), "marathon": fm_.get("marathon")} if kind else {}),
             **({"history": long_history(res, model)} if kind == "long" else {})}
 
