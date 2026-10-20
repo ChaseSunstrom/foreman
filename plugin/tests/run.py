@@ -22,10 +22,11 @@ def skipped():
     return {x.strip() for x in os.environ.get("FOREMAN_SKIP_TESTS", "").split(",") if x.strip()}
 
 
-def classes(patterns, k):
-    """Every test class id (module.Class) discover would run, biggest first so the long ones start early."""
+def classes(patterns, k, hit=None):
+    """Every test class id (module.Class) discover would run, biggest first so the long ones start early; hit (a set)
+    gets each -k pattern or name that matched a test."""
     sys.path.insert(0, HERE)
-    counts, skip = {}, skipped()
+    counts, skip, hit = {}, skipped(), set() if hit is None else hit
 
     def walk(suite):
         for t in suite:
@@ -35,6 +36,7 @@ def classes(patterns, k):
                            else type(t).__module__) in skip:
                 continue
             elif not k or any(x in t.id() for x in k):
+                hit.update(x for x in k if x in t.id())
                 cid = f"{type(t).__module__}.{type(t).__name__}"
                 counts[cid] = counts.get(cid, 0) + 1
     for pattern in dict.fromkeys(patterns):
@@ -85,7 +87,12 @@ def main():
     if any(re.search(r"\s", k) for k in a.k):  # T-0357: '-k "a or b"' matched nothing and failed only at the end
         ap.error("-k matches a substring of test ids; repeat -k for each pattern (-k test_guard -k test_cli)")
     t0 = time.time()
-    todo = classes(a.p or ["test*.py"], a.k)
+    hit = set()
+    todo = classes(a.p or ["test*.py"], a.k, hit)
+    missing = [n for n in a.names if n not in hit]
+    if missing:  # T-1287: a name that matches nothing (a test file that doesn't exist) fails, not passes unseen
+        sys.stderr.write(f"run.py: no test matches {', '.join(missing)}\n")
+        return 1
     with concurrent.futures.ThreadPoolExecutor(max(1, a.j)) as ex:
         results = list(ex.map(lambda c: run_one(c, a.k), todo))
     failed = [r for r in results if r[1] != 0]

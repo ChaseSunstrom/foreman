@@ -2,6 +2,8 @@
 every label here, fm replay --cases reports them, and fm night captures one FIX per drifted case."""
 import json
 import os
+import tempfile
+from unittest import mock
 
 from helpers import ForemanTestCase
 
@@ -24,7 +26,10 @@ class GuardCases(ForemanTestCase):
         cases, broken = fmreplay.load_cases(path)
         self.assertEqual(broken, 0, "a line of guard_cases.jsonl is not a case")
         self.assertGreaterEqual(len(cases), 6)
-        self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled case")
+        # T-1284: a case in /tmp means "where Foreman's temp fallback lives" (tempfile's folder: /tmp on Linux, a
+        # /var/folders/… one on macOS), so the corpus runs with the temp folder pinned to /tmp on every platform
+        with mock.patch.object(tempfile, "tempdir", "/tmp"):
+            self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled case")
 
     def test_a_test_without_the_env_never_writes_the_real_corpus(self):
         # T-1197: a temp repo has no plugin/, so the corpus fell back to the real checkout's and tests wrote junk to it

@@ -228,6 +228,29 @@ class Lease(Base):
         self.assertIn("mod.py", self.fm("lease", "list").stdout)
 
 
+    def test_a_fm_code_workers_edits_lease_as_the_run_so_the_run_and_its_next_worker_edit_on(self):
+        """T-1294: each worker turn is its own Claude session; leasing under it made fm code's judge put the
+        worker's fix back, and the next turn's session was refused the same function."""
+        path = os.path.join(self.repo, "mod.py")
+        with open(path, "w") as f:
+            f.write(MOD.replace("x + 1", "x + 2"))
+        run = {"FOREMAN_WORKER_OF": "fm-code-T-0001"}
+        self.hook("PostToolUse", {"tool_name": "Edit", "session_id": "worker-turn-1", "tool_response": {},
+                                  "tool_input": {"file_path": path, "old_string": "x + 1", "new_string": "x + 2"}},
+                  env=run)
+        edit = {"tool_name": "Edit", "tool_input": {"file_path": path, "old_string": "a = x + 2", "new_string": "a = x"}}
+        for sid, env in (("fm-code-T-0001", None), ("worker-turn-2", run)):
+            out = (parse(self.hook("PreToolUse", dict(edit, session_id=sid), env=env)) or {}).get(
+                "hookSpecificOutput") or {}
+            self.assertNotEqual(out.get("permissionDecision"), "deny", f"{sid}: the run's own lease")
+        out = (parse(self.hook("PreToolUse", dict(edit, session_id="someone-else"))) or {}).get("hookSpecificOutput") or {}
+        self.assertEqual(out.get("permissionDecision"), "deny", "a session outside the run is still refused")
+        stray = {"FOREMAN_WORKER_OF": "my-shell-rc"}  # only fm code's own value names a run
+        out = (parse(self.hook("PreToolUse", dict(edit, session_id="someone-else"), env=stray)) or {}).get(
+            "hookSpecificOutput") or {}
+        self.assertEqual(out.get("permissionDecision"), "deny", "a stray FOREMAN_WORKER_OF isn't a run")
+
+
 class Conductor(Base):
     def test_a_session_whose_claude_is_gone_or_a_one_off_isnt_listed(self):
         # T-1001: killed UI-harness sessions stayed 'live' for 15 minutes and filled the pane's More lines

@@ -76,6 +76,23 @@ class Ask(ForemanTestCase):
         self.assertIn("no claims", out.stdout + out.stderr)
 
 
+class Add(ForemanTestCase):
+    def test_append_keeps_earlier_text_and_plain_add_replaces(self):  # T-1288
+        self.fm("init")
+        for n, t in (("a", "alpha text"), ("b", "beta text")):
+            with open(os.path.join(self.tmp, n), "w") as f:
+                f.write(t)
+        a, b = os.path.join(self.tmp, "a"), os.path.join(self.tmp, "b")
+        path = self.fm("research", "add", "X", "--file", a, "--append", "--json")
+        path = json.loads(path.stdout)["path"]
+        self.fm("research", "add", "X", "--file", b, "--append")
+        got = read_text(path)
+        self.assertIn("alpha text", got)
+        self.assertIn("beta text", got)
+        self.fm("research", "add", "X", "--file", b)
+        self.assertNotIn("alpha text", read_text(path))
+
+
 class Verify(ForemanTestCase):
     def test_quotes_are_checked_against_the_fetched_page(self):
         pages = {"https://a.example/1": "<html><script>x</script><p>The engine &amp; it <b>runs  fast</b> on ARM.</p>",

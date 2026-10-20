@@ -28,6 +28,15 @@ def gone(pid, wait=5):
     """The pid has exited (a zombie waiting on init counts) within `wait` seconds."""
     end = time.time() + wait
     while time.time() < end:
+        if not os.path.isdir("/proc"):  # macOS: init reaps an orphan at once, so a signal tells
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            except OSError:
+                pass
+            time.sleep(0.05)
+            continue
         try:
             with open(f"/proc/{pid}/stat") as f:
                 if f.read().rsplit(")", 1)[1].split()[0] == "Z":
@@ -61,10 +70,15 @@ class _Stubbed(ForemanTestCase):
     def tearDown(self):
         for pid in self.pids():  # a failed test's grandchildren (a pid reused since is no sleep of ours)
             try:
-                with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    if f.read().split(b"\0")[0] == b"sleep":
-                        os.kill(pid, signal.SIGKILL)
-            except OSError:
+                if os.path.isdir("/proc"):
+                    with open(f"/proc/{pid}/cmdline", "rb") as f:
+                        name = f.read().split(b"\0")[0].decode(errors="replace")
+                else:  # T-1284: macOS has no /proc
+                    name = (subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                                           timeout=5).stdout.split() or [""])[0]
+                if os.path.basename(name) == "sleep":
+                    os.kill(pid, signal.SIGKILL)
+            except (OSError, subprocess.SubprocessError):
                 pass
         super().tearDown()
 
@@ -77,7 +91,8 @@ class _Stubbed(ForemanTestCase):
 
     def grandchildren(self, n=1):
         """The stub's grandchildren, once n have started."""
-        for _ in range(100):
+        end = time.time() + 30  # a slow runner's shell starts; a pass returns as soon as they're up
+        while time.time() < end:
             if len(self.pids()) >= n:
                 return self.pids()
             time.sleep(0.05)
@@ -123,6 +138,8 @@ class Timeout(_Stubbed):
             return prs[-1]
 
         def interrupted(pr, *a, **kw):
+            if pr not in prs:  # the registry's own ps (no /proc): not one of the children
+                return communicate(pr, *a, **kw)
             calls.append(pr)
             if len(calls) == 2:  # ^C while waiting on the second child, both sleepers up
                 self.grandchildren(2)
@@ -143,6 +160,15 @@ class Timeout(_Stubbed):
             self.fmideas.run_child("ideas", "sys", "a prompt", "haiku", 1)
         self.assertLess(time.time() - t0, 15, "the reap waited on the escaped grandchild's pipes")  # tearDown kills it
         self.assertEqual(self.entries(), [])
+
+
+class TimeoutWithoutProc(Timeout):
+    """T-1284: the timeouts and the interrupt as macOS runs them, with no /proc: the registry's ps calls are
+    subprocesses of their own, which the interrupt test's patched communicate must not count as children."""
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, self.fmideas, "PROC", getattr(self.fmideas, "PROC", "/proc"))
+        self.fmideas.PROC = os.path.join(self.tmp, "noproc")
 
 
 @unittest.skipUnless(os.path.isdir("/proc"), "this test's own helpers read /proc; SweepWithoutProc covers the reaper's ps path")

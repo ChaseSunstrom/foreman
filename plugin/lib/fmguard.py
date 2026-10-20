@@ -60,7 +60,10 @@ class Ctx:
         self.scratch = list(dict.fromkeys([*scratch, *(os.path.realpath(s) for s in scratch if s)]))
         self.allow, self.task_id = set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
-        self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
+        # where a fallback could live: state even before it's used, as named and in its folder's real path (T-1284:
+        # macOS's temp folder is a link). Never the leaf's link: another user can plant /tmp/foreman-state-<uid> -> /
+        self.state_fallbacks = list(dict.fromkeys([*state_fallbacks, *(
+            os.path.join(os.path.realpath(os.path.dirname(s)), os.path.basename(s)) for s in state_fallbacks if s)]))
         self.standing = set(standing)  # T-0119: the project's standing yeses (core only)
         self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
         # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
@@ -145,7 +148,7 @@ def _focuses(cmd):
 def _hint(detail, cat=""):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
     research = (" If it is a download or notes for the project's research, write it to the scratchpad and file it with "
-                "fm research add NAME --file PATH.") if cat == "state-direct" else ""  # T-0814
+                "fm research add NAME --file PATH (it replaces an existing NAME; add --append to keep it).") if cat == "state-direct" else ""  # T-0814
     if "(not known before it runs" in detail:
         return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
                 "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes." + research)
@@ -157,6 +160,8 @@ def _hint(detail, cat=""):
                 "before it, or after it in its pipeline, is a plain data tool that writes no file (curl -s, jq, head, "
                 "tail, sleep) or sets a new name (T=…), and no & runs anything beside it: run a program that writes "
                 "files, or a redirect, as its own command or after python's pipeline (; git log).")
+    if "is written earlier in this command and run here" in detail:  # T-1289
+        return " Write the script in one command, run it in the next command (Edit/Write tool or cat > f <<'EOF')."
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
