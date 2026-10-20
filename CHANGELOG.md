@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Stack cards cover the 8 androidx dependencies `fm scout` found: new cards for DataStore, Macrobenchmark and the Car App Library, and the Compose and Android cards detect foundation, ui-test-* and activity-ktx (T-1251)
+- Hook time limits are tested under a 0.4 s slowed Python start (the next-request focus, the Stop close and the evidenced-requests close), with one shared `slow_start` test helper; all three fit, so no limit changed (T-1280)
 - The landing page applies the stored theme in its head, as the feature pages do, so a stored light choice on a dark OS no longer flashes dark (T-1244)
 
 ## 1.2.43 — 2026-10-20
