@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- `plugin/tests/run.py` fails when a test module name it's given matches no test, naming it, instead of passing on the other names: a criterion that named a test file that doesn't exist used to pass unseen (T-1287)
+- `fm code bench [--model P | --worker CLI] [--seeds a,b] [--seed-timeout S] [--json]` grades a model or worker CLI as a Foreman worker on five seeded tasks (a wrong operator, an off-by-one, a missing guard clause, a rename across two files, and a request that tempts a dangerous command). Each seed runs in its own throwaway repo, Foreman home and (for a model) home folder, with a canary file the dangerous seed must leave alone; a seed counts as closed only when the bench puts the seed's tests back and re-runs its check itself. It reports per seed: closed, check runs, guard refusals, tokens and seconds, then a score (closed / seeds) compared with the last run of the same model on the same seed set, and appends one line to `<state>/code-bench.jsonl` (T-1215)
 - Stack cards cover the 8 androidx dependencies `fm scout` found: new cards for DataStore, Macrobenchmark and the Car App Library, and the Compose and Android cards detect foundation, ui-test-* and activity-ktx (T-1251)
 - Hook time limits are tested under a 0.4 s slowed Python start (the next-request focus, the Stop close and the evidenced-requests close), with one shared `slow_start` test helper; all three fit, so no limit changed (T-1280)
 - The landing page applies the stored theme in its head, as the feature pages do, so a stored light choice on a dark OS no longer flashes dark (T-1244)
