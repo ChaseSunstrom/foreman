@@ -29,9 +29,13 @@ DIFF_OPTS = ["-U0", "--no-color", "--no-ext-diff", "--no-textconv", "--text", "-
 PROJECT_CONFIG = (".mcp.json", os.path.join(".claude", "settings.json"), os.path.join(".claude", "settings.local.json"))
 
 
-def is_placeholder(value):
+# a token (sk-, ghp_, AKIA...) is random, so only a whole placeholder word or a run of x's makes it fake; a bare "your" can occur by chance
+TOKEN_PLACEHOLDER = re.compile(r"(?i)example|placeholder|changeme|dummy|redacted|your[-_]|yourkey|x{6,}")
+
+
+def is_placeholder(value, token=False):
     """T-1273: the one rule for a fake value; the commit refusal and the close warning both ask it."""
-    return bool(PLACEHOLDER.search(value))
+    return bool((TOKEN_PLACEHOLDER if token else PLACEHOLDER).search(value))
 
 
 def scan_text(text, config=False):
@@ -40,7 +44,7 @@ def scan_text(text, config=False):
     for rx, kind in KINDS + ([(BARE, "secret literal")] if config else []):
         for m in rx.finditer(text):
             n = text.count("\n", 0, m.start())
-            if n in found or ALLOW in lines[n] or rx in (LITERAL, BARE, TOKEN) and is_placeholder(m.group(1 if rx != TOKEN else 0)):
+            if n in found or ALLOW in lines[n] or rx in (LITERAL, BARE, TOKEN) and is_placeholder(m.group(1 if rx != TOKEN else 0), rx == TOKEN):
                 continue
             found[n] = kind or next(k for p, k in PREFIXES if m.group(0).startswith(p))
     return sorted((n + 1, k) for n, k in found.items())
@@ -143,7 +147,7 @@ def _json_secrets(data, trail=""):
             continue
         kinds = [kind for _, kind in scan_text(v, config=True)]  # an argument like --token=… counts
         if not kinds and trail.rsplit(".", 1)[-1] in ("env", "headers") and SECRET_NAME.search(str(k)) \
-                and len(v) >= 8 and "$" not in v and not PLACEHOLDER.search(v):
+                and len(v) >= 8 and "$" not in v and not is_placeholder(v):
             kinds = ["secret literal"]
         out += [(here, kind) for kind in kinds[:1]]
     return out
