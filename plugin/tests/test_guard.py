@@ -1002,6 +1002,22 @@ class ScratchNames(GuardCase):
         self.assertBlocked(fmguard.check("Write", {"file_path": os.path.join(real, "foreman-state-1", "x.json"),
                                                    "content": "x"}, ctx), "state-direct")
 
+    def test_a_fallback_planted_as_a_link_never_makes_other_writes_state(self):
+        # T-1284 review: /tmp/foreman-state-<uid> has a predictable name in a shared /tmp; another user's link there to
+        # / (or anywhere) must not turn every write into ungrantable state-direct: only the parent folder is resolved
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        work = os.path.join(base, "work")
+        os.makedirs(work)
+        for target in ("/", work):
+            planted = os.path.join(base, f"foreman-state-{len(target)}")
+            os.symlink(target, planted)
+            ctx = fmguard.Ctx(cwd=work, project_root=None, home=os.path.join(base, "h"),
+                              foreman_home=os.path.join(base, "fh"), state_fallbacks=[planted])
+            with self.subTest(target=target):
+                self.assertNotIn("state-direct", fmguard.classify_write(os.path.join(work, "notes.txt"), ctx))
+
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
         for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",

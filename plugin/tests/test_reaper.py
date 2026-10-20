@@ -70,10 +70,15 @@ class _Stubbed(ForemanTestCase):
     def tearDown(self):
         for pid in self.pids():  # a failed test's grandchildren (a pid reused since is no sleep of ours)
             try:
-                with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    if f.read().split(b"\0")[0] == b"sleep":
-                        os.kill(pid, signal.SIGKILL)
-            except OSError:
+                if os.path.isdir("/proc"):
+                    with open(f"/proc/{pid}/cmdline", "rb") as f:
+                        name = f.read().split(b"\0")[0].decode(errors="replace")
+                else:  # T-1284: macOS has no /proc
+                    name = (subprocess.run(["ps", "-o", "command=", "-p", str(pid)], capture_output=True, text=True,
+                                           timeout=5).stdout.split() or [""])[0]
+                if os.path.basename(name) == "sleep":
+                    os.kill(pid, signal.SIGKILL)
+            except (OSError, subprocess.SubprocessError):
                 pass
         super().tearDown()
 
