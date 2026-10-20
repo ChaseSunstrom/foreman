@@ -677,12 +677,36 @@ def _requests(text):
     return parts if len(parts) > 1 else []
 
 
+def _fm_inline(root, sid, *argv):
+    """(exit code, stdout, stderr) of fm run inside this process, at root, as session sid: no interpreter start per
+    call (CI, Linux 3.12: one fm process per queued task fit 4 of 8 tasks into the hook's 5 s)."""
+    import contextlib
+    import io
+    import fmcli
+    out, err, cwd, had = io.StringIO(), io.StringIO(), os.getcwd(), os.environ.get("FOREMAN_SESSION_ID")
+    try:
+        os.chdir(root)
+        os.environ["FOREMAN_SESSION_ID"] = sid or ""
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = fmcli.main(list(argv))
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else 1
+    finally:
+        os.chdir(cwd)
+        if had is None:
+            os.environ.pop("FOREMAN_SESSION_ID", None)
+        else:
+            os.environ["FOREMAN_SESSION_ID"] = had
+    return code or 0, out.getvalue(), err.getvalue()
+
+
 def _queue_requests(p, sid, reqs):
     """T-1242: a prompt of several requests queues one task per request, each depending on the one before and holding
     its request's own text, so what's done and what's left survive a compaction; the first is focused. Within the
     hook's 5 s: tasks that don't fit are left to the agent, and the note says so."""
     import fcntl
-    fm, made, t0 = os.path.join(c.PLUGIN_ROOT, "bin", "fm"), [], time.monotonic()
+    made, t0 = [], time.monotonic()
     with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         if c.active_brief_fast(p, getattr(p, "lane", None)):
@@ -694,27 +718,17 @@ def _queue_requests(p, sid, reqs):
             type_ = r.items[0].type if r.items else "FEATURE"
             first = c.plain(text.splitlines()[0]).lstrip("-*• ").strip()
             done = (r.done_when or ["the request is done as asked"])[:6]
-            cmd = [fm, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_, "--tier",
-                   "M" if type_ == "SECURITY" else "S", f"--raw={text}", "--step=do what the request asks", "--json",
-                   *[f"--ac={d}" for d in done], *([f"--depends={made[-1]}"] if made else [])]
-            try:
-                r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True,
-                                   timeout=max(0.5, 4.0 - (time.monotonic() - t0)),
-                                   env=dict(os.environ, FOREMAN_SESSION_ID=sid))
-            except subprocess.TimeoutExpired:
-                break  # a task it may have made has no first_brief event: the agent's own queue picks it up
-            tid = re.search(r'"id": "(T-\d+)"', r.stdout)
-            if r.returncode or not tid:
-                log_error("PreToolUse", f"queue requests: {r.stderr.strip()[-300:]}")
+            code, out, err = _fm_inline(p.root, sid, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_,
+                                        "--tier", "M" if type_ == "SECURITY" else "S", f"--raw={text}",
+                                        "--step=do what the request asks", "--json", *[f"--ac={d}" for d in done],
+                                        *([f"--depends={made[-1]}"] if made else []))
+            tid = re.search(r'"id": "(T-\d+)"', out)
+            if code or not tid:
+                log_error("PreToolUse", f"queue requests: {err.strip()[-300:]}")
                 break
             made.append(tid[1])
             c.log_event(p, "first_brief", task=tid[1], session=sid)  # the Stop hook may close it (_close_first_brief)
-        try:
-            if not made or subprocess.run([fm, "focus", made[0]], cwd=p.root, capture_output=True,
-                                          timeout=max(0.5, 4.6 - (time.monotonic() - t0)),
-                                          env=dict(os.environ, FOREMAN_SESSION_ID=sid)).returncode:
-                return None
-        except subprocess.TimeoutExpired:
+        if not made or _fm_inline(p.root, sid, "focus", made[0])[0]:
             return None
     left = len(reqs) - len(made)
     return (f"Foreman queued this session's {len(reqs)} requests as tasks, in order: {', '.join(made)}"

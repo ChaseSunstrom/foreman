@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- A prompt of many requests queues every one of them on a slow machine too: the hook now makes the tasks inside its own process instead of starting `fm` once per task, which on CI (Linux, Python 3.12) fit only 4 of 8 into the hook's 5 seconds (T-1277)
 - A one-line note Foreman's edit-time hook has already given since the session's last start or compaction isn't given again, and a replayed session holds what each hook event injects under a byte budget, so the context tax can't creep back (T-1258)
 - `fm cost` shows Foreman's own share of what entered the context, by source: fm command output, hook notes, its rules, its output style and its lines in the skill and agent listings. On Foreman's own repo over three days it was 7.9%, led by fm output (3.5%) and Claude Code's per-turn reminder of the output style (2.1%) (T-1257)
 - A test run piped to `tail`, `head` or `grep` now counts as evidence when its output shows the test runner's own pass summary (unittest, pytest, jest, cargo, go or mocha), and a failure summary records a failure; before, every piped run needed a separate `fm task evidence` call, 5 to 12 a session in the long benchmarks (T-1256)
