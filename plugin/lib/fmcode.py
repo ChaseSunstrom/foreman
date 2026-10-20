@@ -68,6 +68,20 @@ WORKER_DROP = re.compile(r"^(GITHUB_|GH_|GITLAB_|BITBUCKET_|AWS_|AZURE_|GCP_|GCL
 MODEL_KEYS = ("ANTHROPIC_", "CLAUDE_", "OPENAI_", "GEMINI_", "GOOGLE_API_KEY", "GOOGLE_GENAI_", "OPENROUTER_",
               "MISTRAL_", "DEEPSEEK_", "GROQ_", "XAI_", "AIDER_")
 SECRET_NAME = re.compile(r"(TOKEN|SECRET|PASSW(OR)?D|_PWD|_KEYS?|CREDENTIALS?)$")
+SCHEMA = 1  # T-1283: the --json event stream's version; a reader refuses a newer one it doesn't know
+# T-1283: every --json event (each also has "event", "text" and "ts", seconds since the epoch). The TUI reads only these.
+EVENTS = {
+    "start": "schema, request, task, worker, model, verify, resume",
+    "plan": "plan (type, tier, title, criteria [{text, verify}], steps)",
+    "task": "task", "resume": "task", "step": "step", "fix": "round",
+    "say": "text: the model's own words beside its actions",
+    "tokens": "call_in, call_out, total_in, total_out",
+    "action": "action, target, result (ok|refused|error), detail (the result, cut)",
+    "worker": "worker, exit", "revert": "file, reason",
+    "verify": "criterion, label (before|verify), cmd, exit, output (when it failed)",
+    "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
+    "closed": "task, tokens", "blocked": "task, reason", "error": "task",
+}
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
 
 
@@ -197,12 +211,24 @@ class Run:
         self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
         self.worker, self.verify_cmd = getattr(args, "worker", None), getattr(args, "verify", None)
         self.worker_timeout = getattr(args, "worker_timeout", None)
+        self.kept = []  # events before the task (and its journal) exists, written once it does
 
     # -- output and journal
-    def emit(self, event, text, **data):
+    def emit(self, event, text, quiet=False, **data):
+        """One event: a JSON line with --json (EVENTS lists them), else its text; a quiet one is JSON only. Each is
+        also kept in code/<task>.events.jsonl, the history fm code tui replays (T-1283)."""
+        rec = dict(data, event=event, text=text, ts=round(time.time(), 1))
+        self.kept.append(fmcore.redact_obj(rec))
+        if self.journal:
+            try:
+                with open(self.journal[:-len(".jsonl")] + ".events.jsonl", "a", encoding="utf-8") as f:
+                    f.write("".join(json.dumps(r) + "\n" for r in self.kept))
+                self.kept = []
+            except OSError:
+                pass
         if self.json:
-            print(json.dumps(dict(data, event=event, text=text)), flush=True)
-        else:
+            print(json.dumps(rec), flush=True)
+        elif not quiet:
             print(text, flush=True)
 
     def log(self, **rec):
@@ -238,8 +264,13 @@ class Run:
                             "off this machine: use a local model (fm code models), or fm sensitive off")
 
     def usage(self, r):
-        self.tokens[0] += r["usage"].get("in") or 0
-        self.tokens[1] += r["usage"].get("out") or 0
+        got = (r["usage"].get("in") or 0, r["usage"].get("out") or 0)
+        self.tokens[0] += got[0]
+        self.tokens[1] += got[1]
+        self.emit("tokens", "", quiet=True, call_in=got[0], call_out=got[1], total_in=self.tokens[0],
+                  total_out=self.tokens[1])
+        if (r.get("text") or "").strip():  # the model's own words beside its actions (T-1283)
+            self.emit("say", _cut(self.redact(r["text"].strip()), 1000), quiet=True)
 
     # -- fm and the hook
     def fm(self, *a, stdin=None, timeout=FM_TIMEOUT):
@@ -565,7 +596,8 @@ class Run:
                        and a.get(k) is not None), "")
         state = "refused" if result.startswith("refused") else "error" if result.startswith("error") else "ok"
         self.emit("action", f"  {name} {_one_line(target, 70)}: {state}" + (
-            f" ({_one_line(result, 100)})" if state != "ok" else ""), action=name, target=target[:200], result=state)
+            f" ({_one_line(result, 100)})" if state != "ok" else ""), action=name, target=target[:200], result=state,
+            detail=result[:1500])
         self.log(kind="action", action=name, result=state)
         return result, fin
 
@@ -579,7 +611,8 @@ class Run:
             code, out = self.fm("task", "evidence", self.tid, "--ac", str(n), f"--run={cr['verify']}",
                                 timeout=VERIFY_TIMEOUT + 60)
             self.emit("verify", f"{label} {n}: {cr['verify']} → {'pass' if code == 0 else f'exit {code}'}",
-                      criterion=n, exit=code)
+                      criterion=n, exit=code, label=label, cmd=cr["verify"],
+                      **({"output": _cut(self.redact(out), 1000)} if code else {}))
             if code:
                 failed.append((n, cr["verify"], _cut(self.redact(out), self.cap)))
         self.log(kind="verify", label=label, failed=[n for n, *_ in failed])
@@ -794,6 +827,43 @@ def _named(root, verify):
     return out
 
 
+NUMSTAT_CAP = 8 << 20  # bytes of a new file read to count its lines (ponytail: a bigger one counts its first 8 MB)
+
+
+def _lines(path):
+    """A regular file's newline count, read in chunks up to NUMSTAT_CAP; 0 for anything else or unreadable."""
+    try:
+        if not stat.S_ISREG(os.lstat(path).st_mode):
+            return 0
+        n, left = 0, NUMSTAT_CAP
+        with open(path, "rb") as f:
+            while left > 0:
+                chunk = f.read(min(1 << 16, left))
+                if not chunk:
+                    break
+                n, left = n + chunk.count(b"\n"), left - len(chunk)
+        return n
+    except OSError:
+        return 0
+
+
+def _numstat(root, files):
+    """{path: [lines added, lines removed]} against HEAD; a new untracked file counts its lines as added, a binary
+    file 0 (T-1283)."""
+    out = {}
+    for rec in os.fsdecode(_git(root, "diff", "--numstat", "-z", "--no-renames", "HEAD", "--").stdout).split("\0"):
+        a, _, rest = rec.partition("\t")
+        d, _, path = rest.partition("\t")
+        if path and (a, d) == ("-", "-"):
+            out[path] = [0, 0]
+        elif path and a.isdigit() and d.isdigit():
+            out[path] = [int(a), int(d)]
+    for f in files:
+        if f not in out:
+            out[f] = [_lines(os.path.join(root, f)), 0]
+    return out
+
+
 def _vanished(root, r, before):
     """T-1270: the user's uncommitted change to r (dirty or untracked before the turn) is gone: the file is, or it's
     back at HEAD's bytes, as a git stash, git clean or rm leaves it. A worker's own edit leaves other bytes, so stays."""
@@ -906,6 +976,9 @@ def cmd_code(args):
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
+    if getattr(args, "tui", False):
+        import fmcodetui
+        return fmcodetui.main(args, words)
     p = fmcli.resolve(args)
     root = os.path.realpath(p.root)
     run = Run(args, root, os.path.join(p.dir, "code"))
@@ -935,6 +1008,8 @@ def cmd_code(args):
         run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
             run.offsite_ok(p, run.escalate)
+        run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
+                 model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
         if args.resume is None:
             _plan(run, profile, args.dry_plan)
             if args.dry_plan:
@@ -947,10 +1022,12 @@ def cmd_code(args):
             run.emit("resume", f"resuming {run.tid} from {run.journal}", task=run.tid)
         _drive(run, profile)
     except m.ModelError as e:
-        print(f"fm code: model: {e}" + (f" (fm code --resume {run.tid} carries on)" if run.tid else ""),
-              file=sys.stderr)
+        msg = f"fm code: model: {e}" + (f" (fm code --resume {run.tid} carries on)" if run.tid else "")
+        run.emit("error", msg, quiet=True, task=run.tid)
+        print(msg, file=sys.stderr)
         raise SystemExit(1)
     except CodeError as e:
+        run.emit("error", f"fm code: {e}", quiet=True, task=run.tid)
         print(f"fm code: {e}", file=sys.stderr)
         raise SystemExit(1)
     except Blocked as e:
@@ -1049,6 +1126,8 @@ def _drive(run, profile):
             run.work(f"step:{n}", prompt)
         else:
             run.phase(f"step:{n}", profile, prompt)
+        files = sorted(_dirty(run.root))
+        run.emit("changed", "", quiet=True, step=n, files=files, stat=_numstat(run.root, files))
     rounds = 0
     while True:
         failed = run.verify("verify")
