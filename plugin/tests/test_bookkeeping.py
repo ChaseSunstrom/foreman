@@ -75,6 +75,20 @@ class FinishGaps(HookCase):
         for gap in ("step 1", "intent", "docs", "lesson"):
             self.assertIn(gap, r.stderr + r.stdout)
 
+    def test_a_red_step_names_its_failed_run_and_the_command_while_a_bare_one_keeps_the_old_message(self):
+        # T-1272: 'no verify command or evidence' was wrong for a step that had a (failed) run
+        self.fm("init")
+        tid = self.task(type_="FEATURE", tier="M", steps=("build it", "wire it"))
+        e = self.fm("task", "evidence", tid, "--step", "1", "--run", "false", check=False)
+        self.assertNotEqual(e.returncode, 0, e.stdout + e.stderr)
+        r =self.fm("task", "finish", tid, "--audit", "self review", check=False)
+        out = r.stderr + r.stdout
+        self.assertIn("step 1", out)
+        self.assertIn("its last run failed", out)
+        self.assertIn(f"fm task evidence {tid} --step 1 --run", out)
+        self.assertIn("step 2 (wire it) has no verify command or evidence of its own", out)
+        self.assertNotIn("step 1 (build it) has no verify", out)
+
 
 class Reproduce(ForemanTestCase):
     def test_a_handoff_is_accepted_only_while_its_failure_reproduces(self):
