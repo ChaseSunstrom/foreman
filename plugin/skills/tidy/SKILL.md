@@ -1,6 +1,6 @@
 ---
 name: tidy
-description: Use when the user asks to clean up Foreman or memory, or STATE says tidy is overdue: archives old tasks, flags stale inbox items, lints rules and memory; dry-run first.
+description: Use when the user asks to clean up Foreman or memory, or STATE says tidy is overdue: archives, flags stale items, lints; dry-run first.
 ---
 
 # Foreman: tidy

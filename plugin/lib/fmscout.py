@@ -15,7 +15,7 @@ import time
 
 import fmcore as c
 
-CC_TESTED = "2.1.301"  # the Claude Code version Foreman was last adapted to (README says the same)
+CC_TESTED = "2.1.304"  # the Claude Code version Foreman was last adapted to (README says the same)
 MAX_CAPTURES = 3
 MAX_OPEN = 5
 GAP_S = 1800
