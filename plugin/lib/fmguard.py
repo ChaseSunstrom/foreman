@@ -60,7 +60,10 @@ class Ctx:
         self.scratch = list(dict.fromkeys([*scratch, *(os.path.realpath(s) for s in scratch if s)]))
         self.allow, self.task_id = set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
-        self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
+        # where a fallback could live: state even before it's used, as named and as it really is (T-1284: macOS's
+        # temp folder is a link, so a write naming the real path is state too)
+        self.state_fallbacks = list(dict.fromkeys([*state_fallbacks,
+                                                   *(os.path.realpath(s) for s in state_fallbacks if s)]))
         self.standing = set(standing)  # T-0119: the project's standing yeses (core only)
         self.trusted = bool(trusted)  # T-0120: /fm-trust on: the guard file and Claude Code settings too
         # T-0234: (a builder's worktree, its project's main checkout) — every write outside the worktree is refused but
