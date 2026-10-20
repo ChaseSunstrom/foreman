@@ -11,7 +11,7 @@ STUB = r'''#!/usr/bin/env python3
 import json, os, sys
 stdin = sys.stdin.read()
 with open(os.environ["STUB_LOG"], "a") as f:
-    f.write(json.dumps({"args": sys.argv[1:], "stdin": stdin}) + "\n")
+    f.write(json.dumps({"args": sys.argv[1:], "stdin": stdin, "ppid": os.getppid()}) + "\n")
 if os.environ.get("STUB_EXIT"):
     sys.exit(int(os.environ["STUB_EXIT"]))
 print(json.dumps({"result": open(os.environ["STUB_REPLY"]).read(), "total_cost_usd": 0.01}))
@@ -24,6 +24,16 @@ T-0003 -> T-0042: an unknown id, dropped
 T-0003 -> T-0003: a self edge, dropped
 group: T-0002 T-0005 — the settings page
 """
+
+
+def _alive(pid):
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:  # someone else's: a reused pid, so ours is gone
+        return False
+    return True
 
 
 class _Stubbed(ForemanTestCase):
@@ -134,15 +144,29 @@ class Due(_Stubbed):
     def wait_for_run(self):
         for _ in range(100):  # detached: the command returned before the run did
             if self.calls() and "inferred_deps" in self.fm("task", "show", "T-0001").stdout:
+                break
+            time.sleep(0.1)
+        else:
+            self.fail("no background fm relate ran")
+        # T-1284: and until it has exited (the stub's parent): it still writes after T-0001's deps, and a slow
+        # machine's cleanup removed the folder under it
+        end = time.time() + 30
+        while time.time() < end:
+            if not any(_alive(call["ppid"]) for call in self.calls()):
                 return
             time.sleep(0.1)
-        self.fail("no background fm relate ran")
+        self.fail("the background fm relate never exited")
 
     def test_session_start_runs_it_in_the_background(self):
         self.seven()
+        import fmcore as c  # only fm relate in the background: the day's review and the canary would race the cleanup
+        c.update_meta(c.find_project(self.repo), second_session=c.now()[:10])
+        with open(os.path.join(c.state_dir(), "canary.at"), "a"):
+            pass
         self.hook("SessionStart", {"source": "startup", "session_id": "new-session"},
                   env=dict(self.env, FOREMAN_NO_BACKGROUND=""))
         self.wait_for_run()
+        self.assertEqual(len({x["ppid"] for x in self.calls()}), 1, "a claude call from more than fm relate")
 
     def test_an_intake_of_three_runs_it_in_the_background(self):
         self.fm("intake", input="FEATURE: export the report as CSV\nFEATURE: settings page layout\n"
