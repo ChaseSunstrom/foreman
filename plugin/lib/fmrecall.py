@@ -585,7 +585,8 @@ def where_defined(p, question):
     that use each most. The walkthrough itself is the reader's; no child runs."""
     defs, uses = [], []
     for term in _idents(question):
-        for line in _grep(p.root, ["-E", "-e", rf"\b{_DEF}{re.escape(term)}\b"])[:3]:
+        defined = re.compile(rf"\b{_DEF}{re.escape(term)}\b")  # T-1249: Python's regex; BSD's git grep -E has no \b
+        for line in [x for x in _grep(p.root, ["-w", "-F", "-e", term]) if defined.search(x.split(":", 2)[-1])][:3]:
             path, n, body = (line.split(":", 2) + ["", ""])[:3]
             defs.append(f"{path}:{n}: {c.fit(body.strip(), 100)}")
         counts = {}

@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import time
+import unittest
 from unittest import mock
 
 from helpers import ForemanTestCase
@@ -144,6 +145,7 @@ class Timeout(_Stubbed):
         self.assertEqual(self.entries(), [])
 
 
+@unittest.skipUnless(os.path.isdir("/proc"), "this test's own helpers read /proc; SweepWithoutProc covers the reaper's ps path")
 class Sweep(_Stubbed):
     def setUp(self):
         super().setUp()
@@ -230,3 +232,11 @@ class Hook(_Stubbed):
         out, sweep, _ = self.session_start("1", return_value=0)
         sweep.assert_not_called()
         self.assertIn("additionalContext", out["hookSpecificOutput"])
+
+
+class SweepWithoutProc(Sweep):
+    """T-1249: the sweep as macOS runs it, with no /proc: ps gives each helper's start time and command line."""
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(setattr, self.fmideas, "PROC", getattr(self.fmideas, "PROC", "/proc"))
+        self.fmideas.PROC = os.path.join(self.tmp, "noproc")

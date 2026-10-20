@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- macOS fixes found by the macOS CI job (T-1249): the guard now treats a scratch folder reached through a link as scratch (macOS's `/tmp` is `/private/tmp`, so a scratchpad file named like a secret was refused and a builder's `/tmp` write counted as outside its worktree); `fm deps --calls` and `fm recall --explain` find their lines with any git (they used GNU regex classes that macOS's git grep ignores, so they found nothing); the helper reaper reads start times and command lines from `ps` where there's no `/proc`; and four tests no longer assume Linux paths
+- The context-tax replay runs with a set-up home folder, so CI's bare one no longer adds Foreman's one-time setup note to what it measures (T-1281)
 - Ambient test notes name up to three failing tests and the command in 220 characters, instead of the runner's timing and class counts; a pass note fits 200. In one long session these notes came to 23 KB over 92 edits (T-1275)
 - The edit-time lesson note reads "T-x's lesson for this file: …" and stops at 200 characters instead of 320; the old wording's frame alone was 49 characters (T-1274)
 
