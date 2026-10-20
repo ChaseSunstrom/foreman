@@ -69,6 +69,46 @@ class Worker(CodeCase):
         reverts = [json.loads(x) for x in journal_text(self).splitlines() if '"revert"' in x]
         self.assertTrue(any(x.get("file") == ".claude/settings.json" for x in reverts), reverts)
 
+    def test_a_worker_cannot_change_the_files_the_verify_names(self):  # T-1271
+        spec = os.path.join(self.repo, "test_calc.py")
+        before = read_text(spec)
+        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "print(\'ok\')" > test_calc.py\n')
+        r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(spec), before)
+        self.assertIn("reverted test_calc.py", r.stdout)
+        self.assertIn("return a + b", self.calc())
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+
+    def test_a_folder_the_verify_names_is_protected_too(self):  # T-1271
+        os.makedirs(os.path.join(self.repo, "tests"))
+        t = os.path.join(self.repo, "tests", "test_x.py")
+        with open(t, "w") as f:
+            f.write("import unittest\n\n\nclass T(unittest.TestCase):\n    def test_t(self):\n        pass\n")
+        subprocess.run(["git", "add", "-A"], cwd=self.repo, check=True)
+        subprocess.run(["git", "commit", "-qm", "tests"], cwd=self.repo, check=True)
+        self.cli("cheat", 'sed -i "s/a - b/a + b/" calc.py\necho "assert 1" > tests/test_x.py\n'
+                          'echo "import sys" > tests/conftest.py\nmkdir -p tests/__pycache__\n'
+                          'echo x > tests/__pycache__/test_x.cpython-314.pyc\n')
+        r = self.work("make calc.add add", "--worker", "cheat {prompt}", "--verify",
+                      "python3 test_calc.py && python3 -m unittest discover -s tests")
+        self.assertIn("def test_t", read_text(t))
+        self.assertIn("reverted tests/test_x.py", r.stdout)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "tests", "conftest.py")), "a new file there is the check too")
+        self.assertNotIn("__pycache__", r.stdout, "a bytecode cache is no part of the check")
+
+    def test_the_users_own_uncommitted_work_survives_a_stash_or_a_delete(self):
+        # T-1270: the T-1214 review: a worker's git stash or rm of the user's in-progress files was never undone
+        with open(os.path.join(self.repo, "notes.md"), "w") as f:
+            f.write("my notes\n")  # untracked, not ignored
+        with open(os.path.join(self.repo, "test_calc.py"), "a") as f:
+            f.write("# my own edit\n")  # tracked, modified
+        self.cli("tidy", 'git stash -q\nrm -f notes.md\nsed -i "s/a - b/a + b/" calc.py\n')
+        r = self.work("make calc.add add", "--worker", "tidy {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(os.path.join(self.repo, "notes.md")), "my notes\n")
+        self.assertIn("# my own edit", read_text(os.path.join(self.repo, "test_calc.py")))
+        self.assertIn("return a + b", self.calc(), "the worker's own fix stays")
+        self.assertIn("your uncommitted work", r.stdout)
+
     def test_a_hanging_worker_is_killed_at_the_timeout(self):
         pid = os.path.join(self.tmp, "pid")
         self.cli("hang", f"sleep 60 &\necho $! > {pid}\nsleep 60\n")
@@ -157,9 +197,9 @@ class Worker(CodeCase):
     def test_the_verify_runs_without_the_credentials_the_worker_never_got(self):
         seen = os.path.join(self.tmp, "seen")
         self.cli("leak", 'sed -i "s/a - b/a + b/" calc.py\n'
-                         f"cat >> test_calc.py <<EOF\nimport os\nopen('{seen}', 'w').write("
-                         "os.environ.get('GITHUB_TOKEN', 'none'))\nEOF\n")
-        self.code("make calc.add add", "--worker", "leak {prompt}", "--verify", VERIFY,
+                         f"cat > probe.py <<EOF\nimport os\nopen('{seen}', 'w').write("
+                         "os.environ.get('GITHUB_TOKEN', 'none'))\nEOF\n")  # a new file: --verify doesn't name it yet
+        self.code("make calc.add add", "--worker", "leak {prompt}", "--verify", VERIFY + " && python3 probe.py",
                   env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "GITHUB_TOKEN": "ghp_x1"})
         self.assertEqual(read_text(seen), "none")
 

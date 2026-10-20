@@ -938,10 +938,14 @@ def task_finish(p, args):
     todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
         ("step", s.n, args.run if b.has_evidence(step=s.n) else proves) for s in b.steps()
         if not s.done and s.n not in evidenced]
-    missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
-               for kind, n, cmd in todo if cmd is None]
-    gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
+    def named(kind, n):
+        return f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
+    # T-1272: a step that has a run (a failed one, else it would have closed) is told so, not that it has no evidence
+    red = [n for kind, n, cmd in todo if cmd is None and kind == "step" and b.has_evidence(step=n)]
+    missing = [named(kind, n) for kind, n, cmd in todo if cmd is None and not (kind == "step" and n in red)]
+    gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
+            for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
+                              f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
@@ -1771,11 +1775,9 @@ def _close_warnings_of(p, b, files):
                 text = fh.read()
         except OSError:
             continue
-        lines = text.split("\n")
-        # review: a placeholder must be in the secret-looking token itself (AKIAXXXX…), not anywhere on the line
+        # T-1273: scan_text already drops placeholders, the same rule the commit refusal uses
         out += [f"possible secret ({kind}) in {f}:{n}: move it to the environment or a secret store before committing"
-                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))
-                if not any(fmsecrets.PLACEHOLDER.search(t) for t in re.findall(r"[\w+/=-]{16,}", lines[n - 1]))][:3]
+                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))][:3]
     began = c.parse_ts(c.first_touch(p, b.id) or b.meta.get("created") or "")
     if b.meta.get("scope") and began and c.git_root(p.root):
         ignored = c._git(p.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory") or ""
@@ -5658,7 +5660,7 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212)")
+                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283)")
     s.add_argument("request", nargs="*", help="what to do (or: models)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
@@ -5675,6 +5677,13 @@ def build_parser():
     s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
+    s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
+    s.add_argument("--plain", action="store_true", help="fm code tui: one line per event, no screen (T-1283)")
+    s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
+    s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
+    s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
+    s.add_argument("--print-config", action="store_true", help="fm code tui: print its settings as tui.toml (the "
+                                                               "defaults with yours over them)")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")
@@ -5813,6 +5822,8 @@ def _options_first(parser, argv):
     their values) standing right before `--` move in front of the positionals; anything else is left as typed, so a
     flag inside an unprotected message is still an error (its review)."""
     k = 2 if argv[:1] in (["-p"], ["--project"]) else 0
+    if argv[k:k + 2] == ["code", "tui"]:  # T-1283: so `fm code tui --plain "fix it"` keeps its request after a flag
+        return argv[:k + 1] + ["--tui"] + argv[k + 2:]
     if argv[k:k + 1] not in (["session"], ["claude"]) or "--" not in argv[k + 1:]:
         return argv
     sub = next(a for a in parser._actions if isinstance(a, argparse._SubParsersAction)).choices[argv[k]]
