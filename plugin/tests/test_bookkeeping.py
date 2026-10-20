@@ -13,9 +13,29 @@ OK = {"stdout": "3 passed", "stderr": "", "interrupted": False}
 
 
 class StepEvidence(HookCase):
-    def ran(self, cmd, env=None):
-        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": OK}, env=env)
+    def ran(self, cmd, env=None, out=OK):
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": cmd}, "tool_response": out}, env=env)
         return c.find_brief(self.project(), self.tid)
+
+    def test_a_piped_test_run_counts_when_its_output_shows_the_runners_own_summary(self):
+        # T-1256: long sessions piped every run to tail, then spent 5 to 12 calls recording evidence by hand
+        self.fm("init")
+        self.tid = self.task(steps=("build it", "wire it"))
+        self.fm("task", "ac", self.tid, "add", "all pass", "--verify", "python3 tests/run.py -p all")
+        said = lambda text: {"stdout": text, "stderr": "", "interrupted": False}
+        green, red = said("Ran 3 tests in 0.1s\n\nOK"), said("Ran 3 tests in 0.1s\n\nFAILED (failures=1)")
+        self.assertFalse(self.ran("python3 tests/run.py -k one 2>&1 | tail -3", out=said("ok")).has_evidence(step=1),
+                         "no summary: tail's exit says nothing")
+        self.assertFalse(self.ran("python3 tests/run.py -k one | tail -3", out=red).has_evidence(step=1))
+        b = self.ran("python3 tests/run.py -k one 2>&1 | tail -n 40", out=green)
+        self.assertTrue(b.has_evidence(step=1), b.evidence())
+        b = self.ran("python3 tests/run.py -p all 2>&1 | grep -E 'OK|FAIL'", out=said("OK"))
+        self.assertTrue(any("(ac 2)" in l and "[ran]" in l and "✗" not in l for l in b.evidence()), b.evidence())
+        for summary in ("===== 4 passed in 0.31s =====", "4 passed in 0.31s", "Tests:       4 passed, 4 total",
+                        "test result: ok. 4 passed; 0 failed", "  4 passing (20ms)", "PASS"):
+            self.assertTrue(c.passed_summary(summary), summary)
+        for not_one in ("passed the ball", "4 passed", "OK then", "FAILED (failures=1)\nOK"):
+            self.assertFalse(c.passed_summary(not_one), not_one)
 
     def test_a_one_off_session_records_nothing_on_the_task(self):
         # T-1004: the UI harness (FOREMAN_ONEOFF=1) ran the suite and closed the working session's step 3

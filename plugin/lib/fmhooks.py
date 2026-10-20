@@ -2657,12 +2657,22 @@ def _auto_evidence(pl, p, ok):
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
     cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
     act = c.active_brief_fast(p, p.lane) if cmd else None
-    hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
+    verifies = [(n, " ".join(v.split())) for n, v in (act.verify_cmds() if act else []) if v]
+    base, piped = _unpiped(cmd)
+    exact = [n for n, v in verifies if v == cmd]
+    hits = exact or ([n for n, v in verifies if v == base] if piped else [])
     if not hits:
-        if ok and act:
+        if (ok or piped) and act:
             _runner_evidence(pl, p, act, cmd)
         return
-    if ok:
+    if piped and not exact:  # T-1256: the exit is the filter's, so the runner's own summary decides
+        r = pl.get("tool_response")
+        output = (f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")) if ok \
+            else str(pl.get("error") or "")
+        if not (c.passed_summary(output) or c.failed_summary(output)):
+            return
+        code = 0 if c.passed_summary(output) else 1
+    elif ok:
         r = pl.get("tool_response")
         code, output = c.judged(0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict)
                                 else str(r or ""))  # T-0820: what fm's own runs count as failing, Bash's runs too
@@ -2688,11 +2698,24 @@ _INTERPRETERS = re.compile(r"python[0-9.]*|node|bun|deno|bash|sh|ruby|perl|php")
 _RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")
 
 
+_FILTER = re.compile(r"\s*(?:2>&1\s*)?\|\s*(?:tail|head|grep)\b(?:'[^']*'|\"[^\"]*\"|[^|;&<>'\"])*$")
+
+
+def _unpiped(cmd):
+    """T-1256: (cmd without its trailing output filters, | tail, | head or | grep with any 2>&1 before them, and
+    whether it had any)."""
+    base = cmd
+    while (m := _FILTER.search(base)):
+        base = base[:m.start()].rstrip()
+    return base, base != cmd
+
+
 def _runner(cmd):
     """T-0704: what runs a check: the program and its subcommand words (npm test, cargo test, claude plugin test), or
-    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's.
+    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's
+    (T-1256: a trailing tail, head or grep is no pipe here; _runner_evidence reads such a run's summary instead).
     ponytail: a word heuristic, so `npm test` and `npm test:e2e` differ; a project-declared runner list if it bites."""
-    cmd = re.sub(r"^(?:cd \S+ && )+", "", cmd)
+    cmd = re.sub(r"^(?:cd \S+ && )+", "", _unpiped(cmd)[0])
     if re.search(r"(?<!\|)\|(?!\|)|;|&&|\|\|", cmd):
         return None
     words = [w for w in cmd.split() if not re.match(r"[A-Za-z_]\w*=", w)]
@@ -2723,6 +2746,8 @@ def _runner_evidence(pl, p, act, cmd):
         return
     r = pl.get("tool_response")
     output = f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+    if _unpiped(cmd)[1] and not c.passed_summary(output):  # T-1256: piped, so only the runner's summary says it passed
+        return
     result, tree = c.run_result(0, c.redact(output)), c.worktree_id(p.root)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         b = c.find_brief(p, act.id)
