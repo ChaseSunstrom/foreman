@@ -156,6 +156,30 @@ class Worker(CodeCase):
         self.assertIn("--no-suggest-shell-commands", fmcode.WORKERS["aider"])
         self.assertNotIn("opencode", fmcode.WORKERS, "its run mode doesn't confine shell commands")
 
+
+    def test_the_runs_leases_are_dropped_when_it_ends(self):
+        """T-1294 review: the run's 20-minute lease would refuse the user's own session on that code afterwards."""
+        import time
+        d = os.path.join(self.home, "state", "bus")
+        os.makedirs(d, exist_ok=True)
+        lease = {"session": "fm-code-T-0001", "project": "x", "file": "calc.py", "symbol": "add", "task": "T-0001",
+                 "until": time.time() + 1200}
+        other = dict(lease, session="someone-else")
+        with open(os.path.join(d, "leases.json"), "w") as f:
+            json.dump({"a": lease, "b": other}, f)
+        self.cli("plain", "fix-calc\n")
+        self.work("make calc.add add", "--worker", "plain {prompt}", "--verify", VERIFY)
+        with open(os.path.join(d, "leases.json")) as f:
+            self.assertEqual([v["session"] for v in json.load(f).values()], ["someone-else"])
+
+    def test_a_worker_turn_knows_which_run_it_belongs_to(self):
+        """T-1294: so its own Claude session's Foreman leases count as the run's."""
+        out = os.path.join(self.tmp, "env")
+        self.cli("envr", f"env > {out}\nfix-calc\n")
+        self.work("make calc.add add", "--worker", "envr {prompt}", "--verify", VERIFY)
+        with open(out) as f:
+            self.assertIn("FOREMAN_WORKER_OF=fm-code-T-0001", f.read())
+
     def test_a_worker_gets_no_forge_cloud_or_registry_credentials(self):
         out = os.path.join(self.tmp, "env")
         self.cli("envy", f'env > {out}\nfix-calc\n')
