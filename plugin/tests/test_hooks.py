@@ -629,15 +629,33 @@ class NoTaskGate(HookCase):
         with open(transcript, "w") as f:
             f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
         self.hook("UserPromptSubmit", {"prompt": prompt, "transcript_path": transcript})
-        slow = os.path.join(self.tmp, "slow")  # CI's slow interpreter start: every new Python process waits 0.4 s
-        os.makedirs(slow)
-        with open(os.path.join(slow, "sitecustomize.py"), "w") as f:
-            f.write("import time\ntime.sleep(0.4)\n")
         self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "f.py"),
                                                                       "content": "x"}, "transcript_path": transcript},
-                  env={"PYTHONPATH": slow}, timeout=20)
+                  env=self.slow_start(), timeout=20)
         briefs = sorted(c.load_briefs(self.project()), key=lambda b: b.id)
         self.assertEqual([b.title.split(":")[0] for b in briefs], [f"Request {k}" for k in range(1, 17)])
+
+    def test_the_task_foreman_made_closes_at_stop_when_every_python_start_takes_0_4_s(self):
+        # T-1280: the close child has 20 s; CI's interpreter starts slowly
+        act = self.first_task_session("True")
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
+                  env=dict(self.HEADLESS, **self.slow_start()), timeout=40)
+        self.assertEqual(c.find_brief(self.project(), act.id).status, "done", self.hooks_log()[-1500:])
+
+    def test_at_stop_the_requests_with_evidence_close_when_every_python_start_takes_0_4_s(self):
+        # T-1280: two fm children per request inside 25 s overall; CI's interpreter starts slowly
+        self.first_task_session("True")
+        p, ids = self.project(), []
+        for k in (2, 3):
+            tid = json.loads(self.fm("task", "new", f"Request {k}", "--type", "FEATURE", "--tier", "S", "--ac",
+                                     "done :: true", "--step", "s", "--json").stdout)["id"]
+            c.log_event(p, "first_brief", task=tid, session="sess-1")
+            self.fm("task", "evidence", tid, "--step", "1", "--run", "true")
+            ids.append(tid)
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."},
+                  env=dict(self.HEADLESS, **self.slow_start()), timeout=40)
+        status = {b.id: b.status for b in c.load_briefs(self.project())}
+        self.assertEqual([status[t] for t in ids], ["done", "done"], self.hooks_log()[-800:])
 
     def test_at_stop_the_requests_with_evidence_close_together(self):
         # T-1242 smoke: seven turns of fm focus so each stop could close one request
@@ -708,6 +726,19 @@ class NoTaskGate(HookCase):
         self.assertIn("Request 2", act.title)
         self.assertNotEqual(out.get("permissionDecision"), "deny", out)
         self.assertIn("keys are lowercased", out["additionalContext"])
+
+    def test_the_next_request_is_focused_when_every_python_start_takes_0_4_s(self):
+        # T-1280: the focus child has 3 s inside the hook's 5; CI's interpreter starts slowly
+        self.fm("init")
+        self.fm("autonomy", "full")
+        self.hook("UserPromptSubmit", {"prompt": "Task: ## Request 1\nAdd half().\n\n## Request 2\nAdd third()."})
+        self.pre(os.path.join(self.repo, "calc.py"))
+        self.fm("task", "drop", c.active_brief(c.load_briefs(self.project())).id, "--reason", "done")
+        self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "t.py"),
+                                                                      "content": "x"}}, env=self.slow_start())
+        act = c.active_brief(c.load_briefs(self.project()))
+        self.assertIsNotNone(act, self.hooks_log()[-800:])
+        self.assertIn("Request 2", act.title)
 
     def test_rules_written_before_the_first_request_go_with_every_request(self):
         # T-1242 review: "NEVER touch tests/." above "## Request 1" reached no task and no compaction note

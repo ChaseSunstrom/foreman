@@ -115,6 +115,14 @@ class ForemanTestCase(unittest.TestCase):
         return subprocess.run(cmd, input=json.dumps(payload), env=e,
                               capture_output=True, text=True, timeout=timeout, cwd=payload["cwd"])
 
+    def slow_start(self, delay=0.4):
+        """T-1280: env for CI's slow interpreter start: every new Python process waits `delay` s (a sitecustomize)."""
+        slow = os.path.join(self.tmp, "slow")
+        os.makedirs(slow, exist_ok=True)
+        with open(os.path.join(slow, "sitecustomize.py"), "w") as f:
+            f.write(f"import time\ntime.sleep({delay})\n")
+        return {"PYTHONPATH": slow}
+
     def claude_stand_in(self):
         """A process named claude (python under that name) that runs the command after its -c code."""
         path = os.path.join(self.tmp, "stand-in", "claude")
