@@ -49,6 +49,24 @@ class Skills(unittest.TestCase):
                 self.assertLess(len(body.splitlines()), 500)
                 self.assertEqual(meta.get("disable-model-invocation") == "true", name in USER_ONLY)
 
+    def test_the_listing_foreman_adds_stays_small(self):
+        # T-1253: Claude Code 2.1.304 sends the skill listing again after every compaction, so Foreman's share of it
+        # (model-visible skill and command descriptions, workflow descriptions) is paid once per compaction
+        total = 0
+        for kind in ("skills", "commands"):
+            for path in [os.path.join(d, "SKILL.md") for d in
+                         (os.path.join(PLUGIN, "skills", n) for n in os.listdir(os.path.join(PLUGIN, "skills")))
+                         if os.path.isfile(os.path.join(d, "SKILL.md"))] if kind == "skills" else \
+                    [os.path.join(PLUGIN, "commands", n) for n in os.listdir(os.path.join(PLUGIN, "commands"))
+                     if n.endswith(".md")]:
+                meta, _ = frontmatter(path)
+                if meta.get("disable-model-invocation") != "true":
+                    total += len(meta.get("description", ""))
+        for name in os.listdir(os.path.join(PLUGIN, "workflows")):
+            text = read_text(os.path.join(PLUGIN, "workflows", name))
+            total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
+        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+
     def test_skill_references_exist(self):
         for name in SKILLS:
             body = read_text(os.path.join(PLUGIN, "skills", name, "SKILL.md"))

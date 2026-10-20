@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Adapted to Claude Code 2.1.304, which sends the skill list again after every compaction: Foreman's part of it is down from 2,730 to under 2,000 characters (shorter skill and workflow descriptions, `/foreman:build` user-only), with a test that keeps it there (T-1253)
 
 ## 1.2.40 — 2026-10-16
 - `fm focus` on a request Foreman queued prints the request's text, word for word, and the note after a compaction carries only the request being worked in full (the rest by title). Every open request whole was 5 to 8 KB after each compaction, which brought the next one sooner (T-1231)
