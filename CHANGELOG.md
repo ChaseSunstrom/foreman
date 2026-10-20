@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- The guard's saved verdict for a script is keyed on where Foreman's state lives (its folder and fallbacks), so it isn't reused after state moves (T-1293)
+- `fm night` and `fm replay --cases` judge the guard corpus with the temp folder it was labelled under (/tmp), so the /tmp hard-reset case no longer reports drift on macOS (T-1291)
+- The builder rules live once, in `plugin/agents/fm-builder.md`: `fm lane brief` reads them from there, and a test fails if a rule goes missing from the brief (T-1290)
 
 ## 1.2.44 — 2026-10-20
 - `fm research add NAME --file PATH --append` adds to a research note instead of replacing it, and the guard's hint for a direct write to state names it, so following the hint no longer erases an existing note (T-1288)
