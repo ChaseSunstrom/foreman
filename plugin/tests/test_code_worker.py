@@ -96,6 +96,19 @@ class Worker(CodeCase):
         self.assertFalse(os.path.exists(os.path.join(self.repo, "tests", "conftest.py")), "a new file there is the check too")
         self.assertNotIn("__pycache__", r.stdout, "a bytecode cache is no part of the check")
 
+    def test_the_users_own_uncommitted_work_survives_a_stash_or_a_delete(self):
+        # T-1270: the T-1214 review: a worker's git stash or rm of the user's in-progress files was never undone
+        with open(os.path.join(self.repo, "notes.md"), "w") as f:
+            f.write("my notes\n")  # untracked, not ignored
+        with open(os.path.join(self.repo, "test_calc.py"), "a") as f:
+            f.write("# my own edit\n")  # tracked, modified
+        self.cli("tidy", 'git stash -q\nrm -f notes.md\nsed -i "s/a - b/a + b/" calc.py\n')
+        r = self.work("make calc.add add", "--worker", "tidy {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(os.path.join(self.repo, "notes.md")), "my notes\n")
+        self.assertIn("# my own edit", read_text(os.path.join(self.repo, "test_calc.py")))
+        self.assertIn("return a + b", self.calc(), "the worker's own fix stays")
+        self.assertIn("your uncommitted work", r.stdout)
+
     def test_a_hanging_worker_is_killed_at_the_timeout(self):
         pid = os.path.join(self.tmp, "pid")
         self.cli("hang", f"sleep 60 &\necho $! > {pid}\nsleep 60\n")
