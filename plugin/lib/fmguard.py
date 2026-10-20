@@ -148,7 +148,7 @@ def _focuses(cmd):
 def _hint(detail, cat=""):
     """T-0185: when the guard couldn't pin the target down, the rewrite that lets it (a false block cost a guess)."""
     research = (" If it is a download or notes for the project's research, write it to the scratchpad and file it with "
-                "fm research add NAME --file PATH.") if cat == "state-direct" else ""  # T-0814
+                "fm research add NAME --file PATH (it replaces an existing NAME; add --append to keep it).") if cat == "state-direct" else ""  # T-0814
     if "(not known before it runs" in detail:
         return (" If the target is elsewhere, name it literally or set its variable once before any loop, pipe or "
                 "branch (D=/path; for …), and chain a cd with &&, so the guard can read where it writes." + research)
