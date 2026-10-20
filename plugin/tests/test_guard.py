@@ -1152,6 +1152,17 @@ class InterpreterWrites(GuardCase):
             self.assertTrue(driving(cmd), cmd)  # still refused: the split is the only way through
         self.assertNotIn("in the next", str(self.bash(f"python3 - <<'EOF'\n{body}EOF")), "no file written: no hint")
 
+    def test_a_script_written_and_run_in_one_command_is_told_to_split(self):
+        # T-1289: still refused, and the refusal ends with the way forward, not only the --allow route
+        for cmd in ("printf 'echo hi\\n' > s.sh && bash s.sh", "cp a.sh s.sh && sh s.sh",  # (a heredoc body is read, so cat <<EOF > s.sh; sh s.sh is judged, not refused)
+
+                    "echo hi | tee s.sh && bash s.sh"):
+            blk = self.bash(cmd)
+            self.assertBlocked(blk, "system", cmd)
+            out = g.message(blk, self.ctx())
+            self.assertIn("written earlier in this command", out, cmd)
+            self.assertTrue(out.rstrip().endswith("run it in the next command (Edit/Write tool or cat > f <<'EOF')."), cmd)
+
     def test_a_literal_cd_chain_picks_the_folder_python_writes_in(self):
         # T-0774: 'cd <scratchpad> && python3 - <<EOF open("clusters.py","w")' was refused as a write in the Foreman
         # home: every folder the command names counted, though python only runs after the cd succeeded
