@@ -124,6 +124,59 @@ def _duel(s, name):
                     [(c["case"], round(c["foreman"]["seconds"]), round(c["bare"]["seconds"])) for c in cs], unit=" s"))
 
 
+def _why(s):
+    """T-1246: the Benchmarks page's opening argument, every figure from the data the charts below it draw."""
+    safety = s.get("safety") or {}
+    bad, ok = safety.get("dangerous") or [], safety.get("everyday") or []
+    stopped, saved = (sum(x.get("decision") == k for x in bad) for k in ("deny", "saved"))
+    false = sum(x.get("decision") != "allow" for x in ok)
+    duel = lambda name: next((d for d in s.get("duels") or [] if d.get("name") == name), None)
+    pct = lambda a, b: round((a / b - 1) * 100) if b else 0
+    more = lambda p: f"{abs(p)}% {'more' if p >= 0 else 'less'}"
+
+    def gap(name):  # (cost %, time %) of Foreman against Claude Code over a duel's cases
+        d = duel(name)
+        cs = (d or {}).get("cases") or []
+        sums = [sum(c[arm][k] for c in cs) for k in ("cost", "seconds") for arm in ("foreman", "bare")]
+        return (pct(sums[0], sums[1]), pct(sums[2], sums[3])) if cs else None
+    out = [f"<p><strong>It stops what you'd regret.</strong> In bypass mode, out of {len(bad)} dangerous commands "
+           "(deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman stopped "
+           f"{stopped}" + (f" and saved a copy before the other {saved}" if saved else "") + f". Claude Code on its "
+           f"own ran all {len(bad)}. Foreman stopped {'none' if not false else false} of {len(ok)} everyday "
+           "commands.</p>",
+           "<p><strong>It leaves a record.</strong> Every task has a plan, the checks that ran and their output, and a "
+           "commit you can revert.</p>"]
+    q, h = gap("quality"), gap("hard-haiku")
+    if q or h:
+        cost = " and ".join(f"{more(g[0])} with {m}" for g, m in ((q, "Sonnet"), (h, "Haiku")) if g)
+        time_ = " and ".join(("about the same time" if abs(g[1]) < 5 else f"{more(g[1])} time") + f" with {m}"
+                             for g, m in ((q, "Sonnet"), (h, "Haiku")) if g)
+        out.append("<p><strong>What the quality runs show.</strong> On small tasks where the request spells out every "
+                   f"rule, both sides pass everything. There Foreman costs {cost}, and takes {time_}, so for a short, "
+                   "fully specified task you're watching, Claude Code alone is cheaper.</p>")
+    hist = (duel("long") or {}).get("history") or []
+    if hist:
+        fp, bp, runs = (sum(x[k] for x in hist) for k in ("f_pass", "b_pass", "runs"))
+        fc, bc = (sum(x[k] * x["runs"] for x in hist) / runs for k in ("f_cost", "b_cost"))
+        out.append("<p><strong>It finishes long work.</strong> Asked for eight requests in one Haiku session whose "
+                   f"context compacts as it goes, Foreman passed every hidden test in {fp} of {runs} runs over "
+                   f"{len(hist)} duel{'s' if len(hist) > 1 else ''}. Claude Code on its own did in {bp} of {runs}; in the "
+                   "first duel, the runs that fell short wrote the modules they got wrong after their first compaction, "
+                   "and the one that passed wrote them before it. Foreman keeps each request's text and gives it back "
+                   f"after every compaction. It cost about {more(pct(fc, bc))} there (${fc:.3f} against ${bc:.3f} a "
+                   "session) and took longer.</p>")
+    m = (duel("marathon") or {}).get("cases") or []
+    if m:
+        f = m[0]["foreman"]
+        comp = ([e.get("compactions") for e in f.get("each") or []] or [f.get("compactions")])[0]
+        t = ([e.get("tests") for e in f.get("each") or []] or [f.get("tests")])[0] or [0, 1]
+        out.append(f"<p><strong>It keeps going.</strong> In a marathon, once the asked work was done, Foreman went on "
+                   f"through {comp} compactions, found and fixed {len(f.get('found') or [])} things nobody asked for, "
+                   + ("and still passed every hidden test.</p>" if t[0] == t[1] else
+                      f"and passed {t[0]} of {t[1]} hidden tests.</p>"))
+    return "".join(out)
+
+
 def _long(s, name):
     """T-1242: one multi-request session per side, compacting as it goes: the hidden tests passing at the end, the
     compactions, cost and time; for a marathon, the work Foreman found and did after the asked work."""
@@ -353,29 +406,15 @@ PAGES = [
           "judges the diff and runs the checks itself.</li><li><strong>The same guard</strong> on every command and "
           "edit, through the hook other harnesses use.</li><li><strong>A bench</strong> that grades any model as a "
           "Foreman worker on seeded tasks.</li></ul>"),
-         ("chart", lambda s: tiles([("Model client tests", 52), ("Endpoints it finds", 9), ("Status", "Building")]))]},
+         ("chart", lambda s: tiles([("Model client tests", (s.get("code") or {}).get("model_tests", "?")),
+                                    ("Endpoints it finds", (s.get("code") or {}).get("endpoints", "?")), ("Status", "Building")]))]},
     {"slug": "benchmarks", "nav": "Benchmarks", "title": "Measured against Claude Code",
      "desc": "Real runs, published whichever way they fall: dangerous commands, and real tasks graded blind.",
      "lede": "Benchmarks run for real on this machine and published as they came out: a set of commands that destroy "
              "work or leak secrets, sixteen fully specified coding tasks graded by hidden tests, and one long session "
              "of eight requests that compacts as it goes, each run with Foreman and with Claude Code on its own.",
      "blocks": [
-         ("text", "Why use Foreman", "<p><strong>It stops what you'd regret.</strong> In bypass mode, out of 24 "
-          "dangerous commands (deleting a home folder, force-pushing, reading SSH keys, publishing a package) Foreman "
-          "stopped 20 and saved a copy before the other 4. Claude Code on its own ran all 24. Foreman stopped none of "
-          "25 everyday commands.</p><p><strong>It leaves a record.</strong> Every task has a plan, the checks that "
-          "ran and their output, and a commit you can revert.</p><p><strong>What the quality runs show.</strong> On "
-          "small tasks where the request spells out every rule, both sides pass everything. There Foreman costs about "
-          "10% more with Sonnet and 14% more with Haiku, and takes about the same time with Sonnet (13% longer with Haiku), so for a short, fully "
-          "specified task you're watching, Claude Code alone is cheaper.</p><p><strong>It finishes long work.</strong> "
-          "Asked for eight requests in one Haiku session whose context compacts as it goes, Foreman passed every hidden "
-          "test in 6 of 6 runs over two duels. Claude Code on its own did in 3 of 6 (89, 64 and 66 of 105 in the "
-          "others); in the first duel, the two runs that fell short wrote the modules they got wrong after their first "
-          "compaction, and the one that passed wrote them before it. Foreman keeps each request's text and gives it "
-          "back after every compaction. It cost about 60% more there ($0.095 against $0.059 a session) and took "
-          "longer.</p>"
-          "<p><strong>It keeps going.</strong> In a marathon, once the asked work was done, Foreman went on through "
-          "seven compactions, found and fixed three things nobody asked for, and still passed every hidden test.</p>"),
+         ("text", "Why use Foreman", _why),
          ("text", "Safety: what runs in bypass mode", "<p>Bypass mode is how Foreman is meant to run: no permission "
           "prompts. Claude Code on its own asks before none of these in that mode. Foreman's guard judges each one "
           "before it runs; the everyday set checks that it doesn't get in the way of normal work.</p>"),

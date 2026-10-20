@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- Site: the Benchmarks page's opening figures and the Foreman Code page's counts are computed from the data (the code page had drifted to 52 model-client tests; there are 51), long-session runs add up over every three-run duel, and a saved light or dark theme applies before the first paint (T-1246)
 - Adapted to Claude Code 2.1.304, which sends the skill list again after every compaction: Foreman's part of it is down from 2,730 to under 2,000 characters (shorter skill and workflow descriptions, `/foreman:build` user-only), with a test that keeps it there (T-1253)
 
 ## 1.2.40 — 2026-10-16

@@ -304,8 +304,40 @@ class Site(unittest.TestCase):
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
         self.assertEqual((kind, title), ("text", "Why use Foreman"))
+        stats = read_json(os.path.join(self.ROOT, "site", "data", "stats.json"))
+        stats.update(read_json(os.path.join(self.ROOT, "site", "data", "bench.json")))
+        text = body(stats)
         for words in ("24 dangerous", "both sides pass", "more", "6 of 6", "3 of 6", "compact"):
-            self.assertIn(words, body)
+            self.assertIn(words, text)
+
+    def test_the_why_section_is_computed_from_the_data(self):
+        # T-1246: the figures were typed into the prose and could drift from the charts beside them
+        pages = self._site("pages")
+        side = lambda ok, cost, secs: {"pass": ok, "cost": cost, "seconds": secs, "runs": 3, "passed": 3}
+        long_ = lambda f, b, fc, bc: {"model": "haiku", "runs": 3, "f_pass": f, "b_pass": b, "f_cost": fc, "b_cost": bc}
+        stats = {"safety": {"dangerous": [{"decision": "deny"}] * 7 + [{"decision": "saved"}] * 2,
+                            "everyday": [{"decision": "allow"}] * 11},
+                 "duels": [{"name": "quality", "cases": [{"foreman": side(True, 0.6, 10), "bare": side(True, 0.5, 10)}]},
+                           {"name": "hard-haiku", "cases": [{"foreman": side(True, 0.15, 15),
+                                                             "bare": side(True, 0.1, 10)}]},
+                           {"name": "long", "history": [long_(3, 1, 0.3, 0.2), long_(2, 2, 0.3, 0.2)], "cases": [{}]}]}
+        _, _, body = next(p for p in pages.PAGES if p["slug"] == "benchmarks")["blocks"][0]
+        text = body(stats)
+        for words in ("9 dangerous", "stopped 7", "other 2", "none of 11", "20% more with Sonnet",
+                      "50% more with Haiku", "5 of 6", "3 of 6", "50% more there"):
+            self.assertIn(words, text)
+
+    def test_the_foreman_code_page_counts_come_from_the_repo(self):
+        stats = self._site("stats")
+        counts = stats.code_counts()
+        self.assertEqual(counts["model_tests"], len(re.findall(r"(?m)^    def test_", read_text(
+            os.path.join(self.ROOT, "plugin", "tests", "test_models.py")))))
+        self.assertGreater(counts["endpoints"], 5)
+
+    def test_the_saved_theme_is_set_before_first_paint(self):
+        build = self._site("build")
+        head = build.layout("T", "d", "<p>x</p>", [], "x").split("</head>")[0]
+        self.assertIn("fm-theme", head, "a stored light theme flashed dark until site.js ran at the end of body")
 
     def test_the_site_builds_and_every_local_link_resolves(self):
         import subprocess
