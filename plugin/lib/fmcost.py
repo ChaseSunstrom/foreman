@@ -73,7 +73,23 @@ def _entries(folder, since):
                 continue
 
 
-_FM_CMD = re.compile(r"^(?:cd \S+ && )*fm\b")
+_TWO_WORD = ("task", "bench", "lib", "lane")  # verbs whose subcommand names the cost
+
+
+def _fm_verb(cmd):
+    """T-1276: the fm verb of a Bash command made of fm calls alone ("task show"; a cd, a redirect and a trailing tail,
+    head or grep allowed), else None: 'fm task log … && python3 -m unittest' is a test run's output, not Foreman's.
+    ponytail: split on && || ; outside quotes too, so a quoted ';' undercounts a command, never overcounts."""
+    verb = None
+    for seg in re.split(r"\s*(?:&&|\|\||;)\s*", cmd.strip()):
+        if re.fullmatch(r"cd \S+", seg):
+            continue
+        seg = re.sub(r"\s*(?:2>&1\s*)?\|\s*(?:tail|head|grep)\b[^|]*$", "", seg)
+        m = re.match(r"fm\s+(?:quiet\s+(?:--\S+\s+\S+\s+)*--\s+(?:fm\s+)?)?([\w-]+)(?:\s+([\w-]+))?", seg)
+        if not m or "|" in seg:
+            return None
+        verb = verb or m[1] + (f" {m[2]}" if m[1] in _TWO_WORD and m[2] else "")
+    return verb
 _FM_NOTE = re.compile(r"\bForeman\b|^Ambient tests:")  # how every note of Foreman's hooks opens
 _STYLE_NOTE = " output style is active. Remember to follow the specific guidelines for this style."
 
@@ -109,7 +125,7 @@ def scan(folder, since, share=None):
     """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
     repeats on each of its content blocks: counted once per message id. A `share` Counter gets what entered the
     context: "all", and Foreman's part by source (T-1257)."""
-    msgs, tools, names, fm_ids = {}, collections.Counter(), {}, set()
+    msgs, tools, names, fm_ids = {}, collections.Counter(), {}, {}
     for path, e in _entries(folder, since):
         n = os.path.basename(path)
         ts = str(e.get("timestamp") or "")
@@ -124,14 +140,17 @@ def scan(folder, since, share=None):
                 continue
             if x.get("type") == "tool_use":
                 names[x.get("id")] = x.get("name") or "?"
-                if x.get("name") == "Bash" and _FM_CMD.match(str((x.get("input") or {}).get("command") or "")):
-                    fm_ids.add(x.get("id"))
+                verb = _fm_verb(str((x.get("input") or {}).get("command") or "")) if x.get("name") == "Bash" else None
+                if verb:
+                    fm_ids[x.get("id")] = verb
             elif x.get("type") == "tool_result":
                 size = _size(x.get("content"))
                 tools[names.get(x.get("tool_use_id"), "?")] += size
                 if share is not None:
                     share["all"] += size
-                    share["fm output"] += size if x.get("tool_use_id") in fm_ids else 0
+                    if x.get("tool_use_id") in fm_ids:
+                        share["fm output"] += size
+                        share["fm:" + fm_ids[x["tool_use_id"]]] += size  # by verb (T-1276)
         if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
             msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
     return list(msgs.values()), tools
@@ -432,13 +451,15 @@ def _task(args, p, fmcli):
 
 
 def _share_line(share):
-    ours = {k: v for k, v in share.items() if k != "all" and v}
+    ours = {k: v for k, v in share.items() if k != "all" and not k.startswith("fm:") and v}
     if not share["all"] or not ours:
         return ""
     pct = lambda v: f"{100 * v / share['all']:.1f}%"
+    verbs = sorted(((k[3:], v) for k, v in share.items() if k.startswith("fm:")), key=lambda x: -x[1])[:5]
     return (f"\nForeman's own share of what entered the context (tool results and attachments, "
             f"{_human(share['all'])} characters): {pct(sum(ours.values()))} · "
-            + " · ".join(f"{k} {pct(v)}" for k, v in sorted(ours.items(), key=lambda x: -x[1])))
+            + " · ".join(f"{k} {pct(v)}" for k, v in sorted(ours.items(), key=lambda x: -x[1]))
+            + ("\nfm output by verb: " + " · ".join(f"{k} {pct(v)}" for k, v in verbs) if verbs else ""))
 
 
 def cmd_cost(args):
@@ -499,7 +520,9 @@ def cmd_cost(args):
             "unexplained": unex,
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
-            "foreman_share": {"all": share["all"], "chars": {k: v for k, v in share.most_common() if k != "all"}},
+            "foreman_share": {"all": share["all"], "chars": {k: v for k, v in share.most_common()
+                                                             if k != "all" and not k.startswith("fm:")},
+                              "fm_verbs": {k[3:]: v for k, v in share.most_common() if k.startswith("fm:")}},
             "time": {"active_s": round(active), "model_s": round(model_s),
                      "tools_s": {k: round(v) for k, v in tool_s.most_common()},
                      "shell_s": {k: round(v) for k, v in shell_s.most_common()}}}

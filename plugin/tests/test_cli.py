@@ -901,7 +901,7 @@ class AuditPrep(ForemanTestCase):
         path = next(w for w in out.split() if w.endswith("T-0001.review.md"))
         self.assertIn("trying to break", read_text(path))
         self.assertNotIn("trying to break", out)
-        self.assertLess(len(out), 800)
+        self.assertLess(len(re.sub(r"/\S+", "/…", out)), 800)  # T-1249: macOS's temp paths are twice as long
 
     def test_every_lens_has_a_template_in_the_audit_reference(self):
         # fm audit prep builds briefs from references/audit.md: rewording it must not silently drop a lens

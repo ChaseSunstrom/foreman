@@ -213,12 +213,12 @@ def call_sites(root, eco, name):
             "crates": [rf"\buse\s+{mod}::"]}.get(eco, [])
     sites, names = [], set()
     for pat in pats:
-        try:
-            r = subprocess.run(["git", "-C", root, "grep", "-n", "-I", "-E", "-e", pat], capture_output=True, text=True,
-                               timeout=20)
+        try:  # T-1249: git finds the lines that name it, Python's regex picks the imports (BSD's git grep -E has no \s)
+            r = subprocess.run(["git", "-C", root, "grep", "-n", "-I", "-F", "-e", name.lower().replace("-", "_")
+                                if eco == "pypi" else name], capture_output=True, text=True, timeout=20)
         except (OSError, subprocess.SubprocessError):
             continue
-        for line in r.stdout.splitlines()[:200]:
+        for line in [x for x in r.stdout.splitlines() if re.search(pat, x.split(":", 2)[-1])][:200]:
             path, n, text = (line.split(":", 2) + ["", ""])[:3]
             sites.append(f"{path}:{n}")
             m = re.search(r"import\s+(.+)$", text) if eco == "pypi" and text.lstrip().startswith("from") else None
