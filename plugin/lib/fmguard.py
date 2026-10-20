@@ -160,6 +160,8 @@ def _hint(detail, cat=""):
                 "before it, or after it in its pipeline, is a plain data tool that writes no file (curl -s, jq, head, "
                 "tail, sleep) or sets a new name (T=…), and no & runs anything beside it: run a program that writes "
                 "files, or a redirect, as its own command or after python's pipeline (; git log).")
+    if "is written earlier in this command and run here" in detail:  # T-1289
+        return " Write the script in one command, run it in the next command (Edit/Write tool or cat > f <<'EOF')."
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
