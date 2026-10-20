@@ -972,6 +972,21 @@ class LiteralLoops(GuardCase):
 
 
 class ScratchNames(GuardCase):
+    def test_a_scratch_folder_reached_through_a_link_is_still_scratch(self):
+        # T-1249: macOS's /tmp is a link to /private/tmp; the resolved path wasn't under the unresolved scratch folder,
+        # so a scratch file named secrets.txt was a credential and a builder's /tmp write was outside its worktree
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link, lane = (os.path.join(base, x) for x in ("private-tmp", "tmp", "lane"))
+        os.makedirs(real)
+        os.makedirs(lane)
+        os.symlink(real, link)
+        ctx = lambda **kw: fmguard.Ctx(cwd=lane, project_root=lane, home=os.path.join(base, "h"),
+                                       foreman_home=os.path.join(base, "fh"), scratch=[link], **kw)
+        self.assertEqual(fmguard.classify_write(os.path.join(link, "secrets.txt"), ctx()), [])
+        self.assertEqual(fmguard.classify_write(os.path.join(link, "x.txt"), ctx(confine=(lane, base + "/main"))), [])
+
     def test_design_tokens_are_not_credentials(self):
         # JARVIS 2026-10-09: /opt/jarvis/design/tokens.json (colours, durations) was refused as a credential mid-run
         for path in (f"{self.repo}/design/tokens.json", f"{self.repo}/src/theme/tokens.yaml",

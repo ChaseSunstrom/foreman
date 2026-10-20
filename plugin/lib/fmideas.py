@@ -97,10 +97,36 @@ def _registry(pid=""):
     return os.path.join(c.state_dir(), "children", str(pid))
 
 
+PROC = "/proc"  # T-1249: tests point it at a missing folder to run the ps path macOS takes
+
+
+def _ps(pid, field):
+    """ps's FIELD for a live pid, where there's no /proc (macOS, BSD); FileNotFoundError when it's gone, as /proc's."""
+    try:
+        out = subprocess.run(["ps", "-o", f"{field}=", "-p", str(pid)], capture_output=True, text=True,
+                             timeout=5).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    if not out:
+        raise FileNotFoundError(f"no process {pid}")
+    return out
+
+
 def _starttime(pid):
-    """When the pid started, in clock ticks since boot (/proc/<pid>/stat field 22): with the pid, one process ever."""
-    with open(f"/proc/{pid}/stat") as f:
-        return f.read().rsplit(")", 1)[1].split()[19]  # after the name, which may hold spaces and parentheses
+    """When the pid started: with the pid, one process ever. Clock ticks since boot (/proc/<pid>/stat field 22), or
+    where there's no /proc, ps's start time with its spaces closed up (the registry line splits on them)."""
+    if os.path.isdir(PROC):
+        with open(f"{PROC}/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[19]
+    return "".join(_ps(pid, "lstart").split())
+
+
+def _cmdline(pid):
+    """A live pid's arguments as bytes (/proc/<pid>/cmdline, else ps: split on spaces, enough to find a flag)."""
+    if os.path.isdir(PROC):
+        with open(f"{PROC}/{pid}/cmdline", "rb") as f:
+            return f.read().split(b"\0")
+    return os.fsencode(_ps(pid, "command")).split()  # after the name, which may hold spaces and parentheses
 
 
 def _popen(argv, timeout, **kw):
@@ -109,7 +135,7 @@ def _popen(argv, timeout, **kw):
     pr = subprocess.Popen(argv, start_new_session=True, **kw)
     try:
         c.write_atomic(_registry(pr.pid), f"{_starttime(pr.pid)} {time.time():.0f} {timeout:.0f}")
-    except (OSError, IndexError):  # no /proc (macOS) or no state folder: unregistered, still reaped on a timeout
+    except (OSError, IndexError):  # no state folder, or ps couldn't see it: unregistered, still reaped on a timeout
         pass
     return pr
 
@@ -141,14 +167,16 @@ def _strays(pgid, start):
         os.killpg(pgid, 0)  # no such group (the usual case: the helper finished) costs one call, not a /proc scan (~30 ms)
     except OSError:
         return False
-    for d in os.listdir("/proc"):
+    if not os.path.isdir(PROC):  # T-1249: no /proc to read members' start times; a live group still holding the dead
+        return True  # leader's pid as its id is the one it made (POSIX doesn't reuse a pid a group still holds)
+    for d in os.listdir(PROC):
         if d.isdigit():
             try:
-                with open(f"/proc/{d}/stat") as f:
+                with open(f"{PROC}/{d}/stat") as f:
                     st = f.read().rsplit(")", 1)[1].split()
             except OSError:
                 continue
-            if st[2] == st[3] == str(pgid) and int(st[19]) >= start:
+            if st[2] == st[3] == str(pgid) and int(st[19]) >= int(start):
                 return True
     return False
 
@@ -174,10 +202,9 @@ def sweep_orphans(max_age=1800):
                 continue  # its run may still be waiting on it
             pid = int(name)
             try:
-                with open(f"/proc/{pid}/cmdline", "rb") as f:
-                    ours = b"--no-session-persistence" in f.read().split(b"\0") and _starttime(pid) == start
+                ours = b"--no-session-persistence" in _cmdline(pid) and _starttime(pid) == start
             except FileNotFoundError:  # the leader is gone
-                ours = _strays(pid, int(start))
+                ours = _strays(pid, start)  # T-1249: ps's start time is no number; only the /proc scan compares it
             if ours:
                 os.killpg(pid, signal.SIGKILL)
                 n += 1

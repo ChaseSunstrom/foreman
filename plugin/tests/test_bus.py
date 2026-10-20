@@ -263,9 +263,9 @@ class Conductor(Base):
         self.assertNotIn("reuse002", out)
 
     @staticmethod
-    def start_of(pid):
-        with open(f"/proc/{pid}/stat") as f:
-            return f.read().rsplit(")", 1)[1].split()[19]
+    def start_of(pid):  # T-1249: as fmbus reads it, ps where there's no /proc (macOS)
+        import fmbus
+        return fmbus._proc(pid)[1]
 
     def test_it_lists_live_sessions_and_its_steer_reaches_them(self):
         self.snap("sess-x", context_pct=41)
