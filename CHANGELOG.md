@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- The Pages workflow builds with read-only permissions and deploys in a separate job that alone holds the Pages and OIDC tokens; every action in both workflows is pinned to a commit SHA, and a test keeps them that way (T-1245)
+- Foreman's reply format now lives in its rules file (sent once a session), and `fm install-user` no longer selects Foreman's output style, removing it where an older install selected it: Claude Code's per-turn reminder of that style was 2.7% of what entered the context, the largest part of Foreman's own 6.8% (T-1279)
 - `fm code --worker --verify`: a worker turn can't change the check that judges it. Edits to the files and folders the verify command names, or a new file in such a folder (a `conftest.py`), are put back and reported, and the task still closes on the real check (T-1271)
 
 ## 1.2.42 — 2026-10-20
