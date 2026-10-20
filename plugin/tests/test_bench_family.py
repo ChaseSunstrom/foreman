@@ -12,6 +12,9 @@ import fmcore as c
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
 args = sys.argv[1:]
+if args == ["--version"]:  # T-1255: run_arm stamps the Claude Code version
+    print("2.1.304 (Claude Code)")
+    sys.exit(0)
 stdin = sys.stdin.read()
 system = args[args.index("--append-system-prompt") + 1] if "--append-system-prompt" in args else ""
 with open(os.environ["STUB_LOG"], "a") as f:

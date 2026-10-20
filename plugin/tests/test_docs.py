@@ -332,6 +332,24 @@ class Site(unittest.TestCase):
         stats["duels"][2]["history"] = [long_(3, 0, 0.3, 0.2)]
         self.assertIn("Claude Code alone never passed every test", body(stats))
 
+    def test_each_duel_names_the_claude_code_it_ran_on(self):
+        # T-1255
+        pages, stats = self._site("pages"), self._site("stats")
+        side = {"pass": True, "cost": 0.1, "seconds": 5, "runs": 1, "passed": 1}
+        s = {"duels": [{"name": "quality", "claude": "2.1.304", "cases": [{"case": "a", "foreman": side, "bare": side}]},
+                       {"name": "hard", "cases": [{"case": "a", "foreman": side, "bare": side}]}]}
+        self.assertIn("Claude Code 2.1.304", pages._duel(s, "quality"))
+        self.assertIn("Claude Code version wasn't recorded", pages._duel(s, "hard"))
+        import tempfile
+        with tempfile.TemporaryDirectory() as state:
+            res = os.path.join(state, "bench", "results")
+            os.makedirs(res)
+            case = {"id": "x", "pass": True, "cost_usd": 0.1}
+            for arm, extra in (("foreman", {"claude": "2.1.304"}), ("bare", {})):
+                with open(os.path.join(res, f"duel-none-{arm}-1.json"), "w") as f:
+                    json.dump(dict(extra, model="haiku", cases=[case]), f)
+            self.assertEqual(stats.duel(state)["claude"], "2.1.304")
+
     def test_the_foreman_code_page_counts_come_from_the_repo(self):
         stats = self._site("stats")
         counts = stats.code_counts()
