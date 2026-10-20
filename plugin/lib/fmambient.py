@@ -12,7 +12,7 @@ import fmcore as c
 
 RERUNS = 3  # edits that land during a run trigger at most this many reruns, then the next edit starts a new one
 FAILED = re.compile(r"^(?:FAIL|ERROR): (\S+)|^FAILED (\S+)", re.M)  # unittest 'FAIL: name (mod.Class.name)', pytest 'FAILED path::name'
-RED_STEP =re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")  # a step that wants a red run, which a pass won't verify
+RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")  # a step that wants a red run, which a pass won't verify
 
 
 def _dir(p):
@@ -118,7 +118,7 @@ def _record(p, cmd, tests, code, output):
         # T-0994: a pass is no proof the step is done (recorded as evidence, it closed steps mid-work); when it is:
         text = "Ambient tests: ✓ affected tests pass again."
         if cur and not RED_STEP.search(cur.text):
-            tail = f" Step {cur.n} done: fm task evidence {act.id} --step {cur.n} --run \""
+            tail = f" When step {cur.n} is done: fm task evidence {act.id} --step {cur.n} --run \""
             text += tail + c.fit(cmd, max(20, 200 - len(text) - len(tail) - 2)) + "\"."
     else:
         text = None
