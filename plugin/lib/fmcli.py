@@ -5669,7 +5669,7 @@ def build_parser():
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
     s.add_argument("--worker", metavar="CLI", help="an installed CLI does each step and fix round instead of the "
-                                                   "model: claude, codex, gemini, opencode, aider, or 'CMD {prompt}'; "
+                                                   "model: claude, codex, gemini, aider, or 'CMD {prompt}'; "
                                                    "the harness reverts what the guard refuses and its verify decides "
                                                    "(T-1214)")
     s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")

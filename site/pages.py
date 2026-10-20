@@ -402,7 +402,7 @@ PAGES = [
          ("raw", FLOW_CODE),
          ("text", "Any model, any CLI", "<ul><li><strong>Any OpenAI-compatible endpoint</strong>: Ollama, LM Studio, "
           "llama.cpp, vLLM, OpenRouter, Groq, OpenAI, Gemini's compatible endpoint, and Anthropic's API.</li><li>"
-          "<strong>Other CLIs as workers.</strong> claude, codex, gemini, opencode or aider do a step; the harness "
+          "<strong>Other CLIs as workers.</strong> claude, codex, gemini or aider do a step; the harness "
           "judges the diff and runs the checks itself.</li><li><strong>The same guard</strong> on every command and "
           "edit, through the hook other harnesses use.</li><li><strong>A bench</strong> that grades any model as a "
           "Foreman worker on seeded tasks.</li></ul>"),
