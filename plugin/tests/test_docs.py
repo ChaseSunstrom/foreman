@@ -326,6 +326,11 @@ class Site(unittest.TestCase):
         for words in ("9 dangerous", "stopped 7", "other 2", "none of 11", "20% more with Sonnet",
                       "50% more with Haiku", "5 of 6", "3 of 6", "50% more there"):
             self.assertIn(words, text)
+        # T-1254: per session that passed every test, Foreman cost 1.8 / 5 = $0.360 and Claude Code 1.2 / 3 = $0.400
+        self.assertIn("$0.360 against $0.400", text)
+        self.assertIn("10% less per fully correct session", text)
+        stats["duels"][2]["history"] = [long_(3, 0, 0.3, 0.2)]
+        self.assertIn("Claude Code alone never passed every test", body(stats))
 
     def test_the_foreman_code_page_counts_come_from_the_repo(self):
         stats = self._site("stats")
