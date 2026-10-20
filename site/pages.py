@@ -164,7 +164,7 @@ def _why(s):
                    "first duel, the runs that fell short wrote the modules they got wrong after their first compaction, "
                    "and the one that passed wrote them before it. Foreman keeps each request's text and gives it back "
                    f"after every compaction. It cost about {more(pct(fc, bc))} there (${fc:.3f} against ${bc:.3f} a "
-                   "session) and took longer.</p>")
+                   "session) and took longer. " + _per_correct(fc * runs, fp, bc * runs, bp, pct, more) + "</p>")
     m = (duel("marathon") or {}).get("cases") or []
     if m:
         f = m[0]["foreman"]
@@ -175,6 +175,20 @@ def _why(s):
                    + ("and still passed every hidden test.</p>" if t[0] == t[1] else
                       f"and passed {t[0]} of {t[1]} hidden tests.</p>"))
     return "".join(out)
+
+
+def _per_correct(f_total, f_pass, b_total, b_pass, pct, more):
+    """T-1254: what one session that passed every hidden test cost on each side: all the runs' cost over the runs
+    that passed, since a session that falls short has to be run again."""
+    if not f_pass:
+        return "With Foreman no run passed every test."
+    f = f_total / f_pass
+    if not b_pass:
+        return (f"Claude Code alone never passed every test, so its sessions bought no fully correct result; each "
+                f"one with Foreman cost ${f:.3f}.")
+    b = b_total / b_pass
+    return (f"Counted per session that passed every test, which is what you'd pay to get one, Foreman cost ${f:.3f} "
+            f"against ${b:.3f}: {more(pct(f, b))} per fully correct session.")
 
 
 def _long(s, name):
