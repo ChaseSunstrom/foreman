@@ -55,7 +55,10 @@ class Ctx:
     def __init__(self, cwd, project_root, home, foreman_home, scratch=(), allow=(), task_id=None, state_dir=None,
                  state_fallbacks=(), standing=(), trusted=False, confine=None, unbriefed=None):
         self.cwd, self.project_root, self.home, self.foreman_home = cwd, project_root, home, foreman_home
-        self.scratch, self.allow, self.task_id = list(scratch), set(allow), task_id
+        # T-1249: each scratch folder as given and as it really is (macOS's /tmp is a link to /private/tmp, and a
+        # path is judged where it really points too)
+        self.scratch = list(dict.fromkeys([*scratch, *(os.path.realpath(s) for s in scratch if s)]))
+        self.allow, self.task_id = set(allow), task_id
         self.state_dir = state_dir  # when Foreman state lives outside foreman_home (read-only home fallback)
         self.state_fallbacks = list(state_fallbacks)  # where a fallback could live: state even before it's used
         self.standing = set(standing)  # T-0119: the project's standing yeses (core only)

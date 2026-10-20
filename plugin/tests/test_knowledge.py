@@ -28,6 +28,42 @@ class Base(ForemanTestCase):
         subprocess.run(["git", "-C", root or self.repo, "commit", "-qm", msg], check=True)
 
 
+BSD_GIT = r'''#!/usr/bin/env python3
+# git as macOS runs git grep -E (BSD regex): \b, \s, \w and \d are no classes there, so such a pattern finds nothing
+import os, re, sys
+a = sys.argv[1:]
+if "grep" in a and "-E" in a and any(re.search(r"\\[bswdBSWD]", x) for x in a[a.index("grep"):]):
+    sys.exit(1)
+os.execv(GIT, ["git", *a])
+'''
+
+
+class BsdRegex(Base):
+    """T-1249: on macOS fm deps --calls and fm recall --explain found nothing; their git grep -E patterns used GNU
+    classes. A git that ignores them, as BSD regex does, stands in for macOS here."""
+    def setUp(self):
+        super().setUp()
+        import shutil
+        folder = os.path.join(self.tmp, "bsdbin")
+        os.makedirs(folder)
+        with open(os.path.join(folder, "git"), "w") as f:
+            f.write(BSD_GIT.replace("os.execv(GIT", "os.execv(" + repr(shutil.which("git"))))
+        os.chmod(os.path.join(folder, "git"), 0o755)
+        self.bsd = {"PATH": folder + os.pathsep + os.environ["PATH"]}
+
+    def test_deps_calls_and_explain_find_their_lines_without_gnu_regex(self):
+        self.write("requirements.txt", "requests>=2.0,<3\n")
+        self.write("app/net.py", "from requests import Session, get\n")
+        self.write("app/other.py", "import requests\nrequests.post('x')\n")
+        self.write("lib/cache.py", "class SessionCache:\n    pass\n\n\ndef warm_cache(c):\n    return c\n")
+        self.commit("deps")
+        out = self.fm("deps", "--calls", env=dict(self.bsd, FOREMAN_OFFLINE="1", https_proxy="http://127.0.0.1:9")).stdout
+        self.assertRegex(out, r"requests .*2 file\(s\)")
+        out = self.fm("recall", "--explain", "how does warm_cache fill the SessionCache?", env=self.bsd).stdout
+        self.assertIn("lib/cache.py:5", out)
+        self.assertIn("lib/cache.py:1", out)
+
+
 class Deps(Base):
     def test_calls_lists_import_sites_and_the_names_used_without_the_network(self):
         self.write("requirements.txt", "requests>=2.0,<3\nleftpad>=1\n")

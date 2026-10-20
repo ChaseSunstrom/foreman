@@ -101,7 +101,8 @@ class PageHardening(ForemanTestCase):
     def test_home_and_user_in_any_spelling_are_refused(self):
         import getpass
         user, home = getpass.getuser(), os.path.expanduser("~")
-        for text in (f"see /var{home}/x", f"/tmp/claude-1000/-home-{user}--proj/scratch", f"C:\\Users\\{user}\\x",
+        encoded = home.replace("/", "-")  # T-1249: -home-USER- on Linux, -Users-USER- on macOS
+        for text in (f"see /var{home}/x", f"/tmp/claude-1000/{encoded}--proj/scratch", f"C:\\Users\\{user}\\x",
                      f"{home}/notes"):
             r = self.fm("page", "--catalogue", self.write_cat([{"id": "a", "capability": text}]), check=False)
             self.assertNotEqual(r.returncode, 0, text)

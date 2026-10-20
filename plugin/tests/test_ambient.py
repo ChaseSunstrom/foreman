@@ -59,6 +59,26 @@ class Ambient(HookCase):
         b = c.find_brief(self.project(), self.tid)
         self.assertFalse(b.has_evidence(step=1), b.evidence())
 
+    def test_a_failing_note_names_the_failing_tests_not_the_runners_timing(self):
+        # T-1275: 'Ran 44 tests in 1.6s (12 classes …)' made these notes 23 KB over 92 edits
+        self.fm("check", "ambient", "on")
+        self.write("test_calc.py", TEST + "\n    def test_sub(self):\n        self.assertEqual(calc.add(3, 1), 4)\n")
+        self.edit("def add(a, b):\n    return a - b\n")
+        first = self.note()
+        self.assertIn("test_add", first)
+        self.assertIn("test_sub", first)
+        self.assertNotIn("Ran ", first)
+        self.assertNotIn("classes", first)
+        self.assertLessEqual(len(first.split("Ambient tests:")[1]) + len("Ambient tests:"), 220, first)
+        self.edit(GOOD)
+        back = self.note()
+        self.assertIn("pass again", back)
+        self.assertLessEqual(len(back), 200, back)
+        import fmambient  # pytest's summary lines name the failures too
+        out = "FAILED tests/test_a.py::test_one - AssertionError: x\nFAILED tests/test_b.py::test_two\n"
+        self.assertEqual([m.group(1) or m.group(2) for m in fmambient.FAILED.finditer(out)],
+                         ["tests/test_a.py::test_one", "tests/test_b.py::test_two"])
+
     def test_a_test_the_runner_cant_run_is_left_out(self):
         # T-0994: a .tsx test went to 'python3 plugin/tests/run.py widget.test', which ran nothing and read as a pass
         import json

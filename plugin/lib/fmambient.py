@@ -11,6 +11,7 @@ import subprocess
 import fmcore as c
 
 RERUNS = 3  # edits that land during a run trigger at most this many reruns, then the next edit starts a new one
+FAILED = re.compile(r"^(?:FAIL|ERROR): (\S+)|^FAILED (\S+)", re.M)  # unittest 'FAIL: name (mod.Class.name)', pytest 'FAILED path::name'
 RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")  # a step that wants a red run, which a pass won't verify
 
 
@@ -105,19 +106,20 @@ def _record(p, cmd, tests, code, output):
             prev = json.load(f).get("exit")
     except (OSError, ValueError):
         prev = None
-    result = c.run_result(code, c.redact(output))
     c.write_atomic(last, json.dumps({"cmd": cmd, "tests": tests, "exit": code, "ts": c.now()}))
-    names = ", ".join(os.path.basename(t) for t in tests[:6]) + (" …" if len(tests) > 6 else "")
     act = c.active_brief(c.load_briefs(p), p.lane)
     cur = act.current_step() if act else None
     if code and (prev is None or not prev):
-        text = (f"Ambient tests: ✗ the affected tests now fail after your last edit ({names}): {c.fit(cmd, 160)} → "
-                f"{c.fit(result, 300)}")
+        # T-1275: the failing tests' own names, then the command; never the runner's timing or class counts
+        bad = list(dict.fromkeys(m.group(1) or m.group(2) for m in FAILED.finditer(c.redact(output)[:200000])))
+        head = f"Ambient tests: ✗ now fail ({', '.join(c.fit(b, 50) for b in bad[:3]) if bad else f'exit {code}'}): "
+        text = head + c.fit(cmd, max(20, 220 - len(head)))
     elif not code and prev:
         # T-0994: a pass is no proof the step is done (recorded as evidence, it closed steps mid-work); when it is:
-        text = f"Ambient tests: ✓ the affected tests pass again ({names})." + (
-            f" When step {cur.n} is done: fm task evidence {act.id} --step {cur.n} --run \"{c.fit(cmd, 160)}\"."
-            if cur and not RED_STEP.search(cur.text) else "")
+        text = "Ambient tests: ✓ affected tests pass again."
+        if cur and not RED_STEP.search(cur.text):
+            tail = f" When step {cur.n} is done: fm task evidence {act.id} --step {cur.n} --run \""
+            text += tail + c.fit(cmd, max(20, 200 - len(text) - len(tail) - 2)) + "\"."
     else:
         text = None
     if text:

@@ -2315,7 +2315,7 @@ def _tripwire_note(pl, p, act):
                    for e in c.ledger_tail(p, 400)):
         return None
     _event({"kind": "lesson_shown", "task": hit[0], "file": rel, "session_id": sid, "project": p.slug})  # T-0454
-    return c.fit(f"Foreman: {hit[0]} (done) also changed this file; its lesson: {hit[1]}", 320)
+    return c.fit(f"Foreman: {hit[0]}'s lesson for this file: {hit[1]}", 200)
 
 
 def _step_note(pl, p, act):

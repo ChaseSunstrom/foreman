@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.2.42 — 2026-10-20
+- `fm cost` counts as Foreman's own output only commands made of `fm` calls (a `fm … && python3 -m unittest` chain is the test run's output), and says which fm verbs it came from. Measured right, fm output is 0.9% of what entered the context, not 3.5%; Foreman's share is 6.8%, led by Claude Code's per-turn reminder of Foreman's output style (2.7%) and its rules (1.7%) (T-1276)
+- macOS fixes found by the macOS CI job (T-1249): the guard now treats a scratch folder reached through a link as scratch (macOS's `/tmp` is `/private/tmp`, so a scratchpad file named like a secret was refused and a builder's `/tmp` write counted as outside its worktree); `fm deps --calls` and `fm recall --explain` find their lines with any git (they used GNU regex classes that macOS's git grep ignores, so they found nothing); the helper reaper reads start times and command lines from `ps` where there's no `/proc`; and four tests no longer assume Linux paths
+- The context-tax replay runs with a set-up home folder, so CI's bare one no longer adds Foreman's one-time setup note to what it measures (T-1281)
+- Ambient test notes name up to three failing tests and the command in 220 characters, instead of the runner's timing and class counts; a pass note fits 200. In one long session these notes came to 23 KB over 92 edits (T-1275)
+- The edit-time lesson note reads "T-x's lesson for this file: …" and stops at 200 characters instead of 320; the old wording's frame alone was 49 characters (T-1274)
+
 ## 1.2.41 — 2026-10-20
 - A prompt of many requests queues every one of them on a slow machine too: the hook now makes the tasks inside its own process instead of starting `fm` once per task, which on CI (Linux, Python 3.12) fit only 4 of 8 into the hook's 5 seconds (T-1277)
 - A one-line note Foreman's edit-time hook has already given since the session's last start or compaction isn't given again, and a replayed session holds what each hook event injects under a byte budget, so the context tax can't creep back (T-1258)
