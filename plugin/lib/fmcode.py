@@ -523,7 +523,7 @@ class Run:
         for r in sorted(changed) + sorted(hidden - changed):
             full = os.path.join(self.root, r)
             why = strict(full)
-            if not why and r in b["named"]:
+            if not why and _under_named(r, b["named"]):
                 why = "a worker never changes the check that judges it (--verify names it)"
             elif not why and r in changed:
                 why = (f"the worker changed {len(changed)} files, over {JUDGE_MAX}, so none is kept" if
@@ -775,21 +775,28 @@ def _put(path, saved):
     os.chmod(path, saved[1])
 
 
-def _named(root, verify, stats):
-    """The files (from the before-stats, so a deleted one counts) the user's --verify command names: a word that is a
-    file or a folder in the repo. ponytail: a file the test only imports (conftest.py, a helper) isn't named, so it
-    isn't protected; a word like `.` that names the whole repo is skipped."""
+def _named(root, verify):
+    """The repo paths (files and folders) the user's --verify command names, taken before the turn so a deleted one
+    counts. ponytail: a file the test only imports from elsewhere (a helper) isn't named, so it isn't protected; a word
+    like `.` that names the whole repo is skipped."""
     try:
         words = shlex.split(verify or "")
     except ValueError:
         return set()
     out = set()
     for w in words:
-        rel = os.path.normpath(os.path.join(root, w))
-        rel = os.path.relpath(rel, root) if rel.startswith(root + os.sep) else None
-        if rel:
-            out |= {r for r in stats if r == rel or r.startswith(rel + os.sep)}
+        full = os.path.normpath(os.path.join(root, w))
+        if full.startswith(root + os.sep) and os.path.exists(full):
+            out.add(os.path.relpath(full, root))
     return out
+
+
+def _under_named(r, named):
+    """A path at or under what --verify names (a new file in a named folder too: a conftest.py there is the check as
+    well), bytecode caches aside."""
+    if "__pycache__" in r.split(os.sep) or r.endswith((".pyc", ".pyo")):
+        return False
+    return any(r == n or r.startswith(n + os.sep) for n in named)
 
 
 def _snapshot(root, verify=None):
@@ -810,8 +817,8 @@ def _snapshot(root, verify=None):
     stats, strict = _stats(root), _strict(root)
     kept = {r: _read(os.path.join(root, r)) for r, s in stats.items() if s[1] <= KEEP_MAX and (
         r.split(os.sep)[0] in WATCHED or strict(os.path.join(root, r)))}
-    named = _named(root, verify, stats)
-    kept.update({r: _read(os.path.join(root, r)) for r in named})
+    named = _named(root, verify)
+    kept.update({r: _read(os.path.join(root, r)) for r in stats if _under_named(r, named)})
     return {"named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
             "own": {f: _read(f) for f in own | _files_under(hooks)}, "hooks_at": _read(hooks), "flags": _flags(root),
             "stats": stats, "kept": kept}
