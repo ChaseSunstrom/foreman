@@ -1775,11 +1775,9 @@ def _close_warnings_of(p, b, files):
                 text = fh.read()
         except OSError:
             continue
-        lines = text.split("\n")
-        # review: a placeholder must be in the secret-looking token itself (AKIAXXXX…), not anywhere on the line
+        # T-1273: scan_text already drops placeholders, the same rule the commit refusal uses
         out += [f"possible secret ({kind}) in {f}:{n}: move it to the environment or a secret store before committing"
-                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))
-                if not any(fmsecrets.PLACEHOLDER.search(t) for t in re.findall(r"[\w+/=-]{16,}", lines[n - 1]))][:3]
+                for n, kind in fmsecrets.scan_text(text, bool(fmsecrets.CONFIG.search(f)))][:3]
     began = c.parse_ts(c.first_touch(p, b.id) or b.meta.get("created") or "")
     if b.meta.get("scope") and began and c.git_root(p.root):
         ignored = c._git(p.root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory") or ""
