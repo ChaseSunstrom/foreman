@@ -943,7 +943,7 @@ def task_finish(p, args):
     # T-1272: a step that has a run (a failed one, else it would have closed) is told so, not that it has no evidence
     red = [n for kind, n, cmd in todo if cmd is None and kind == "step" and b.has_evidence(step=n)]
     missing = [named(kind, n) for kind, n, cmd in todo if cmd is None and not (kind == "step" and n in red)]
-    gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD)"
+    gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD, or finish with --run CMD)"
             for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
                               f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b)
