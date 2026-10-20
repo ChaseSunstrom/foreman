@@ -478,8 +478,22 @@ _NO_TESTS = re.compile(r"(?m)^(=+ )?(Ran 0 tests in|collected 0 items\b|no tests
                        r"0 examples, 0 failures)")
 # test runners' failure summaries: unittest, pytest, jest, cargo, go
 _FAILED_SUMMARY = re.compile(r"(?m)^(FAILED \((failures|errors)=\d|=+ .*\b\d+ (failed|errors?)\b.* =+$|Tests: .*\b\d+ failed\b|"
-                             r"test result: FAILED\b|--- FAIL: )")
+                             r"test result: FAILED\b|--- FAIL: |\s*\d+ failing\b)")
 _SOME_TESTS = re.compile(r"Ran [1-9]\d* tests? in|collected [1-9]\d* items?|\b[1-9]\d* (passed|examples?)\b")
+# T-1256: their pass summaries: unittest, pytest (full or -q), jest, cargo, go, mocha
+_PASSED_SUMMARY = re.compile(r"(?m)^(OK( \([^)]*\))?\s*$|=+ (.*, )?\d+ passed\b.* =+\s*$|\d+ passed\b.* in [\d.]+m?s\b|"
+                             r"Tests:\s+(\d+ \w+, )*\d+ passed\b|test result: ok\b|ok\s+\S+\s+[\d.]+s\s*$|PASS\s*$|"
+                             r"\s*\d+ passing \()")
+
+
+def passed_summary(out):
+    """T-1256: the output carries a test runner's own pass summary and no failure summary, so a run piped to tail
+    (whose exit is tail's) still says how the tests went."""
+    return bool(_PASSED_SUMMARY.search(out or "")) and not failed_summary(out)
+
+
+def failed_summary(out):
+    return bool(_FAILED_SUMMARY.search(out or ""))
 
 
 def env_id():
