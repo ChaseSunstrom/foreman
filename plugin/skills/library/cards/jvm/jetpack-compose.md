@@ -3,7 +3,7 @@ name: jetpack-compose
 title: Jetpack Compose
 area: jvm
 tags: [android, kotlin, compose, ui, state, testing]
-detect: [dep:androidx.compose.ui:ui, dep:androidx.compose.material3:material3, dep:androidx.compose:compose-bom, dep:androidx.activity:activity-compose]
+detect: [dep:androidx.compose.ui:ui, dep:androidx.compose.material3:material3, dep:androidx.compose:compose-bom, dep:androidx.activity:activity-compose, dep:androidx.compose.foundation:foundation, dep:androidx.compose.ui:ui-test-junit4, dep:androidx.compose.ui:ui-test-manifest]
 related: [android, kotlin-coroutines, hilt, kotlin-multiplatform]
 ---
 Jetpack Compose UI: stateless composables, state hoisting, recomposition control, semantic UI tests.
