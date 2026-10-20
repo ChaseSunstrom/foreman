@@ -3259,7 +3259,11 @@ def cmd_research(args):
                for m in re.finditer(r"(?mi)^\W*noticed:?\**\s*(.+)$", text)] if args.from_agent else []
     noticed = [x for x in dict.fromkeys(noticed) if x and x.lower() not in ("none", "nothing", "n/a")][:10]
     with c.lock(p.dir):
-        c.write_atomic(path, c.defang(c.redact(text)))
+        new = c.defang(c.redact(text))
+        if args.append and os.path.isfile(path):  # T-1288: inside the lock, so two appends can't lose one
+            with open(path, encoding="utf-8", errors="replace") as f:
+                new = f.read().rstrip("\n") + "\n\n" + new
+        c.write_atomic(path, new)
         made = []
         for x in noticed:
             type_ = "FIX" if re.search(r"(?i)\b(bug|broken|drops?|crash|fails?|wrong|leak)\b", x) else "FEATURE"
@@ -4701,6 +4705,7 @@ def build_parser():
     r.add_argument("--file")
     r.add_argument("--from-agent", metavar="FILE", help="a subagent's output file: keeps its final report, not the "
                                                            "transcript")
+    r.add_argument("--append", action="store_true", help="add to the note NAME if it exists instead of replacing it")
     r.add_argument("--task")
     r.add_argument("--json", action="store_true")
     r = rsp.add_parser("list", help="saved research, newest first (T-0802)")

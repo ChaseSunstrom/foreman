@@ -170,6 +170,7 @@ class RuleIds(Base):
         self.assertEqual(b.category, "state-direct", b.detail)
         text = g.message(b, ctx)
         self.assertIn("fm research add", text)
+        self.assertIn("--append", text)  # T-1288: following the hint on an existing file must not replace it
 
     def test_guard_block_events_carry_it_and_friction_counts_it(self):
         self.fm("task", "new", "x", "--type", "FIX", "--tier", "S", "--ac", "a :: true", "--step", "s", "--focus")
