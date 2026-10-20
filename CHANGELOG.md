@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.44 — 2026-10-20
 - `fm research add NAME --file PATH --append` adds to a research note instead of replacing it, and the guard's hint for a direct write to state names it, so following the hint no longer erases an existing note (T-1288)
 - Guard: the refusal of a script written and run in one command (`printf > s.sh && bash s.sh`) ends with the way forward, write it in one command and run it in the next, instead of an `--allow` route that didn't apply (T-1289)
 - `fm code --worker claude` works with Foreman installed: each worker turn runs in its own Claude Code session, whose Foreman hooks leased what it edited, so fm code's judge put the worker's fix back as another session's and every later turn was refused the same code (`fm code bench --worker claude` scored 0/2; now the operator seed closes in 21 s). A worker turn now carries `FOREMAN_WORKER_OF`, and its edits lease as the fm code run's own (T-1294)
