@@ -19,10 +19,19 @@ The harness makes the task (fm task new --focus), runs each criterion's verify a
 --run) before the first step and after the last, gives a failure back to the model (3 rounds, then 3 more on
 --escalate's model), blocks the task when it still fails, and closes it with fm task finish (an M task's audit lenses,
 docs and lesson come from one more slot). Every message and action goes in the project's code/<task>.jsonl journal.
+
+    fm code "<request>" --worker CLI [--worker-timeout 1200] [--verify CMD]     (T-1214)
+An installed CLI (WORKERS, or 'CMD {prompt}') does each step and fix round in one unattended turn instead of the model;
+--verify plans without a model (one S task, done when CMD passes). After each turn the harness judges the tree: Git's
+own config and hooks are put back, a commit is undone (its changes stay), and each changed file the guard refuses as a
+Write is reverted and reported. The worker's exit code and reply never mark anything done: the harness's verify does.
 """
 import json
 import os
+import shlex
+import shutil
 import signal
+import stat
 import subprocess
 import sys
 import threading
@@ -40,6 +49,14 @@ CAP = 3000            # characters of a run's head, and of its tail, the model s
 READ_LINES, READ_MAX, LINE_MAX, READ_BYTES = 200, 400, 500, 16 << 20
 RUN_TIMEOUT, VERIFY_TIMEOUT, FM_TIMEOUT = 120, 600, 900
 MAX_TOKENS, KEEP_RESULTS, SMALL_CONTEXT = 8192, 6, 32768
+WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files the guard judges one by one
+WORKERS = {  # T-1214: each CLI's unattended one-prompt form
+    "claude": "claude -p {prompt} --permission-mode acceptEdits",
+    "codex": "codex exec --full-auto {prompt}",
+    "gemini": "gemini --yolo -p {prompt}",
+    "opencode": "opencode run {prompt}",
+    "aider": "aider --yes-always --no-auto-commits --message {prompt}",
+}
 
 TOOLS = [
     {"name": "read", "description": "Read a file's numbered lines, or list a folder, inside the project.",
@@ -158,6 +175,8 @@ class Run:
         self.sensitive, self.escalate, self.cap = False, getattr(args, "escalate", None), CAP
         self.no_commit, self.max_steps = bool(getattr(args, "no_commit", False)), getattr(args, "max_steps", None)
         self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
+        self.worker, self.verify_cmd = getattr(args, "worker", None), getattr(args, "verify", None)
+        self.worker_timeout = getattr(args, "worker_timeout", None)
 
     # -- output and journal
     def emit(self, event, text, **data):
@@ -414,6 +433,67 @@ class Run:
         self.done.add(name)
         self.log(kind="phase_done", phase=name)
 
+    def work(self, name, prompt):
+        """T-1214: one worker turn, bounded by --worker-timeout (its process group killed), then the tree judged. Its
+        exit code and reply never mark anything done: the harness's verify does."""
+        if name in self.done:
+            return
+        argv = worker_argv(self.worker, prompt)
+        before = _snapshot(self.root)
+        code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, dict(os.environ), self.cap)
+        state = f"timed out after {self.worker_timeout} s" if code is None else f"exit {code}"
+        self.emit("worker", f"  worker {argv[0]}: {state}", worker=argv[0], exit=code)
+        self.log(kind="worker", phase=name, exit=code, output=self.redact(out))
+        for rel, why in self.judge(before):
+            rel = os.fsencode(rel).decode("utf-8", "replace")  # an undecodable name still prints
+            self.emit("revert", f"  reverted {rel}: {_one_line(why, 160)}", file=rel, reason=why)
+            self.log(kind="revert", phase=name, file=rel, reason=why)
+        self.done.add(name)
+        self.log(kind="phase_done", phase=name)
+
+    def judge(self, before):
+        """[(path, why)] of what a worker turn changed that the harness put back: Git's own config and hooks always
+        (first: a planted core.fsmonitor would run on the next git status), a commit or branch switch (its changes
+        stay, to be judged), then each changed file the guard refuses as a Write."""
+        head, tree, own, hooks = before
+        out = []
+        if os.path.islink(hooks):  # walking a planted link would delete whatever it points at
+            os.remove(hooks)
+            out.append((os.path.relpath(hooks, self.root), "a worker never changes Git's own config or hooks"))
+        files = set(own) | {os.path.join(b, n) for b, _, names in os.walk(hooks) for n in names}
+        for f in sorted(files):
+            if _read(f) != own.get(f):
+                _put(f, own.get(f))
+                out.append((os.path.relpath(f, self.root), "a worker never changes Git's own config or hooks"))
+        if _head(self.root) != head:
+            if head[0]:
+                _git(self.root, "symbolic-ref", "HEAD", head[0])
+            if head[1]:
+                _git(self.root, "reset", "-q", "--soft", head[1])
+            out.append(("HEAD", "the worker committed or switched branch: moved back, its changes judged below"))
+        now = _dirty(self.root)
+        changed = [r for r in sorted(set(tree) | set(now))
+                   if r not in tree or _read(os.path.join(self.root, r)) != tree[r]]
+        for r in changed:
+            full = os.path.join(self.root, r)
+            why = (f"the worker changed {len(changed)} files, over {JUDGE_MAX}, so none is kept" if
+                   len(changed) > JUDGE_MAX else self.guard("Write", {"file_path": full, "content": ""}))
+            if not why:
+                self.after("Write", {"file_path": full, "content": ""}, {"filePath": full})
+                continue
+            if os.path.realpath(os.path.dirname(full)) != os.path.dirname(full):  # root is real: a folder became a link
+                out.append((r, f"{why} (not put back: a folder on its path is now a link)"))
+                continue
+            if r in tree:
+                _put(full, tree[r])
+            elif _git(self.root, "cat-file", "-e", f"HEAD:{r}").returncode == 0:
+                _git(self.root, "checkout", "-q", "HEAD", "--", r)
+            else:
+                _git(self.root, "rm", "-q", "--cached", "--ignore-unmatch", "--", r)
+                _put(full, None)
+            out.append((r, why))
+        return out
+
     def add(self, phase, msg):
         self.msgs.setdefault(phase, []).append(msg)
         self.log(kind="msg", phase=phase, msg=msg)
@@ -507,6 +587,82 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP):
     return code, out.strip()
 
 
+# ---------------------------------------------------------------- workers (T-1214)
+
+def worker_argv(spec, prompt, which=True):
+    """A --worker spec as argv: the user's own template ("{prompt}" in it), a WORKERS name, else [spec, prompt]."""
+    tpl = WORKERS.get(spec, spec)
+    try:
+        argv = [w.replace("{prompt}", prompt) for w in shlex.split(tpl)] if "{prompt}" in tpl else [spec, prompt]
+    except ValueError as e:
+        raise CodeError(f"--worker {spec!r} doesn't split as a command: {e}")
+    if not argv or not argv[0]:
+        raise CodeError(f"--worker {spec!r} names no command")
+    if which and not shutil.which(argv[0]):
+        raise CodeError(f"the worker {argv[0]} isn't on PATH: install it, or give --worker 'CMD {{prompt}}'")
+    return argv
+
+
+def _git(root, *a):
+    return subprocess.run(["git", "--literal-pathspecs", *a], cwd=root, capture_output=True, timeout=60)
+
+
+def _dirty(root):
+    """{path: status} of every dirty or untracked file."""
+    out = _git(root, "status", "--porcelain", "-z", "-uall", "--no-renames").stdout
+    return {e[3:]: e[:2] for e in os.fsdecode(out).split("\0") if len(e) > 3 and not e.endswith("/")}
+
+
+def _head(root):
+    return tuple(_git(root, *a).stdout.strip() for a in (("symbolic-ref", "-q", "HEAD"), ("rev-parse", "-q", "--verify",
+                                                                                          "HEAD")))
+
+
+def _read(path):
+    """A file's (bytes, mode), a link's ("link", target), anything else's kind; None when nothing is there."""
+    try:
+        st = os.lstat(path)
+        if stat.S_ISLNK(st.st_mode):
+            return "link", os.readlink(path)
+        if not stat.S_ISREG(st.st_mode):
+            return "other", stat.S_IFMT(st.st_mode)  # a folder, FIFO or device: never read (a FIFO would hang)
+        with open(path, "rb") as f:
+            return f.read(), stat.S_IMODE(st.st_mode)
+    except OSError:
+        return None
+
+
+def _put(path, saved):
+    """Put a _read result back: what's there now goes, even a link (never written through) or a folder."""
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path, ignore_errors=True)
+    elif os.path.lexists(path):
+        os.remove(path)
+    if not saved or saved[0] == "other":
+        return  # ponytail: a FIFO or folder that was there isn't recreated
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if saved[0] == "link":
+        os.symlink(saved[1], path)
+        return
+    with open(path, "wb") as f:
+        f.write(saved[0])
+    os.chmod(path, saved[1])
+
+
+def _snapshot(root):
+    """What a worker turn is judged against: HEAD, each dirty or untracked file's content, and Git's own config and
+    hooks, which git status can't see. ponytail: dirty files are held in memory; a huge untracked tree costs RAM."""
+    gd, cd = (os.fsdecode(_git(root, "rev-parse", "--path-format=absolute", "--git-dir", "--git-common-dir").stdout)
+              .split("\n") + ["", ""])[:2]
+    if not cd:
+        raise CodeError("--worker needs a git repository: the harness judges each turn by its diff")
+    hooks = os.path.join(cd, "hooks")
+    own = {os.path.join(cd, "config"), os.path.join(cd, "config.worktree"), os.path.join(gd, "config.worktree"),
+           os.path.join(cd, "info", "exclude")}  # an exclude line would hide a planted file from git status
+    own |= {os.path.join(b, n) for b, _, names in os.walk(hooks) for n in names}
+    return _head(root), {r: _read(os.path.join(root, r)) for r in _dirty(root)}, {f: _read(f) for f in own}, hooks
+
+
 def _files(root):
     try:
         out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, timeout=30).stdout
@@ -544,14 +700,21 @@ def cmd_code(args):
                                    'fm code --resume)')
         else:
             run.request = " ".join(words)
-        profile = m.resolve(args.model or run.model_name)
-        run.model_name = profile["name"]
-        run.offsite_ok(p, profile)
-        run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
+        if run.worker:
+            worker_argv(run.worker, "")  # a missing CLI fails now, before any plan or task
+            if run.worker_timeout is not None and run.worker_timeout <= 0:
+                raise CodeError("--worker-timeout is a number of seconds above 0")
+            run.worker_timeout = run.worker_timeout or WORKER_TIMEOUT
+        profile = None  # T-1214: a worker with --verify needs no model
+        if not (run.worker and run.verify_cmd):
+            profile = m.resolve(args.model or run.model_name)
+            run.model_name = profile["name"]
+            run.offsite_ok(p, profile)
+            run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
         run.max_steps = run.max_steps or 40
         run.escalate = m.resolve(run.escalate) if run.escalate else None  # a bad name fails now, not 3 rounds in
         if run.escalate:
-            run.offsite_ok(None, run.escalate)
+            run.offsite_ok(p, run.escalate)
         if args.resume is None:
             _plan(run, profile, args.dry_plan)
             if args.dry_plan:
@@ -578,7 +741,9 @@ def cmd_code(args):
 
 
 def _plan(run, profile, dry=False):
-    msgs = [{"role": "system", "content": PLAN_PROMPT + _files(run.root)}, {"role": "user", "content": run.request}]
+    if run.verify_cmd:
+        return _verify_plan(run, dry)
+    msgs =[{"role": "system", "content": PLAN_PROMPT + _files(run.root)}, {"role": "user", "content": run.request}]
     run.plan = slot(run, profile, msgs, check_plan, "plan")
     why = None if dry else _plan_problem(run)  # --dry-plan runs nothing
     if why:  # one re-plan
@@ -591,6 +756,22 @@ def _plan(run, profile, dry=False):
     pl = run.plan
     run.emit("plan", f"plan: {pl['type']} {pl['tier']} {pl['title']} (criteria: {len(pl['criteria'])}, "
                      f"steps: {len(pl['steps'])})", plan=pl)
+
+
+def _verify_plan(run, dry):
+    """T-1214: --verify plans without a model: S, the request's tag type (else FEATURE), titled from its first line,
+    done when the verify passes; the verify must be allowed and, for FIX and FEATURE, fail before any work."""
+    first = (run.request.strip().splitlines() or [""])[0]
+    tag, _, rest = first.partition(":")
+    typ = {"PERF": "PERFORMANCE"}.get(tag.strip().rstrip("!?").upper(), tag.strip().rstrip("!?").upper())
+    typ, title = (typ, rest) if typ in TYPES and rest.strip() else ("FEATURE", first)
+    run.plan = {"type": typ, "tier": "S", "title": _one_line(title, 120).lstrip("- ") or "the request",
+                "criteria": [{"text": "the request is done as asked", "verify": run.verify_cmd}],
+                "steps": ["do what the request asks"]}
+    why = check_plan(run.plan) or (None if dry else _plan_problem(run))
+    if why:
+        raise CodeError(f"--verify: {why}")
+    run.emit("plan", f"plan: {typ} S {run.plan['title']} (done when `{run.verify_cmd}` passes)", plan=run.plan)
 
 
 def _plan_problem(run):
@@ -614,8 +795,9 @@ def _make_task(run, profile):
     pl = run.plan
     a = ["task", "new", pl["title"], "--type", pl["type"], "--tier", pl["tier"], f"--raw={run.request}",
          f"--interpretation={run.request}",
-         f"--approach=fm code ({profile['name']}): the harness runs the stations; the model filled the plan and picks "
-         "one action at a time", "--focus", "--json"]
+         f"--approach=fm code ({_who(run, None if run.worker else profile)}):the harness runs the stations; " + (
+             "the worker CLI does each step, the harness judges its diff and runs the verify" if run.worker else
+             "the model filled the plan and picks one action at a time"), "--focus", "--json"]
     a += [f"--ac={cr['text'].strip()} :: {cr['verify'].strip()}" for cr in pl["criteria"]]
     a += [f"--step={s.strip()}" for s in pl["steps"]]
     code, out = run.fm(*a)
@@ -625,9 +807,11 @@ def _make_task(run, profile):
     run.tid = made["id"]
     os.makedirs(run.jdir, exist_ok=True)
     run.journal = os.path.join(run.jdir, f"{run.tid}.jsonl")
-    run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile["name"], messages=run.plan_msgs,
+    run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile and profile["name"],
+            messages=run.plan_msgs,
             options={"no_commit": run.no_commit, "escalate": run.escalate and run.escalate["name"],
-                     "max_steps": run.max_steps})
+                     "max_steps": run.max_steps, "worker": run.worker, "worker_timeout": run.worker_timeout,
+                     "verify": run.verify_cmd})
     run.emit("task", f"task {run.tid} created and focused", task=run.tid)
 
 
@@ -641,7 +825,10 @@ def _drive(run, profile):
         if f"step:{n}" not in run.done:
             run.emit("step", f"step {n}/{len(pl['steps'])}: {step}", step=n)
         prompt = f"{_task_text(run)}\n\nVerify results before any change:\n{run.baseline}\n\nNow do step {n}: {step}"
-        run.phase(f"step:{n}", profile, prompt)
+        if run.worker:
+            run.work(f"step:{n}", prompt)
+        else:
+            run.phase(f"step:{n}", profile, prompt)
     rounds = 0
     while True:
         failed = run.verify("verify")
@@ -654,17 +841,28 @@ def _drive(run, profile):
                 raise Blocked(f"fm code: the verify still fails after {rounds - 1} fix rounds: "
                               f"{_one_line(_failures(failed), 300)}")
             model = run.escalate
+        by_worker = run.worker and model is profile  # T-1214: escalation stays a model's
         if f"fix:{rounds}" not in run.done:
-            run.emit("fix", f"fix round {rounds} ({model['name']}): {len(failed)} criteria fail", round=rounds)
-        run.phase(f"fix:{rounds}", model, f"{_task_text(run)}\n\nEvery step is done, but these verify commands fail "
-                                          f"(fix round {rounds}):\n\n{_failures(failed)}\n\nFix the work (not the "
-                                          "verify commands), then call done.")
+            run.emit("fix", f"fix round {rounds} ({_who(run, None if by_worker else model)}): {len(failed)} criteria "
+                            "fail", round=rounds)
+        text = (f"{_task_text(run)}\n\nEvery step is done, but these verify commands fail (fix round {rounds}):\n\n"
+                f"{_failures(failed)}\n\nFix the work (not the verify commands)")
+        if by_worker:
+            run.work(f"fix:{rounds}", text + ".")
+        else:
+            run.phase(f"fix:{rounds}", model, text + ", then call done.")
     _finish(run, profile)
+
+
+def _who(run, profile):
+    """What does the work, as the journal and the audit line name it."""
+    return profile["name"] if profile else f"worker {run.worker}"
 
 
 def _finish(run, profile):
     pl = run.plan
-    a = ["task", "finish", run.tid, f"--audit=fm code ({profile['name']}): harness-run verify",
+    a = ["task", "finish", run.tid, f"--audit=fm code ({_who(run, None if run.worker else profile)}): harness-run "
+                                    "verify",
          "--run=" + " && ".join(cr["verify"] for cr in pl["criteria"])]
     if pl["tier"] == "M":
         notes = run.close_notes
@@ -720,6 +918,9 @@ def _load(run, tid):
     run.no_commit = run.no_commit or bool(opts.get("no_commit"))
     run.escalate = run.args.escalate or opts.get("escalate")
     run.max_steps = run.args.max_steps or opts.get("max_steps")
+    run.worker = run.worker or opts.get("worker")  # T-1214
+    run.worker_timeout = run.worker_timeout or opts.get("worker_timeout")
+    run.verify_cmd = run.verify_cmd or opts.get("verify")
     for r in recs[1:]:
         k = r.get("kind")
         if k == "msg":

@@ -294,6 +294,7 @@ In a repo on your server, ask Claude to "serve this repo". Claude asks you once 
 - `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
 - A run that was killed or lost its model carries on with `fm code --resume`.
 - In a repo marked sensitive, only a model on this machine is used.
+- `fm code "FIX: make calc.add add" --worker codex --verify "python3 test_calc.py"` hands each step to a CLI you already have (`claude`, `codex`, `gemini`, `opencode`, `aider`, or your own `'CMD {prompt}'`), one unattended turn at a time, killed after `--worker-timeout` seconds (1200). After each turn the harness puts back anything the guard refuses (a protected file, a planted git hook or config) and says so; its own verify decides, never the worker's word. `--verify` plans without a model.
 
 ## When not to use Foreman
 
