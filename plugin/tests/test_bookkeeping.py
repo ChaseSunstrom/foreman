@@ -81,7 +81,7 @@ class FinishGaps(HookCase):
         tid = self.task(type_="FEATURE", tier="M", steps=("build it", "wire it"))
         e = self.fm("task", "evidence", tid, "--step", "1", "--run", "false", check=False)
         self.assertNotEqual(e.returncode, 0, e.stdout + e.stderr)
-        r =self.fm("task", "finish", tid, "--audit", "self review", check=False)
+        r = self.fm("task", "finish", tid, "--audit", "self review", check=False)
         out = r.stderr + r.stdout
         self.assertIn("step 1", out)
         self.assertIn("its last run failed", out)
