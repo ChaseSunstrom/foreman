@@ -1,7 +1,7 @@
 export const meta = {
   name: 'review',
-  description: 'Foreman five-lens review of a diff: one reviewer per audit lens, then two skeptics try to refute each finding',
-  whenToUse: 'Before closing an M or L task or merging a builder branch. Args: a git range (a..b), a branch, a task id (T-0123), or nothing for the uncommitted change (else the last commit).',
+  description: 'Foreman five-lens review of a diff: a reviewer per lens, then two skeptics try to refute each finding',
+  whenToUse: 'Before closing an M or L task or merging a builder branch. Args: a range (a..b), branch or task id; none: the uncommitted change.',
   phases: [
     { title: 'Scope', detail: 'collect the diff and its changed files' },
     { title: 'Review', detail: 'intent, adversary, edge, operator, maintainer' },

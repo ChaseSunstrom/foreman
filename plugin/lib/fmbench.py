@@ -604,6 +604,14 @@ def soak_case(p, case, plugin, model=None, budget=3.0, timeout=30, turns=3, shad
             "cost_usd": round(cost, 4), "seconds": round(time.monotonic() - t0), "error": error, "transcript": talk}
 
 
+def claude_version():
+    """T-1255: the Claude Code a result ran on ("2.1.304"), or None when claude --version gives none."""
+    import fmeco
+    line = fmeco.claude_version() or ""
+    found = re.search(r"\d+\.\d+\.\d+", line)
+    return found.group(0) if found else (line or None)
+
+
 def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1, quiet=False, head=None, extra=(),
             bare=False, jobs=1, compact_at=None, marathon=None):
     """Every case on one plugin (and `extra` plugin dirs beside it), results written after each case (a crash or
@@ -615,7 +623,8 @@ def run_arm(p, cases, plugin, label, model=None, budget=3.0, timeout=30, runs=1,
         raise ValueError(f"{plugin} doesn't ship Foreman's guard (a PreToolUse Bash hook and lib/fmguard.py); "
                          f"replays run in bypass mode, so they never run without it")
     results = []
-    res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "cases": results,
+    res = {"label": label, "plugin": plugin, "model": model, "at": c.now(), "head": head, "claude": claude_version(),
+           "cases": results,
            **({"extra": list(extra)} if extra else {}), **({"bare": True} if bare else {}),
            **({"compact_at": compact_at} if compact_at else {}), **({"marathon": marathon} if marathon else {})}
     os.makedirs(_results_dir(p), exist_ok=True)

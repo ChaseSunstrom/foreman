@@ -623,14 +623,21 @@ class NoTaskGate(HookCase):
         # T-1242 smoke: the ledger keeps a prompt's first 2,000 characters, so eight long requests queued as two
         self.fm("init")
         self.fm("autonomy", "full")
-        prompt = "Task: " + "\n\n".join(f"## Request {k}\nAdd f{k}().\n" + "- a rule\n" * 60 for k in range(1, 9))
+        # CI (Linux, 3.12) queued 4 of 8: one fm process per task didn't fit the hook's 5 s on a slow machine; 16 here
+        prompt = "Task: " + "\n\n".join(f"## Request {k}\nAdd f{k}().\n" + "- a rule\n" * 60 for k in range(1, 17))
         transcript = os.path.join(self.tmp, "t.jsonl")
         with open(transcript, "w") as f:
             f.write(json.dumps({"type": "user", "message": {"role": "user", "content": prompt}}) + "\n")
         self.hook("UserPromptSubmit", {"prompt": prompt, "transcript_path": transcript})
+        slow = os.path.join(self.tmp, "slow")  # CI's slow interpreter start: every new Python process waits 0.4 s
+        os.makedirs(slow)
+        with open(os.path.join(slow, "sitecustomize.py"), "w") as f:
+            f.write("import time\ntime.sleep(0.4)\n")
         self.hook("PreToolUse", {"tool_name": "Write", "tool_input": {"file_path": os.path.join(self.repo, "f.py"),
-                                                                      "content": "x"}, "transcript_path": transcript})
-        self.assertEqual(len(c.load_briefs(self.project())), 8)
+                                                                      "content": "x"}, "transcript_path": transcript},
+                  env={"PYTHONPATH": slow}, timeout=20)
+        briefs = sorted(c.load_briefs(self.project()), key=lambda b: b.id)
+        self.assertEqual([b.title.split(":")[0] for b in briefs], [f"Request {k}" for k in range(1, 17)])
 
     def test_at_stop_the_requests_with_evidence_close_together(self):
         # T-1242 smoke: seven turns of fm focus so each stop could close one request

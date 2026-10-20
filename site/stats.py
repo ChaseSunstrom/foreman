@@ -190,8 +190,43 @@ def duel(state, model=None, kind=""):
         return mod[0] if mod else (" ".join(re.sub(r"[:(].*", "", t).split()[:5]).rstrip(",;.") or cid)
     cases = [{"case": name(x["id"]), "foreman": pick(x), "bare": pick(b[x["id"]])} for x in fm_.get("cases", [])
              if x["id"] in b]
-    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "cases": cases,
-            **({"compact_at": fm_.get("compact_at"), "marathon": fm_.get("marathon")} if kind else {})}
+    return {"model": fm_.get("model"), "at": (fm_.get("at") or "")[:10], "claude": fm_.get("claude"), "cases": cases,
+            **({"compact_at": fm_.get("compact_at"), "marathon": fm_.get("marathon")} if kind else {}),
+            **({"history": long_history(res, model)} if kind == "long" else {})}
+
+
+def long_history(res, model=None):
+    """T-1246: every three-run long-session duel (forced compaction, no marathon): runs passing every hidden test on
+    each side and the mean cost a session, oldest first. One-run smokes are left out, as the page's method says."""
+    out = []
+    for path in sorted(glob.glob(os.path.join(res, "duel-none-foreman-*.json"))):
+        bare_path = os.path.join(res, "duel-none-bare-" + path.rsplit("duel-none-foreman-", 1)[1])
+        try:
+            with open(path, encoding="utf-8") as f:
+                a = json.load(f)
+            with open(bare_path, encoding="utf-8") as f:
+                b = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not a.get("compact_at") or a.get("marathon") or (model and a.get("model") != model) or not a.get("cases"):
+            continue
+        x, y = a["cases"][0], (b.get("cases") or [{}])[0]
+        if (x.get("runs") or 1) < 3:
+            continue
+        ok = lambda c: sum(bool(t.get("pass")) for t in c.get("attempts") or [])
+        out.append({"model": a.get("model"), "runs": x["runs"], "f_pass": ok(x), "b_pass": ok(y),
+                    "f_cost": round(x.get("cost_usd") or 0, 4), "b_cost": round(y.get("cost_usd") or 0, 4)})
+    return out
+
+
+def code_counts():
+    """T-1246: the Foreman Code page's figures, counted from the repo: the model client's tests and the endpoints
+    fm code finds (local servers and keyed clouds)."""
+    with open(os.path.join(ROOT, "plugin", "tests", "test_models.py"), encoding="utf-8") as f:
+        tests = len(re.findall(r"(?m)^    def test_", f.read()))
+    sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))
+    import fmmodels
+    return {"model_tests": tests, "endpoints": len(fmmodels.LOCAL) + len(fmmodels.CLOUD)}
 
 
 def main():
@@ -210,7 +245,7 @@ def main():
         with open(OUT, encoding="utf-8") as f:
             old = json.load(f)
     stats = {"generated": datetime.date.today().isoformat(), **ledger(state, None), "releases": releases(),
-             "cards": cards(), "bench": old.get("bench", {}) if a.no_bench else bench(),
+             "cards": cards(), "code": code_counts(), "bench": old.get("bench", {}) if a.no_bench else bench(),
              "duels": merge_duels(old.get("duels") or [], [dict(d, name=n) for n, d in ((x.partition("=")[0], duel(
                  *x.partition("=")[2].split("@", 1), kind=next((k for k in ("long", "marathon") if x.startswith(k)), "")))
                                                      for x in (a.duel or [f"quality={state}"])) if d])}

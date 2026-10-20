@@ -1,6 +1,6 @@
 ---
 name: brainstorm
-description: Use for an open-ended request with no concrete target ("super improve it", "what should we build next?") or when Foreman's note says so: fans out lens brainstormers (fm ideas), grounds and scores their ideas, and briefs the best.
+description: Use for an open-ended request ("super improve it", "what next?") or when Foreman's note says so: lens brainstormers, then every idea grounded, scored and briefed.
 ---
 
 # Foreman: brainstorm

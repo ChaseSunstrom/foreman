@@ -1,6 +1,6 @@
 ---
 name: status
-description: Use when the user asks where things stand (STATUS, "what's left", /foreman:status): Foreman's status for this project in at most 25 lines.
+description: Use when the user asks where things stand (STATUS, "what's left"): Foreman's status in at most 25 lines.
 ---
 
 # Foreman: status

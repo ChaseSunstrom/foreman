@@ -1,17 +1,17 @@
 {
- "generated": "2026-10-16",
+ "generated": "2026-10-20",
  "totals": {
-  "tasks_done": 732,
-  "evidence": 2679,
+  "tasks_done": 734,
+  "evidence": 2684,
   "proofs": 250,
-  "commits": 569,
-  "gate_runs": 556,
-  "subagents": 538,
+  "commits": 570,
+  "gate_runs": 558,
+  "subagents": 539,
   "lanes_merged": 131,
   "findings": 155,
-  "guard_blocks": 295,
-  "captures": 520,
-  "lessons_shown": 724
+  "guard_blocks": 296,
+  "captures": 522,
+  "lessons_shown": 730
  },
  "daily": [
   {
@@ -112,17 +112,39 @@
    "RESEARCH": 4,
    "lanes": 86,
    "evidence": 744
+  },
+  {
+   "day": "2026-10-17",
+   "FEATURE": 0,
+   "FIX": 0,
+   "CLEAN": 0,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 1
+  },
+  {
+   "day": "2026-10-20",
+   "FEATURE": 0,
+   "FIX": 0,
+   "CLEAN": 2,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 4
   }
  ],
  "tiers": {
-  "S": 385,
+  "S": 387,
   "M": 300,
   "L": 47
  },
  "types": {
   "FEATURE": 335,
   "FIX": 239,
-  "CLEAN": 44,
+  "CLEAN": 46,
   "PERFORMANCE": 21,
   "SECURITY": 68,
   "RESEARCH": 25
@@ -130,7 +152,7 @@
  "guard": {
   "core": 111,
   "brief": 80,
-  "state-direct": 35,
+  "state-direct": 36,
   "plugin": 26,
   "rm-outside": 15,
   "system": 12,
@@ -152,7 +174,7 @@
   }
  },
  "subagents": {
-  "fm-builder": 223,
+  "fm-builder": 224,
   "fm-reviewer": 148,
   "general-purpose": 76,
   "fm-recon": 71,
@@ -160,15 +182,10 @@
   "claude-code-guide": 7
  },
  "gate_seconds": {
-  "runs": 556,
-  "median": 75.5
+  "runs": 558,
+  "median": 75.6
  },
  "releases": [
-  {
-   "version": "1.2.24",
-   "day": "2026-10-09",
-   "tests": 1186
-  },
   {
    "version": "1.2.25",
    "day": "2026-10-09",
@@ -243,6 +260,11 @@
    "version": "1.2.39",
    "day": "2026-10-16",
    "tests": 2279
+  },
+  {
+   "version": "1.2.40",
+   "day": "2026-10-16",
+   "tests": 2283
   }
  ],
  "cards": {
@@ -273,6 +295,10 @@
   "idioms": 16,
   "docs": 10,
   "hardware": 8
+ },
+ "code": {
+  "model_tests": 51,
+  "endpoints": 9
  },
  "bench": {
   "SessionStart": {
@@ -1584,6 +1610,24 @@
    ],
    "compact_at": 40000,
    "marathon": null,
+   "history": [
+    {
+     "model": "haiku",
+     "runs": 3,
+     "f_pass": 3,
+     "b_pass": 1,
+     "f_cost": 0.0916,
+     "b_cost": 0.0564
+    },
+    {
+     "model": "haiku",
+     "runs": 3,
+     "f_pass": 3,
+     "b_pass": 2,
+     "f_cost": 0.0986,
+     "b_cost": 0.0625
+    }
+   ],
    "name": "long"
   },
   {
