@@ -3433,7 +3433,7 @@ def _script_verdict(script, cwd, kind, ctx, depth):
     key = None
     if len(data) <= _SCRIPT_LIMIT:  # over it: refused below, nothing to cache
         key = "|".join((p, digest, hashlib.sha256(repr(
-            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.confine,
+            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.state_dir, tuple(ctx.state_fallbacks), ctx.confine,
              ctx.unbriefed, kind, _guard_hash())).encode()).hexdigest()[:16]))
     path = _script_cache_path(ctx)
     hit = None if nested or key is None else _cache_load(path).get(key)
