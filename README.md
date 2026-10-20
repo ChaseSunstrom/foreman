@@ -55,7 +55,7 @@ The plugin-system install changes nothing outside the plugin: the hooks and the 
 gh repo clone ChaseSunstrom/foreman ~/.claude/foreman && ~/.claude/foreman/install.sh
 ```
 
-**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude` (tested on 2.1.301; the pane needs 2.1.299 or later), and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
+**Requirements:** Linux, macOS or WSL (not native Windows), `git`, `claude` (tested on 2.1.304; the pane needs 2.1.299 or later), and Python 3.12.7 or newer as `python3`. When Python is older or missing, the installer gets it with Homebrew on macOS or with `uv` elsewhere (no sudo; `python3` goes in `~/.local/bin`).
 
 **Flags:**
 
@@ -294,6 +294,7 @@ In a repo on your server, ask Claude to "serve this repo". Claude asks you once 
 - `--dry-plan` shows the plan and changes nothing. `--no-commit` closes without committing. `--json` prints one event per line.
 - A run that was killed or lost its model carries on with `fm code --resume`.
 - In a repo marked sensitive, only a model on this machine is used.
+- `fm code "FIX: make calc.add add" --worker codex --verify "python3 test_calc.py"` hands each step to a CLI you already have (`claude`, `codex`, `gemini`, `aider`, or your own `'CMD {prompt}'`; only codex runs shell commands, inside its own sandbox; it and the verify get no forge, cloud, registry or other credentials, and a sensitive repo is refused), one unattended turn at a time, killed after `--worker-timeout` seconds (1200). After each turn the harness kills what it left running and puts back anything Foreman refuses (a protected file, ignored or not, a planted git hook or config) and says so; the worker runs as you, so Foreman judges what it wrote, not what it read or sent; its own verify decides, never the worker's word. `--verify` plans without a model.
 
 ## When not to use Foreman
 

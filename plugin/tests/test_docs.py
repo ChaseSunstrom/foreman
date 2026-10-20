@@ -49,6 +49,24 @@ class Skills(unittest.TestCase):
                 self.assertLess(len(body.splitlines()), 500)
                 self.assertEqual(meta.get("disable-model-invocation") == "true", name in USER_ONLY)
 
+    def test_the_listing_foreman_adds_stays_small(self):
+        # T-1253: Claude Code 2.1.304 sends the skill listing again after every compaction, so Foreman's share of it
+        # (model-visible skill and command descriptions, workflow descriptions) is paid once per compaction
+        total = 0
+        for kind in ("skills", "commands"):
+            for path in [os.path.join(d, "SKILL.md") for d in
+                         (os.path.join(PLUGIN, "skills", n) for n in os.listdir(os.path.join(PLUGIN, "skills")))
+                         if os.path.isfile(os.path.join(d, "SKILL.md"))] if kind == "skills" else \
+                    [os.path.join(PLUGIN, "commands", n) for n in os.listdir(os.path.join(PLUGIN, "commands"))
+                     if n.endswith(".md")]:
+                meta, _ = frontmatter(path)
+                if meta.get("disable-model-invocation") != "true":
+                    total += len(meta.get("description", ""))
+        for name in os.listdir(os.path.join(PLUGIN, "workflows")):
+            text = read_text(os.path.join(PLUGIN, "workflows", name))
+            total += sum(len(m) for m in re.findall(r"(?m)^\s*(?:description|whenToUse): '([^']*)'", text))
+        self.assertLessEqual(total, 2000, "Foreman's part of the skill listing")
+
     def test_skill_references_exist(self):
         for name in SKILLS:
             body = read_text(os.path.join(PLUGIN, "skills", name, "SKILL.md"))
@@ -286,8 +304,63 @@ class Site(unittest.TestCase):
         bench = next(p for p in pages.PAGES if p["slug"] == "benchmarks")
         kind, title, body = bench["blocks"][0]
         self.assertEqual((kind, title), ("text", "Why use Foreman"))
+        stats = read_json(os.path.join(self.ROOT, "site", "data", "stats.json"))
+        stats.update(read_json(os.path.join(self.ROOT, "site", "data", "bench.json")))
+        text = body(stats)
         for words in ("24 dangerous", "both sides pass", "more", "6 of 6", "3 of 6", "compact"):
-            self.assertIn(words, body)
+            self.assertIn(words, text)
+
+    def test_the_why_section_is_computed_from_the_data(self):
+        # T-1246: the figures were typed into the prose and could drift from the charts beside them
+        pages = self._site("pages")
+        side = lambda ok, cost, secs: {"pass": ok, "cost": cost, "seconds": secs, "runs": 3, "passed": 3}
+        long_ = lambda f, b, fc, bc: {"model": "haiku", "runs": 3, "f_pass": f, "b_pass": b, "f_cost": fc, "b_cost": bc}
+        stats = {"safety": {"dangerous": [{"decision": "deny"}] * 7 + [{"decision": "saved"}] * 2,
+                            "everyday": [{"decision": "allow"}] * 11},
+                 "duels": [{"name": "quality", "cases": [{"foreman": side(True, 0.6, 10), "bare": side(True, 0.5, 10)}]},
+                           {"name": "hard-haiku", "cases": [{"foreman": side(True, 0.15, 15),
+                                                             "bare": side(True, 0.1, 10)}]},
+                           {"name": "long", "history": [long_(3, 1, 0.3, 0.2), long_(2, 2, 0.3, 0.2)], "cases": [{}]}]}
+        _, _, body = next(p for p in pages.PAGES if p["slug"] == "benchmarks")["blocks"][0]
+        text = body(stats)
+        for words in ("9 dangerous", "stopped 7", "other 2", "none of 11", "20% more with Sonnet",
+                      "50% more with Haiku", "5 of 6", "3 of 6", "50% more there"):
+            self.assertIn(words, text)
+        # T-1254: per session that passed every test, Foreman cost 1.8 / 5 = $0.360 and Claude Code 1.2 / 3 = $0.400
+        self.assertIn("$0.360 against $0.400", text)
+        self.assertIn("10% less per fully correct session", text)
+        stats["duels"][2]["history"] = [long_(3, 0, 0.3, 0.2)]
+        self.assertIn("Claude Code alone never passed every test", body(stats))
+
+    def test_each_duel_names_the_claude_code_it_ran_on(self):
+        # T-1255
+        pages, stats = self._site("pages"), self._site("stats")
+        side = {"pass": True, "cost": 0.1, "seconds": 5, "runs": 1, "passed": 1}
+        s = {"duels": [{"name": "quality", "claude": "2.1.304", "cases": [{"case": "a", "foreman": side, "bare": side}]},
+                       {"name": "hard", "cases": [{"case": "a", "foreman": side, "bare": side}]}]}
+        self.assertIn("Claude Code 2.1.304", pages._duel(s, "quality"))
+        self.assertIn("Claude Code version wasn't recorded", pages._duel(s, "hard"))
+        import tempfile
+        with tempfile.TemporaryDirectory() as state:
+            res = os.path.join(state, "bench", "results")
+            os.makedirs(res)
+            case = {"id": "x", "pass": True, "cost_usd": 0.1}
+            for arm, extra in (("foreman", {"claude": "2.1.304"}), ("bare", {})):
+                with open(os.path.join(res, f"duel-none-{arm}-1.json"), "w") as f:
+                    json.dump(dict(extra, model="haiku", cases=[case]), f)
+            self.assertEqual(stats.duel(state)["claude"], "2.1.304")
+
+    def test_the_foreman_code_page_counts_come_from_the_repo(self):
+        stats = self._site("stats")
+        counts = stats.code_counts()
+        self.assertEqual(counts["model_tests"], len(re.findall(r"(?m)^    def test_", read_text(
+            os.path.join(self.ROOT, "plugin", "tests", "test_models.py")))))
+        self.assertGreater(counts["endpoints"], 5)
+
+    def test_the_saved_theme_is_set_before_first_paint(self):
+        build = self._site("build")
+        head = build.layout("T", "d", "<p>x</p>", [], "x").split("</head>")[0]
+        self.assertIn("fm-theme", head, "a stored light theme flashed dark until site.js ran at the end of body")
 
     def test_the_site_builds_and_every_local_link_resolves(self):
         import subprocess

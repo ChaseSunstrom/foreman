@@ -1,6 +1,6 @@
 ---
 name: improve
-description: Use when the user asks to improve Foreman itself, or the self-inbox has items and the queue is empty: builds eval-gated candidates in a worktree; any merge needs the user's yes.
+description: Use when the user asks to improve Foreman itself, or the self-inbox has items and the queue is empty: eval-gated candidates in a worktree.
 ---
 
 # Foreman: improve (bounded, eval-gated)

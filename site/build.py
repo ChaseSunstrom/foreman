@@ -185,6 +185,7 @@ def layout(title, desc, body, pages, here, depth=1):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try {{ var t = localStorage.getItem("fm-theme"); if (t) document.documentElement.setAttribute("data-theme", t); }} catch (e) {{}}</script>
 <title>{esc(title)} · Foreman</title>
 <meta name="description" content="{esc(desc)}">
 <meta property="og:title" content="{esc(title)} · Foreman">
@@ -235,8 +236,9 @@ def render_page(p, stats, pages):
     parts = [f'<p class="kicker">{esc(p["nav"])}</p><h1>{esc(p["title"])}</h1><p class="lede">{p["lede"]}</p>']
     for block in p["blocks"]:
         kind = block[0]
-        if kind == "text":
-            parts.append(f"<section><h2>{esc(block[1])}</h2>{block[2]}</section>")
+        if kind == "text":  # T-1246: its body may be computed from the stats
+            body = block[2](stats) if callable(block[2]) else block[2]
+            parts.append(f"<section><h2>{esc(block[1])}</h2>{body}</section>")
         elif kind == "term":
             parts.append(f'<div class="term"><pre>{block[1]}</pre></div>')
         elif kind == "chart":

@@ -677,12 +677,36 @@ def _requests(text):
     return parts if len(parts) > 1 else []
 
 
+def _fm_inline(root, sid, *argv):
+    """(exit code, stdout, stderr) of fm run inside this process, at root, as session sid: no interpreter start per
+    call (CI, Linux 3.12: one fm process per queued task fit 4 of 8 tasks into the hook's 5 s)."""
+    import contextlib
+    import io
+    import fmcli
+    out, err, cwd, had = io.StringIO(), io.StringIO(), os.getcwd(), os.environ.get("FOREMAN_SESSION_ID")
+    try:
+        os.chdir(root)
+        os.environ["FOREMAN_SESSION_ID"] = sid or ""
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            try:
+                code = fmcli.main(list(argv))
+            except SystemExit as e:
+                code = e.code if isinstance(e.code, int) else 1
+    finally:
+        os.chdir(cwd)
+        if had is None:
+            os.environ.pop("FOREMAN_SESSION_ID", None)
+        else:
+            os.environ["FOREMAN_SESSION_ID"] = had
+    return code or 0, out.getvalue(), err.getvalue()
+
+
 def _queue_requests(p, sid, reqs):
     """T-1242: a prompt of several requests queues one task per request, each depending on the one before and holding
     its request's own text, so what's done and what's left survive a compaction; the first is focused. Within the
     hook's 5 s: tasks that don't fit are left to the agent, and the note says so."""
     import fcntl
-    fm, made, t0 = os.path.join(c.PLUGIN_ROOT, "bin", "fm"), [], time.monotonic()
+    made, t0 = [], time.monotonic()
     with open(os.path.join(p.dir, "first-brief.lock"), "a") as lk:
         fcntl.flock(lk, fcntl.LOCK_EX)
         if c.active_brief_fast(p, getattr(p, "lane", None)):
@@ -694,27 +718,17 @@ def _queue_requests(p, sid, reqs):
             type_ = r.items[0].type if r.items else "FEATURE"
             first = c.plain(text.splitlines()[0]).lstrip("-*• ").strip()
             done = (r.done_when or ["the request is done as asked"])[:6]
-            cmd = [fm, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_, "--tier",
-                   "M" if type_ == "SECURITY" else "S", f"--raw={text}", "--step=do what the request asks", "--json",
-                   *[f"--ac={d}" for d in done], *([f"--depends={made[-1]}"] if made else [])]
-            try:
-                r = subprocess.run(cmd, cwd=p.root, capture_output=True, text=True,
-                                   timeout=max(0.5, 4.0 - (time.monotonic() - t0)),
-                                   env=dict(os.environ, FOREMAN_SESSION_ID=sid))
-            except subprocess.TimeoutExpired:
-                break  # a task it may have made has no first_brief event: the agent's own queue picks it up
-            tid = re.search(r'"id": "(T-\d+)"', r.stdout)
-            if r.returncode or not tid:
-                log_error("PreToolUse", f"queue requests: {r.stderr.strip()[-300:]}")
+            code, out, err = _fm_inline(p.root, sid, "task", "new", c.fit(f"Request {k}: {first}", 90), "--type", type_,
+                                        "--tier", "M" if type_ == "SECURITY" else "S", f"--raw={text}",
+                                        "--step=do what the request asks", "--json", *[f"--ac={d}" for d in done],
+                                        *([f"--depends={made[-1]}"] if made else []))
+            tid = re.search(r'"id": "(T-\d+)"', out)
+            if code or not tid:
+                log_error("PreToolUse", f"queue requests: {err.strip()[-300:]}")
                 break
             made.append(tid[1])
             c.log_event(p, "first_brief", task=tid[1], session=sid)  # the Stop hook may close it (_close_first_brief)
-        try:
-            if not made or subprocess.run([fm, "focus", made[0]], cwd=p.root, capture_output=True,
-                                          timeout=max(0.5, 4.6 - (time.monotonic() - t0)),
-                                          env=dict(os.environ, FOREMAN_SESSION_ID=sid)).returncode:
-                return None
-        except subprocess.TimeoutExpired:
+        if not made or _fm_inline(p.root, sid, "focus", made[0])[0]:
             return None
     left = len(reqs) - len(made)
     return (f"Foreman queued this session's {len(reqs)} requests as tasks, in order: {', '.join(made)}"
@@ -1683,9 +1697,10 @@ def _pre_tool_use(raw):
                         for n, r, _ in hits[:2])  # what's left after the blocks above: warns
         slow = " ".join(f"Foreman: the script {path} (or one it runs) was too long for the guard to parse in time; "
                         "a literal scan of it found nothing to refuse." for path, _ in unread[:2])
-        note = " ".join(filter(None, [made, saved, slow, warn,_fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act), _tripwire_note(pl, p, act),
-                                      _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
-                                      _test_first_note(pl, p, act)]))
+        note = " ".join(_said_once(pl, list(filter(None, [
+            made, saved, slow, warn, _fix_note(pl, p), _dep_note(pl, p), _veto_note(pl, p), _scope_note(pl, p, act),
+            _tripwire_note(pl, p, act), _step_note(pl, p, act), _ambient_note(p), _bus_note(pl), _card_note(pl, p, act),
+            _test_first_note(pl, p, act)]))))
         if note:
             print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": note}}))
             _log_inject("PreToolUse", note)
@@ -1788,6 +1803,39 @@ def _test_first_note(pl, p, act):
     except Exception:
         log_error("PreToolUse", _tb())
         return None
+
+
+def _said_once(pl, parts):
+    """T-1258: the notes not already in the context: a one-line note given since the session's last start or
+    compaction (sessions/<sid>.said, which SessionStart clears with the session's other one-shot files) is dropped;
+    a longer note keeps its own once-rule. Any failure keeps every note."""
+    sid = pl.get("session_id")
+    if not parts or not (isinstance(sid, str) and re.fullmatch(r"[\w-]{1,100}", sid)):
+        return parts
+    import hashlib
+    path = os.path.join(c.state_dir(), "sessions", sid + ".said")
+    try:
+        with open(path, encoding="utf-8") as f:
+            said = set(f.read().split())
+    except OSError:
+        said = set()
+    out, new = [], []
+    for x in parts:
+        h = None if "\n" in x else hashlib.sha1(x.encode("utf-8", "replace")).hexdigest()[:12]
+        if h in said:
+            continue
+        out.append(x)
+        if h:
+            said.add(h)
+            new.append(h)
+    if new:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("\n".join(new) + "\n")
+        except OSError:
+            pass
+    return out
 
 
 def _card_injected(p, tid, name):
@@ -2657,12 +2705,22 @@ def _auto_evidence(pl, p, ok):
     cmd = " ".join(str((pl.get("tool_input") or {}).get("command") or "").split())
     cmd = re.sub(r"^fm quiet (?:--(?:tail|timeout) \S+ )*(?:-- )?", "", cmd)  # the same check, run quietly
     act = c.active_brief_fast(p, p.lane) if cmd else None
-    hits = [n for n, v in (act.verify_cmds() if act else []) if v and " ".join(v.split()) == cmd]
+    verifies = [(n, " ".join(v.split())) for n, v in (act.verify_cmds() if act else []) if v]
+    base, piped = _unpiped(cmd)
+    exact = [n for n, v in verifies if v == cmd]
+    hits = exact or ([n for n, v in verifies if v == base] if piped else [])
     if not hits:
-        if ok and act:
+        if (ok or piped) and act:
             _runner_evidence(pl, p, act, cmd)
         return
-    if ok:
+    if piped and not exact:  # T-1256: the exit is the filter's, so the runner's own summary decides
+        r = pl.get("tool_response")
+        output = (f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")) if ok \
+            else str(pl.get("error") or "")
+        if not (c.passed_summary(output) or c.failed_summary(output)):
+            return
+        code = 0 if c.passed_summary(output) else 1
+    elif ok:
         r = pl.get("tool_response")
         code, output = c.judged(0, f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict)
                                 else str(r or ""))  # T-0820: what fm's own runs count as failing, Bash's runs too
@@ -2688,11 +2746,24 @@ _INTERPRETERS = re.compile(r"python[0-9.]*|node|bun|deno|bash|sh|ruby|perl|php")
 _RED_STEP = re.compile(r"(?i)\b(fail|red\b|reproduc|repro\b)")
 
 
+_FILTER = re.compile(r"\s*(?:2>&1\s*)?\|\s*(?:tail|head|grep)\b(?:'[^']*'|\"[^\"]*\"|[^|;&<>'\"])*$")
+
+
+def _unpiped(cmd):
+    """T-1256: (cmd without its trailing output filters, | tail, | head or | grep with any 2>&1 before them, and
+    whether it had any)."""
+    base = cmd
+    while (m := _FILTER.search(base)):
+        base = base[:m.start()].rstrip()
+    return base, base != cmd
+
+
 def _runner(cmd):
     """T-0704: what runs a check: the program and its subcommand words (npm test, cargo test, claude plugin test), or
-    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's.
+    an interpreter and its script or -m module; None for a piped or ;-chained command, whose exit isn't the check's
+    (T-1256: a trailing tail, head or grep is no pipe here; _runner_evidence reads such a run's summary instead).
     ponytail: a word heuristic, so `npm test` and `npm test:e2e` differ; a project-declared runner list if it bites."""
-    cmd = re.sub(r"^(?:cd \S+ && )+", "", cmd)
+    cmd = re.sub(r"^(?:cd \S+ && )+", "", _unpiped(cmd)[0])
     if re.search(r"(?<!\|)\|(?!\|)|;|&&|\|\|", cmd):
         return None
     words = [w for w in cmd.split() if not re.match(r"[A-Za-z_]\w*=", w)]
@@ -2723,6 +2794,8 @@ def _runner_evidence(pl, p, act, cmd):
         return
     r = pl.get("tool_response")
     output = f"{r.get('stdout') or ''}\n{r.get('stderr') or ''}" if isinstance(r, dict) else str(r or "")
+    if _unpiped(cmd)[1] and not c.passed_summary(output):  # T-1256: piped, so only the runner's summary says it passed
+        return
     result, tree = c.run_result(0, c.redact(output)), c.worktree_id(p.root)
     with c.lock(p.dir, timeout=LOCK_QUICK):
         b = c.find_brief(p, act.id)

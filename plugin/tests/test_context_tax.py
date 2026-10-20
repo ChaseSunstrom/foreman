@@ -1,0 +1,55 @@
+"""T-1258: the context tax ratchet. A scripted session (start, a prompt, edits across three tasks, test runs, a
+compaction, stop) is replayed through the hooks, and what each event injects is held under a byte budget, read from
+the inject events the hooks log (T-0499). A one-line note isn't said twice while it's still in the context."""
+import json
+import os
+
+from test_edit_cards import _CardCase, card
+
+import fmcore as c
+
+# bytes each hook event may inject over the whole replay: measured, then about a quarter of headroom
+# (2026-10-20: SessionStart 814, UserPromptSubmit 397 under its own 400 cap, PreToolUse 1538, PostToolUse 0)
+BUDGET = {"SessionStart": 1000, "UserPromptSubmit": 400, "PreToolUse": 1900, "PostToolUse": 200}
+POINTER = "its notes were shown earlier this session"
+
+
+class ContextTax(_CardCase):
+    def injects(self):
+        path = os.path.join(c.state_dir(), "events.jsonl")
+        with open(path, encoding="utf-8") as f:
+            return [e for e in map(json.loads, f) if e.get("kind") == "inject"]
+
+    def ran_tests(self):
+        self.hook("PostToolUse", {"tool_name": "Bash", "tool_input": {"command": "python3 -m unittest"},
+                                  "tool_response": {"stdout": "Ran 3 tests in 0.1s\n\nOK", "stderr": ""}})
+
+    def new_task(self, title):
+        self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
+
+    def test_a_replayed_session_stays_under_its_budget_and_says_a_one_liner_once(self):
+        self.map([card("python", "lang", 5, "ext:.py")])
+        self.hook("SessionStart", {"source": "startup"})
+        self.hook("UserPromptSubmit", {"prompt": "make the parser accept tabs"})
+        notes = [self.edit("app.py") for _ in range(3)]
+        self.ran_tests()
+        self.new_task("Second")
+        notes += [self.edit("app.py") for _ in range(3)]
+        self.new_task("Third")
+        notes += [self.edit("app.py") for _ in range(2)]
+        self.assertEqual(sum(POINTER in n for n in notes), 1, "the pointer was already in the context")
+        self.hook("SessionStart", {"source": "compact"})
+        self.new_task("Fourth")
+        self.assertIn(POINTER, self.edit("app.py"), "after a compaction it's no longer in the context")
+        self.ran_tests()
+        self.hook("Stop", {"stop_hook_active": False, "last_assistant_message": "Done."})
+        used = {}
+        for e in self.injects():
+            used[e["event"]] = used.get(e["event"], 0) + e["chars"]
+        for event, cap in BUDGET.items():
+            self.assertLessEqual(used.get(event, 0), cap, f"{event} injected {used.get(event, 0)} bytes: {used}")
+
+
+if __name__ == "__main__":
+    import unittest
+    unittest.main()

@@ -11,6 +11,9 @@ import fmcore as c
 STUB = r'''#!/usr/bin/env python3
 import json, os, sys
 args = sys.argv[1:]
+if args == ["--version"]:
+    print("2.1.304 (Claude Code)")
+    sys.exit(0)
 with open(os.environ["STUB_LOG"], "a") as f:
     f.write(json.dumps({"args": args, "cwd": os.getcwd(), "state": os.environ.get("FOREMAN_STATE"),
                         "path": os.environ.get("PATH", "").split(os.pathsep)[0],
@@ -154,6 +157,12 @@ class Bench(ForemanTestCase):
         out = self.fm("bench", "show", "diag", env=self.env).stdout
         self.assertIn("FIX S planned", out)
         self.assertIn("rm-outside", out)
+
+    def test_a_result_names_the_claude_code_it_ran_on(self):
+        # T-1255: results from different Claude Code releases weren't comparable without it
+        self.fm("bench", "build", env=self.env)
+        res = json.loads(self.fm("bench", "run", "--label", "ver", "--json", env=self.env, check=False).stdout)
+        self.assertEqual(res["claude"], "2.1.304")
 
     def test_repeats_give_a_pass_rate(self):
         # T-0221: one run per arm is noise; a pass rate is a measurement

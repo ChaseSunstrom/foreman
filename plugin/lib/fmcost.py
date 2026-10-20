@@ -73,13 +73,48 @@ def _entries(folder, since):
                 continue
 
 
-def scan(folder, since):
+_FM_CMD = re.compile(r"^(?:cd \S+ && )*fm\b")
+_FM_NOTE = re.compile(r"\bForeman\b|^Ambient tests:")  # how every note of Foreman's hooks opens
+_STYLE_NOTE = " output style is active. Remember to follow the specific guidelines for this style."
+
+
+def _share(a, share):
+    """T-1257: add a transcript attachment's characters to share["all"], and Foreman's part of them to its source."""
+    def add(source, n, ours):
+        share["all"] += n
+        if ours:
+            share[source] += n
+    t = a.get("type")
+    if t in ("hook_additional_context", "hook_system_message", "hook_blocking_error"):
+        body = a.get("content") or a.get("blockingError") or ""
+        body = "\n".join(map(str, body)) if isinstance(body, list) else str(body)
+        add("hook notes", len(body), bool(_FM_NOTE.search(body[:80])))
+    elif t in ("skill_listing", "agent_listing_delta"):
+        rows = str(a.get("content") or "").splitlines() if t == "skill_listing" else a.get("addedLines") or []
+        for row in map(str, rows):
+            add("skill listing" if t == "skill_listing" else "agent listing", len(row) + 1, row.startswith("- foreman:"))
+    elif t == "output_style_instructions":
+        style = a.get("style") if isinstance(a.get("style"), dict) else {}
+        add("output style", len(str(style.get("prompt") or "")), str(style.get("name")).startswith("foreman:"))
+    elif t == "output_style":  # the reminder Claude Code renders each turn around the style's name
+        add("output style", len(str(a.get("style"))) + len(_STYLE_NOTE), str(a.get("style")).startswith("foreman:"))
+    elif t == "instructions":
+        for f in a.get("files") or []:
+            add("rules", len(str(f.get("content") or "")), str(f.get("path") or "").endswith("rules/foreman.md"))
+    else:  # ponytail: any other attachment counts by its JSON size, a rough measure of what it adds
+        share["all"] += len(json.dumps(a))
+
+
+def scan(folder, since, share=None):
     """(assistant messages [(ts, session, usage)], tool result chars by tool name) since the cutoff. A message's usage
-    repeats on each of its content blocks: counted once per message id."""
-    msgs, tools, names = {}, collections.Counter(), {}
+    repeats on each of its content blocks: counted once per message id. A `share` Counter gets what entered the
+    context: "all", and Foreman's part by source (T-1257)."""
+    msgs, tools, names, fm_ids = {}, collections.Counter(), {}, set()
     for path, e in _entries(folder, since):
         n = os.path.basename(path)
         ts = str(e.get("timestamp") or "")
+        if share is not None and isinstance(e.get("attachment"), dict) and ts[:19] >= since:
+            _share(e["attachment"], share)
         m = e.get("message")
         if not isinstance(m, dict) or ts[:19] < since:
             continue
@@ -89,8 +124,14 @@ def scan(folder, since):
                 continue
             if x.get("type") == "tool_use":
                 names[x.get("id")] = x.get("name") or "?"
+                if x.get("name") == "Bash" and _FM_CMD.match(str((x.get("input") or {}).get("command") or "")):
+                    fm_ids.add(x.get("id"))
             elif x.get("type") == "tool_result":
-                tools[names.get(x.get("tool_use_id"), "?")] += _size(x.get("content"))
+                size = _size(x.get("content"))
+                tools[names.get(x.get("tool_use_id"), "?")] += size
+                if share is not None:
+                    share["all"] += size
+                    share["fm output"] += size if x.get("tool_use_id") in fm_ids else 0
         if e.get("type") == "assistant" and isinstance(m.get("usage"), dict):
             msgs[m.get("id") or (n, ts)] = (ts, e.get("sessionId") or n[:-6], m["usage"])
     return list(msgs.values()), tools
@@ -390,6 +431,16 @@ def _task(args, p, fmcli):
     return fmcli.out(args, {"task": b.id, "spent": round(spent), "cap": cap, "forecast": fc and fc[0]}, text)
 
 
+def _share_line(share):
+    ours = {k: v for k, v in share.items() if k != "all" and v}
+    if not share["all"] or not ours:
+        return ""
+    pct = lambda v: f"{100 * v / share['all']:.1f}%"
+    return (f"\nForeman's own share of what entered the context (tool results and attachments, "
+            f"{_human(share['all'])} characters): {pct(sum(ours.values()))} · "
+            + " · ".join(f"{k} {pct(v)}" for k, v in sorted(ours.items(), key=lambda x: -x[1])))
+
+
 def cmd_cost(args):
     import fmcli
     p = fmcli.resolve(args)
@@ -415,7 +466,8 @@ def cmd_cost(args):
     folder = transcripts_dir(p.root)
     if not os.path.isdir(folder):
         raise fmcli.UsageError(f"no Claude Code transcripts for this project at {folder}")
-    msgs, tools = scan(folder, _since(args.days))
+    share = collections.Counter()
+    msgs, tools = scan(folder, _since(args.days), share)
     if getattr(args, "sessions", False):
         return _sessions(msgs, args, fmcli)
     totals, by_task, by_session = collections.Counter(), collections.Counter(), collections.Counter()
@@ -447,6 +499,7 @@ def cmd_cost(args):
             "unexplained": unex,
             "by_task": dict(by_task.most_common()), "by_session": dict(by_session.most_common()),
             "tool_result_chars": dict(tools.most_common()), "session_start_context": base,
+            "foreman_share": {"all": share["all"], "chars": {k: v for k, v in share.most_common() if k != "all"}},
             "time": {"active_s": round(active), "model_s": round(model_s),
                      "tools_s": {k: round(v) for k, v in tool_s.most_common()},
                      "shell_s": {k: round(v) for k, v in shell_s.most_common()}}}
@@ -463,6 +516,7 @@ def cmd_cost(args):
             + "\nTool results (what filled the context): " + " · ".join(
                 f"{t} {100 * v / tool_total:.0f}%" for t, v in tools.most_common(6))
             + "\nSessions: " + " · ".join(f"{s[:8]} {_human(v)}" for s, v in by_session.most_common(5))
+            + _share_line(share)
             + (f"\nContext at the first reply of a session (median): {_human(base)} tokens, re-read every turn"
                if base else "") + when)
     fmcli.out(args, data, text)

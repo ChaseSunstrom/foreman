@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 1.2.41 — 2026-10-20
+- A prompt of many requests queues every one of them on a slow machine too: the hook now makes the tasks inside its own process instead of starting `fm` once per task, which on CI (Linux, Python 3.12) fit only 4 of 8 into the hook's 5 seconds (T-1277)
+- A one-line note Foreman's edit-time hook has already given since the session's last start or compaction isn't given again, and a replayed session holds what each hook event injects under a byte budget, so the context tax can't creep back (T-1258)
+- `fm cost` shows Foreman's own share of what entered the context, by source: fm command output, hook notes, its rules, its output style and its lines in the skill and agent listings. On Foreman's own repo over three days it was 7.9%, led by fm output (3.5%) and Claude Code's per-turn reminder of the output style (2.1%) (T-1257)
+- A test run piped to `tail`, `head` or `grep` now counts as evidence when its output shows the test runner's own pass summary (unittest, pytest, jest, cargo, go or mocha), and a failure summary records a failure; before, every piped run needed a separate `fm task evidence` call, 5 to 12 a session in the long benchmarks (T-1256)
+- Every `fm bench` result records the Claude Code version it ran on, and the Benchmarks page names it under each duel; runs from before say it wasn't recorded (T-1255)
+- Benchmarks page: what one long session that passed every hidden test cost on each side, which is what you pay to get one. Foreman's sessions cost more each, but over the six long runs it came to $0.095 per fully correct session against Claude Code's $0.119: 20% less (T-1254)
+- `fm code --worker claude|codex|gemini|aider|'CMD {prompt}'`: an installed CLI does each step in one unattended turn, killed at `--worker-timeout`; on Linux whatever it left running is killed too, even past setsid. Afterwards Git's own config, hooks and exclude file and your global Git config are put back, a commit is undone, an assume-unchanged flag it set is cleared, and every file it wrote that Foreman refuses is reverted and reported, whether git shows it or not (an ignored `.env` too); what can't be put back blocks the task. Only codex runs shell commands, inside its own sandbox. The worker and its verify get no forge, cloud, registry or other credentials, and a sensitive repo never goes to a worker. Only the harness's verify marks work done, and `--verify CMD` plans without a model (T-1214)
+- Site: the Benchmarks page's opening figures and the Foreman Code page's counts are computed from the data (the code page had drifted to 52 model-client tests; there are 51), long-session runs add up over every three-run duel, and a saved light or dark theme applies before the first paint (T-1246)
+- Adapted to Claude Code 2.1.304, which sends the skill list again after every compaction: Foreman's part of it is down from 2,730 to under 2,000 characters (shorter skill and workflow descriptions, `/foreman:build` user-only), with a test that keeps it there (T-1253)
+
 ## 1.2.40 — 2026-10-16
 - `fm focus` on a request Foreman queued prints the request's text, word for word, and the note after a compaction carries only the request being worked in full (the rest by title). Every open request whole was 5 to 8 KB after each compaction, which brought the next one sooner (T-1231)
 - CI: the guard scan's CPU-time bounds allow GitHub's slower runners (0.11 s there against 0.08), and each failing test gets its own public annotation instead of one per class (T-1248)

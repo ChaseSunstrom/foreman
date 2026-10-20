@@ -1,5 +1,6 @@
 ---
 description: Build Foreman (or resume building it) from ~/.claude/foreman/BUILD_PROMPT.md
+disable-model-invocation: true
 argument-hint: "[optional extra instructions for this run]"
 ---
 Build Foreman.

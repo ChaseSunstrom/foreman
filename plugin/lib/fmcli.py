@@ -5668,6 +5668,13 @@ def build_parser():
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
+    s.add_argument("--worker", metavar="CLI", help="an installed CLI does each step and fix round instead of the "
+                                                   "model: claude, codex, gemini, aider, or 'CMD {prompt}'; "
+                                                   "the harness reverts what the guard refuses and its verify decides "
+                                                   "(T-1214)")
+    s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")
+    s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
+                                                   "(it must fail now)")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),
             help="run Claude Code Remote Control here in the background (systemd user unit): [start|status|stop] [PATH]")
     s.add_argument("args", nargs="*", metavar="[ACTION] [PATH]")

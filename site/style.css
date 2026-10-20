@@ -274,6 +274,7 @@ footer .fine { flex-basis: 100%; }
 
 /* benchmarks (T-1222) */
 .stamp.warn { color: var(--signal-ink); }
+.src { color: var(--ink-2); font-size: 0.88rem; margin: 6px 0 0; }
 .verdicts { margin-top: 28px; overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow); }
 .verdicts table { border-collapse: collapse; width: 100%; min-width: 560px; }
 .verdicts th, .verdicts td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--rule); vertical-align: middle; }
