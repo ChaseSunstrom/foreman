@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.41 — 2026-10-20
 - A prompt of many requests queues every one of them on a slow machine too: the hook now makes the tasks inside its own process instead of starting `fm` once per task, which on CI (Linux, Python 3.12) fit only 4 of 8 into the hook's 5 seconds (T-1277)
 - A one-line note Foreman's edit-time hook has already given since the session's last start or compaction isn't given again, and a replayed session holds what each hook event injects under a byte budget, so the context tax can't creep back (T-1258)
 - `fm cost` shows Foreman's own share of what entered the context, by source: fm command output, hook notes, its rules, its output style and its lines in the skill and agent listings. On Foreman's own repo over three days it was 7.9%, led by fm output (3.5%) and Claude Code's per-turn reminder of the output style (2.1%) (T-1257)
