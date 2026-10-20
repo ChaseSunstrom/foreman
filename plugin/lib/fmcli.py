@@ -938,10 +938,14 @@ def task_finish(p, args):
     todo = [("ac", n, cmd or args.run) for n, cmd in b.verify_cmds(unchecked=True)] + [
         ("step", s.n, args.run if b.has_evidence(step=s.n) else proves) for s in b.steps()
         if not s.done and s.n not in evidenced]
-    missing = [f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
-               for kind, n, cmd in todo if cmd is None]
-    gaps = ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or evidence of "
-             f"its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
+    def named(kind, n):
+        return f"{kind} {n}" + (f" ({c.fit(next(s.text for s in b.steps() if s.n == n), 50)})" if kind == "step" else "")
+    # T-1272: a step that has a run (a failed one, else it would have closed) is told so, not that it has no evidence
+    red = [n for kind, n, cmd in todo if cmd is None and kind == "step" and b.has_evidence(step=n)]
+    missing = [named(kind, n) for kind, n, cmd in todo if cmd is None and not (kind == "step" and n in red)]
+    gaps = [f"{named('step', n)}: its last run failed; record a passing run (fm task evidence {b.id} --step {n} --run CMD)"
+            for n in red] + ([f"give --run \"<cmd>\" (or record evidence): {', '.join(missing)} has no verify command or "
+                              f"evidence of its own"] if missing else []) + _finish_gaps(b, args, lenses) + _self_docs_gaps(p, b) \
         + _file_map_gaps(p, b)
     if gaps:  # T-0704: every gap in one refusal (135 finishes in 14 days were refused and retried one gap at a time)
         raise UsageError(f"{b.id} not finished, nothing ran:\n  - " + "\n  - ".join(gaps))
