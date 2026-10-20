@@ -54,11 +54,21 @@ class Memory(ForemanTestCase):
             r = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": sid, "tool_input": {
                 "file_path": os.path.join(self.repo, rel), "old_string": "a", "new_string": "b"}})
             return r.stdout
-        self.assertIn("T-0001 (done) also changed this file; its lesson: invalidate on currency change",
-                      edit("shop/cache.py"))
+        self.assertIn("T-0001's lesson for this file: invalidate on currency change", edit("shop/cache.py"))
         self.assertNotIn("lesson", edit("shop/cache.py"), "once per session")
         self.assertNotIn("lesson", edit("shop/other.py"))
         self.assertIn("lesson", edit("shop/cache.py", sid="s2"))
+
+    def test_a_long_lesson_note_fits_200_characters_and_keeps_the_task_id(self):
+        self.finished("speed up the price cache", ["shop/cache.py"], lesson="invalidate on currency change " * 20)
+        self.fm("task", "new", "cache warmup", "--type", "FEATURE", "--tier", "S", "--step", "s", "--ac", "a",
+                "--focus")
+        out = self.hook("PreToolUse", {"tool_name": "Edit", "session_id": "s1", "tool_input": {
+            "file_path": os.path.join(self.repo, "shop/cache.py"), "old_string": "a", "new_string": "b"}}).stdout
+        note = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+        note = note[note.index("Foreman: T-0001's lesson"):].split("… Foreman:")[0] + "…"  # notes are joined
+        self.assertIn("T-0001's lesson for this file", note)
+        self.assertLessEqual(len(note), 200, note)
 
     def test_lesson_notes_never_repeat_what_this_session_already_knows(self):
         # T-0127: every task touches CHANGELOG.md, so each newly closed one added a note on the next edit of it
