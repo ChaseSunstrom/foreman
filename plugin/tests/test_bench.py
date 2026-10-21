@@ -174,25 +174,82 @@ class Bench(ForemanTestCase):
         self.assertEqual(case["cost_usd"], 0.42)
         self.assertEqual(len(case["attempts"]), 2)
 
-    def write_result(self, label, cases):
+    def write_result(self, label, cases, runs=1):
         folder = os.path.join(c.find_project(self.repo).dir, "bench", "results")
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, label + ".json"), "w") as f:
-            json.dump({"label": label, "cases": [dict(id=i, pass_rate=r, cost_usd=cost, turns=10, runs=2,
+            json.dump({"label": label, "cases": [dict(id=i, pass_rate=r, cost_usd=cost, turns=10, runs=runs,
                                                       **{"pass": r >= 0.5}) for i, r, cost in cases]}, f)
 
+    def write_attempts(self, label, cases):
+        """cases: (id, [(passed, cost)] per attempt) — a result as fm bench run --runs N saves it."""
+        folder = os.path.join(c.find_project(self.repo).dir, "bench", "results")
+        os.makedirs(folder, exist_ok=True)
+        rows = []
+        for i, tries in cases:
+            rate = sum(p for p, _ in tries) / len(tries)
+            rows.append({"id": i, "runs": len(tries), "pass_rate": rate, "pass": rate >= 0.5, "turns": 10,
+                         "cost_usd": round(sum(x for _, x in tries) / len(tries), 4),
+                         "attempts": [{"pass": p, "cost_usd": x} for p, x in tries]})
+        with open(os.path.join(folder, label + ".json"), "w") as f:
+            json.dump({"label": label, "cases": rows}, f)
+
     def test_the_gate_lets_through_only_no_worse_candidates(self):
-        self.write_result("live", [("T-1", 1.0, 1.0), ("T-2", 0.5, 1.0)])
-        self.write_result("same", [("T-1", 1.0, 1.1), ("T-2", 0.5, 1.0)])
-        self.write_result("worse", [("T-1", 0.5, 1.0), ("T-2", 0.5, 1.0)])
+        # single runs (T-1260: unchanged): any lost pass fails, and a flip is flagged as possible noise
+        self.write_result("live", [("T-1", 1.0, 1.0), ("T-2", 0.0, 1.0)])
+        self.write_result("same", [("T-1", 1.0, 1.1), ("T-2", 0.0, 1.0)])
+        self.write_result("worse", [("T-1", 0.0, 1.0), ("T-2", 0.0, 1.0)])
         self.write_result("pricey", [("T-1", 1.0, 1.5), ("T-2", 1.0, 1.5)])
         self.assertEqual(self.fm("bench", "gate", "live", "same", env=self.env, check=False).returncode, 0)
         worse = self.fm("bench", "gate", "live", "worse", env=self.env, check=False)
         self.assertEqual(worse.returncode, 1)
         self.assertIn("T-1", worse.stdout)
+        self.assertIn("may be noise", worse.stdout)
+        self.assertNotIn("±", worse.stdout)
+        self.assertNotIn("within noise", worse.stdout)
         pricey = self.fm("bench", "gate", "live", "pricey", env=self.env, check=False)
         self.assertEqual(pricey.returncode, 1, "more passes don't buy 50% more cost")
         self.assertIn("cost", pricey.stdout)
+
+    def test_the_gate_calls_a_drop_inside_the_noise_band_noise(self):
+        # T-1260: with --runs 3 a lost attempt and a dearer one are inside the spread the attempts show
+        self.write_attempts("live", [("T-1", [(True, 1.0), (True, 1.0), (True, 1.0)]),
+                                     ("T-2", [(True, 1.0), (True, 1.0), (True, 1.0)])])
+        self.write_attempts("noisy", [("T-1", [(True, 1.0), (False, 1.6), (True, 1.0)]),
+                                      ("T-2", [(True, 1.0), (True, 1.6), (True, 1.0)])])
+        r = self.fm("bench", "gate", "live", "noisy", env=self.env, check=False)
+        self.assertEqual(r.returncode, 0, r.stdout)
+        head = r.stdout.splitlines()[0]
+        self.assertRegex(head, r"passes 2 → 1\.67 \(-0\.33 ± [\d.]+\)")
+        self.assertRegex(head, r"cost/case \$1\.00 → \$1\.20 \(\+\$0\.20 ± \$[\d.]+\)")
+        self.assertIn("fewer passes within noise", r.stdout)
+        self.assertIn("cost per case up 20% within noise", r.stdout)
+        self.assertNotIn("may be noise", r.stdout)
+
+    def test_the_gate_fails_a_drop_outside_the_noise_band(self):
+        self.write_attempts("live", [("T-1", [(True, 1.0)] * 3), ("T-2", [(True, 1.0)] * 3),
+                                     ("T-3", [(True, 1.0), (False, 1.0), (True, 1.0)])])
+        self.write_attempts("broken", [("T-1", [(False, 1.0)] * 3), ("T-2", [(False, 1.0)] * 3),
+                                       ("T-3", [(True, 1.0), (False, 1.0), (True, 1.0)])])
+        self.write_attempts("dear", [("T-1", [(True, 2.0), (True, 2.2), (True, 1.8)]), ("T-2", [(True, 2.0)] * 3),
+                                     ("T-3", [(True, 2.0), (False, 2.0), (True, 2.0)])])
+        broken = self.fm("bench", "gate", "live", "broken", env=self.env, check=False)
+        self.assertEqual(broken.returncode, 1, broken.stdout)
+        self.assertIn("✗ fewer passes", broken.stdout)
+        self.assertIn("outside noise", broken.stdout)
+        self.assertIn("±", broken.stdout)
+        dear = self.fm("bench", "gate", "live", "dear", env=self.env, check=False)
+        self.assertEqual(dear.returncode, 1, dear.stdout)
+        self.assertIn("✗ cost per case up 100%", dear.stdout)
+
+    def test_old_repeated_results_without_attempt_costs_keep_the_cost_tolerance(self):
+        # results saved before per-attempt costs: a pass band from runs and pass rate, no cost band
+        self.write_result("live", [("T-1", 1.0, 1.0)], runs=3)
+        self.write_result("cand", [("T-1", 2 / 3, 1.3)], runs=3)
+        r = self.fm("bench", "gate", "live", "cand", env=self.env, check=False)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("fewer passes within noise", r.stdout)
+        self.assertIn("✗ cost per case up 30% (over 15%)", r.stdout)
 
     def test_grading_restores_the_reference_tests_an_arm_edited(self):
         # T-1237 review: only the commit's own test files were restored, so gutting another existing test passed
