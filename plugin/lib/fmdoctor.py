@@ -415,6 +415,24 @@ def check_rules_symlink(plugin=PLUGIN):
     return Result("rules symlink", "PASS" if ok else "FAIL", f"{link} → {os.path.realpath(link)}")
 
 
+def check_fm_link(link=None, target=None, path=None):
+    """T-1324: fm in any shell (T-0853): ~/.local/bin/fm points at this Foreman's plugin/bin/fm, and that folder is on
+    PATH. An install from before T-0853 never made the link, so fm worked only inside Claude Code."""
+    link = link or os.path.join(os.path.expanduser("~"), ".local", "bin", "fm")
+    target = target or os.path.join(PLUGIN, "bin", "fm")
+    path = os.environ.get("PATH", "") if path is None else path
+    if not os.path.lexists(link):
+        return Result("fm link", "WARN", f"{link} is missing, so fm works only inside Claude Code: fm install-user "
+                                         "makes it")
+    if os.path.realpath(link) != os.path.realpath(target):
+        return Result("fm link", "WARN", f"{link} → {os.path.realpath(link)}, not this Foreman's {target}: move it "
+                                         "aside and run fm install-user")
+    if os.path.dirname(link) not in path.split(os.pathsep):
+        return Result("fm link", "WARN", f"{os.path.dirname(link)} isn't on PATH, so a shell doesn't find fm: add it "
+                                         "in your shell's profile")
+    return Result("fm link", "PASS", f"{link} → {target}")
+
+
 def _version(root):
     return (_load_json(os.path.join(root, ".claude-plugin", "plugin.json")) or {}).get("version") or "?"
 
@@ -1208,7 +1226,7 @@ def run_all(full=False, accept_supply=False):
                                     os.path.join(PLUGIN, "settings.json"), os.path.join(PLUGIN, "hooks", "hooks.json")]),
                check_hook_scripts(), check_state_dir(home, c.state_dir()), check_env(settings, manifest),
                check_serve(fmserve.states()), check_hook_events(), check_plugins(), check_mod_release(home),
-               check_supply(claude, accept_supply), check_worktree_base(settings),
+               check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
     try:
         load = busy()
