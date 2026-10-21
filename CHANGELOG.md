@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code's claude sessions run lean: the worker without your plugins, MCP servers or settings hooks (`--setting-sources project,local --strict-mcp-config`) and the planner in `--restricted` mode, each with Foreman's guard as `--settings`. A planner call here read 15,286 input tokens instead of 31,620, and the guard still refused a `.env` write (`plugin/tests/e2e/lean_probe.py`). `lean = false` in code.toml keeps the old launch (T-1354).
 - `fm code` on its own opens the app, like `claude`: a project's view (its active task, queue, inbox, blocked tasks and past runs) inside a project, and a home over every Foreman project on the machine (`Esc`, or `p` from a run). A task runs from there in its own project's folder with the runner `m` picks, and `n` starts a new request there. `fm code --task ID` works a planned task without a planner call, refusing one with no check to run, one that's done or dropped, and one another run is working (T-1330).
 - `fm code tui --events FILE` on its own replays that run: on the screen in a terminal, or as its Activity lines with `--plain` or no terminal (exit 0 for a closed run); a missing file says so and exits 2. Before, the file was silently ignored (T-1363).
 - `fm doctor` checks that `fm` works in any shell: it warns, naming the fix, when `~/.local/bin/fm` is missing (an install from before 1.2.x never made it), points at another copy, or sits in a folder that isn't on PATH (T-1324).

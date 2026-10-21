@@ -439,6 +439,20 @@ def kill_group(proc):
             pass
 
 
+def guard_settings(plugin=None):
+    """T-0963, T-1354: Foreman's guard alone, as a --settings JSON for a claude session that loads no plugin: the
+    plugin's own PreToolUse entries, every matcher and its onFailure kept, the root resolved (security review), so
+    that session is guarded exactly as one with the plugin is."""
+    plugin = plugin or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    with open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8") as f:
+        entries = json.load(f)["hooks"]["PreToolUse"]
+    root = shlex.quote(plugin)
+    for e in entries:
+        for h in e.get("hooks") or []:
+            h["command"] = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
+    return json.dumps({"hooks": {"PreToolUse": entries}})
+
+
 def _safe(fn, *a):
     try:
         return fn(*a)
