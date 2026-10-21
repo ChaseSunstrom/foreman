@@ -2290,6 +2290,7 @@ _NOT_A_VETO = {"think", "know", "want", "like", "care", "mind", "worry", "unders
 _VETO_STOP = set("""without asking ask me you the a an it its that this these those any anything ever first again please
 before being told unless until and or to of in on for with from my your our just so too also all again yet
 make do does doing done be is are was were get got have has had use using there here then""".split())
+_GRANTS = re.compile(r"(?i)\s*(?:(?:ask|check|confirm|wait|bother)(?:s|ed|ing)?|stop|until|till|unless|before|now|working|going)\b")
 VETOES_KEEP = 30
 
 
@@ -2316,6 +2317,8 @@ def add_veto(p, text, words=None):
     words: the key words already known (T-0439: a proposal from repeated steers the user said yes to)."""
     words = list(words or [])
     for m in [] if words else _VETO.finditer(text or ""):  # each clause alone: "I don't think so, never push" is pushing
+        if _GRANTS.match(m.group(1)):  # T-1323: "stop asking me if you can release" says go ahead, it isn't a no
+            continue
         found = [w for w in re.findall(r"[a-z0-9]{3,}", m.group(1).lower()) if w not in _VETO_STOP]
         if found and found[0] not in _NOT_A_VETO:
             words = found[:3]
