@@ -1242,8 +1242,14 @@ def _capability_delta(was, now, key=""):
     def new(k):
         had = set(was.get(k) or [])
         return [x for x in now.get(k) or [] if x not in had]
-    split = lambda specs: dict(s.rsplit(" ", 1) for s in specs or [] if isinstance(s, str) and " " in s)
-    changes = lambda k: [m for m, d in sorted(split(now.get(k)).items()) if split(was.get(k)).get(m, d) != d]
+    def split(specs):  # {name: {digest, …}}: two components may share a name (review), so digests compare as sets
+        out = {}
+        for s in specs or []:
+            if isinstance(s, str) and " " in s:
+                out.setdefault(s.rsplit(" ", 1)[0], set()).add(s.rsplit(" ", 1)[1])
+        return out
+    changes = lambda k: [m for m, d in sorted(split(now.get(k)).items()) if m in split(was.get(k))
+                         and d - split(was.get(k))[m]]
     events = new("hooks")
     return ([f"{verb('hooks')} hook {c.plain(e)[:40]}" for e in events]
             + [f"{verb('handlers')} a {c.plain(h.split(' ', 1)[0])[:40]} hook handler "
