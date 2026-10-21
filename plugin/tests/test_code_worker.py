@@ -311,6 +311,20 @@ class Worker(CodeCase):
         with open(out) as f:
             self.assertIn("FOREMAN_WORKER_OF=fm-code-T-0001", f.read())
 
+    def test_a_worker_turn_runs_its_hooks_quiet(self):
+        """T-1327: Foreman's hooks in the nested session run only the guard."""
+        out = os.path.join(self.tmp, "quiet")
+        self.cli("quietw", f'printf "%s" "$FOREMAN_QUIET" > {out}\nfix-calc\n')
+        self.work("make calc.add add", "--worker", "quietw {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(out), "1")
+
+    def test_the_planner_cli_runs_its_hooks_quiet(self):
+        out = os.path.join(self.tmp, "quiet")
+        self.planner({"type": "result", "is_error": False, "usage": {}, "result": json.dumps({"answer": "ok"})},
+                     extra=f'printf "%s" "$FOREMAN_QUIET" > {out}')
+        self.work("what does calc.add do?", "--worker", "claude", check=False)
+        self.assertEqual(read_text(out), "1")
+
     def test_a_worker_gets_no_forge_cloud_or_registry_credentials(self):
         out = os.path.join(self.tmp, "env")
         self.cli("envy", f'env > {out}\nfix-calc\n')
