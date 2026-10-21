@@ -240,6 +240,9 @@ class State:
             s["state"] = "done"
         self.note("closed", text=e.get("text", ""))
 
+    def _on_note(self, e):  # T-1328: which runner the run uses and why, or a caution about it
+        self.note("note", text=str(e.get("text", "")))
+
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
         for line in str(e.get("text", "")).splitlines() or [""]:
@@ -762,6 +765,8 @@ def entry_segments(e, w, thoughts=True):
         return [("  ↻ ", "warn"), (e["text"], "warn")]
     if k == "worker":
         return [("  ⚙ ", "accent"), (e["text"].strip(), "text")]
+    if k == "note":
+        return [("  i ", "accent"), (e["text"], "text")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":
