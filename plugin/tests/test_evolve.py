@@ -157,3 +157,28 @@ class Evolve(ForemanTestCase):
         self.assertTrue(res["kept"], res)
         self.assertEqual(read_text(os.path.join(res["worktree"], "plugin/skills/demo/SKILL.md")), "")
         self.assertFalse(any(x["mutate"] for x in self.calls()))
+
+
+class BetterOutsideNoise(__import__("unittest").TestCase):
+    """T-1435: evolve kept a candidate on any pass gain or cost drop, even one inside the bench noise band (T-1260)."""
+
+    @staticmethod
+    def result(rates, cost, spread):
+        return {"cases": [{"id": f"c{i}", "pass_rate": r, "runs": 3, "cost_usd": cost,
+                           "attempts": [{"cost_usd": cost - spread}, {"cost_usd": cost}, {"cost_usd": cost + spread}]}
+                          for i, r in enumerate(rates)]}
+
+    def test_a_win_inside_the_noise_band_is_not_better(self):
+        import fmevolve
+        base = self.result([2 / 3] * 6, 1.00, 0.30)
+        self.assertFalse(fmevolve._better(base, self.result([2 / 3] * 5 + [1.0], 1.00, 0.30)), "one pass inside the band")
+        self.assertFalse(fmevolve._better(base, self.result([2 / 3] * 6, 0.85, 0.30)), "cheaper, inside the cost band")
+        self.assertTrue(fmevolve._better(base, self.result([1.0] * 6, 1.00, 0.30)), "six passes ahead: outside")
+        self.assertTrue(fmevolve._better(base, self.result([2 / 3] * 6, 0.40, 0.01)), "much cheaper, tight spread")
+
+    def test_a_pass_rate_out_of_range_is_read_within_0_and_1(self):
+        import fmbench
+        self.assertEqual(fmbench._rate({"pass_rate": 5}), 1.0)
+        self.assertEqual(fmbench._rate({"pass_rate": -1}), 0.0)
+        self.assertEqual(fmbench._rate({"pass_rate": "x"}), 0.0)
+        self.assertEqual(fmbench._rate({"pass": True}), 1.0)
