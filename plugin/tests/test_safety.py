@@ -110,8 +110,8 @@ class SupplyChainHash(Base):
         with open(os.path.join(self.plugin, "hooks", "hooks.json"), "w") as f:
             f.write('{"hooks": {"PreToolUse": []}}')
         changed = fmdoctor.check_supply(self.claude)
-        self.assertEqual(changed.status, "WARN")
-        self.assertIn("p@m", changed.detail)
+        self.assertEqual(changed.status, "FAIL", "T-1392: a new hook event is held, not only noted")
+        self.assertIn("p@m adds hook PreToolUse", changed.detail)
         fmdoctor.check_supply(self.claude, accept=True)
         self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
         with open(os.path.join(self.plugin, "hooks", "run.sh"), "w") as f:  # code, not just the manifest

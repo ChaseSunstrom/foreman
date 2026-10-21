@@ -133,20 +133,55 @@ def profile(path):
                                       os.path.basename(f)[:-3])
             out[kind].append((name, fm.get("description", "")))
             out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
-    manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {}) or {}
-    for key, default in (("hooks", "hooks/hooks.json"), ("mcpServers", ".mcp.json")):
-        spec = manifest.get(key, default)  # plugin.json can inline them or name another file
-        data = spec if isinstance(spec, dict) else _json(os.path.join(path, spec), {}) if isinstance(spec, str) else {}
-        data = data.get(key, data) if isinstance(data, dict) else {}
-        if key == "hooks":
-            out["hooks"] |= set(data or {})
-            stops = [h for e in (data or {}).get("Stop") or [] if isinstance(e, dict)
-                     for h in e.get("hooks") or [] if isinstance(h, dict)]
-            # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
-            out["sync_stop"] |= any(not (h.get("async") or h.get("asyncRewake")) for h in stops)
-        else:
-            out["mcp"].update(data or {})
+    hooks, out["mcp"] = _plugin_spec(path, "hooks"), _plugin_spec(path, "mcpServers")
+    out["hooks"] = set(hooks)
+    # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
+    out["sync_stop"] = any(not (h.get("async") or h.get("asyncRewake")) for e, _, h in _handlers(hooks) if e == "Stop")
     return out
+
+
+def _plugin_spec(path, key):
+    """A plugin's hooks or mcpServers as a dict: plugin.json can inline them or name another file, else the default
+    file (hooks/hooks.json, .mcp.json); {} for anything malformed."""
+    manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {})
+    manifest = manifest if isinstance(manifest, dict) else {}
+    spec = manifest.get(key, {"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json"}[key])
+    data = spec if isinstance(spec, dict) else _json(os.path.join(path, spec), {}) if isinstance(spec, str) else {}
+    data = data.get(key, data) if isinstance(data, dict) else {}
+    return data if isinstance(data, dict) else {}
+
+
+def _handlers(hooks):
+    """(event, matcher, handler dict) for every hook handler, skipping malformed entries."""
+    for event, entries in hooks.items():
+        for e in entries if isinstance(entries, list) else ():
+            for h in (e.get("hooks") if isinstance(e, dict) and isinstance(e.get("hooks"), list) else ()):
+                if isinstance(h, dict):
+                    yield event, e.get("matcher") or "", h
+
+
+_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
+
+
+def capabilities(root):
+    """T-1392: what a plugin tree runs on its own (hook events, each hook handler as "event matcher: command", MCP
+    server names, scripts: bin/ and the files its hooks and MCP servers name under ${CLAUDE_PLUGIN_ROOT}) and what it
+    adds to the session (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to
+    the first four; ponytail: an existing handler's script edited in place is only the tree hash's note."""
+    prof = profile(root)
+    hooks, mcp = (_plugin_spec(root, k) if root and os.path.isdir(root) else {} for k in ("hooks", "mcpServers"))
+    handlers = {f"{e} {m}: {h.get('command') or h.get('url') or h.get('prompt') or ''}" for e, m, h in _handlers(hooks)}
+    scripts = {os.path.normpath(p) for p in _ROOT_PATH.findall(json.dumps([hooks, mcp]))}
+    bindir = os.path.join(root or "", "bin")
+    for d, dirs, files in os.walk(bindir) if root and os.path.isdir(bindir) else ():
+        dirs.sort()
+        scripts.update(os.path.relpath(os.path.join(d, f), root) for f in files)
+        if len(scripts) > 500:  # ponytail: a bin/ this big is reported by its first 500 files
+            break
+    names = lambda kind: sorted({n for n, _ in prof[kind] if isinstance(n, str)})
+    return {"hooks": sorted(map(str, hooks)), "handlers": sorted(handlers), "mcp": sorted(map(str, mcp)),
+            "scripts": sorted(scripts), "commands": names("commands"), "agents": names("agents"),
+            "skills": names("skills")}
 
 
 def _marketplace_files():
@@ -347,9 +382,12 @@ def find(need, n=10, skipped=None):
         score = sum(3 * bool(r.search(name)) + bool(r.search(text)) for r in pats)
         if score:
             trusted, why = trust(p, ledger)
+            tree = p["local"] or have.get(p["id"], {}).get("path")
+            # T-1392: what it runs and adds, read from a tree on disk; None for a remote entry not installed
+            needs = capabilities(tree) if tree and os.path.isdir(tree) else None
             hits.append(dict(p, score=score, installed=p["id"] in have, trusted=trusted, untrusted=why,
-                             enabled=have.get(p["id"], {}).get("enabled", False),
-                             tokens=profile(p["local"] or have.get(p["id"], {}).get("path"))["tokens"]))
+                             enabled=have.get(p["id"], {}).get("enabled", False), tokens=profile(tree)["tokens"],
+                             needs=needs and {k: v for k, v in needs.items() if k != "handlers"}))
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
 
 
@@ -533,6 +571,13 @@ def install(pid):
     return ("installed" if fresh else "enabled"), conflicts
 
 
+def _runs_line(needs):
+    """T-1392: what a find hit runs on its own, as one indented line ("" for none or a remote entry)."""
+    parts = [f"{label} {', '.join(c.plain(x)[:40] for x in needs[k][:6])}" + (" …" if len(needs[k]) > 6 else "")
+             for k, label in (("hooks", "hook"), ("mcp", "MCP"), ("scripts", "script")) if needs and needs[k]]
+    return f"\n    runs: {' · '.join(parts)}" if parts else ""
+
+
 def cmd_plugins(args):
     import fmcli
     if args.action in ("add-marketplace", "forget") and not args.words:
@@ -562,7 +607,7 @@ def cmd_plugins(args):
         fmcli.out(args, hits, "\n".join(
             f"{h['id']:<40} {'enabled' if h['enabled'] else 'installed' if h['installed'] else 'available':<9} "
             f"~{h['tokens']} tok  {h['description'][:70]}" + (f"\n    untrusted: {h['untrusted']}" if h["untrusted"] else "")
-            for h in hits) or "No matching plugin in the known marketplaces.")
+            + _runs_line(h["needs"]) for h in hits) or "No matching plugin in the known marketplaces.")
         if skipped and not getattr(args, "json", False):  # T-1396: a bad entry is left out with its reason, no crash
             print(f"({len(skipped)} marketplace entries skipped: {'; '.join(skipped[:3])}"
                   + (f"; {len(skipped) - 3} more)" if len(skipped) > 3 else ")"))
