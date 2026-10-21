@@ -213,6 +213,119 @@ class SupplyDelta(ForemanTestCase):
         self.assertEqual(r.status, "FAIL", r.detail)
         self.assertIn("adds hook PreToolUse", r.detail)
 
+    # T-1434: the rest of what a plugin runs
+    FM_HOOK = "---\nname: s\ndescription: d\nhooks:\n  PreToolUse:\n    - matcher: Bash\n      hooks:\n" \
+              "        - type: command\n          command: \"${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh\"\n---\nbody\n"
+
+    def test_a_hooks_block_in_skill_or_agent_frontmatter_is_held(self):
+        write(os.path.join(self.plugin, "skills", "s", "SKILL.md"), self.FM_HOOK)
+        write(os.path.join(self.plugin, "agents", "a.md"),
+              "---\nname: a\ndescription: d\nhooks: {Stop: [{hooks: [{type: command, command: x}]}]}\n---\n")
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("p@m adds hook PreToolUse (skill s)", r.detail)
+        self.assertIn("p@m adds hook Stop (agent a)", r.detail, "a flow-style block is read too")
+        self.assertIn("adds script scripts/guard.sh", r.detail, "the script it names")
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+
+    def test_an_lsp_server_added_or_changed_is_held(self):
+        write(os.path.join(self.plugin, ".lsp.json"), {"go": {"command": "gopls"}})
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("p@m adds LSP server go", r.detail)
+        fmdoctor.check_supply(self.claude, accept=True)
+        write(os.path.join(self.plugin, ".lsp.json"), {"go": {"command": "sh", "args": ["-c", "curl evil"]}})
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("p@m changes LSP server go", r.detail)
+
+    def test_a_symlinked_or_large_script_is_held_and_its_change_seen(self):
+        target = os.path.join(self.tmp, "elsewhere.sh")
+        write(target, "echo a\n")
+        os.symlink(target, os.path.join(self.plugin, "bin", "linked"))
+        write(os.path.join(self.plugin, "bin", "big"), "#" * 4_000_001)
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("adds script bin/linked", r.detail)
+        self.assertIn("adds script bin/big", r.detail)
+        fmdoctor.check_supply(self.claude, accept=True)
+        other = os.path.join(self.tmp, "other.sh")
+        write(other, "curl evil\n")
+        os.remove(os.path.join(self.plugin, "bin", "linked"))
+        os.symlink(other, os.path.join(self.plugin, "bin", "linked"))
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "WARN", "a retargeted link was a PASS: the tree hash skipped it")
+        self.assertIn("changed: p@m", r.detail)
+        fmdoctor.check_supply(self.claude, accept=True)
+        write(os.path.join(self.plugin, "bin", "big"), "#" * 4_000_002)
+        self.assertIn("changed: p@m", fmdoctor.check_supply(self.claude).detail, "a large file's size counts")
+
+    def test_a_hooks_module_reads_as_a_module_not_an_event(self):
+        ui = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                          "mods", "foreman-ui")
+        caps = fmplugins.capabilities(ui)
+        self.assertEqual(caps["modules"], ["register.tsx"])
+        self.assertNotIn("modules", caps["hooks"])
+        self.assertIn("runs: hooks module register.tsx", fmplugins._runs_line(caps))
+        self.assertNotIn("modules", fmplugins.profile(ui)["hooks"])
+        self.hooks(dict(STOP, modules=["./register.tsx"]))
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("p@m runs hooks module register.tsx", r.detail)
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.hooks(dict(STOP, modules=["./register.tsx", "./more.ts"]))
+        self.assertIn("p@m runs hooks module more.ts", fmdoctor.check_supply(self.claude).detail)
+
+    def older(self, drop=("lsp", "lsp_specs", "fm_hooks", "modules")):
+        """The baseline as the version before T-1434 recorded it: no stand-in hash, none of the new fields."""
+        path = os.path.join(c.state_dir(), "supply.json")
+        seen = json.load(open(path))
+        for v in seen.values():
+            if isinstance(v, dict):
+                v.pop("skipped", None)
+                for k in drop:
+                    v["caps"].pop(k, None)
+        write(path, seen)
+        return path
+
+    def test_an_older_baseline_gains_the_new_fields_only_on_a_matching_run(self):
+        write(os.path.join(self.plugin, ".lsp.json"), {"go": {"command": "gopls"}})
+        os.symlink("/bin/true", os.path.join(self.plugin, "bin", "linked"))
+        fmdoctor.check_supply(self.claude, accept=True)
+        path = self.older()
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "its hash compares as before")
+        self.assertIn("skipped", json.load(open(path))["p@m"])
+        self.assertEqual(json.load(open(path))["p@m"]["caps"]["lsp"], ["go"])
+        self.older()
+        write(os.path.join(self.plugin, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\nedit\n")
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", "an older set never accepts a change silently")
+        self.assertIn("p@m has LSP server go", r.detail, "never recorded, so not news, but held")
+
+    def test_an_older_baseline_that_read_modules_as_an_event_holds_the_module(self):
+        self.hooks(dict(STOP, modules=["./register.tsx"]))
+        fmdoctor.check_supply(self.claude, accept=True)
+        path = self.older()
+        seen = json.load(open(path))
+        seen["p@m"]["caps"]["hooks"] = ["Stop", "modules"]  # how T-1392 read it
+        write(path, seen)
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("p@m runs hooks module register.tsx", r.detail)
+
+    def test_a_fifo_never_hangs_the_doctors_frontmatter_reader(self):
+        import threading
+        fifo = os.path.join(self.tmp, "SKILL.md")
+        os.mkfifo(fifo)
+        t = threading.Thread(target=fmdoctor._frontmatter, args=(fifo,), daemon=True)
+        t.start()
+        t.join(3)
+        if t.is_alive():  # release the blocked open so the run can end
+            os.close(os.open(fifo, os.O_WRONLY | os.O_NONBLOCK))
+        self.assertFalse(t.is_alive(), "fmdoctor._frontmatter blocked on a FIFO")
+        self.assertIsNone(fmdoctor._frontmatter(os.path.join(self.tmp, "absent.md")))
+
 
 class FindNeeds(ForemanTestCase):
     def test_find_json_shows_what_a_local_entry_needs(self):
