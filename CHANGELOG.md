@@ -8,7 +8,6 @@
 - fm code hardening: a STOP kills the CLI's group once, the local-server probe refuses metadata addresses, aider `--yes-always`, q `--trust-all-tools`, cursor-agent `--force` and `-anever` are linted, and hooks inside a worker never create a project (T-1438).
 - fm code looks a model host's addresses up once a minute instead of on every model call (the metadata-address check); a failed or slow lookup is tried again (T-1436).
 - `fm evolve` keeps a candidate only for a win outside the bench's noise band (more passes, or a cost drop, beyond two standard errors when runs were repeated), and a stored pass rate is read within 0..1 (T-1435).
-- `fm doctor` accepts Foreman's own plugins (foreman, foreman-ui) when their installed files are this checkout's HEAD, file for file (gitignored copies byte-equal to the checkout's own), so a release no longer holds itself; anything else, and every third-party plugin, stays held (T-1441).
 
 ## 1.2.49 — 2026-10-21
 - fm code names a stall: a CLI turn with no output for FM_STALL s (default 120) gets one `stalled` event per silence naming its likely cause (no output since launch, a prompt, a rate or usage limit, or silent since its last line), a warning line in the TUI, and the status bar says how long since the CLI was last heard. Before, a stuck turn just looked busy (T-1336).
