@@ -460,23 +460,28 @@ def _safe(fn, *a):
         return False
 
 
+PUMP_TAIL = 2048  # the last bytes a stalled turn's cause is read from
+
+
 def pump(stream, sink, on_line=None, idle=None, on_idle=None):
     """T-1329: a child's output as it comes, on the calling (reader) thread, until EOF: each chunk to sink(bytes), each
-    whole line to on_line(str), which returns whether it showed something, and on_idle() each `idle` seconds in which
-    nothing was shown. Every live event of a turn comes from this one thread, so none interleave."""
+    whole line to on_line(str), which returns whether it showed something, and on_idle(heard, tail) each `idle` seconds
+    in which nothing was shown: heard is the monotonic time of the last byte (None before the first), tail its last
+    PUMP_TAIL bytes (T-1336). Every live event of a turn comes from this one thread, so none interleave."""
     import selectors
-    fd, buf, quiet = stream.fileno(), b"", time.monotonic()
+    fd, buf, quiet, heard, tail = stream.fileno(), b"", time.monotonic(), None, b""
     sel = selectors.DefaultSelector()
     sel.register(fd, selectors.EVENT_READ)
     try:
         while True:
             if idle and on_idle and not sel.select(max(0.0, quiet + idle - time.monotonic())):
-                _safe(on_idle)
+                _safe(on_idle, heard, tail)
                 quiet = time.monotonic()
                 continue
             chunk = os.read(fd, 65536)
             if not chunk:
                 break
+            heard, tail = time.monotonic(), (tail + chunk[-PUMP_TAIL:])[-PUMP_TAIL:]
             sink(chunk)
             if on_line:
                 *lines, buf = (buf + chunk).split(b"\n")

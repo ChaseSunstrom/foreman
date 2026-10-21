@@ -415,6 +415,49 @@ class Worker(CodeCase):
         beats = [e for e in self.events(r) if e["event"] == "working"]
         self.assertGreaterEqual(len(beats), 2, r.stdout)
         self.assertEqual(beats[0]["worker"], "claude")
+        self.assertTrue(all(isinstance(b.get("silent"), int) for b in beats), "how long since it was last heard")
+
+    def stalled(self, before):
+        """T-1336: the stalled events of a worker turn that prints `before` (shell), then goes quiet past FM_STALL."""
+        self.cli("claude", before + "\nsleep 1.6\nfix-calc\n")
+        r = self.code("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False,
+                      env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "FM_HEARTBEAT": "0.2",
+                           "FM_STALL": "0.6"})
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        got = [e for e in self.events(r) if e["event"] == "stalled"]
+        self.assertEqual(len(got), 1, f"one stalled event per silence: {got}")
+        self.assertEqual(got[0]["worker"], "claude")
+        return got[0]
+
+    def test_a_turn_silent_after_a_line_is_named_silent(self):
+        e = self.stalled("echo 'reading the code'")
+        self.assertEqual(e["cause"], "silent", e)
+        self.assertIn("silent", e["text"])
+        self.assertIn("reading the code", e["last"])
+
+    def test_a_turn_that_prints_nothing_is_named_no_output_since_launch(self):
+        e = self.stalled(":")
+        self.assertEqual(e["cause"], "launch", e)
+        self.assertIn("no output since launch", e["text"])
+
+    def test_a_turn_waiting_at_a_prompt_names_it(self):
+        e = self.stalled("printf '\\033[1mOverwrite calc.py? (y/n) '")
+        self.assertEqual(e["cause"], "prompt", e)
+        self.assertIn("prompt", e["text"])
+        self.assertIn("Overwrite calc.py? (y/n)", e["last"])
+        self.assertTrue(e["last"].isprintable(), e["last"])
+
+    def test_a_stalls_cause_reads_where_the_cursor_rests(self):
+        import fmcode
+        self.assertEqual(fmcode.stall_cause(b"Password: "), ("prompt", "Password:"), "a colon still waiting")
+        self.assertEqual(fmcode.stall_cause(b"Running tests:\n")[0], "silent", "a finished line asks nothing")
+        self.assertEqual(fmcode.stall_cause(b" \n\n"), ("silent", ""))
+        self.assertEqual(fmcode.stall_cause(b"\x1b]0;title\x07done\n"), ("silent", "done"), "escapes never show")
+
+    def test_a_turn_at_a_rate_limit_names_the_limit(self):
+        e = self.stalled("echo 'Error: 429 rate limit reached, retrying in 60 s'\necho")
+        self.assertEqual(e["cause"], "limit", e)
+        self.assertIn("limit", e["text"])
 
     def test_a_named_planner_not_verified_here_warns(self):
         self.cli("codex", "printf '%s' '" + json.dumps({"type": "FIX", "tier": "S", "title": "t", "criteria": [
