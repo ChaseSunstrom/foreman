@@ -29,6 +29,7 @@ An installed CLI (WORKERS, or 'CMD {prompt}') does each step and fix round in on
 own config and hooks are put back, a commit is undone (its changes stay), and each changed file the guard refuses as a
 Write is reverted and reported. The worker's exit code and reply never mark anything done: the harness's verify does.
 """
+import hashlib
 import json
 import os
 import re
@@ -854,14 +855,37 @@ def code_config():
         raise CodeError(f"{path}: {e}")
 
 
+# T-1395: flags that turn a CLI's own approvals and sandbox off. ponytail: a flag set in a wrapper script, an alias
+# or the CLI's own config isn't seen; this catches the template, which is what fm code runs
+DANGEROUS = re.compile(r"--yolo(?![\w-])|--dangerously-[\w-]+|danger-full-access|bypassPermissions")
+
+
+def _lint_runner(name, r, ack):
+    """A code.toml runner whose work or plan has a DANGEROUS flag runs only when code.toml's [ack] gives that runner
+    the sha256 of each such template (a list when both are): a changed template needs a new ack."""
+    risky = [r[k] for k in ("work", "plan") if k in r and DANGEROUS.search(r[k])]
+    have = {ack} if isinstance(ack, str) else set(x for x in ack if isinstance(x, str)) if isinstance(ack, list) else set()
+    sums = [hashlib.sha256(t.encode()).hexdigest() for t in risky]
+    if all(s in have for s in sums):
+        return
+    key = name if re.fullmatch(r"[A-Za-z0-9_-]+", name) else json.dumps(name)
+    flags = ", ".join(sorted({m.group() for t in risky for m in DANGEROUS.finditer(t)}))
+    raise CodeError(f"code.toml: [runners.{name}] has {flags}, which turns off the CLI's own approvals, and fm code "
+                    f"would run it with nobody asking. If you mean it, add under [ack] in code.toml (it holds for this "
+                    f"exact template only): {key} = {json.dumps(sums[0] if len(sums) == 1 else sums)}")
+
+
 def all_runners():
     """RUNNERS with code.toml's [runners.NAME] over them; a plan the user changed isn't verified unless they say so."""
     out = {k: dict(v) for k, v in RUNNERS.items()}
-    for name, r in (code_config().get("runners") or {}).items():
+    conf = code_config()
+    acks = conf.get("ack") if isinstance(conf.get("ack"), dict) else {}
+    for name, r in (conf.get("runners") or {}).items():
         if isinstance(r, dict):
             for k in ("work", "plan"):
                 if k in r and not (isinstance(r[k], str) and "{prompt}" in r[k]):
                     raise CodeError(f"code.toml: [runners.{name}] {k} needs {{prompt}} where the request goes")
+            _lint_runner(name, r, acks.get(name))
             mine = {k: r[k] for k in ("work", "plan") if k in r}
             mine["verified"] = r.get("verified") is True or (out.get(name, {}).get("verified", False) and "plan" not in mine)
             # a command the user wrote runs as written: no lean flags on it
@@ -878,6 +902,16 @@ def lean_args(r, kind):
         raise CodeError(f"code.toml: lean is true or false, not {lean!r}")
     flags = (r.get("lean") or {}).get(kind) if lean else None
     return shlex.split(flags) + ["--settings", fmcore.guard_settings()] if flags else []
+
+
+def _guard_grade(name, r):
+    """T-1395: claude's shell commands go through Foreman's PreToolUse hook; any other CLI's run unseen (only the files
+    they change are judged afterwards)."""
+    try:
+        cmd = shlex.split(r.get("work") or r.get("plan") or name)[0]
+    except (ValueError, IndexError):
+        cmd = ""
+    return "confined" if os.path.basename(cmd) == "claude" else "not confined"
 
 
 def _installed(name, r):
@@ -1619,7 +1653,8 @@ def _runners(args, fmcli):
     for n, r in rs.items():
         path = _installed(n, r)
         row = {"name": n, "installed": bool(path), "path": path, "works": bool(r.get("work")),
-               "plans": bool(r.get("plan")), "verified": bool(r.get("verified") and r.get("plan")), "default": n == name}
+               "plans": bool(r.get("plan")), "verified": bool(r.get("verified") and r.get("plan")), "default": n == name,
+               "guard": _guard_grade(n, r)}
         if args.check and path:
             try:
                 v = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
@@ -1630,7 +1665,9 @@ def _runners(args, fmcli):
 
     def can(r):
         return ("works" if r["works"] else "no preset: define it in code.toml") + (
-            ", plans read-only" + ("" if r["verified"] else " (not verified here)") if r["plans"] else "")
+            ", plans read-only" + ("" if r["verified"] else " (not verified here)") if r["plans"] else "") + (
+            "; Foreman's guard confines its shell" if r["guard"] == "confined" else
+            "; Foreman's guard doesn't confine its shell (only the files it changes are judged)")
     lines = [f"{'*' if r['default'] else ' '} {r['name']:<13} {'installed' if r['installed'] else '—':<10} {can(r)}"
              + (f"  [{r['version']}]" if r.get("version") else "") for r in rows]
     lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
