@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code tui has a test net: golden frames of the demo run (FM_GOLDEN=regen rewrites them), a seeded fuzz of 300 malformed event streams at six sizes, and a pty test that resizes and quits; a malformed event now changes nothing instead of crashing the screen (14 crash classes found and fixed) (T-1306)
 - Foreman notices friction itself: a complaint about a Foreman area ("why can't I launch fm code like claude", "fm isn't recognized") gets a fix-the-cause note and a queued improvement round for that area (fm mission + fm ideas, then build), without being asked; a second complaint within a week makes it urgent; a complaint naming no Foreman area gets only the note (T-1332)
 - fm release --push and fm pr's post and merge refusals name both ways to grant publishing: fm ask ID publish (the user's yes), or fm task set ID --allow publish where the user has given standing permission to release (T-1322)
 - fm code: the worker and planner Claude sessions it starts run Foreman's hooks quiet, so only the guard acts there: no second copy of Foreman's session context, drive, request capture or leases inside its own workers (T-1327)
