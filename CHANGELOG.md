@@ -12,6 +12,7 @@
 - fm code fences what the repo and tools wrote: file lists, action results and verify output reach the model inside a per-run nonce-tagged data envelope, envelope-shaped tags in them are escaped, and every prompt (worker CLIs' too) names the envelope as data, never instructions (T-1394).
 - `fm vetoes rm` is the user's to run, like `fm rule rm`: Foreman's guard refuses it from Claude and says to type `! fm vetoes rm N` (T-1413).
 - fm code's judge also holds your shell startup files (bash, zsh including `$ZDOTDIR`, fish including `conf.d`) and other agents' settings (`~/.codex` or `$CODEX_HOME`, `~/.gemini`, `~/.claude` settings, and the MCP servers in `~/.claude.json`): a worker's change there is put back and named, a folder it turns into a link is removed without being followed, and a worker turn that changed nothing says so (T-1393).
+- `fm lease drop FILE` frees only the active task's leases, as a bare `fm lease drop` already did: a builder lane dropping a file no longer frees other parallel lanes' leases on it (they share the main session's id) (T-1416).
 
 ## 1.2.48 — 2026-10-21
 - fm code's claude sessions run lean: the worker without your plugins, MCP servers or settings hooks (`--setting-sources project,local --strict-mcp-config`) and the planner in `--restricted` mode, each with Foreman's guard as `--settings`. A planner call here read 15,286 input tokens instead of 31,620, and the guard still refused a `.env` write (`plugin/tests/e2e/lean_probe.py`). `lean = false` in code.toml keeps the old launch (T-1354).
