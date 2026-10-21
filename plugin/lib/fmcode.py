@@ -236,7 +236,15 @@ def slot(run, profile, messages, check, what):
     err = None
     for _ in range(REPAIRS + 1):
         before = fmcore.worktree_tree(run.root) if profile.get("kind") == "cli" else None
-        r = m.complete(profile, messages, max_tokens=MAX_TOKENS)
+        run.unlean = None
+        try:
+            r = m.complete(profile, messages, max_tokens=MAX_TOKENS)
+        except m.ModelError:
+            if run.unlean:  # T-1426: a lean planner stopped at its init line, as a lean worker is
+                raise CodeError(f"{profile['name']}'s claude session started with {', '.join(run.unlean[:5])}, which "
+                                "a lean session never loads (a .mcp.json or .claude settings in the repo?); it was "
+                                "stopped before it read anything: check the repo's Claude Code settings") from None
+            raise
         if before:  # T-1320: a CLI planner runs with the user's own settings; planning must change nothing
             after = fmcore.worktree_tree(run.root)
             if after != before:
@@ -331,7 +339,8 @@ class Run:
                             "off this machine: use a local model (fm code models), or fm sensitive off")
 
     def usage(self, r):
-        got = (r["usage"].get("in") or 0, r["usage"].get("out") or 0)
+        got = tuple(v if type(v) is int and v > 0 else 0  # T-1423: a server's "12", null or -1 counts as 0
+                    for v in (r["usage"].get("in"), r["usage"].get("out")))
         self.tokens[0] += got[0]
         self.tokens[1] += got[1]
         self.emit("tokens", "", quiet=True, call_in=got[0], call_out=got[1], total_in=self.tokens[0],
@@ -865,7 +874,7 @@ def stall_cause(tail):
     return ("prompt" if asks else "silent"), lines[-1]
 
 
-STOP = object()  # T-1388: an on_line answer that ends the turn now
+STOP = m.STOP  # T-1388: an on_line answer that ends the turn now (fmmodels' CLI planner call honours it too)
 
 
 def lean_extras(line):
@@ -1116,6 +1125,11 @@ def worker_argv(spec, prompt, which=True):
     """A --worker spec as argv: the user's own template ("{prompt}" in it), a runner's name, else [spec, prompt]."""
     r = all_runners().get(spec, {})
     tpl = r.get("work") or spec
+    risky = not r.get("work") and dangerous_flags(tpl)  # T-1418: a runner's template was linted in all_runners; this one wasn't
+    if risky:
+        raise CodeError(f"--worker {spec!r} has {', '.join(risky)}, which turns off the CLI's own approvals, and fm code "
+                        "would run it with nobody asking. If you mean it, make it a runner in code.toml "
+                        "([runners.NAME] work = \"...\"), add the [ack] line fm code then prints, and give --worker NAME")
     try:
         argv = [w.replace("{prompt}", prompt) for w in shlex.split(tpl)] if "{prompt}" in tpl else [spec, prompt]
     except ValueError as e:
@@ -1566,9 +1580,11 @@ def choose_profile(run, model):
     run it planned gets again; a model asked for by name is never swapped for it."""
     planner, r = None, all_runners().get(run.worker or "", {})
     if r.get("plan"):
+        lean = lean_args(r, "plan")  # T-1426: a lean planner's init line is checked like a lean worker's
         planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "verified": r.get("verified"),
-                   "argv": r["plan"] + "".join(" " + shlex.quote(a) for a in lean_args(r, "plan")),
-                   "stream": "claude" if "stream-json" in r["plan"] else None, "on_line": run.live_tools(run.worker),
+                   "argv": r["plan"] + "".join(" " + shlex.quote(a) for a in lean),
+                   "stream": "claude" if "stream-json" in r["plan"] else None,
+                   "on_line": run.live_tools(run.worker, "--strict-mcp-config" in lean),
                    "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
                    "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
