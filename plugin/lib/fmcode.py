@@ -362,6 +362,8 @@ class Run:
 
     # -- actions
     def path(self, rel):
+        if rel.startswith("-"):  # T-1408: '-' and '--x' read as stdin or an option to git and the verify
+            raise ValueError(f"{rel!r} looks like an option, not a file path; name it ./{rel} if that's the file")
         full = os.path.realpath(os.path.join(self.root, rel))
         if full != self.root and not full.startswith(self.root + os.sep):
             raise ValueError(f"{rel} is outside the project")
@@ -455,8 +457,39 @@ class Run:
             return "no match" + (" (matches in credential files are never shown)" if seen else "")
         return "\n".join(hits[:80]) + (f"\n… {len(hits) - 80} more matches" if len(hits) > 80 else "")
 
+    @staticmethod
+    def existing(full, rel):
+        """T-1408: (None, None) for a new file, else (whether the file's lines end in CRLF, None), or (None, why it
+        may not be rewritten): binary or not UTF-8 text, or not a regular file (a pipe would hang the write)."""
+        if not os.path.lexists(full):
+            return None, None
+        if not os.path.isfile(full):
+            return None, f"refused: {rel} is not a regular file"
+        if os.path.getsize(full) > READ_BYTES:  # read refuses it too, so the model never saw what it would replace
+            return None, f"refused: {rel} is over {READ_BYTES >> 20} MB, which fm code doesn't rewrite"
+        with open(full, "rb") as f:
+            data = f.read()
+        try:
+            if b"\0" in data:
+                raise UnicodeError
+            data.decode("utf-8")
+        except UnicodeError:
+            return None, f"refused: {rel} is binary or not UTF-8 text, which fm code doesn't rewrite"
+        crlf = data.count(b"\r\n")
+        return crlf > data.count(b"\n") - crlf, None
+
+    @staticmethod
+    def endings(text, crlf):
+        text = text.replace("\r\n", "\n")
+        return text.replace("\n", "\r\n") if crlf else text
+
     def edit(self, rel, old, new):
         full = self.path(rel)
+        crlf, why = self.existing(full, rel)
+        if why:
+            return why
+        if crlf:  # the model reads lines without their '\r', so its old and new text are LF
+            old, new = self.endings(old, True), self.endings(new, True)
         ti = {"file_path": full, "old_string": old, "new_string": new}
         why = self.guard("Edit", ti)
         if why:
@@ -469,12 +502,17 @@ class Run:
 
     def write(self, rel, content):
         full = self.path(rel)
+        crlf, why = self.existing(full, rel)
+        if why:
+            return why
+        if crlf is not None:  # an existing file keeps its line endings; a new one gets what the model wrote
+            content = self.endings(content, crlf)
         ti = {"file_path": full, "content": content}
         why = self.guard("Write", ti)
         if why:
             return f"refused by Foreman's guard: {why}"
         os.makedirs(os.path.dirname(full), exist_ok=True)
-        with open(full, "w", encoding="utf-8") as f:
+        with open(full, "w", encoding="utf-8", newline="") as f:
             f.write(content)
         self.after("Write", ti, {"filePath": full})
         return f"wrote {rel} ({len(content)} characters)"
