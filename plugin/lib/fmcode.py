@@ -216,6 +216,21 @@ def check_close(v):
     return f"give {', '.join(bad)} as text" if bad else None
 
 
+def check_truncated(profile, messages, r):
+    """T-1404: some servers (llama.cpp, Ollama, vLLM with a small context) drop the start of a long prompt and answer
+    anyway; a reply that read far fewer prompt tokens than were sent never saw its instructions. API profiles only (a
+    CLI counts its own prompt), above a floor where tokenizer variance is no signal; 0 means the server didn't say."""
+    if profile.get("kind") == "cli":
+        return
+    got = r["usage"].get("in")
+    if not isinstance(got, int) or isinstance(got, bool):
+        return
+    sent = sum(len(str(x.get("content") or "")) for x in messages) // 4  # ponytail: chars/4, a tokenizer if it misfires
+    if sent > 2000 and 0 < got < 0.7 * sent:
+        raise CodeError(f"{profile['name']}: the model's server truncated the prompt at {got} tokens (about {sent} "
+                        "sent): use a model with a longer context or a smaller request")
+
+
 def slot(run, profile, messages, check, what):
     """Ask for one JSON slot; on a bad answer quote the error back, at most REPAIRS times."""
     err = None
@@ -229,6 +244,7 @@ def slot(run, profile, messages, check, what):
                 raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
                                 "must change nothing: check them (git diff) before going on")
         run.usage(r)
+        check_truncated(profile, messages, r)
         v = m.extract_json(r["text"])
         if v is None and r["tool_calls"]:
             v = r["tool_calls"][0]["args"]
@@ -512,8 +528,10 @@ class Run:
                 raise CodeError(f"stopped: the model used all {self.max_steps} turns (--max-steps) before {name} was "
                                 f"done; fm code --resume {self.tid} --max-steps N carries on")
             self.turns += 1
-            r = m.complete(profile, trim(msgs), tools=tools, max_tokens=MAX_TOKENS)
+            sent = trim(msgs)
+            r = m.complete(profile, sent, tools=tools, max_tokens=MAX_TOKENS)
             self.usage(r)
+            check_truncated(profile, sent, r)
             calls = r["tool_calls"]
             if r["stop"] == "length":  # a cut-off call may be missing its end: nothing in it runs
                 self.add(name, {"role": "assistant", "content": r["text"]})

@@ -15,7 +15,7 @@ HANG = object()
 
 
 class Fake:
-    """Answers each POST with the next scripted reply (a dict: text and/or calls) in the profile's wire shape; HANG
+    """Answers each POST with the next scripted reply (a dict: text and/or calls; in: the prompt tokens it reports, 5 unless given) in the profile's wire shape; HANG
     holds the request until release(); past the script it answers 400. Records every request body."""
 
     def __init__(self, kind, script):
@@ -51,14 +51,14 @@ class Fake:
             content = ([{"type": "text", "text": step["text"]}] if step.get("text") else []) + [
                 {"type": "tool_use", "id": i, "name": n, "input": a} for i, n, a in calls]
             stop = "max_tokens" if step.get("cut") else "tool_use" if calls else "end_turn"
-            return {"content": content, "stop_reason": stop, "usage": {"input_tokens": 5, "output_tokens": 2}}
+            return {"content": content, "stop_reason": stop, "usage": {"input_tokens": step.get("in", 5), "output_tokens": 2}}
         msg = {"role": "assistant", "content": step.get("text")}
         if calls:
             msg["tool_calls"] = [{"id": i, "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
                                  for i, n, a in calls]
         stop = "length" if step.get("cut") else "tool_calls" if calls else "stop"
         return {"choices": [{"message": msg, "finish_reason": stop}],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+                "usage": {"prompt_tokens": step.get("in", 5), "completion_tokens": 2}}
 
     def close(self):
         self.release_.set()
