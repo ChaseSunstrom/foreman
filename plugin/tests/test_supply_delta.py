@@ -410,6 +410,151 @@ class SupplyDelta(ForemanTestCase):
         self.held("p@m runs hooks module ?")
 
 
+class OwnPlugins(ForemanTestCase):
+    """T-1441: Foreman's own plugins are accepted when their installed files are this checkout's tracked files at HEAD,
+    file for file; anything else (a differing, extra, missing, linked or unreadable file, no checkout, another id)
+    keeps the hold."""
+    UI = {".claude-plugin/plugin.json": json.dumps({"name": "foreman-ui"}),
+          "hooks/hooks.json": json.dumps({"modules": ["./register.tsx"]}), "hooks/register.tsx": "export {}\n"}
+
+    def setUp(self):
+        super().setUp()
+        import subprocess
+        self.claude = os.path.join(self.tmp, "claude")
+        for rel, text in self.UI.items():
+            write(os.path.join(self.home, "mods", "foreman-ui", rel), text)
+        write(os.path.join(self.home, "plugin", ".claude-plugin", "plugin.json"), {"name": "foreman"})
+        git = lambda *a: subprocess.run(["git", "-C", self.home, *a], check=True, capture_output=True)
+        git("init", "-q", "-b", "main")
+        git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "init", "--allow-empty")
+        self.git = git
+        self.commit()
+        self.ui = os.path.join(self.claude, "plugins", "cache", "foreman", "foreman-ui", "1.0")
+        self.install({"foreman-ui@foreman": self.ui})
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "the baseline (no hooks module yet)")
+        for rel, text in self.UI.items():  # the release: foreman-ui gains its hooks module, installed from HEAD
+            write(os.path.join(self.ui, rel), text)
+
+    def commit(self):
+        self.git("add", "plugin", "mods")
+        self.git("-c", "user.email=t@example.com", "-c", "user.name=t", "commit", "-qm", "x", "--allow-empty")
+
+    def install(self, plugins):
+        write(os.path.join(self.claude, "plugins", "installed_plugins.json"),
+              {"plugins": {k: [{"installPath": v}] for k, v in plugins.items()}})
+        for v in plugins.values():
+            os.makedirs(v, exist_ok=True)
+
+    def held(self, why):
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", f"{why}: {r.detail}")
+        self.assertIn("foreman-ui@foreman runs hooks module register.tsx", r.detail, why)
+        self.assertNotIn("matches this checkout", r.detail, why)
+
+    def test_an_install_equal_to_head_is_accepted_and_named(self):
+        r = fmdoctor.check_supply(self.claude)
+        self.assertNotEqual(r.status, "FAIL", r.detail)
+        self.assertIn("foreman-ui@foreman matches this checkout", r.detail)
+        self.assertNotIn("--accept-supply", r.detail)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS", "recorded: the next run is unchanged")
+
+    def test_one_differing_file_keeps_the_hold(self):
+        write(os.path.join(self.ui, "hooks", "register.tsx"), "export {}\n// curl evil\n")
+        self.held("a differing file")
+
+    def test_an_extra_or_missing_file_keeps_the_hold(self):
+        write(os.path.join(self.ui, "hooks", "extra.ts"), "")
+        self.held("an extra file")
+        os.remove(os.path.join(self.ui, "hooks", "extra.ts"))
+        os.remove(os.path.join(self.ui, ".claude-plugin", "plugin.json"))
+        self.held("a missing file")
+
+    def test_a_symlink_or_unreadable_file_keeps_the_hold(self):
+        reg = os.path.join(self.ui, "hooks", "register.tsx")
+        os.remove(reg)
+        os.symlink(os.path.join(self.home, "mods", "foreman-ui", "hooks", "register.tsx"), reg)
+        self.held("a linked file, even to the checkout's own")
+        os.remove(reg)
+        write(reg, self.UI["hooks/register.tsx"])
+        cur = fmdoctor._supply(self.claude)[0]["foreman-ui@foreman"]
+        self.assertTrue(fmdoctor._matches_checkout(self.claude, "foreman-ui@foreman", cur), "the control")
+        for path in (reg, os.path.dirname(reg)):  # the supply hash stops first ("not checked"); the match alone
+            os.chmod(path, 0)
+            try:
+                self.assertFalse(fmdoctor._matches_checkout(self.claude, "foreman-ui@foreman", cur), path)
+                self.assertNotIn("matches this checkout", fmdoctor.check_supply(self.claude).detail)
+            finally:
+                os.chmod(path, 0o700)
+
+    def test_a_linked_install_folder_keeps_the_hold(self):
+        os.rename(os.path.join(self.ui, "hooks"), os.path.join(self.tmp, "hooks"))
+        os.symlink(os.path.join(self.tmp, "hooks"), os.path.join(self.ui, "hooks"))
+        r = fmdoctor.check_supply(self.claude)
+        self.assertNotIn("matches this checkout", r.detail)
+
+    def test_an_uncommitted_checkout_or_no_checkout_keeps_the_hold(self):
+        import shutil
+        shutil.rmtree(os.path.join(self.home, ".git"))
+        self.held("no checkout")
+        self.git("init", "-q", "-b", "main")
+        self.held("a checkout with no commit")
+        self.commit()
+        write(os.path.join(self.home, "mods", "foreman-ui", "hooks", "register.tsx"), "export {}\n// newer\n")
+        self.commit()
+        self.held("the install is older than HEAD")
+
+    def test_a_third_party_plugin_with_the_same_files_is_held(self):
+        other = os.path.join(self.claude, "plugins", "cache", "evil", "foreman-ui", "1.0")
+        for rel, text in self.UI.items():
+            write(os.path.join(other, rel), text)
+        self.install({"foreman-ui@evil": other, "foreman-ui@foreman": self.ui})
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertIn("foreman-ui@evil runs hooks module register.tsx", r.detail)
+        self.assertIn("foreman-ui@foreman matches this checkout", r.detail)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "FAIL", "the third party stays held")
+
+    def ignored(self, rel, checkout, installed):
+        write(os.path.join(self.home, ".gitignore"), "mods/*/tsconfig.json\nmods/*/.claude-plugin/types/\n")
+        if checkout is not None:
+            write(os.path.join(self.home, "mods", "foreman-ui", rel), checkout)
+        write(os.path.join(self.ui, rel), installed)
+
+    def test_an_ignored_file_equal_to_the_checkouts_is_accepted(self):
+        # the directory marketplace copies the whole folder, gitignored files too
+        self.ignored("tsconfig.json", '{"extends": "x"}\n', '{"extends": "x"}\n')
+        self.ignored(".claude-plugin/types/claude-code/index.d.ts", "export {}\n", "export {}\n")
+        self.assertIn("foreman-ui@foreman matches this checkout", fmdoctor.check_supply(self.claude).detail)
+
+    def test_an_ignored_file_that_differs_or_is_absent_keeps_the_hold(self):
+        self.ignored("tsconfig.json", '{"extends": "x"}\n', '{"extends": "evil"}\n')
+        self.held("an ignored file that differs")
+        os.remove(os.path.join(self.home, "mods", "foreman-ui", "tsconfig.json"))
+        self.held("an ignored path the checkout doesn't have")
+
+    def test_an_untracked_file_that_isnt_ignored_keeps_the_hold(self):
+        write(os.path.join(self.home, "mods", "foreman-ui", "hooks", "new.ts"), "x\n")  # in the checkout, not HEAD
+        write(os.path.join(self.ui, "hooks", "new.ts"), "x\n")
+        self.held("an untracked, unignored file")
+
+    def test_an_ignored_file_linked_in_the_checkout_keeps_the_hold(self):
+        self.ignored("tsconfig.json", None, "{}\n")
+        write(os.path.join(self.tmp, "elsewhere.json"), "{}\n")
+        os.symlink(os.path.join(self.tmp, "elsewhere.json"), os.path.join(self.home, "mods", "foreman-ui", "tsconfig.json"))
+        self.held("the checkout's copy is a link")
+
+    def test_a_working_tree_edit_to_a_tracked_file_keeps_the_hold(self):
+        write(os.path.join(self.home, "mods", "foreman-ui", "hooks", "register.tsx"), "export {}\n// local\n")
+        write(os.path.join(self.ui, "hooks", "register.tsx"), "export {}\n// local\n")
+        self.held("tracked files must equal HEAD, not the working tree")
+
+    def test_foremans_own_id_pointing_at_another_tree_is_held(self):
+        self.install({"foreman@foreman": self.ui})  # foreman-ui's files under foreman's id: not plugin/ at HEAD
+        r = fmdoctor.check_supply(self.claude)
+        self.assertEqual(r.status, "FAIL", r.detail)
+        self.assertNotIn("matches this checkout", r.detail)
+
+
 class FindNeeds(ForemanTestCase):
     def test_find_json_shows_what_a_local_entry_needs(self):
         cc = os.path.join(self.tmp, "cc")
