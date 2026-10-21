@@ -744,7 +744,8 @@ def cmd_source(args):
 
 
 def _words(text):
-    return [w for w in re.findall(r"[a-z0-9+#.]+", text.lower().replace("-", " ")) if len(w) > 1]
+    words = (w.strip(".") for w in re.findall(r"[a-z0-9+#.]+", text.lower().replace("-", " ")))  # T-1420: "end." is end
+    return [w for w in words if len(w) > 1]
 
 
 def search(query, n=15):
