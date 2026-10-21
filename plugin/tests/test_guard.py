@@ -1022,6 +1022,27 @@ class ScratchNames(GuardCase):
         self.assertBlocked(fmguard.check("Write", {"file_path": os.path.join(real, "foreman-state-1", "x.json"),
                                                    "content": "x"}, ctx), "state-direct")
 
+    def test_state_reached_through_a_linked_folder_is_state_at_its_real_path(self):
+        # T-1318: Foreman's home and an explicit state folder were compared as named; with ~/.claude linked into a
+        # dotfiles repo, or FOREMAN_STATE under macOS's linked /tmp, a write to the real path wasn't state-direct
+        import fmguard
+        base = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, base)
+        real, link, work = (os.path.join(base, x) for x in ("dotfiles", "claude", "work"))
+        os.makedirs(os.path.join(real, "foreman", "state"))
+        os.makedirs(os.path.join(real, "tmp", "fm-state"))
+        os.makedirs(work)
+        os.symlink(real, link)
+        home_ctx = fmguard.Ctx(cwd=work, project_root=None, home=os.path.join(base, "h"),
+                               foreman_home=os.path.join(link, "foreman"))
+        dir_ctx = fmguard.Ctx(cwd=work, project_root=None, home=os.path.join(base, "h"),
+                              foreman_home=os.path.join(base, "fh"), state_dir=os.path.join(link, "tmp", "fm-state"))
+        for ctx, path in ((home_ctx, os.path.join(real, "foreman", "state", "tasks.json")),
+                          (dir_ctx, os.path.join(real, "tmp", "fm-state", "tasks.json"))):
+            with self.subTest(path=path):
+                self.assertIn("state-direct", fmguard.classify_write(path, ctx))
+                self.assertNotIn("state-direct", fmguard.classify_write(os.path.join(work, "notes.txt"), ctx))
+
     def test_a_fallback_planted_as_a_link_never_makes_other_writes_state(self):
         # T-1284 review: /tmp/foreman-state-<uid> has a predictable name in a shared /tmp; another user's link there to
         # / (or anywhere) must not turn every write into ungrantable state-direct: only the parent folder is resolved

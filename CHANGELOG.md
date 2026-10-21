@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- Guard: Foreman's state folder reached through a linked folder (`~/.claude` linked into a dotfiles repo, `FOREMAN_STATE` under macOS's linked `/tmp`) is refused as state at its real path too, like the state fallbacks; a link at the state folder itself is still never followed (T-1318)
+- `fm code` takes any request: with no model or API key set, `--worker claude` (or codex, gemini) also plans, in that CLI's read-only mode, so `fm code "<anything>" --worker claude` works with nothing but Claude Code installed; a question about the code gets an answer from the files (read-only, no task); a plan whose check can't run here (a test runner that isn't installed) goes back to the planner instead of ending the run; a task's commit leaves out build artefacts (`__pycache__`, `.pyc`, `node_modules`) and no longer fails on one that vanished before the close. The site's fm code page shows seven real runs, one per kind of request, drawn from their recorded events in `demo/examples/` (T-1320)
 
 ## 1.2.45 — 2026-10-20
 - macOS: the test suite passes there (CI's macOS job is green): fm code --worker judges a fix reached through a linked temp folder, the guard refuses a hard reset in a linked /tmp, Foreman's state fallbacks are judged at their folder's real path (never a planted leaf link), and the reaper, relate and context-tax tests work without /proc and with long temp paths (T-1284)
