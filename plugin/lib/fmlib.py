@@ -576,6 +576,8 @@ def source_add(url, name=None, replace=False):
         raise ValueError("give the source a --name")
     base = _sources_dir()
     final = os.path.join(base, name)
+    if os.path.isdir(base):
+        _recover_sources(base)
     if os.path.exists(final) and not replace:
         raise ValueError(f"source {name} exists; fm lib source update {name}")
     tmp = os.path.join(base, f".tmp-{name}-{os.getpid()}")
@@ -598,7 +600,12 @@ def source_add(url, name=None, replace=False):
         if os.path.exists(final):
             old = f"{final}.old-{os.getpid()}"
             os.replace(final, old)
-        os.replace(tmp, final)
+        try:
+            os.replace(tmp, final)
+        except OSError:
+            if old:
+                os.replace(old, final)
+            raise
         if old:
             shutil.rmtree(old, ignore_errors=True)
         return meta, index
@@ -606,10 +613,39 @@ def source_add(url, name=None, replace=False):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _recover_sources(base):
+    """T-1412: undo what a killed source_add left: its NAME.old-PID goes back when NAME is missing (killed between
+    the two moves), else away; its .tmp-NAME-PID is removed. A live process's folders are left alone."""
+    import shutil
+    for n in os.listdir(base):
+        m = re.fullmatch(r"\.tmp-[a-z0-9-]+-(\d+)|([a-z0-9-]+)\.old-(\d+)", n)
+        if not m:
+            continue
+        try:
+            os.kill(int(m[1] or m[3]), 0)
+            continue  # ponytail: a reused pid looks alive; that folder waits for a later call
+        except ProcessLookupError:
+            pass
+        except (OSError, OverflowError):
+            continue
+        path = os.path.join(base, n)
+        try:
+            if m[2] and not os.path.exists(os.path.join(base, m[2])):
+                os.rename(path, os.path.join(base, m[2]))  # rename, not replace: a NAME made meanwhile wins
+            else:
+                shutil.rmtree(path)
+        except OSError:
+            pass  # another process recovered it first
+
+
 def sources():
     out = []
     base = _sources_dir()
+    if os.path.isdir(base):
+        _recover_sources(base)
     for n in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        if n.startswith(".") or ".old-" in n:
+            continue  # a temp or set-aside folder, never a source (T-1412)
         try:
             with open(os.path.join(base, n, "source.json"), encoding="utf-8") as f:
                 meta = json.load(f)
