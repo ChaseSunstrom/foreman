@@ -69,6 +69,67 @@ CLOUD = [
 LOCAL = [("ollama", "http://127.0.0.1:11434/v1"), ("lmstudio", "http://127.0.0.1:1234/v1"),
          ("llamacpp", "http://127.0.0.1:8080/v1"), ("vllm", "http://127.0.0.1:8000/v1")]
 LOCAL_CONTEXT = 8192
+
+# T-1409: model ids the provider no longer serves, read off each provider's deprecation page on RETIRED_AS_OF
+# (research T-1409-retired-models). Only dates already past then; text/chat models only; Google's are its "earliest
+# possible" dates. ponytail: static and dated, so a stale table reads as stale; a "retiring soon" warning is the
+# upgrade.
+RETIRED_AS_OF = "2026-10-21"
+_PAGES = {"anthropic": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+          "openai": "https://developers.openai.com/api/docs/deprecations",
+          "gemini": "https://ai.google.dev/gemini-api/docs/deprecations"}
+_RETIRED_ROWS = [  # provider, retired on, replacement, ids
+    ("anthropic", "2026-08-05", "claude-opus-4-8", "claude-opus-4-1-20250805"),
+    ("anthropic", "2026-06-15", "claude-opus-4-8", "claude-opus-4-20250514"),
+    ("anthropic", "2026-06-15", "claude-sonnet-5-5", "claude-sonnet-4-20250514"),
+    ("anthropic", "2026-04-20", "claude-haiku-4-5-20251001", "claude-3-haiku-20240307"),
+    ("anthropic", "2026-02-19", "claude-haiku-4-5-20251001", "claude-3-5-haiku-20241022"),
+    ("anthropic", "2026-02-19", "claude-sonnet-5-5", "claude-3-7-sonnet-20250219"),
+    ("anthropic", "2026-01-05", "claude-opus-4-8", "claude-3-opus-20240229"),
+    ("anthropic", "2025-10-28", "claude-sonnet-5-5", "claude-3-5-sonnet-20240620 claude-3-5-sonnet-20241022"),
+    ("anthropic", "2025-07-21", "claude-opus-4-8", "claude-2.0 claude-2.1"),
+    ("anthropic", "2025-07-21", "claude-sonnet-5-5", "claude-3-sonnet-20240229"),
+    ("anthropic", "2024-11-06", "claude-haiku-4-5-20251001",
+     "claude-1.0 claude-1.1 claude-1.2 claude-1.3 claude-instant-1.0 claude-instant-1.1 claude-instant-1.2"),
+    ("openai", "2026-10-01", "the most capable cyber model available to you", "gpt-5.4-cyber"),
+    ("openai", "2026-09-28", "gpt-5.6-terra", "gpt-3.5-turbo-instruct babbage-002 davinci-002 gpt-3.5-turbo-1106"),
+    ("openai", "2026-08-10", "gpt-5.6-sol", "gpt-5.2-chat-latest gpt-5.3-chat-latest"),
+    ("openai", "2026-07-23", "gpt-5.6-sol",
+     "gpt-5-chat-latest gpt-5-codex gpt-5.1-chat-latest gpt-5.1-codex gpt-5.1-codex-max gpt-5.2-codex"),
+    ("openai", "2026-07-23", "gpt-5.6-terra", "gpt-5.1-codex-mini"),
+    ("openai", "2026-03-26", "gpt-5 or gpt-4.1", "gpt-4-0314 gpt-4-0125-preview gpt-4-turbo-preview"),
+    ("openai", "2026-02-17", "gpt-5.1-chat-latest", "chatgpt-4o-latest"),
+    ("openai", "2026-02-12", "gpt-5-codex-mini", "codex-mini-latest"),
+    ("openai", "2025-07-28", "o3", "o1-preview"),
+    ("openai", "2025-10-27", "o4-mini", "o1-mini"),
+    ("openai", "2025-07-14", "gpt-4.1", "gpt-4.5-preview"),
+    ("openai", "2025-06-06", "gpt-4o", "gpt-4-32k gpt-4-32k-0613 gpt-4-32k-0314"),
+    ("openai", "2024-09-13", "gpt-3.5-turbo", "gpt-3.5-turbo-0613 gpt-3.5-turbo-16k-0613"),
+    ("gemini", "2026-06-01", "gemini-3.6-flash", "gemini-2.0-flash gemini-2.0-flash-001"),
+    ("gemini", "2026-06-01", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite gemini-2.0-flash-lite-001"),
+    ("gemini", "2026-07-28", "gemini-3.8-flash", "gemini-2.5-computer-use-preview-10-2025"),
+    ("gemini", "2026-05-25", "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"),
+    ("gemini", "2026-03-31", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite-preview-09-2025"),
+    ("gemini", "2026-03-09", "gemini-3.1-pro-preview", "gemini-3-pro-preview"),
+    ("gemini", "2026-02-17", "gemini-3.6-flash", "gemini-2.5-flash-preview-09-25"),
+    ("gemini", "2025-11-18", "gemini-3.6-flash", "gemini-2.5-flash-preview-05-20"),
+    ("gemini", "2025-12-02", "gemini-3.1-pro-preview",
+     "gemini-2.5-pro-preview-03-25 gemini-2.5-pro-preview-05-06 gemini-2.5-pro-preview-06-05"),
+    ("gemini", "2025-12-09", "gemini-3.1-flash-lite",
+     "gemini-2.0-flash-lite-preview gemini-2.0-flash-lite-preview-02-05"),
+]
+RETIRED = {i: (day, repl, _PAGES[prov]) for prov, day, repl, ids in _RETIRED_ROWS for i in ids.split()}
+
+
+def retired(model_id):
+    """{"date", "replacement", "source"} when model_id (a provider prefix like openai/ or models/ is ignored) is on
+    RETIRED, else None."""
+    if not isinstance(model_id, str):
+        return None
+    hit = RETIRED.get(model_id.strip().lower().rsplit("/", 1)[-1])
+    return hit and {"date": hit[0], "replacement": hit[1], "source": hit[2]}
+
+
 STOPS = {"stop": "end", "end_turn": "end", "stop_sequence": "end", "tool_calls": "tool_calls",
          "function_call": "tool_calls", "tool_use": "tool_calls", "length": "length", "max_tokens": "length"}
 
