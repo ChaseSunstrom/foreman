@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm release --push and fm pr's post and merge refusals name both ways to grant publishing: fm ask ID publish (the user's yes), or fm task set ID --allow publish where the user has given standing permission to release (T-1322)
 - fm code: the worker and planner Claude sessions it starts run Foreman's hooks quiet, so only the guard acts there: no second copy of Foreman's session context, drive, request capture or leases inside its own workers (T-1327)
 
 ## 1.2.46 — 2026-10-20
