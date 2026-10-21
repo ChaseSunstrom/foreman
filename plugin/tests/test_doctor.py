@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -206,6 +207,23 @@ class Checks(unittest.TestCase):
                                        "omitClaudeMd: true\n---\nbody\n")
         self.assertNotIn("a.md", d.check_frontmatter(root).detail)
 
+    def test_a_skill_that_breaks_the_agent_skills_spec_fails(self):
+        # T-1396: name 1-64 lowercase letters, digits and single hyphens, equal to its folder; description 1-1024
+        root = os.path.join(self.t, "plug")
+        self.write("plug/skills/good/SKILL.md", "---\nname: good\ndescription: does one thing well\n---\nbody\n")
+        self.assertEqual(d.check_frontmatter(root).status, "PASS")
+        for folder, name, desc, why in (("Bad_Name", "Bad_Name", "fine", "breaks the spec"),
+                                        ("x", "y", "fine", "doesn't match its folder"),
+                                        ("a" * 65, "a" * 65, "fine", "over 64 characters"),
+                                        ("long", "long", "d" * 1025, "description over 1,024"),
+                                        ("greedy", "greedy", "Use for every task.", "over-broad description")):
+            with self.subTest(why):
+                self.write(f"plug/skills/{folder}/SKILL.md", f"---\nname: {name}\ndescription: {desc}\n---\nbody\n")
+                r = d.check_frontmatter(root)
+                self.assertEqual(r.status, "FAIL")
+                self.assertIn(why, r.detail)
+                shutil.rmtree(os.path.join(root, "skills", folder))
+
     def test_worktree_base(self):
         # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch
         self.assertEqual(d.check_worktree_base({"worktree": {"baseRef": "head"}}).status, "PASS")
@@ -224,14 +242,17 @@ class Checks(unittest.TestCase):
         fmcli.build_parser()
         tiers = [(t, " ".join(w for w in n.split() if w != "approve-reads") + (" status teleport" if i == 0 else ""))
                  for i, (t, n) in enumerate(fmcli.HELP_TIERS)]
-        real = fmcli.build_parser  # build_parser refills HELP_TIERS: put the broken ones back after it
+        real, saved = fmcli.build_parser, list(fmcli.HELP_TIERS)  # T-1378: the parser is built once, so put them back
 
         def broken():
             parser = real()
             fmcli.HELP_TIERS[:] = tiers
             return parser
-        with mock.patch.object(fmcli, "build_parser", broken):
-            r = d.check_self_docs()
+        try:
+            with mock.patch.object(fmcli, "build_parser", broken):
+                r = d.check_self_docs()
+        finally:
+            fmcli.HELP_TIERS[:] = saved
         self.assertEqual(r.status, "FAIL")
         for needle in ("fm help's tiers lack approve-reads", "list status twice", "teleport isn't an fm command"):
             self.assertIn(needle, r.detail)
@@ -430,6 +451,16 @@ class Command(ForemanTestCase):
         self.assertIn("PASS ", loud)
         self.assertIn("fm doctor:", quiet)
         self.assertIn("pass", quiet.splitlines()[-1], "the summary still counts them")
+
+    def test_the_tests_skip_the_hook_bench_and_doctor_says_so(self):
+        # T-1379: the bench is ~100 hook runs (13 of doctor's 18 s at load 44, past 30 s at 60), and the tests that run
+        # fm doctor for its other checks waited on it inside a 30 s limit; FOREMAN_DOCTOR_BENCH=0 (set for every test)
+        self.fm("init")
+        rs = {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+              ["results"]}
+        for n in ("hook latency", "hook exit codes", "injection budgets"):
+            self.assertEqual(rs[n]["status"], "WARN", rs[n])
+            self.assertIn("FOREMAN_DOCTOR_BENCH=0", rs[n]["detail"])
 
 
 if __name__ == "__main__":

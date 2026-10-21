@@ -256,6 +256,11 @@ def check_frontmatter(plugin=PLUGIN):
         meta = _frontmatter(os.path.join(skills, name, "SKILL.md"))
         if meta is None or not meta.get("name") or not meta.get("description"):
             bad.append(f"skill {name}: missing frontmatter name/description")
+            continue
+        import fmplugins  # T-1396: the Agent Skills spec, as fm lib's source indexer checks it
+        why = fmplugins.spec_problems(fmplugins._frontmatter(os.path.join(skills, name, "SKILL.md")), name)
+        if why:
+            bad.append(f"skill {name}: {'; '.join(why)}")
     agents = os.path.join(plugin, "agents")
     for f in sorted(os.listdir(agents)) if os.path.isdir(agents) else []:
         meta = _frontmatter(os.path.join(agents, f))
@@ -754,6 +759,10 @@ def check_hook_errors():
 
 # ---------------------------------------------------------------- orchestration
 
+class _NoBench(Exception):
+    pass
+
+
 def _bench_and_injection(runs=5):
     import tempfile
     sys.path.insert(0, os.path.join(PLUGIN, "tests"))
@@ -1099,7 +1108,8 @@ def _tree_hash(root, h, cap=4000):
         for f in sorted(files):
             full = os.path.join(d, f)
             n += 1
-            if n > cap or os.path.islink(full) or os.path.getsize(full) > 4_000_000:
+            # not a regular file (a FIFO would block the open forever): named, never read
+            if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
                 h.update(os.path.relpath(full, root).encode() + b"\0skipped\0")
                 continue
             with open(full, "rb") as fh:
@@ -1107,18 +1117,27 @@ def _tree_hash(root, h, cap=4000):
 
 
 def _supply(claude):
-    """{id: sha256} of every enabled plugin's install tree and each MCP server's spec (user-wide and per project)."""
+    """{id: {"sha": sha256, "caps": fmplugins.capabilities}} of every installed plugin's install tree (T-1392: the
+    capability set beside the hash) and {"mcp:…": sha256} of each MCP server's spec (user-wide and per project), and
+    {id: "why"} for each plugin it couldn't read (T-1392 review: one bad plugin costs only its own row)."""
     import hashlib
-    out = {}
+    import fmplugins
+    out, errors = {}, {}
     plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
-        h = hashlib.sha256()
-        for inst in installs if isinstance(installs, list) else [installs]:
-            root = inst.get("installPath") if isinstance(inst, dict) else None
-            if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
-                _tree_hash(root, h)
-        out[pid] = h.hexdigest()
+        h, caps = hashlib.sha256(), {}
+        try:
+            for inst in installs if isinstance(installs, list) else [installs]:
+                root = inst.get("installPath") if isinstance(inst, dict) else None
+                if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
+                    _tree_hash(root, h)
+                    for k, v in fmplugins.capabilities(root).items():
+                        caps[k] = sorted(set(caps.get(k, [])) | set(v))
+        except Exception as e:
+            errors[pid] = f"{type(e).__name__}: {e}"
+            continue
+        out[pid] = {"sha": h.hexdigest(), "caps": caps}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
     scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
@@ -1126,7 +1145,7 @@ def _supply(claude):
     for scope, servers in scopes:
         for name, spec in sorted((servers if isinstance(servers, dict) else {}).items()):
             out[f"mcp:{scope}{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
-    return out
+    return out, errors
 
 
 def check_supply(claude, accept=False):
@@ -1141,20 +1160,77 @@ def check_supply(claude, accept=False):
 
 def _check_supply(claude, accept):
     path = os.path.join(c.state_dir(), "supply.json")
-    now, seen = _supply(claude), _load_json(path)
+    (now, errors), seen = _supply(claude), _load_json(path)
     if os.path.exists(path) and not isinstance(seen, dict) and not accept:
         return Result("supply chain", "WARN", f"{path} is unreadable: fm doctor --accept-supply records a new baseline")
+    for k in errors:  # a plugin it couldn't read keeps its old baseline: neither changed, gone nor accepted
+        if isinstance(seen, dict) and k in seen:
+            now[k] = seen[k]
+    unchecked = "not checked: " + _ids(errors, lambda k: f" ({c.plain(errors[k])[:80]})") if errors else ""
     if seen is None or accept:
         c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
-        return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
-                                              f"{len(now)} plugin(s) and MCP server(s)")
-    changed = sorted(k for k in now if seen.get(k) not in (None, now[k]))
-    added, gone = sorted(set(now) - set(seen)), sorted(set(seen) - set(now))
+        return Result("supply chain", "WARN" if errors else "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
+                      f"{len(now)} plugin(s) and MCP server(s)" + (f"; {unchecked}" if errors else ""))
+    sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
+    caps = lambda v: v.get("caps") if isinstance(v, dict) else None
+    changed, added, held, upgraded = [], [], [], False
+    for k in sorted(set(now) - set(errors)):
+        was, cur = seen.get(k), now[k]
+        if k in seen and sha(was) == sha(cur):
+            old, new = caps(was), caps(cur)
+            if old == new:
+                continue
+            if isinstance(new, dict) and (not isinstance(old, dict) or all(new.get(x) == v for x, v in old.items())):
+                seen[k], upgraded = cur, True  # an unchanged tree's entry gains what this version records (review)
+                continue
+        # review: the delta is read even when the sha matches (the hash skips big files, symlinks, the 4,001st)
+        (changed if k in seen else added).append(k)
+        held += [f"{c.plain(k)[:60]} {d}" for d in _capability_delta(was, cur, k)]
+    if upgraded:
+        c.write_atomic(path, json.dumps(seen, sort_keys=True, indent=1))
+    # a spec file Foreman won't read hides what it runs, so it stays held: accepting can't see past it
+    held += [f"{c.plain(k)[:60]} can't read {c.plain(u)[:80]} (outside the plugin, not a file or over 8 MB)"
+             for k in sorted(now) for u in (caps(now[k]) or {}).get("unread") or []]
+    gone = sorted(set(seen) - set(now))
+    note = "; ".join(x for x in (f"changed: {_ids(changed)}" if changed else "", f"new: {_ids(added)}" if added else "",
+                                 f"gone: {_ids(gone)}" if gone else "", unchecked) if x)
+    if held:  # T-1392: new code that runs on its own is held, named, until accepted
+        return Result("supply chain", "FAIL", "; ".join(held[:12]) + (f"; and {len(held) - 12} more" if len(held) > 12
+                      else "") + (f" ({note})" if note else "") + " — review what it runs, then fm doctor --accept-supply")
     if not (changed or added or gone):
-        return Result("supply chain", "PASS", f"{len(now)} plugin(s) and MCP server(s) unchanged")
-    return Result("supply chain", "WARN", "; ".join(x for x in (
-        f"changed: {', '.join(changed)}" if changed else "", f"new: {', '.join(added)}" if added else "",
-        f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
+        return Result("supply chain", "WARN" if errors else "PASS",
+                      f"{len(now)} plugin(s) and MCP server(s) unchanged" + (f"; {unchecked}" if errors else ""))
+    return Result("supply chain", "WARN", note + " — expected (an update you ran)? fm doctor --accept-supply")
+
+
+def _ids(ids, extra=lambda k: ""):
+    """Plugin ids for a doctor line: plain (an id is outside text) and capped at ten."""
+    ids = sorted(ids)
+    return ", ".join(c.plain(k)[:60] + extra(k) for k in ids[:10]) + (f" and {len(ids) - 10} more" if len(ids) > 10 else "")
+
+
+def _capability_delta(was, now, key=""):
+    """T-1392: what an update or a new entry adds that runs on its own: hook events, hook handlers on an existing
+    event, MCP servers (new, or one whose spec changed) and scripts, as phrases. A plugin with no recorded set (new,
+    or a baseline before T-1392) is diffed against nothing (review)."""
+    if key.startswith("mcp:"):  # a user or project MCP server: its spec's hash
+        return [f"{'changes' if was is not None else 'adds'} MCP server {c.plain(key[4:])[:60]}"]
+    legacy = isinstance(was, str)  # a baseline from before T-1392 holds only the hash: what runs was never recorded
+    verb = "has" if legacy else "adds"
+    was, now = (v.get("caps") if isinstance(v, dict) else None for v in (was, now))
+    was, now = (v if isinstance(v, dict) else {} for v in (was, now))
+    def new(k):
+        had = set(was.get(k) or [])
+        return [x for x in now.get(k) or [] if x not in had]
+    split = lambda specs: dict(s.rsplit(" ", 1) for s in specs or [] if isinstance(s, str) and " " in s)
+    had, has = split(was.get("mcp_specs")), split(now.get("mcp_specs"))
+    events = new("hooks")
+    return ([f"{verb} hook {c.plain(e)[:40]}" for e in events]
+            + [f"{verb} a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
+               for h in new("handlers") if h.split(" ", 1)[0] not in events]
+            + [f"{verb} MCP server {c.plain(m)[:40]}" for m in new("mcp")]
+            + [f"changes MCP server {c.plain(m)[:40]}" for m in sorted(has) if m in had and had[m] != has[m]]
+            + [f"{verb} script {c.plain(s)[:80]}" for s in new("scripts")])
 
 
 ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")
@@ -1229,10 +1305,15 @@ def run_all(full=False, accept_supply=False):
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
     try:
+        if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0":  # T-1379: the tests' fm doctor runs, which read no timings
+            raise _NoBench
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
         load = load or busy()  # T-1219: a burst that began during the bench made its timings, not the hooks, slow
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
+    except _NoBench:
+        results += [Result(n, "WARN", "not measured (FOREMAN_DOCTOR_BENCH=0)")
+                    for n in ("hook latency", "hook exit codes", "injection budgets")]
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),

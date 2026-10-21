@@ -27,6 +27,8 @@ USER_ONLY_FM = {
                             "user turns it on", "fm approve-reads on"),  # T-0974
     "rule": ("rm", "fm rule rm is the user's to run: their rule stops what they said to stop, so only they lift it",
              "fm rule rm N"),  # T-0971; `add rm` is a rare miss
+    "vetoes": ("rm", "fm vetoes rm is the user's to run: their veto keeps an idea out of the plan, so only they lift it",
+               "fm vetoes rm N"),  # T-1413
     "taste": ("--block", "fm taste compile N --block makes a rule that stops a command outright, and only the user lifts it "
                          "(fm rule rm): they decide what blocks", "fm taste compile N --block"),  # T-1063
     "rollback": ("--yes", "fm rollback --yes is the user's to run: it puts back an older state, with consent they "

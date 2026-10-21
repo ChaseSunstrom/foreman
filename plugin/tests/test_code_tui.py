@@ -538,6 +538,23 @@ class Motion(unittest.TestCase):
         app.feed({"event": "tool", "action": "run", "target": "python3 test_calc.py", "ts": 3.0})
         self.assertNotIn("working (20 s)", self.frame(app, cfg, 101.0, w=110, h=32).text())
 
+    def test_a_stall_is_a_warning_line_and_the_status_bar_says_when_the_cli_was_last_heard(self):
+        # T-1336: a CLI silent past FM_STALL gets a stalled line in Activity; the bar says how long it has been quiet
+        beat = {"event": "working", "worker": "claude", "secs": 130, "silent": 125, "text": "claude working (130 s)",
+                "ts": 2.0}
+        stall = {"event": "stalled", "worker": "claude", "secs": 125, "cause": "prompt", "last": "Overwrite? (y/n)",
+                 "text": "claude stalled: waiting at a prompt: Overwrite? (y/n)", "ts": 2.5}
+        app, cfg = self.app(RUN[:1] + [beat, stall], motion="off")
+        cv = self.frame(app, cfg, 100.0, w=110, h=32)
+        self.assertIn("Overwrite? (y/n)", cv.text().splitlines()[self.row_of(cv, "waiting at a prompt")[0]])
+        self.assertEqual(self.cell(cv, "waiting at a prompt", cfg).get("fg"), tui().col(cfg, "warn"))
+        bar = cv.text().splitlines()[-1]
+        self.assertIn("last heard 2m05s ago", bar)
+        app.feed({"event": "tool", "action": "run", "target": "pytest", "ts": 3.0})
+        self.assertNotIn("last heard", self.frame(app, cfg, 101.0, w=110, h=32).text().splitlines()[-1],
+                         "heard again: nothing to say")
+        self.assertIn("waiting at a prompt", self.frame(app, cfg, 101.0, w=110, h=32).text(), "the warning stays")
+
     def test_an_answer_wraps_and_the_run_reads_as_finished(self):
         # T-1320: a question's answer is one long line; it wraps in Activity, and nothing reads as still running
         long = "parse_dates treats a date with no timezone as UTC " * 6
@@ -1144,6 +1161,91 @@ class Home(unittest.TestCase):
         self.assertEqual(app.mode, "home")
 
 
+class Width(unittest.TestCase):
+    """T-1301: text is cut and padded by the columns it fills, so wide (CJK, emoji) text keeps its ellipsis and the
+    columns after it stay put."""
+    WIDE = ["日本語のタイトルがとても長い", "🚀🚀🚀🚀🚀🚀🚀🚀 launch", "café résumé naïve façade", "mixed 日本 text here"]
+
+    def test_fit_tail_and_wrap_stay_within_n_columns_and_mark_the_cut(self):
+        T = tui()
+        for s in self.WIDE:
+            for n in range(1, 30):
+                for got, marks in ((T.fit(s, n), True), (T.tail(s, n), n > 1)):  # a 1-column tail is the last char
+                    self.assertLessEqual(T.width(got), n, (s, n, got))
+                    if T.width(s) > n:
+                        self.assertTrue("…" in got or not marks, (s, n, got))
+                    else:
+                        self.assertEqual(got, s)
+                for line in T.wrap(s, n, lines=3):
+                    self.assertLessEqual(T.width(line), n, (s, n, line))
+        self.assertEqual(T.fit("日本語", 4), "日…")
+        self.assertEqual(T.tail("日本語", 4), "…語")
+        self.assertEqual(T.fit("café", 4), "café", "an accent fills no column of its own")
+
+    def test_plain_ascii_is_cut_as_before(self):
+        T = tui()
+        self.assertEqual((T.fit("hello world", 5), T.fit("hi", 5), T.fit("abc", 0)), ("hell…", "hi", ""))
+        self.assertEqual((T.tail("a/b/c.py", 5), T.tail("ab", 5), T.tail("abc", 1)), ("…c.py", "ab", "c"))
+        self.assertEqual(T.wrap("one two three four", 9), ["one two", "three fo…"])
+        self.assertEqual(T.pad("ab", 4), "ab  ")
+        self.assertEqual(T.pad("日本", 6), "日本  ")
+
+    @staticmethod
+    def col(cv, needle):
+        """The display column needle starts at on its row, and the row."""
+        for row in cv.cells:
+            for i in range(len(row)):
+                if "".join(c for c, _ in row[i:]).startswith(needle):
+                    return i, row
+        raise AssertionError(f"{needle!r} not drawn:\n{cv.text()}")
+
+    def test_a_cjk_project_row_keeps_the_later_columns_and_the_border(self):
+        T = tui()
+        projects = [{"project": "plain", "root": "/w/p", "exists": True, "active": None, "queue": 1, "inbox": 2,
+                     "blocked": 3, "updated": 200.0},
+                    {"project": "日本語のプロジェクト", "root": "/w/j", "exists": True, "updated": 100.0, "queue": 4,
+                     "inbox": 5, "blocked": 6, "active": {"id": "T-0009", "title": "長いタイトル" * 20}}]
+        for w in (80, 120):
+            app = T.App(T.DEFAULTS, spawn=lambda *a: None, projects=lambda: [dict(p) for p in projects],
+                        project_state=lambda p: {"code_dir": None})
+            app.show_home()
+            for selected in (0, 1):
+                app.item_index = selected
+                cv = T.render(app.state, w, 30, T.DEFAULTS, app, t=100.0)
+                a, row_a = self.col(cv, "queue 1")
+                b, row_b = self.col(cv, "queue 4")
+                self.assertEqual(a, b, f"the counts line up at {w} columns:\n{cv.text()}")
+                edge = [i for i, (c, _) in enumerate(row_a) if c == "│"][-1]
+                self.assertEqual(row_b[edge][0], "│", f"the right border survives at {w} columns:\n{cv.text()}")
+                self.assertIn("…", "".join(c for c, _ in row_b), "a cut title ends in …")
+        long = dict(projects[1], project="日本語のプロジェクト" * 3)
+        app = T.App(T.DEFAULTS, spawn=lambda *a: None, projects=lambda: [dict(long)],
+                    project_state=lambda p: {"code_dir": None})
+        app.show_home()
+        app.key("\n")  # the project's own view: its long CJK name is the box title, cut to leave room for the note
+        cv = T.render(app.state, 120, 30, T.DEFAULTS, app, t=100.0)
+        top = "".join(c for c, _ in self.col(cv, "日本語")[1])
+        self.assertIn("…", top, cv.text())
+        self.assertIn("Esc projects ─╮", top, f"the note and the corner both still draw:\n{cv.text()}")
+
+    def test_a_cjk_history_row_keeps_the_border(self):
+        T = tui()
+        for w in (80, 120):
+            app = T.App(T.DEFAULTS, spawn=lambda *a: None)
+            app.items = [{"status": "closed", "task": "T-0001", "ts": 1760000000, "request": "plain request"},
+                         {"status": "closed", "task": "T-0002", "ts": 1760000000, "request": "日本語の依頼" * 30}]
+            app.mode = "history"
+            for selected in (0, 1):
+                app.item_index = selected
+                cv = T.render(app.state, w, 30, T.DEFAULTS, app, t=100.0)
+                a, row_a = self.col(cv, "plain request")
+                b, row_b = self.col(cv, "日本語の依頼")
+                self.assertEqual(a, b, f"the requests line up at {w} columns:\n{cv.text()}")
+                edge = [i for i, (c, _) in enumerate(row_a) if c == "│"][-1]
+                self.assertEqual(row_b[edge][0], "│", f"the right border survives at {w} columns:\n{cv.text()}")
+                self.assertIn("…", "".join(c for c, _ in row_b), "a cut request ends in …")
+
+
 class Command(CodeCase):
     def test_fm_code_with_no_request_and_no_terminal_says_what_to_give(self):
         # T-1330: piped or without a terminal, fm code alone is the usage error it always was (exit 1)
@@ -1318,6 +1420,71 @@ class Command(CodeCase):
             except (OSError, ChildProcessError):
                 pass
             os.close(fd)
+
+    def _in_terminal(self, *argv, want):
+        """T-1343: fm code ARGV in a 100x30 pseudo-terminal: (what it wrote by `want`, its exit code or None)."""
+        import fcntl
+        import pty
+        import select
+        import struct
+        import termios
+        from test_code import FM
+        env = dict(self.env(), TERM="xterm-256color")
+        env.pop("NO_COLOR", None)
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+                os.chdir(self.repo)
+                os.execve(sys.executable, [sys.executable, FM, "code", *argv], env)
+            finally:
+                os._exit(127)
+        seen, code, deadline = b"", None, time.time() + 40
+        try:
+            while want not in seen and time.time() < deadline:
+                if select.select([fd], [], [], 0.5)[0]:
+                    try:
+                        seen += os.read(fd, 65536)
+                    except OSError:
+                        break
+            if b"\x1b[?1049h" in seen:  # the app: q quits it
+                os.write(fd, b"q")
+            while time.time() < deadline:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    code = os.waitstatus_to_exitcode(status)
+                    break
+                if select.select([fd], [], [], 0.2)[0]:
+                    try:
+                        seen += os.read(fd, 65536)
+                    except OSError:
+                        pass
+            return seen, code
+        finally:
+            try:
+                os.kill(pid, 9)
+                os.waitpid(pid, 0)
+            except (OSError, ChildProcessError):
+                pass
+            os.close(fd)
+
+    def test_fm_code_with_a_request_on_a_terminal_runs_it_in_the_app(self):
+        # T-1343: like claude "<prompt>", fm code "<request>" on a terminal opens the app with that run going
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        seen, code = self._in_terminal("fix add", "--model", "fake", "--no-commit", want=b"CLOSED")
+        self.assertIn(b"CLOSED", seen, seen[-2000:])
+        self.assertIn(b"\x1b[?1049h", seen, "the app's screen, not printed lines")
+        self.assertEqual(code, 0, "q quits")
+        self.assertIn("a + b", self.calc())
+
+    def test_plain_on_a_terminal_prints_fm_codes_own_lines(self):
+        # T-1343: --plain keeps today's output on a terminal: fm code's own lines, no screen
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        seen, code = self._in_terminal("fix add", "--model", "fake", "--no-commit", "--plain", want=b"closed (tokens")
+        self.assertIn(b"T-0001 closed (tokens", seen, seen[-2000:])
+        self.assertNotIn(b"\x1b[?1049h", seen, "no screen")
+        self.assertNotIn(b"DONE", seen, "fm code's lines, not the app's Activity lines")
+        self.assertEqual(code, 0)
 
     def test_fm_code_tui_plain_runs_a_request_line_by_line(self):
         self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))

@@ -111,7 +111,7 @@ class Worker(CodeCase):
         import fmcode
         import fmmodels
         run = types.SimpleNamespace(worker="claude", model_name="claude (plan, read-only)", root=self.repo,
-                                    worker_timeout=5, live_tools=lambda who: None, live_beat=lambda who: None)
+                                    worker_timeout=5, live_tools=lambda who, lean=False: None, live_beat=lambda who: None)
         with unittest.mock.patch.object(fmmodels, "resolve", side_effect=fmmodels.ModelError("no model profile")):
             self.assertEqual(fmcode.choose_profile(run, None)["kind"], "cli")
             with self.assertRaises(fmmodels.ModelError):
@@ -339,6 +339,32 @@ class Worker(CodeCase):
         self.assertTrue(any(a == "run" and t.startswith("pwd && git status") for a, t in tools), tools)
         self.assertTrue(all(len(t) <= 200 and "\n" not in t for _, t in tools))
 
+    def bug(self):
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a - b\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "the bug again"], capture_output=True)
+
+    def test_a_lean_claude_worker_whose_session_loads_more_than_the_guard_is_stopped(self):
+        # T-1388: a lean worker starts with no MCP server and only built-in plugins (a live init line, 2026-10-21); one
+        # that lists more (a repo's .mcp.json or settings got past --strict-mcp-config) is stopped before it acts
+        base = {"type": "system", "subtype": "init", "mcp_servers": [], "tools": ["Bash", "Edit"],
+                "plugins": [{"name": "cc-plugin-telemetry", "path": "builtin"}]}
+        for extra, named in (({"mcp_servers": [{"name": "evil", "status": "connected"}]}, "MCP server evil"),
+                             ({"tools": ["Bash", "mcp__evil__run"]}, "tool mcp__evil__run"),
+                             ({"plugins": [{"name": "evil", "path": "/x/evil"}]}, "plugin evil")):
+            with self.subTest(named=named):
+                self.bug()
+                self.cli("claude", f"echo '{json.dumps(dict(base, **extra))}'\nsleep 5\nfix-calc\n")
+                r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                blocked = [e["reason"] for e in self.events(r) if e["event"] == "blocked"]
+                self.assertTrue(blocked and named in blocked[0], (blocked, r.stderr[-400:]))
+                self.assertIn("a - b", self.calc(), "stopped before it acted")
+        self.bug()
+        self.cli("claude", f"echo '{json.dumps(base)}'\nfix-calc\n")
+        self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json")
+        self.assertIn("a + b", self.calc(), "a lean session as launched goes on")
+
     def test_the_planner_reads_its_reply_from_the_streams_result_line(self):
         plan = {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}], "steps": ["s"]}
         lines = ['{"type":"system","subtype":"init"}', "not json at all",
@@ -415,6 +441,49 @@ class Worker(CodeCase):
         beats = [e for e in self.events(r) if e["event"] == "working"]
         self.assertGreaterEqual(len(beats), 2, r.stdout)
         self.assertEqual(beats[0]["worker"], "claude")
+        self.assertTrue(all(isinstance(b.get("silent"), int) for b in beats), "how long since it was last heard")
+
+    def stalled(self, before):
+        """T-1336: the stalled events of a worker turn that prints `before` (shell), then goes quiet past FM_STALL."""
+        self.cli("claude", before + "\nsleep 1.6\nfix-calc\n")
+        r = self.code("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False,
+                      env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "FM_HEARTBEAT": "0.2",
+                           "FM_STALL": "0.6"})
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        got = [e for e in self.events(r) if e["event"] == "stalled"]
+        self.assertEqual(len(got), 1, f"one stalled event per silence: {got}")
+        self.assertEqual(got[0]["worker"], "claude")
+        return got[0]
+
+    def test_a_turn_silent_after_a_line_is_named_silent(self):
+        e = self.stalled("echo 'reading the code'")
+        self.assertEqual(e["cause"], "silent", e)
+        self.assertIn("silent", e["text"])
+        self.assertIn("reading the code", e["last"])
+
+    def test_a_turn_that_prints_nothing_is_named_no_output_since_launch(self):
+        e = self.stalled(":")
+        self.assertEqual(e["cause"], "launch", e)
+        self.assertIn("no output since launch", e["text"])
+
+    def test_a_turn_waiting_at_a_prompt_names_it(self):
+        e = self.stalled("printf '\\033[1mOverwrite calc.py? (y/n) '")
+        self.assertEqual(e["cause"], "prompt", e)
+        self.assertIn("prompt", e["text"])
+        self.assertIn("Overwrite calc.py? (y/n)", e["last"])
+        self.assertTrue(e["last"].isprintable(), e["last"])
+
+    def test_a_stalls_cause_reads_where_the_cursor_rests(self):
+        import fmcode
+        self.assertEqual(fmcode.stall_cause(b"Password: "), ("prompt", "Password:"), "a colon still waiting")
+        self.assertEqual(fmcode.stall_cause(b"Running tests:\n")[0], "silent", "a finished line asks nothing")
+        self.assertEqual(fmcode.stall_cause(b" \n\n"), ("silent", ""))
+        self.assertEqual(fmcode.stall_cause(b"\x1b]0;title\x07done\n"), ("silent", "done"), "escapes never show")
+
+    def test_a_turn_at_a_rate_limit_names_the_limit(self):
+        e = self.stalled("echo 'Error: 429 rate limit reached, retrying in 60 s'\necho")
+        self.assertEqual(e["cause"], "limit", e)
+        self.assertIn("limit", e["text"])
 
     def test_a_named_planner_not_verified_here_warns(self):
         self.cli("codex", "printf '%s' '" + json.dumps({"type": "FIX", "tier": "S", "title": "t", "criteria": [

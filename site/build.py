@@ -4,13 +4,18 @@
 Copies site/ (the landing page, style.css, assets) and the demo files, then renders one page per capability from
 site/pages.py with charts drawn from site/data/stats.json (made by site/stats.py on a machine with Foreman's state).
 Charts are inline SVG that follow the page's light and dark tokens; every mark has a hover title and every chart a
-data table. Stdlib only, so the Pages workflow runs it with the runner's Python."""
+data table. Stdlib only, so the Pages workflow runs it with the runner's Python. T-1411: the pages load nothing from
+another host (fonts are the reader's own, named first in style.css with system fallbacks); the build fails on any
+page, stylesheet, script or picture that would."""
 import html
+import html.parser
 import json
 import os
+import re
 import shlex
 import shutil
 import sys
+import urllib.parse
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -29,6 +34,84 @@ def safe_out(out):
     out = os.path.realpath(out)
     keep = [os.path.realpath(x) for x in (ROOT, HERE, os.path.expanduser("~"))]
     return out != os.path.sep and not any(out == k or k.startswith(out.rstrip(os.sep) + os.sep) for k in keep)
+
+
+OWN_HOSTS = {"chasesunstrom.github.io"}  # the site itself
+ABSOLUTE = re.compile(r"""(?i)\bhttps?:[/\\]{2}[^\s'"`)<>]+""")  # any http(s) URL in a stylesheet or script
+CSS_SHORT = re.compile(r"""(?i)(?:url\(\s*|@import\s+)['"]?([/\\]{2}[^\s'")]+)""")  # url(//host/x), @import "//host"
+
+
+def _outside(url):
+    """The URL if it names a host other than the site's own (as a browser reads it: tabs and newlines dropped, \\ as /)."""
+    try:
+        u = urllib.parse.urlsplit(re.sub(r"[\t\n\r]", "", url).strip().replace("\\", "/"))
+        return url if u.netloc and (u.hostname or "") not in OWN_HOSTS else None
+    except ValueError:
+        return url
+
+
+def _text_urls(text):
+    text = re.sub(r"(?s)/\*.*?\*/", "", text)
+    return ABSOLUTE.findall(text) + CSS_SHORT.findall(text)
+
+
+class _Loads(html.parser.HTMLParser):
+    """Every URL a page or SVG makes the browser fetch: src, srcset, poster, data, href off anything but a link to
+    follow (<a>, <area>), CSS in <style> and style="", and any http(s) URL in a <script>."""
+
+    def __init__(self):
+        super().__init__()
+        self.urls, self.inside = [], None
+
+    def handle_starttag(self, tag, attrs):
+        self.handle_startendtag(tag, attrs)
+        self.inside = tag if tag in ("style", "script") else None
+
+    def handle_startendtag(self, tag, attrs):
+        for k, v in attrs:
+            if v is None:
+                continue
+            if k == "srcset":
+                self.urls += [c.split()[0] for c in v.split(",") if c.split()]
+            elif k == "ping":  # <a ping> posts to each URL on a click
+                self.urls += v.split()
+            elif k in ("src", "poster", "data", "background") or k in ("href", "xlink:href") and tag not in ("a", "area"):
+                self.urls.append(v)
+            elif k == "style":
+                self.urls += _text_urls(v)
+
+    def handle_endtag(self, tag):
+        self.inside = None
+
+    def handle_data(self, data):
+        if self.inside:
+            self.urls += _text_urls(data)
+
+
+def outside_loads(text, ext):
+    """T-1411: the URLs on another host that this .html, .svg, .css or .js file makes the browser fetch."""
+    if ext in (".html", ".svg"):
+        p = _Loads()
+        p.feed(text)
+        p.close()
+        urls = p.urls
+    else:
+        urls = _text_urls(text)
+    return [u for u in urls if _outside(u)]
+
+
+def outside_hosts(out):
+    """Each built file's outside loads, as "path: url" lines."""
+    found = []
+    for d, dirs, files in os.walk(out):
+        dirs.sort()
+        for f in sorted(files):
+            ext = os.path.splitext(f)[1].lower()
+            if ext in (".html", ".svg", ".css", ".js"):
+                with open(os.path.join(d, f), encoding="utf-8", errors="replace") as fh:
+                    rel = os.path.relpath(os.path.join(d, f), out)
+                    found += [f"{rel}: {u}" for u in outside_loads(fh.read(), ext)]
+    return found
 
 
 def table(head, rows):
@@ -193,9 +276,6 @@ def layout(title, desc, body, pages, here, depth=1):
 <meta property="og:description" content="{esc(desc)}">
 <meta property="og:image" content="https://chasesunstrom.github.io/foreman/assets/poster.jpg">
 <link rel="icon" href="{up}assets/foreman.svg" type="image/svg+xml">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{up}style.css">
 </head>
 <body>
@@ -378,4 +458,7 @@ if __name__ == "__main__":
     if not safe_out(target):
         sys.exit(f"build.py: refusing to wipe {target}: give a new or build-only folder, such as _site")
     n = build(os.path.abspath(target))
+    outside = outside_hosts(target)
+    if outside:
+        sys.exit("build.py: the site loads nothing from another host (T-1411), but these would:\n  " + "\n  ".join(outside))
     print(f"built {target}: landing page + {n} feature pages")

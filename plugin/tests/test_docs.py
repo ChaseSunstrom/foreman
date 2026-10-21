@@ -295,6 +295,48 @@ class Site(unittest.TestCase):
             self.assertIn("usage", r.stderr)
             self.assertEqual(os.listdir(tmp), [], "nothing written")
 
+    def test_the_build_fails_on_a_page_that_loads_an_outside_host(self):
+        # T-1411: every page pulled Google Fonts, against nothing leaving the machine; the real site's build (the test
+        # below) exits 0, so its pages load no outside host
+        import shutil
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            shutil.copytree(os.path.join(self.ROOT, "site"), os.path.join(tmp, "site"),
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            for d in ("demo", "plugin"):
+                os.symlink(os.path.join(self.ROOT, d), os.path.join(tmp, d))
+            with open(os.path.join(tmp, "site", "fixture.html"), "w", encoding="utf-8") as f:
+                f.write('<link href="https://fonts.googleapis.com/css2?family=Barlow" rel="stylesheet">')
+            r = subprocess.run([sys.executable, os.path.join(tmp, "site", "build.py"), os.path.join(tmp, "out")],
+                               capture_output=True, text=True, timeout=120)
+            self.assertNotEqual(r.returncode, 0, r.stdout)
+            self.assertIn("fixture.html: https://fonts.googleapis.com/css2?family=Barlow", r.stderr)
+
+    def test_what_counts_as_loading_an_outside_host(self):
+        # T-1411: what the browser fetches counts (src, srcset, a link's href, CSS url() and @import, a script's URL);
+        # a link to follow, a URL in the text, the site's own host and an SVG namespace don't
+        build = self._site("build")
+        bad = ['<img src="https://x.test/a.png">', "<script src=//x.test/a.js></script>", '<LINK HREF="//x.test/f">',
+               '<img srcset="a.png 1x, https://x.test/b.png 2x">', '<video poster="http://x.test/p.jpg"></video>',
+               '<svg><image href="https://x.test/i.png"/></svg>', '<svg><use xlink:href="https://x.test/s.svg#a"/></svg>',
+               '<div style="background:url(\'//x.test/bg.png\')"></div>', '<style>@import "https://x.test/c.css";</style>',
+               '<script>fetch("https://x.test/collect")</script>', '<img src="https:\\\\x.test/a.png">',
+               '<link rel="preconnect" href="https://x.test">', '<a href="#top" ping="https://x.test/p">top</a>']
+        for page in bad:
+            self.assertEqual(len(build.outside_loads(page, ".html")), 1, page)
+        self.assertTrue(build.outside_loads("body { background: url(https://x.test/a.png) }", ".css"))
+        self.assertTrue(build.outside_loads('fetch("https://x.test/a")', ".js"))
+        good = ['<a href="https://github.com/ChaseSunstrom/foreman">Source</a>', "<code>curl https://x.test/i.sh</code>",
+                '<svg xmlns="http://www.w3.org/2000/svg"><a href="https://x.test">x</a></svg>',
+                '<meta property="og:image" content="https://x.test/poster.jpg">', '<img src="assets/a.png">',
+                '<link rel="icon" href="https://chasesunstrom.github.io/foreman/assets/foreman.svg">',
+                '<img src="data:image/png;base64,iVBOR//x.test">', '<script>// see //x.test\nvar a = 1;</script>']
+        for page in good:
+            self.assertEqual(build.outside_loads(page, ".html"), [], page)
+        self.assertEqual(build.outside_loads(".a { marker-end: url(#arrow) } /* https://x.test */", ".css"), [])
+
     def test_a_new_duel_keeps_the_saved_ones(self):
         # site review: stats.py --duel long=DIR alone replaced quality, hard and hard-haiku with nothing
         stats = self._site("stats")

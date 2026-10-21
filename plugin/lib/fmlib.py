@@ -501,18 +501,33 @@ def _git_src(repo, *args, timeout=600):
     return r.stdout
 
 
-def _index_source(repo):
-    """[{name, description, path, kind}] for the checkout's SKILL.md and agents/*.md files, symlinks never."""
+def _index_source(repo, name=None):
+    """[{name, description, path, kind[, quarantine]}] for the checkout's SKILL.md and agents/*.md files. T-1396: one
+    that is a symlink, breaks the Agent Skills spec, hides characters, claims every task or repeats an earlier name
+    keeps its reason under quarantine and stays out of search; a symlink is never read. name: the source's, which a
+    SKILL.md at the repo's root must carry (its folder is only the clone's)."""
     import fmplugins
-    links = {line.split("\t", 1)[1] for line in _git_src(repo, "ls-tree", "-r", "HEAD").splitlines()
-             if line.startswith("120000 ")}  # symlinks as committed: core.symlinks=false wrote them as plain files
+    # symlinks as committed: core.symlinks=false wrote them as plain files. -z: unquoted paths (café, not "caf\303\251")
+    links = {rec.split("\t", 1)[1] for rec in _git_src(repo, "ls-tree", "-r", "-z", "HEAD").split("\0")
+             if rec.startswith("120000 ") and "\t" in rec}
+    clean = lambda s: re.sub(r"[^a-z0-9_.-]+", "-", c.plain(s).lower()).strip("-")[:64]
     root, out = os.path.realpath(repo), []
+    folder_of = lambda d: (name or os.path.basename(repo)) if os.path.realpath(d) == root else os.path.basename(d)
+    for rel in sorted(links):
+        parts = rel.split("/")
+        # only what would be a skill or agent: a SKILL.md, a skill's folder, an agents/*.md (not CLAUDE.md -> AGENTS.md)
+        skill = parts[-1] == "SKILL.md" or parts[-2:-1] == ["skills"]
+        if skill or ("agents" in parts[:-1] and parts[-1].endswith(".md")):
+            out.append({"name": clean(parts[-2] if parts[-1] == "SKILL.md" and len(parts) > 1 else
+                                      os.path.splitext(parts[-1])[0]) or "link", "description": "", "path": rel,
+                        "kind": "skill" if skill else "agent", "quarantine": "a symlink: never followed"})
     for d, dirs, names in os.walk(repo):
         dirs[:] = [x for x in dirs if x != ".git"]
         for n in names:
             path = os.path.join(d, n)
             rel = os.path.relpath(path, repo).replace(os.sep, "/")
-            if not n.endswith(".md") or rel in links or os.path.islink(path) or not os.path.realpath(path).startswith(root + os.sep):
+            # git's bytes were decoded with errors="replace": a non-UTF-8 name compares the same way
+            if not n.endswith(".md") or rel.encode(errors="surrogateescape").decode(errors="replace") in links or os.path.islink(path) or not os.path.realpath(path).startswith(root + os.sep):
                 continue
             fm = fmplugins._frontmatter(path)
             # SKILL.md always; another .md only as an agent: under agents/, or anywhere with a name and a description
@@ -522,10 +537,20 @@ def _index_source(repo):
                 r"(?i)(readme|changelog|contributing|license|code_of_conduct|security)\b", n) else None
             if not kind:
                 continue
-            fallback = os.path.basename(d) if kind == "skill" else os.path.splitext(n)[0]
-            name = re.sub(r"[^a-z0-9_.-]+", "-", c.plain(fm.get("name") or fallback).lower()).strip("-")[:64] or fallback
-            out.append({"name": name, "description": c.plain(fm.get("description", ""))[:400], "path": rel, "kind": kind})
-    return sorted(out, key=lambda x: (x["kind"], x["name"]))
+            fallback = folder_of(d) if kind == "skill" else os.path.splitext(n)[0]
+            row = {"name": clean(fmplugins._unquote(fm.get("name", "")) or fallback) or clean(fallback) or kind,
+                   "description": c.plain(fmplugins._unquote(fm.get("description", "")))[:400], "path": rel, "kind": kind}
+            why = fmplugins.spec_problems(fm, folder_of(d) if kind == "skill" else None, kind)
+            if why:
+                row["quarantine"] = "; ".join(why)
+            out.append(row)
+    first = {}
+    # a second skill or agent of a name squats on the first's; a quarantined one holds no name
+    for x in sorted((x for x in out if not x.get("quarantine")), key=lambda x: x["path"]):
+        if first.setdefault((x["kind"], x["name"]), x["path"]) != x["path"]:
+            x["quarantine"] = "; ".join(filter(None, [x.get("quarantine"), f"a second {x['kind']} named {x['name']} "
+                                                                           f"(the first is {c.plain(first[(x['kind'], x['name'])])})"]))
+    return sorted(out, key=lambda x: (x["kind"], x["name"], x["path"]))
 
 
 def _license(repo):
@@ -551,6 +576,8 @@ def source_add(url, name=None, replace=False):
         raise ValueError("give the source a --name")
     base = _sources_dir()
     final = os.path.join(base, name)
+    if os.path.isdir(base):
+        _recover_sources(base)
     if os.path.exists(final) and not replace:
         raise ValueError(f"source {name} exists; fm lib source update {name}")
     tmp = os.path.join(base, f".tmp-{name}-{os.getpid()}")
@@ -560,10 +587,12 @@ def source_add(url, name=None, replace=False):
         _git_src(None, "clone", "--quiet", "--depth", "1", "--filter=blob:none", "--no-checkout", "--no-recurse-submodules", "--", url, repo)
         _git_src(repo, "sparse-checkout", "set", "--no-cone", "*.md")
         _git_src(repo, "checkout", "--quiet")
-        index = _index_source(repo)
+        index = _index_source(repo, name)
         meta = {"name": name, "url": url, "commit": _git_src(repo, "rev-parse", "HEAD").strip(),
                 "license": _license(repo), "added": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "skills": sum(x["kind"] == "skill" for x in index), "agents": sum(x["kind"] == "agent" for x in index)}
+                "skills": sum(x["kind"] == "skill" and not x.get("quarantine") for x in index),
+                "agents": sum(x["kind"] == "agent" and not x.get("quarantine") for x in index),
+                "quarantined": sum(bool(x.get("quarantine")) for x in index)}
         for fname, data in (("index.json", index), ("source.json", meta)):
             with open(os.path.join(tmp, fname), "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=1)
@@ -571,7 +600,12 @@ def source_add(url, name=None, replace=False):
         if os.path.exists(final):
             old = f"{final}.old-{os.getpid()}"
             os.replace(final, old)
-        os.replace(tmp, final)
+        try:
+            os.replace(tmp, final)
+        except OSError:
+            if old:
+                os.replace(old, final)
+            raise
         if old:
             shutil.rmtree(old, ignore_errors=True)
         return meta, index
@@ -579,10 +613,39 @@ def source_add(url, name=None, replace=False):
         shutil.rmtree(tmp, ignore_errors=True)
 
 
+def _recover_sources(base):
+    """T-1412: undo what a killed source_add left: its NAME.old-PID goes back when NAME is missing (killed between
+    the two moves), else away; its .tmp-NAME-PID is removed. A live process's folders are left alone."""
+    import shutil
+    for n in os.listdir(base):
+        m = re.fullmatch(r"\.tmp-[a-z0-9-]+-(\d+)|([a-z0-9-]+)\.old-(\d+)", n)
+        if not m:
+            continue
+        try:
+            os.kill(int(m[1] or m[3]), 0)
+            continue  # ponytail: a reused pid looks alive; that folder waits for a later call
+        except ProcessLookupError:
+            pass
+        except (OSError, OverflowError):
+            continue
+        path = os.path.join(base, n)
+        try:
+            if m[2] and not os.path.exists(os.path.join(base, m[2])):
+                os.rename(path, os.path.join(base, m[2]))  # rename, not replace: a NAME made meanwhile wins
+            else:
+                shutil.rmtree(path)
+        except OSError:
+            pass  # another process recovered it first
+
+
 def sources():
     out = []
     base = _sources_dir()
+    if os.path.isdir(base):
+        _recover_sources(base)
     for n in sorted(os.listdir(base)) if os.path.isdir(base) else []:
+        if n.startswith(".") or ".old-" in n:
+            continue  # a temp or set-aside folder, never a source (T-1412)
         try:
             with open(os.path.join(base, n, "source.json"), encoding="utf-8") as f:
                 meta = json.load(f)
@@ -599,7 +662,15 @@ def source_skills():
     return [{"name": f"{meta['name']}:{x['name']}", "description": x.get("description", ""), "enabled": None,
              "path": os.path.join(_sources_dir(), meta["name"], "repo", x["path"]), "source": meta["name"],
              "license": meta.get("license", "")}
-            for meta, index in sources() for x in index if isinstance(x, dict) and x.get("name")]
+            for meta, index in sources() for x in index if isinstance(x, dict) and x.get("name") and not x.get("quarantine")]
+
+
+def _held(index, n=10):
+    """The quarantined items of a new index, n at most, each with its reason (T-1396)."""
+    held = [x for x in index if x.get("quarantine")]
+    return (f"\n{len(held)} quarantined, out of search:" + "".join(
+        f"\n  {c.fit(c.plain(x['path']), 60)}: {c.fit(x['quarantine'], 140)}" for x in held[:n])
+        + (f"\n  … {len(held) - n} more in the source's index.json" if len(held) > n else "")) if held else ""
 
 
 def cmd_source(args):
@@ -614,7 +685,7 @@ def cmd_source(args):
         except (ValueError, RuntimeError, subprocess.SubprocessError) as e:
             raise fmcli.UsageError(f"source not added: {e}")
         return print(f"Added {meta['name']} @ {meta['commit'][:8]}: {meta['skills']} skills, {meta['agents']} agents "
-                     f"({meta['license']}). Indexed read-only; fm lib search finds them.")
+                     f"({meta['license']}). Indexed read-only; fm lib search finds them." + _held(index))
     if sub == "defaults":  # the vetted set, added where missing
         have = {m["name"] for m, _ in sources()}
         for n, url in DEFAULT_SOURCES:
@@ -632,9 +703,9 @@ def cmd_source(args):
             have = {m["name"]: (m, i) for m, i in sources()}.get(n)
             if not have:
                 raise fmcli.UsageError(f"no source {n!r}")
-            before = {x["name"] for x in have[1]}
+            before = {x["name"] for x in have[1] if not x.get("quarantine")}
             meta, index = source_add(have[0]["url"], n, replace=True)
-            after = {x["name"] for x in index}
+            after = {x["name"] for x in index if not x.get("quarantine")}
             print(f"{n} @ {meta['commit'][:8]}" + ("".join(f"\n  + {x}" for x in sorted(after - before))
                                                      + "".join(f"\n  - {x}" for x in sorted(before - after)) or " (no change)"))
         return
@@ -646,6 +717,7 @@ def cmd_source(args):
     rows = sources()
     fmcli.out(args, [m for m, _ in rows], "\n".join(
         f"  {m['name']:<22} {m['skills']:>4} skills {m['agents']:>4} agents  {m['commit'][:8]}  {m['license']}  {m['url']}"
+        + (f"  ({m['quarantined']} quarantined)" if m.get("quarantined") else "")
         for m, _ in rows) or "No sources yet: fm lib source add <git URL>")
 
 

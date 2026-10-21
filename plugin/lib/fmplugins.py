@@ -41,11 +41,13 @@ def _json(path, default=None):
     try:
         with open(path) as f:
             return json.load(f)
-    except (OSError, ValueError):
+    except (OSError, ValueError, RecursionError):  # RecursionError: "[" * 100000
         return default
 
 
 def _frontmatter(path):
+    if not os.path.isfile(path):  # a FIFO would block the open forever, a device never end
+        return {}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read(4000)
@@ -59,6 +61,63 @@ def _frontmatter(path):
     for key, value, block in re.findall(r"^(name|description):[ \t]*(.*)\n?((?:[ \t]+.*\n?)*)", m.group(1), re.M):
         value = value.strip()
         out[key] = " ".join(l.strip() for l in block.splitlines()) if value[:1] in (">", "|") else value
+    return out
+
+
+# T-1396: the Agent Skills spec's frontmatter rules, shared by fm doctor and fm lib's source indexer
+SPEC_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# a description that claims every task (or tells the model to drop its other instructions) would win every routing
+# choice: such a skill is indexed but held out of fm lib search. Matched on the NFKC-folded text with the common
+# Cyrillic and Greek look-alikes mapped to Latin. ponytail: phrase list, not a model judgement; a reworded claim
+# still passes (an LLM or embedding check if one gets through in practice).
+BROAD = re.compile(
+    r"(?i)\b(?:(?:for|on|in|before|with|to|during|after)\s+(?:each\s+and\s+every|every|all|any|each)(?:\s+of)?"
+    r"(?:\s+(?:the|your|my|their|the\s+user's|user's))?\s+(?:single\s+|other\s+)?"
+    r"(?:tasks?|requests?|prompts?|messages?|conversations?|questions?|turns?|queries|query|responses?|interactions?)\b"
+    r"|always\s+(?:use|invoke|load|activate|run)\s+(?:this|me)\b(?!\s+(?:skill\s+|agent\s+)?(?:when|if|for|to)\b)"
+    r"|always\s+(?:use|invoke|load|activate|run)\s+(?:this|me)(?:\s+(?:skill|agent))?\s+(?:for|on|with|in)\s+"
+    r"(?:anything|everything)\b"
+    r"|before\s+(?:anything|everything)\b|for\s+everything\b|no\s+matter\s+what\b|regardless\s+of\s+the\s+task\b"
+    r"|ignore\s+(?:all\s+|any\s+)?(?:previous|prior|other|earlier|the)\s+(?:instructions|skills|rules|agents)\b"
+    r"|(?:replaces?|overrides?|supersedes?)\s+(?:all\s+|any\s+|every\s+)?(?:other\s+)?(?:skills|instructions|agents|rules)\b)"
+    r"|(?:^|(?<=[.!?:;]\s))\s*(?:system|assistant|developer)(?:\s+(?:prompt|message|note))?\s*:"
+    r"|<\s*/?\s*system\b")
+_LOOKALIKES = str.maketrans("аеорсухіјѕԁԛԝАВЕКМНОРСТХІЈЅαεικνορτυχΑΒΕΗΙΚΜΝΟΡΤΥΧ’",
+                            "aeopcyxijsdqwABEKMHOPCTXIJSaeikvoptuxABEHIKMNOPTYX'")
+
+
+def _fold(s):
+    import unicodedata
+    return unicodedata.normalize("NFKC", s).translate(_LOOKALIKES)
+
+
+def _unquote(v):
+    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v
+
+
+def spec_problems(fm, folder=None, kind="skill"):
+    """What a SKILL.md's (or an agent's) frontmatter, as _frontmatter read it, breaks of the Agent Skills spec, plus
+    hidden characters and an over-broad description: [] when nothing. A skill's name must equal its folder; an agent
+    (folder None) may leave its name to its file's. Every message is safe to print."""
+    if not fm:
+        return ["no frontmatter in its first 4,000 characters"]
+    name, desc = _unquote(fm.get("name", "")), _unquote(fm.get("description", ""))
+    out = ["control or hidden characters in its frontmatter"] if c.plain(name + desc) != name + desc else []
+    if not name:
+        out += ["no name in its frontmatter"] if kind == "skill" else []
+    elif len(name) > 64:
+        out.append(f"name over 64 characters ({len(name)})")
+    elif not SPEC_NAME.fullmatch(name):
+        out.append(f"name {c.plain(name)[:40]!r} breaks the spec (lowercase letters, digits and single hyphens)")
+    elif folder is not None and name != folder:
+        out.append(f"name {name!r} doesn't match its folder {c.plain(folder)[:40]!r}")
+    if not desc:
+        out.append("no description")
+    elif len(desc) > 1024 and kind == "skill":  # the skills spec's cap: agents' <example> blocks run longer
+        out.append(f"description over 1,024 characters ({len(desc)})")
+    broad = BROAD.search(_fold(desc))
+    if broad:
+        out.append(f"over-broad description ({c.plain(broad.group(0))!r}): held out of search")
     return out
 
 
@@ -76,20 +135,99 @@ def profile(path):
                                       os.path.basename(f)[:-3])
             out[kind].append((name, fm.get("description", "")))
             out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
-    manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {}) or {}
-    for key, default in (("hooks", "hooks/hooks.json"), ("mcpServers", ".mcp.json")):
-        spec = manifest.get(key, default)  # plugin.json can inline them or name another file
-        data = spec if isinstance(spec, dict) else _json(os.path.join(path, spec), {}) if isinstance(spec, str) else {}
-        data = data.get(key, data) if isinstance(data, dict) else {}
-        if key == "hooks":
-            out["hooks"] |= set(data or {})
-            stops = [h for e in (data or {}).get("Stop") or [] if isinstance(e, dict)
-                     for h in e.get("hooks") or [] if isinstance(h, dict)]
-            # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
-            out["sync_stop"] |= any(not (h.get("async") or h.get("asyncRewake")) for h in stops)
-        else:
-            out["mcp"].update(data or {})
+    hooks, out["mcp"] = _plugin_spec(path, "hooks"), _plugin_spec(path, "mcpServers")
+    out["hooks"] = set(hooks)
+    # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
+    out["sync_stop"] = any(not (h.get("async") or h.get("asyncRewake")) for e, _, h in _handlers(hooks) if e == "Stop")
     return out
+
+
+_SPEC_CAP = 8_000_000  # over the supply hash's 4 MB per file, so a padded hooks file is still read (T-1392 review)
+
+
+def _plugin_spec(path, key, unread=None):
+    """A plugin's hooks or mcpServers as one dict: the default file (hooks/hooks.json, .mcp.json) plus whatever
+    plugin.json names (inline, a path or a list of paths). Both are read, the safe superset whichever way Claude Code
+    merges them (T-1392 review); hook events are concatenated. A named file outside the plugin root, not a regular
+    file or over 8 MB is skipped and its path appended to unread; malformed entries are skipped."""
+    manifest = _spec_file(path, ".claude-plugin/plugin.json", unread)
+    extra = manifest.get(key) if isinstance(manifest, dict) else None
+    out = {}
+    for spec in [{"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json"}[key]] + (
+            extra[:50] if isinstance(extra, list) else [extra]):  # ponytail: a manifest's first 50 paths
+        data = _spec_file(path, spec, unread) if isinstance(spec, str) else spec
+        data = data.get(key, data) if isinstance(data, dict) else None
+        for k, v in (data.items() if isinstance(data, dict) else ()):
+            if isinstance(v, list):
+                out[k] = (out[k] if isinstance(out.get(k), list) else []) + v
+            else:
+                out.setdefault(k, v)
+    return out
+
+
+def _spec_file(root, rel, unread):
+    """The JSON at rel under a plugin root, confined to it and capped in size (None when absent or malformed)."""
+    given = os.path.join(root, rel)
+    if not os.path.lexists(given):
+        return None
+    full, base = os.path.realpath(given), os.path.realpath(root)
+    try:
+        ok = full.startswith(base + os.sep) and os.path.isfile(full) and os.path.getsize(full) <= _SPEC_CAP
+        if ok:  # isfile first: a FIFO or device would block or never end
+            with open(full, "rb") as f:
+                raw = f.read(_SPEC_CAP + 1)
+            ok = len(raw) <= _SPEC_CAP
+    except OSError:
+        ok = False
+    if not ok:
+        if unread is not None:
+            unread.append(rel)
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):
+        return None
+
+
+def _handlers(hooks):
+    """(event, matcher, handler dict) for every hook handler, skipping malformed entries."""
+    for event, entries in hooks.items():
+        for e in entries if isinstance(entries, list) else ():
+            for h in (e.get("hooks") if isinstance(e, dict) and isinstance(e.get("hooks"), list) else ()):
+                if isinstance(h, dict):
+                    yield event, e.get("matcher") or "", h
+
+
+_ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
+
+
+def capabilities(root, prof=None):
+    """T-1392: what a plugin tree runs on its own (hook events, each hook handler as "event matcher: command", MCP
+    server names and "name digest" of each server's spec, scripts: bin/ and the files its hooks and MCP servers name
+    under ${CLAUDE_PLUGIN_ROOT}, and spec files it names but Foreman won't read) and what it adds to the session
+    (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to the first group.
+    ponytail: an existing handler's script edited in place is only the tree hash's note, and hooks declared in skill,
+    agent or command frontmatter, .lsp.json servers and hooks inlined in a marketplace entry aren't read."""
+    prof = prof or profile(root)
+    unread = []
+    hooks, mcp = (_plugin_spec(root, k, unread) if root and os.path.isdir(root) else {} for k in ("hooks", "mcpServers"))
+    # a ": " in a matcher would read as the separator and push the command out of fm doctor's window
+    sep = lambda s: str(s).replace(": ", ":")
+    handlers = {f"{sep(e)} {sep(m)}: {h.get('command') or h.get('url') or h.get('prompt') or ''}"
+                for e, m, h in _handlers(hooks)}
+    digest = lambda spec: hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:16]
+    scripts = {os.path.normpath(p) for p in _ROOT_PATH.findall(json.dumps([hooks, mcp]))}
+    bindir = os.path.join(root or "", "bin")
+    for d, dirs, files in os.walk(bindir) if root and os.path.isdir(bindir) else ():
+        dirs.sort()
+        scripts.update(os.path.relpath(os.path.join(d, f), root) for f in files)
+        if len(scripts) > 500:  # ponytail: a bin/ this big is reported by its first 500 files
+            break
+    names = lambda kind: sorted({n for n, _ in prof[kind] if isinstance(n, str)})
+    return {"hooks": sorted(map(str, hooks)), "handlers": sorted(handlers), "mcp": sorted(map(str, mcp)),
+            "mcp_specs": sorted(f"{k} {digest(v)}" for k, v in mcp.items()), "scripts": sorted(scripts),
+            "unread": sorted(set(unread)), "commands": names("commands"), "agents": names("agents"),
+            "skills": names("skills")}
 
 
 def _marketplace_files():
@@ -110,20 +248,104 @@ def _marketplace_files():
     return sorted(out)
 
 
-def index():
-    """Every plugin in the known marketplaces: id, description, category, and its local copy when there is one."""
-    out = []
+_PLUGIN_NAME = re.compile(r"[\w.-]+")  # the name part of fmguard.PLUGIN_ID: no @, no slash, no space
+
+
+def _marketplace_name(data, root):
+    """A marketplace's name: its own when it is a plugin name, else its folder's made into one (never a control
+    character, an @ or a slash)."""
+    name = data.get("name") if isinstance(data, dict) else None
+    if isinstance(name, str) and _PLUGIN_NAME.fullmatch(name):
+        return name
+    return re.sub(r"[^\w.-]+", "-", os.path.basename(root), flags=re.A).strip("-") or "marketplace"
+
+
+def index(skipped=None):
+    """Every plugin in the known marketplaces: id, description, category, and its local copy when there is one;
+    `renamed_from` the old names the marketplace's `renames` maps to it, `identity` its (marketplace, name, source)
+    for trust(). T-1396: an entry that isn't an object, has no usable name, repeats an id or points its local source
+    outside its marketplace is left out, its reason appended to skipped (a list) when given."""
+    out, seen = [], set()
+    skip = (lambda why: skipped.append(c.plain(why))) if skipped is not None else (lambda why: None)
     for f in _marketplace_files():
-        root, data = os.path.dirname(os.path.dirname(f)), _json(f, {}) or {}
-        mk = data.get("name") or os.path.basename(root)
-        for p in data.get("plugins") or []:
-            src = p.get("source")
+        root, data = os.path.dirname(os.path.dirname(f)), _json(f, {})
+        if not isinstance(data, dict):
+            skip(f"{os.path.basename(root)}: marketplace.json isn't a JSON object")
+            continue
+        mk = _marketplace_name(data, root)
+        plugins = data.get("plugins")
+        if not isinstance(plugins, list):
+            if plugins is not None:
+                skip(f"{mk}: plugins isn't a list")
+            plugins = []
+        renames = data.get("renames") if isinstance(data.get("renames"), dict) else {}
+        renamed = {}
+        for old, new in renames.items():
+            if isinstance(new, str):
+                renamed.setdefault(new, []).append(c.plain(old)[:60])
+        real_root = os.path.realpath(root)
+
+        def outside(local):
+            try:
+                real = os.path.realpath(local)
+            except (OSError, ValueError):  # a NUL in the source
+                return "bad source path"
+            return "its source is outside the marketplace" if real != real_root and \
+                not real.startswith(real_root + os.sep) else None
+        for i, p in enumerate(plugins, 1):
+            name = p.get("name") if isinstance(p, dict) else None
+            src = p.get("source") if isinstance(p, dict) else None
             local = os.path.normpath(os.path.join(root, src)) if isinstance(src, str) else None
-            out.append({"id": f"{p.get('name')}@{mk}", "name": p.get("name", ""), "marketplace": mk,
-                        "description": p.get("description", ""), "category": p.get("category", ""),
+            why = ("not an object" if not isinstance(p, dict) else "no name" if not isinstance(name, str) or not name
+                   else f"name {c.plain(name)[:40]!r} isn't a plugin name" if not _PLUGIN_NAME.fullmatch(name)
+                   else f"a second entry named {name}" if f"{name}@{mk}" in seen
+                   else outside(local) if local else None)
+            if why:
+                skip(f"{mk}: entry {i}: {why}")
+                continue
+            seen.add(f"{name}@{mk}")
+            text = lambda k: c.plain(p[k]) if isinstance(p.get(k), str) else ""
+            out.append({"id": f"{name}@{mk}", "name": name, "marketplace": mk,
+                        "description": text("description"), "category": text("category"),
                         "local": local if local and os.path.isdir(local) else None,
+                        "renamed_from": sorted(renamed.get(name, [])),
+                        "identity": _digest(json.dumps([mk, name, src], sort_keys=True).encode()),
                         "entry_hash": _digest(json.dumps(p, sort_keys=True).encode())})
     return out
+
+
+def _trust_path():
+    return os.path.join(c.state_dir(), "plugin-trust.json")
+
+
+def record_trust(pid, fresh=True):
+    """Remember the identity (marketplace, name, source with its sha) of a plugin fm plugins installed or enabled. An
+    enable (fresh False) records only a plugin the ledger doesn't know: it must not bless a source that changed since
+    the install. ponytail: read-modify-write without a lock; a lost record only makes a plugin read as untrusted."""
+    row = next((p for p in index() if p["id"] == pid), None)
+    if not row:
+        return
+    ledger = _json(_trust_path(), {})
+    ledger = ledger if isinstance(ledger, dict) else {}
+    if not fresh and ledger.get(pid) not in (None, row["identity"]):
+        return
+    ledger[pid] = row["identity"]
+    c.write_atomic(_trust_path(), json.dumps(ledger, indent=1, sort_keys=True) + "\n")
+
+
+def trust(row, ledger=None):
+    """(trusted, why) for an index() row (T-1396): trusted only when fm plugins installed this very identity; a plugin
+    the marketplace renamed, or whose source or sha changed since, reads as a new, untrusted one (why says which).
+    (False, "") for one fm plugins never installed."""
+    ledger = _json(_trust_path(), {}) if ledger is None else ledger
+    had = ledger.get(row["id"]) if isinstance(ledger, dict) else None
+    if had == row["identity"]:
+        return True, ""
+    if row["renamed_from"]:
+        return False, f"renamed from {', '.join(row['renamed_from'])}: a new plugin to Foreman, not the one you had"
+    if had:
+        return False, "its name, source or sha changed since fm plugins installed it"
+    return False, ""
 
 
 def _digest(data):
@@ -194,20 +416,25 @@ def installed():
     return out
 
 
-def find(need, n=10):
+def find(need, n=10, skipped=None):
     words = [w for w in re.findall(r"[a-z0-9+#.-]+", need.lower()) if w not in _STOP]
     if not words:
         return []
-    have, hits = installed(), []
-    for p in index():
+    have, hits, ledger = installed(), [], _json(_trust_path(), {})
+    for p in index(skipped):
         name, text = p["name"].lower(), f"{p['description']} {p['category']}".lower()
         # a short word must be a whole word ("go" is not google or mongo); longer ones may prefix ("test" → testing)
         pats = [re.compile(r"\b" + re.escape(w) + (r"\b" if len(w) <= 3 else "")) for w in words]
         score = sum(3 * bool(r.search(name)) + bool(r.search(text)) for r in pats)
         if score:
-            hits.append(dict(p, score=score, installed=p["id"] in have,
-                             enabled=have.get(p["id"], {}).get("enabled", False),
-                             tokens=profile(p["local"] or have.get(p["id"], {}).get("path"))["tokens"]))
+            trusted, why = trust(p, ledger)
+            tree = p["local"] or have.get(p["id"], {}).get("path")
+            # T-1392: what it runs and adds, read from a tree on disk; None for a remote entry not installed
+            prof = profile(tree)
+            needs = capabilities(tree, prof) if tree and os.path.isdir(tree) else None
+            hits.append(dict(p, score=score, installed=p["id"] in have, trusted=trusted, untrusted=why,
+                             enabled=have.get(p["id"], {}).get("enabled", False), tokens=prof["tokens"],
+                             needs=needs and {k: v for k, v in needs.items() if k not in ("handlers", "mcp_specs")}))
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
 
 
@@ -360,8 +587,7 @@ def _claude(*args, timeout=300):
 
 
 def _marketplaces():
-    return {(_json(f, {}) or {}).get("name") or os.path.basename(os.path.dirname(os.path.dirname(f)))
-            for f in _marketplace_files()}
+    return {_marketplace_name(_json(f, {}), os.path.dirname(os.path.dirname(f))) for f in _marketplace_files()}
 
 
 def add_marketplace(source):
@@ -388,7 +614,21 @@ def install(pid):
         if pid not in installed():  # exit 0 without an install (e.g. a prompt it couldn't show) owns nothing
             raise c.PolicyError(f"claude plugin install exited 0 but {pid} isn't installed")
         _manifest("plugins_installed", add=pid)
+    record_trust(pid, fresh)  # T-1396: this identity; a later rename or re-source reads as untrusted
     return ("installed" if fresh else "enabled"), conflicts
+
+
+def _runs_line(needs):
+    """T-1392: what a find hit runs on its own and adds to the session, as indented lines; a remote entry has no tree
+    to read until installed."""
+    if needs is None:
+        return "\n    runs: unknown until installed"
+    part = lambda keys: " · ".join(
+        f"{label} {', '.join(c.plain(x)[:40] for x in needs[k][:6])}" + (" …" if len(needs[k]) > 6 else "")
+        for k, label in keys if needs.get(k))
+    runs = part((("hooks", "hook"), ("mcp", "MCP"), ("scripts", "script")))
+    adds = part((("commands", "command"), ("agents", "agent"), ("skills", "skill")))
+    return f"\n    runs: {runs or 'nothing on its own'}" + (f"\n    adds: {adds}" if adds else "")
 
 
 def cmd_plugins(args):
@@ -415,10 +655,15 @@ def cmd_plugins(args):
         return print(f"{pid} {done} (/reload-plugins to load it)." + "".join(
             f"\n  note: {f['detail']} → {f['action']}" for f in conflicts))
     if args.action == "find":
-        hits = find(" ".join(args.words))
+        skipped = []
+        hits = find(" ".join(args.words), skipped=skipped)
         fmcli.out(args, hits, "\n".join(
             f"{h['id']:<40} {'enabled' if h['enabled'] else 'installed' if h['installed'] else 'available':<9} "
-            f"~{h['tokens']} tok  {h['description'][:70]}" for h in hits) or "No matching plugin in the known marketplaces.")
+            f"~{h['tokens']} tok  {h['description'][:70]}" + (f"\n    untrusted: {h['untrusted']}" if h["untrusted"] else "")
+            + _runs_line(h["needs"]) for h in hits) or "No matching plugin in the known marketplaces.")
+        if skipped and not getattr(args, "json", False):  # T-1396: a bad entry is left out with its reason, no crash
+            print(f"({len(skipped)} marketplace entries skipped: {'; '.join(skipped[:3])}"
+                  + (f"; {len(skipped) - 3} more)" if len(skipped) > 3 else ")"))
     elif args.action == "check":
         found = check(args.words[0] if args.words else None)
         fmcli.out(args, found, "\n".join(f"{f['plugin']}: {f['detail']} → {f['action']}" for f in found)
