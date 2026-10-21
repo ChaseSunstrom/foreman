@@ -292,7 +292,7 @@ class AnyRequest(CodeCase):
 
 
 class Resume(CodeCase):
-    def test_resume_after_a_killed_run_finishes_the_task(self):
+    def kill_mid_run(self):
         first = self.serve("openai", plan(), call("read", path="calc.py"), HANG)
         p = subprocess.Popen([sys.executable, FM, "code", "fix add", "--model", "fake"], cwd=self.repo, env=self.env(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -302,6 +302,9 @@ class Resume(CodeCase):
         finally:
             p.communicate(timeout=30)
         self.assertEqual(self.task()["status"], "active")
+
+    def test_resume_after_a_killed_run_finishes_the_task(self):
+        self.kill_mid_run()
         second = self.serve("openai", call("edit", file="calc.py", old="a - b", new="a + b"),
                             call("done", summary="fixed"))
         r = self.code("--resume", "--model", "fake")
@@ -341,6 +344,49 @@ class Resume(CodeCase):
         r = self.code("--resume", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("nothing to resume", r.stderr)
+
+    def test_claudes_continue_resumes_the_newest_unfinished_run(self):  # T-1399: claude -c
+        self.kill_mid_run()
+        self.serve("openai", *FIX)
+        r = self.code("-c", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("resuming T-0001", r.stdout)
+
+
+class ClaudeFlags(CodeCase):
+    """T-1399: claude's own flags where the meaning matches: -p/--print is --plain, -c/--continue is --resume with no
+    id, --output-format json is --json. fm's -p PROJECT still works before the verb (and --project after it)."""
+
+    def test_print_is_plain_and_a_project_before_the_verb_stays_the_project(self):
+        import fmcli
+        parse = fmcli.build_parser().parse_args
+        for flag in ("-p", "--print"):
+            a = parse(["code", flag, "x", "--dry-plan"])
+            self.assertEqual((a.plain, a.request, a.project, a.dry_plan), (True, ["x"], None, True), flag)
+        for flag in ("-c", "--continue"):
+            self.assertEqual(parse(["code", flag]).resume, "", flag)
+        a = parse(["-p", "SLUG", "code", "x"])
+        self.assertEqual((a.project, a.plain), ("SLUG", False))
+        self.assertEqual(parse(["code", "--project", "SLUG", "x"]).project, "SLUG")
+        slug = self.fm("init").stdout.strip()
+        elsewhere = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(elsewhere)
+        self.serve("openai", plan())
+        r = subprocess.run([sys.executable, FM, "-p", slug, "code", "-p", "fix add", "--model", "fake", "--dry-plan"],
+                           cwd=elsewhere, env=self.env(), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Make calc.add add", r.stdout)
+        self.assertEqual(self.status(), "")
+
+    def test_output_format_json_is_json_and_any_other_is_refused(self):
+        self.serve("openai", plan())
+        r = self.code("fix add", "--model", "fake", "--output-format", "json", "--dry-plan")
+        events = [json.loads(line) for line in r.stdout.splitlines()]
+        self.assertEqual(events[-1]["event"], "plan", r.stdout)
+        for value in ("stream-json", "text"):
+            r = self.code("fix add", "--output-format", value, check=False)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("--json", r.stderr)
 
 
 def journal_text(case, tid="T-0001"):
