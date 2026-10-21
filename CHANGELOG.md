@@ -16,6 +16,9 @@
 - `fm page` loads nothing from another host either: its template's Google Fonts links are gone and its font stacks fall back to faces already on the reader's machine (T-1414).
 - fm code stops with "the model's server truncated the prompt at N tokens" when an API model reports reading under half the prompt fm code sent, instead of acting on a reply that never saw its instructions (T-1404).
 - A coding CLI that fm code runs only reads Foreman's state: under `FOREMAN_WORKER_OF`, `fm` refuses every command that changes it (grants, `fm ask`, `fm standing`, `fm autonomy`, `fm task done`, `fm vetoes rm`, capture, focus, …) and keeps the reads (state, task show/list, queue, next, lib search, vetoes). A lean claude worker whose session starts with an MCP server, an `mcp__` tool or a non-built-in plugin is stopped at that first line, before it acts, and the run blocks naming them (T-1388).
+- `fm lib source add` and `update` killed at any step keep the previous source listed and searchable: a set-aside copy is restored, a dead add's temp folders are swept, and neither is ever listed as a source (T-1412).
+- `fm code runners --check` flags each configured model id its provider has retired (a table dated 2026-10-21 from the Anthropic, OpenAI and Gemini deprecation pages; the Anthropic rows checked against the live page) and names the replacement, instead of a run failing later with an unexplained 404 (T-1409).
+- The test suite no longer flakes on a busy machine: its `fm doctor` runs skip the ~100-run hook benchmark no test reads (`FOREMAN_DOCTOR_BENCH=0`, reported as "not measured"), so the breaker, scout, doctor and resilience tests passed 5 of 5 rounds with a busy process on every core (load 67) (T-1379).
 - fm code's write and edit keep a file's line endings (LF text over a CRLF file stays CRLF), refuse a binary, non-UTF-8 or non-regular target instead of rewriting it, and refuse option-shaped paths like `-` and `--x` (T-1408).
 
 ## 1.2.48 — 2026-10-21
