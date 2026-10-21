@@ -215,6 +215,32 @@ class Views(unittest.TestCase):
         self.assertEqual(started[0]["worker"], "claude")
 
 
+def screen(data, rows=34, cols=120):
+    """T-1430: the text a terminal shows after data: cursor moves (CSI row;col H), erase-display and printed characters
+    (a wide one fills two cells); every other escape is ignored."""
+    import re
+    import unicodedata
+    grid = [[" "] * cols for _ in range(rows)]
+    r = c = 0
+    for m in re.finditer(r"\x1b\[([0-9;?]*)([A-Za-z])|\x1b[()][A-Za-z0-9]|\x1b.|([^\x1b])",
+                         bytes(data).decode("utf-8", "replace")):
+        if m.group(3) is not None:
+            ch = m.group(3)
+            if ch == "\r":
+                c = 0
+            elif ch == "\n":
+                r = min(r + 1, rows - 1)
+            elif ch.isprintable() and r < rows and c < cols:
+                grid[r][c] = ch
+                c += 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        elif m.group(2) == "H":
+            at = (m.group(1) or "").split(";")
+            r, c = int(at[0] or 1) - 1, int(at[1] if len(at) > 1 and at[1] else 1) - 1
+        elif m.group(2) == "J" and m.group(1) == "2":
+            grid = [[" "] * cols for _ in range(rows)]
+    return "\n".join("".join(row) for row in grid)
+
+
 class Terminal(unittest.TestCase):
     """T-1300: Foreman's own ANSI renderer (no curses): 24-bit colour where the terminal has it, the nearest of 256
     or 8 elsewhere, none on NO_COLOR, and only the cells that changed are written again."""
@@ -1273,29 +1299,29 @@ class Command(CodeCase):
             finally:
                 os._exit(127)
         deadline = time.time() + 60  # two fm subprocesses (projects, state) before the first frame, on a busy machine
+        stream = bytearray()
 
-        def until(want):
-            seen = b""
-            while want not in seen and time.time() < deadline:
+        def until(want):  # T-1430: the screen the stream draws, not its bytes: a redraw skips cells already right
+            while want not in screen(stream) and time.time() < deadline:
                 if select.select([fd], [], [], 0.3)[0]:
                     try:
-                        seen += os.read(fd, 65536)
+                        stream.extend(os.read(fd, 65536))
                     except OSError:
                         break
-            return seen
+            return screen(stream)
         try:
-            seen = until(b"add export")
-            self.assertIn(b"add export", seen, seen[-1500:])
-            self.assertIn(slug, seen, "the project's own view")
+            seen = until("add export")
+            self.assertIn("add export", seen, seen[-1500:])
+            self.assertIn(slug.decode(), seen, "the project's own view")
             os.write(fd, b"\x1b")
-            self.assertIn(b"Foreman projects", until(b"Foreman projects"))
+            self.assertIn("Foreman projects", until("Foreman projects"))
             os.write(fd, b"q")
             while time.time() < deadline:
                 done, status = os.waitpid(pid, os.WNOHANG)
                 if done:
                     self.assertEqual(os.waitstatus_to_exitcode(status), 0)
                     break
-                until(b"\x00")
+                until("\x00")
             else:
                 self.fail("q didn't quit")
         finally:
