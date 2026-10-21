@@ -117,6 +117,45 @@ class Worker(CodeCase):
             with self.assertRaises(fmmodels.ModelError):
                 fmcode.choose_profile(run, "my-model")  # a model asked for by name is never swapped for the CLI
 
+    def stopped_cli_is_gone(self, args, pidfile):
+        """Start fm code as the TUI does (its own session), wait for the CLI it starts, stop fm code as the TUI does
+        (SIGTERM to its group), and say whether that CLI is gone within 5 s."""
+        import signal
+        from test_code import FM
+        env = self.env({"PATH": self.bin + os.pathsep + os.environ["PATH"]})
+        p = subprocess.Popen([sys.executable, FM, "code", *args], cwd=self.repo, env=env, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+        deadline = time.time() + 30
+        while not os.path.exists(pidfile) and time.time() < deadline:
+            time.sleep(0.1)
+        self.assertTrue(os.path.exists(pidfile), "the CLI started")
+        time.sleep(0.3)
+        os.killpg(p.pid, signal.SIGTERM)
+        p.wait(15)
+        pid = int(read_text(pidfile).strip())
+        for _ in range(50):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            time.sleep(0.1)
+        os.kill(pid, 9)
+        return False
+
+    def test_stopping_fm_code_stops_the_worker_it_started(self):
+        # T-1326: the TUI stops a run with SIGTERM to fm code's group; the worker CLI, in its own session, ran on
+        pidfile = os.path.join(self.tmp, "worker.pid")
+        self.cli("slowcli", f"echo $$ > {pidfile}\nexec sleep 60\n")
+        self.assertTrue(self.stopped_cli_is_gone(["FIX: make calc.add add", "--worker", "slowcli {prompt}", "--verify",
+                                                  VERIFY], pidfile), "the worker outlived fm code")
+
+    def test_stopping_fm_code_stops_the_planner_it_started(self):
+        # T-1326: a quit in ~/projects/nixie left claude planning, orphaned, for minutes
+        pidfile = os.path.join(self.tmp, "planner.pid")
+        self.planner({"type": "result", "result": "{}", "usage": {}}, extra=f"echo $$ > {pidfile}; exec sleep 60")
+        self.assertTrue(self.stopped_cli_is_gone(["make calc.add add", "--worker", "claude"], pidfile),
+                        "the planner outlived fm code")
+
     def test_with_no_model_a_cli_that_cant_plan_read_only_says_what_to_give(self):
         r = self.work("make calc.add add", "--worker", "fix-calc {prompt}", check=False)
         self.assertNotEqual(r.returncode, 0)

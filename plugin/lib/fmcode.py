@@ -1000,8 +1000,17 @@ def _failures(failed):
 
 # ---------------------------------------------------------------- the verb
 
+def _ended(sig, _frame):
+    raise SystemExit(128 + sig)
+
+
 def cmd_code(args):
     import fmcli
+    for name in ("SIGTERM", "SIGHUP"):  # T-1326: a stop (the TUI's, a closed terminal, kill) unwinds, so each finally
+        try:                              # kills the planner or worker CLI it started: they run in their own sessions
+            signal.signal(getattr(signal, name), _ended)
+        except (ValueError, AttributeError):  # not the main thread, or no such signal here
+            pass
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
