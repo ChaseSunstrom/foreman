@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.45 — 2026-10-20
 - macOS: the test suite passes there (CI's macOS job is green): fm code --worker judges a fix reached through a linked temp folder, the guard refuses a hard reset in a linked /tmp, Foreman's state fallbacks are judged at their folder's real path (never a planted leaf link), and the reaper, relate and context-tax tests work without /proc and with long temp paths (T-1284)
 - Guard: a refusal for a program it couldn't read (a script written earlier in the command, one fed through a pipe, a chain of scripts nested too deep, one too long to parse in time, a changed IFS) ends with the rewrite that makes it readable, not `--allow system`, which would lift every system check for the task (T-1298)
 - `fm audit prep`'s diff for a builder's branch also holds the checkout's uncommitted edits, so a reviewer sees every changed file, not only the CHANGELOG hunk (T-1296)
