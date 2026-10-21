@@ -271,6 +271,7 @@ def slot(run, profile, messages, check, what):
 class Run:
     def __init__(self, args, root, jdir):
         self.args, self.root, self.jdir = args, root, jdir
+        self.jreal = os.path.realpath(jdir)  # T-1417: before any worker ran, so a link it plants there later is seen
         self.json = getattr(args, "json", False)
         self.tid = self.plan = self.request = self.journal = None
         self.done, self.msgs, self.turns, self.tokens = set(), {}, 0, [0, 0]
@@ -701,9 +702,13 @@ class Run:
         Claude in the session, not to a worker CLI); a file git shows is also judged by the guard as a Write."""
         out, lost = [], []
 
-        def back(f, saved, why):
+        def back(f, saved, why, whole=False):
             inside = f.startswith(self.root + os.sep)
-            shown, copy = (os.path.relpath(f, self.root), None) if inside else (f, _keep_aside(self.jdir, f))
+            shown, copy = (os.path.relpath(f, self.root), None) if inside else (f, _keep_aside(self.jreal, f, whole))
+            if whole and not copy and not os.path.islink(f):  # T-1417: ~/.local/bin loses nothing it can't keep
+                lost.append(shown)
+                out.append((shown, why + " (not removed: no full copy of it could be kept)"))
+                return
             if copy:  # T-1417: a user's own edit there, or the evidence of what the worker tried, isn't lost
                 why += f" (the worker's version kept at {copy})"
             if not _restore(f, saved):
@@ -736,11 +741,15 @@ class Run:
             f = os.path.join(bin_, r)
             if s == was.get(r) or not (stat.S_ISLNK(s[4]) or s[4] & 0o111) or r in held and _read(f) == held[r]:
                 continue
-            if r in was and r not in held:
+            shim = "a worker never plants a command in ~/.local/bin"
+            if s[1] > KEEP_ASIDE and not stat.S_ISLNK(s[4]):  # an updater's binary as likely as a worker's: no block
+                out.append((f, f"{shim} (left as it is, run not stopped: over 1 MB, too big to keep a copy of; "
+                               "check it)"))
+            elif r in was and r not in held:
                 lost.append(f)
-                out.append((f, "a worker never plants a command in ~/.local/bin (not put back: over 1 MB, not held)"))
+                out.append((f, f"{shim} (not put back: its old version was over 1 MB, not held)"))
             else:
-                back(f, held.get(r), "a worker never plants a command in ~/.local/bin")
+                back(f, held.get(r), shim, whole=True)
         claude, now = os.path.join(home, ".claude.json"), _mcp(os.path.join(home, ".claude.json"))
         if b["mcp"] is not None and now and now != b["mcp"]:  # ponytail: one deleted or broken isn't put back
             why = "a worker never adds or changes an MCP server in ~/.claude.json"
@@ -1212,25 +1221,49 @@ def _restore(path, saved):
     return False
 
 
-def _keep_aside(jdir, path):
+def _keep_aside(jdir, path, whole=False):
     """T-1417: the worker's version of a file outside the repo, about to be put back, kept (its first KEEP_ASIDE bytes)
-    as <jdir>/reverted/<hash>-<name>, readable by the user only; None for a link, folder or anything unreadable."""
+    as <jdir>/reverted/<hash>-<name>, readable by the user only; None for a link, folder or anything unreadable, for
+    one over KEEP_ASIDE when whole, and when a folder on the way is a link or not the user's own (the worker can write
+    the journal folder: a reverted/ linked into ~/.config/autostart would have the judge plant its file there). jdir is
+    a realpath taken before any worker ran, so no link is expected anywhere on it."""
+    fds = []
     try:
-        if not stat.S_ISREG(os.lstat(path).st_mode):
+        if not jdir or not stat.S_ISREG(os.lstat(path).st_mode):
             return None
         fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)  # swapped for a link or FIFO since: no
         with os.fdopen(fd, "rb") as f:
-            data = f.read(KEEP_ASIDE)
-        dest = os.path.join(jdir, "reverted")
-        os.makedirs(dest, mode=0o700, exist_ok=True)
-        out = os.path.join(dest, hashlib.sha256(os.fsencode(path) + b"\0" + data).hexdigest()[:12] + "-" +
-                           re.sub(r"[^\w.-]", "_", os.path.basename(path))[:80])
-        fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+            data = f.read(KEEP_ASIDE + 1)
+        if len(data) > KEEP_ASIDE:
+            if whole:
+                return None
+            data = data[:KEEP_ASIDE]
+        fds.append(os.open("/", os.O_RDONLY | os.O_DIRECTORY))
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        for part in jdir.strip(os.sep).split(os.sep):
+            fds.append(os.open(part, flags, dir_fd=fds[-1]))
+        try:
+            os.mkdir("reverted", 0o700, dir_fd=fds[-1])
+        except FileExistsError:
+            pass
+        fds.append(os.open("reverted", flags, dir_fd=fds[-1]))
+        if any(os.fstat(d).st_uid != os.getuid() for d in fds[-2:]):
+            return None
+        name = (hashlib.sha256(os.fsencode(path) + b"\0" + data).hexdigest()[:12] + "-" +
+                re.sub(r"[^\w.-]", "_", os.path.basename(path))[:80])
+        try:  # a fresh file: one there already could be a hard link the worker made to a file it wants written
+            os.unlink(name, dir_fd=fds[-1])
+        except FileNotFoundError:
+            pass
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fds[-1])
         with os.fdopen(fd, "wb") as f:
             f.write(data)
-        return out
+        return os.path.join(jdir, "reverted", name)
     except OSError:
         return None
+    finally:
+        for d in fds:
+            os.close(d)
 
 
 def _put(path, saved):
@@ -1344,7 +1377,8 @@ def _snapshot(root, verify=None):
     named = _named(root, verify)
     kept.update({r: _read(os.path.join(root, r)) for r in stats if _under_named(r, named)})
     held = _home_held(home)
-    held |= {os.path.realpath(f) for f in held if os.path.islink(f)}  # T-1393: a dotfiles link is written through
+    held |= {r for r in (os.path.realpath(f) for f in held if os.path.islink(f)) if _users(r)}  # T-1393: a dotfiles
+    # link is written through; T-1417: not a root-owned unit a .wants link names, which an upgrade may change
     dirs = {d for f in held | {os.path.join(x, "_") for x in [os.path.join(_fish(home), "conf.d")] +
                                  _home_folders(home)} for d in _parents(f, home)}
     bin_ = _home_folders(home)[-1]
@@ -1376,7 +1410,9 @@ def _home_held(home):
             os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
             os.path.join(home, ".gemini", "settings.json"), os.path.join(home, ".claude", "settings.json"),
             os.path.join(home, ".claude", "settings.local.json"),
-            os.path.join(home, ".ssh", "authorized_keys"), os.path.join(home, ".ssh", "authorized_keys2")}  # T-1417
+            os.path.join(home, ".ssh", "authorized_keys"), os.path.join(home, ".ssh", "authorized_keys2"),  # T-1417
+            os.path.join(home, ".ssh", "rc"), os.path.join(home, ".ssh", "config"),  # a ProxyCommand runs
+            os.path.join(home, ".xprofile"), os.path.join(home, ".xinitrc")}
     out |= {os.path.join(d, r) for d in _home_folders(home)[:-1] for r in _stats(d)}  # T-1417: every file in them
     return out | set(glob.glob(os.path.join(glob.escape(_fish(home)), "conf.d", "*.fish")))
 
@@ -1384,10 +1420,24 @@ def _home_held(home):
 def _home_folders(home):
     """T-1417: folders whose every file runs later (a login's autostart entries and user units, ~/.bashrc.d
     snippets) and, last, ~/.local/bin, where only a new or changed executable is judged (a shim that shadows a
-    real command)."""
-    cfg = os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config")
-    return [os.path.join(cfg, "autostart"), os.path.join(cfg, "systemd", "user"), os.path.join(home, ".bashrc.d"),
-            os.path.join(home, ".local", "bin")]
+    real command). Under both the XDG_* folder and its default, as a login reads both, whatever this shell sets."""
+    env = os.environ.get
+    cfgs = dict.fromkeys([env("XDG_CONFIG_HOME") or os.path.join(home, ".config"), os.path.join(home, ".config")])
+    data = dict.fromkeys([env("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
+                          os.path.join(home, ".local", "share")])
+    return ([os.path.join(c, d) for c in cfgs for d in ("autostart", os.path.join("systemd", "user"), "environment.d")]
+            + [os.path.join(d, "systemd", "user") for d in data]
+            + [os.path.join(home, ".bashrc.d"), os.path.join(home, ".local", "bin")])
+
+
+def _users(path):
+    """T-1417: path, or when it's missing the folder it'd be made in, is the user's own, so a worker could write it."""
+    for p in (path, os.path.dirname(path)):
+        try:
+            return os.stat(p).st_uid == os.getuid()
+        except OSError:
+            continue
+    return False
 
 
 def _parents(f, home):
