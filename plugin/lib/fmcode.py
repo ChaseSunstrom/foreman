@@ -100,7 +100,8 @@ EVENTS = {
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
     "closed": "task, tokens", "blocked": "task, reason", "error": "task",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
-    "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328)",
+    "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328), or a worker turn that "
+            "changed nothing (T-1393)",
     "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
     "working": "worker, secs, silent (seconds since its last byte): a CLI turn still running with nothing to show "
                "(each FM_HEARTBEAT s, default 10)",
@@ -548,11 +549,16 @@ class Run:
                 out = res["result"] if res and isinstance(res.get("result"), str) else out
             ended = True
         finally:
-            reverts, lost = self.judge(before)
+            reverts, lost, touched = self.judge(before)
             state = ("interrupted" if not ended else f"timed out after {self.worker_timeout} s" if code is None else
                      f"exit {code}")
             self.emit("worker", f"  worker {argv[0]}: {state}", worker=argv[0], exit=code)
             self.log(kind="worker", phase=name, exit=code, output=self.redact(out))
+            if not touched:  # T-1393: a turn that left the tree, HEAD and held files as they were isn't progress
+                kind, _, n = name.partition(":")
+                self.emit("note", f"  {'fix round' if kind == 'fix' else kind} {n}: the worker's turn changed nothing",
+                          worker=argv[0])
+                self.log(kind="no_effect", phase=name)
             for rel, why in reverts:
                 rel = os.fsencode(rel).decode("utf-8", "replace")  # an undecodable name still prints
                 self.emit("revert", f"  reverted {rel}: {_one_line(why, 160)}", file=rel, reason=why)
@@ -594,11 +600,12 @@ class Run:
         return beat
 
     def judge(self, b):
-        """([(path, why)] put back, [paths it couldn't put back]) for one worker turn. Always put back: Git's own
-        config and hooks and the user's global Git config (first: a planted core.fsmonitor or hook would run on the
-        next git command), a commit or branch switch (its changes stay, to be judged), and an index flag that hides a
-        file from git status. Then each file the turn wrote, whether git status shows it or not (a stat walk finds
-        ignored ones): a kind Foreman protects is refused whatever standing yes or trust is on (those were given to
+        """([(path, why)] put back, [paths it couldn't put back], whether the turn changed anything) for one worker
+        turn. Always put back: Git's own config and hooks and the user's global Git config (first: a planted
+        core.fsmonitor or hook would run on the next git command), the shell startup files and other agents' settings
+        under HOME (HOME_HELD, T-1393), a commit or branch switch (its changes stay, to be judged), and an index flag
+        that hides a file from git status. Then each file the turn wrote, whether git status shows it or not (a stat
+        walk finds ignored ones): a kind Foreman protects is refused whatever standing yes or trust is on (those were given to
         Claude in the session, not to a worker CLI); a file git shows is also judged by the guard as a Write."""
         out, lost = [], []
 
@@ -615,6 +622,9 @@ class Run:
         for f in sorted(set(b["own"]) | _files_under(hooks)):
             if _read(f) != b["own"].get(f):
                 back(f, b["own"].get(f), own)
+        for f in sorted(b["home"]):  # T-1393
+            if _read(f) != b["home"][f]:
+                back(f, b["home"][f], "a worker never changes your shell startup or another agent's settings")
         head = b["head"]
         if _head(self.root) != head:
             if head[0]:
@@ -664,7 +674,7 @@ class Run:
             else:
                 lost.append(r)
                 out.append((r, f"{why} (it couldn't be put back: git doesn't track it)"))
-        return out, lost
+        return out, lost, bool(out or changed or hidden)
 
     def add(self, phase, msg):
         self.msgs.setdefault(phase, []).append(msg)
@@ -1087,12 +1097,20 @@ def _snapshot(root, verify=None):
         r.split(os.sep)[0] in WATCHED or strict(os.path.join(root, r)))}
     named = _named(root, verify)
     kept.update({r: _read(os.path.join(root, r)) for r in stats if _under_named(r, named)})
+    held = {os.path.join(home, f) for f in HOME_HELD}
+    held |= {os.path.realpath(f) for f in held if os.path.islink(f)}  # T-1393: a dotfiles link is written through
     return {"named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
             "own": {f: _read(f) for f in own | _files_under(hooks)}, "hooks_at": _read(hooks), "flags": _flags(root),
-            "stats": stats, "kept": kept}
+            "stats": stats, "kept": kept, "home": {f: _read(f) for f in held}}
 
 
 WATCHED = (".claude", ".foreman")  # also judged by the guard when git doesn't show them
+# T-1393: under HOME, what runs in the user's next shell and what sets another agent's sandbox: held like Git's global
+# config, so a worker (running as the user) can't leave a line there. Files only; one that appears is removed.
+HOME_HELD = (".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zshenv", ".zprofile",
+             ".zlogin", os.path.join(".config", "fish", "config.fish"), os.path.join(".codex", "config.toml"),
+             os.path.join(".gemini", "settings.json"), os.path.join(".claude", "settings.json"),
+             os.path.join(".claude", "settings.local.json"))
 
 
 def _files_under(top):
