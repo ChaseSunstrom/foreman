@@ -242,14 +242,17 @@ class Checks(unittest.TestCase):
         fmcli.build_parser()
         tiers = [(t, " ".join(w for w in n.split() if w != "approve-reads") + (" status teleport" if i == 0 else ""))
                  for i, (t, n) in enumerate(fmcli.HELP_TIERS)]
-        real = fmcli.build_parser  # build_parser refills HELP_TIERS: put the broken ones back after it
+        real, saved = fmcli.build_parser, list(fmcli.HELP_TIERS)  # T-1378: the parser is built once, so put them back
 
         def broken():
             parser = real()
             fmcli.HELP_TIERS[:] = tiers
             return parser
-        with mock.patch.object(fmcli, "build_parser", broken):
-            r = d.check_self_docs()
+        try:
+            with mock.patch.object(fmcli, "build_parser", broken):
+                r = d.check_self_docs()
+        finally:
+            fmcli.HELP_TIERS[:] = saved
         self.assertEqual(r.status, "FAIL")
         for needle in ("fm help's tiers lack approve-reads", "list status twice", "teleport isn't an fm command"):
             self.assertIn(needle, r.detail)
