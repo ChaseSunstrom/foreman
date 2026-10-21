@@ -39,7 +39,10 @@ class ContextTax(_CardCase):
         paths are measured as if under Linux's /tmp/tmpXXXXXXXX, so macOS's /private/var/folders/… costs nothing."""
         out = self.hook("SessionStart", {"source": source}).stdout
         text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out.strip() else ""
-        self.long_paths += text.count(self.tmp) * (len(self.tmp) - len("/tmp/tmpXXXXXXXX"))
+        real = os.path.realpath(self.tmp)  # macOS writes either form: /var/folders/… or /private/var/folders/…
+        n_real = text.count(real) if real != self.tmp else 0
+        n_raw = text.count(self.tmp) - (n_real if self.tmp in real else 0)
+        self.long_paths += n_raw * (len(self.tmp) - 16) + n_real * (len(real) - 16)  # 16: len("/tmp/tmpXXXXXXXX")
 
     def new_task(self, title):
         self.fm("task", "new", title, "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus")
