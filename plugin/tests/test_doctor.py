@@ -2,6 +2,7 @@
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -205,6 +206,23 @@ class Checks(unittest.TestCase):
         self.write("plug/agents/a.md", "---\nname: a\ndescription: agent\ntools: Read\neffort: low\nmaxTurns: 20\n"
                                        "omitClaudeMd: true\n---\nbody\n")
         self.assertNotIn("a.md", d.check_frontmatter(root).detail)
+
+    def test_a_skill_that_breaks_the_agent_skills_spec_fails(self):
+        # T-1396: name 1-64 lowercase letters, digits and single hyphens, equal to its folder; description 1-1024
+        root = os.path.join(self.t, "plug")
+        self.write("plug/skills/good/SKILL.md", "---\nname: good\ndescription: does one thing well\n---\nbody\n")
+        self.assertEqual(d.check_frontmatter(root).status, "PASS")
+        for folder, name, desc, why in (("Bad_Name", "Bad_Name", "fine", "breaks the spec"),
+                                        ("x", "y", "fine", "doesn't match its folder"),
+                                        ("a" * 65, "a" * 65, "fine", "over 64 characters"),
+                                        ("long", "long", "d" * 1025, "description over 1,024"),
+                                        ("greedy", "greedy", "Use for every task.", "over-broad description")):
+            with self.subTest(why):
+                self.write(f"plug/skills/{folder}/SKILL.md", f"---\nname: {name}\ndescription: {desc}\n---\nbody\n")
+                r = d.check_frontmatter(root)
+                self.assertEqual(r.status, "FAIL")
+                self.assertIn(why, r.detail)
+                shutil.rmtree(os.path.join(root, "skills", folder))
 
     def test_worktree_base(self):
         # T-0803: builder lanes need worktree.baseRef head; the default makes them start from the remote's branch

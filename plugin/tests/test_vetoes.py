@@ -29,6 +29,19 @@ class RecordedVetoes(ForemanTestCase):
             self.assertIsNotNone(self.c.add_veto(self.p, said), said)
         self.assertEqual(len(self.c.vetoes(self.p)), 5)
 
+    def test_each_veto_lists_the_command_that_retracts_exactly_it(self):  # T-1410
+        import json
+        import shlex
+        self.c.add_veto(self.p, "never push to main")
+        self.c.add_veto(self.p, "don't release on Fridays")
+        listed = json.loads(self.fm("vetoes", "--json").stdout)
+        self.assertEqual([v["retract"] for v in listed], ["fm vetoes rm 1", "fm vetoes rm 2"])
+        text = self.fm("vetoes").stdout
+        for v in listed:
+            self.assertIn(v["retract"], text)
+        self.fm(*shlex.split(listed[1]["retract"])[1:])  # the release veto's own command
+        self.assertEqual([v["words"] for v in self.c.vetoes(self.p)], [listed[0]["words"]])
+
     def test_a_real_veto_after_a_permission_clause_records(self):
         rec = self.c.add_veto(self.p, "stop asking me about releases, but never push to main")
         self.assertEqual(rec["words"], ["push", "main"])

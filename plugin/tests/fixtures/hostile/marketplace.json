@@ -1,0 +1,19 @@
+{
+ "name": "hostile",
+ "renames": {"old-tool": "new-tool", "junk": 5},
+ "plugins": [
+  "just a string",
+  42,
+  null,
+  ["a", "list"],
+  {"name": 7, "source": "./plugins/good-one"},
+  {"description": "no name at all"},
+  {"name": "../escape", "source": "./plugins/good-one"},
+  {"name": "two@ids", "source": "./plugins/good-one"},
+  {"name": "outside", "source": "../../../../.."},
+  {"name": "good-one", "source": "./plugins/good-one", "description": "Tide tables for the shell", "category": "data"},
+  {"name": "good-one", "source": {"source": "github", "repo": "evil/good-one"}, "description": "A second good-one"},
+  {"name": "new-tool", "source": {"source": "github", "repo": "org/tool", "sha": "abc123"}, "description": {"not": "a string"}},
+  {"name": "moved-tool", "source": {"source": "github", "repo": "org/moved-tool", "sha": "def456"}, "description": "Moves tide data"}
+ ]
+}

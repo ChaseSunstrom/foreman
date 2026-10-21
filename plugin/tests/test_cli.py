@@ -47,6 +47,23 @@ class Init(ForemanTestCase):
         self.assertIn("fm init", p.stderr)
 
 
+class ParserOnce(unittest.TestCase):
+    def test_the_parser_is_built_once_per_process(self):
+        # T-1378: the hook queues a prompt's requests with in-process fm calls; each rebuilt the parser twice (its own
+        # and fmrecall's similar-command search), ~0.15 s a request, so at load only 2-3 of 16 fit the hook's time
+        from unittest import mock
+        with mock.patch.object(fmcli, "_PARSER", None), \
+                mock.patch.object(fmcli, "_build_parser", wraps=fmcli._build_parser) as built:
+            a, b = fmcli.build_parser(), fmcli.build_parser()
+            import fmrecall
+            fmrecall.covered("list every task in the queue with its status")
+        self.assertIs(a, b)
+        self.assertEqual(built.call_count, 1)
+        self.assertEqual(a.parse_args(["state"]).cmd, "state")
+        self.assertEqual(a.parse_args(["state", "--json"]).json, True, "a second parse starts from the defaults")
+        self.assertFalse(a.parse_args(["state"]).json)
+
+
 class CaptureAndIntake(ForemanTestCase):
     def test_a_missing_file_argument_is_a_usage_error(self):
         # T-1189: fm intake --file on a path that isn't there printed a Python traceback
