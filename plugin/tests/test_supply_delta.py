@@ -91,8 +91,9 @@ class SupplyDelta(ForemanTestCase):
         write(os.path.join(self.plugin, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\nedit\n")
         r = fmdoctor.check_supply(self.claude)
         self.assertEqual(r.status, "FAIL", "review: a legacy baseline is no way past the gate")
-        for want in ("adds hook Stop", "adds script bin/tool"):
+        for want in ("has hook Stop", "has script bin/tool"):  # what runs, not news: the old baseline never said
             self.assertIn(want, r.detail)
+        self.assertNotIn("adds", r.detail)
 
     def test_a_change_the_tree_hash_skips_is_still_held(self):
         pad = " " * 4_000_001  # review: _tree_hash leaves a file over 4 MB out, so the sha alone can't see it
