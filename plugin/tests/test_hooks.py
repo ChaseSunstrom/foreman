@@ -220,6 +220,27 @@ class SessionStart(HookCase):
         self.assertIn("SessionStart", self.hooks_log())
 
 
+class Friction(unittest.TestCase):
+    """T-1332: a complaint or puzzlement about something Foreman made, and the area it names."""
+    def test_complaints_are_friction(self):
+        for text, area in (("how come fm isnt recognized as a command on my system?", "fm"),
+                           ("why cant i launch fm code as a tui management thing like I can claude code?", "fm code"),
+                           ("I started one from ~/projects/nixie, and it just isn't doing anything", "this"),
+                           ("the guard doesn't work", "the guard"), ("fm queue is broken", "fm queue"),
+                           ("the pane keeps failing", "the TUI"), ("it's stuck again", "this"),
+                           ("lanes are confusing", "lanes"), ("Fix fm doctor, it keeps crashing", "fm doctor")):
+            with self.subTest(text=text):
+                self.assertTrue(c.is_friction(text))
+                self.assertEqual(c.friction_area(text), area)
+
+    def test_lookalikes_are_not(self):
+        for text in ("why does the cache use LRU?", "add a --json flag", "how do I run the tests?",
+                     "fix the test that keeps failing", "why don't we add a cache?", "make the stuck-job check faster",
+                     "", "yes"):
+            with self.subTest(text=text):
+                self.assertFalse(c.is_friction(text))
+
+
 class UserPromptSubmit(HookCase):
     def test_session_is_named_after_its_task(self):
         # T-0781: the resume picker showed Claude Code's own session names, never the task being worked
@@ -257,6 +278,31 @@ class UserPromptSubmit(HookCase):
         ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "NOW: prod is down"}))
         self.assertIn("NOW", ctx)
         self.assertIn(f"{tid} FIX step 1/2", ctx)
+
+    def test_friction_starts_an_improvement_round(self):
+        # T-1332: the user had to ask three times for a round on fm code after saying it didn't work for them
+        self.fm("init")
+        friction = lambda: [b for b in c.load_briefs(self.project()) if b.title.endswith("from the user's friction")]
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "why cant i launch fm code as a tui like claude?"}))
+        self.assertIn("Friction with fm code", ctx)
+        self.assertIn("fix the cause", ctx)
+        [b] = friction()
+        self.assertEqual((b.title, b.type, b.meta.get("source"), b.priority),
+                         ("Improve fm code: fm mission + fm ideas from the user's friction", "RESEARCH", "self", "normal"))
+        self.assertIn(b.id, ctx)
+        self.hook("UserPromptSubmit", {"prompt": "fm code just isn't doing anything"})
+        [b] = friction()
+        self.assertEqual(b.priority, "urgent", "a second complaint about the same area within a week")
+        self.hook("UserPromptSubmit", {"prompt": "the guard is confusing"})
+        self.assertEqual(len(friction()), 2, "another area gets its own task")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "the login page is broken"}))
+        self.assertIn("fix the cause", ctx, "the user's own app: the note only")
+        self.assertNotIn("improvement round", ctx)
+        for prompt in ("why does the cache use LRU?", "add a --json flag", "how do I run the tests?",
+                       "fix the test that keeps failing", "FIX: fm code is broken"):
+            ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt}))
+            self.assertNotIn("Friction", ctx, prompt)
+        self.assertEqual(len(friction()), 2)
 
     def test_next_action_is_injected_every_turn(self):
         self.fm("init")

@@ -1949,6 +1949,41 @@ def is_exhaustive(text):
     return bool(_EXHAUSTIVE.search(text or ""))
 
 
+_NOT = r"(?:can'?t|cannot|isn'?t|aren'?t|doesn'?t|don'?t|won'?t|wouldn'?t|didn'?t|not)"
+_FRICTION = re.compile(
+    r"(?i)\b(?:why|how come)\b(?!\s+(?:don'?t|not)\s+(?:we|you)\b|\s+not\b)[^.?!\n]{0,80}\b" + _NOT + r"\b"
+    r"|\b(?:doesn'?t|does not|didn'?t|won'?t|isn'?t|is not|not) (?:work|working|do(?:ing)? anything|start|launch|run|"
+    r"open|recogni[sz]ed)\b|\bjust sits there\b|\bnothing happens\b|\b(?:is|are|seems?|looks?) broken\b"
+    r"|\bkeeps? (?:failing|crashing|hanging|breaking)\b|\bstuck\b(?!-)|\bconfus(?:ing|ed)\b")
+# the Foreman areas a complaint can name, first match wins; any other fm verb is its own area
+_FRICTION_AREAS = ((r"\bfm code\b", "fm code"), (r"\b(?:tui|pane|dock)\b", "the TUI"), (r"\bguard\b", "the guard"),
+                   (r"\bstatus ?line\b", "the statusline"), (r"\bhooks?\b", "the hooks"), (r"\blanes?\b", "lanes"))
+_NOT_VERB = {"is", "isnt", "was", "doesnt", "does", "did", "didnt", "not", "to", "as", "and", "or", "on", "in", "it",
+             "that", "keeps", "wont", "can", "cant", "still", "just", "has", "have", "should", "would", "will", "the",
+             "a", "an", "command", "itself", "says", "gives", "shows", "never", "always", "now", "seems", "looks", "are",
+             "isn", "doesn", "didn", "won", "wasn", "aren"}  # "isn't" reads as "isn"
+
+
+def is_friction(text):
+    """The user's complaint or puzzlement ("why can't I…", "it just isn't doing anything"), not a plain request or
+    question (T-1332). A request that opens with a work verb counts only from its second clause ("fix X, it's stuck")."""
+    t = re.sub(r"```.*?(?:```|$)", " ", text or "", flags=re.S)[:1000]
+    if _WORK_VERB.match(t):
+        t = "".join(re.split(r"([.;!?\n,])", t, 1)[1:])
+    return bool(_FRICTION.search(t))
+
+
+def friction_area(text):
+    """The Foreman command or feature a complaint names, else "this"."""
+    for pat, area in _FRICTION_AREAS:
+        if re.search(pat, text, re.I):
+            return area
+    m = re.search(r"\bfm ([a-z][a-z-]{1,20})\b", text, re.I)
+    if m and m.group(1).lower() not in _NOT_VERB:
+        return "fm " + m.group(1).lower()
+    return "fm" if re.search(r"\b(?:fm|foreman)\b", text, re.I) else "this"
+
+
 def parse_intake(text):
     r = IntakeResult()
     whole = re.sub(r"[.!]+$", "", text.strip().lower())
