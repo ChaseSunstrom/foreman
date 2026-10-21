@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.47 — 2026-10-21
 - fm code shows what a coding CLI is doing as it happens: each file claude reads or edits and each command it runs is an Activity line (a `tool` event), for the worker and the read-only planner alike, and a turn with nothing to show sends a `working` heartbeat every 10 s, one ticking line in the TUI. Before, a run looked stuck for minutes (T-1329).
 - `fm code` works with no setup: with no model and no `--worker`, it uses the Claude Code CLI if installed and says so. `fm code runners` lists every coding CLI it knows (installed, can plan read-only, verified here, the default; `--check` runs each one's `--version`), `--use NAME` sets the default in `$FOREMAN_HOME/code.toml` (`--here`: this project only, by name), and `[runners.NAME]` in that file adds your own CLI; it also lists the models set up. A broken models.json is an error, never a quiet switch to a CLI. The guard now protects `code.toml`, `tui.toml`, `tui/` and `models.json` in Foreman's home: they become commands, run Python, or pick where code is sent (T-1328).
 - fm release starts its canary detached: `--push` returns once pushed, the report lands in the project's logs/canary-VERSION.txt, a project whose past check now fails gets an inbox item and an `fm notify` message, and `fm release --canary-status` prints the last run (T-1362).
