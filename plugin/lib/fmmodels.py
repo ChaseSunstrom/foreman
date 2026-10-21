@@ -214,10 +214,11 @@ def _cloud(name=None, keyed=True):
 def _probe(name, base_url):
     """The local server's profile when it answers /models with at least one model, else None."""
     try:
+        _check_url({"name": name}, base_url, None)  # T-1438: a metadata or link-local address isn't probed either
         with _LOCAL_OPENER.open(base_url + "/models", timeout=PROBE_TIMEOUT) as r:
             data = json.loads(r.read(1 << 20))
         ids = [x.get("id") for x in data.get("data") or [] if isinstance(x, dict)]
-    except (*_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
+    except (ModelError, *_TRANSPORT, ValueError, AttributeError, TypeError, RecursionError):
         return None
     ids = [i for i in ids if isinstance(i, str) and i]
     return ids and {"name": name, "kind": "openai", "base_url": base_url, "model": ids[0], "key_env": None,
@@ -519,7 +520,7 @@ def _cli(profile, messages, timeout):
         del out[:-CLI_KEEP]
 
     def on_line(line):
-        if not stream or done.is_set():
+        if not stream or done.is_set() or stopped:  # T-1438: after a STOP, the chunk's other lines kill nothing again
             return False
         res = stream_result(line)
         if res:
