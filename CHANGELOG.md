@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm code` works with no setup: with no model and no `--worker`, it uses the Claude Code CLI if installed and says so. `fm code runners` lists every coding CLI it knows (installed, can plan read-only, verified here, the default; `--check` runs each one's `--version`), `--use NAME` sets the default in `$FOREMAN_HOME/code.toml` (`--here`: this project only, by name), and `[runners.NAME]` in that file adds your own CLI; it also lists the models set up. A broken models.json is an error, never a quiet switch to a CLI. The guard now protects `code.toml`, `tui.toml`, `tui/` and `models.json` in Foreman's home: they become commands, run Python, or pick where code is sent (T-1328).
 - fm release starts its canary detached: `--push` returns once pushed, the report lands in the project's logs/canary-VERSION.txt, a project whose past check now fails gets an inbox item and an `fm notify` message, and `fm release --canary-status` prints the last run (T-1362).
 - fm code tui: an extension's panel, handler or command that fails or runs slow (a panel over 50 ms on 3 frames running, a handler over 50 ms, a command over 2 s) is switched off with a note in Activity, never taking the screen down; built-in panels are never switched off (T-1315).
 - "Stop asking me if you can release", "don't stop until it's done" and the like no longer record a veto: they tell Foreman to go ahead (T-1323).

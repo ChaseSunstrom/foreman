@@ -160,8 +160,122 @@ class Worker(CodeCase):
         r = self.work("make calc.add add", "--worker", "fix-calc {prompt}", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("--verify", r.stderr)
+        tools = os.path.join(self.tmp, "tools")  # git and python3 only: no CLI that can plan, the real claude least
+        os.makedirs(tools)
+        for t in ("git", "python3"):
+            os.symlink(shutil.which(t), os.path.join(tools, t))
+        r = self.code("make calc.add add", check=False, env={"PATH": self.bin + os.pathsep + tools})
+        self.assertIn("--worker claude", r.stderr, "no CLI that can plan is installed: say which would")
+
+    # T-1328: runners
+    def runners(self, *args, config=None):
+        if config is not None:
+            with open(os.path.join(self.home, "code.toml"), "w") as f:
+                f.write(config)
+        r = self.work("runners", *args, "--json", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return json.loads(r.stdout)
+
+    def test_runners_lists_every_cli_and_what_it_can_do(self):
+        for name in ("claude", "codex"):
+            self.cli(name, "echo hi\n")
+        got = {r["name"]: r for r in self.runners()["runners"]}
+        self.assertTrue(got["claude"]["installed"] and got["claude"]["plans"] and got["claude"]["verified"])
+        self.assertTrue(got["codex"]["installed"] and got["codex"]["works"])
+        self.assertFalse(got["codex"]["verified"], "a read-only mode not run here isn't claimed")
+        self.assertIn("opencode", got)
+        self.assertFalse(got["opencode"]["works"], "no preset that confines its shell commands")
+        self.assertEqual(self.runners()["default"], "claude", "the verified planner, with nothing configured")
+
+    def test_no_model_and_no_flag_uses_the_verified_planner_and_says_so(self):
+        self.planner({"type": "result", "is_error": False, "usage": {}, "result": json.dumps(
+            {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}],
+             "steps": ["fix"]})})
+        r = self.work("make calc.add add", "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        self.assertEqual(next(e for e in events if e["event"] == "start")["worker"], "claude")
+        self.assertTrue(any(e["event"] == "note" and "claude" in e["text"] for e in events), "it says which runner")
+
+    def test_the_config_picks_the_default_and_defines_a_custom_cli(self):
+        self.cli("mycli", "fix-calc\n")
+        self.assertEqual(self.runners(config='runner = "mine"\n[runners.mine]\nwork = "mycli {prompt}"\n')["default"],
+                         "mine")
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY, "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        self.assertEqual(next(e for e in events if e["event"] == "start")["worker"], "mine")
+        self.work("runners", "--use", "claude")
+        self.assertIn('runner = "claude"', read_text(os.path.join(self.home, "code.toml")))
+        self.assertIn("[runners.mine]", read_text(os.path.join(self.home, "code.toml")), "the rest of the file stays")
+
+    def test_a_project_picks_a_runner_by_name_only(self):
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        self.assertEqual(self.runners()["default"], "codex")
+        r = self.work("runners", "--use", "rm -rf ~ {prompt}", "--here", check=False)
+        self.assertNotEqual(r.returncode, 0, "a project's choice names a runner; it can't be a command")
+        self.assertIn("codex", r.stderr + r.stdout, "it lists the names it takes")
+
+    def test_a_broken_config_is_named_and_the_list_still_shows(self):
+        got = self.runners(config="runner =\n")
+        self.assertIn("code.toml", got["problem"])
+        self.assertIn("claude", [r["name"] for r in got["runners"]])
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('[runners.mine]\nwork = "mycli"\n')
+        r = self.work("runners", check=False)
+        self.assertIn("{prompt}", r.stdout + r.stderr, "a template without {prompt} says what it lacks")
+
+    def test_a_hand_edited_project_runner_never_becomes_a_command(self):
+        import glob
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        [meta] = [f for f in glob.glob(os.path.join(self.home, "**", "meta.json"), recursive=True)
+                  if '"code_runner"' in read_text(f)]
+        text = read_text(meta).replace('"codex"', '"touch pwned {prompt}"')
+        with open(meta, "w") as f:
+            f.write(text)
         r = self.work("make calc.add add", check=False)
-        self.assertIn("--worker claude", r.stderr, "a CLI you have can plan and work")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("isn't one fm code can run", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "pwned")))
+
+    def test_a_broken_model_setup_is_an_error_not_a_fallback_to_claude(self):
+        self.cli("claude", f"touch {self.tmp}/claude-ran\n")
+        with open(os.path.join(self.home, "models.json"), "w") as f:
+            f.write('{"default": "local-typo", "profiles": {}}')
+        r = self.work("make calc.add add", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("local-typo", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "claude-ran")))
+
+    def test_runners_lists_the_models_too_and_a_model_does_the_work(self):
+        self.serve("openai")
+        got = self.runners()
+        self.assertIn("fake", [x["name"] for x in got["models"]])
+        self.assertIsNone(got["default"], "a model is set up: it does the work, as before")
+
+    def test_a_project_pin_clears_and_here_alone_is_refused(self):
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        self.work("runners", "--use", "", "--here")
+        self.assertEqual(self.runners()["default"], "claude")
+        self.assertNotEqual(self.work("runners", "--here", check=False).returncode, 0)
+
+    def test_use_sets_the_top_level_key_only(self):
+        self.runners(config='[runners.mine]\nwork = "mycli {prompt}"\nrunner = "x"\n')
+        self.work("runners", "--use", "claude")
+        import tomllib
+        with open(os.path.join(self.home, "code.toml"), "rb") as f:
+            conf = tomllib.load(f)
+        self.assertEqual(conf["runner"], "claude")
+        self.assertEqual(conf["runners"]["mine"]["runner"], "x", "a key inside a table is left alone")
+
+    def test_a_named_planner_not_verified_here_warns(self):
+        self.cli("codex", "printf '%s' '" + json.dumps({"type": "FIX", "tier": "S", "title": "t", "criteria": [
+            {"text": "adds", "verify": VERIFY}], "steps": ["s"]}) + "'\n")
+        r = self.work("make calc.add add", "--worker", "codex", "--json", check=False)
+        self.assertIn("not verified", r.stdout + r.stderr)
 
     def test_a_worker_that_fixes_the_bug_closes_the_task(self):
         # a table name: claude's unattended form, with the prompt as one argument

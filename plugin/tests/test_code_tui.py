@@ -520,6 +520,11 @@ class Motion(unittest.TestCase):
             self.assertTrue(self.cell(cv, "GUARD", cfg).get("reverse"), t)
             self.assertTrue(self.cell(cv, "RUNNING", cfg).get("reverse"), t)
 
+    def test_a_note_names_the_runner_in_activity(self):
+        # T-1328: with nothing configured fm code picks a runner and says which; the screen shows it
+        app, cfg = self.app(RUN[:1] + [{"event": "note", "text": "runner: claude (no model is set up)", "ts": 1.0}])
+        self.assertIn("runner: claude", self.frame(app, cfg, 100.0, w=110, h=32).text())
+
     def test_an_answer_wraps_and_the_run_reads_as_finished(self):
         # T-1320: a question's answer is one long line; it wraps in Activity, and nothing reads as still running
         long = "parse_dates treats a date with no timezone as UTC " * 6
