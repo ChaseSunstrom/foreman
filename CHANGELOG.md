@@ -3,6 +3,7 @@
 ## Unreleased
 - fm code names a stall: a CLI turn with no output for FM_STALL s (default 120) gets one `stalled` event per silence naming its likely cause (no output since launch, a prompt, a rate or usage limit, or silent since its last line), a warning line in the TUI, and the status bar says how long since the CLI was last heard. Before, a stuck turn just looked busy (T-1336).
 - `fm code "<request>"` on a terminal opens the app with that run going, the way `claude "<prompt>"` does; `--plain`, `--json`, `--dry-plan` or a pipe keep the line-by-line output, and `fm code tui` works as before (T-1343).
+- A prompt with many requests is queued within the hook's time even on a busy machine: fm builds its command parser once per process instead of once per in-process call, so the prompt hook's one pass no longer re-parses fm's whole command set for every request (T-1378).
 
 ## 1.2.48 — 2026-10-21
 - fm code's claude sessions run lean: the worker without your plugins, MCP servers or settings hooks (`--setting-sources project,local --strict-mcp-config`) and the planner in `--restricted` mode, each with Foreman's guard as `--settings`. A planner call here read 15,286 input tokens instead of 31,620, and the guard still refused a `.env` write (`plugin/tests/e2e/lean_probe.py`). `lean = false` in code.toml keeps the old launch (T-1354).

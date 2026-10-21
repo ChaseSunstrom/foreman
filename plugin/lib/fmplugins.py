@@ -62,6 +62,49 @@ def _frontmatter(path):
     return out
 
 
+# T-1396: the Agent Skills spec's frontmatter rules, shared by fm doctor and fm lib's source indexer
+SPEC_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+# a description that claims every task (or tells the model to drop its other instructions) would win every routing
+# choice: such a skill is indexed but held out of fm lib search. ponytail: phrase list, not a model judgement.
+BROAD = re.compile(
+    r"(?i)\b(?:(?:for|on|in|before|with|to)\s+(?:every|all|any)\s+(?:single\s+|other\s+)?"
+    r"(?:tasks?|requests?|prompts?|messages?|conversations?|questions?|turns?|queries|query|responses?|interactions?)\b"
+    r"|always\s+(?:use|invoke|load|activate|run)\s+(?:this|me)\b(?!\s+(?:skill\s+|agent\s+)?(?:when|if|for|to)\b)"
+    r"|before\s+(?:anything|everything)\b|for\s+everything\b|no\s+matter\s+what\b|regardless\s+of\s+the\s+task\b"
+    r"|ignore\s+(?:all\s+|any\s+)?(?:previous|prior|other|earlier|the)\s+(?:instructions|skills|rules|agents)\b"
+    r"|(?:replaces?|overrides?|supersedes?)\s+(?:all\s+|any\s+|every\s+)?(?:other\s+)?(?:skills|instructions|agents|rules)\b)")
+
+
+def _unquote(v):
+    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v
+
+
+def spec_problems(fm, folder=None, kind="skill"):
+    """What a SKILL.md's (or an agent's) frontmatter, as _frontmatter read it, breaks of the Agent Skills spec, plus
+    hidden characters and an over-broad description: [] when nothing. A skill's name must equal its folder; an agent
+    (folder None) may leave its name to its file's. Every message is safe to print."""
+    if not fm:
+        return ["no frontmatter in its first 4,000 characters"]
+    name, desc = _unquote(fm.get("name", "")), _unquote(fm.get("description", ""))
+    out = ["control or hidden characters in its frontmatter"] if c.plain(name + desc) != name + desc else []
+    if not name:
+        out += ["no name in its frontmatter"] if kind == "skill" else []
+    elif len(name) > 64:
+        out.append(f"name over 64 characters ({len(name)})")
+    elif not SPEC_NAME.fullmatch(name):
+        out.append(f"name {c.plain(name)[:40]!r} breaks the spec (lowercase letters, digits and single hyphens)")
+    elif folder is not None and name != folder:
+        out.append(f"name {name!r} doesn't match its folder {c.plain(folder)[:40]!r}")
+    if not desc:
+        out.append("no description")
+    elif len(desc) > 1024:
+        out.append(f"description over 1,024 characters ({len(desc)})")
+    broad = BROAD.search(desc)
+    if broad:
+        out.append(f"over-broad description ({c.plain(broad.group(0))!r}): held out of search")
+    return out
+
+
 def profile(path):
     """What a plugin directory brings: skills, commands, agents (name, description), hook events, MCP servers and an
     always-on token estimate."""
@@ -110,20 +153,86 @@ def _marketplace_files():
     return sorted(out)
 
 
-def index():
-    """Every plugin in the known marketplaces: id, description, category, and its local copy when there is one."""
-    out = []
+_PLUGIN_NAME = re.compile(r"[\w.-]+")  # the name part of fmguard.PLUGIN_ID: no @, no slash, no space
+
+
+def index(skipped=None):
+    """Every plugin in the known marketplaces: id, description, category, and its local copy when there is one;
+    `renamed_from` the old names the marketplace's `renames` maps to it, `identity` its (marketplace, name, source)
+    for trust(). T-1396: an entry that isn't an object, has no usable name, repeats an id or points its local source
+    outside its marketplace is left out, its reason appended to skipped (a list) when given."""
+    out, seen = [], set()
+    skip = (lambda why: skipped.append(c.plain(why))) if skipped is not None else (lambda why: None)
     for f in _marketplace_files():
-        root, data = os.path.dirname(os.path.dirname(f)), _json(f, {}) or {}
-        mk = data.get("name") or os.path.basename(root)
-        for p in data.get("plugins") or []:
-            src = p.get("source")
+        root, data = os.path.dirname(os.path.dirname(f)), _json(f, {})
+        if not isinstance(data, dict):
+            skip(f"{os.path.basename(root)}: marketplace.json isn't a JSON object")
+            continue
+        mk = data["name"] if isinstance(data.get("name"), str) and _PLUGIN_NAME.fullmatch(data["name"]) \
+            else os.path.basename(root)
+        plugins = data.get("plugins")
+        if not isinstance(plugins, list):
+            if plugins is not None:
+                skip(f"{mk}: plugins isn't a list")
+            plugins = []
+        renames = data.get("renames") if isinstance(data.get("renames"), dict) else {}
+        renamed = {}
+        for old, new in renames.items():
+            if isinstance(new, str):
+                renamed.setdefault(new, []).append(c.plain(old)[:60])
+        real_root = os.path.realpath(root)
+        for i, p in enumerate(plugins, 1):
+            name = p.get("name") if isinstance(p, dict) else None
+            src = p.get("source") if isinstance(p, dict) else None
             local = os.path.normpath(os.path.join(root, src)) if isinstance(src, str) else None
-            out.append({"id": f"{p.get('name')}@{mk}", "name": p.get("name", ""), "marketplace": mk,
-                        "description": p.get("description", ""), "category": p.get("category", ""),
+            why = ("not an object" if not isinstance(p, dict) else "no name" if not isinstance(name, str) or not name
+                   else f"name {c.plain(name)[:40]!r} isn't a plugin name" if not _PLUGIN_NAME.fullmatch(name)
+                   else f"a second entry named {name}" if f"{name}@{mk}" in seen
+                   else "its source is outside the marketplace" if local and os.path.realpath(local) != real_root
+                   and not os.path.realpath(local).startswith(real_root + os.sep) else None)
+            if why:
+                skip(f"{mk}: entry {i}: {why}")
+                continue
+            seen.add(f"{name}@{mk}")
+            text = lambda k: c.plain(p[k]) if isinstance(p.get(k), str) else ""
+            out.append({"id": f"{name}@{mk}", "name": name, "marketplace": mk,
+                        "description": text("description"), "category": text("category"),
                         "local": local if local and os.path.isdir(local) else None,
+                        "renamed_from": sorted(renamed.get(name, [])),
+                        "identity": _digest(json.dumps([mk, name, src], sort_keys=True).encode()),
                         "entry_hash": _digest(json.dumps(p, sort_keys=True).encode())})
     return out
+
+
+def _trust_path():
+    return os.path.join(c.state_dir(), "plugin-trust.json")
+
+
+def record_trust(pid):
+    """Remember the identity (marketplace, name, source with its sha) of a plugin fm plugins installed or enabled.
+    ponytail: read-modify-write without a lock; a lost record only makes a plugin read as untrusted."""
+    row = next((p for p in index() if p["id"] == pid), None)
+    if not row:
+        return
+    ledger = _json(_trust_path(), {})
+    ledger = ledger if isinstance(ledger, dict) else {}
+    ledger[pid] = row["identity"]
+    c.write_atomic(_trust_path(), json.dumps(ledger, indent=1, sort_keys=True) + "\n")
+
+
+def trust(row, ledger=None):
+    """(trusted, why) for an index() row (T-1396): trusted only when fm plugins installed this very identity; a plugin
+    the marketplace renamed, or whose source or sha changed since, reads as a new, untrusted one (why says which).
+    (False, "") for one fm plugins never installed."""
+    ledger = _json(_trust_path(), {}) if ledger is None else ledger
+    had = ledger.get(row["id"]) if isinstance(ledger, dict) else None
+    if had == row["identity"]:
+        return True, ""
+    if row["renamed_from"]:
+        return False, f"renamed from {', '.join(row['renamed_from'])}: a new plugin to Foreman, not the one you had"
+    if had:
+        return False, "its name, source or sha changed since fm plugins installed it"
+    return False, ""
 
 
 def _digest(data):
@@ -194,18 +303,19 @@ def installed():
     return out
 
 
-def find(need, n=10):
+def find(need, n=10, skipped=None):
     words = [w for w in re.findall(r"[a-z0-9+#.-]+", need.lower()) if w not in _STOP]
     if not words:
         return []
-    have, hits = installed(), []
-    for p in index():
+    have, hits, ledger = installed(), [], _json(_trust_path(), {})
+    for p in index(skipped):
         name, text = p["name"].lower(), f"{p['description']} {p['category']}".lower()
         # a short word must be a whole word ("go" is not google or mongo); longer ones may prefix ("test" → testing)
         pats = [re.compile(r"\b" + re.escape(w) + (r"\b" if len(w) <= 3 else "")) for w in words]
         score = sum(3 * bool(r.search(name)) + bool(r.search(text)) for r in pats)
         if score:
-            hits.append(dict(p, score=score, installed=p["id"] in have,
+            trusted, why = trust(p, ledger)
+            hits.append(dict(p, score=score, installed=p["id"] in have, trusted=trusted, untrusted=why,
                              enabled=have.get(p["id"], {}).get("enabled", False),
                              tokens=profile(p["local"] or have.get(p["id"], {}).get("path"))["tokens"]))
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
@@ -388,6 +498,7 @@ def install(pid):
         if pid not in installed():  # exit 0 without an install (e.g. a prompt it couldn't show) owns nothing
             raise c.PolicyError(f"claude plugin install exited 0 but {pid} isn't installed")
         _manifest("plugins_installed", add=pid)
+    record_trust(pid)  # T-1396: this identity; a later rename or re-source reads as untrusted
     return ("installed" if fresh else "enabled"), conflicts
 
 
@@ -415,10 +526,15 @@ def cmd_plugins(args):
         return print(f"{pid} {done} (/reload-plugins to load it)." + "".join(
             f"\n  note: {f['detail']} → {f['action']}" for f in conflicts))
     if args.action == "find":
-        hits = find(" ".join(args.words))
+        skipped = []
+        hits = find(" ".join(args.words), skipped=skipped)
         fmcli.out(args, hits, "\n".join(
             f"{h['id']:<40} {'enabled' if h['enabled'] else 'installed' if h['installed'] else 'available':<9} "
-            f"~{h['tokens']} tok  {h['description'][:70]}" for h in hits) or "No matching plugin in the known marketplaces.")
+            f"~{h['tokens']} tok  {h['description'][:70]}" + (f"\n    untrusted: {h['untrusted']}" if h["untrusted"] else "")
+            for h in hits) or "No matching plugin in the known marketplaces.")
+        if skipped and not getattr(args, "json", False):  # T-1396: a bad entry is left out with its reason, no crash
+            print(f"({len(skipped)} marketplace entries skipped: {'; '.join(skipped[:3])}"
+                  + (f"; {len(skipped) - 3} more)" if len(skipped) > 3 else ")"))
     elif args.action == "check":
         found = check(args.words[0] if args.words else None)
         fmcli.out(args, found, "\n".join(f"{f['plugin']}: {f['detail']} → {f['action']}" for f in found)
