@@ -409,9 +409,9 @@ def cmd_vetoes(args):
         if args.n is None or not c.drop_veto(p, args.n):
             raise UsageError("fm vetoes rm N (N from fm vetoes)")
         return out(args, {"removed": args.n}, f"Veto {args.n} removed.")
-    v = c.vetoes(p)
+    v = [dict(x, retract=f"fm vetoes rm {i}") for i, x in enumerate(c.vetoes(p), 1)]  # T-1410: N counts oldest first
     out(args, v, "\n".join(f"{i}. {x.get('said', '')} — key words: {' '.join(x['words'])} ({str(x.get('at', ''))[:10]})"
-                           for i, x in enumerate(v, 1)) or "No vetoes recorded.")
+                           f" — retract: {x['retract']}" for i, x in enumerate(v, 1)) or "No vetoes recorded.")
 
 
 def cmd_rule(args):
