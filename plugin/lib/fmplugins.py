@@ -203,33 +203,92 @@ def _handlers(hooks):
 
 
 _ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
-_FM_CAP = 256_000  # a frontmatter hooks block past this is not read (ponytail: Claude Code reads the whole file)
+_FM_CAP = 256_000  # a frontmatter not closed by here is the event "?" (ponytail: Claude Code reads the whole file)
+_FM_FILES, _FM_DIRS = 2000, 5000  # past these a component folder is the event "?" (a hostile tree stays bounded)
+# a top-level hooks key, quoted or spaced (review), and its block: indented lines, blank lines, column-0 comments
+_FM_BLOCK = re.compile(r"""^["']?hooks["']?[ \t]*:[ \t]*(.*)\n?((?:[ \t]+.*\n?|[ \t\r]*\n|#.*\n?)*)""", re.M)
+# anything else that may be a hooks key (a flow-style frontmatter, an indented root, a "? hooks" key): unknown
+_FM_MENTION = re.compile(r"""\bhooks\b["']?[ \t]*:|\?[ \t]*["']?hooks\b""")
+
+
+def _component_files(root):
+    """T-1434 review: (kind, path or None, label) of each skill, command and agent file Claude Code may read hooks
+    from: the default folders and the paths plugin.json's skills, commands and agents name, folders walked whole
+    (nested command folders too). A named path that isn't a string, lies outside the plugin root or holds more than
+    the caps comes back with path None: unknown, never "no hooks"."""
+    manifest = _spec_file(root, ".claude-plugin/plugin.json", None)
+    base = os.path.realpath(root)
+    out, dirs_seen = [], set()
+    for kind, key in (("skill", "skills"), ("command", "commands"), ("agent", "agents")):
+        extra = manifest.get(key) if isinstance(manifest, dict) else None
+        for i, rel in enumerate([key] + (extra[:50] if isinstance(extra, list) else [] if extra is None else [extra])):
+            label = c.plain(str(rel))[:60]
+            full = os.path.realpath(os.path.join(root, rel)) if isinstance(rel, str) and "\0" not in rel else None
+            # the default folder is followed wherever it links (as before); a named path must stay in the root
+            if full is None or i and full != base and not full.startswith(base + os.sep):
+                out.append((kind, None, label))
+                continue
+            if os.path.isfile(full):
+                out.append((kind, full, label))
+                continue
+            # a folder it can't list is unknown; one that isn't there (no agents/) is nothing
+            unlisted = lambda e, kind=kind, label=label: os.path.lexists(e.filename or "") and out.append(
+                (kind, None, label))
+            for d, subs, files in os.walk(full, onerror=unlisted, followlinks=True):
+                real = (kind, os.path.realpath(d))
+                if real in dirs_seen:  # a link loop, or a folder two paths name, is walked once
+                    subs[:] = []
+                    continue
+                dirs_seen.add(real)
+                subs.sort()
+                out += [(kind, os.path.join(d, f), label) for f in sorted(files)
+                        if (f == "SKILL.md" if kind == "skill" else f.endswith(".md"))]
+                if len(dirs_seen) > _FM_DIRS or len(out) > _FM_FILES:
+                    del out[_FM_FILES:]
+                    out.append((kind, None, label))
+                    break
+    return out
 
 
 def _frontmatter_hooks(root):
     """T-1434: hooks declared in skill, agent and command frontmatter: (["Event (skill name)", …], ["skill name
     digest", …], the blocks' text, for the scripts they name). A block's events are its least-indented keys, or a
-    flow mapping's top-level keys; one it can't read is the event "?", still held when it appears."""
+    flow mapping's top-level keys. Review: anything that may declare hooks but can't be read for sure (no events
+    found, a frontmatter not closed in the read window, a hooks key outside a block, a path it won't walk) is the
+    event "?", still held when it appears."""
     events, specs, text = set(), set(), []
-    for kind, pattern in (("skill", "skills/*/SKILL.md"), ("command", "commands/*.md"), ("agent", "agents/*.md")):
-        for f in sorted(glob.glob(os.path.join(root, pattern))):
+    for kind, f, label in _component_files(root):
+        if f is None:
+            events.add(f"? ({kind} {label})")
+            continue
+        try:
             if not os.path.isfile(f):  # a FIFO would block the open, a device never end
-                continue
-            try:
-                with open(f, encoding="utf-8", errors="replace") as fh:
-                    m = re.match(r"---\r?\n(.*?)\r?\n---", fh.read(_FM_CAP), re.S)
-            except OSError:
-                continue
-            block = re.search(r"^hooks:[ \t]*(.*)\n?((?:[ \t]+.*\n?|[ \t]*\n)*)", m.group(1), re.M) if m else None
-            if not block:
-                continue
-            name = re.search(r"^name:[ \t]*(.+)$", m.group(1), re.M)
-            name = _unquote(name.group(1).strip()) if name else (
-                os.path.basename(os.path.dirname(f)) if kind == "skill" else os.path.basename(f)[:-3])
+                raise OSError
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                raw = fh.read(_FM_CAP).lstrip("﻿")
+        except OSError:  # it may hold hooks Foreman can't see
+            events.add(f"? ({kind} {c.plain(os.path.relpath(f, root))[:60]})")
+            continue
+        m = re.match(r"---[ \t]*\r?\n(.*?)^---", raw, re.S | re.M)
+        # less the newline before the close, as T-1434 first read it, so recorded digests still match
+        fm = re.sub(r"\r?\n\Z", "", m.group(1)) if m else raw if re.match(r"---[ \t]*\r?\n", raw) else ""
+        name = re.search(r"""^["']?name["']?[ \t]*:[ \t]*(.+)$""", fm, re.M)
+        name = _unquote(name.group(1).strip()) if name else (
+            os.path.basename(os.path.dirname(f)) if kind == "skill" else os.path.basename(f)[:-3])
+        where = f"{kind} {c.plain(str(name))[:60]}"
+        if fm and not m:  # opened but not closed in the window: whatever follows may be hooks
+            events.add(f"? ({where})")
+            continue
+        blocks = list(_FM_BLOCK.finditer(fm))
+        rest = "".join(fm[a:b] for a, b in zip([0] + [x.end() for x in blocks], [x.start() for x in blocks] + [len(fm)]))
+        if _FM_MENTION.search(rest):
+            events.add(f"? ({where})")
+        for block in blocks:
             inline, body = block.group(1).strip(), block.group(2)
-            if inline:  # flow style: {Stop: [...], PreToolUse: [...]}, keys at depth one
+            inline = "" if inline.startswith("#") else inline  # "hooks:  # comment" then a block
+            if inline:  # flow style: {Stop: [...], PreToolUse: [...]}, keys at depth one, over as many lines as it takes
                 keys, depth, tok = [], 0, ""
-                for ch in inline:
+                for ch in inline + "\n" + body:
                     depth += (ch in "{[") - (ch in "}]")
                     tok = "" if ch in "{[,}]" else tok + ch
                     if ch == ":" and depth == 1:
@@ -239,7 +298,6 @@ def _frontmatter_hooks(root):
                 indent = min((len(l) - len(l.lstrip()) for l in lines), default=0)
                 keys = [_unquote(l.split(":", 1)[0].strip()) for l in lines
                         if len(l) - len(l.lstrip()) == indent and ":" in l and not l.lstrip().startswith("-")]
-            where = f"{kind} {c.plain(str(name))[:60]}"
             events.update(f"{k or '?'} ({where})" for k in keys or ["?"])
             specs.add(f"{where} {hashlib.sha256((inline + body).encode()).hexdigest()[:16]}")
             text.append(inline + body)
@@ -260,7 +318,9 @@ def capabilities(root, prof=None):
     hooks, mcp, lsp = (_plugin_spec(root, k, unread) if root and os.path.isdir(root) else {}
                        for k in ("hooks", "mcpServers", "lspServers"))
     mods = hooks.pop("modules", None)
-    modules = sorted({os.path.normpath(m) for m in (mods if isinstance(mods, list) else [mods]) if isinstance(m, str) and m})
+    # review: an entry that isn't a path (an object, a number) is the module "?", never dropped
+    modules = sorted({os.path.normpath(m) if isinstance(m, str) and m else "?"
+                      for m in (mods if isinstance(mods, list) else [] if mods is None else [mods])})
     fm_hooks, fm_specs, fm_text = _frontmatter_hooks(root) if root and os.path.isdir(root) else ([], [], "")
     # a ": " in a matcher would read as the separator and push the command out of fm doctor's window
     sep = lambda s: str(s).replace(": ", ":")
