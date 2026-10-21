@@ -439,6 +439,43 @@ def kill_group(proc):
             pass
 
 
+def _safe(fn, *a):
+    try:
+        return fn(*a)
+    except Exception:  # a display bug never stops the draining: the child would block on a full pipe
+        return False
+
+
+def pump(stream, sink, on_line=None, idle=None, on_idle=None):
+    """T-1329: a child's output as it comes, on the calling (reader) thread, until EOF: each chunk to sink(bytes), each
+    whole line to on_line(str), which returns whether it showed something, and on_idle() each `idle` seconds in which
+    nothing was shown. Every live event of a turn comes from this one thread, so none interleave."""
+    import selectors
+    fd, buf, quiet = stream.fileno(), b"", time.monotonic()
+    sel = selectors.DefaultSelector()
+    sel.register(fd, selectors.EVENT_READ)
+    try:
+        while True:
+            if idle and on_idle and not sel.select(max(0.0, quiet + idle - time.monotonic())):
+                _safe(on_idle)
+                quiet = time.monotonic()
+                continue
+            chunk = os.read(fd, 65536)
+            if not chunk:
+                break
+            sink(chunk)
+            if on_line:
+                *lines, buf = (buf + chunk).split(b"\n")
+                buf = buf[-(1 << 20):]  # a CLI printing without newlines keeps only a line's tail
+                for line in lines:
+                    if _safe(on_line, line.decode("utf-8", "replace")):
+                        quiet = time.monotonic()
+        if on_line and buf:
+            _safe(on_line, buf.decode("utf-8", "replace"))
+    finally:
+        sel.close()
+
+
 def run_command(root, cmd, timeout=600, env=None):
     """Run a verification command (bash -c, in the repo root) for evidence: (exit code, redacted output)."""
     if root and os.path.isdir(root):

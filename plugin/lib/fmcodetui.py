@@ -153,6 +153,8 @@ class State:
         return self
 
     def note(self, kind, **fields):
+        if self.log and self.log[-1].get("kind") == "working":  # T-1329: the ticking line goes at the next one
+            self.log.pop()
         self.log.append(dict(fields, kind=kind))
 
     def _on_start(self, e):
@@ -242,6 +244,12 @@ class State:
 
     def _on_note(self, e):  # T-1328: which runner the run uses and why, or a caution about it
         self.note("note", text=str(e.get("text", "")))
+
+    def _on_tool(self, e):  # T-1329: a worker or planner CLI's tool use, as it happens
+        self.note("tool", action=str(e.get("action") or ""), text=str(e.get("target") or ""))
+
+    def _on_working(self, e):  # T-1329: a quiet CLI turn's heartbeat, one line that ticks
+        self.note("working", text=str(e.get("text") or "working"))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
@@ -767,6 +775,10 @@ def entry_segments(e, w, thoughts=True):
         return [("  ⚙ ", "accent"), (e["text"].strip(), "text")]
     if k == "note":
         return [("  i ", "accent"), (e["text"], "text")]
+    if k == "tool":
+        return [("  · ", "dim"), (f"{e.get('action', '')[:7]:<7}", "dim"), (e["text"], "text")]
+    if k == "working":
+        return [("  … ", "accent"), (e["text"].strip(), "dim")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":

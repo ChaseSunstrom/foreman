@@ -525,6 +525,19 @@ class Motion(unittest.TestCase):
         app, cfg = self.app(RUN[:1] + [{"event": "note", "text": "runner: claude (no model is set up)", "ts": 1.0}])
         self.assertIn("runner: claude", self.frame(app, cfg, 100.0, w=110, h=32).text())
 
+    def test_tool_uses_show_and_a_heartbeat_ticks_until_the_next_line(self):
+        # T-1329: a CLI's tool use is an Activity line; "still working" ticks in one line, gone at the next real one
+        beat = {"event": "working", "worker": "claude", "secs": 10, "text": "claude working (10 s)", "ts": 2.0}
+        app, cfg = self.app(RUN[:1] + [{"event": "tool", "action": "edit", "target": "calc.py", "ts": 1.0}, beat,
+                                       dict(beat, secs=20, text="claude working (20 s)")])
+        text = self.frame(app, cfg, 100.0, w=110, h=32).text()
+        self.assertIn("edit", text)
+        self.assertIn("calc.py", text)
+        self.assertIn("working (20 s)", text)
+        self.assertNotIn("working (10 s)", text, "one ticking line, not one per beat")
+        app.feed({"event": "tool", "action": "run", "target": "python3 test_calc.py", "ts": 3.0})
+        self.assertNotIn("working (20 s)", self.frame(app, cfg, 101.0, w=110, h=32).text())
+
     def test_an_answer_wraps_and_the_run_reads_as_finished(self):
         # T-1320: a question's answer is one long line; it wraps in Activity, and nothing reads as still running
         long = "parse_dates treats a date with no timezone as UTC " * 6
