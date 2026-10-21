@@ -1319,6 +1319,71 @@ class Command(CodeCase):
                 pass
             os.close(fd)
 
+    def _in_terminal(self, *argv, want):
+        """T-1343: fm code ARGV in a 100x30 pseudo-terminal: (what it wrote by `want`, its exit code or None)."""
+        import fcntl
+        import pty
+        import select
+        import struct
+        import termios
+        from test_code import FM
+        env = dict(self.env(), TERM="xterm-256color")
+        env.pop("NO_COLOR", None)
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
+                os.chdir(self.repo)
+                os.execve(sys.executable, [sys.executable, FM, "code", *argv], env)
+            finally:
+                os._exit(127)
+        seen, code, deadline = b"", None, time.time() + 40
+        try:
+            while want not in seen and time.time() < deadline:
+                if select.select([fd], [], [], 0.5)[0]:
+                    try:
+                        seen += os.read(fd, 65536)
+                    except OSError:
+                        break
+            if b"\x1b[?1049h" in seen:  # the app: q quits it
+                os.write(fd, b"q")
+            while time.time() < deadline:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    code = os.waitstatus_to_exitcode(status)
+                    break
+                if select.select([fd], [], [], 0.2)[0]:
+                    try:
+                        seen += os.read(fd, 65536)
+                    except OSError:
+                        pass
+            return seen, code
+        finally:
+            try:
+                os.kill(pid, 9)
+                os.waitpid(pid, 0)
+            except (OSError, ChildProcessError):
+                pass
+            os.close(fd)
+
+    def test_fm_code_with_a_request_on_a_terminal_runs_it_in_the_app(self):
+        # T-1343: like claude "<prompt>", fm code "<request>" on a terminal opens the app with that run going
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        seen, code = self._in_terminal("fix add", "--model", "fake", "--no-commit", want=b"CLOSED")
+        self.assertIn(b"CLOSED", seen, seen[-2000:])
+        self.assertIn(b"\x1b[?1049h", seen, "the app's screen, not printed lines")
+        self.assertEqual(code, 0, "q quits")
+        self.assertIn("a + b", self.calc())
+
+    def test_plain_on_a_terminal_prints_fm_codes_own_lines(self):
+        # T-1343: --plain keeps today's output on a terminal: fm code's own lines, no screen
+        self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
+        seen, code = self._in_terminal("fix add", "--model", "fake", "--no-commit", "--plain", want=b"closed (tokens")
+        self.assertIn(b"T-0001 closed (tokens", seen, seen[-2000:])
+        self.assertNotIn(b"\x1b[?1049h", seen, "no screen")
+        self.assertNotIn(b"DONE", seen, "fm code's lines, not the app's Activity lines")
+        self.assertEqual(code, 0)
+
     def test_fm_code_tui_plain_runs_a_request_line_by_line(self):
         self.serve("openai", plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="x"))
         r = self.code("tui", "--plain", "fix add", "--model", "fake", "--no-commit")
