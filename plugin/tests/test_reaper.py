@@ -171,9 +171,11 @@ class TimeoutWithoutProc(Timeout):
         self.fmideas.PROC = os.path.join(self.tmp, "noproc")
 
 
-@unittest.skipUnless(os.path.isdir("/proc"), "this test's own helpers read /proc; SweepWithoutProc covers the reaper's ps path")
 class Sweep(_Stubbed):
     def setUp(self):
+        # this test's own helpers read /proc; SweepWithoutProc (a subclass, so not skipped with it) covers the ps path
+        if type(self) is Sweep and not os.path.isdir("/proc"):
+            self.skipTest("no /proc here: SweepWithoutProc covers the reaper's ps path")
         super().setUp()
         self.procs = []
 

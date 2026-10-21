@@ -15,7 +15,7 @@ jobs:
         os: [ubuntu-latest]
         python: ["3.12", "3.14"]
         include:
-          - os: macos-latest  # not yet run green here: reported, not blocking
+          - os: macos-latest  # green since 1.2.44 (T-1284); still reported, not blocking, while it settles
             python: "3.14"
             experimental: true
     runs-on: ${{ matrix.os }}
