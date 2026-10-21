@@ -522,7 +522,8 @@ class Run:
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
-            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
+            # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
+            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
             ended = True
         finally:

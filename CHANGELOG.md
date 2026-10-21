@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm code: the worker and planner Claude sessions it starts run Foreman's hooks quiet, so only the guard acts there: no second copy of Foreman's session context, drive, request capture or leases inside its own workers (T-1327)
 
 ## 1.2.46 — 2026-10-20
 - Stopping an `fm code` run (the TUI's stop or quit, a closed terminal, `kill`) now stops the planner or worker CLI it started; before, that CLI ran on orphaned, still spending tokens and, for a worker, still editing files nothing judged (T-1326)
