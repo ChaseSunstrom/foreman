@@ -257,6 +257,40 @@ class Repairs(CodeCase):
         self.assertEqual(len(f.seen), 4)
 
 
+class AnyRequest(CodeCase):
+    """T-1320: fm code takes any request: a question gets an answer (no task, nothing changed), and a plan whose check
+    can't run here goes back to the planner instead of ending the run."""
+
+    def test_a_question_is_answered_from_the_files_and_changes_nothing(self):
+        f = self.serve("openai", {"text": json.dumps({"answer": "it subtracts"})},
+                       call("read", path="calc.py"),
+                       call("edit", file="calc.py", old="a - b", new="a + b"),
+                       call("done", summary="calc.add returns a - b (calc.py line 2): it subtracts, it doesn't add"))
+        r = self.code("what does calc.add do?", "--model", "fake", "--json")
+        events = [json.loads(line) for line in r.stdout.splitlines() if line.startswith("{")]
+        answer = [e for e in events if e["event"] == "answer"]
+        self.assertEqual(len(answer), 1, r.stdout)
+        self.assertIn("calc.py line 2", answer[0]["text"])
+        self.assertIn("return a - b", self.calc(), "a question changes nothing")
+        self.assertIn("refused", f.said(3), "the edit was refused: this run only answers")
+        self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0, "no task for a question")
+
+    def test_a_plan_that_also_says_answer_is_a_plan(self):
+        both = dict(PLAN, answer="it subtracts")
+        self.serve("openai", plan(both), call("edit", file="calc.py", old="a - b", new="a + b"),
+                   call("done", summary="adds"))
+        r = self.code("fix add", "--model", "fake", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+
+    def test_a_check_that_cant_run_here_goes_back_to_the_planner(self):
+        bad = dict(PLAN, criteria=[{"text": "calc.add adds", "verify": "python3 -m nosuchmod_t1320 -q"}])
+        f = self.serve("openai", plan(bad), plan(),
+                       call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="adds"))
+        r = self.code("fix add", "--model", "fake", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("nosuchmod_t1320", f.said(1), "why it can't run was quoted back")
+
+
 class Resume(CodeCase):
     def test_resume_after_a_killed_run_finishes_the_task(self):
         first = self.serve("openai", plan(), call("read", path="calc.py"), HANG)

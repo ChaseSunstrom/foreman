@@ -71,6 +71,15 @@ class Ctx:
         self.confine = confine
         self.unbriefed = unbriefed  # T-0308: the project's root while no task is active — writes inside wait for one
 
+    @property
+    def state_dirs(self):
+        """T-1318: every place state lives, judged the same way: Foreman's own state folder and an explicit one too
+        (~/.claude linked into a dotfiles repo, FOREMAN_STATE under macOS's linked /tmp), each as named and with its
+        folder resolved (the leaf never followed), then the fallbacks."""
+        named = [d for d in (os.path.join(self.foreman_home, "state") if self.foreman_home else None, self.state_dir) if d]
+        return list(dict.fromkeys([*named, *(os.path.join(os.path.realpath(os.path.dirname(d)), os.path.basename(d))
+                                             for d in named), *self.state_fallbacks]))
+
 
 class Block:
     def __init__(self, category, detail):
@@ -482,7 +491,7 @@ def _trust_covers(path, ctx):
     path = _plain_path(path)
     if path is None:
         return False
-    states = [os.path.join(ctx.foreman_home, "state"), ctx.state_dir, *ctx.state_fallbacks]
+    states = ctx.state_dirs
     return not any(d and _under(path, d) for d in states)
 
 
@@ -516,7 +525,7 @@ def _protected_roots(ctx):
     # user-wide Claude Code settings (a project's own are handled in classify_tree)
     roots += [(os.path.join(ctx.home, ".claude", f), "core") for f in ("settings.json", "settings.local.json")]
     # Foreman state inside a tree write: the user may approve it (core); a direct write never is (state-direct)
-    roots += [(d, "core") for d in [os.path.join(fh, "state"), ctx.state_dir, *ctx.state_fallbacks] if d]
+    roots += [(d, "core") for d in ctx.state_dirs]
     roots += [(os.path.join(ctx.home, d), "credentials") for d in _CRED_DIRS + _CRED_FILES]
     return roots
 
@@ -559,8 +568,7 @@ def classify_write(path, ctx, real=True):
     for p in (_variants(path) if real else {path, os.path.join(os.path.realpath(os.path.dirname(path)),
                                                                 os.path.basename(path))}):
         mirror = os.path.join(ctx.project_root, ".foreman") if ctx.project_root else None  # fm sync writes it
-        if any(d and _under(p, d) for d in [os.path.join(ctx.foreman_home, "state"), ctx.state_dir,
-                                            *ctx.state_fallbacks, mirror]):
+        if any(d and _under(p, d) for d in [*ctx.state_dirs, mirror]):
             cats.append("state-direct")
         if _is_core(p, ctx):
             cats.append("core")

@@ -435,6 +435,13 @@ PAGES = [
           'aria-label="fm code tui running a request: the track fills station by station, checks flip from red to pass, '
           'change bars and token columns grow, a refused git push flashes, and the close plays a wave along the track">'
           '<source src="../demo/code-tui.mp4" type="video/mp4"></video>'),
+         ("examples", "Examples: real runs of every kind",
+          "<p>Each card below is one real run, in a throwaway repo on this machine, with nothing set up but Claude "
+          "Code's own CLI: <code>--worker claude</code> plans in Claude's read-only mode, then does each step, while "
+          "fm code makes the task, runs every check before and after the work, and closes it with a commit only when "
+          "the checks pass. A fix, a feature, a rename across files, docs, a question, a project from an empty folder "
+          "and another language: the cards are drawn from each run's own events, kept in <code>demo/examples/</code>, "
+          "and <code>fm code tui --events</code> replays any of them.</p>"),
          ("text", "Any model, any CLI", "<ul><li><strong>Any OpenAI-compatible endpoint</strong>: Ollama, LM Studio, "
           "llama.cpp, vLLM, OpenRouter, Groq, OpenAI, Gemini's compatible endpoint, and Anthropic's API.</li><li>"
           "<strong>Other CLIs as workers.</strong> claude, codex, gemini or aider do a step; the harness "

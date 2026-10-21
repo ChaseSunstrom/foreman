@@ -3325,6 +3325,11 @@ def _missing_npm(words, cwd):
             return f"package.json in {cwd} has no npm script {script}"
 
 
+# T-1320: what a check or a build leaves behind, never a task's own change (unless the repo tracks it)
+ARTEFACT = re.compile(r"(^|/)(__pycache__|\.pytest_cache|\.mypy_cache|\.ruff_cache|node_modules|\.tox)(/|$)"
+                      r"|\.py[co]$|(^|/)\.DS_Store$")
+
+
 def unrunnable(cmd, root, notes=None):
     """T-0765: why a verify command can't run at all, or None: `python -m MOD` whose module that python can't import
     there, or `fm …` words fm's own parser rejects. Literal `cd DIR` links move where later parts run; anything this

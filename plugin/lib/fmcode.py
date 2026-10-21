@@ -63,6 +63,13 @@ WORKERS = {
     "gemini": "gemini --approval-mode auto_edit -p {prompt}",
     "aider": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}",
 }
+# T-1320: the same CLIs in their read-only mode, which fill fm code's plan and close-notes slots when no model is set
+PLANNERS = {
+    "claude": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit --output-format json",
+    "codex": "codex exec --sandbox read-only {prompt}",
+    "gemini": "gemini --approval-mode default -p {prompt}",
+}
+NO_MODEL_HINT = ("; or let a coding CLI you have plan and work: fm code \"<request>\" --worker claude (or codex, gemini)")
 # what a worker never gets from fm code's environment: forge, cloud and registry credentials (a model key stays, so the
 # CLI can sign in)
 WORKER_DROP = re.compile(r"^(GITHUB_|GH_|GITLAB_|BITBUCKET_|AWS_|AZURE_|GCP_|GCLOUD_|GOOGLE_APPLICATION_CREDENTIALS$|NPM_|"
@@ -83,6 +90,7 @@ EVENTS = {
     "verify": "criterion, label (before|verify), cmd, exit, output (when it failed)",
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
     "closed": "task, tokens", "blocked": "task, reason", "error": "task",
+    "answer": "text: the answer to a question about the code (no task, nothing changed)",
 }
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
 
@@ -118,6 +126,8 @@ PLAN_PROMPT = """You plan one coding task for Foreman's harness. Reply with only
 {"type": "FIX|FEATURE|CLEAN|PERFORMANCE|SECURITY|RESEARCH", "tier": "S|M", "title": "...",
  "criteria": [{"text": "what is true when it is done", "verify": "a shell command that exits 0 only then"}],
  "steps": ["...", "..."]}
+If the request only asks a question about the code and needs no change, reply instead with only
+{"answer": "the answer, naming the files and lines it rests on"}.
 Tier S is a small change in one or two files; M is several files or a design choice. Each verify runs at the project
 root and must fail before the work and pass after it. Steps are short and in order; the first is usually a failing
 test. The project's files:
@@ -150,6 +160,8 @@ def check_plan(v):
     """None when v is a usable plan, else what's wrong with it (quoted back to the model)."""
     if not isinstance(v, dict):
         return "the reply holds no JSON object"
+    if is_answer(v):  # T-1320: a question
+        return None if isinstance(v["answer"], str) and v["answer"].strip() else "answer must be text"
     if v.get("type") not in TYPES:
         return f"type must be one of {', '.join(TYPES)}, not {v.get('type')!r}"
     if v.get("tier") not in ("S", "M"):
@@ -185,7 +197,14 @@ def slot(run, profile, messages, check, what):
     """Ask for one JSON slot; on a bad answer quote the error back, at most REPAIRS times."""
     err = None
     for _ in range(REPAIRS + 1):
+        before = fmcore.worktree_tree(run.root) if profile.get("kind") == "cli" else None
         r = m.complete(profile, messages, max_tokens=MAX_TOKENS)
+        if before:  # T-1320: a CLI planner runs with the user's own settings; planning must change nothing
+            after = fmcore.worktree_tree(run.root)
+            if after != before:
+                gone = os.fsdecode(_git(run.root, "diff", "--name-only", before, after or before).stdout).split()
+                raise CodeError(f"{profile['name']} changed {', '.join(gone[:5]) or 'files'} while planning, which "
+                                "must change nothing: check them (git diff) before going on")
         run.usage(r)
         v = m.extract_json(r["text"])
         if v is None and r["tool_calls"]:
@@ -213,6 +232,7 @@ class Run:
         self.secret_envs = {cloud[4] for cloud in m.CLOUD}  # and each profile's own key_env, added as it's resolved
         self.worker, self.verify_cmd = getattr(args, "worker", None), getattr(args, "verify", None)
         self.worker_timeout = getattr(args, "worker_timeout", None)
+        self.read_only, self.summary = False, None  # T-1320: a question's run, and the last done's summary
         self.kept = []  # events before the task (and its journal) exists, written once it does
 
     # -- output and journal
@@ -331,6 +351,9 @@ class Run:
         """(result text, step finished)."""
         if not isinstance(a, dict) or "_raw" in a:
             return "error: the action's arguments weren't a JSON object", False
+        if self.read_only and name not in ("read", "search", "done"):  # T-1320: a question changes nothing
+            return ("refused: this run answers a question and changes nothing: read or search, then call done with the "
+                    "answer as the summary"), False
 
         def arg(k, typ=str, default=None):
             v = default if a.get(k) is None else a[k]
@@ -339,6 +362,7 @@ class Run:
             return v
         try:
             if name == "done":
+                self.summary = arg("summary", default="") if isinstance(a.get("summary"), str) else ""
                 return "step finished", True
             if name == "read":
                 return self.read(arg("path"), arg("start", int, 1), arg("lines", int, READ_LINES)), False
@@ -452,6 +476,8 @@ class Run:
         if msgs[-1].get("role") == "assistant":
             self.add(name, {"role": "user", "content": lost})
         tools = TOOLS if profile.get("tools") else None
+        if tools and self.read_only:
+            tools = [t for t in TOOLS if t["name"] in ("read", "search", "done")]
         while True:
             if self.turns >= self.max_steps:
                 raise CodeError(f"stopped: the model used all {self.max_steps} turns (--max-steps) before {name} was "
@@ -974,8 +1000,17 @@ def _failures(failed):
 
 # ---------------------------------------------------------------- the verb
 
+def _ended(sig, _frame):
+    raise SystemExit(128 + sig)
+
+
 def cmd_code(args):
     import fmcli
+    for name in ("SIGTERM", "SIGHUP"):  # T-1326: a stop (the TUI's, a closed terminal, kill) unwinds, so each finally
+        try:                              # kills the planner or worker CLI it started: they run in their own sessions
+            signal.signal(getattr(signal, name), _ended)
+        except (ValueError, AttributeError):  # not the main thread, or no such signal here
+            pass
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
@@ -1006,7 +1041,7 @@ def cmd_code(args):
             run.worker_timeout = run.worker_timeout or WORKER_TIMEOUT
         profile = None  # T-1214: a worker with --verify needs no model
         if not (run.worker and run.verify_cmd):
-            profile = m.resolve(args.model or run.model_name)
+            profile = choose_profile(run, args.model)
             run.model_name = profile["name"]
             run.offsite_ok(p, profile)
             run.cap = CAP if profile.get("context", 0) >= SMALL_CONTEXT else CAP // 2
@@ -1018,6 +1053,8 @@ def cmd_code(args):
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
         if args.resume is None:
             _plan(run, profile, args.dry_plan)
+            if is_answer(run.plan):
+                return _answer(run, profile)
             if args.dry_plan:
                 return run.emit("plan", json.dumps(run.plan, indent=2), plan=run.plan)
             _make_task(run, profile)
@@ -1055,6 +1092,8 @@ def _plan(run, profile, dry=False):
         return _verify_plan(run, dry)
     msgs = [{"role": "system", "content": PLAN_PROMPT + _files(run.root)}, {"role": "user", "content": run.request}]
     run.plan = slot(run, profile, msgs, check_plan, "plan")
+    if is_answer(run.plan):  # a question: no checks to judge
+        return
     why = None if dry else _plan_problem(run)  # --dry-plan runs nothing
     if why:  # one re-plan
         msgs.append({"role": "user", "content": f"{why} Reply with only the corrected plan as a JSON object."})
@@ -1066,6 +1105,48 @@ def _plan(run, profile, dry=False):
     pl = run.plan
     run.emit("plan", f"plan: {pl['type']} {pl['tier']} {pl['title']} (criteria: {len(pl['criteria'])}, "
                      f"steps: {len(pl['steps'])})", plan=pl)
+
+
+def choose_profile(run, model):
+    """The profile that fills the plan and close-notes slots: the model named, else the run's own (on --resume), else
+    the configured one. With none and a --worker in PLANNERS, that CLI in its read-only mode (T-1320), which a resumed
+    run it planned gets again; a model asked for by name is never swapped for it."""
+    planner = None
+    if run.worker in PLANNERS:
+        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": PLANNERS[run.worker],
+                   "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
+                   "env": dict(worker_env(), FOREMAN_WORKER_OF="fm-code-plan")}
+        if not model and run.model_name == planner["name"]:
+            return planner
+    try:
+        return m.resolve(model or run.model_name)
+    except m.ModelError as e:
+        if model or run.model_name or not run.worker:
+            raise m.ModelError(f"{e}{'' if model or run.model_name else NO_MODEL_HINT}") from None
+        if not planner:  # a CLI with no read-only mode can't be trusted to only plan
+            raise m.ModelError(f"{e}; --worker {run.worker!r} has no read-only mode to plan in: give --verify CMD "
+                               "(done when CMD passes), or --worker claude, codex or gemini") from None
+        return planner
+
+
+def is_answer(v):
+    """A plan slot's reply that answers a question instead of planning (one with a type is a plan)."""
+    return isinstance(v, dict) and "answer" in v and "type" not in v
+
+
+def _answer(run, profile):
+    """T-1320: a question about the code is answered and nothing changes: no task, no edit. A CLI planner read the
+    files itself; a model, whose plan slot saw only the file list, reads and searches them first."""
+    text = run.plan["answer"]
+    if profile.get("kind") != "cli":
+        run.read_only = True
+        run.phase("answer", profile, f"Question about this project: {run.request}\n\nThis run only answers it and "
+                                     "changes nothing: read and search the files it depends on, then call done with "
+                                     "the whole answer as the summary, naming the files and lines it rests on.")
+        text = run.summary or text
+    text = "".join(ch for ch in run.redact(text) if ch.isprintable() or ch in "\n\t")  # an answer never drives a terminal
+    run.log(kind="end", status="answered")
+    run.emit("answer", text)
 
 
 def _verify_plan(run, dry):
@@ -1091,6 +1172,10 @@ def _plan_problem(run):
         why = run.guard("Bash", {"command": cr["verify"]})
         if why:
             return f"refused by Foreman's guard: criterion {n}'s verify `{cr['verify']}`: {_one_line(why, 300)}"
+        why = fmcore.unrunnable(cr["verify"], run.root)  # T-1320: fm task new refuses it; the planner can do better
+        if why:
+            return (f"Criterion {n}'s verify `{cr['verify']}` can't run here: {why}. Use a check this project can run "
+                    "(its own test runner, python3 -m unittest, node --test, a python3 -c assert).")
     if run.plan["type"] not in ("FIX", "FEATURE"):
         return None
     for n, cr in enumerate(run.plan["criteria"], 1):
@@ -1139,7 +1224,7 @@ def _drive(run, profile):
             run.work(f"step:{n}", prompt)
         else:
             run.phase(f"step:{n}", profile, prompt)
-        files = sorted(_dirty(run.root))
+        files = sorted(f for f in _dirty(run.root) if not fmcore.ARTEFACT.search(f))  # T-1320: not a .pyc a check left
         run.emit("changed", "", quiet=True, step=n, files=files, stat=_numstat(run.root, files))
     rounds = 0
     while True:

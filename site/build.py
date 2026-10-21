@@ -8,6 +8,7 @@ data table. Stdlib only, so the Pages workflow runs it with the runner's Python.
 import html
 import json
 import os
+import shlex
 import shutil
 import sys
 
@@ -232,6 +233,78 @@ def layout(title, desc, body, pages, here, depth=1):
 """
 
 
+# T-1320: real fm code runs, one per kind of request, kept as their event streams (fm code --json) in demo/examples/
+EXAMPLES = [("fix", "Fix a bug"), ("feature", "Add a feature"), ("rename", "Rename across files"),
+            ("docs", "Write docs"), ("question", "Ask about the code"), ("new-project", "Start from an empty folder"),
+            ("javascript", "Another language")]
+
+
+def load_example(path):
+    """One run's events → what its card shows: the request, the plan, each check before and after, the files, the
+    worker turns, tokens, time and how it ended."""
+    with open(path, encoding="utf-8") as f:
+        ev = [json.loads(line) for line in f if line.startswith("{")]
+    first = lambda kind: next((e for e in ev if e.get("event") == kind), {})
+    checks = {}
+    for e in ev:
+        if e.get("event") == "verify":
+            checks.setdefault(e.get("criterion"), {})["before" if e.get("label") == "before" else "after"] = e.get("exit")
+    stat = {}
+    for e in ev:
+        if e.get("event") == "changed":
+            stat.update(e.get("stat") or {f: stat.get(f, [0, 0]) for f in e.get("files") or []})
+    tokens = next((e.get("total_in", 0) + e.get("total_out", 0) for e in reversed(ev) if e.get("event") == "tokens"), 0)
+    ts = [e["ts"] for e in ev if isinstance(e.get("ts"), (int, float))]
+    end = next((e for e in reversed(ev) if e.get("event") in ("closed", "blocked", "error", "answer")), {})
+    return {"request": first("start").get("request", ""), "worker": first("start").get("worker"),
+            "plan": first("plan").get("plan") or {}, "checks": checks, "stat": stat, "tokens": tokens,
+            "turns": sum(e.get("event") == "worker" for e in ev), "seconds": round(ts[-1] - ts[0]) if ts else None,
+            "end": end.get("event"), "end_text": end.get("text", ""), "events": ev}
+
+
+def _took(sec):
+    return "" if sec is None else f"{sec // 60}m{sec % 60:02d}s" if sec >= 60 else f"{sec}s"
+
+
+def example_html(name, label, ex):
+    pl, worker = ex["plan"], ex["worker"]
+    cmd = f"fm code {shlex.quote(ex['request'])}" + (f" --worker {shlex.quote(worker)}" if worker else "")
+    rows = []
+    for i, c in enumerate(pl.get("criteria") or [], 1):
+        got = ex["checks"].get(i, {})
+        after = got.get("after")
+        chip = ("pass", "PASS") if after == 0 else ("fail", "FAIL") if after is not None else ("todo", "····")
+        first = " (failed before the work)" if got.get("before") not in (0, None) else ""
+        rows.append(f'<li><span class="chip {chip[0]}">{chip[1]}</span> {esc(c.get("text", ""))}'
+                    f'<code>{esc(c.get("verify", ""))}</code><small>{first}</small></li>')
+    files = "".join(f"<li><code>{esc(f)}</code> <span class=\"plus\">+{a}</span>"
+                    + (f' <span class="minus">−{d}</span>' if d else "") + "</li>" for f, (a, d) in ex["stat"].items())
+    facts = [f"{ex['turns']} worker turn{'s' if ex['turns'] != 1 else ''}" if ex["turns"] else "",
+             f"{ex['tokens'] / 1000:.0f}k tokens" if ex["tokens"] else "", _took(ex["seconds"])]
+    end = {"closed": "Closed", "blocked": "Blocked", "error": "Stopped", "answer": "Answer"}.get(ex["end"], "Ended")
+    return (f'<article class="ex" id="ex-{name}"><header><span class="ex-kind">{esc(label)}</span>'
+            f'<p class="ex-cmd"><code>{esc(cmd)}</code></p></header><div class="ex-body">'
+            f'<img class="ex-shot" src="../assets/examples/{name}.svg" loading="lazy" alt="fm code tui at the end of this '
+            f'run: {esc(pl.get("title", ""))}"><div class="ex-facts">'
+            + (f'<p><b>Plan</b> {esc(pl.get("type", ""))} {esc(pl.get("tier", ""))} · {esc(pl.get("title", ""))}</p>'
+               if pl.get("type") else '<p><b>Plan</b> a question: answered from the files, no task, nothing changed</p>')
+            + (f'<p><b>Steps</b></p><ol class="ex-steps">{"".join(f"<li>{esc(s)}</li>" for s in pl.get("steps") or [])}</ol>'
+               if pl.get("steps") else "")
+            + (f'<p><b>Checks</b></p><ul class="ex-checks">{"".join(rows)}</ul>' if rows else "")
+            + (f'<p><b>Changed</b></p><ul class="ex-files">{files}</ul>' if files else "")
+            + (f'<div class="ex-answer"><p><b>{end}</b></p>{"".join(f"<p>{esc(x)}</p>" for x in ex["end_text"].split(chr(10)) if x.strip())}</div>'
+               if ex["end"] == "answer" else f'<p class="ex-end"><b>{end}</b> {esc(ex["end_text"])}</p>')
+            + f'<p class="ex-meta">{esc(" · ".join(x for x in facts if x))} · replay it: '
+              f'<code>fm code tui --events demo/examples/{name}.jsonl</code></p></div></div></article>')
+
+
+def examples_html(folder=None):
+    folder = folder or os.path.join(ROOT, "demo", "examples")
+    cards = [example_html(n, label, load_example(os.path.join(folder, n + ".jsonl")))
+             for n, label in EXAMPLES if os.path.isfile(os.path.join(folder, n + ".jsonl"))]
+    return f'<div class="examples">{"".join(cards)}</div>' if cards else ""
+
+
 def render_page(p, stats, pages):
     parts = [f'<p class="kicker">{esc(p["nav"])}</p><h1>{esc(p["title"])}</h1><p class="lede">{p["lede"]}</p>']
     for block in p["blocks"]:
@@ -245,6 +318,8 @@ def render_page(p, stats, pages):
             parts.append(block[1](stats))
         elif kind == "raw":
             parts.append(block[1])
+        elif kind == "examples":  # T-1320
+            parts.append(f"<section><h2>{esc(block[1])}</h2>{block[2]}{examples_html()}</section>")
     i = [q["slug"] for q in pages].index(p["slug"])
     nxt = pages[(i + 1) % len(pages)]
     parts.append(f'<p class="next"><a href="{nxt["slug"]}.html">Next: {esc(nxt["nav"])}</a></p>')
@@ -280,6 +355,12 @@ def build(out):
     with open(os.path.join(ROOT, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
         fmcodetui.snapshot([json.loads(line) for line in f if line.strip()], os.path.join(out, "assets", "code-tui.svg"),
                            (120, 34))
+    os.makedirs(os.path.join(out, "assets", "examples"), exist_ok=True)  # T-1320: each example's last screen
+    for name, _ in EXAMPLES:
+        src = os.path.join(ROOT, "demo", "examples", name + ".jsonl")
+        if os.path.isfile(src):
+            fmcodetui.snapshot(load_example(src)["events"], os.path.join(out, "assets", "examples", name + ".svg"),
+                               (120, 34))
     os.makedirs(os.path.join(out, "features"), exist_ok=True)
     for p in P.PAGES:
         with open(os.path.join(out, "features", p["slug"] + ".html"), "w", encoding="utf-8") as f:

@@ -218,6 +218,35 @@ class CommitAfterFocus(HookCase):
         self.assertIn("D\tcache.json", shown)
         self.assertIn(".gitignore", shown)
 
+    def test_build_artefacts_stay_out_and_a_vanished_one_doesnt_break_the_commit(self):
+        # T-1320: an fm code run's checks left __pycache__/*.pyc, which went into its commit; one that was there at the
+        # focus and gone by the close failed git commit's pathspec, so the task was done and nothing committed
+        self.fm("init")
+        git = lambda *a: subprocess.run(["git", "-C", self.repo, *a], capture_output=True, text=True)
+        cache = os.path.join(self.repo, "__pycache__")
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 1\n")
+        git("add", "a.py")
+        git("commit", "-qm", "start")
+        os.makedirs(cache)
+        with open(os.path.join(cache, "a.cpython-314.pyc"), "w") as f:
+            f.write("old\n")
+        self.fm("task", "new", "Two", "--type", "FEATURE", "--tier", "S", "--ac", "ok :: true", "--step", "s", "--focus")
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 2\n")
+        os.remove(os.path.join(cache, "a.cpython-314.pyc"))
+        for name in ("b.cpython-314.pyc", "c.pyc"):
+            with open(os.path.join(cache, name), "w") as f:
+                f.write("new\n")
+        os.makedirs(os.path.join(self.repo, "node_modules", "x"))
+        with open(os.path.join(self.repo, "node_modules", "x", "index.js"), "w") as f:
+            f.write("1\n")
+        r = self.fm("task", "finish", "T-0001", "--audit", "self", "--run", "true", "--commit", "Two", check=False)
+        self.assertIn("committed", r.stdout, r.stdout + r.stderr)
+        self.assertIn("build artefact", r.stdout, "what was left out is said")
+        self.assertEqual(git("show", "--name-only", "--format=", "HEAD").stdout.split(), ["a.py"])
+        self.assertNotIn("__pycache__", git("diff", "--cached", "--name-only").stdout, "nothing left staged")
+
 
 class FinalRun(ForemanTestCase):
     def test_run_is_the_final_check_even_when_every_step_has_evidence(self):
