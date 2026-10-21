@@ -29,6 +29,7 @@ An installed CLI (WORKERS, or 'CMD {prompt}') does each step and fix round in on
 own config and hooks are put back, a commit is undone (its changes stay), and each changed file the guard refuses as a
 Write is reverted and reported. The worker's exit code and reply never mark anything done: the harness's verify does.
 """
+import glob
 import json
 import os
 import re
@@ -38,6 +39,7 @@ import signal
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -603,7 +605,7 @@ class Run:
         """([(path, why)] put back, [paths it couldn't put back], whether the turn changed anything) for one worker
         turn. Always put back: Git's own config and hooks and the user's global Git config (first: a planted
         core.fsmonitor or hook would run on the next git command), the shell startup files and other agents' settings
-        under HOME (HOME_HELD, T-1393), a commit or branch switch (its changes stay, to be judged), and an index flag
+        (_home_held, the MCP servers in ~/.claude.json: T-1393), a commit or branch switch (its changes stay, to be judged), and an index flag
         that hides a file from git status. Then each file the turn wrote, whether git status shows it or not (a stat
         walk finds ignored ones): a kind Foreman protects is refused whatever standing yes or trust is on (those were given to
         Claude in the session, not to a worker CLI); a file git shows is also judged by the guard as a Write."""
@@ -622,9 +624,26 @@ class Run:
         for f in sorted(set(b["own"]) | _files_under(hooks)):
             if _read(f) != b["own"].get(f):
                 back(f, b["own"].get(f), own)
-        for f in sorted(b["home"]):  # T-1393
-            if _read(f) != b["home"][f]:
-                back(f, b["home"][f], "a worker never changes your shell startup or another agent's settings")
+        mine, home, dirs = ("a worker never changes your shell startup or another agent's settings",
+                            os.path.expanduser("~"), b["home_dirs"])  # T-1393
+        for d in sorted(dirs, key=len):  # a folder that became a link goes first, never walked: it'd reach elsewhere
+            now = _read(d)
+            if now != dirs[d][0] and now and now[0] == "link":
+                back(d, dirs[d][0] if dirs[d][0] and dirs[d][0][0] == "link" else None, mine)
+        for f in sorted(set(b["home"]) | _home_held(home)):
+            d = os.path.dirname(f)
+            if d in dirs and os.path.realpath(d) != dirs[d][1]:
+                lost.append(f)
+                out.append((f, f"{mine} (not put back: a folder on its path is now a link)"))
+            elif _read(f) != b["home"].get(f):
+                back(f, b["home"].get(f), mine)
+        claude, now = os.path.join(home, ".claude.json"), _mcp(os.path.join(home, ".claude.json"))
+        if b["mcp"] is not None and now and now != b["mcp"]:  # ponytail: one deleted or broken isn't put back
+            why = "a worker never adds or changes an MCP server in ~/.claude.json"
+            if not _put_mcp(claude, b["mcp"], now):
+                lost.append(claude)
+                why += " (it couldn't be put back)"
+            out.append((claude, why))
         head = b["head"]
         if _head(self.root) != head:
             if head[0]:
@@ -1097,20 +1116,84 @@ def _snapshot(root, verify=None):
         r.split(os.sep)[0] in WATCHED or strict(os.path.join(root, r)))}
     named = _named(root, verify)
     kept.update({r: _read(os.path.join(root, r)) for r in stats if _under_named(r, named)})
-    held = {os.path.join(home, f) for f in HOME_HELD}
+    held = _home_held(home)
     held |= {os.path.realpath(f) for f in held if os.path.islink(f)}  # T-1393: a dotfiles link is written through
+    dirs = {d for f in held | {os.path.join(_fish(home), "conf.d", "_")} for d in _parents(f, home)}
     return {"named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
             "own": {f: _read(f) for f in own | _files_under(hooks)}, "hooks_at": _read(hooks), "flags": _flags(root),
-            "stats": stats, "kept": kept, "home": {f: _read(f) for f in held}}
+            "stats": stats, "kept": kept, "home": {f: _read(f) for f in held},
+            "home_dirs": {d: (_read(d), os.path.realpath(d)) for d in dirs},
+            "mcp": _mcp(os.path.join(home, ".claude.json"))}
 
 
 WATCHED = (".claude", ".foreman")  # also judged by the guard when git doesn't show them
-# T-1393: under HOME, what runs in the user's next shell and what sets another agent's sandbox: held like Git's global
-# config, so a worker (running as the user) can't leave a line there. Files only; one that appears is removed.
-HOME_HELD = (".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".profile", ".zshrc", ".zshenv", ".zprofile",
-             ".zlogin", os.path.join(".config", "fish", "config.fish"), os.path.join(".codex", "config.toml"),
-             os.path.join(".gemini", "settings.json"), os.path.join(".claude", "settings.json"),
-             os.path.join(".claude", "settings.local.json"))
+
+
+def _fish(home):
+    return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "fish")
+
+
+def _home_held(home):
+    """T-1393: what runs in the user's next shell and what sets another agent's sandbox, held like Git's global
+    config, so a worker (running as the user) can't leave a line there. Files only; one that appears is removed."""
+    env = os.environ.get
+    out = {os.path.join(home, f) for f in (".bashrc", ".bash_profile", ".bash_login", ".bash_logout", ".bash_aliases",
+                                           ".profile")}
+    out |= {os.path.join(z, f) for z in {home, env("ZDOTDIR") or home}
+            for f in (".zshenv", ".zshrc", ".zprofile", ".zlogin", ".zlogout")}
+    out |= {os.path.join(_fish(home), "config.fish"),
+            os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
+            os.path.join(home, ".gemini", "settings.json"), os.path.join(home, ".claude", "settings.json"),
+            os.path.join(home, ".claude", "settings.local.json")}
+    return out | set(glob.glob(os.path.join(glob.escape(_fish(home)), "conf.d", "*.fish")))
+
+
+def _parents(f, home):
+    """The folders above f, up to HOME (or /) not included."""
+    d = os.path.dirname(f)
+    while d not in (home, os.path.dirname(d)):
+        yield d
+        d = os.path.dirname(d)
+
+
+def _mcp(path):
+    """T-1393: the MCP servers ~/.claude.json sets, user-wide (key ()) and per project (key (path,)): the one part of
+    that file a worker turn is judged on, as Claude Code rewrites the rest every session. {} when it's missing, None
+    when it isn't a JSON object."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError):
+        return None
+    if not isinstance(d, dict):
+        return None
+    out = {(): d["mcpServers"]} if d.get("mcpServers") else {}  # an empty one is what Claude Code writes itself
+    projects = d.get("projects") if isinstance(d.get("projects"), dict) else {}
+    out.update({(p,): v["mcpServers"] for p, v in projects.items() if isinstance(v, dict) and v.get("mcpServers")})
+    return out
+
+
+def _put_mcp(path, saved, now):
+    """Put the held MCP servers back into ~/.claude.json, the rest as it is now; False when it can't. ponytail: read
+    and replaced whole, so a Claude Code session writing it in between loses that write."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        for k in set(saved) | set(now):
+            obj = d.setdefault("projects", {}).setdefault(k[0], {}) if k else d
+            if k in saved or "mcpServers" in obj:
+                obj["mcpServers"] = saved.get(k, {})
+        path = os.path.realpath(path)  # a dotfiles link stays one
+        fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path))  # never a name a worker could have planted a link at
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(d, f, indent=2, ensure_ascii=False)
+        os.chmod(tmp, stat.S_IMODE(os.stat(path).st_mode))
+        os.replace(tmp, path)
+        return True
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
 
 
 def _files_under(top):

@@ -25,8 +25,13 @@ class JudgeHome(CodeCase):
             f.write("#!/bin/sh\n" + body)
         os.chmod(path, 0o755)
 
-    def work(self, *args, check=True):
-        return self.code(*args, check=check, env={"PATH": self.bin + os.pathsep + os.environ["PATH"]})
+    def work(self, *args, check=True, env=None):
+        return self.code(*args, check=check, env=dict(env or {}, PATH=self.bin + os.pathsep + os.environ["PATH"]))
+
+    def put(self, path, text):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as f:
+            f.write(text)
 
     def reverts(self):
         return {x.get("file"): x.get("reason") for x in map(json.loads, journal_text(self).splitlines())
@@ -64,6 +69,50 @@ class JudgeHome(CodeCase):
         self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY)
         self.assertEqual(read_text(real), "# mine\n")
         self.assertTrue(os.path.islink(os.path.join(self.fake_home, ".zshrc")))
+
+    def test_a_planted_folder_link_is_removed_and_never_walked(self):
+        mine = os.path.join(self.fake_home, ".claude", "settings.json")
+        self.put(mine, '{"mine": true}\n')
+        self.cli("sneak", FIX + 'ln -s "$HOME/.claude" "$HOME/.gemini"\n')
+        r = self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(mine), '{"mine": true}\n', r.stdout)
+        gemini = os.path.join(self.fake_home, ".gemini")
+        self.assertFalse(os.path.lexists(gemini))
+        self.assertIn(gemini, self.reverts())
+
+    def test_zdotdir_xdg_config_home_codex_home_aliases_and_fish_conf_d_are_held(self):
+        zdot, xdg, cx = (os.path.join(self.tmp, d) for d in ("zdot", "xdg", "cx"))
+        self.put(os.path.join(zdot, ".zshrc"), "# mine\n")
+        os.makedirs(os.path.join(xdg, "fish", "conf.d"))
+        self.cli("sneak", FIX + 'echo evil >> "$ZDOTDIR/.zshrc"\n'
+                               'echo evil > "$XDG_CONFIG_HOME/fish/conf.d/evil.fish"\n'
+                               'mkdir -p "$CODEX_HOME" && echo evil > "$CODEX_HOME/config.toml"\n'
+                               'echo evil > "$HOME/.bash_aliases"\n')
+        self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY,
+                  env={"ZDOTDIR": zdot, "XDG_CONFIG_HOME": xdg, "CODEX_HOME": cx})
+        self.assertEqual(read_text(os.path.join(zdot, ".zshrc")), "# mine\n")
+        for f in (os.path.join(xdg, "fish", "conf.d", "evil.fish"), os.path.join(cx, "config.toml"),
+                  os.path.join(self.fake_home, ".bash_aliases")):
+            self.assertFalse(os.path.exists(f), f)
+            self.assertIn(f, self.reverts())
+
+    def test_an_mcp_server_added_to_claude_json_is_taken_out_and_the_rest_kept(self):
+        path = os.path.join(self.fake_home, ".claude.json")
+        self.put(path, json.dumps({"numStartups": 1, "mcpServers": {}, "projects": {"/x": {"allowedTools": []}}}))
+        self.cli("sneak", FIX + 'python3 -c \'import json, os; p = os.path.expanduser("~/.claude.json"); '
+                               'd = json.load(open(p)); d["numStartups"] = 2; '
+                               'd["mcpServers"]["evil"] = {"command": "x"}; '
+                               'd["projects"]["/x"]["mcpServers"] = {"evil": {"command": "x"}}; '
+                               'd["projects"]["/new"] = {"mcpServers": {}}; '
+                               'json.dump(d, open(p, "w"))\'\n')
+        self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY)
+        got = json.loads(read_text(path))
+        self.assertEqual(got["numStartups"], 2, "Claude Code's own bookkeeping stays")
+        self.assertEqual(got["mcpServers"], {})
+        self.assertEqual(got["projects"]["/x"]["mcpServers"], {})
+        self.assertEqual(got["projects"]["/x"]["allowedTools"], [])
+        self.assertEqual(got["projects"]["/new"], {"mcpServers": {}}, "an empty list, as Claude Code writes, stays")
+        self.assertIn("MCP", self.reverts()[path])
 
     def test_a_turn_that_changes_nothing_is_reported_as_no_effect(self):
         self.cli("idle", 'echo "All done"\n')
