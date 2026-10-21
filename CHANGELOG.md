@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+
+## 1.2.50 — 2026-10-21
 - A library source indexed before 1.2.49's quarantine is indexed again from its local clone the next time fm reads it (no network), so its hostile skills and agents leave `fm lib search` without a `fm lib source update` (T-1415).
 - `fm lib search` finds a description's last word: "tidewater." no longer keeps its full stop, while node.js and c# stay one word (T-1420).
 - fm code's judge also holds `~/.ssh/authorized_keys`, `~/.ssh/rc` and `config`, X session files, login autostart entries, `environment.d`, systemd user units, `~/.bashrc.d`, and fish and git config under `~/.config` even when `XDG_CONFIG_HOME` points elsewhere; a new command in `~/.local/bin` is moved aside whole whatever its size, and a changed one it can't put back stops the run; the worker's version of each file it puts back is kept under the run journal's `reverted/` folder (user-only, never written through a planted link); worker and planner sessions don't self-update mid-turn (T-1417).
