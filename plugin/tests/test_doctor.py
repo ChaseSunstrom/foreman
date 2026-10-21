@@ -152,6 +152,27 @@ class Checks(unittest.TestCase):
         r = d.check_python((3, 12, 14), child=True)
         self.assertEqual((r.status, "runs under" in r.detail), ("WARN", True))
 
+    def test_fm_link_says_whether_fm_works_in_any_shell(self):
+        # T-1324: an install from before T-0853 had no ~/.local/bin/fm, so fm worked only inside Claude Code
+        bin_, target = os.path.join(self.t, "bin"), os.path.join(self.t, "plugin-bin-fm")
+        os.makedirs(bin_)
+        with open(target, "w") as f:
+            f.write("#!/bin/sh\n")
+        link = os.path.join(bin_, "fm")
+        r = d.check_fm_link(link, target, bin_)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("fm install-user", r.detail)
+        os.symlink(target, link)
+        self.assertEqual(d.check_fm_link(link, target, bin_).status, "PASS")
+        r = d.check_fm_link(link, target, "/usr/bin")
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("PATH", r.detail)
+        os.unlink(link)
+        os.symlink("/elsewhere/fm", link)
+        r = d.check_fm_link(link, target, bin_)
+        self.assertEqual(r.status, "WARN")
+        self.assertIn("/elsewhere/fm", r.detail)
+
     def test_settings_json(self):
         good = self.write("good.json", '{"a": 1}')
         bad = self.write("bad.json", "{nope")

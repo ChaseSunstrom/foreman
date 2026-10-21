@@ -271,6 +271,53 @@ class Worker(CodeCase):
         self.assertEqual(conf["runner"], "claude")
         self.assertEqual(conf["runners"]["mine"]["runner"], "x", "a key inside a table is left alone")
 
+    # T-1354: lean nested claude sessions: no user plugins or MCP servers, only Foreman's guard (as --settings)
+    def lean_claude(self):
+        plan = {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}], "steps": ["s"]}
+        with open(os.path.join(self.tmp, "reply.json"), "w") as f:
+            f.write(json.dumps({"type": "result", "is_error": False, "usage": {"input_tokens": 5}, "result": json.dumps(plan)}))
+        self.cli("claude", 'mode=; prev=\nfor a in "$@"; do [ "$prev" = "--permission-mode" ] && mode=$a; prev=$a; done\n'
+                           f'if [ "$mode" = plan ]; then printf "%s\\n" "$@" > {self.tmp}/plan-args; cat {self.tmp}/reply.json\n'
+                           f'else printf "%s\\n" "$@" > {self.tmp}/work-args; fix-calc; fi\n')
+
+    def args_of(self, kind):
+        return read_text(os.path.join(self.tmp, f"{kind}-args")).splitlines()
+
+    def test_claude_runs_lean_by_default_with_only_the_guard(self):
+        import shlex
+        self.lean_claude()
+        r = self.work("make calc.add add", "--worker", "claude", "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        plan, work = self.args_of("plan"), self.args_of("work")
+        for flag in ("--restricted", "--strict-mcp-config", "--settings"):
+            self.assertIn(flag, plan)
+        for flag in ("--strict-mcp-config", "--settings"):
+            self.assertIn(flag, work)
+        self.assertEqual(work[work.index("--setting-sources") + 1], "project,local")
+        for argv in (plan, work):
+            guard = json.loads(argv[argv.index("--settings") + 1])
+            hooks = [h for e in guard["hooks"]["PreToolUse"] for h in e["hooks"]]
+            self.assertTrue(hooks)
+            for h in hooks:
+                self.assertTrue(os.path.exists(shlex.split(h["command"])[0]), h["command"])
+        notes = [e["text"] for e in self.events(r) if e["event"] == "note"]
+        self.assertTrue(any("lean" in t for t in notes), notes)
+        self.assertTrue([e for e in self.events(r) if e["event"] == "tokens"], "the first call's tokens still show")
+
+    def test_lean_false_launches_claude_as_before_and_a_bad_value_is_named(self):
+        self.lean_claude()
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write("lean = false\n")
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        for kind in ("plan", "work"):
+            self.assertFalse({"--settings", "--restricted", "--strict-mcp-config"} & set(self.args_of(kind)), kind)
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('lean = "false"\n')
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("lean", r.stderr)
+
     # T-1329: live progress from a streaming CLI, replayed from a real claude stream (this machine's paths removed)
     STREAM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "claude-worker-stream.jsonl")
 

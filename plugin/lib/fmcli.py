@@ -2312,6 +2312,9 @@ def task_new(p, args):
             for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
                 if text:  # an M/L brief plans in one call (T-0083)
                     b.set_section(name, c.redact(text))
+            for name, given in (("Acceptance criteria", args.ac), ("Steps", args.step)):
+                if args.from_id and given:  # T-1364: the plan given replaces the capture's own, never adds to it
+                    b.set_section(name, "")
             for text in args.ac or []:  # "criterion :: verify command" (T-0042)
                 done_when, sep, verify = text.rpartition(" :: ")
                 b.add_ac(done_when, verify.strip()) if sep else b.add_ac(text)
@@ -5720,6 +5723,8 @@ def build_parser():
     s.add_argument("--resume", nargs="?", const="", metavar="ID", help="carry on a crashed or killed run from its "
                                                                      "journal (default: the newest unfinished one)")
     s.add_argument("--no-commit", action="store_true", help="close the task without committing")
+    s.add_argument("--task", metavar="ID", help="work this planned task: its criteria and open steps are the plan "
+                                                "(no planner call; T-1330)")
     s.add_argument("--worker", metavar="CLI", help="an installed CLI does each step and fix round instead of the "
                                                    "model: claude, codex, gemini, aider, or 'CMD {prompt}'; "
                                                    "the harness reverts what the guard refuses and its verify decides "

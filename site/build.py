@@ -372,6 +372,9 @@ def build(out):
 
 if __name__ == "__main__":
     target = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "_site")
+    if target.startswith("-"):  # it takes no options: `--check` once became a folder that got committed
+        print("usage: python3 site/build.py [OUTPUT_FOLDER] (default _site; it takes no options)", file=sys.stderr)
+        sys.exit(2)
     if not safe_out(target):
         sys.exit(f"build.py: refusing to wipe {target}: give a new or build-only folder, such as _site")
     n = build(os.path.abspath(target))

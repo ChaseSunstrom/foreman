@@ -31,4 +31,4 @@
 │                                                                   ││                                                 │  ⟨9539bfcb82⟩
 │                                                                   ││                                                 │  ⟨9539bfcb82⟩
 ╰───────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────╯  ⟨54bb416338⟩
- ⠋ PLANNING                                                       n new  d diff  h history  t thoughts  ? keys  q quit  ⟨cc5eacf68a⟩
+ ⠋ PLANNING                                           n new  p projects  d diff  h history  t thoughts  ? keys  q quit  ⟨7d96bf1cba⟩

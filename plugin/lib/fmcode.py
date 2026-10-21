@@ -65,7 +65,11 @@ RUNNERS = {
     # T-1329: a template with --output-format stream-json is read as claude's stream, so each tool use shows live
     "claude": {"work": "claude -p {prompt} --permission-mode acceptEdits --output-format stream-json --verbose",
                "plan": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit "
-                       "--output-format stream-json --verbose", "verified": True},
+                       "--output-format stream-json --verbose", "verified": True,
+               # T-1354: lean: none of the user's plugins, MCP servers or settings hooks, only Foreman's guard (added
+               # as --settings); the planner also loses every tool that runs code. code.toml lean = false: as before
+               "lean": {"work": "--setting-sources project,local --strict-mcp-config",
+                        "plan": "--restricted --strict-mcp-config"}},
     "codex": {"work": "codex exec --full-auto {prompt}", "plan": "codex exec --sandbox read-only {prompt}"},
     "gemini": {"work": "gemini --approval-mode auto_edit -p {prompt}", "plan": "gemini --approval-mode default -p {prompt}"},
     "aider": {"work": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}"},
@@ -822,8 +826,20 @@ def all_runners():
                     raise CodeError(f"code.toml: [runners.{name}] {k} needs {{prompt}} where the request goes")
             mine = {k: r[k] for k in ("work", "plan") if k in r}
             mine["verified"] = r.get("verified") is True or (out.get(name, {}).get("verified", False) and "plan" not in mine)
+            # a command the user wrote runs as written: no lean flags on it
+            mine["lean"] = {k: v for k, v in (out.get(name, {}).get("lean") or {}).items() if k not in mine}
             out.setdefault(name, {}).update(mine)
     return out
+
+
+def lean_args(r, kind):
+    """T-1354: the extra argv that launches a runner's work or plan lean, with Foreman's guard as its only hooks; []
+    when it has none or code.toml says lean = false."""
+    lean = code_config().get("lean", True)
+    if not isinstance(lean, bool):
+        raise CodeError(f"code.toml: lean is true or false, not {lean!r}")
+    flags = (r.get("lean") or {}).get(kind) if lean else None
+    return shlex.split(flags) + ["--settings", fmcore.guard_settings()] if flags else []
 
 
 def _installed(name, r):
@@ -861,13 +877,15 @@ def pick_runner(p):
 
 def worker_argv(spec, prompt, which=True):
     """A --worker spec as argv: the user's own template ("{prompt}" in it), a runner's name, else [spec, prompt]."""
-    tpl = all_runners().get(spec, {}).get("work") or spec
+    r = all_runners().get(spec, {})
+    tpl = r.get("work") or spec
     try:
         argv = [w.replace("{prompt}", prompt) for w in shlex.split(tpl)] if "{prompt}" in tpl else [spec, prompt]
     except ValueError as e:
         raise CodeError(f"--worker {spec!r} doesn't split as a command: {e}")
     if not argv or not argv[0]:
         raise CodeError(f"--worker {spec!r} names no command")
+    argv += lean_args(r, "work") if r.get("work") else []
     if which and not shutil.which(argv[0]):
         raise CodeError(f"the worker {argv[0]} isn't on PATH: install it, or give --worker 'CMD {{prompt}}'")
     return argv
@@ -1110,6 +1128,10 @@ def cmd_code(args):
         except (ValueError, AttributeError):  # not the main thread, or no such signal here
             pass
     words = list(args.request or [])
+    if not words and args.resume is None and not getattr(args, "task", None) and not getattr(args, "json", False) \
+            and not getattr(args, "tui", False) and sys.stdin.isatty() and sys.stdout.isatty():
+        import fmcodetui  # T-1330: fm code alone on a terminal opens the app, like claude does
+        return fmcodetui.main(args, [], home=True)
     if words == ["models"]:
         return _models(args, fmcli)
     if words == ["runners"]:
@@ -1126,9 +1148,14 @@ def cmd_code(args):
     try:
         if args.resume is not None:
             _load(run, args.resume)
+            _hold(run)
+        elif getattr(args, "task", None):  # T-1330: a planned brief is the plan
+            if words:
+                raise fmcli.UsageError(f"--task {args.task} works that task's own plan: give it no request")
+            _load_task(run, args.task)
         elif not words:
             raise fmcli.UsageError('fm code needs a request: fm code "<what to do>" (or fm code models, '
-                                   'fm code --resume)')
+                                   'fm code --resume, fm code --task ID; on a terminal, fm code alone opens the app)')
         else:
             run.request = " ".join(words)
         picked = None
@@ -1156,7 +1183,12 @@ def cmd_code(args):
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
         if picked:
             run.emit("note", f"runner: {run.worker} ({picked}; fm code runners lists them all)", worker=run.worker)
-        if args.resume is None:
+        if run.worker and lean_args(all_runners().get(run.worker, {}), "work"):
+            run.emit("note", f"lean: {run.worker} runs without your plugins, MCP servers or settings hooks, with "
+                             "Foreman's guard (code.toml lean = false keeps them)", worker=run.worker)
+        if args.resume is None and run.tid:  # --task
+            _start_task(run, profile)
+        elif args.resume is None:
             _plan(run, profile, args.dry_plan)
             if is_answer(run.plan):
                 return _answer(run, profile)
@@ -1218,7 +1250,8 @@ def choose_profile(run, model):
     run it planned gets again; a model asked for by name is never swapped for it."""
     planner, r = None, all_runners().get(run.worker or "", {})
     if r.get("plan"):
-        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": r["plan"], "verified": r.get("verified"),
+        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "verified": r.get("verified"),
+                   "argv": r["plan"] + "".join(" " + shlex.quote(a) for a in lean_args(r, "plan")),
                    "stream": "claude" if "stream-json" in r["plan"] else None, "on_line": run.live_tools(run.worker),
                    "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
@@ -1310,14 +1343,83 @@ def _make_task(run, profile):
     if code or not made.get("id"):
         raise CodeError(f"fm task new refused the plan: {out[:500]}")
     run.tid = made["id"]
+    _hold(run)
+    _journal_start(run, profile)
+    run.emit("task", f"task {run.tid} created and focused", task=run.tid)
+
+
+def _hold(run):
+    """T-1330: one fm code run per task: a lock on code/<task>.lock, held until this process ends."""
+    import fcntl
     os.makedirs(run.jdir, exist_ok=True)
+    run.lock = open(os.path.join(run.jdir, f"{run.tid}.lock"), "w")
+    try:
+        fcntl.flock(run.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        raise CodeError(f"another fm code run is working {run.tid}: let it finish, or stop it first") from None
+
+
+def _load_task(run, tid):
+    """T-1330: --task ID: a planned brief's criteria that have a check, and its open steps, are the plan."""
+    tid = tid.strip().upper()  # as fm task show matches it
+    code, out = run.fm("task", "show", tid, "--json")
+    t = None if code else m.extract_json(out)
+    if not isinstance(t, dict) or t.get("id") != tid:
+        raise CodeError(f"no task {tid} in this project: {_one_line(out, 200)}")
+    if t.get("status") in ("done", "dropped"):
+        raise CodeError(f"{tid} is {t['status']}: there's nothing to work")
+    crit = [{"text": _printable(cr.get("text")), "verify": cr.get("verify") or ""} for cr in t.get("criteria") or []]
+    if not crit:
+        raise CodeError(f"{tid} has no criterion with a check to run: fm task ac {tid} add \"<done when>\" --verify CMD")
+    for n, cr in enumerate(crit, 1):  # each one's evidence goes on its own number, so every one needs a check
+        if not cr["verify"]:
+            raise CodeError(f"{tid}'s criterion {n} has no check to run: fm task ac {tid} edit {n} --verify CMD")
+    steps = [_printable(st["text"]) for st in t.get("steps") or [] if not st.get("done")] or ["do what the task asks"]
+    run.tid, run.request = tid, _printable(t.get("title")) or tid
+    run.plan = {"type": t.get("type") or "FEATURE", "tier": t.get("tier") or "S", "title": run.request,
+                "criteria": crit, "steps": steps}
+    _hold(run)
+    journal = os.path.join(run.jdir, f"{tid}.jsonl")
+    if os.path.isfile(journal):  # an earlier run of it: carry on an unfinished one; keep a finished one beside
+        with open(journal, encoding="utf-8", errors="replace") as f:
+            ended = any('"kind": "end"' in line or '"kind":"end"' in line for line in f)
+        if not ended:
+            raise CodeError(f"an earlier fm code run of {tid} didn't finish: fm code --resume {tid} carries it on")
+        at = int(time.time())
+        for old in (journal, journal[:-len(".jsonl")] + ".events.jsonl"):
+            if os.path.isfile(old):
+                os.replace(old, old.replace(f"{tid}.", f"{tid}.{at}.", 1))
+
+
+def _printable(s):
+    """One line a terminal only prints: a brief's text may come from a synced repo."""
+    return "".join(c for c in " ".join(str(s or "").split()) if c.isprintable())
+
+
+def _start_task(run, profile):
+    """T-1330: focus the brief --task named and start its journal; a check the guard refuses stops it here."""
+    why = _plan_problem(run)
+    if why and "already passes" not in why:  # a refused or unrunnable check stops it; one already passing is noted
+        raise CodeError(why)
+    code, out = run.fm("focus", run.tid)
+    if code:
+        raise CodeError(f"can't start {run.tid}: {_one_line(out, 300)}")
+    run.plan_msgs = []
+    pl = run.plan
+    run.emit("plan", f"plan: {run.tid}'s own: {pl['type']} {pl['tier']} {pl['title']} (criteria: {len(pl['criteria'])}, "
+                     f"steps: {len(pl['steps'])})", plan=pl)
+    _journal_start(run, profile)
+    run.emit("task", f"task {run.tid} focused", task=run.tid)
+
+
+def _journal_start(run, profile):
+    pl = run.plan
     run.journal = os.path.join(run.jdir, f"{run.tid}.jsonl")
     run.log(kind="start", task=run.tid, request=run.request, plan=pl, model=profile and profile["name"],
             messages=run.plan_msgs,
             options={"no_commit": run.no_commit, "escalate": run.escalate and run.escalate["name"],
                      "max_steps": run.max_steps, "worker": run.worker, "worker_timeout": run.worker_timeout,
                      "verify": run.verify_cmd})
-    run.emit("task", f"task {run.tid} created and focused", task=run.tid)
 
 
 def _drive(run, profile):

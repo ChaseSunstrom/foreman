@@ -150,6 +150,23 @@ class CaptureAndIntake(ForemanTestCase):
             self.assertTrue(b.title, "a title of only control characters falls back to 'untitled'")
         self.assertNotIn("\x1b]0;pwned", self.fm("watch", "--once").stdout)
 
+    def test_planning_a_capture_replaces_its_criteria_and_steps(self):
+        # T-1364: a capture that already has criteria and steps, planned with --from, keeps only the ones given
+        # (T-1315 and T-1331 each ended up with every step twice)
+        for tid in ("T-0001", "T-0002"):
+            self.fm("capture", f"make it so {tid}")
+            self.fm("task", "ac", tid, "add", "old check", "--verify", "true")
+            self.fm("task", "step", tid, "add", "old step")
+        self.fm("task", "new", "make it so", "--type", "FIX", "--tier", "S", "--from", "T-0001",
+                "--ac", "new check :: true", "--step", "new step")
+        got = json.loads(self.fm("task", "show", "T-0001", "--json").stdout)
+        self.assertEqual([x["text"] for x in got["criteria"]], ["new check"])
+        self.assertEqual([x["text"] for x in got["steps"]], ["new step"])
+        self.fm("task", "new", "keep mine", "--type", "FIX", "--tier", "S", "--from", "T-0002")
+        got = json.loads(self.fm("task", "show", "T-0002", "--json").stdout)
+        self.assertEqual([x["text"] for x in got["criteria"]], ["old check"], "no --ac: the capture's own stay")
+        self.assertEqual([x["text"] for x in got["steps"]], ["old step"])
+
     def test_parallel_captures_get_unique_ids(self):
         outs = []
 

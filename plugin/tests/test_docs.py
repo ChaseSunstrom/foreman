@@ -283,6 +283,18 @@ class Site(unittest.TestCase):
             self.assertTrue(build.safe_out(os.path.join(tmp, "_site")))
         self.assertTrue(build.safe_out(os.path.join(self.ROOT, "_site")))
 
+    def test_an_option_is_never_taken_as_the_output_folder(self):
+        # T-1371: `python3 site/build.py --check` built into a folder named --check, which then got committed
+        import subprocess
+        import sys
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            r = subprocess.run([sys.executable, os.path.join(self.ROOT, "site", "build.py"), "--check"], cwd=tmp,
+                               capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("usage", r.stderr)
+            self.assertEqual(os.listdir(tmp), [], "nothing written")
+
     def test_a_new_duel_keeps_the_saved_ones(self):
         # site review: stats.py --duel long=DIR alone replaced quality, hard and hard-haiku with nothing
         stats = self._site("stats")
