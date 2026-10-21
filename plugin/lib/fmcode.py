@@ -62,9 +62,10 @@ WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files 
 # so only such a runner is picked with nothing configured. One without work is found and named, not run: define it in
 # $FOREMAN_HOME/code.toml. Commands come only from here and that file; a project picks a runner by name.
 RUNNERS = {
-    "claude": {"work": "claude -p {prompt} --permission-mode acceptEdits", "verified": True,
+    # T-1329: a template with --output-format stream-json is read as claude's stream, so each tool use shows live
+    "claude": {"work": "claude -p {prompt} --permission-mode acceptEdits --output-format stream-json --verbose",
                "plan": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit "
-                       "--output-format json"},
+                       "--output-format stream-json --verbose", "verified": True},
     "codex": {"work": "codex exec --full-auto {prompt}", "plan": "codex exec --sandbox read-only {prompt}"},
     "gemini": {"work": "gemini --approval-mode auto_edit -p {prompt}", "plan": "gemini --approval-mode default -p {prompt}"},
     "aider": {"work": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}"},
@@ -95,6 +96,8 @@ EVENTS = {
     "closed": "task, tokens", "blocked": "task, reason", "error": "task",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
     "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328)",
+    "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
+    "working": "worker, secs: a CLI turn still running with nothing to show (each FM_HEARTBEAT s, default 10)",
 }
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
 
@@ -528,7 +531,13 @@ class Run:
         try:
             # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
             env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
-            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
+            streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
+            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
+                                    on_line=self.live_tools(argv[0]) if streams else None,
+                                    on_idle=self.live_beat(argv[0]))
+            if streams:  # the journal keeps its reply, not the stream
+                res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
+                out = res["result"] if res and isinstance(res.get("result"), str) else out
             ended = True
         finally:
             reverts, lost = self.judge(before)
@@ -545,6 +554,25 @@ class Run:
                           "put back: check it before going on")
         self.done.add(name)
         self.log(kind="phase_done", phase=name)
+
+    def live_tools(self, who):
+        """T-1329: a stream line's tool uses as tool events; whether it showed any."""
+        def on_line(line):
+            shown = m.stream_tools(line, self.root)
+            for action, target in shown:
+                target = self.redact(target)
+                self.emit("tool", f"    {action} {target}", action=action, target=target, worker=who)
+            return bool(shown)
+        return on_line
+
+    def live_beat(self, who):
+        """T-1329: a working event for a CLI turn that has shown nothing for a while."""
+        t0 = time.monotonic()
+
+        def beat():
+            secs = round(time.monotonic() - t0)
+            self.emit("working", f"    {who} working ({secs} s)", worker=who, secs=secs)
+        return beat
 
     def judge(self, b):
         """([(path, why)] put back, [paths it couldn't put back]) for one worker turn. Always put back: Git's own
@@ -681,23 +709,27 @@ def trim(msgs, keep=KEEP_RESULTS):
     return out
 
 
-def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False):
+def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
-    (setsid, a double fork): this process is their subreaper, so they come back to it, not to init."""
+    (setsid, a double fork): this process is their subreaper, so they come back to it, not to init. on_line and
+    on_idle see its output live (fmcore.pump, T-1329)."""
     reaping = reap and _subreaper(True)
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, start_new_session=True, env=env)
     head, tail, total = bytearray(), bytearray(), [0]
 
-    def pump():
-        for chunk in iter(lambda: p.stdout.read1(65536), b""):
-            total[0] += len(chunk)
-            take = chunk[:max(cap - len(head), 0)]
-            head.extend(take)
-            tail.extend(chunk[len(take):])
-            del tail[:-cap]
-    t = threading.Thread(target=pump, daemon=True)
+    def sink(chunk):
+        total[0] += len(chunk)
+        take = chunk[:max(cap - len(head), 0)]
+        head.extend(take)
+        tail.extend(chunk[len(take):])
+        del tail[:-cap]
+    done = threading.Event()  # set once the turn is over: a line a leftover grandchild prints shows nothing
+    live = (on_line and (lambda line: not done.is_set() and on_line(line)),
+            on_idle and (lambda: done.is_set() or on_idle()))
+    t = threading.Thread(target=fmcore.pump, args=(p.stdout, sink, live[0], on_idle and m.heartbeat(), live[1]),
+                         daemon=True)
     t.start()
     try:
         code = p.wait(timeout)
@@ -713,6 +745,7 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False):
             _kill_orphans()
             _subreaper(False)
     t.join(5)
+    done.set()
     gap = total[0] - len(head) - len(tail)
     out = head.decode("utf-8", "replace") + (f"\n… ({gap} bytes cut) …\n" if gap > 0 else "") + \
         tail.decode("utf-8", "replace")
@@ -1186,6 +1219,8 @@ def choose_profile(run, model):
     planner, r = None, all_runners().get(run.worker or "", {})
     if r.get("plan"):
         planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": r["plan"], "verified": r.get("verified"),
+                   "stream": "claude" if "stream-json" in r["plan"] else None, "on_line": run.live_tools(run.worker),
+                   "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
                    "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
         if not model and run.model_name == planner["name"]:
