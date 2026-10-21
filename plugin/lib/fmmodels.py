@@ -354,13 +354,16 @@ def _cli(profile, messages, timeout):
                                 start_new_session=True)
     except OSError as e:
         raise ModelError(f"{profile['name']}: {e}") from None
+    import fmcore
     try:
         out, err = proc.communicate(timeout=limit)
     except subprocess.TimeoutExpired:  # it and everything it started: nothing keeps working after we give up
-        import fmcore
         fmcore.kill_group(proc)
         proc.communicate()
         raise ModelError(f"{profile['name']}: no reply in {limit} s") from None
+    finally:
+        if proc.poll() is None:  # T-1326: fm code stopped mid-call (SystemExit from a signal): the CLI goes too
+            fmcore.kill_group(proc)
     r = subprocess.CompletedProcess(argv, proc.returncode, out, err)
     if r.returncode:
         raise ModelError(f"{profile['name']}: exit {r.returncode}: {(r.stderr or r.stdout).strip()[-300:]}")
