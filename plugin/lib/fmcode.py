@@ -618,7 +618,9 @@ class Run:
         code, out, ended = None, "", False
         try:
             # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
-            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
+            # T-1417: no self-update mid-turn: it rewrites ~/.local/bin/claude, which the judge holds
+            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}",
+                       DISABLE_AUTOUPDATER="1")
             streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
             self.unlean = None
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
@@ -1643,7 +1645,7 @@ def choose_profile(run, model):
                    "on_line": run.live_tools(run.worker, "--strict-mcp-config" in lean),
                    "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
-                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
+                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan", DISABLE_AUTOUPDATER="1")}
         if not model and run.model_name == planner["name"]:
             return planner
     try:
