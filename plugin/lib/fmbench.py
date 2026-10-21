@@ -404,15 +404,7 @@ def _judge(p, wt, case, reply, model="sonnet", timeout=300):
 def _bare_guard(plugin):
     """T-0963: the plugin's guard alone, as --settings hooks for a session that loads no plugin: bypass mode stays
     guarded, and FOREMAN_QUIET drops the brief rule, so the arm is Claude with nothing of Foreman's but the guard."""
-    # T-0963 security review: the plugin's own PreToolUse entries, every matcher and its onFailure kept, the root
-    # resolved, so the bare arm is guarded exactly as a session with the plugin is
-    with open(os.path.join(plugin, "hooks", "hooks.json"), encoding="utf-8") as f:
-        entries = json.load(f)["hooks"]["PreToolUse"]
-    root = shlex.quote(plugin)
-    for e in entries:
-        for h in e.get("hooks") or []:
-            h["command"] = h["command"].replace("${CLAUDE_PLUGIN_ROOT}", root)
-    return json.dumps({"hooks": {"PreToolUse": entries}})
+    return c.guard_settings(plugin)  # T-1354: shared with fm code's lean claude sessions
 
 
 def run_case(p, case, plugin, model=None, budget=3.0, timeout=30, extra=(), bare=False, compact_at=None, marathon=None):

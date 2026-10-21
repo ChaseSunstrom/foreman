@@ -65,7 +65,11 @@ RUNNERS = {
     # T-1329: a template with --output-format stream-json is read as claude's stream, so each tool use shows live
     "claude": {"work": "claude -p {prompt} --permission-mode acceptEdits --output-format stream-json --verbose",
                "plan": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit "
-                       "--output-format stream-json --verbose", "verified": True},
+                       "--output-format stream-json --verbose", "verified": True,
+               # T-1354: lean: none of the user's plugins, MCP servers or settings hooks, only Foreman's guard (added
+               # as --settings); the planner also loses every tool that runs code. code.toml lean = false: as before
+               "lean": {"work": "--setting-sources project,local --strict-mcp-config",
+                        "plan": "--restricted --strict-mcp-config"}},
     "codex": {"work": "codex exec --full-auto {prompt}", "plan": "codex exec --sandbox read-only {prompt}"},
     "gemini": {"work": "gemini --approval-mode auto_edit -p {prompt}", "plan": "gemini --approval-mode default -p {prompt}"},
     "aider": {"work": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}"},
@@ -822,8 +826,20 @@ def all_runners():
                     raise CodeError(f"code.toml: [runners.{name}] {k} needs {{prompt}} where the request goes")
             mine = {k: r[k] for k in ("work", "plan") if k in r}
             mine["verified"] = r.get("verified") is True or (out.get(name, {}).get("verified", False) and "plan" not in mine)
+            # a command the user wrote runs as written: no lean flags on it
+            mine["lean"] = {k: v for k, v in (out.get(name, {}).get("lean") or {}).items() if k not in mine}
             out.setdefault(name, {}).update(mine)
     return out
+
+
+def lean_args(r, kind):
+    """T-1354: the extra argv that launches a runner's work or plan lean, with Foreman's guard as its only hooks; []
+    when it has none or code.toml says lean = false."""
+    lean = code_config().get("lean", True)
+    if not isinstance(lean, bool):
+        raise CodeError(f"code.toml: lean is true or false, not {lean!r}")
+    flags = (r.get("lean") or {}).get(kind) if lean else None
+    return shlex.split(flags) + ["--settings", fmcore.guard_settings()] if flags else []
 
 
 def _installed(name, r):
@@ -861,13 +877,15 @@ def pick_runner(p):
 
 def worker_argv(spec, prompt, which=True):
     """A --worker spec as argv: the user's own template ("{prompt}" in it), a runner's name, else [spec, prompt]."""
-    tpl = all_runners().get(spec, {}).get("work") or spec
+    r = all_runners().get(spec, {})
+    tpl = r.get("work") or spec
     try:
         argv = [w.replace("{prompt}", prompt) for w in shlex.split(tpl)] if "{prompt}" in tpl else [spec, prompt]
     except ValueError as e:
         raise CodeError(f"--worker {spec!r} doesn't split as a command: {e}")
     if not argv or not argv[0]:
         raise CodeError(f"--worker {spec!r} names no command")
+    argv += lean_args(r, "work") if r.get("work") else []
     if which and not shutil.which(argv[0]):
         raise CodeError(f"the worker {argv[0]} isn't on PATH: install it, or give --worker 'CMD {{prompt}}'")
     return argv
@@ -1165,6 +1183,9 @@ def cmd_code(args):
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
         if picked:
             run.emit("note", f"runner: {run.worker} ({picked}; fm code runners lists them all)", worker=run.worker)
+        if run.worker and lean_args(all_runners().get(run.worker, {}), "work"):
+            run.emit("note", f"lean: {run.worker} runs without your plugins, MCP servers or settings hooks, with "
+                             "Foreman's guard (code.toml lean = false keeps them)", worker=run.worker)
         if args.resume is None and run.tid:  # --task
             _start_task(run, profile)
         elif args.resume is None:
@@ -1229,7 +1250,8 @@ def choose_profile(run, model):
     run it planned gets again; a model asked for by name is never swapped for it."""
     planner, r = None, all_runners().get(run.worker or "", {})
     if r.get("plan"):
-        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": r["plan"], "verified": r.get("verified"),
+        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "verified": r.get("verified"),
+                   "argv": r["plan"] + "".join(" " + shlex.quote(a) for a in lean_args(r, "plan")),
                    "stream": "claude" if "stream-json" in r["plan"] else None, "on_line": run.live_tools(run.worker),
                    "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
