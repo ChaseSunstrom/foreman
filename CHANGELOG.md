@@ -14,6 +14,8 @@
 - fm code's judge also holds your shell startup files (bash, zsh including `$ZDOTDIR`, fish including `conf.d`) and other agents' settings (`~/.codex` or `$CODEX_HOME`, `~/.gemini`, `~/.claude` settings, and the MCP servers in `~/.claude.json`): a worker's change there is put back and named, a folder it turns into a link is removed without being followed, and a worker turn that changed nothing says so (T-1393).
 - `fm lease drop FILE` frees only the active task's leases, as a bare `fm lease drop` already did: a builder lane dropping a file no longer frees other parallel lanes' leases on it (they share the main session's id) (T-1416).
 - `fm page` loads nothing from another host either: its template's Google Fonts links are gone and its font stacks fall back to faces already on the reader's machine (T-1414).
+- fm code stops with "the model's server truncated the prompt at N tokens" when an API model reports reading under half the prompt fm code sent, instead of acting on a reply that never saw its instructions (T-1404).
+- fm code's write and edit keep a file's line endings (LF text over a CRLF file stays CRLF), refuse a binary, non-UTF-8 or non-regular target instead of rewriting it, and refuse option-shaped paths like `-` and `--x` (T-1408).
 
 ## 1.2.48 — 2026-10-21
 - fm code's claude sessions run lean: the worker without your plugins, MCP servers or settings hooks (`--setting-sources project,local --strict-mcp-config`) and the planner in `--restricted` mode, each with Foreman's guard as `--settings`. A planner call here read 15,286 input tokens instead of 31,620, and the guard still refused a `.env` write (`plugin/tests/e2e/lean_probe.py`). `lean = false` in code.toml keeps the old launch (T-1354).
