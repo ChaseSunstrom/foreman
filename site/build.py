@@ -273,7 +273,7 @@ def build(out):
         shutil.rmtree(out)
     shutil.copytree(HERE, out, ignore=lambda d, names: [n for n in names if n in SOURCE_ONLY])
     os.makedirs(os.path.join(out, "demo"), exist_ok=True)
-    for f in ("live.mp4", "demo.svg"):
+    for f in ("live.mp4", "demo.svg", "code-tui.mp4"):  # code-tui.mp4: fm code tui --record demo/code-tui.jsonl
         shutil.copy2(os.path.join(ROOT, "demo", f), os.path.join(out, "demo", f))
     sys.path.insert(0, os.path.join(ROOT, "plugin", "lib"))  # T-1283: fm code tui draws its own picture
     import fmcodetui

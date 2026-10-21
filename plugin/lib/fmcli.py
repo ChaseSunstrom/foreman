@@ -5689,6 +5689,8 @@ def build_parser():
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
     s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
+    s.add_argument("--record", metavar="VIDEO", help="fm code tui: play --events FILE's run into an mp4 or gif (needs "
+                                                     "ffmpeg and rsvg-convert; T-1300)")
     s.add_argument("--print-config", action="store_true", help="fm code tui: print its settings as tui.toml (the "
                                                                "defaults with yours over them)")
     s = add("serve", lazy("fmserve", "cmd_serve"), tier=("Running elsewhere", 1140),

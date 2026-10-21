@@ -2,12 +2,15 @@
 event stream (fmcode.EVENTS), so the harness stays the source of truth: the TUI never edits, verifies or closes.
 
 Layers, each testable without a terminal: State (events → what happened); Canvas and the panels (a grid of styled
-cells); render (state + config → a canvas); App (keys → commands, views, the child process). main() is the thin curses
+cells); render (state + config + time → a canvas); App (keys → commands, views, the child process). main() runs the
+screen through fmcodetui's own ANSI renderer (fmcodeterm; no curses)
 driver, --plain its line-by-line twin and --snapshot an SVG of the screen. Pictures over prose: a station track, check
 chips, change bars and a token chart; the model's own words are one key away. Themes, layout and keys are config;
 panels and commands are registries extensions add to. Stdlib only."""
+import functools
 import html
 import json
+import math
 import os
 import queue
 import shutil
@@ -16,6 +19,9 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
+
+from fmcodeterm import Term, colour_depth, parse_keys, session, split_tail  # noqa: E402 (T-1300: the terminal)
 
 SCHEMA = 1  # the fm code event stream this reader knows (fmcode.SCHEMA)
 FM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "bin", "fm")
@@ -25,11 +31,16 @@ FM = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "
 PALETTES = {
     "night": {"bg": "#0D1420", "bar": "#1B2638", "head": "#131C2B", "ink": "#E7ECF4", "dim": "#8A98AE",
               "said": "#9AA8BC", "accent": "#86A8FF", "ok": "#47C98B", "bad": "#FF6B6B", "warn": "#FFC83D",
-              "edge": "#33445F", "track": "#2E3D58", "shade": "#2A3650", "barink": "#C9D3E3"},
+              "edge": "#33445F", "track": "#2E3D58", "shade": "#2A3650", "barink": "#C9D3E3",
+              "accent2": "#C792FF", "ok2": "#B8F26B", "bad2": "#FFA26B", "glow": "#FFFFFF", "panel": "#111B2B"},
     "paper": {"bg": "#F6F7F9", "bar": "#E1E6EE", "head": "#E9EDF3", "ink": "#1B2330", "dim": "#5E6B7E",
               "said": "#4F5B6C", "accent": "#2F54C9", "ok": "#12805C", "bad": "#C42B2B", "warn": "#9A6200",
-              "edge": "#C3CCD9", "track": "#CDD5E1", "shade": "#C9D1DD", "barink": "#2B3442", "paint": True},
+              "edge": "#C3CCD9", "track": "#CDD5E1", "shade": "#C9D1DD", "barink": "#2B3442", "paint": True,
+              "accent2": "#8B3FD1", "ok2": "#4E9F1D", "bad2": "#C2571A", "glow": "#FFFFFF", "panel": "#FFFFFF"},
 }
+# signal: night with pass blue and fail orange, told apart with red-green colour blindness (T-1300)
+PALETTES["signal"] = dict(PALETTES["night"], ok="#4DA3FF", ok2="#9AD4FF", bad="#FF8A1F", bad2="#FFC46B",
+                          warn="#F2D544", accent="#C4A8FF", accent2="#FF8FD8")
 _BG, _INK = PALETTES["night"]["bg"], PALETTES["night"]["ink"]
 
 
@@ -47,7 +58,8 @@ def _theme(p):
             "bar_dim": {"fg": p["dim"], "bg": p["bar"]}, "key": {"fg": p["warn"], "bg": p["bar"], "bold": True},
             "input": {"fg": p["ink"], "bg": p["bar"], "bold": True}, "chip_ok": chip(p["ok"]),
             "chip_bad": chip(p["bad"]), "chip_warn": chip(p["warn"]), "chip_accent": chip(p["accent"]),
-            "chip_todo": {"fg": p["dim"], "bg": p["bar"]}}
+            "chip_todo": {"fg": p["dim"], "bg": p["bar"]}, "accent2": {"fg": p["accent2"]}, "ok2": {"fg": p["ok2"]},
+            "bad2": {"fg": p["bad2"]}, "glow": {"fg": p["glow"]}, "panel": {"bg": p["panel"]}}
 
 
 def _mono():
@@ -57,11 +69,13 @@ def _mono():
             for n, spec in _theme(PALETTES["night"]).items()}
 
 
-PRESETS = {"night": lambda: _theme(PALETTES["night"]), "paper": lambda: _theme(PALETTES["paper"]), "mono": _mono}
+PRESETS = {"night": lambda: _theme(PALETTES["night"]), "paper": lambda: _theme(PALETTES["paper"]),
+           "signal": lambda: _theme(PALETTES["signal"]), "mono": _mono}
 THEME = PRESETS["night"]()
 BORDERS = {"rounded": "╭╮╰╯─│", "square": "┌┐└┘─│", "heavy": "┏┓┗┛━┃", "double": "╔╗╚╝═║", "ascii": "++++-|"}
 DEFAULTS = {
     "preset": "night",
+    "motion": "full",
     "theme": THEME,
     "border": "rounded",
     "layout": {"top": ["track"], "columns": [["log"], ["checks", "files", "time", "tokens"]], "widths": [58, 42],
@@ -77,6 +91,8 @@ CHIP = {"done": (" ✓ ", "chip_ok"), "now": (" ● ", "chip_accent"), "todo": (
 NODE = {"done": ("●", "ok"), "now": ("◉", "accent"), "todo": ("○", "track"), "fail": ("✖", "bad")}
 LINK = {"done": ("━", "ok"), "now": ("━", "accent"), "fail": ("━", "bad"), "todo": ("─", "track")}
 BLOCKS = "▁▂▃▄▅▆▇█"
+SPIN = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+MOTIONS = ("full", "reduced", "off")
 LOG_HIDES = ("plan", "task", "before")  # the track and Checks show these; --plain prints them
 SINGLE_BELOW = 60  # columns: a terminal narrower than this shows the activity log alone
 
@@ -247,18 +263,33 @@ class Canvas:
     def __init__(self, w, h):
         self.w, self.h = max(w, 1), max(h, 1)
         self.cells = [[(" ", "text")] * self.w for _ in range(self.h)]
+        self.bg = [[None] * self.w for _ in range(self.h)]  # the colour under a cell with no background of its own
+
+    def tint(self, y, x, h, w, colour):
+        for r in range(max(0, y), min(self.h, y + h)):
+            for c in range(max(0, x), min(self.w, x + w)):
+                self.bg[r][c] = colour
 
     def put(self, y, x, s, style="text", right=None):
         """s at (y, x), clipped at `right` (exclusive) or the edge; the column after it."""
         if not 0 <= y < self.h:
             return x
-        end = min(self.w, right if right is not None else self.w)
+        end, last = min(self.w, right if right is not None else self.w), None
         for ch in str(s):
-            if x >= end:
+            if unicodedata.combining(ch):  # an accent joins the letter before it, in the same cell
+                if last is not None:
+                    self.cells[y][last] = (self.cells[y][last][0] + ch, style)
+                continue
+            wide = unicodedata.east_asian_width(ch) in "WF"
+            if x + wide >= end:
+                if x < end and x >= 0:
+                    self.cells[y][x] = (" ", style)  # half a wide character doesn't fit: a space
                 break
             if x >= 0:
-                self.cells[y][x] = (ch if ch.isprintable() else " ", style)
-            x += 1
+                self.cells[y][x], last = (ch if ch.isprintable() else " ", style), x
+                if wide:  # it fills two columns: the second is an empty cell, so the row stays w columns
+                    self.cells[y][x + 1] = ("", style)
+            x += 1 + wide
         return x
 
     def line(self, y, x, segments, right):
@@ -312,9 +343,12 @@ def wrap(s, n, lines=2):
 def box(cv, y, x, h, w, title, cfg, focused=False, note=""):
     """A bordered panel, its title and a dim note in the top edge; its inner (y, x, h, w)."""
     tl, tr, bl, br, hz, vt = BORDERS.get(cfg.get("border"), BORDERS["rounded"])
-    edge = "accent" if focused else "border"
+    fx = current()
+    edge = "border" if not focused else rgb(fg=mix(col(cfg, "border"), col(cfg, "accent"), 0.55 + 0.45 * fx.wave(2.4)),
+                                            bold=True) if fx.moving else "accent"
     if h < 2 or w < 4:
         return y, x, 0, 0
+    cv.tint(y, x, h, w, col(cfg, "panel", "bg"))
     cv.put(y, x, tl + hz * (w - 2) + tr, edge)
     for r in range(y + 1, y + h - 1):
         cv.put(r, x, vt, edge)
@@ -351,13 +385,159 @@ def columns(values, w, height=3):
     return out
 
 
+# ---------------------------------------------------------------- colour and motion (T-1300)
+
+def rgb(fg=None, bg=None, bold=False, italic=False):
+    """A computed style: colours worked out for this cell at this instant (a gradient, a pulse, a fade)."""
+    return ("rgb", fg, bg, bold, italic)
+
+
+def resolve(style, cfg, cell_bg=None):
+    """{fg, bg, bold, italic, reverse} for a cell: a theme style by name, or a computed one; a cell with no
+    background of its own sits on its panel's tint (cell_bg)."""
+    if isinstance(style, tuple) and style[:1] == ("rgb",):
+        _, fg, bg, bold, italic = style
+        spec = {k: v for k, v in (("fg", fg), ("bg", bg), ("bold", bold), ("italic", italic)) if v not in (None, False)}
+    else:
+        spec = dict(((cfg or {}).get("theme") or THEME).get(style) or {})
+    if "bg" not in spec and cell_bg is not None and not spec.get("reverse"):
+        spec["bg"] = cell_bg
+    return spec
+
+
+def col(cfg, name, key="fg"):
+    return (((cfg or {}).get("theme") or THEME).get(name) or {}).get(key)
+
+
+def mix(a, b, k):
+    """Colour a → b by k (0..1); with one of them missing (mono, NO_COLOR) the other, or None."""
+    if a is None or b is None:
+        return a if b is None else b
+    ka, kb, k = _rgb(a), _rgb(b), max(0.0, min(1.0, k))
+    return "#%02x%02x%02x" % tuple(round(x + (y - x) * k) for x, y in zip(ka, kb))
+
+
+def ease_out(k):
+    k = max(0.0, min(1.0, k))
+    return 1 - (1 - k) ** 3
+
+
+class Motion:
+    """What render needs to animate, kept across frames: when each watched value changed, and from what. A value
+    already there in the first frame is no change (opening a finished run shows it as it is); one first seen later
+    is new (a fresh activity line fades in, a new number rolls up from 0)."""
+
+    def __init__(self):
+        self.seen, self.frames, self.last_change = {}, 0, -1e9
+
+    def since(self, key, value, t):
+        """Seconds since key's value became `value` (inf when it already was in the first frame)."""
+        rec = self.seen.get(("s", key))
+        if rec is None or rec[0] != value:
+            rec = (value, None if rec is None and self.frames <= 1 else t)
+            self.seen[("s", key)] = rec
+            if rec[1] is not None:
+                self.last_change = max(self.last_change, t)
+        return float("inf") if rec[1] is None else max(0.0, t - rec[1])
+
+    def eased(self, key, value, t, dur=0.7):
+        """value as shown at t: it rolls from what was shown before to the new value over dur seconds."""
+        rec = self.seen.get(("e", key))
+        if rec is None:
+            rec = (value, value, None) if self.frames <= 1 else (value, 0, t)
+        elif rec[0] != value:
+            rec = (value, self._at(rec, t, dur), t)
+        self.seen[("e", key)] = rec
+        if rec[2] is not None and t - rec[2] < dur:
+            self.last_change = max(self.last_change, t)
+        return self._at(rec, t, dur)
+
+    @staticmethod
+    def _at(rec, t, dur):
+        target, frm, t0 = rec
+        return target if t0 is None else frm + (target - frm) * ease_out((t - t0) / dur)
+
+    def busy(self, t, window=1.6):
+        return t - self.last_change < window
+
+
+class FX:
+    """One frame's motion: its time, the setting (full: everything moves; reduced: colours change, nothing moves;
+    off: still) and the theme's colours. A frame drawn without an App (a snapshot, a test) is still."""
+
+    def __init__(self, cfg=None, app=None, t=0.0):
+        self.cfg, self.t = cfg or DEFAULTS, t
+        mode = self.cfg.get("motion", "full") if app is not None else "off"
+        self.motion = app.motion if app is not None else None
+        # a theme with no colours (mono) can't flash or fade: its chips keep their reverse; things still turn
+        self.moving, self.colour = mode == "full", mode in ("full", "reduced") and col(self.cfg, "accent") is not None
+
+    def since(self, key, value):
+        return self.motion.since(key, value, self.t) if self.colour else float("inf")
+
+    def ease(self, key, value, dur=0.7):
+        return self.motion.eased(key, value, self.t, dur) if self.moving else value
+
+    def wave(self, period):
+        """0..1, a slow sine: what breathes and pulses."""
+        return (math.sin(self.t * 2 * math.pi / period) + 1) / 2 if self.moving else 0.5
+
+    def c(self, name, key="fg"):
+        return col(self.cfg, name, key)
+
+    def spin(self):
+        return SPIN[int(self.t * 10) % len(SPIN)]
+
+
+_FX = FX()
+
+
+def current():
+    """The frame being drawn (render sets it): panels and extensions ask it for time and colour."""
+    return _FX
+
+
+def faded(style, k, cfg, under):
+    """style's colours brought in from the panel's tint (k 0) to themselves (k 1): a line arriving."""
+    spec = resolve(style, cfg)
+    fg = spec.get("fg") or col(cfg, "screen")
+    return rgb(fg=mix(under, fg, k), bg=spec.get("bg") and mix(under, spec["bg"], k), bold=spec.get("bold", False),
+               italic=spec.get("italic", False))
+
+
+LIVE = ("planning", "running", "fixing")
+
+
+def _waiting(st, text):
+    """An empty panel's words: still when idle; during a run a light passes over them, as a skeleton shimmers."""
+    fx = current()
+    if st.status not in LIVE or not fx.moving:
+        return [[(text, "dim")]]
+    dim, ink, d0 = fx.c("dim"), fx.c("screen"), (fx.t * 18) % (len(text) + 12)
+    return [_segments([(ch, rgb(fg=mix(dim, ink, 0.8 * (1 - (d0 - i) / 6) if 0 <= d0 - i < 6 else 0)))
+                       for i, ch in enumerate(text)])]
+
+
+def _focus_line(segs, w, band, cfg):
+    """segs on the band that marks the line being worked now; chips keep their own colours."""
+    out = []
+    for t, style in segs:
+        spec = resolve(style, cfg)
+        out.append((t, style if spec.get("bg") or spec.get("reverse") else rgb(
+            fg=spec.get("fg") or col(cfg, "screen"), bg=band, bold=spec.get("bold", False),
+            italic=spec.get("italic", False))))
+    return out + [(" " * max(0, w - sum(len(t) for t, _ in segs)), rgb(bg=band))]
+
+
 # ---------------------------------------------------------------- panels: (state, width, height, app) → lines
 # Each panel returns lines of (text, style) segments. height is None when the layout measures it (an "auto"
 # panel), or the inner rows a stretching panel has to fill.
 
 def _track(st, w, h, app):
-    """The run as a line of stations (✓ done, ● now, an empty slot to come, ✖ failed), each labelled under it; a
-    long plan on a narrow screen gets one-cell nodes."""
+    """The run as a line of stations (✓ done, the one being worked, an empty slot to come, ✖ failed), each labelled
+    under it; a long plan on a narrow screen gets one-cell nodes. In motion: the station being worked pulses and its
+    spinner turns, a light runs along the link into it, done links are a gradient, and a close sends a wave along."""
+    fx = current()
     nodes = stations(st)
     n = len(nodes)
     big = (w - 3) / (n - 1) >= 7
@@ -365,13 +545,36 @@ def _track(st, w, h, app):
     cw = 3 if big else 1
     xs = [round(i * (w - cw) / (n - 1)) for i in range(n)]
     rows = [[(" ", "text")] * w for _ in range(3)]
+    ok, ok2, accent, glow, track = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("track")
     for i, (_, _, state) in enumerate(nodes):
         glyph, style = marks[state]
+        if state == "now" and fx.moving:
+            glyph = f" {fx.spin()} " if big else fx.spin()
+            if fx.colour:
+                style = rgb(fg=col(fx.cfg, "chip_accent"), bg=mix(accent, glow, 0.1 + 0.4 * fx.wave(1.7)), bold=True) \
+                    if big else rgb(fg=mix(accent, glow, 0.5 * fx.wave(1.7)), bold=True)
         for k, ch in enumerate(glyph):
             rows[0][xs[i] + k] = (ch, style)
         if i < n - 1:
-            for x in range(xs[i] + cw + (1 if big else 0), xs[i + 1] - (1 if big else 0)):
-                rows[0][x] = LINK[nodes[i + 1][2]]
+            span = list(range(xs[i] + cw + (1 if big else 0), xs[i + 1] - (1 if big else 0)))
+            into = nodes[i + 1][2]
+            for j, x in enumerate(span):
+                ch, style = LINK[into]
+                if into == "done":
+                    style = rgb(fg=mix(ok, ok2, (x / max(1, w - 1))))
+                elif into == "now" and fx.moving:  # a light running toward the station being worked
+                    d = (fx.t * 22) % (len(span) + 10) - j
+                    style = rgb(fg=mix(mix(track, accent, 0.6), glow, (1 - d / 8) if 0 <= d < 8 else 0), bold=True)
+                rows[0][x] = (ch, style)
+    wave = fx.since("track:status", st.status)
+    if st.status == "closed" and fx.moving and wave < 1.8:  # done: a bright wave runs the length of the track
+        p = wave / 1.3 * (w + 16) - 8
+        for x, (ch, style) in enumerate(rows[0]):
+            k = max(0.0, 1 - abs(x - p) / 7)
+            if k and ch != " ":
+                spec = resolve(style, fx.cfg)
+                rows[0][x] = (ch, rgb(fg=mix(spec.get("fg"), glow, 0.9 * k), bg=spec.get("bg") and mix(
+                    spec["bg"], glow, 0.5 * k), bold=True))
     gap = (w - cw) // (n - 1)
     for r in (1, 2):
         last = fit(nodes[-1][r - 1], max(1, gap - 1))
@@ -389,43 +592,64 @@ def _track(st, w, h, app):
 
 
 def _checks(st, w, h, app):
+    """Each criterion as a chip and its words; a chip that just changed flashes bright and settles."""
     if not st.criteria:
-        return [[("checks come with the plan", "dim")]]
-    out = []
-    for c in st.criteria:
-        chip = (" PASS ", "chip_ok") if c["state"] == "pass" else (" RED  ", "chip_warn") if c.get("first") else \
-            (" FAIL ", "chip_bad") if c["state"] == "fail" else (" ···· ", "chip_todo")
+        return _waiting(st, "checks come with the plan")
+    fx, out = current(), []
+    for i, c in enumerate(st.criteria):
+        text, name = (" PASS ", "chip_ok") if c["state"] == "pass" else (" RED  ", "chip_warn") if c.get("first") \
+            else (" FAIL ", "chip_bad") if c["state"] == "fail" else (" ···· ", "chip_todo")
+        since = fx.since(f"check:{i}", (c["state"], bool(c.get("first"))))
+        style = name if since >= 1.1 else rgb(fg=col(fx.cfg, name), bg=mix(fx.c("glow"), col(fx.cfg, name, "bg"),
+                                                                        ease_out(since / 1.1)), bold=True)
         first, *more = wrap(c["text"], max(8, w - 8))
-        out.append([chip, ("  ", "text"), (first, "text")])
+        out.append([(text, style), ("  ", "text"), (first, "text")])
         out += [[("        ", "text"), (line, "text")] for line in more]
     return out
 
 
 def _files(st, w, h, app):
+    """Each changed file's added and removed lines as a bar (a gradient), longest first; bars and numbers grow."""
     stat = st.stat or {f: [0, 0] for fs in st.files.values() for f in fs}
     if not stat:
-        return [[("nothing changed yet", "dim")]]
+        return _waiting(st, "nothing changed yet")
+    fx = current()
     rows = sorted(stat.items(), key=lambda kv: (-(kv[1][0] + kv[1][1]), kv[0]))
     top = max(1, max(a + d for _, (a, d) in rows))
     nums = max(len(f" +{a} −{d}") for _, (a, d) in rows)
     nw = max(6, min(max(len(p) for p, _ in rows), w - nums - 8))
     bw = max(2, w - nw - nums - 1)
+    ok, ok2, bad, bad2 = fx.c("ok"), fx.c("ok2"), fx.c("bad"), fx.c("bad2")
     out = []
     for path, (a, d) in rows:
-        plus = max(1 if a else 0, round(a * bw / top))
-        minus = max(1 if d else 0, min(bw - plus, round(d * bw / top)))
-        out.append([(tail(path, nw).ljust(nw), "text"), (" ", "text"), ("▆" * plus, "ok"), ("▆" * minus, "bad"),
-                    (" " * (bw - plus - minus), "text"), (f" +{a}", "ok"), (f" −{d}" if d else "", "bad")])
+        plus = round(fx.ease(f"bar+:{path}", max(1 if a else 0, round(a * bw / top))))
+        minus = round(fx.ease(f"bar-:{path}", max(1 if d else 0, min(bw - plus, round(d * bw / top)))))
+        bar = [("▆", rgb(fg=mix(ok, ok2, j / max(1, bw - 1)))) for j in range(plus)] + \
+              [("▆", rgb(fg=mix(bad, bad2, j / max(1, bw - 1)))) for j in range(minus)]
+        shown_a, shown_d = round(fx.ease(f"n+:{path}", a)), round(fx.ease(f"n-:{path}", d))
+        heat = fx.since(f"heat:{path}", (a, d))  # a file that just changed glows, then cools to plain text
+        name = "text" if heat >= 3 or not fx.colour else rgb(fg=mix(fx.c("glow"), fx.c("screen"), ease_out(heat / 3)),
+                                                             bold=True)
+        out.append([(tail(path, nw).ljust(nw), name), (" ", "text")] + _segments(bar) + [
+            (" " * max(0, bw - plus - minus), "text"), (f" +{shown_a}".ljust(len(f" +{a}")), "ok"),
+            (f" −{shown_d}".ljust(len(f" −{d}")) if d else "", "bad")])
     return out
 
 
 def _tokens(st, w, h, app):
-    """Each model call's prompt size as a column, newest on the right, sat on the panel's floor; the totals under it."""
+    """Each model call's prompt size as a column (shaded floor to top, rising when it arrives), newest on the right,
+    sat on the panel's floor; the totals under it, rolling."""
     if not st.calls:
-        return [[("no model calls yet", "dim")]]
+        return _waiting(st, "no model calls yet")
+    fx = current()
     tall = min(10, max(3, (h or 5) - 1))
-    lines = [[(row, "chart")] for row in columns(st.calls, w, tall)]
-    lines.append([(human(st.tokens[0]), "strong"), (" in   ", "dim"), (human(st.tokens[1]), "strong"), (" out", "dim")])
+    vals = [fx.ease(f"col:{i}", v, 0.9) for i, v in enumerate(st.calls)]
+    accent, accent2 = fx.c("chart") or fx.c("accent"), fx.c("accent2")
+    lines = [[(row, rgb(fg=mix(accent, accent2, (tall - 1 - r) / max(1, tall - 1))))]
+             for r, row in enumerate(columns(vals, w, tall))]
+    roll = lambda key, v: human(round(fx.ease(key, v))).rjust(len(human(v)))  # rolls in place: labels stay put
+    lines.append([(roll("tok:in", st.tokens[0]), "strong"), (" in   ", "dim"), (roll("tok:out", st.tokens[1]), "strong"),
+                  (" out", "dim")])
     return [[]] * max(0, (h or 0) - len(lines)) + lines
 
 
@@ -442,21 +666,33 @@ def spans(st):
 
 
 def _time(st, w, h, app):
-    """Where the time went: each phase as a bar on the run's own clock."""
+    """Where the time went: each phase as a bar on the run's own clock, done ones a gradient, the live one
+    shimmering."""
     sp = spans(st)
     if not sp:
-        return [[("starts with the run", "dim")]]
+        return _waiting(st, "starts with the run")
+    fx = current()
     total = max(1, sp[-1][2])
     dw = max(len(duration(e - s)) for _, s, e in sp) + 2
     bw = max(4, w - 8 - dw)
+    ok, ok2, accent, glow, bad = fx.c("ok"), fx.c("ok2"), fx.c("accent"), fx.c("glow"), fx.c("bad")
     out = []
     for i, (label, s, e) in enumerate(sp):
         a = min(bw - 1, int(s * bw / total))
         b = max(a + 1, min(bw, round(e * bw / total)))
         live = i == len(sp) - 1 and st.status != "closed"
-        style = ("bad" if st.status in ("blocked", "error", "stopped") else "accent") if live else "ok"
-        out.append([(f"{label:<8}", "dim"), (" " * a, "text"), ("▆" * (b - a), style), (" " * (bw - b), "text"),
-                    (duration(e - s).rjust(dw), "accent" if live else "dim")])
+        cells = []
+        for x in range(a, b):
+            if not live:
+                c = mix(ok, ok2, x / max(1, bw - 1))
+            elif st.status in ("blocked", "error", "stopped"):
+                c = bad
+            else:
+                d = (fx.t * 14) % (b - a + 8) - (x - a)
+                c = mix(accent, glow, 0.7 * (1 - d / 5) if fx.moving and 0 <= d < 5 else 0)
+            cells.append(("▆", rgb(fg=c)))
+        out.append([(f"{label:<8}", "dim"), (" " * a, "text")] + _segments(cells) + [
+            (" " * (bw - b), "text"), (duration(e - s).rjust(dw), "accent" if live else "dim")])
     return out
 
 
@@ -510,18 +746,50 @@ def entry_text(e):
 
 
 def _log(st, w, h, app):
-    out, thoughts = [], app is None or app.thoughts
+    """The run as it happens; a line that just arrived fades in from the panel."""
+    out, thoughts, fx = [], app is None or app.thoughts, current()
+    under, now = fx.c("panel", "bg"), None
     for i, e in enumerate(st.log):
         segs = None if e.get("kind") in LOG_HIDES else entry_segments(e, w, thoughts)
         if segs is None:
             continue
+        arrived = fx.since(f"log:{i}", e.get("kind"))
+        if arrived < 0.6:
+            segs = [(t, faded(style, ease_out(arrived / 0.6), fx.cfg, under)) for t, style in segs]
+        if arrived < 1.6 and e.get("result") == "refused":  # the guard's no lands with a flash
+            hot = rgb(fg=col(fx.cfg, "chip_bad"), bg=mix(fx.c("glow"), col(fx.cfg, "chip_bad", "bg"),
+                                                         ease_out(arrived / 1.6)), bold=True)
+            segs = [(t, hot if t == " GUARD " else style) for t, style in segs]
         if app is not None and app.selected == i:
             segs = [("".join(t for t, _ in segs).ljust(w), "select")]
+        else:
+            now = len(out)
         out.append(segs)
         if app is not None and i in app.expanded and e.get("detail"):
             out += [[("      ", "text"), (part, "dim")] for line in str(e["detail"]).splitlines()[:30]
                     for part in wrap(line, max(10, w - 6), lines=4)]
-    return out or [[("press ", "dim"), ("n", "accent"), (" and type a request", "dim")]]
+    band = mix(under, fx.c("accent"), 0.16) if under and fx.c("accent") else None
+    if st.status in LIVE and now == len(out) - 1 and band:  # the line being worked now sits on a band
+        out[now] = _focus_line(out[now], w, band, fx.cfg)
+    if not out and st.status in LIVE:  # started, nothing done yet: say what it's doing, mid-panel
+        words = {"planning": "planning the work", "fixing": "fixing the checks"}.get(st.status, "working")
+        line = [(" " * max(0, (w - len(words) - 2) // 2), "text"), ((fx.spin() if fx.moving else "◆") + " ", "accent")] + _waiting(st, words)[0]
+        return [[]] * max(0, ((h or 1) - 1) // 2) + [line]
+    return out or _welcome(w, h, fx)
+
+
+def _welcome(w, h, fx):
+    """The screen before any run: Foreman's mark, breathing, and the keys that start something."""
+    a, b = fx.c("accent"), fx.c("accent2")
+    keys = [("n", "new request"), ("h", "past runs"), ("m", "model"), ("?", "keys")]
+    chips = [seg for k, word in keys for seg in ((f" {k} ", "chip_accent"), (f" {word}   ", "dim"))]
+    width = sum(len(t) for t, _ in chips)
+    pad = lambda n: [(" " * max(0, (w - n) // 2), "text")]
+    lines = [pad(1) + [("◆", rgb(fg=mix(a, b, fx.wave(3.2)), bold=True) if a else "accent")], [],
+             pad(12) + [("Foreman Code", "strong")],
+             pad(42) + [("plan, edit, check and close, each guarded", "dim")], [], pad(width) + chips]
+    top = max(0, ((h or len(lines)) - len(lines)) // 2)
+    return [[]] * top + lines
 
 
 def _plan(st, w, h, app):  # the plan in words: not in the default layout, one config line away
@@ -583,7 +851,13 @@ def elapsed(st, app):
 
 def _header(cv, st, app):
     cv.fill(0, "header")
-    x = cv.put(0, 0, " ◆ FOREMAN CODE ", "brand")
+    fx, brand = current(), " ◆ FOREMAN CODE "
+    a, b, glow, ink = fx.c("accent"), fx.c("accent2"), fx.c("glow"), col(fx.cfg, "brand")
+    sweep = (fx.t % 7) / 1.4 * (len(brand) + 8) - 4 if fx.moving else -99  # a glint crosses the name now and then
+    for i, ch in enumerate(brand):
+        bg = mix(mix(a, b, i / (len(brand) - 1)), glow, 0.55 * max(0.0, 1 - abs(i - sweep) / 3))
+        cv.put(0, i, ch, rgb(fg=ink, bg=bg, bold=True) if bg else "brand")
+    x = len(brand)
     clock = elapsed(st, app)
     right = "   ".join(v for v in (st.worker and f"worker {st.worker}" or st.model or "", clock and f"⏱ {clock}") if v)
     right = f"{right}  " if right else ""
@@ -595,7 +869,12 @@ def _header(cv, st, app):
 def _status(cv, st, app):
     y = cv.h - 1
     cv.fill(y, "bar")
-    segs = [(f" {st.status.upper()} ", STATUS_CHIP.get(st.status, "chip_todo"))]
+    fx, name = current(), STATUS_CHIP.get(st.status, "chip_todo")
+    live = st.status in LIVE
+    since = fx.since("status:chip", st.status)
+    chip = rgb(fg=col(fx.cfg, name), bg=mix(fx.c("glow"), col(fx.cfg, name, "bg"), ease_out(since / 1.2)), bold=True) \
+        if since < 1.2 else name
+    segs = [(f" {fx.spin()} {st.status.upper()} " if live and fx.moving else f" {st.status.upper()} ", chip)]
     if st.task:
         segs += [("  ", "bar"), (st.task, "bar")]
     if st.steps:
@@ -612,7 +891,8 @@ def _status(cv, st, app):
 
 def _draw(name, st, w, h, app):
     try:
-        return [[(str(t), str(s)) for t, s in line] for line in PANELS[name][1](st, w, h, app)]
+        return [[(str(t), s if isinstance(s, tuple) else str(s)) for t, s in line]
+                for line in PANELS[name][1](st, w, h, app)]
     except Exception as e:  # an extension's panel that fails, or returns something else than lines, says why
         return [[(f"panel {name} failed: {type(e).__name__}: {e}", "bad")]]
 
@@ -626,8 +906,14 @@ def _panel(cv, st, app, cfg, name, y, x, h, w, lines):
         cv.line(iy + r, ix, segs, ix + iw)
 
 
-def render(st, w, h, cfg, app=None):
-    """The whole screen for this state: header, panels per the layout, the status bar, and any open view."""
+def render(st, w, h, cfg, app=None, t=None):
+    """The whole screen for this state at time t (the App's clock): header, panels per the layout, the status bar,
+    any open view. Motion is a function of state and time, so any instant can be drawn (tests, snapshots, video)."""
+    global _FX
+    if app is not None:
+        app.motion.frames += 1
+        t = app.clock() if t is None else t
+    _FX = FX(cfg, app, t or 0.0)
     cv = Canvas(w, h)
     prompt = app is not None and app.mode == "prompt"
     y0, body_h = 1, h - 2 - (1 if prompt else 0)
@@ -644,9 +930,9 @@ def render(st, w, h, cfg, app=None):
     widths = (widths + [100 // len(columns_)] * len(columns_))[:len(columns_)]
     heights = [lay.get("narrow_heights") or []] if narrow else list(lay.get("heights") or [])
     x = 0
-    for ci, col in enumerate(columns_):
+    for ci, names_ in enumerate(columns_):
         cw = w - x if ci == len(columns_) - 1 else max(12, w * widths[ci] // max(sum(widths), 1))
-        names = [n for n in col if n in PANELS] or ["log"]
+        names = [n for n in names_ if n in PANELS] or ["log"]
         weights = ((list(heights[ci]) if ci < len(heights) else []) + [1] * len(names))[:len(names)]
         measured = {n: _draw(n, st, max(1, cw - 4), None, app) for n, wt in zip(names, weights) if wt == "auto"}
         fixed = {n: min(len(lines) + 2, body_h * 45 // 100) for n, lines in measured.items()}
@@ -767,6 +1053,7 @@ def _rgb(c):
     return (8 + (i - 232) * 10,) * 3
 
 
+@functools.lru_cache(maxsize=4096)  # the terminal asks for every cell of every frame
 def to_256(c):
     """The nearest 256-colour index (the 6x6x6 cube or the grey ramp) for a theme colour."""
     if isinstance(c, int):
@@ -799,19 +1086,21 @@ def to_svg(cv, cfg, title="fm code tui"):
     for i, dot in enumerate(("#FF5F57", "#FEBC2E", "#28C840")):
         out.append(f'<circle cx="{22 + i * 20}" cy="{chrome / 2}" r="6" fill="{dot}"/>')
     out.append(f'<text x="{W / 2}" y="{chrome / 2 + 5}" text-anchor="middle" fill="#8A98AE">{html.escape(title)}</text>')
+    back, head = [], len(out)  # every background goes under every glyph, so a later run's background can't cut a hairline into a bar
     for y, row in enumerate(cv.cells):
-        x = 0
+        x, under = 0, cv.bg[y]
         while x < len(row):
             style, end = row[x][1], x
-            while end < len(row) and row[end][1] == style:
+            while end < len(row) and row[end][1] == style and under[end] == under[x]:
                 end += 1
-            spec = theme.get(style) or {}
+            spec = resolve(style, cfg, under[x])
             s_fg, s_bg = spec.get("fg"), spec.get("bg")
             if spec.get("reverse"):
                 s_fg, s_bg = s_bg or screen.get("bg", _BG), s_fg or screen.get("fg", _INK)
             px, py = pad + x * cw, chrome + pad + y * ch
             if s_bg is not None:
-                out.append(f'<rect x="{px:.1f}" y="{py:.1f}" width="{(end - x) * cw:.1f}" height="{ch}" fill="{_hex(s_bg)}"/>')
+                back.append(f'<rect x="{px:.1f}" y="{py:.1f}" width="{(end - x) * cw + 0.6:.1f}" height="{ch + 0.6:.1f}" '
+                            f'fill="{_hex(s_bg)}"/>')  # +0.6: neighbouring runs overlap, no seam between them
             text = "".join(c for c, _ in row[x:end])
             k = 0
             while k < len(text):  # block glyphs as exact rects (one per run), as a terminal fills its cells
@@ -820,8 +1109,8 @@ def to_svg(cv, cfg, title="fm code tui"):
                     j += 1
                 if c in BLOCKS:
                     part = (BLOCKS.index(c) + 1) / 8
-                    out.append(f'<rect x="{px + k * cw:.1f}" y="{py + ch * (1 - part):.1f}" width="{(j - k) * cw:.1f}" '
-                               f'height="{ch * part:.1f}" fill="{_hex(s_fg) if s_fg is not None else fg}"/>')
+                    out.append(f'<rect x="{px + k * cw:.1f}" y="{py + ch * (1 - part):.1f}" width="{(j - k) * cw + 0.6:.1f}" '
+                               f'height="{ch * part + 0.6:.1f}" fill="{_hex(s_fg) if s_fg is not None else fg}"/>')
                 k = j
             text = "".join(" " if c in BLOCKS else c for c in text)
             if text.strip():
@@ -831,6 +1120,7 @@ def to_svg(cv, cfg, title="fm code tui"):
                            f' textLength="{(end - x) * cw:.1f}" lengthAdjust="spacingAndGlyphs"{attrs}>'
                            f'{html.escape(text)}</text>')
             x = end
+    out[head:head] = back
     out.append("</svg>")
     return "\n".join(out)
 
@@ -850,6 +1140,7 @@ class App:
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.extra_labels, self.ext = list(EXT_LABELS), {}
+        self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
                          "down": lambda: self.move(1), "page_up": lambda: self.move(-10),
@@ -857,6 +1148,17 @@ class App:
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
                          "thoughts": self.toggle_thoughts}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
+
+    def fps(self, t):
+        """How often to draw: 30 while something eases or flashes, 12 while live work spins and pulses, 1 when the
+        screen is still (4 with motion off and a run going, for its clock)."""
+        mode = self.cfg.get("motion", "full")
+        live = self.running() or self.state.status in ("planning", "running", "fixing")
+        if mode == "off":
+            return 4 if live else 1
+        if self.motion.busy(t):
+            return 30
+        return 12 if live and mode == "full" else 1
 
     def _ext_command(self, name, fn):
         def run():
@@ -909,7 +1211,7 @@ class App:
             self.input += k
 
     def focused(self):
-        return self.order[self.focus % len(self.order)] if self.order else None
+        return self.order[self.focus % len(self.order)] if self.order else "log"  # the first frame too
 
     # -- commands
     def quit(self):
@@ -991,6 +1293,7 @@ class App:
             self.message = f"can't read {path}: {e}"
             return
         self.state, self.selected, self.expanded, self.follow = st, None, set(), True
+        self.motion = Motion()
         self.message = f"viewing {st.task or 'a past run'}"
 
     def _git_diff(self):
@@ -1031,6 +1334,7 @@ class App:
 
     def start(self, words, **extra):
         self.state, self.selected, self.expanded, self.follow, self.message = State(), None, set(), True, ""
+        self.motion = Motion()
         self.child = self.spawn(words, dict(self.opts, **extra))
 
     def _spawn(self, words, opts):
@@ -1207,6 +1511,25 @@ def _colour(v):
     return isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 255
 
 
+def contrast(a, b):
+    """WCAG contrast ratio of two colours (1 to 21)."""
+    def lum(c):
+        ch = [v / 255 for v in _rgb(c)]
+        ch = [v / 12.92 if v <= 0.03928 else ((v + 0.055) / 1.055) ** 2.4 for v in ch]
+        return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2]
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+def _faint(spec, theme):
+    """Why a style's text can't be read on what it sits on (its own background or the screen's), or None."""
+    fg, bg = spec.get("fg"), spec.get("bg") or theme.get("screen", {}).get("bg")
+    if fg is None or bg is None:
+        return None
+    ratio = contrast(fg, bg)
+    return f"{fg} on {bg} is too faint to read ({ratio:.1f}:1; text needs 3:1)" if ratio < 3 else None
+
+
 def _style_error(name, spec, theme):
     if name not in theme:
         return f"no such style ({', '.join(theme)})"
@@ -1269,7 +1592,12 @@ def load_config(path=None):
     for key, val in user.items():
         if key == "theme":
             continue
-        if key == "border":
+        if key == "motion":
+            if val in MOTIONS:
+                cfg["motion"] = val
+            else:
+                bad(f"motion = {val!r}: one of {', '.join(MOTIONS)}")
+        elif key == "border":
             if val in BORDERS:
                 cfg["border"] = val
             else:
@@ -1279,6 +1607,8 @@ def load_config(path=None):
         elif key == "colors":
             for name, spec in val.items():
                 msg = _style_error(name, spec, cfg["theme"])
+                if not msg and name not in ("screen", "panel", "border", "track", "shade"):  # text has to be read
+                    msg = _faint(spec if isinstance(spec, dict) else {"fg": spec}, cfg["theme"])
                 if msg:
                     bad(f"colors.{name}: {msg}")
                 else:
@@ -1301,7 +1631,7 @@ def load_config(path=None):
                     for k in keys:
                         cfg["keys"].pop(k, None) if cmd == "none" else cfg["keys"].__setitem__(k, cmd)
         else:
-            bad(f"{key}: not a setting (theme, border, colors, layout, keys)")
+            bad(f"{key}: not a setting (theme, motion, border, colors, layout, keys)")
     return cfg, errors
 
 
@@ -1325,6 +1655,7 @@ def print_config(cfg, path=None):
     """The config as tui.toml text that loads back the same: a starting point to edit."""
     out = [f"# fm code tui's settings{f': {path}' if path else ''}. Delete what you don't change.",
            f"theme = {_toml(cfg.get('preset', 'night'))}  # {', '.join(PRESETS)}; [colors] changes single styles",
+           f"motion = {_toml(cfg.get('motion', 'full'))}  # full; reduced: colours change, nothing moves; off",
            f"border = {_toml(cfg['border'])}  # {', '.join(BORDERS)}", "",
            "[colors]  # a style: a colour (#rrggbb or 0-255), or { fg, bg, bold, italic, reverse }"]
     out += [f"{_toml_key(n)} = {_toml(spec)}" for n, spec in cfg["theme"].items()]
@@ -1352,52 +1683,8 @@ def run_plain(app, out=sys.stdout):
             return 0 if app.state.status == "closed" else 1
 
 
-def _attrs(curses, cfg):
-    """{style: curses attr}: theme colours as 256-colour indexes (the 8 basic ones on a smaller terminal), none on
-    NO_COLOR; the screen style's background stays the terminal's own."""
-    out, pairs = {}, {}
-    color = curses.has_colors() and not os.environ.get("NO_COLOR")
-    if color:
-        curses.use_default_colors()
-    small = color and curses.COLORS < 256
-    pick = (lambda c: -1 if c is None else min(range(8), key=lambda i: sum((a - b) ** 2 for a, b in zip(_rgb(i), _rgb(c)))))\
-        if small else (lambda c: -1 if c is None else to_256(c))
-    theme = cfg.get("theme") or THEME
-    screen = theme.get("screen") or {}
-    base = (screen.get("fg"), screen.get("bg")) if screen.get("paint") else (None, None)
-    for name, spec in theme.items():
-        a = (curses.A_BOLD if spec.get("bold") else 0) | (curses.A_REVERSE if spec.get("reverse") else 0)
-        a |= getattr(curses, "A_ITALIC", 0) if spec.get("italic") else 0
-        if color and name != "screen" and ("fg" in spec or "bg" in spec or base[1] is not None):
-            key = (pick(spec.get("fg", base[0])), pick(spec.get("bg", base[1])))
-            if key not in pairs and len(pairs) < curses.COLOR_PAIRS - 1:
-                curses.init_pair(len(pairs) + 1, *key)
-                pairs[key] = len(pairs) + 1
-            a |= curses.color_pair(pairs.get(key, 0))
-        elif not color and (name.startswith(("bar", "chip")) or name in ("select", "brand", "key", "input")):
-            a |= curses.A_REVERSE
-        out[name] = a
-    return out
-
-
-def _paint(scr, cv, attrs):
-    for y, row in enumerate(cv.cells):
-        x = 0
-        while x < len(row):
-            style, end = row[x][1], x
-            while end < len(row) and row[end][1] == style:
-                end += 1
-            try:
-                scr.addstr(y, x, "".join(c for c, _ in row[x:end]), attrs.get(style, 0))
-            except Exception:  # curses refuses the bottom-right cell; the rest is drawn
-                pass
-            x = end
-    scr.refresh()
-
-
 def key_of(k):
-    """A key as tui.toml names it: get_wch gives a control key as its character (Ctrl-R is \\x12), so ^R; Enter's
-    \\r is \\n."""
+    """A key as tui.toml names it: a control key as ^R, Enter's \\r as \\n (parse_keys does this for raw input)."""
     if k == "\r":
         return "\n"
     if len(k) == 1 and ord(k) < 32 and k not in "\t\n\x1b\b":
@@ -1405,42 +1692,67 @@ def key_of(k):
     return k
 
 
-def run_screen(app, wrapper=None):
-    """The curses screen until q. Whatever ends it (q, Ctrl-C, a crash, a closed terminal) stops the run first: fm
-    code runs in its own session and would carry on into a closed pipe."""
-    def hangup(*_):
-        raise SystemExit(129)
-    try:
-        old = signal.signal(signal.SIGHUP, hangup)
-    except (ValueError, AttributeError):  # not the main thread, or no SIGHUP here
-        old = None
-    try:
-        if wrapper is None:
-            import curses
-            wrapper = curses.wrapper
-        wrapper(lambda scr: _loop(scr, app))
-    finally:
-        app.stop()
-        if old is not None:
-            signal.signal(signal.SIGHUP, old)
-
-
-def _loop(scr, app):
-    import curses
-    curses.curs_set(0)
-    scr.timeout(250)
-    attrs = _attrs(curses, app.cfg)
+def _loop(io, app):
+    """Draw, wait for a key or the next frame, repeat: as often as what's on screen moves (App.fps)."""
+    term, w, h = Term(colour_depth()), 80, 24
+    if term.depth == 0:  # NO_COLOR: the mono theme, whose chips are reversed and panels untinted
+        app.cfg = dict(app.cfg, theme=_mono(), preset="mono")
     while not app.done:
         app.poll()
-        h, w = scr.getmaxyx()
-        scr.erase()
-        _paint(scr, render(app.state, w, h, app.cfg, app), attrs)  # every tick, so the clock moves during a run
+        if io.resized():
+            w, h = io.size()
+            term.prev = None
+            io.write("\x1b[2J")
+        t = app.clock()
+        io.write(term.frame(render(app.state, w, h, app.cfg, app, t=t), app.cfg))
+        for k in io.keys(1 / app.fps(t)):
+            app.key(k)
+
+
+def run_screen(app, wrapper=None):
+    """The screen until q. Whatever ends it (q, Ctrl-C, a crash, a closed terminal) stops the run first: fm code
+    runs in its own session and would carry on into a closed pipe. wrapper owns the terminal (fmcodeterm.session)."""
+    def hangup(*_):
+        raise SystemExit(129)
+    old = {}
+    for name in ("SIGHUP", "SIGTERM"):  # a closed terminal or a kill: the run stops and the terminal comes back
         try:
-            k = scr.get_wch()
-        except curses.error:
-            continue
-        if k != curses.KEY_RESIZE:
-            app.key(curses.keyname(k).decode() if isinstance(k, int) else key_of(k))
+            old[name] = signal.signal(getattr(signal, name), hangup)
+        except (ValueError, AttributeError):  # not the main thread, or no such signal here
+            pass
+    try:
+        (wrapper or session)(lambda io: _loop(io, app))
+    finally:
+        app.stop()
+        for name, handler in old.items():
+            signal.signal(getattr(signal, name), handler)
+
+
+def record(events, path, size=(120, 34), fps=20, seconds=None, cfg=None, hold=2.5):
+    """A run's events played back as a video (mp4, or gif by its name): frames drawn at their instant, put to PNG by
+    rsvg-convert and joined by ffmpeg. For the README, the site and a bug report."""
+    if not (shutil.which("ffmpeg") and shutil.which("rsvg-convert")):
+        raise RuntimeError("fm code tui --record needs ffmpeg and rsvg-convert on PATH")
+    import tempfile
+    cfg = cfg or DEFAULTS
+    events = [e for e in events if isinstance(e, dict)]
+    seconds = seconds or max(4.0, min(16.0, len(events) * 0.45))
+    gap, app = seconds / max(len(events), 1), App(cfg, spawn=lambda *a, **k: None)
+    with tempfile.TemporaryDirectory(prefix="fm-tui-") as tmp:
+        fed, svg = 0, os.path.join(tmp, "frame.svg")
+        for f in range(int((seconds + hold) * fps)):
+            t = f / fps
+            while fed < len(events) and fed * gap <= t:
+                app.feed(events[fed])
+                fed += 1
+            with open(svg, "w", encoding="utf-8") as fh:
+                fh.write(to_svg(render(app.state, size[0], size[1], cfg, app, t=1000.0 + t), cfg))
+            subprocess.run(["rsvg-convert", "-o", os.path.join(tmp, f"f{f:05d}.png"), svg], check=True)
+        args = ["ffmpeg", "-y", "-loglevel", "error", "-framerate", str(fps), "-i", os.path.join(tmp, "f%05d.png")]
+        args += ["-vf", "split[a][b];[a]palettegen[p];[b][p]paletteuse"] if path.endswith(".gif") else [
+            "-pix_fmt", "yuv420p", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2"]
+        subprocess.run(args[:1] + ["-nostdin"] + args[1:] + [os.path.abspath(path)], check=True, stdin=subprocess.DEVNULL)
+    return path
 
 
 def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
@@ -1467,15 +1779,24 @@ def main(args, words):
         print(f"fm code tui: {e}", file=sys.stderr)
     if getattr(args, "print_config", False):
         return 2 if errors else 0
-    if getattr(args, "snapshot", None):
+    out = getattr(args, "snapshot", None) or getattr(args, "record", None)
+    if out:
         src = getattr(args, "events", None)
         if not src:
-            print("fm code tui --snapshot needs --events FILE (fm code … --json > FILE records one)", file=sys.stderr)
+            print("fm code tui --snapshot/--record needs --events FILE (fm code … --json > FILE records one)",
+                  file=sys.stderr)
             return 2
         with open(src, encoding="utf-8") as f:
             events = [json.loads(line) for line in f if line.strip()]
         w, _, h = (getattr(args, "size", None) or "120x34").partition("x")
-        print(snapshot(events, args.snapshot, (int(w), int(h)), cfg))
+        if getattr(args, "snapshot", None):
+            print(snapshot(events, out, (int(w), int(h)), cfg))
+            return 0
+        try:
+            print(record(events, out, (int(w), int(h)), cfg=cfg))
+        except (RuntimeError, subprocess.CalledProcessError) as e:
+            print(f"fm code tui: {e}", file=sys.stderr)
+            return 2
         return 0
     import fmcli
     p = fmcli.resolve(args)  # -p, like fm code itself; the child runs in the project's root
@@ -1485,7 +1806,7 @@ def main(args, words):
     resume = getattr(args, "resume", None)
     first = (lambda: app.start([], resume=resume or True)) if resume is not None else (
         lambda: app.start([" ".join(words)])) if words else None
-    if getattr(args, "plain", False) or not sys.stdout.isatty():
+    if getattr(args, "plain", False) or not sys.stdout.isatty() or not sys.stdin.isatty():
         if not first:
             print('fm code tui --plain needs a request: fm code tui --plain "fix the login bug"', file=sys.stderr)
             return 2
