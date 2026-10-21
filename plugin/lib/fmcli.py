@@ -2312,6 +2312,9 @@ def task_new(p, args):
             for name, text in (("Interpretation", args.interpretation), ("Approach", args.approach)):
                 if text:  # an M/L brief plans in one call (T-0083)
                     b.set_section(name, c.redact(text))
+            for name, given in (("Acceptance criteria", args.ac), ("Steps", args.step)):
+                if args.from_id and given:  # T-1364: the plan given replaces the capture's own, never adds to it
+                    b.set_section(name, "")
             for text in args.ac or []:  # "criterion :: verify command" (T-0042)
                 done_when, sep, verify = text.rpartition(" :: ")
                 b.add_ac(done_when, verify.strip()) if sep else b.add_ac(text)

@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm task new --from ID` with `--ac` or `--step` replaces the capture's own criteria or steps instead of adding to them; before, a capture planned that way listed every step twice (T-1364).
 
 ## 1.2.47 — 2026-10-21
 - fm code shows what a coding CLI is doing as it happens: each file claude reads or edits and each command it runs is an Activity line (a `tool` event), for the worker and the read-only planner alike, and a turn with nothing to show sends a `working` heartbeat every 10 s, one ticking line in the TUI. Before, a run looked stuck for minutes (T-1329).
