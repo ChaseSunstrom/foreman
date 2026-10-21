@@ -113,6 +113,7 @@ EVENTS = {
                "FM_STALL s (default 120), once per silence (T-1336)",
 }
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
+KEEP_ASIDE = 1 << 20  # T-1417: the most of a worker's version of a file outside the repo kept when it's put back
 
 
 def worker_env():
@@ -270,6 +271,7 @@ def slot(run, profile, messages, check, what):
 class Run:
     def __init__(self, args, root, jdir):
         self.args, self.root, self.jdir = args, root, jdir
+        self.jreal = os.path.realpath(jdir)  # T-1417: before any worker ran, so a link it plants there later is seen
         self.json = getattr(args, "json", False)
         self.tid = self.plan = self.request = self.journal = None
         self.done, self.msgs, self.turns, self.tokens = set(), {}, 0, [0, 0]
@@ -617,7 +619,9 @@ class Run:
         code, out, ended = None, "", False
         try:
             # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
-            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
+            # T-1417: no self-update mid-turn: it rewrites ~/.local/bin/claude, which the judge holds
+            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}",
+                       DISABLE_AUTOUPDATER="1")
             streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
             self.unlean = None
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
@@ -691,14 +695,22 @@ class Run:
         """([(path, why)] put back, [paths it couldn't put back], whether the turn changed anything) for one worker
         turn. Always put back: Git's own config and hooks and the user's global Git config (first: a planted
         core.fsmonitor or hook would run on the next git command), the shell startup files and other agents' settings
-        (_home_held, the MCP servers in ~/.claude.json: T-1393), a commit or branch switch (its changes stay, to be judged), and an index flag
+        (_home_held, the MCP servers in ~/.claude.json: T-1393; login items, SSH keys and ~/.local/bin shims, each file
+        outside the repo kept aside first: T-1417), a commit or branch switch (its changes stay, to be judged), and an index flag
         that hides a file from git status. Then each file the turn wrote, whether git status shows it or not (a stat
         walk finds ignored ones): a kind Foreman protects is refused whatever standing yes or trust is on (those were given to
         Claude in the session, not to a worker CLI); a file git shows is also judged by the guard as a Write."""
         out, lost = [], []
 
-        def back(f, saved, why):
-            shown = os.path.relpath(f, self.root) if f.startswith(self.root + os.sep) else f
+        def back(f, saved, why, whole=False):
+            inside = f.startswith(self.root + os.sep)
+            shown, copy = (os.path.relpath(f, self.root), None) if inside else (f, _keep_aside(self.jreal, f, whole))
+            if whole and not copy and not os.path.islink(f):  # T-1417: ~/.local/bin loses nothing it can't keep
+                lost.append(shown)
+                out.append((shown, why + " (not removed: no full copy of it could be kept)"))
+                return
+            if copy:  # T-1417: a user's own edit there, or the evidence of what the worker tried, isn't lost
+                why += f" (the worker's version kept at {copy})"
             if not _restore(f, saved):
                 lost.append(shown)
                 why += " (it couldn't be put back)"
@@ -710,7 +722,8 @@ class Run:
         for f in sorted(set(b["own"]) | _files_under(hooks)):
             if _read(f) != b["own"].get(f):
                 back(f, b["own"].get(f), own)
-        mine, home, dirs = ("a worker never changes your shell startup or another agent's settings",
+        mine, home, dirs = ("a worker never changes your shell startup, login items, SSH keys or another agent's "
+                            "settings",
                             os.path.expanduser("~"), b["home_dirs"])  # T-1393
         for d in sorted(dirs, key=len):  # a folder that became a link goes first, never walked: it'd reach elsewhere
             now = _read(d)
@@ -723,6 +736,24 @@ class Run:
                 out.append((f, f"{mine} (not put back: a folder on its path is now a link)"))
             elif _read(f) != b["home"].get(f):
                 back(f, b["home"].get(f), mine)
+        bin_, was, held = b["bin"]  # T-1417: a new or changed executable there shadows a command; a deletion stays
+        for r, s in sorted(_stats(bin_).items()):
+            f = os.path.join(bin_, r)
+            if s == was.get(r) or not (stat.S_ISLNK(s[4]) or s[4] & 0o111) or r in held and _read(f) == held[r]:
+                continue
+            shim = "a worker never plants a command in ~/.local/bin"
+            if r not in was and not stat.S_ISLNK(s[4]):  # new: moved aside whole, any size (a padded shim goes too)
+                moved = _keep_aside(self.jreal, f, move=True)
+                if not moved:
+                    lost.append(f)
+                out.append((f, f"{shim} " + (f"(the worker's version kept at {moved})" if moved else
+                                             "(not removed: it couldn't be moved aside whole into the journal folder)")))
+            elif r in was and r not in held:  # an updater mid-turn is the rare case: stopping is the safe one
+                lost.append(f)
+                out.append((f, f"{shim} (it changed and couldn't be put back: its old version was over 1 MB, not "
+                               "kept)"))
+            else:
+                back(f, held.get(r), shim, whole=True)
         claude, now = os.path.join(home, ".claude.json"), _mcp(os.path.join(home, ".claude.json"))
         if b["mcp"] is not None and now and now != b["mcp"]:  # ponytail: one deleted or broken isn't put back
             why = "a worker never adds or changes an MCP server in ~/.claude.json"
@@ -1018,14 +1049,17 @@ def dangerous_flags(tpl, depth=0):
         words = shlex.split(tpl)
     except ValueError:
         words = tpl.split()
-    gemini = any(os.path.basename(w) == "gemini" for w in words)
+    names = {os.path.basename(w) for w in words}
+    gemini, cursor = "gemini" in names, "cursor-agent" in names
     hits = []
     for i, w in enumerate(words):
         flag, eq, val = w.partition("=")
         val = val if eq else (words[i + 1] if i + 1 < len(words) else "")
-        if (flag == "--yolo" or flag.startswith("--dangerously-") or "danger-full-access" in w or "bypassPermissions" in w
+        if (flag in ("--yolo", "--yes-always", "--trust-all-tools", "-anever") or flag.startswith("--dangerously-")
+                or "danger-full-access" in w or "bypassPermissions" in w
                 or (flag == "--approval-mode" and val == "yolo") or (flag in ("-a", "--ask-for-approval") and val == "never")
-                or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")):
+                or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")
+                or (cursor and flag in ("--force", "-f"))):
             hits.append(f"{flag} {val}" if not eq and val in ("yolo", "never") else w)
     # T-1432 review: a shell wrapper's script (sh -c '…') is one word; read the words inside it too
     return hits + [h for w in words if depth < 3 and len(w.split()) > 1 for h in dangerous_flags(w, depth + 1)]
@@ -1191,6 +1225,62 @@ def _restore(path, saved):
     return False
 
 
+def _keep_aside(jdir, path, whole=False, move=False):
+    """T-1417: the worker's version of a file outside the repo, about to be put back, kept (its first KEEP_ASIDE bytes)
+    as <jdir>/reverted/<hash>-<name>, readable by the user only; with move, the file itself is renamed there, whole
+    whatever its size (a new ~/.local/bin shim padded past the cap goes too). None for a link, folder or anything
+    unreadable, for one over KEEP_ASIDE when whole, for a move across filesystems, and when a folder on the way is a
+    link or not the user's own (the worker can write the journal folder: a reverted/ linked into ~/.config/autostart
+    would have the judge plant its file there). jdir is a realpath taken before any worker ran, so no link is expected
+    anywhere on it."""
+    fds = []
+    try:
+        if not jdir or not stat.S_ISREG(os.lstat(path).st_mode):
+            return None
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)  # swapped for a link or FIFO since: no
+        with os.fdopen(fd, "rb") as f:
+            data = f.read(KEEP_ASIDE + 1)
+        if len(data) > KEEP_ASIDE:
+            if whole and not move:
+                return None
+            data = data[:KEEP_ASIDE]
+        fds.append(os.open("/", os.O_RDONLY | os.O_DIRECTORY))
+        flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+        for part in jdir.strip(os.sep).split(os.sep):
+            fds.append(os.open(part, flags, dir_fd=fds[-1]))
+        try:
+            os.mkdir("reverted", 0o700, dir_fd=fds[-1])
+        except FileExistsError:
+            pass
+        fds.append(os.open("reverted", flags, dir_fd=fds[-1]))
+        if any(os.fstat(d).st_uid != os.getuid() for d in fds[-2:]):
+            return None
+        name = (hashlib.sha256(os.fsencode(path) + b"\0" + data).hexdigest()[:12] + "-" +
+                re.sub(r"[^\w.-]", "_", os.path.basename(path))[:80])
+        try:  # a fresh file: one there already could be a hard link the worker made to a file it wants written
+            os.unlink(name, dir_fd=fds[-1])
+        except FileNotFoundError:
+            pass
+        if move:
+            os.rename(path, name, dst_dir_fd=fds[-1])
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fds[-1])
+            try:
+                if os.fstat(fd).st_nlink == 1:  # a hard link to one of the user's own files keeps its mode
+                    os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
+            return os.path.join(jdir, "reverted", name)
+        fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fds[-1])
+        with os.fdopen(fd, "wb") as f:
+            f.write(data)
+        return os.path.join(jdir, "reverted", name)
+    except OSError:
+        return None
+    finally:
+        for d in fds:
+            os.close(d)
+
+
 def _put(path, saved):
     """Put a _read result back: what's there now goes, even a link (never written through) or a folder."""
     if os.path.isdir(path) and not os.path.islink(path):
@@ -1293,8 +1383,7 @@ def _snapshot(root, verify=None):
     hooks, home = os.path.join(cd, "hooks"), os.path.expanduser("~")
     own = {os.path.join(cd, "config"), os.path.join(cd, "config.worktree"), os.path.join(gd, "config.worktree"),
            os.path.join(cd, "info", "exclude"),  # an exclude line would hide a planted file from git status
-           os.path.join(home, ".gitconfig"), os.path.join(os.environ.get("XDG_CONFIG_HOME") or
-                                                          os.path.join(home, ".config"), "git", "config")}
+           os.path.join(home, ".gitconfig"), *(os.path.join(c, "git", "config") for c in _cfgs(home))}
     own |= {x for x in (os.environ.get("GIT_CONFIG_GLOBAL"), os.path.join(root, ".git")) if x and os.path.isfile(x)}
     stats, strict = _stats(root), _strict(root)
     kept = {r: _read(os.path.join(root, r)) for r, s in stats.items() if s[1] <= KEEP_MAX and (
@@ -1302,9 +1391,14 @@ def _snapshot(root, verify=None):
     named = _named(root, verify)
     kept.update({r: _read(os.path.join(root, r)) for r in stats if _under_named(r, named)})
     held = _home_held(home)
-    held |= {os.path.realpath(f) for f in held if os.path.islink(f)}  # T-1393: a dotfiles link is written through
-    dirs = {d for f in held | {os.path.join(_fish(home), "conf.d", "_")} for d in _parents(f, home)}
-    return {"named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
+    held |= {r for r in (os.path.realpath(f) for f in held if os.path.islink(f)) if _users(r)}  # T-1393: a dotfiles
+    # link is written through; T-1417: not a root-owned unit a .wants link names, which an upgrade may change
+    dirs = {d for f in held | {os.path.join(x, "_") for x in [os.path.join(y, "conf.d") for y in _fish(home)] +
+                                 _home_folders(home)} for d in _parents(f, home)}
+    bin_ = _home_folders(home)[-1]
+    bins = _stats(bin_)
+    return {"bin": (bin_, bins, {r: _read(os.path.join(bin_, r)) for r, s in bins.items() if s[1] <= KEEP_ASIDE}),
+            "named": named, "head": _head(root), "tree": {r: _read(os.path.join(root, r)) for r in _dirty(root)}, "hooks": hooks,
             "own": {f: _read(f) for f in own | _files_under(hooks)}, "hooks_at": _read(hooks), "flags": _flags(root),
             "stats": stats, "kept": kept, "home": {f: _read(f) for f in held},
             "home_dirs": {d: (_read(d), os.path.realpath(d)) for d in dirs},
@@ -1314,8 +1408,14 @@ def _snapshot(root, verify=None):
 WATCHED = (".claude", ".foreman")  # also judged by the guard when git doesn't show them
 
 
+def _cfgs(home):
+    """T-1417: XDG_CONFIG_HOME and ~/.config, once each: a login reads both, whatever this shell sets."""
+    return list(dict.fromkeys([os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"),
+                               os.path.join(home, ".config")]))
+
+
 def _fish(home):
-    return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "fish")
+    return [os.path.join(c, "fish") for c in _cfgs(home)]
 
 
 def _home_held(home):
@@ -1326,11 +1426,37 @@ def _home_held(home):
                                            ".profile")}
     out |= {os.path.join(z, f) for z in {home, env("ZDOTDIR") or home}
             for f in (".zshenv", ".zshrc", ".zprofile", ".zlogin", ".zlogout")}
-    out |= {os.path.join(_fish(home), "config.fish"),
-            os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
+    out |= {os.path.join(f, "config.fish") for f in _fish(home)}
+    out |= {            os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
             os.path.join(home, ".gemini", "settings.json"), os.path.join(home, ".claude", "settings.json"),
-            os.path.join(home, ".claude", "settings.local.json")}
-    return out | set(glob.glob(os.path.join(glob.escape(_fish(home)), "conf.d", "*.fish")))
+            os.path.join(home, ".claude", "settings.local.json"),
+            os.path.join(home, ".ssh", "authorized_keys"), os.path.join(home, ".ssh", "authorized_keys2"),  # T-1417
+            os.path.join(home, ".ssh", "rc"), os.path.join(home, ".ssh", "config"),  # a ProxyCommand runs
+            *(os.path.join(home, f) for f in (".xprofile", ".xinitrc", ".xsession", ".xsessionrc"))}
+    out |= {os.path.join(d, r) for d in _home_folders(home)[:-1] for r in _stats(d)}  # T-1417: every file in them
+    return out | {g for f in _fish(home) for g in glob.glob(os.path.join(glob.escape(f), "conf.d", "*.fish"))}
+
+
+def _home_folders(home):
+    """T-1417: folders whose every file runs later (a login's autostart entries and user units, ~/.bashrc.d
+    snippets) and, last, ~/.local/bin, where only a new or changed executable is judged (a shim that shadows a
+    real command). Under both the XDG_* folder and its default, as a login reads both, whatever this shell sets."""
+    env, cfgs = os.environ.get, _cfgs(home)
+    data = dict.fromkeys([env("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
+                          os.path.join(home, ".local", "share")])
+    return ([os.path.join(c, d) for c in cfgs for d in ("autostart", os.path.join("systemd", "user"), "environment.d")]
+            + [os.path.join(d, "systemd", "user") for d in data]
+            + [os.path.join(home, ".bashrc.d"), os.path.join(home, ".local", "bin")])
+
+
+def _users(path):
+    """T-1417: path, or when it's missing the folder it'd be made in, is the user's own, so a worker could write it."""
+    for p in (path, os.path.dirname(path)):
+        try:
+            return os.stat(p).st_uid == os.getuid()
+        except OSError:
+            continue
+    return False
 
 
 def _parents(f, home):
@@ -1588,7 +1714,7 @@ def choose_profile(run, model):
                    "on_line": run.live_tools(run.worker, "--strict-mcp-config" in lean),
                    "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
-                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
+                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan", DISABLE_AUTOUPDATER="1")}
         if not model and run.model_name == planner["name"]:
             return planner
     try:

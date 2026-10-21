@@ -58,6 +58,8 @@ def resolve(args, create=True):
     p = c.find_project(os.getcwd(), create=create and not os.environ.get("FOREMAN_WORKER_OF"))
     if not p and os.environ.get("FOREMAN_PROJECT"):
         p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
+    if not p and os.environ.get("FOREMAN_WORKER_OF"):  # T-1438: fm init is refused inside a worker
+        raise UsageError("not in a Foreman project, and a worker of an fm code run can't run `fm init`; pass -p SLUG")
     if not p:
         raise UsageError("not in a Foreman project; run `fm init` here or pass -p SLUG")
     return p

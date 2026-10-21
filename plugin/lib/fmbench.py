@@ -469,7 +469,26 @@ def run_case_n(p, case, plugin, model=None, budget=3.0, timeout=30, runs=1, extr
 
 
 def _rate(x):
-    return x.get("pass_rate", 1.0 if x.get("pass") else 0.0)
+    """A case's pass rate, read within 0..1 (T-1435: a stored 5 counted as five passes)."""
+    try:
+        return max(0.0, min(1.0, float(x.get("pass_rate", 1.0 if x.get("pass") else 0.0))))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def pass_band(A, B, shared):
+    """T-1260: 2 standard errors of the pass-total difference over the shared cases; None without repeated runs (a
+    single run's variance is unmeasured and counts as 0, so the band only widens with real repeats)."""
+    if not any(_runs(r[i]) > 1 for r in (A, B) for i in shared):
+        return None
+    return 2 * math.sqrt(sum(_rate(r[i]) * (1 - _rate(r[i])) / _runs(r[i]) for r in (A, B) for i in shared))
+
+
+def cost_band(A, B, shared):
+    """T-1260: 2 standard errors of the mean-cost difference; None unless every priced case has attempt costs."""
+    ses = [[_cost_se(r[i]) for i in shared if r[i].get("cost_usd") is not None] for r in (A, B)]
+    return (2 * math.sqrt(sum(sum(s * s for s in x) / len(x) ** 2 for x in ses))
+            if all(x and None not in x for x in ses) else None)
 
 
 def _runs(x):
@@ -498,15 +517,10 @@ def gate(a, b, tolerance=0.15):
     A, B = ({x["id"]: x for x in r["cases"]} for r in (a, b))
     sa, sb = sum(_rate(A[i]) for i in shared), sum(_rate(B[i]) for i in shared)
     lost = [i for i in shared if _rate(B[i]) < _rate(A[i])]
-    repeated = any(_runs(r[i]) > 1 for r in (A, B) for i in shared)
-    # a single run's variance is unmeasured and counts as 0: the band only widens with real repeats
-    pband = 2 * math.sqrt(sum(max(0.0, min(1.0, _rate(r[i])) * (1 - min(1.0, _rate(r[i])))) / _runs(r[i])
-                              for r in (A, B) for i in shared)) if repeated else None
+    pband = pass_band(A, B, shared)
     priced = [[i for i in shared if r[i].get("cost_usd") is not None] for r in (A, B)]
     ca, cb = (sum(r[i]["cost_usd"] for i in ids) / len(ids) if ids else None for r, ids in zip((A, B), priced))
-    ses = [[_cost_se(r[i]) for i in ids] for r, ids in zip((A, B), priced)]
-    cband = (2 * math.sqrt(sum((sum(s * s for s in x) / len(x) ** 2) for x in ses))
-             if all(x and None not in x for x in ses) else None)
+    cband = cost_band(A, B, shared)
 
     def band(d, width, money=False):
         if width is None:
@@ -533,7 +547,7 @@ def gate(a, b, tolerance=0.15):
         else:
             ok = False
             lines.append(f"✗ {up} (over {round(100 * tolerance)}%{', outside noise' if cband else ''})")
-    if not repeated:
+    if pband is None:  # single runs only
         lines.append("  single runs: a flipped case may be noise (--runs 3 measures it)")
     lines.append("✓ no worse: may be proposed" if ok else "✗ not proposed")
     return ok, lines
