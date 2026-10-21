@@ -1848,6 +1848,11 @@ def _runners(args, fmcli):
         models = [{"name": x["name"], "kind": x["kind"], "model": x["model"]} for x in m.profiles()]
     except m.ModelError as e:
         models, problem = [], problem or str(e)
+    if args.check:  # T-1409: a retired id fails mid-run with an opaque 404; say so now, from fmmodels' dated table
+        for x in models:
+            gone = m.retired(x["model"])
+            if gone:
+                x.update(retired=True, retired_on=gone["date"], replacement=gone["replacement"], source=gone["source"])
     rows = []
     for n, r in rs.items():
         path = _installed(n, r)
@@ -1871,6 +1876,8 @@ def _runners(args, fmcli):
              + (f"  [{r['version']}]" if r.get("version") else "") for r in rows]
     lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
                                "none set up (fm code models says how)"))
+    lines += [f"  {x['name']} ({x['model']}) was retired {x['retired_on']}: use {x['replacement']} "
+              f"({x['source']}; table as of {m.RETIRED_AS_OF})" for x in models if x.get("retired")]
     lines.append(problem or (f"(* used with no --worker or --model: {why})" if name else
                              "With no --worker, fm code uses the model" if models
                              else "No runner installed that can plan read-only, and no model: install claude, or set one up"))
