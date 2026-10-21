@@ -1130,6 +1130,15 @@ def user_prompt_submit(pl):
     elif c.is_broad(text):
         parts.append("Broad request: sweep the whole space before planning (fm ideas --lens 'capability map' "
                      "--lens approaches, or a capability list in the brief)")
+    if not r.items and not r.overrides and c.is_friction(text):  # T-1332: friction starts a round unasked
+        try:
+            import fmcli
+            area, tid, urgent = fmcli.capture_friction(p, text, sid)
+            parts.append(f"Friction with {area}: fix the cause now; {tid}" + (" (urgent: a second complaint this week)"
+                         if urgent else "") + " queues an improvement round on it (fm mission + fm ideas, then build), "
+                         "unasked")
+        except Exception:
+            log_error("UserPromptSubmit", _tb())
     if c.is_sweep(text):
         parts.append("Repo-wide cleanup: tier L, playbook clean/repo-sweep.md (every area checked by a stated method; "
                      "a tool finding nothing isn't done)")
