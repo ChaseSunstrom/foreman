@@ -1754,6 +1754,25 @@ def print_config(cfg, path=None):
 
 # ---------------------------------------------------------------- drivers
 
+def replay_file(path, cfg, plain, out=sys.stdout):
+    """fm code tui --events FILE: the run on the screen, or (plain) its Activity lines; 0 for a closed run, 1 for
+    another, 2 when FILE can't be read."""
+    if not os.path.isfile(path):
+        print(f"fm code tui: can't read {path}: no such file (fm code … --json > FILE records a run)", file=sys.stderr)
+        return 2
+    app = App(cfg, spawn=lambda *a, **k: None)
+    app.replay(path)
+    if app.message.startswith("can't read"):
+        print(f"fm code tui: {app.message}", file=sys.stderr)
+        return 2
+    if not plain:
+        run_screen(app)
+        return 0
+    for entry in app.state.log:
+        print(entry_text(entry), file=out, flush=True)
+    return 0 if app.state.status == "closed" else 1
+
+
 def run_plain(app, out=sys.stdout):
     """--plain: each new Activity line as text, the model's own words included; the run's exit status."""
     while True:
@@ -1881,6 +1900,9 @@ def main(args, words):
             print(f"fm code tui: {e}", file=sys.stderr)
             return 2
         return 0
+    if getattr(args, "events", None):  # T-1363: a recorded run alone replays: on the screen, else as Activity lines
+        return replay_file(args.events, cfg, plain=getattr(args, "plain", False) or not sys.stdout.isatty()
+                           or not sys.stdin.isatty())
     import fmcli
     p = fmcli.resolve(args)  # -p, like fm code itself; the child runs in the project's root
     opts = {k: getattr(args, k, None) for k in ("model", "worker", "verify", "escalate", "max_steps", "no_commit",

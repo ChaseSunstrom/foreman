@@ -1053,6 +1053,19 @@ class Command(CodeCase):
         self.assertTrue(body.startswith("<svg"), body[:80])
         self.assertIn("4e1b9c2", body)
 
+    def test_events_alone_replays_the_run_as_plain_lines(self):
+        # T-1363: --events FILE without --snapshot or --record replays it; with no terminal, as Activity lines
+        fixture = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "demo",
+                               "code-tui.jsonl")
+        for extra in ([], ["--plain"]):
+            r = self.code("tui", "--events", fixture, *extra, check=False)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("DONE", r.stdout)
+            self.assertIn("edit   deploy.py", r.stdout)
+        r = self.code("tui", "--events", os.path.join(self.tmp, "missing.jsonl"), check=False)
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("missing.jsonl", r.stderr)
+
     def test_print_config_and_a_bad_file(self):
         out = self.code("tui", "--print-config").stdout
         self.assertIn('theme = "night"', out)
