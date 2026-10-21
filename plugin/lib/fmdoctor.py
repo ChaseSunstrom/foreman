@@ -1104,7 +1104,8 @@ def _tree_hash(root, h, cap=4000):
         for f in sorted(files):
             full = os.path.join(d, f)
             n += 1
-            if n > cap or os.path.islink(full) or os.path.getsize(full) > 4_000_000:
+            # not a regular file (a FIFO would block the open forever): named, never read
+            if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
                 h.update(os.path.relpath(full, root).encode() + b"\0skipped\0")
                 continue
             with open(full, "rb") as fh:
@@ -1113,20 +1114,25 @@ def _tree_hash(root, h, cap=4000):
 
 def _supply(claude):
     """{id: {"sha": sha256, "caps": fmplugins.capabilities}} of every installed plugin's install tree (T-1392: the
-    capability set beside the hash) and {"mcp:…": sha256} of each MCP server's spec (user-wide and per project)."""
+    capability set beside the hash) and {"mcp:…": sha256} of each MCP server's spec (user-wide and per project), and
+    {id: "why"} for each plugin it couldn't read (T-1392 review: one bad plugin costs only its own row)."""
     import hashlib
     import fmplugins
-    out = {}
+    out, errors = {}, {}
     plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
         h, caps = hashlib.sha256(), {}
-        for inst in installs if isinstance(installs, list) else [installs]:
-            root = inst.get("installPath") if isinstance(inst, dict) else None
-            if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
-                _tree_hash(root, h)
-                for k, v in fmplugins.capabilities(root).items():
-                    caps[k] = sorted(set(caps.get(k, [])) | set(v))
+        try:
+            for inst in installs if isinstance(installs, list) else [installs]:
+                root = inst.get("installPath") if isinstance(inst, dict) else None
+                if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
+                    _tree_hash(root, h)
+                    for k, v in fmplugins.capabilities(root).items():
+                        caps[k] = sorted(set(caps.get(k, [])) | set(v))
+        except Exception as e:
+            errors[pid] = f"{type(e).__name__}: {e}"
+            continue
         out[pid] = {"sha": h.hexdigest(), "caps": caps}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
@@ -1135,7 +1141,7 @@ def _supply(claude):
     for scope, servers in scopes:
         for name, spec in sorted((servers if isinstance(servers, dict) else {}).items()):
             out[f"mcp:{scope}{name}"] = hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest()
-    return out
+    return out, errors
 
 
 def check_supply(claude, accept=False):
@@ -1150,42 +1156,74 @@ def check_supply(claude, accept=False):
 
 def _check_supply(claude, accept):
     path = os.path.join(c.state_dir(), "supply.json")
-    now, seen = _supply(claude), _load_json(path)
+    (now, errors), seen = _supply(claude), _load_json(path)
     if os.path.exists(path) and not isinstance(seen, dict) and not accept:
         return Result("supply chain", "WARN", f"{path} is unreadable: fm doctor --accept-supply records a new baseline")
+    for k in errors:  # a plugin it couldn't read keeps its old baseline: neither changed, gone nor accepted
+        if isinstance(seen, dict) and k in seen:
+            now[k] = seen[k]
+    unchecked = "not checked: " + _ids(errors, lambda k: f" ({c.plain(errors[k])[:80]})") if errors else ""
     if seen is None or accept:
         c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
-        return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
-                                              f"{len(now)} plugin(s) and MCP server(s)")
+        return Result("supply chain", "WARN" if errors else "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
+                      f"{len(now)} plugin(s) and MCP server(s)" + (f"; {unchecked}" if errors else ""))
     sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
-    changed = sorted(k for k in now if k in seen and sha(seen[k]) != sha(now[k]))
-    added, gone = sorted(set(now) - set(seen)), sorted(set(seen) - set(now))
-    if not (changed or added or gone):
-        return Result("supply chain", "PASS", f"{len(now)} plugin(s) and MCP server(s) unchanged")
-    held = [f"{k} {d}" for k in changed for d in _capability_delta(seen[k], now[k])]
-    note = "; ".join(x for x in (
-        f"changed: {', '.join(changed)}" if changed else "", f"new: {', '.join(added)}" if added else "",
-        f"gone: {', '.join(gone)}" if gone else "") if x)
+    caps = lambda v: v.get("caps") if isinstance(v, dict) else None
+    changed, added, held, upgraded = [], [], [], False
+    for k in sorted(set(now) - set(errors)):
+        was, cur = seen.get(k), now[k]
+        if k in seen and sha(was) == sha(cur):
+            old, new = caps(was), caps(cur)
+            if old == new:
+                continue
+            if isinstance(new, dict) and (not isinstance(old, dict) or all(new.get(x) == v for x, v in old.items())):
+                seen[k], upgraded = cur, True  # an unchanged tree's entry gains what this version records (review)
+                continue
+        # review: the delta is read even when the sha matches (the hash skips big files, symlinks, the 4,001st)
+        (changed if k in seen else added).append(k)
+        held += [f"{c.plain(k)[:60]} {d}" for d in _capability_delta(was, cur, k)]
+    if upgraded:
+        c.write_atomic(path, json.dumps(seen, sort_keys=True, indent=1))
+    # a spec file Foreman won't read hides what it runs, so it stays held: accepting can't see past it
+    held += [f"{c.plain(k)[:60]} can't read {c.plain(u)[:80]} (outside the plugin, not a file or over 8 MB)"
+             for k in sorted(now) for u in (caps(now[k]) or {}).get("unread") or []]
+    gone = sorted(set(seen) - set(now))
+    note = "; ".join(x for x in (f"changed: {_ids(changed)}" if changed else "", f"new: {_ids(added)}" if added else "",
+                                 f"gone: {_ids(gone)}" if gone else "", unchecked) if x)
     if held:  # T-1392: new code that runs on its own is held, named, until accepted
-        return Result("supply chain", "FAIL", "; ".join(held) + f" ({note}) — review what it runs, then "
-                                                                 "fm doctor --accept-supply")
+        return Result("supply chain", "FAIL", "; ".join(held[:12]) + (f"; and {len(held) - 12} more" if len(held) > 12
+                      else "") + (f" ({note})" if note else "") + " — review what it runs, then fm doctor --accept-supply")
+    if not (changed or added or gone):
+        return Result("supply chain", "WARN" if errors else "PASS",
+                      f"{len(now)} plugin(s) and MCP server(s) unchanged" + (f"; {unchecked}" if errors else ""))
     return Result("supply chain", "WARN", note + " — expected (an update you ran)? fm doctor --accept-supply")
 
 
-def _capability_delta(was, now):
-    """T-1392: what an update adds that runs on its own: hook events, hook handlers on an existing event, MCP servers
-    and scripts, as "adds …" phrases ([] when the baseline recorded no capability set)."""
+def _ids(ids, extra=lambda k: ""):
+    """Plugin ids for a doctor line: plain (an id is outside text) and capped at ten."""
+    ids = sorted(ids)
+    return ", ".join(c.plain(k)[:60] + extra(k) for k in ids[:10]) + (f" and {len(ids) - 10} more" if len(ids) > 10 else "")
+
+
+def _capability_delta(was, now, key=""):
+    """T-1392: what an update or a new entry adds that runs on its own: hook events, hook handlers on an existing
+    event, MCP servers (new, or one whose spec changed) and scripts, as phrases. A plugin with no recorded set (new,
+    or a baseline before T-1392) is diffed against nothing (review)."""
+    if key.startswith("mcp:"):  # a user or project MCP server: its spec's hash
+        return [f"{'changes' if was is not None else 'adds'} MCP server {c.plain(key[4:])[:60]}"]
     was, now = (v.get("caps") if isinstance(v, dict) else None for v in (was, now))
-    if not isinstance(was, dict) or not isinstance(now, dict):
-        return []
+    was, now = (v if isinstance(v, dict) else {} for v in (was, now))
     def new(k):
         had = set(was.get(k) or [])
         return [x for x in now.get(k) or [] if x not in had]
+    split = lambda specs: dict(s.rsplit(" ", 1) for s in specs or [] if isinstance(s, str) and " " in s)
+    had, has = split(was.get("mcp_specs")), split(now.get("mcp_specs"))
     events = new("hooks")
     return ([f"adds hook {c.plain(e)[:40]}" for e in events]
             + [f"adds a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
                for h in new("handlers") if h.split(" ", 1)[0] not in events]
             + [f"adds MCP server {c.plain(m)[:40]}" for m in new("mcp")]
+            + [f"changes MCP server {c.plain(m)[:40]}" for m in sorted(has) if m in had and had[m] != has[m]]
             + [f"adds script {c.plain(s)[:80]}" for s in new("scripts")])
 
 
