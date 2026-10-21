@@ -3322,6 +3322,28 @@ def capture_promises(p, text, sid=None):
     return made
 
 
+def capture_friction(p, text, sid=None):
+    """T-1332: the user's friction with an area queues a brainstorm-and-improve RESEARCH task for it, once per open
+    area; another complaint within 7 days of the last makes it urgent. Returns (area, id, urgent)."""
+    area = c.friction_area(text)
+    title = _title(f"Improve {area}: fm mission + fm ideas from the user's friction")
+    with c.lock(p.dir, timeout=1):  # the prompt hook: a busy lock loses this capture, not the turn
+        b = next((b for b in c.load_briefs(p) if b.status not in c.CLOSED and b.title.lower() == title.lower()), None)
+        if b is None:
+            b = _create(p, title, "RESEARCH", "M", "captured", source="self",
+                        raw=f"{c.fit(c.plain(c.redact(text)).strip(), 300)}\n(the user's friction with {area}: run fm "
+                            f"mission --request on it, then fm ideas, then a build round)")
+            c.log_event(p, "capture", task=b.id, data={"source": "friction", "area": area}, session=sid)
+        else:
+            age = c.age_days(b.meta.get("friction_at") or b.meta.get("created"))
+            if age is not None and age <= 7:
+                b.meta["priority"] = "urgent"
+        b.meta["friction_at"] = c.now()
+        c.save_brief(p, b, touch=False)
+        c.regen_views(p)
+    return area, b.id, b.priority == "urgent"
+
+
 def _research_items(p):
     """(name, path of the file to read, mtime) for each note and brainstorm folder, newest first (T-0802)."""
     folder = os.path.join(p.dir, "research")
@@ -5200,6 +5222,7 @@ def build_parser():
     s.add_argument("--ui", metavar="VERSION", help="foreman-ui's new version (required when mods/foreman-ui changed since the last release)")
     s.add_argument("--push", action="store_true", help="merge into origin's main and push; needs the active task's publish grant")
     s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
+    s.add_argument("--canary-status", action="store_true", help="print the last canary run's report (T-1362)")
     s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
     s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
@@ -5687,8 +5710,8 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283); fm code bench grades a model or worker on seeded tasks (T-1215)")
-    s.add_argument("request", nargs="*", help="what to do (or: models)")
+                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328)")
+    s.add_argument("request", nargs="*", help="what to do (or: models, runners, bench, tui)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
     s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
@@ -5702,6 +5725,10 @@ def build_parser():
                                                    "the harness reverts what the guard refuses and its verify decides "
                                                    "(T-1214)")
     s.add_argument("--worker-timeout", type=int, metavar="SECONDS", help="each worker turn's limit (default 1200)")
+    s.add_argument("--use", metavar="NAME", help="fm code runners: make NAME the default runner (code.toml's runner = "
+                                                "NAME; with --here, this project's only, by name; T-1328)")
+    s.add_argument("--here", action="store_true", help="fm code runners --use: for this project only")
+    s.add_argument("--check", action="store_true", help="fm code runners: run each installed CLI's --version")
     s.add_argument("--verify", metavar="CMD", help="the plan without a model: one S task done when CMD passes "
                                                    "(it must fail now)")
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes

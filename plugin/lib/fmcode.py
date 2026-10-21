@@ -57,18 +57,22 @@ WORKER_TIMEOUT, JUDGE_MAX = 1200, 300  # a worker turn's seconds; changed files 
 # guard judges a worker's files afterwards, not its commands (security review). claude asks for Bash, which -p can't
 # answer (and Foreman's own hooks guard it); codex keeps its workspace sandbox; gemini edits without asking, shell still
 # asks; aider suggests no shell commands. opencode's run mode doesn't confine shell commands: give it as a template.
-WORKERS = {
-    "claude": "claude -p {prompt} --permission-mode acceptEdits",
-    "codex": "codex exec --full-auto {prompt}",
-    "gemini": "gemini --approval-mode auto_edit -p {prompt}",
-    "aider": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}",
+# T-1320: plan is the CLI's read-only mode, which fills fm code's plan and close-notes slots when no model is set.
+# T-1328: every runner fm code knows by name; verified: its read-only mode was run on a real machine and kept to reading,
+# so only such a runner is picked with nothing configured. One without work is found and named, not run: define it in
+# $FOREMAN_HOME/code.toml. Commands come only from here and that file; a project picks a runner by name.
+RUNNERS = {
+    # T-1329: a template with --output-format stream-json is read as claude's stream, so each tool use shows live
+    "claude": {"work": "claude -p {prompt} --permission-mode acceptEdits --output-format stream-json --verbose",
+               "plan": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit "
+                       "--output-format stream-json --verbose", "verified": True},
+    "codex": {"work": "codex exec --full-auto {prompt}", "plan": "codex exec --sandbox read-only {prompt}"},
+    "gemini": {"work": "gemini --approval-mode auto_edit -p {prompt}", "plan": "gemini --approval-mode default -p {prompt}"},
+    "aider": {"work": "aider --yes-always --no-suggest-shell-commands --no-auto-commits --message {prompt}"},
+    "opencode": {}, "qwen": {}, "cursor-agent": {}, "goose": {}, "amp": {},
 }
-# T-1320: the same CLIs in their read-only mode, which fill fm code's plan and close-notes slots when no model is set
-PLANNERS = {
-    "claude": "claude -p {prompt} --permission-mode plan --disallowedTools Bash,Edit,Write,NotebookEdit --output-format json",
-    "codex": "codex exec --sandbox read-only {prompt}",
-    "gemini": "gemini --approval-mode default -p {prompt}",
-}
+WORKERS = {k: r["work"] for k, r in RUNNERS.items() if r.get("work")}  # the built-in presets (the TUI picker, bench)
+PLANNERS = {k: r["plan"] for k, r in RUNNERS.items() if r.get("plan")}
 NO_MODEL_HINT = ("; or let a coding CLI you have plan and work: fm code \"<request>\" --worker claude (or codex, gemini)")
 # what a worker never gets from fm code's environment: forge, cloud and registry credentials (a model key stays, so the
 # CLI can sign in)
@@ -91,6 +95,9 @@ EVENTS = {
     "changed": "step, files (dirty after the step), stat {path: [added, removed]}",
     "closed": "task, tokens", "blocked": "task, reason", "error": "task",
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
+    "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328)",
+    "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
+    "working": "worker, secs: a CLI turn still running with nothing to show (each FM_HEARTBEAT s, default 10)",
 }
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
 
@@ -522,8 +529,15 @@ class Run:
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
-            env = dict(worker_env(), FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
-            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
+            # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
+            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
+            streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
+            code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
+                                    on_line=self.live_tools(argv[0]) if streams else None,
+                                    on_idle=self.live_beat(argv[0]))
+            if streams:  # the journal keeps its reply, not the stream
+                res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
+                out = res["result"] if res and isinstance(res.get("result"), str) else out
             ended = True
         finally:
             reverts, lost = self.judge(before)
@@ -540,6 +554,25 @@ class Run:
                           "put back: check it before going on")
         self.done.add(name)
         self.log(kind="phase_done", phase=name)
+
+    def live_tools(self, who):
+        """T-1329: a stream line's tool uses as tool events; whether it showed any."""
+        def on_line(line):
+            shown = m.stream_tools(line, self.root)
+            for action, target in shown:
+                target = self.redact(target)
+                self.emit("tool", f"    {action} {target}", action=action, target=target, worker=who)
+            return bool(shown)
+        return on_line
+
+    def live_beat(self, who):
+        """T-1329: a working event for a CLI turn that has shown nothing for a while."""
+        t0 = time.monotonic()
+
+        def beat():
+            secs = round(time.monotonic() - t0)
+            self.emit("working", f"    {who} working ({secs} s)", worker=who, secs=secs)
+        return beat
 
     def judge(self, b):
         """([(path, why)] put back, [paths it couldn't put back]) for one worker turn. Always put back: Git's own
@@ -676,23 +709,27 @@ def trim(msgs, keep=KEEP_RESULTS):
     return out
 
 
-def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False):
+def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
-    (setsid, a double fork): this process is their subreaper, so they come back to it, not to init."""
+    (setsid, a double fork): this process is their subreaper, so they come back to it, not to init. on_line and
+    on_idle see its output live (fmcore.pump, T-1329)."""
     reaping = reap and _subreaper(True)
     p = subprocess.Popen(["bash", "-c", cmd], cwd=cwd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT, start_new_session=True, env=env)
     head, tail, total = bytearray(), bytearray(), [0]
 
-    def pump():
-        for chunk in iter(lambda: p.stdout.read1(65536), b""):
-            total[0] += len(chunk)
-            take = chunk[:max(cap - len(head), 0)]
-            head.extend(take)
-            tail.extend(chunk[len(take):])
-            del tail[:-cap]
-    t = threading.Thread(target=pump, daemon=True)
+    def sink(chunk):
+        total[0] += len(chunk)
+        take = chunk[:max(cap - len(head), 0)]
+        head.extend(take)
+        tail.extend(chunk[len(take):])
+        del tail[:-cap]
+    done = threading.Event()  # set once the turn is over: a line a leftover grandchild prints shows nothing
+    live = (on_line and (lambda line: not done.is_set() and on_line(line)),
+            on_idle and (lambda: done.is_set() or on_idle()))
+    t = threading.Thread(target=fmcore.pump, args=(p.stdout, sink, live[0], on_idle and m.heartbeat(), live[1]),
+                         daemon=True)
     t.start()
     try:
         code = p.wait(timeout)
@@ -708,6 +745,7 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False):
             _kill_orphans()
             _subreaper(False)
     t.join(5)
+    done.set()
     gap = total[0] - len(head) - len(tail)
     out = head.decode("utf-8", "replace") + (f"\n… ({gap} bytes cut) …\n" if gap > 0 else "") + \
         tail.decode("utf-8", "replace")
@@ -761,9 +799,69 @@ def _procs():
 
 # ---------------------------------------------------------------- workers (T-1214)
 
+def code_config():
+    """$FOREMAN_HOME/code.toml: `runner = "NAME"`, the default, and [runners.NAME] work/plan templates of the user's own."""
+    path = os.path.join(fmcore.foreman_home(), "code.toml")
+    try:
+        import tomllib
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:  # TOMLDecodeError is a ValueError
+        raise CodeError(f"{path}: {e}")
+
+
+def all_runners():
+    """RUNNERS with code.toml's [runners.NAME] over them; a plan the user changed isn't verified unless they say so."""
+    out = {k: dict(v) for k, v in RUNNERS.items()}
+    for name, r in (code_config().get("runners") or {}).items():
+        if isinstance(r, dict):
+            for k in ("work", "plan"):
+                if k in r and not (isinstance(r[k], str) and "{prompt}" in r[k]):
+                    raise CodeError(f"code.toml: [runners.{name}] {k} needs {{prompt}} where the request goes")
+            mine = {k: r[k] for k in ("work", "plan") if k in r}
+            mine["verified"] = r.get("verified") is True or (out.get(name, {}).get("verified", False) and "plan" not in mine)
+            out.setdefault(name, {}).update(mine)
+    return out
+
+
+def _installed(name, r):
+    try:
+        return shutil.which(shlex.split(r.get("work") or r.get("plan") or name)[0])
+    except (ValueError, IndexError):
+        return None
+
+
+def pick_runner(p):
+    """T-1328: the runner a new run with no --worker or --model uses, and why: the project's (a name only), else
+    code.toml's; else none when a model is set up (it does the work, as before); else the first installed runner whose
+    read-only mode is verified."""
+    rs = all_runners()
+    for name, why in ((fmcore.read_meta(p).get("code_runner"), "this project's runner"),
+                      (code_config().get("runner"), "code.toml's runner")):
+        if name:
+            if not isinstance(name, str) or not rs.get(name, {}).get("work"):
+                raise CodeError(f"{why} {name!r} isn't one fm code can run: {', '.join(n for n, r in rs.items() if r.get('work'))}"
+                                " (or define [runners.NAME] work = \"CMD {prompt}\" in code.toml)")
+            return name, why
+    default, conf = m.configured()  # an unreadable models.json is an error, never a quiet switch to a CLI
+    if default or conf:
+        return None, None  # a model is set up: it does the work, and a wrong name in it says so
+    try:
+        m.resolve(None)  # a local server answering, or a cloud key set
+        return None, None
+    except m.ModelError:
+        pass
+    for name, r in rs.items():
+        if r.get("verified") and r.get("work") and r.get("plan") and _installed(name, r):
+            return name, "no model is set up; it plans read-only and works"
+    return None, None
+
+
 def worker_argv(spec, prompt, which=True):
-    """A --worker spec as argv: the user's own template ("{prompt}" in it), a WORKERS name, else [spec, prompt]."""
-    tpl = WORKERS.get(spec, spec)
+    """A --worker spec as argv: the user's own template ("{prompt}" in it), a runner's name, else [spec, prompt]."""
+    tpl = all_runners().get(spec, {}).get("work") or spec
     try:
         argv = [w.replace("{prompt}", prompt) for w in shlex.split(tpl)] if "{prompt}" in tpl else [spec, prompt]
     except ValueError as e:
@@ -1014,6 +1112,8 @@ def cmd_code(args):
     words = list(args.request or [])
     if words == ["models"]:
         return _models(args, fmcli)
+    if words == ["runners"]:
+        return _runners(args, fmcli)
     if words[:1] == ["bench"]:
         import fmcodebench
         return fmcodebench.cmd(args, words[1:])
@@ -1031,6 +1131,9 @@ def cmd_code(args):
                                    'fm code --resume)')
         else:
             run.request = " ".join(words)
+        picked = None
+        if args.resume is None and not run.worker and not args.model:  # T-1328
+            run.worker, picked = pick_runner(p)
         if run.worker:
             if fmcore.read_meta(p).get("sensitive"):
                 raise CodeError("this repo is marked sensitive (fm sensitive on), so its code can't go to a worker CLI, "
@@ -1051,6 +1154,8 @@ def cmd_code(args):
             run.offsite_ok(p, run.escalate)
         run.emit("start", "", quiet=True, schema=SCHEMA, request=run.request, task=run.tid, worker=run.worker,
                  model=profile and profile["name"], verify=run.verify_cmd, resume=args.resume is not None)
+        if picked:
+            run.emit("note", f"runner: {run.worker} ({picked}; fm code runners lists them all)", worker=run.worker)
         if args.resume is None:
             _plan(run, profile, args.dry_plan)
             if is_answer(run.plan):
@@ -1111,11 +1216,13 @@ def choose_profile(run, model):
     """The profile that fills the plan and close-notes slots: the model named, else the run's own (on --resume), else
     the configured one. With none and a --worker in PLANNERS, that CLI in its read-only mode (T-1320), which a resumed
     run it planned gets again; a model asked for by name is never swapped for it."""
-    planner = None
-    if run.worker in PLANNERS:
-        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": PLANNERS[run.worker],
+    planner, r = None, all_runners().get(run.worker or "", {})
+    if r.get("plan"):
+        planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": r["plan"], "verified": r.get("verified"),
+                   "stream": "claude" if "stream-json" in r["plan"] else None, "on_line": run.live_tools(run.worker),
+                   "heartbeat": lambda: run.live_beat(run.worker),  # a fresh clock for each call
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
-                   "env": dict(worker_env(), FOREMAN_WORKER_OF="fm-code-plan")}
+                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
         if not model and run.model_name == planner["name"]:
             return planner
     try:
@@ -1126,6 +1233,9 @@ def choose_profile(run, model):
         if not planner:  # a CLI with no read-only mode can't be trusted to only plan
             raise m.ModelError(f"{e}; --worker {run.worker!r} has no read-only mode to plan in: give --verify CMD "
                                "(done when CMD passes), or --worker claude, codex or gemini") from None
+        if not planner["verified"]:  # T-1328: named, so it plans; the tree check after each call still stands
+            run.emit("note", f"{run.worker}'s read-only mode is not verified here: if its plan changes a file, the "
+                             "run stops", worker=run.worker)
         return planner
 
 
@@ -1329,6 +1439,81 @@ def _load(run, tid):
             run.baseline = r["text"]
         elif k == "close_notes":
             run.close_notes = r["notes"]
+
+
+def _runners(args, fmcli):
+    """T-1328: every runner fm code knows, what each can do here, and the one a run with no flags uses."""
+    p = fmcli.resolve(args)
+    if args.here and args.use is None:
+        raise fmcli.UsageError("--here goes with --use NAME (--use '' --here clears this project's runner)")
+    name = why = problem = None
+    try:
+        rs = all_runners()
+    except CodeError as e:  # the built-ins still list, with what's wrong in the file
+        rs, problem = {k: dict(v) for k, v in RUNNERS.items()}, str(e)
+    if args.use is not None:
+        if problem:
+            raise fmcli.UsageError(problem)
+        if args.use and not rs.get(args.use, {}).get("work"):
+            raise fmcli.UsageError(f"{args.use!r} isn't a runner fm code can run: "
+                                   f"{', '.join(n for n, r in rs.items() if r.get('work'))} (or define [runners.NAME] "
+                                   "work = \"CMD {prompt}\" in $FOREMAN_HOME/code.toml)")
+        if args.here:  # a name only: the command stays the registry's or code.toml's
+            fmcore.update_meta(p, code_runner=args.use or None)
+        else:
+            _set_default_runner(args.use, fmcli)
+        print(f"fm code's default runner{' here' if args.here else ''}: {args.use or '(cleared)'}")
+    if not problem:
+        try:
+            name, why = pick_runner(p)
+        except (CodeError, m.ModelError) as e:
+            problem = str(e)
+    try:
+        models = [{"name": x["name"], "kind": x["kind"], "model": x["model"]} for x in m.profiles()]
+    except m.ModelError as e:
+        models, problem = [], problem or str(e)
+    rows = []
+    for n, r in rs.items():
+        path = _installed(n, r)
+        row = {"name": n, "installed": bool(path), "path": path, "works": bool(r.get("work")),
+               "plans": bool(r.get("plan")), "verified": bool(r.get("verified") and r.get("plan")), "default": n == name}
+        if args.check and path:
+            try:
+                v = subprocess.run([path, "--version"], capture_output=True, text=True, timeout=10, stdin=subprocess.DEVNULL)
+                row["version"] = ((v.stdout or v.stderr).strip().splitlines() or ["?"])[0][:60]
+            except (OSError, subprocess.TimeoutExpired) as e:
+                row["version"] = f"didn't answer --version ({type(e).__name__})"
+        rows.append(row)
+
+    def can(r):
+        return ("works" if r["works"] else "no preset: define it in code.toml") + (
+            ", plans read-only" + ("" if r["verified"] else " (not verified here)") if r["plans"] else "")
+    lines = [f"{'*' if r['default'] else ' '} {r['name']:<13} {'installed' if r['installed'] else '—':<10} {can(r)}"
+             + (f"  [{r['version']}]" if r.get("version") else "") for r in rows]
+    lines.append("Models: " + (", ".join(f"{x['name']} ({x['model']})" for x in models) if models else
+                               "none set up (fm code models says how)"))
+    lines.append(problem or (f"(* used with no --worker or --model: {why})" if name else
+                             "With no --worker, fm code uses the model" if models
+                             else "No runner installed that can plan read-only, and no model: install claude, or set one up"))
+    fmcli.out(args, {"runners": rows, "models": models, "default": name, "why": why, "problem": problem},
+              "\n".join(lines))
+
+
+def _set_default_runner(name, fmcli):
+    """code.toml's top-level runner = NAME ('' removes it); keys come before the first table, so only those change."""
+    import tomllib
+    path = os.path.join(fmcore.foreman_home(), "code.toml")
+    text = open(path, encoding="utf-8").read() if os.path.isfile(path) else ""
+    first = re.search(r"(?m)^\s*\[", text)
+    cut = first.start() if first else len(text)
+    head = re.sub(r"(?m)^runner\s*=.*\n?", "", text[:cut])
+    new = (f"runner = {json.dumps(name)}\n" if name else "") + head + text[cut:]
+    try:
+        if tomllib.loads(new).get("runner") != (name or None):
+            raise ValueError("the runner key didn't land")
+    except ValueError as e:
+        raise fmcli.UsageError(f"{path}: couldn't set runner ({e}); edit it by hand")
+    fmcore.write_atomic(path, new)
 
 
 def _models(args, fmcli):

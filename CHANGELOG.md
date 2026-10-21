@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 1.2.47 — 2026-10-21
+- fm code shows what a coding CLI is doing as it happens: each file claude reads or edits and each command it runs is an Activity line (a `tool` event), for the worker and the read-only planner alike, and a turn with nothing to show sends a `working` heartbeat every 10 s, one ticking line in the TUI. Before, a run looked stuck for minutes (T-1329).
+- `fm code` works with no setup: with no model and no `--worker`, it uses the Claude Code CLI if installed and says so. `fm code runners` lists every coding CLI it knows (installed, can plan read-only, verified here, the default; `--check` runs each one's `--version`), `--use NAME` sets the default in `$FOREMAN_HOME/code.toml` (`--here`: this project only, by name), and `[runners.NAME]` in that file adds your own CLI; it also lists the models set up. A broken models.json is an error, never a quiet switch to a CLI. The guard now protects `code.toml`, `tui.toml`, `tui/` and `models.json` in Foreman's home: they become commands, run Python, or pick where code is sent (T-1328).
+- fm release starts its canary detached: `--push` returns once pushed, the report lands in the project's logs/canary-VERSION.txt, a project whose past check now fails gets an inbox item and an `fm notify` message, and `fm release --canary-status` prints the last run (T-1362).
+- fm code tui: an extension's panel, handler or command that fails or runs slow (a panel over 50 ms on 3 frames running, a handler over 50 ms, a command over 2 s) is switched off with a note in Activity, never taking the screen down; built-in panels are never switched off (T-1315).
+- "Stop asking me if you can release", "don't stop until it's done" and the like no longer record a veto: they tell Foreman to go ahead (T-1323).
+- fm code tui has a test net: golden frames of the demo run (FM_GOLDEN=regen rewrites them), a seeded fuzz of 300 malformed event streams at six sizes, and a pty test that resizes and quits; a malformed event now changes nothing instead of crashing the screen (14 crash classes found and fixed) (T-1306)
+- Foreman notices friction itself: a complaint about a Foreman area ("why can't I launch fm code like claude", "fm isn't recognized") gets a fix-the-cause note and a queued improvement round for that area (fm mission + fm ideas, then build), without being asked; a second complaint within a week makes it urgent; a complaint naming no Foreman area gets only the note (T-1332)
+- fm release --push and fm pr's post and merge refusals name both ways to grant publishing: fm ask ID publish (the user's yes), or fm task set ID --allow publish where the user has given standing permission to release (T-1322)
+- fm code: the worker and planner Claude sessions it starts run Foreman's hooks quiet, so only the guard acts there: no second copy of Foreman's session context, drive, request capture or leases inside its own workers (T-1327)
+
 ## 1.2.46 — 2026-10-20
 - Stopping an `fm code` run (the TUI's stop or quit, a closed terminal, `kill`) now stops the planner or worker CLI it started; before, that CLI ran on orphaned, still spending tokens and, for a worker, still editing files nothing judged (T-1326)
 - Guard: Foreman's state folder reached through a linked folder (`~/.claude` linked into a dotfiles repo, `FOREMAN_STATE` under macOS's linked `/tmp`) is refused as state at its real path too, like the state fallbacks; a link at the state folder itself is still never followed (T-1318)

@@ -341,38 +341,121 @@ def _post(url, body, headers, timeout, key):
         return v
 
 
+# T-1329: what a CLI's stream shows: claude's stream-json tool_use blocks, as (action, the input key it acts on)
+TOOL_SHOW = {"Read": ("read", "file_path"), "Edit": ("edit", "file_path"), "MultiEdit": ("edit", "file_path"),
+             "Write": ("edit", "file_path"), "NotebookEdit": ("edit", "notebook_path"), "Bash": ("run", "command"),
+             "Grep": ("search", "pattern"), "Glob": ("search", "pattern")}
+CLI_KEEP = 8 << 20  # a CLI's stdout kept for its reply
+
+
+def heartbeat():
+    """Seconds between working events while a CLI turn shows nothing (FM_HEARTBEAT, for tests; default 10)."""
+    try:
+        return max(0.1, float(os.environ.get("FM_HEARTBEAT") or 10))
+    except ValueError:
+        return 10.0
+
+
+def stream_tools(line, root=""):
+    """T-1329: the tool uses in one line of claude's stream-json as [(action, target)], each target one line of at
+    most 200 characters, relative when it's in root; [] for any other line, a malformed one included."""
+    if '"tool_use"' not in line:
+        return []
+    try:
+        e = json.loads(line)
+        content = e["message"]["content"] if e.get("type") == "assistant" else []
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return []
+    out = []
+    for b in content if isinstance(content, list) else []:
+        if isinstance(b, dict) and b.get("type") == "tool_use":
+            action, key = TOOL_SHOW.get(b.get("name"), (_shown(str(b.get("name") or "tool").lower())[:40], None))
+            target = str((b.get("input") if isinstance(b.get("input"), dict) else {}).get(key) or "") if key else ""
+            if root and target.startswith(root.rstrip(os.sep) + os.sep):
+                target = os.path.relpath(target, root)
+            target = _shown(target)
+            out.append((action, target if len(target) <= 200 else target[:199] + "…"))
+    return out
+
+
+def _shown(s):
+    """One line a terminal only prints: whitespace runs as one space, no control character (ESC, BEL, C1)."""
+    return "".join(c for c in " ".join(s.split()) if c.isprintable())
+
+
+def stream_result(line):
+    """A claude stream-json line that is the run's final result, as a dict; None for any other."""
+    if '"result"' not in line:
+        return None
+    try:
+        e = json.loads(line)
+    except ValueError:
+        return None
+    return e if isinstance(e, dict) and e.get("type") == "result" else None
+
+
 def _cli(profile, messages, timeout):
     """T-1320: a slot filled by a coding CLI run once in its read-only mode (claude -p … --permission-mode plan): the
-    conversation as one prompt, its reply as the text. Claude's --output-format json gives the token counts."""
+    conversation as one prompt, its reply as the text. Claude's stream-json shows each tool use live (T-1329) and its
+    final result line gives the reply and the token counts; a quiet call sends heartbeats."""
+    import tempfile
+    import threading
+    import fmcore
     prompt = "\n\n".join(f"{msg['role'].upper()}:\n{msg['content']}" for msg in messages
                           if isinstance(msg.get("content"), str))
     argv = [w.replace("{prompt}", prompt) for w in shlex.split(profile["argv"])]
     limit = max(timeout, profile.get("timeout") or 0)
-    try:
-        proc = subprocess.Popen(argv, cwd=profile.get("cwd"), env=profile.get("env"), stdin=subprocess.DEVNULL,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
-                                start_new_session=True)
-    except OSError as e:
-        raise ModelError(f"{profile['name']}: {e}") from None
-    import fmcore
-    try:
-        out, err = proc.communicate(timeout=limit)
-    except subprocess.TimeoutExpired:  # it and everything it started: nothing keeps working after we give up
-        fmcore.kill_group(proc)
-        proc.communicate()
-        raise ModelError(f"{profile['name']}: no reply in {limit} s") from None
-    finally:
-        if proc.poll() is None:  # T-1326: fm code stopped mid-call (SystemExit from a signal): the CLI goes too
+    stream, shown, found, out = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray()
+    done = threading.Event()  # set once the call returns: a line a leftover grandchild prints shows nothing
+
+    def sink(chunk):
+        out.extend(chunk)
+        del out[:-CLI_KEEP]
+
+    def on_line(line):
+        if not stream or done.is_set():
+            return False
+        res = stream_result(line)
+        if res:
+            found.append(res)
+        return bool(shown and shown(line))
+    live = profile.get("heartbeat") and profile["heartbeat"]()
+    beat = live and (lambda: done.is_set() or live())
+    with tempfile.TemporaryFile() as err:
+        try:
+            proc = subprocess.Popen(argv, cwd=profile.get("cwd"), env=profile.get("env"), stdin=subprocess.DEVNULL,
+                                    stdout=subprocess.PIPE, stderr=err, start_new_session=True)
+        except OSError as e:
+            raise ModelError(f"{profile['name']}: {e}") from None
+        reader = threading.Thread(target=fmcore.pump, args=(proc.stdout, sink, on_line, beat and heartbeat(), beat),
+                                  daemon=True)
+        reader.start()
+        try:
+            proc.wait(limit)
+        except subprocess.TimeoutExpired:  # it and everything it started: nothing keeps working after we give up
             fmcore.kill_group(proc)
-    r = subprocess.CompletedProcess(argv, proc.returncode, out, err)
-    if r.returncode:
-        raise ModelError(f"{profile['name']}: exit {r.returncode}: {(r.stderr or r.stdout).strip()[-300:]}")
+            proc.wait()
+            raise ModelError(f"{profile['name']}: no reply in {limit} s") from None
+        finally:
+            if proc.poll() is None:  # T-1326: fm code stopped mid-call (SystemExit from a signal): the CLI goes too
+                fmcore.kill_group(proc)
+            reader.join(5)
+            done.set()
+        err.seek(0)
+        stderr = err.read().decode("utf-8", "replace")
+    stdout = out.decode("utf-8", "replace")
+    if proc.returncode:
+        raise ModelError(f"{profile['name']}: exit {proc.returncode}: {(stderr or stdout).strip()[-300:]}")
+    if stream and not found:
+        raise ModelError(f"{profile['name']}: its stream ended with no result line: {(stderr or stdout).strip()[-300:]}")
+    if stream and not isinstance(found[-1].get("result"), str):  # error_max_turns and the like carry no reply
+        raise ModelError(f"{profile['name']}: {found[-1].get('subtype') or 'its result had no reply text'}")
     try:
-        got = json.loads(r.stdout)
+        got = found[-1] if found else json.loads(stdout)
     except ValueError:
         got = None
     if not (isinstance(got, dict) and isinstance(got.get("result"), str)):
-        return {"text": r.stdout.strip(), "tool_calls": [], "usage": {"in": 0, "out": 0}, "stop": "end"}
+        return {"text": stdout.strip(), "tool_calls": [], "usage": {"in": 0, "out": 0}, "stop": "end"}
     if got.get("is_error"):
         raise ModelError(f"{profile['name']}: {got['result'][:300]}")
     u = _of(got.get("usage"), dict)

@@ -89,7 +89,8 @@ def post(p, b, body, number=None):
     the task's publish grant like the train's, spent before the call so one yes posts once."""
     import fmcli
     if "publish" not in set(b.meta.get("allow") or []):
-        raise fmcli.UsageError(f"posting is outward: fm ask {b.id} publish --why \"post {b.id}'s PR description\", "
+        raise fmcli.UsageError(f"posting is outward: fm ask {b.id} publish --why \"post {b.id}'s PR description\" (the user's yes), "
+                               f"or, where the user has given standing permission, fm task set {b.id} --allow publish; "
                                "then run it again")
     n = number or _json(_gh(p, "pr", "view", "--json", "number")).get("number")
     with c.lock(p.dir):
@@ -111,8 +112,10 @@ def train(p, args):
     ready = [x for x in prs if _eligible(x)]
     lines = [f"#{x['number']} skipped: not approved with green checks" for x in prs if x not in ready]
     if ready and "publish" not in set((b.meta.get("allow") if b else None) or []):  # merging is outward: the user's yes
-        raise fmcli.UsageError(f"{len(ready)} PR(s) ready; merging is outward: fm ask {b.id if b else '<task>'} publish "
-                               f"--why \"merge approved PRs\", then run the train again")
+        tid = b.id if b else '<task>'
+        raise fmcli.UsageError(f"{len(ready)} PR(s) ready; merging is outward: fm ask {tid} publish "
+                               f"--why \"merge approved PRs\" (the user's yes), or, where the user has given standing "
+                               f"permission, fm task set {tid} --allow publish; then run the train again")
     if ready:  # the yes covers this one run: spent before the first merge
         with c.lock(p.dir):
             nb = fmcli.need_brief(p, b.id)
