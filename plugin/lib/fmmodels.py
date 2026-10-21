@@ -43,6 +43,7 @@ import itertools
 import json
 import os
 import shlex
+import socket
 import subprocess
 import time
 import urllib.error
@@ -285,6 +286,20 @@ def is_loopback(host):
     return _loopback(host)
 
 
+def _link_local(host):
+    """T-1395: 169.254.0.0/16 or fe80::/10, in any spelling the resolver takes (2852039166, 0xa9.0xfe.0xa9.0xfe,
+    ::ffff:169.254.169.254). ponytail: a hostname that resolves there isn't caught; resolve and pin it if that matters."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        try:  # the legacy IPv4 forms urllib's resolver also accepts, read without any lookup
+            ip = ipaddress.IPv4Address(socket.inet_aton(host))
+        except (OSError, ValueError):
+            return False
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    return ip.is_link_local
+
+
 def _check_url(profile, base, key):
     """Refuse a base_url the key mustn't go to; the messages never echo base_url (it may hold a password)."""
     who = f"profile {profile.get('name')!r}"
@@ -297,6 +312,9 @@ def _check_url(profile, base, key):
         raise ModelError(f"{who}: base_url must be an http(s) URL")
     if "@" in u.netloc:
         raise ModelError(f"{who}: base_url must not carry a user or password (put the key in key_env)")
+    if _link_local(host):
+        raise ModelError(f"{who}: base_url is a link-local address (169.254.0.0/16, fe80::/10: cloud metadata); "
+                         "refused")
     if key and u.scheme == "http" and not _loopback(host):
         raise ModelError(f"{who}: refusing to send {profile.get('key_env')} over plain http to {host}; use https")
 
