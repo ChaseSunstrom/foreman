@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm doctor` checks that `fm` works in any shell: it warns, naming the fix, when `~/.local/bin/fm` is missing (an install from before 1.2.x never made it), points at another copy, or sits in a folder that isn't on PATH (T-1324).
 - `fm task new --from ID` with `--ac` or `--step` replaces the capture's own criteria or steps instead of adding to them; before, a capture planned that way listed every step twice (T-1364).
 
 ## 1.2.47 — 2026-10-21
