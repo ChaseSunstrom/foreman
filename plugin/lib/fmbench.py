@@ -14,10 +14,12 @@ import contextlib
 import glob
 import hashlib
 import json
+import math
 import os
 import re
 import shlex
 import shutil
+import statistics
 import subprocess
 import tempfile
 import threading
@@ -470,28 +472,68 @@ def _rate(x):
     return x.get("pass_rate", 1.0 if x.get("pass") else 0.0)
 
 
+def _runs(x):
+    try:
+        return max(1, int(x.get("runs") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
+def _cost_se(x):
+    """T-1260: the standard error of a case's mean cost from its attempts' costs; None when fewer than two."""
+    vals = [t["cost_usd"] for t in x.get("attempts") or [] if isinstance(t, dict)
+            and isinstance(t.get("cost_usd"), (int, float)) and not isinstance(t.get("cost_usd"), bool)]
+    return statistics.stdev(vals) / math.sqrt(len(vals)) if len(vals) >= 2 else None
+
+
 def gate(a, b, tolerance=0.15):
     """(ok, lines): candidate b is no worse than a on their shared cases — no fewer passes in total, and mean cost per
-    case at most `tolerance` higher. Old results without repeats count each pass as 1.0."""
+    case at most `tolerance` higher. Old results without repeats count each pass as 1.0.
+    T-1260: with repeated runs each delta carries a band, 2 standard errors of the difference: per case the binomial
+    error of its pass rate, and the spread of its attempts' costs. A loss inside its band is noise, not a failure;
+    single runs (no band) and results without per-attempt costs (no cost band) are judged as before."""
     shared = sorted({x["id"] for x in a["cases"]} & {x["id"] for x in b["cases"]})
     if not shared:
         return False, ["no shared cases: run both on the same cases (fm bench run --ids …)"]
     A, B = ({x["id"]: x for x in r["cases"]} for r in (a, b))
     sa, sb = sum(_rate(A[i]) for i in shared), sum(_rate(B[i]) for i in shared)
     lost = [i for i in shared if _rate(B[i]) < _rate(A[i])]
-    costs = [[r[i]["cost_usd"] for i in shared if r[i].get("cost_usd") is not None] for r in (A, B)]
-    ca, cb = (sum(x) / len(x) if x else None for x in costs)
-    lines, ok = [f"{a['label']} → {b['label']}: passes {sa:g} → {sb:g} over {len(shared)} shared case(s)"
-                 + (f"; cost/case ${ca:.2f} → ${cb:.2f}" if ca is not None and cb is not None else "")], True
-    if sb < sa:
+    repeated = any(_runs(r[i]) > 1 for r in (A, B) for i in shared)
+    # a single run's variance is unmeasured and counts as 0: the band only widens with real repeats
+    pband = 2 * math.sqrt(sum(max(0.0, min(1.0, _rate(r[i])) * (1 - min(1.0, _rate(r[i])))) / _runs(r[i])
+                              for r in (A, B) for i in shared)) if repeated else None
+    priced = [[i for i in shared if r[i].get("cost_usd") is not None] for r in (A, B)]
+    ca, cb = (sum(r[i]["cost_usd"] for i in ids) / len(ids) if ids else None for r, ids in zip((A, B), priced))
+    ses = [[_cost_se(r[i]) for i in ids] for r, ids in zip((A, B), priced)]
+    cband = (2 * math.sqrt(sum((sum(s * s for s in x) / len(x) ** 2) for x in ses))
+             if all(x and None not in x for x in ses) else None)
+
+    def band(d, width, money=False):
+        if width is None:
+            return ""
+        sign = "+" if d >= 0 else "-"
+        return f" ({sign}${abs(d):.2f} ± ${width:.2f})" if money else f" ({sign}{abs(d):.2f} ± {width:.2f})"
+    lines, ok = [f"{a['label']} → {b['label']}: passes {round(sa, 2):g} → {round(sb, 2):g}{band(sb - sa, pband)}"
+                 f" over {len(shared)} shared case(s)"
+                 + (f"; cost/case ${ca:.2f} → ${cb:.2f}{band(cb - ca, cband, True)}"
+                    if ca is not None and cb is not None else "")], True
+    if sb < sa and pband and sa - sb <= pband:
+        lines.append(f"  fewer passes within noise (lost ground on {', '.join(lost)}): not a measured loss")
+    elif sb < sa:
         ok = False
-        lines.append(f"✗ fewer passes (lost ground on {', '.join(lost)})")
+        lines.append(f"✗ fewer passes{', outside noise' if pband else ''} (lost ground on {', '.join(lost)})")
     elif lost:
         lines.append(f"  (lost ground on {', '.join(lost)}, made up elsewhere)")
+    elif sb > sa and pband and sb - sa <= pband:
+        lines.append("  more passes within noise: not a measured win")
     if ca and cb is not None and cb > ca * (1 + tolerance):
-        ok = False
-        lines.append(f"✗ cost per case up {round(100 * (cb / ca - 1))}% (over {round(100 * tolerance)}%)")
-    if all(r[i].get("runs", 1) == 1 for r in (A, B) for i in shared):
+        up = f"cost per case up {round(100 * (cb / ca - 1))}%"
+        if cband and cb - ca <= cband:
+            lines.append(f"  {up} within noise (over {round(100 * tolerance)}%, inside ±${cband:.2f})")
+        else:
+            ok = False
+            lines.append(f"✗ {up} (over {round(100 * tolerance)}%{', outside noise' if cband else ''})")
+    if not repeated:
         lines.append("  single runs: a flipped case may be noise (--runs 3 measures it)")
     lines.append("✓ no worse: may be proposed" if ok else "✗ not proposed")
     return ok, lines
