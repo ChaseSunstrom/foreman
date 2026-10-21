@@ -31,4 +31,4 @@
 │                                                                   ││ ██████                                          │  ⟨94efbaff20⟩
 │                                                                   ││ 2.1k in   312 out                               │  ⟨cb47fa192a⟩
 ╰───────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────╯  ⟨8408b19c91⟩
- ⠼ PLANNING    step 0/3                                           n new  d diff  h history  t thoughts  ? keys  q quit  ⟨d212e71c83⟩
+ ⠼ PLANNING    step 0/3                               n new  p projects  d diff  h history  t thoughts  ? keys  q quit  ⟨24beb42cd7⟩

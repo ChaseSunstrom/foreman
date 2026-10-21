@@ -83,9 +83,11 @@ DEFAULTS = {
                "narrow_heights": ["auto", 1], "narrow_below": 80},
     "keys": {"q": "quit", "n": "new", "s": "stop", "r": "resume", "?": "help", "d": "diff", "h": "history",
              "m": "model", "t": "thoughts", "\t": "focus", "KEY_UP": "up", "KEY_DOWN": "down", "k": "up", "j": "down",
-             "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow"},
+             "\n": "expand", "KEY_ENTER": "expand", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "G": "follow",
+             "p": "projects"},
 }
-HINTS = [("n", "new"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"), ("q", "quit")]
+HINTS = [("n", "new"), ("p", "projects"), ("d", "diff"), ("h", "history"), ("t", "thoughts"), ("?", "keys"),
+         ("q", "quit")]
 CHIP = {"done": (" ✓ ", "chip_ok"), "now": (" ● ", "chip_accent"), "todo": ("   ", "chip_todo"),
         "fail": (" ✖ ", "chip_bad")}
 NODE = {"done": ("●", "ok"), "now": ("◉", "accent"), "todo": ("○", "track"), "fail": ("✖", "bad")}
@@ -1034,7 +1036,8 @@ def render(st, w, h, cfg, app=None, t=None):
 KEY_NAMES = {"\t": "Tab", "\n": "Enter", "KEY_ENTER": "Enter", "KEY_UP": "↑", "KEY_DOWN": "↓", "KEY_PPAGE": "PgUp",
              "KEY_NPAGE": "PgDn"}
 COMMAND_LABELS = [("new", "type a request"), ("stop", "stop the run"), ("resume", "resume it"),
-                  ("diff", "the run's changes"), ("history", "past runs"), ("model", "model or worker"),
+                  ("diff", "the run's changes"), ("history", "past runs"), ("projects", "every Foreman project"),
+                  ("model", "model or worker"),
                   ("thoughts", "the model's own words"), ("focus", "next panel"), ("up", "up"), ("down", "down"),
                   ("expand", "open a line"), ("follow", "follow the latest"), ("help", "keys"), ("quit", "quit")]
 
@@ -1076,7 +1079,8 @@ def _diff_view(cv, st, app, cfg):
 
 def _list_view(title, note, row):
     def view(cv, st, app, cfg):
-        iy, ix, ih, iw = _overlay(cv, cfg, title, note, 96, min(len(app.items) + 4, cv.h - 4))
+        iy, ix, ih, iw = _overlay(cv, cfg, title(app) if callable(title) else title, note, 110,
+                                  min(len(app.items) + 4, cv.h - 4))
         if not app.items:
             cv.line(iy + 1, ix, [("nothing here yet", "dim")], ix + iw)
         first = max(0, app.item_index - ih + 2)
@@ -1101,8 +1105,70 @@ def _picker_row(item):
             ("  " + name, "text")]
 
 
+def _num(v):
+    return v if isinstance(v, (int, float)) and v == v else 0
+
+
+def _project_row(p):
+    """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown."""
+    name = str(p.get("project") or "?")
+    if p.get("error"):
+        return [(" ERROR ", "chip_bad"), (f"  {name:<24}", "strong"), ("  " + str(p["error"]), "bad")]
+    if p.get("exists") is False:
+        return [(" GONE  ", "chip_bad"), (f"  {name:<24}", "strong"), (f"  folder missing: {p.get('root')}", "dim")]
+    a = p.get("active") if isinstance(p.get("active"), dict) else None
+    counts = f"queue {_num(p.get('queue'))}  inbox {_num(p.get('inbox'))}  blocked {_num(p.get('blocked'))}"
+    return [(" ACTIVE " if a else " IDLE   ", "chip_accent" if a else "chip_todo"), (f"  {name:<24}", "strong"),
+            (f"  {counts:<34}", "dim"), ("  " + (f"{a.get('id')} {a.get('title') or ''}" if a else "nothing active"),
+                                         "text")]
+
+
+_SECTION = {"active": (" ACTIVE  ", "chip_accent"), "queue": (" QUEUED  ", "chip_todo"),
+            "inbox": (" INBOX   ", "chip_todo"), "blocked": (" BLOCKED ", "chip_bad")}
+
+
+def _work_row(it):
+    """T-1330: one line of a project's view: a task by section, a past run, or why its state can't be read."""
+    if it.get("kind") == "error":
+        return [(" ERROR ", "chip_bad"), ("  " + str(it.get("text")), "bad")]
+    if it.get("kind") == "run":
+        return _history_row(it)
+    t = it.get("task") or {}
+    why = f"  ({t['reason']})" if t.get("reason") else ""
+    return [_SECTION.get(it.get("section"), (" TASK    ", "chip_todo")), (f"  {str(t.get('id') or '?'):<7}", "strong"),
+            (f"  {str(t.get('type') or '')[:4]:<4} {str(t.get('tier') or '')}", "dim"),
+            ("  " + str(t.get("title") or "") + why, "text")]
+
+
+def fm_projects():
+    """Every Foreman project on this machine, as fm projects --json lists them."""
+    return (_fm_json("projects").get("projects") or [])
+
+
+def fm_project_state(p):
+    """A project's work, as fm state --json gives it, and its fm code runs' folder."""
+    st = _fm_json("state", "-p", str(p.get("project")))
+    import fmcore
+    q = fmcore.project_by_slug(str(p.get("project")))
+    st["code_dir"] = os.path.join(q.dir, "code") if q else None
+    return st
+
+
+def _fm_json(*args):
+    r = subprocess.run([sys.executable, FM, *args, "--json"], capture_output=True, text=True, timeout=60,
+                       stdin=subprocess.DEVNULL)
+    if r.returncode:
+        raise RuntimeError(" ".join((r.stderr or r.stdout).split())[-300:] or f"fm {args[0]} exit {r.returncode}")
+    return json.loads(r.stdout)
+
+
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
-         "picker": _list_view("Run the next request with", "Enter picks", _picker_row)}
+         "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
+         "home": _list_view("Foreman projects", "Enter opens · n new request there · Esc run screen · q quits",
+                            _project_row),
+         "project": _list_view(lambda app: str((app.project or {}).get("project") or "project"),
+                               "Enter/r runs a task · Enter replays a run · n new · m runner · Esc projects",
+                               _work_row)}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1198,13 +1264,17 @@ def to_svg(cv, cfg, title="fm code tui"):
 # ---------------------------------------------------------------- the app: keys, commands, views, the child
 
 class App:
-    def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None):
+    def __init__(self, cfg, spawn=None, root=None, opts=None, diff=None, history=None, choices=None, projects=None,
+                 project_state=None):
         self.cfg, self.state = cfg, State()
         self.mode, self.input, self.message, self.done = "main", "", "", False
         self.spawn = spawn or self._spawn
         self.root, self.opts = root or os.getcwd(), dict(opts or {})
         self.diff_source, self.history_dir = diff or self._git_diff, history
         self.choices_source = choices or self._choices
+        # T-1330: the app's home (every Foreman project) and a project's view, read through fm
+        self.projects_source, self.state_source = projects or fm_projects, project_state or fm_project_state
+        self.project, self.view_back, self.next_root, self.prompt_back = None, "main", None, "main"
         self.child, self.events = None, queue.Queue()
         self.order, self.focus, self.scroll, self.follow, self.thoughts = [], 0, 0, True, False
         self.selected, self.expanded = None, set()
@@ -1217,7 +1287,7 @@ class App:
                          "down": lambda: self.move(1), "page_up": lambda: self.move(-10),
                          "page_down": lambda: self.move(10), "expand": self.expand, "follow": self.follow_tail,
                          "diff": self.show_diff, "history": self.show_history, "model": self.show_picker,
-                         "thoughts": self.toggle_thoughts}
+                         "thoughts": self.toggle_thoughts, "projects": self.show_home}
         self.commands.update({name: self._ext_command(name, fn) for name, fn in EXT_COMMANDS.items()})
 
     def fps(self, t):
@@ -1254,6 +1324,8 @@ class App:
         if self.mode == "help":
             self.mode = "main"
             return None
+        if self.mode in ("home", "project"):
+            return self._home_key(k)
         if self.mode in ("diff", "history", "picker"):
             return self._view_key(k)
         fn = self.commands.get(self.cfg["keys"].get(k))
@@ -1263,13 +1335,16 @@ class App:
         cmd = self.cfg["keys"].get(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q") or cmd == {"diff": "diff", "history": "history", "picker": "model"}[self.mode]:
-            self.mode = "main"
+            self._back()
         elif step and self.mode == "diff":
             self.view_scroll = max(0, self.view_scroll + step)
         elif step:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
         elif cmd == "expand" and self.items:
             item, self.mode = self.items[self.item_index], "main"
+            if not isinstance(item, dict):  # a runner picked: back to the project it's for, if any
+                self._back()
+            self.view_back = "main"
             if isinstance(item, dict):
                 self.replay(item["path"])
             else:
@@ -1279,11 +1354,16 @@ class App:
 
     def _prompt_key(self, k):
         if k in ("\n", "\r", "KEY_ENTER"):
-            text, self.mode, self.input = self.input.strip(), "main", ""
+            text, self.mode, self.input, self.prompt_back = self.input.strip(), "main", "", "main"
             if text:
                 self.start([text])
         elif k == "\x1b":
-            self.mode, self.input = "main", ""
+            self.input, self.next_root = "", None
+            back, self.prompt_back = self.prompt_back, "main"
+            if back == "project" and self.project is not None:
+                self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
+            else:
+                self.mode = "main"
         elif k in ("KEY_BACKSPACE", "\x7f", "\b"):
             self.input = self.input[:-1]
         elif len(k) == 1 and k.isprintable():
@@ -1349,6 +1429,98 @@ class App:
             self.view_lines = [f"no diff: {e}"]
         self.view_scroll, self.mode = 0, "diff"
 
+    # -- the app (T-1330): home over every Foreman project, a project's work and past runs
+    def _back(self):
+        """Close a view: to the project or home it was opened from, else the run's screen."""
+        back, self.view_back = self.view_back, "main"
+        if back == "project" and self.project is not None:
+            self.mode, self.items, self.item_index = "project", self.project_items, self.project_index
+        elif back == "home":
+            self.show_home()
+        else:
+            self.mode = "main"
+
+    def show_home(self):
+        try:
+            found = list(self.projects_source())
+        except Exception as e:  # fm isn't answering: say so, keep the screen
+            found, self.message = [], f"can't list projects: {e}"
+        self.items = sorted((x for x in found if isinstance(x, dict)),  # a missing folder last, then newest first
+                            key=lambda x: (x.get("exists") is False, -_num(x.get("updated"))))
+        self.item_index, self.mode = 0, "home"
+
+    def open_project(self, proj):
+        """A project's view: its active task, queue, inbox and blocked tasks, then its past runs; runs start there."""
+        rows, self.project = [], proj
+        if proj.get("exists") is False:
+            rows.append({"kind": "error", "text": f"folder missing: {proj.get('root')} (nothing can run here)"})
+        try:
+            st = self.state_source(proj) or {}
+        except Exception as e:  # its state can't be read: say why here, home still draws
+            st, rows = {}, [{"kind": "error", "text": f"can't read {proj.get('project')}'s state: {e}"}]
+        if isinstance(st.get("active"), dict):
+            rows.append({"kind": "task", "section": "active", "task": st["active"]})
+        for sec in ("queue", "inbox", "blocked"):
+            rows += [{"kind": "task", "section": sec, "task": t} for t in st.get(sec) or [] if isinstance(t, dict)]
+        rows += [dict(r, kind="run") for r in history(st.get("code_dir"))]
+        self.project_code = st.get("code_dir")  # the run's own folder and history move only when a run starts here
+        self.project_items, self.project_index = rows, 0
+        self.items, self.item_index, self.mode = rows, 0, "project"
+
+    def _home_key(self, k):
+        cmd = self.cfg["keys"].get(k)
+        step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
+        item = self.items[self.item_index] if self.items else None
+        if step:
+            self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+            if self.mode == "project":
+                self.project_index = self.item_index
+        elif k == "\x1b" or cmd == "projects":
+            if self.mode == "project":
+                self.show_home()
+            else:
+                self.mode = "main"
+        elif cmd == "quit":
+            return self.quit()
+        elif self.mode == "home" and item and cmd in ("expand", "new"):
+            self.open_project(item)
+            if cmd == "new":
+                self.new_here()
+        elif self.mode == "project" and cmd == "new":
+            self.new_here()
+        elif self.mode == "project" and cmd == "model":
+            self.view_back = "project"
+            self.show_picker()
+        elif self.mode == "project" and item and item.get("kind") == "task" and cmd in ("expand", "resume"):
+            self.run_task(item["task"])
+        elif self.mode == "project" and item and item.get("kind") == "run" and cmd == "expand":
+            self.mode = "main"
+            self.replay(item["path"])
+        return None
+
+    def _here(self):
+        """Whether a run can start in the open project; the next run's folder and history are set to it."""
+        if self.running():
+            self.message = "a run is going: s stops it"
+            return False
+        if (self.project or {}).get("exists") is False:
+            self.message = f"{self.project.get('project')}'s folder is missing: nothing can run there"
+            return False
+        self.next_root = (str(self.project.get("root") or self.root), self.project_code)
+        return True
+
+    def run_task(self, t):
+        """fm code --task ID in the open project's folder, with the runner picked by m."""
+        if self._here():
+            self.mode = "main"
+            self.start(["--task", str(t.get("id"))])
+
+    def new_here(self):
+        """A new request typed for the open project; Esc goes back to its view."""
+        if self._here():
+            self.prompt_back = "project"
+            self.new()
+
     def show_history(self):
         self.items, self.item_index, self.mode = history(self.history_dir), 0, "history"
 
@@ -1405,7 +1577,8 @@ class App:
         import fmcode
         import fmmodels
         out = [("model", p.get("name")) for p in fmmodels.profiles() if p.get("name")]
-        return out + [("worker", w) for w, tpl in fmcode.WORKERS.items() if shutil.which(tpl.split()[0])]
+        return out + [("worker", w) for w, r in fmcode.all_runners().items()  # T-1330: code.toml's runners too
+                      if r.get("work") and fmcode._installed(w, r)]
 
     # -- the child
     def running(self):
@@ -1414,7 +1587,15 @@ class App:
     def start(self, words, **extra):
         self.state, self.selected, self.expanded, self.follow, self.message = State(), None, set(), True, ""
         self.motion = Motion()
-        self.child = self.spawn(words, dict(self.opts, **extra))
+        if self.next_root:  # T-1330: a run started from a project's view runs in that project
+            (self.root, code), self.next_root = self.next_root, None
+            self.history_dir = code or self.history_dir
+        try:
+            self.child = self.spawn(words, dict(self.opts, **extra))
+        except OSError as e:  # a folder gone since, fm missing: say so, keep the screen
+            self.child = None
+            self.state.status, self.state.error = "error", f"couldn't start: {e}"
+            self.state.note("error", text=f"couldn't start: {e}")
 
     def _spawn(self, words, opts):
         argv = [sys.executable, FM, "code", *words, "--json"]
@@ -1869,7 +2050,7 @@ def snapshot(events, path, size=(120, 34), cfg=None, mode="main"):
     return path
 
 
-def main(args, words):
+def main(args, words, home=False):
     """fm code tui [REQUEST…] [--plain] [--model M | --worker CLI] [--verify CMD] [--resume [ID]] [--print-config]
     [--snapshot FILE --events FILE]. A bad setting or extension is said once and skipped; --print-config exits 2."""
     ext_errors = load_extensions()
@@ -1904,10 +2085,25 @@ def main(args, words):
         return replay_file(args.events, cfg, plain=getattr(args, "plain", False) or not sys.stdout.isatty()
                            or not sys.stdin.isatty())
     import fmcli
-    p = fmcli.resolve(args)  # -p, like fm code itself; the child runs in the project's root
+    try:
+        p = fmcli.resolve(args, create=not home)  # the app never registers a folder by opening in it
+    except fmcli.UsageError:
+        if not home:
+            raise
+        p = None  # T-1330: outside any project the app opens on its home
     opts = {k: getattr(args, k, None) for k in ("model", "worker", "verify", "escalate", "max_steps", "no_commit",
                                                  "worker_timeout", "dry_plan")}
-    app = App(cfg, root=os.path.realpath(p.root), opts=opts, history=os.path.join(p.dir, "code"))
+    root = os.path.realpath(p.root) if p else os.getcwd()
+    app = App(cfg, root=root, opts=opts, history=p and os.path.join(p.dir, "code"))
+    if home:  # T-1330: inside a project, its view; elsewhere every project
+        app.show_home()
+        here = next((x for x in app.items if p and x.get("project") == p.slug), None)  # a worktree too
+        if here:
+            app.open_project(here)
+        if problems:
+            app.message = f"{len(problems)} setting(s) skipped: {problems[0]}"
+        run_screen(app)
+        return 0
     resume = getattr(args, "resume", None)
     first = (lambda: app.start([], resume=resume or True)) if resume is not None else (
         lambda: app.start([" ".join(words)])) if words else None

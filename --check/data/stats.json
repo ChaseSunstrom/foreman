@@ -1,0 +1,1770 @@
+{
+ "generated": "2026-10-20",
+ "totals": {
+  "tasks_done": 734,
+  "evidence": 2684,
+  "proofs": 250,
+  "commits": 570,
+  "gate_runs": 558,
+  "subagents": 539,
+  "lanes_merged": 131,
+  "findings": 155,
+  "guard_blocks": 296,
+  "captures": 522,
+  "lessons_shown": 730
+ },
+ "daily": [
+  {
+   "day": "2026-10-02",
+   "FEATURE": 8,
+   "FIX": 2,
+   "CLEAN": 0,
+   "PERFORMANCE": 1,
+   "SECURITY": 0,
+   "RESEARCH": 2,
+   "lanes": 0,
+   "evidence": 57
+  },
+  {
+   "day": "2026-10-03",
+   "FEATURE": 46,
+   "FIX": 28,
+   "CLEAN": 2,
+   "PERFORMANCE": 2,
+   "SECURITY": 16,
+   "RESEARCH": 2,
+   "lanes": 0,
+   "evidence": 287
+  },
+  {
+   "day": "2026-10-04",
+   "FEATURE": 33,
+   "FIX": 12,
+   "CLEAN": 1,
+   "PERFORMANCE": 2,
+   "SECURITY": 4,
+   "RESEARCH": 5,
+   "lanes": 0,
+   "evidence": 254
+  },
+  {
+   "day": "2026-10-06",
+   "FEATURE": 16,
+   "FIX": 12,
+   "CLEAN": 0,
+   "PERFORMANCE": 0,
+   "SECURITY": 6,
+   "RESEARCH": 1,
+   "lanes": 0,
+   "evidence": 197
+  },
+  {
+   "day": "2026-10-08",
+   "FEATURE": 0,
+   "FIX": 3,
+   "CLEAN": 0,
+   "PERFORMANCE": 1,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 18
+  },
+  {
+   "day": "2026-10-09",
+   "FEATURE": 58,
+   "FIX": 58,
+   "CLEAN": 13,
+   "PERFORMANCE": 2,
+   "SECURITY": 22,
+   "RESEARCH": 5,
+   "lanes": 15,
+   "evidence": 605
+  },
+  {
+   "day": "2026-10-14",
+   "FEATURE": 8,
+   "FIX": 23,
+   "CLEAN": 4,
+   "PERFORMANCE": 5,
+   "SECURITY": 2,
+   "RESEARCH": 3,
+   "lanes": 10,
+   "evidence": 196
+  },
+  {
+   "day": "2026-10-15",
+   "FEATURE": 62,
+   "FIX": 35,
+   "CLEAN": 8,
+   "PERFORMANCE": 0,
+   "SECURITY": 5,
+   "RESEARCH": 3,
+   "lanes": 20,
+   "evidence": 321
+  },
+  {
+   "day": "2026-10-16",
+   "FEATURE": 104,
+   "FIX": 66,
+   "CLEAN": 16,
+   "PERFORMANCE": 8,
+   "SECURITY": 13,
+   "RESEARCH": 4,
+   "lanes": 86,
+   "evidence": 744
+  },
+  {
+   "day": "2026-10-17",
+   "FEATURE": 0,
+   "FIX": 0,
+   "CLEAN": 0,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 1
+  },
+  {
+   "day": "2026-10-20",
+   "FEATURE": 0,
+   "FIX": 0,
+   "CLEAN": 2,
+   "PERFORMANCE": 0,
+   "SECURITY": 0,
+   "RESEARCH": 0,
+   "lanes": 0,
+   "evidence": 4
+  }
+ ],
+ "tiers": {
+  "S": 387,
+  "M": 300,
+  "L": 47
+ },
+ "types": {
+  "FEATURE": 335,
+  "FIX": 239,
+  "CLEAN": 46,
+  "PERFORMANCE": 21,
+  "SECURITY": 68,
+  "RESEARCH": 25
+ },
+ "guard": {
+  "core": 111,
+  "brief": 80,
+  "state-direct": 36,
+  "plugin": 26,
+  "rm-outside": 15,
+  "system": 12,
+  "pipe-shell": 8,
+  "credentials": 4
+ },
+ "findings": {
+  "lenses": {
+   "edge": 55,
+   "adversary": 48,
+   "operator": 22,
+   "maintainer": 16,
+   "intent": 14
+  },
+  "severity": {
+   "LOW": 62,
+   "MEDIUM": 44,
+   "HIGH": 11
+  }
+ },
+ "subagents": {
+  "fm-builder": 224,
+  "fm-reviewer": 148,
+  "general-purpose": 76,
+  "fm-recon": 71,
+  "Explore": 8,
+  "claude-code-guide": 7
+ },
+ "gate_seconds": {
+  "runs": 558,
+  "median": 75.6
+ },
+ "releases": [
+  {
+   "version": "1.2.25",
+   "day": "2026-10-09",
+   "tests": 1215
+  },
+  {
+   "version": "1.2.26",
+   "day": "2026-10-09",
+   "tests": 1249
+  },
+  {
+   "version": "1.2.27",
+   "day": "2026-10-09",
+   "tests": 1263
+  },
+  {
+   "version": "1.2.28",
+   "day": "2026-10-15",
+   "tests": 1372
+  },
+  {
+   "version": "1.2.29",
+   "day": "2026-10-15",
+   "tests": 1385
+  },
+  {
+   "version": "1.2.30",
+   "day": "2026-10-15",
+   "tests": 1418
+  },
+  {
+   "version": "1.2.31",
+   "day": "2026-10-15",
+   "tests": 1591
+  },
+  {
+   "version": "1.2.32",
+   "day": "2026-10-16",
+   "tests": 1935
+  },
+  {
+   "version": "1.2.33",
+   "day": "2026-10-16",
+   "tests": 2018
+  },
+  {
+   "version": "1.2.34",
+   "day": "2026-10-16",
+   "tests": 2081
+  },
+  {
+   "version": "1.2.35",
+   "day": "2026-10-16",
+   "tests": 2131
+  },
+  {
+   "version": "1.2.36",
+   "day": "2026-10-16",
+   "tests": 2131
+  },
+  {
+   "version": "1.2.37",
+   "day": "2026-10-16",
+   "tests": 2253
+  },
+  {
+   "version": "1.2.38",
+   "day": "2026-10-16",
+   "tests": 2255
+  },
+  {
+   "version": "1.2.39",
+   "day": "2026-10-16",
+   "tests": 2279
+  },
+  {
+   "version": "1.2.40",
+   "day": "2026-10-16",
+   "tests": 2283
+  }
+ ],
+ "cards": {
+  "python": 62,
+  "data": 60,
+  "infra": 60,
+  "tools": 59,
+  "security": 59,
+  "design": 58,
+  "web": 57,
+  "node": 56,
+  "cloud": 55,
+  "ml": 54,
+  "lang": 50,
+  "testing": 50,
+  "jvm": 50,
+  "domains": 45,
+  "native": 41,
+  "frontend": 37,
+  "mobile": 28,
+  "claude-code": 27,
+  "rust": 26,
+  "practice": 25,
+  "ops": 24,
+  "go": 24,
+  "dotnet": 22,
+  "games": 21,
+  "idioms": 16,
+  "docs": 10,
+  "hardware": 8
+ },
+ "code": {
+  "model_tests": 51,
+  "endpoints": 9
+ },
+ "bench": {
+  "SessionStart": {
+   "p50": 55.9,
+   "p95": 63.4,
+   "budget": 150
+  },
+  "UserPromptSubmit": {
+   "p50": 58.0,
+   "p95": 92.6,
+   "budget": 150
+  },
+  "PreToolUse:Bash": {
+   "p50": 58.5,
+   "p95": 67.1,
+   "budget": 150
+  },
+  "PreToolUse:Bash:block": {
+   "p50": 44.6,
+   "p95": 48.7,
+   "budget": 150
+  },
+  "PreToolUse:Bash:script": {
+   "p50": 267.3,
+   "p95": 274.0,
+   "budget": 300
+  },
+  "PreToolUse:Edit": {
+   "p50": 47.1,
+   "p95": 56.5,
+   "budget": 150
+  },
+  "PostToolUse": {
+   "p50": 38.7,
+   "p95": 41.5,
+   "budget": 150
+  },
+  "PostToolUseFailure": {
+   "p50": 36.9,
+   "p95": 39.0,
+   "budget": 150
+  },
+  "PreCompact": {
+   "p50": 42.6,
+   "p95": 45.3,
+   "budget": 150
+  },
+  "Stop": {
+   "p50": 42.5,
+   "p95": 47.6,
+   "budget": 150
+  },
+  "TaskCompleted": {
+   "p50": 33.3,
+   "p95": 35.8,
+   "budget": 150
+  },
+  "SubagentStart": {
+   "p50": 33.0,
+   "p95": 35.4,
+   "budget": 150
+  },
+  "SubagentStop": {
+   "p50": 35.1,
+   "p95": 41.4,
+   "budget": 150
+  },
+  "MessageDisplay": {
+   "p50": 33.9,
+   "p95": 35.6,
+   "budget": 100
+  },
+  "Notification": {
+   "p50": 40.0,
+   "p95": 42.4,
+   "budget": 150
+  },
+  "SessionEnd": {
+   "p50": 34.4,
+   "p95": 38.8,
+   "budget": 150
+  }
+ },
+ "duels": [
+  {
+   "model": "sonnet",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "csvlite",
+     "foreman": {
+      "pass": true,
+      "cost": 0.06,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.0,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.055,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 14.3333,
+      "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "tokenbucket",
+     "foreman": {
+      "pass": true,
+      "cost": 0.078,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 21.6667,
+      "turns": 3.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.078,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.6667,
+      "turns": 4.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "dotted",
+     "foreman": {
+      "pass": true,
+      "cost": 0.076,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 20.6667,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.073,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 23.3333,
+      "turns": 3.3333,
+      "error": false
+     }
+    },
+    {
+     "case": "ranges",
+     "foreman": {
+      "pass": true,
+      "cost": 0.069,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.3333,
+      "turns": 3.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.068,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.0,
+      "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "table",
+     "foreman": {
+      "pass": true,
+      "cost": 0.06,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.3333,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.057,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.0,
+      "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "semver",
+     "foreman": {
+      "pass": true,
+      "cost": 0.073,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.3333,
+      "turns": 4.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.056,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 16.0,
+      "turns": 3.3333,
+      "error": false
+     }
+    },
+    {
+     "case": "lru",
+     "foreman": {
+      "pass": true,
+      "cost": 0.063,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 14.0,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.055,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 15.3333,
+      "turns": 4.3333,
+      "error": false
+     }
+    },
+    {
+     "case": "duration",
+     "foreman": {
+      "pass": true,
+      "cost": 0.069,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.3333,
+      "turns": 4.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.058,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 18.0,
+      "turns": 4.3333,
+      "error": false
+     }
+    }
+   ],
+   "name": "quality"
+  },
+  {
+   "model": "sonnet",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "Add ledger.lexer.tokenize",
+     "foreman": {
+      "pass": true,
+      "cost": 0.073,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 17.6667,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.081,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 24.3333,
+      "turns": 4.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Round tax half to even",
+     "foreman": {
+      "pass": true,
+      "cost": 0.087,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 7.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.084,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.3333,
+      "turns": 9.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.interval.Interval",
+     "foreman": {
+      "pass": true,
+      "cost": 0.099,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 29.0,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.081,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.6667,
+      "turns": 3.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Typed invoice lines take prices",
+     "foreman": {
+      "pass": true,
+      "cost": 0.087,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.3333,
+      "turns": 6.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.079,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 24.3333,
+      "turns": 7.0,
+      "error": false
+     }
+    },
+    {
+     "case": "Add ledger.ini.parse",
+     "foreman": {
+      "pass": true,
+      "cost": 0.082,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 26.0,
+      "turns": 3.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.071,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 3.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Export file names",
+     "foreman": {
+      "pass": true,
+      "cost": 0.078,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 20.0,
+      "turns": 5.6667,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.05,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 14.6667,
+      "turns": 3.3333,
+      "error": false
+     }
+    },
+    {
+     "case": "Wrap text with indents, paragraphs",
+     "foreman": {
+      "pass": true,
+      "cost": 0.076,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 23.0,
+      "turns": 5.3333,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.076,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 19.3333,
+      "turns": 5.6667,
+      "error": false
+     }
+    },
+    {
+     "case": "Group thousands in invoice amounts",
+     "foreman": {
+      "pass": true,
+      "cost": 0.08,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 22.0,
+      "turns": 7.0,
+      "error": false
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.068,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 18.6667,
+      "turns": 6.3333,
+      "error": false
+     }
+    }
+   ],
+   "name": "hard"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "Add ledger.lexer.tokenize",
+     "foreman": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 36.0,
+      "turns": 8.3333,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 34.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Round tax half to even",
+     "foreman": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 26.6667,
+      "turns": 11.3333,
+      "error": false,
+      "tests": [
+       92,
+       92
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       92,
+       92
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         92,
+         92
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Add ledger.interval.Interval",
+     "foreman": {
+      "pass": true,
+      "cost": 0.011,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 46.0,
+      "turns": 8.3333,
+      "error": false,
+      "tests": [
+       90,
+       90
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.011,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 46.6667,
+      "turns": 8.6667,
+      "error": false,
+      "tests": [
+       90,
+       90
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         90,
+         90
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Typed invoice lines take prices",
+     "foreman": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 29.6667,
+      "turns": 9.0,
+      "error": false,
+      "tests": [
+       71,
+       71
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 25.0,
+      "turns": 7.6667,
+      "error": false,
+      "tests": [
+       71,
+       71
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         71,
+         71
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Add ledger.ini.parse",
+     "foreman": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 40.3333,
+      "turns": 8.0,
+      "error": false,
+      "tests": [
+       68,
+       68
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.008,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 35.0,
+      "turns": 7.0,
+      "error": false,
+      "tests": [
+       68,
+       68
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         68,
+         68
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Export file names",
+     "foreman": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.0,
+      "turns": 6.0,
+      "error": false,
+      "tests": [
+       50,
+       50
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.006,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 21.3333,
+      "turns": 7.6667,
+      "error": false,
+      "tests": [
+       50,
+       50
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         50,
+         50
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Wrap text with indents, paragraphs",
+     "foreman": {
+      "pass": true,
+      "cost": 0.011,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 48.6667,
+      "turns": 11.0,
+      "error": false,
+      "tests": [
+       46,
+       46
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 36.6667,
+      "turns": 9.0,
+      "error": false,
+      "tests": [
+       46,
+       46
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         46,
+         46
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    },
+    {
+     "case": "Group thousands in invoice amounts",
+     "foreman": {
+      "pass": true,
+      "cost": 0.009,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 32.0,
+      "turns": 12.0,
+      "error": false,
+      "tests": [
+       36,
+       36
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.007,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 27.6667,
+      "turns": 9.6667,
+      "error": false,
+      "tests": [
+       36,
+       36
+      ],
+      "compactions": null,
+      "capped": null,
+      "requests": null,
+      "each": [
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       },
+       {
+        "tests": [
+         36,
+         36
+        ],
+        "compactions": null
+       }
+      ],
+      "found": []
+     }
+    }
+   ],
+   "name": "hard-haiku"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "8 requests in one session",
+     "foreman": {
+      "pass": true,
+      "cost": 0.099,
+      "score": null,
+      "runs": 3,
+      "passed": 3,
+      "seconds": 405.3333,
+      "turns": 64.6667,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": 4,
+      "capped": null,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 0
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 4
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 4
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 2
+       }
+      ],
+      "found": []
+     },
+     "bare": {
+      "pass": true,
+      "cost": 0.062,
+      "score": null,
+      "runs": 3,
+      "passed": 2,
+      "seconds": 284.3333,
+      "turns": 33.3333,
+      "error": false,
+      "tests": [
+       105,
+       105
+      ],
+      "compactions": 2,
+      "capped": null,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 0
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 2
+       },
+       {
+        "tests": [
+         66,
+         105
+        ],
+        "compactions": 2
+       },
+       {
+        "tests": [
+         105,
+         105
+        ],
+        "compactions": 3
+       }
+      ],
+      "found": []
+     }
+    }
+   ],
+   "compact_at": 40000,
+   "marathon": null,
+   "history": [
+    {
+     "model": "haiku",
+     "runs": 3,
+     "f_pass": 3,
+     "b_pass": 1,
+     "f_cost": 0.0916,
+     "b_cost": 0.0564
+    },
+    {
+     "model": "haiku",
+     "runs": 3,
+     "f_pass": 3,
+     "b_pass": 2,
+     "f_cost": 0.0986,
+     "b_cost": 0.0625
+    }
+   ],
+   "name": "long"
+  },
+  {
+   "model": "haiku",
+   "at": "2026-10-16",
+   "cases": [
+    {
+     "case": "8 requests in one session",
+     "foreman": {
+      "pass": true,
+      "cost": 0.197,
+      "score": null,
+      "runs": 1,
+      "passed": 1,
+      "seconds": 784.0,
+      "turns": 126.0,
+      "error": false,
+      "tests": [
+       106,
+       106
+      ],
+      "compactions": 7,
+      "capped": false,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 0
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         106,
+         106
+        ],
+        "compactions": 7
+       }
+      ],
+      "found": [
+       "line_tax names the tax rate for an empty or malformed tax_rate (covered by T-0010) (discovered)",
+       "Make the README's helper-user list match the imports (discovered)",
+       "Name the divisor in the ZeroDivisionError for dividing by a range holding 0 (discovered)"
+      ]
+     },
+     "bare": {
+      "pass": false,
+      "cost": 0.045,
+      "score": null,
+      "runs": 1,
+      "passed": 0,
+      "seconds": 337.0,
+      "turns": 32.0,
+      "error": false,
+      "tests": [
+       104,
+       105
+      ],
+      "compactions": 1,
+      "capped": false,
+      "requests": [
+       {
+        "title": "Group thousands in invoice amounts: 1234567 cents shows as 12,345.67",
+        "failed": 0
+       },
+       {
+        "title": "Wrap text with indents, paragraphs and long words cut to fit; indent invoice notes",
+        "failed": 0
+       },
+       {
+        "title": "Export file names: spell out &, + and @, cap the customer part at 30 characters, never leave it emp\u2026",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.ini.parse: read INI settings, with comments and continued values",
+        "failed": 0
+       },
+       {
+        "title": "Typed invoice lines take prices the way people write them: 1,234.50, 12.5, \u20ac12",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.interval.Interval: exact interval arithmetic for estimates",
+        "failed": 0
+       },
+       {
+        "title": "Round tax half to even, line by line, as the tax office requires",
+        "failed": 0
+       },
+       {
+        "title": "Add ledger.lexer.tokenize: split a formula into tokens",
+        "failed": 1
+       }
+      ],
+      "each": [
+       {
+        "tests": [
+         104,
+         105
+        ],
+        "compactions": 1
+       }
+      ],
+      "found": []
+     }
+    }
+   ],
+   "compact_at": 40000,
+   "marathon": 5,
+   "name": "marathon"
+  }
+ ]
+}

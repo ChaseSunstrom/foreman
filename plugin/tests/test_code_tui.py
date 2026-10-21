@@ -1042,7 +1042,167 @@ class Fuzz(unittest.TestCase):
         T.render(st, 80, 24, T.DEFAULTS, None, t=5.0)
 
 
+class Home(unittest.TestCase):
+    """T-1330: fm code opens the app: home lists every Foreman project, a project's view its work and past runs, and a
+    run starts in that project's folder."""
+    PROJECTS = [
+        {"project": "old", "root": "/w/old", "exists": True, "active": None, "queue": 0, "inbox": 1, "blocked": 0,
+         "updated": 100.0},
+        {"project": "new", "root": "/w/new", "exists": True, "active": {"id": "T-0002", "title": "fix login"},
+         "queue": 1, "inbox": 1, "blocked": 1, "updated": 200.0},
+        {"project": "gone", "root": "/w/gone", "exists": False, "updated": 150.0},
+    ]
+    STATE = {"active": {"id": "T-0002", "type": "FIX", "tier": "S", "title": "fix login"},
+             "queue": [{"id": "T-0003", "type": "FEATURE", "tier": "S", "title": "add export"}],
+             "inbox": [{"id": "T-0004", "type": "FIX", "tier": "S", "title": "typo in help"}],
+             "blocked": [{"id": "T-0005", "type": "FIX", "tier": "M", "title": "flaky upload",
+                          "reason": "needs a device"}]}
+
+    def app(self, state=None):
+        T = tui()
+        self.spawned = []
+        app = T.App(T.DEFAULTS, spawn=lambda words, opts: self.spawned.append((words, app.root)),
+                    projects=lambda: [dict(p) for p in self.PROJECTS],
+                    project_state=state or (lambda p: dict(self.STATE, code_dir=None)))
+        return T, app
+
+    def text(self, T, app):
+        return T.render(app.state, 120, 34, T.DEFAULTS, app, t=100.0).text()
+
+    def test_home_lists_every_project_newest_first_and_a_missing_one_last_saying_why(self):
+        T, app = self.app()
+        app.show_home()
+        self.assertEqual([p["project"] for p in app.items], ["new", "old", "gone"], "a missing folder last")
+        text = self.text(T, app)
+        for want in ("new", "fix login", "gone", "folder missing", "old"):
+            self.assertIn(want, text)
+
+    def test_a_project_view_lists_its_work_and_runs_a_queued_task_there(self):
+        T, app = self.app()
+        app.show_home()
+        app.key("\n")  # opens "new"
+        text = self.text(T, app)
+        for want in ("fix login", "add export", "typo in help", "flaky upload", "needs a device"):
+            self.assertIn(want, text)
+        app.item_index = next(i for i, it in enumerate(app.items) if (it.get("task") or {}).get("id") == "T-0003")
+        app.key("r")
+        self.assertEqual(self.spawned, [(["--task", "T-0003"], "/w/new")])
+
+    def test_n_in_a_project_starts_a_new_request_in_its_folder(self):
+        T, app = self.app()
+        app.show_home()
+        app.key("\n")
+        app.key("n")
+        for ch in "add a flag":
+            app.key(ch)
+        app.key("\n")
+        self.assertEqual(self.spawned, [(["add a flag"], "/w/new")])
+
+    def test_a_project_whose_state_cant_be_read_says_why_and_home_still_draws(self):
+        def broken(p):
+            raise RuntimeError("state looks corrupt")
+        T, app = self.app(state=broken)
+        app.show_home()
+        app.key("\n")
+        self.assertIn("state looks corrupt", self.text(T, app))
+        app.key("\x1b")
+        self.assertIn("old", self.text(T, app))
+
+    def test_a_missing_folder_never_starts_a_run(self):
+        T, app = self.app()
+        app.show_home()
+        app.item_index = [p["project"] for p in app.items].index("gone")
+        app.key("\n")
+        self.assertIn("folder missing", self.text(T, app))
+        app.key("n")
+        app.key("r")
+        self.assertEqual(self.spawned, [])
+        self.assertIn("folder", app.message)
+
+    def test_browsing_never_moves_the_runs_folder(self):
+        # a resume (r) or diff (d) on the run screen stays with the run's own project
+        T, app = self.app()
+        app.root = "/w/run"
+        app.key("p")
+        app.key("\n")
+        app.key("\x1b")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.root), ("main", "/w/run"))
+
+    def test_esc_in_the_request_box_goes_back_to_the_project(self):
+        T, app = self.app()
+        app.show_home()
+        app.key("\n")
+        app.key("n")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "project")
+        self.assertEqual(self.spawned, [])
+
+    def test_p_opens_home_from_a_run(self):
+        T, app = self.app()
+        app.key("p")
+        self.assertEqual(app.mode, "home")
+
+
 class Command(CodeCase):
+    def test_fm_code_with_no_request_and_no_terminal_says_what_to_give(self):
+        # T-1330: piped or without a terminal, fm code alone is the usage error it always was (exit 1)
+        r = self.code(check=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("needs a request", r.stderr)
+
+    def test_fm_code_alone_on_a_terminal_opens_the_app(self):
+        # T-1330: like claude, fm code with nothing after it opens the app: this project's view, Esc for every project
+        import fcntl
+        import pty
+        import select
+        import struct
+        import termios
+        from test_code import FM
+        self.fm("task", "new", "add export", "--type", "FEATURE", "--tier", "S", "--ac", "done :: true")
+        slug = self.fm_json("state")["project"].encode()
+        env = dict(self.env(), TERM="xterm-256color")
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 34, 120, 0, 0))
+                os.chdir(self.repo)
+                os.execve(sys.executable, [sys.executable, FM, "code"], env)
+            finally:
+                os._exit(127)
+        deadline = time.time() + 60  # two fm subprocesses (projects, state) before the first frame, on a busy machine
+
+        def until(want):
+            seen = b""
+            while want not in seen and time.time() < deadline:
+                if select.select([fd], [], [], 0.3)[0]:
+                    try:
+                        seen += os.read(fd, 65536)
+                    except OSError:
+                        break
+            return seen
+        try:
+            seen = until(b"add export")
+            self.assertIn(b"add export", seen, seen[-1500:])
+            self.assertIn(slug, seen, "the project's own view")
+            os.write(fd, b"\x1b")
+            self.assertIn(b"Foreman projects", until(b"Foreman projects"))
+            os.write(fd, b"q")
+            while time.time() < deadline:
+                done, status = os.waitpid(pid, os.WNOHANG)
+                if done:
+                    self.assertEqual(os.waitstatus_to_exitcode(status), 0)
+                    break
+                until(b"\x00")
+            else:
+                self.fail("q didn't quit")
+        finally:
+            try:
+                os.kill(pid, 9)
+            except OSError:
+                pass
+            os.close(fd)
+
     def test_fm_code_tui_draws_a_recorded_run(self):
         svg = os.path.join(self.home, "shot.svg")
         fixture = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "demo",

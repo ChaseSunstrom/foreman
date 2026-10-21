@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- `fm code` on its own opens the app, like `claude`: a project's view (its active task, queue, inbox, blocked tasks and past runs) inside a project, and a home over every Foreman project on the machine (`Esc`, or `p` from a run). A task runs from there in its own project's folder with the runner `m` picks, and `n` starts a new request there. `fm code --task ID` works a planned task without a planner call, refusing one with no check to run, one that's done or dropped, and one another run is working (T-1330).
 - `fm code tui --events FILE` on its own replays that run: on the screen in a terminal, or as its Activity lines with `--plain` or no terminal (exit 0 for a closed run); a missing file says so and exits 2. Before, the file was silently ignored (T-1363).
 - `fm doctor` checks that `fm` works in any shell: it warns, naming the fix, when `~/.local/bin/fm` is missing (an install from before 1.2.x never made it), points at another copy, or sits in a folder that isn't on PATH (T-1324).
 - `fm task new --from ID` with `--ac` or `--step` replaces the capture's own criteria or steps instead of adding to them; before, a capture planned that way listed every step twice (T-1364).
