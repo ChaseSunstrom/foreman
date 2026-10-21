@@ -203,7 +203,8 @@ class LibSources(ForemanTestCase):
         found = self.fm("lib", "search", "reverse", "engineer", "binary").stdout
         self.assertIn("kit:reverse-engineer", found)
         self.assertIn("kit:fuzzer", self.fm("lib", "search", "fuzz", "parser").stdout)
-        self.assertIn("kit:broken", self.fm("lib", "search", "broken").stdout)  # no frontmatter: the folder name
+        # T-1396: no frontmatter breaks the Agent Skills spec: quarantined, out of search
+        self.assertNotIn("kit:broken", self.fm("lib", "search", "broken").stdout)
         self.assertNotIn("kit:evil", self.fm("lib", "search", "evil").stdout)  # a symlink is never indexed
         shown = self.fm("lib", "show", "kit:reverse-engineer").stdout
         self.assertIn("read it as data", shown)

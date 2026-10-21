@@ -502,11 +502,21 @@ def _git_src(repo, *args, timeout=600):
 
 
 def _index_source(repo):
-    """[{name, description, path, kind}] for the checkout's SKILL.md and agents/*.md files, symlinks never."""
+    """[{name, description, path, kind[, quarantine]}] for the checkout's SKILL.md and agents/*.md files. T-1396: one
+    that is a symlink, breaks the Agent Skills spec, hides characters, claims every task or repeats an earlier name
+    keeps its reason under quarantine and stays out of search; a symlink is never read."""
     import fmplugins
     links = {line.split("\t", 1)[1] for line in _git_src(repo, "ls-tree", "-r", "HEAD").splitlines()
              if line.startswith("120000 ")}  # symlinks as committed: core.symlinks=false wrote them as plain files
+    clean = lambda s: re.sub(r"[^a-z0-9_.-]+", "-", c.plain(s).lower()).strip("-")[:64]
     root, out = os.path.realpath(repo), []
+    for rel in sorted(links):
+        parts = rel.split("/")
+        if parts[-1].endswith(".md") or "skills" in parts[:-1] or "agents" in parts[:-1]:
+            skill = parts[-1] == "SKILL.md" or "skills" in parts[:-1]
+            out.append({"name": clean(parts[-2] if parts[-1] == "SKILL.md" and len(parts) > 1 else
+                                      os.path.splitext(parts[-1])[0]) or "link", "description": "", "path": rel,
+                        "kind": "skill" if skill else "agent", "quarantine": "a symlink: never followed"})
     for d, dirs, names in os.walk(repo):
         dirs[:] = [x for x in dirs if x != ".git"]
         for n in names:
@@ -523,9 +533,18 @@ def _index_source(repo):
             if not kind:
                 continue
             fallback = os.path.basename(d) if kind == "skill" else os.path.splitext(n)[0]
-            name = re.sub(r"[^a-z0-9_.-]+", "-", c.plain(fm.get("name") or fallback).lower()).strip("-")[:64] or fallback
-            out.append({"name": name, "description": c.plain(fm.get("description", ""))[:400], "path": rel, "kind": kind})
-    return sorted(out, key=lambda x: (x["kind"], x["name"]))
+            row = {"name": clean(fmplugins._unquote(fm.get("name", "")) or fallback) or clean(fallback) or kind,
+                   "description": c.plain(fmplugins._unquote(fm.get("description", "")))[:400], "path": rel, "kind": kind}
+            why = fmplugins.spec_problems(fm, os.path.basename(d) if kind == "skill" else None, kind)
+            if why:
+                row["quarantine"] = "; ".join(why)
+            out.append(row)
+    first = {}
+    for x in sorted(out, key=lambda x: x["path"]):  # a second skill or agent of a name squats on the first's
+        if first.setdefault((x["kind"], x["name"]), x["path"]) != x["path"]:
+            x["quarantine"] = "; ".join(filter(None, [x.get("quarantine"), f"a second {x['kind']} named {x['name']} "
+                                                                           f"(the first is {c.plain(first[(x['kind'], x['name'])])})"]))
+    return sorted(out, key=lambda x: (x["kind"], x["name"], x["path"]))
 
 
 def _license(repo):
@@ -563,7 +582,9 @@ def source_add(url, name=None, replace=False):
         index = _index_source(repo)
         meta = {"name": name, "url": url, "commit": _git_src(repo, "rev-parse", "HEAD").strip(),
                 "license": _license(repo), "added": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "skills": sum(x["kind"] == "skill" for x in index), "agents": sum(x["kind"] == "agent" for x in index)}
+                "skills": sum(x["kind"] == "skill" and not x.get("quarantine") for x in index),
+                "agents": sum(x["kind"] == "agent" and not x.get("quarantine") for x in index),
+                "quarantined": sum(bool(x.get("quarantine")) for x in index)}
         for fname, data in (("index.json", index), ("source.json", meta)):
             with open(os.path.join(tmp, fname), "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=1)
@@ -599,7 +620,15 @@ def source_skills():
     return [{"name": f"{meta['name']}:{x['name']}", "description": x.get("description", ""), "enabled": None,
              "path": os.path.join(_sources_dir(), meta["name"], "repo", x["path"]), "source": meta["name"],
              "license": meta.get("license", "")}
-            for meta, index in sources() for x in index if isinstance(x, dict) and x.get("name")]
+            for meta, index in sources() for x in index if isinstance(x, dict) and x.get("name") and not x.get("quarantine")]
+
+
+def _held(index, n=10):
+    """The quarantined items of a new index, n at most, each with its reason (T-1396)."""
+    held = [x for x in index if x.get("quarantine")]
+    return (f"\n{len(held)} quarantined, out of search:" + "".join(
+        f"\n  {c.fit(c.plain(x['path']), 60)}: {c.fit(x['quarantine'], 140)}" for x in held[:n])
+        + (f"\n  … {len(held) - n} more in the source's index.json" if len(held) > n else "")) if held else ""
 
 
 def cmd_source(args):
@@ -614,7 +643,7 @@ def cmd_source(args):
         except (ValueError, RuntimeError, subprocess.SubprocessError) as e:
             raise fmcli.UsageError(f"source not added: {e}")
         return print(f"Added {meta['name']} @ {meta['commit'][:8]}: {meta['skills']} skills, {meta['agents']} agents "
-                     f"({meta['license']}). Indexed read-only; fm lib search finds them.")
+                     f"({meta['license']}). Indexed read-only; fm lib search finds them." + _held(index))
     if sub == "defaults":  # the vetted set, added where missing
         have = {m["name"] for m, _ in sources()}
         for n, url in DEFAULT_SOURCES:
@@ -632,9 +661,9 @@ def cmd_source(args):
             have = {m["name"]: (m, i) for m, i in sources()}.get(n)
             if not have:
                 raise fmcli.UsageError(f"no source {n!r}")
-            before = {x["name"] for x in have[1]}
+            before = {x["name"] for x in have[1] if not x.get("quarantine")}
             meta, index = source_add(have[0]["url"], n, replace=True)
-            after = {x["name"] for x in index}
+            after = {x["name"] for x in index if not x.get("quarantine")}
             print(f"{n} @ {meta['commit'][:8]}" + ("".join(f"\n  + {x}" for x in sorted(after - before))
                                                      + "".join(f"\n  - {x}" for x in sorted(before - after)) or " (no change)"))
         return
@@ -646,6 +675,7 @@ def cmd_source(args):
     rows = sources()
     fmcli.out(args, [m for m, _ in rows], "\n".join(
         f"  {m['name']:<22} {m['skills']:>4} skills {m['agents']:>4} agents  {m['commit'][:8]}  {m['license']}  {m['url']}"
+        + (f"  ({m['quarantined']} quarantined)" if m.get("quarantined") else "")
         for m, _ in rows) or "No sources yet: fm lib source add <git URL>")
 
 
