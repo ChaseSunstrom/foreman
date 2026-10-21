@@ -501,19 +501,23 @@ def _git_src(repo, *args, timeout=600):
     return r.stdout
 
 
-def _index_source(repo):
+def _index_source(repo, name=None):
     """[{name, description, path, kind[, quarantine]}] for the checkout's SKILL.md and agents/*.md files. T-1396: one
     that is a symlink, breaks the Agent Skills spec, hides characters, claims every task or repeats an earlier name
-    keeps its reason under quarantine and stays out of search; a symlink is never read."""
+    keeps its reason under quarantine and stays out of search; a symlink is never read. name: the source's, which a
+    SKILL.md at the repo's root must carry (its folder is only the clone's)."""
     import fmplugins
-    links = {line.split("\t", 1)[1] for line in _git_src(repo, "ls-tree", "-r", "HEAD").splitlines()
-             if line.startswith("120000 ")}  # symlinks as committed: core.symlinks=false wrote them as plain files
+    # symlinks as committed: core.symlinks=false wrote them as plain files. -z: unquoted paths (café, not "caf\303\251")
+    links = {rec.split("\t", 1)[1] for rec in _git_src(repo, "ls-tree", "-r", "-z", "HEAD").split("\0")
+             if rec.startswith("120000 ") and "\t" in rec}
     clean = lambda s: re.sub(r"[^a-z0-9_.-]+", "-", c.plain(s).lower()).strip("-")[:64]
     root, out = os.path.realpath(repo), []
+    folder_of = lambda d: (name or os.path.basename(repo)) if os.path.realpath(d) == root else os.path.basename(d)
     for rel in sorted(links):
         parts = rel.split("/")
-        if parts[-1].endswith(".md") or "skills" in parts[:-1] or "agents" in parts[:-1]:
-            skill = parts[-1] == "SKILL.md" or "skills" in parts[:-1]
+        # only what would be a skill or agent: a SKILL.md, a skill's folder, an agents/*.md (not CLAUDE.md -> AGENTS.md)
+        skill = parts[-1] == "SKILL.md" or parts[-2:-1] == ["skills"]
+        if skill or ("agents" in parts[:-1] and parts[-1].endswith(".md")):
             out.append({"name": clean(parts[-2] if parts[-1] == "SKILL.md" and len(parts) > 1 else
                                       os.path.splitext(parts[-1])[0]) or "link", "description": "", "path": rel,
                         "kind": "skill" if skill else "agent", "quarantine": "a symlink: never followed"})
@@ -522,7 +526,8 @@ def _index_source(repo):
         for n in names:
             path = os.path.join(d, n)
             rel = os.path.relpath(path, repo).replace(os.sep, "/")
-            if not n.endswith(".md") or rel in links or os.path.islink(path) or not os.path.realpath(path).startswith(root + os.sep):
+            # git's bytes were decoded with errors="replace": a non-UTF-8 name compares the same way
+            if not n.endswith(".md") or rel.encode(errors="surrogateescape").decode(errors="replace") in links or os.path.islink(path) or not os.path.realpath(path).startswith(root + os.sep):
                 continue
             fm = fmplugins._frontmatter(path)
             # SKILL.md always; another .md only as an agent: under agents/, or anywhere with a name and a description
@@ -532,15 +537,16 @@ def _index_source(repo):
                 r"(?i)(readme|changelog|contributing|license|code_of_conduct|security)\b", n) else None
             if not kind:
                 continue
-            fallback = os.path.basename(d) if kind == "skill" else os.path.splitext(n)[0]
+            fallback = folder_of(d) if kind == "skill" else os.path.splitext(n)[0]
             row = {"name": clean(fmplugins._unquote(fm.get("name", "")) or fallback) or clean(fallback) or kind,
                    "description": c.plain(fmplugins._unquote(fm.get("description", "")))[:400], "path": rel, "kind": kind}
-            why = fmplugins.spec_problems(fm, os.path.basename(d) if kind == "skill" else None, kind)
+            why = fmplugins.spec_problems(fm, folder_of(d) if kind == "skill" else None, kind)
             if why:
                 row["quarantine"] = "; ".join(why)
             out.append(row)
     first = {}
-    for x in sorted(out, key=lambda x: x["path"]):  # a second skill or agent of a name squats on the first's
+    # a second skill or agent of a name squats on the first's; a quarantined one holds no name
+    for x in sorted((x for x in out if not x.get("quarantine")), key=lambda x: x["path"]):
         if first.setdefault((x["kind"], x["name"]), x["path"]) != x["path"]:
             x["quarantine"] = "; ".join(filter(None, [x.get("quarantine"), f"a second {x['kind']} named {x['name']} "
                                                                            f"(the first is {c.plain(first[(x['kind'], x['name'])])})"]))
@@ -579,7 +585,7 @@ def source_add(url, name=None, replace=False):
         _git_src(None, "clone", "--quiet", "--depth", "1", "--filter=blob:none", "--no-checkout", "--no-recurse-submodules", "--", url, repo)
         _git_src(repo, "sparse-checkout", "set", "--no-cone", "*.md")
         _git_src(repo, "checkout", "--quiet")
-        index = _index_source(repo)
+        index = _index_source(repo, name)
         meta = {"name": name, "url": url, "commit": _git_src(repo, "rev-parse", "HEAD").strip(),
                 "license": _license(repo), "added": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                 "skills": sum(x["kind"] == "skill" and not x.get("quarantine") for x in index),
