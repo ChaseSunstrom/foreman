@@ -422,6 +422,11 @@ PAGES = [
              "real work, and a big one go faster.",
      "blocks": [
          ("raw", FLOW_CODE),
+         ("text", "Open the app", "<p><code>fm code</code> on its own opens the app, the way <code>claude</code> "
+          "does. Inside a project it shows that project's active task, queue, inbox, blocked tasks and past runs; "
+          "<code>Esc</code> lists every Foreman project on the machine with what each is doing. <code>Enter</code> "
+          "on a task runs it in its own folder (<code>fm code --task ID</code>: the task's criteria and steps are the "
+          "plan), <code>n</code> starts a new request there and <code>m</code> picks the runner.</p>"),
          ("text", "Watch it work", "<p><code>fm code tui</code> runs a request in a terminal UI drawn from the "
           "harness's own events: the stations as a track, each check as a pass or fail chip, changed files as bars, "
           "where the time went, and tokens per model call. A guard refusal stands out in the activity log; the "

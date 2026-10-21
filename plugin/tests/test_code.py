@@ -438,6 +438,83 @@ class Models(CodeCase):
         self.assertNotIn("Traceback", r.stderr)
 
 
+class TaskRun(CodeCase):
+    """T-1330: fm code --task ID works a planned brief: its criteria and steps are the plan, so no planner call."""
+    def brief(self, verify="python3 test_calc.py"):
+        a = ["task", "new", "make calc.add add", "--type", "FIX", "--tier", "S", "--json", "--step", "fix calc.add"]
+        a += ["--ac", f"calc.add adds :: {verify}"] if verify else []
+        return json.loads(self.fm(*a).stdout)["id"]
+
+    def test_a_planned_brief_is_worked_without_a_plan_call(self):
+        tid = self.brief()
+        f = self.serve("openai", call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="adds"))
+        r = self.code("--task", tid, "--model", "fake", "--json", check=False)
+        self.assertEqual(self.task(tid)["status"], "done", r.stdout + r.stderr)
+        self.assertIn("return a + b", self.calc())
+        self.assertIn("step 1", f.said(0), "the first call is the step, not a plan")
+        ev = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        self.assertEqual([e.get("task") for e in ev if e["event"] == "start"], [tid])
+
+    def test_it_refuses_a_task_it_cant_work_and_says_why(self):
+        self.serve("openai", call("done", summary="x"))
+        no_check = self.brief(verify=None)
+        r = self.code("--task", no_check, "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no criterion", r.stderr)
+        dropped = self.brief()
+        self.fm("task", "drop", dropped, "not needed")
+        r = self.code("--task", dropped, "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("dropped", r.stderr)
+        r = self.code("--task", "T-9999", "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("T-9999", r.stderr)
+        r = self.code("fix it too", "--task", no_check, "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0, "a request and --task can't both be the plan")
+
+    def test_it_refuses_checks_it_cant_run_and_a_criterion_without_one(self):
+        self.serve("openai", call("done", summary="x"))
+        ran = []
+        for verify, want in (("python3 -m no_such_module_xyz", "can't run here"), ("rm -rf ~", "refused")):
+            tid = self.brief()  # fm task new refuses such a check; an edit or a synced brief can still hold one
+            self.fm("task", "ac", tid, "edit", "1", "--verify", verify, check=False)
+            if self.task(tid)["criteria"][0]["verify"] != verify:
+                continue  # refused at the edit too: nothing for fm code to catch
+            r = self.code("--task", tid, "--model", "fake", check=False)
+            self.assertNotEqual(r.returncode, 0, verify)
+            self.assertIn(want, r.stderr, verify)
+            ran.append(verify)
+        self.assertTrue(ran, "at least one bad check reached fm code")
+        tid = self.brief()
+        self.fm("task", "ac", tid, "add", "the README says so")  # no check: evidence would land on the wrong number
+        r = self.code("--task", tid, "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("criterion 2", r.stderr)
+
+    def test_an_earlier_unfinished_run_of_the_task_is_resumed_not_restarted(self):
+        tid = self.brief()
+        self.serve("openai", call("done", summary="x"))
+        code = os.path.join(os.path.dirname(os.path.dirname(self.task(tid)["path"])), "code")
+        os.makedirs(code, exist_ok=True)
+        with open(os.path.join(code, f"{tid}.jsonl"), "w") as f:
+            f.write(json.dumps({"kind": "start", "task": tid}) + "\n")
+        r = self.code("--task", tid.lower(), "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn(f"--resume {tid}", r.stderr, "the id is matched whatever its case")
+
+    def test_it_refuses_a_task_another_run_is_working(self):
+        import fcntl
+        tid = self.brief()
+        self.serve("openai", call("done", summary="x"))
+        code = os.path.join(os.path.dirname(os.path.dirname(self.task(tid)["path"])), "code")
+        os.makedirs(code, exist_ok=True)
+        with open(os.path.join(code, f"{tid}.lock"), "w") as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)  # as a running fm code holds it
+            r = self.code("--task", tid, "--model", "fake", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("another fm code run", r.stderr)
+
+
 if __name__ == "__main__":
     import unittest
     unittest.main()
