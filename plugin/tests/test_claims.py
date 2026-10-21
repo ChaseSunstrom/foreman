@@ -41,6 +41,17 @@ class Claims(Base):
         self.assertIn("a.py", held, "the first task's lease stays")
         self.assertNotIn("b.py", held)
 
+    def test_a_file_named_drop_keeps_another_tasks_leases_in_the_same_session(self):
+        # T-1416: a builder lane's `fm lease drop plugin/lib/fmcode.py` freed two other lanes' leases on that file
+        self.fm("task", "new", "One", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)
+        self.fm("lease", "take", "a.py::f", env=A)
+        self.fm("task", "new", "Two", "--type", "FIX", "--tier", "S", "--ac", "x :: true", "--step", "s", "--focus", env=A)
+        self.fm("lease", "take", "a.py::g", env=A)
+        self.assertIn("Dropped 1 lease(s)", self.fm("lease", "drop", "a.py", env=A).stdout)
+        held = self.fm("lease", "list").stdout
+        self.assertIn("a.py::f", held, "the first task's lease stays")
+        self.assertNotIn("a.py::g", held)
+
     def test_dropping_a_file_releases_its_symbol_leases(self):
         self.fm("lease", "take", "a.py::f", "a.py::g", "c.py::h", env=A)
         self.assertIn("Dropped 2 lease(s)", self.fm("lease", "drop", "a.py", env=A).stdout)
