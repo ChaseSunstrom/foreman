@@ -25,6 +25,12 @@ class InlineWorker(CodeCase):
                 self.assertIn("[ack]", r.stderr)
                 self.assertIn("a - b", self.calc())
         self.assertEqual(fmcode.worker_argv("mycli -y {prompt}", "go", which=False), ["mycli", "-y", "go"])
+        # T-1432 review: a shell wrapper's script is one word, so the flag inside it hid from the lint
+        for tpl in ("sh -c 'gemini --yolo {prompt}'", "bash -lc \"claude -p {prompt} --dangerously-skip-permissions\"",
+                    "env sh -c 'codex exec -a never {prompt}'"):
+            with self.subTest(tpl=tpl):
+                self.assertTrue(fmcode.dangerous_flags(tpl), tpl)
+        self.assertEqual(fmcode.dangerous_flags("sh -c 'mycli -y {prompt}'"), [])
 
 
 def model(url):
