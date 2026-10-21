@@ -25,7 +25,7 @@ STEPS = [("tree", "the working tree is clean"),
          ("push", "--push: merge into the remote's main (--no-ff) from a temporary worktree, push; spends the publish grant"),
          ("round", "fm round close: tag HEAD round-N"),
          # T-1199: never fatal, so it never holds the push; 12 projects one by one held 1.2.34's for ~35 min
-         ("canary", "fm sentinel in every local project, 4 at a time (reported, never fatal)")]
+         ("canary", "fm sentinel in every local project, 4 at a time, started detached (report: fm release --canary-status)")]
 GATES = ("check", "release-check", "canary")
 MARK = r"^Foreman [0-9]+\.[0-9]+\.[0-9]+"  # a release commit's subject
 SEMVER = r"\d+\.\d+\.\d+"
@@ -134,7 +134,34 @@ def _commit(ctx):
     ctx["state"]["sha"] = _git(root, "rev-parse", "HEAD").strip()  # what a later --push merges, not a moved HEAD
 
 
+def _canary_log(p, v):
+    return os.path.join(p.dir, "logs", f"canary-{v}.txt")
+
+
 def _canary(ctx):
+    """T-1362: the canary starts detached (own session, stdin closed, output in the project's logs/) so the release
+    returns once pushed; the worker captures failures to each project's inbox and calls fm notify when it ends."""
+    log = _canary_log(ctx["p"], ctx["version"])
+    os.makedirs(os.path.dirname(log), exist_ok=True)
+    with open(log, "wb") as f:
+        subprocess.Popen([sys.executable, os.path.abspath(__file__), "--canary-worker", ctx["version"], ctx["root"]],
+                         stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+    print(f"  canary (fm sentinel in every local project) started in the background; its report: {log} (fm release --canary-status)")
+
+
+def _canary_status(p):
+    logs = os.path.join(p.dir, "logs")
+    found = [os.path.join(logs, f) for f in os.listdir(logs) if re.fullmatch(r"canary-.*\.txt", f)] if os.path.isdir(logs) else []
+    if not found:
+        print("no canary run yet (fm release --push starts one)")
+        return
+    last = max(found, key=os.path.getmtime)
+    with open(last, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    print(f"{last}" + ("" if "canary done" in text else " (still running)") + "\n" + text.rstrip())
+
+
+def _canary_worker(v, root):
     """`fm sentinel` in every local project fm knows: what an earlier task proved that fails there now. Never fatal."""
     try:
         listed = json.loads(subprocess.run([*FM, "projects", "--json"], capture_output=True, text=True, timeout=120,
@@ -147,14 +174,34 @@ def _canary(ctx):
         try:
             r = subprocess.run([*FM, "sentinel"], cwd=x["root"], capture_output=True, text=True, timeout=1800)
             first = (r.stdout.strip().splitlines() or ["(no output)"])[0]
-            return f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}"
+            return bool(r.returncode), f"  {'✗' if r.returncode else '✓'} {x['project']}: {first}"
         except (OSError, subprocess.TimeoutExpired) as e:
-            return f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
+            return True, f"  ✗ {x['project']}: sentinel couldn't run ({type(e).__name__})"
 
     from concurrent.futures import ThreadPoolExecutor
+    failed = []
+    todo = [x for x in listed if x.get("exists")]
     with ThreadPoolExecutor(4) as pool:
-        for line in pool.map(one, [x for x in listed if x.get("exists")]):  # in project order, as each is ready
+        for x, (bad, line) in zip(todo, pool.map(one, todo)):  # in project order, as each is ready
             print(line, flush=True)
+            if bad:
+                failed.append((x, line.strip()))
+    import fmeco
+    for x, line in failed:  # a project's past check failing now: an item in that project's inbox
+        try:
+            q = c.find_project(x["root"])
+            if q:
+                fmeco.capture_once(q, f"Canary after Foreman {v}: {line[:200]}", "FIX", "discovered")
+        except Exception as e:  # never fatal: the report above still names it
+            print(f"  (couldn't capture for {x['project']}: {type(e).__name__})", flush=True)
+    print(f"canary done: {len(failed)} of {len(todo)} project(s) failing", flush=True)
+    if failed:
+        try:
+            import fmserve
+            p = c.find_project(root)
+            fmserve._notify(p, f"Foreman {v} canary: {len(failed)} project(s) failing: " + ", ".join(x["project"] for x, _ in failed))
+        except Exception:
+            pass
 
 
 _NEED_GRANT = ("--push needs the active task's publish grant: fm ask ID publish (the user's yes), or, where the user "
@@ -198,6 +245,8 @@ def _changed(state):
 
 
 def run(p, args):
+    if getattr(args, "canary_status", False):
+        return _canary_status(p) or 0
     state_path = os.path.join(p.dir, "release.json")
     try:
         state = _json(state_path) if os.path.isfile(state_path) else None
@@ -308,3 +357,7 @@ def run(p, args):
     print(f"Foreman {v} released: " + (f"{len(state['skipped'])} gate(s) skipped ({', '.join(state['skipped'])}); "
                                        if state["skipped"] else "") + ("pushed" if "push" in state["done"] else "not pushed"))
     return 0
+
+
+if __name__ == "__main__" and len(sys.argv) == 4 and sys.argv[1] == "--canary-worker":  # _canary's detached child
+    _canary_worker(sys.argv[2], sys.argv[3])
