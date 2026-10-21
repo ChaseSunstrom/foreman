@@ -133,6 +133,8 @@ def retired(model_id):
 STOPS = {"stop": "end", "end_turn": "end", "stop_sequence": "end", "tool_calls": "tool_calls",
          "function_call": "tool_calls", "tool_use": "tool_calls", "length": "length", "max_tokens": "length"}
 
+STOP = object()  # T-1388: an on_line answer that ends the call now (fmcode.STOP is this one)
+RESOLVE_TIMEOUT = 2  # T-1421: seconds a base_url's host may take to resolve before it's let through unchecked
 _sleep = time.sleep  # tests swap it out
 _ids = itertools.count(1)
 _TRANSPORT = (urllib.error.URLError, OSError, http.client.HTTPException)
@@ -351,17 +353,31 @@ def is_loopback(host):
 def _link_local(host):
     """T-1395: 169.254.0.0/16 or fe80::/10, in any spelling the resolver takes (2852039166, 0xa9.0xfe.0xa9.0xfe,
     ::ffff:169.254.169.254, fullwidth digits or ideographic dots, which IDNA folds to ASCII), and AWS's IPv6 metadata
-    fd00:ec2::254. ponytail: a hostname that resolves there isn't caught; resolve and pin it if that matters."""
+    fd00:ec2::254; T-1421: Alibaba's 100.100.100.200 and Azure's wireserver 168.63.129.16 too, and a hostname any of
+    whose addresses is one of these (looked up for at most RESOLVE_TIMEOUT s). ponytail: the request resolves the name
+    again, so a name that answers differently the second time (DNS rebinding) or that times out here isn't caught; pin
+    the checked address on the connection if that matters."""
+    import threading
     host = unicodedata.normalize("NFKC", host).replace("。", ".")  # what the IDNA encoder sends
     try:
-        ip = ipaddress.ip_address(host)
+        ips = [ipaddress.ip_address(host)]
     except ValueError:
         try:  # the legacy IPv4 forms urllib's resolver also accepts, read without any lookup
-            ip = ipaddress.IPv4Address(socket.inet_aton(host))
+            ips = [ipaddress.IPv4Address(socket.inet_aton(host))]
         except (OSError, ValueError):
-            return False
-    ip = getattr(ip, "ipv4_mapped", None) or ip
-    return ip.is_link_local or ip == ipaddress.ip_address("fd00:ec2::254")
+            found = []
+
+            def look():
+                try:
+                    found.extend(ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(host, None))
+                except (OSError, ValueError, UnicodeError):
+                    pass
+            t = threading.Thread(target=look, daemon=True)  # getaddrinfo has no timeout of its own
+            t.start()
+            t.join(RESOLVE_TIMEOUT)
+            ips = list(found)  # a copy: a lookup still running past the timeout changes nothing here
+    bad = {ipaddress.ip_address(a) for a in ("fd00:ec2::254", "100.100.100.200", "168.63.129.16")}
+    return any(ip.is_link_local or ip in bad for ip in (getattr(x, "ipv4_mapped", None) or x for x in ips))
 
 
 def _check_url(profile, base, key):
@@ -377,8 +393,8 @@ def _check_url(profile, base, key):
     if "@" in u.netloc:
         raise ModelError(f"{who}: base_url must not carry a user or password (put the key in key_env)")
     if _link_local(host):
-        raise ModelError(f"{who}: base_url is a link-local or cloud metadata address (169.254.0.0/16, fe80::/10, "
-                         "fd00:ec2::254); refused")
+        raise ModelError(f"{who}: base_url is, or resolves to, a link-local or cloud metadata address "
+                         "(169.254.0.0/16, fe80::/10, fd00:ec2::254, 100.100.100.200, 168.63.129.16); refused")
     if key and u.scheme == "http" and not _loopback(host):
         raise ModelError(f"{who}: refusing to send {profile.get('key_env')} over plain http to {host}; use https")
 
@@ -495,7 +511,7 @@ def _cli(profile, messages, timeout):
                           if isinstance(msg.get("content"), str))
     argv = [w.replace("{prompt}", prompt) for w in shlex.split(profile["argv"])]
     limit = max(timeout, profile.get("timeout") or 0)
-    stream, shown, found, out = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray()
+    stream, shown, found, out, stopped = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray(), []
     done = threading.Event()  # set once the call returns: a line a leftover grandchild prints shows nothing
 
     def sink(chunk):
@@ -508,7 +524,11 @@ def _cli(profile, messages, timeout):
         res = stream_result(line)
         if res:
             found.append(res)
-        return bool(shown and shown(line))
+        got = shown and shown(line)
+        if got is STOP:  # T-1426: the caller's check stopped the call (a lean planner's init loaded too much)
+            stopped.append(line)
+            fmcore.kill_group(proc)
+        return bool(got)
     live = profile.get("heartbeat") and profile["heartbeat"]()
     beat = live and (lambda *a: done.is_set() or live(*a))
     with tempfile.TemporaryFile() as err:
@@ -534,6 +554,8 @@ def _cli(profile, messages, timeout):
         err.seek(0)
         stderr = err.read().decode("utf-8", "replace")
     stdout = out.decode("utf-8", "replace")
+    if stopped:
+        raise ModelError(f"{profile['name']}: stopped at a line its caller refused")
     if proc.returncode:
         raise ModelError(f"{profile['name']}: exit {proc.returncode}: {(stderr or stdout).strip()[-300:]}")
     if stream and not found:
@@ -549,7 +571,8 @@ def _cli(profile, messages, timeout):
     if got.get("is_error"):
         raise ModelError(f"{profile['name']}: {got['result'][:300]}")
     u = _of(got.get("usage"), dict)
-    seen = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    seen = sum(v for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+               if type(v := u.get(k)) is int)  # T-1423: a "10" or null isn't added (Run.usage zeroes the rest)
     return {"text": got["result"], "tool_calls": [], "usage": {"in": seen, "out": u.get("output_tokens") or 0},
             "stop": "end"}
 
