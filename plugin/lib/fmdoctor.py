@@ -1215,6 +1215,8 @@ def _capability_delta(was, now, key=""):
     or a baseline before T-1392) is diffed against nothing (review)."""
     if key.startswith("mcp:"):  # a user or project MCP server: its spec's hash
         return [f"{'changes' if was is not None else 'adds'} MCP server {c.plain(key[4:])[:60]}"]
+    legacy = isinstance(was, str)  # a baseline from before T-1392 holds only the hash: what runs was never recorded
+    verb = "has" if legacy else "adds"
     was, now = (v.get("caps") if isinstance(v, dict) else None for v in (was, now))
     was, now = (v if isinstance(v, dict) else {} for v in (was, now))
     def new(k):
@@ -1223,12 +1225,12 @@ def _capability_delta(was, now, key=""):
     split = lambda specs: dict(s.rsplit(" ", 1) for s in specs or [] if isinstance(s, str) and " " in s)
     had, has = split(was.get("mcp_specs")), split(now.get("mcp_specs"))
     events = new("hooks")
-    return ([f"adds hook {c.plain(e)[:40]}" for e in events]
-            + [f"adds a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
+    return ([f"{verb} hook {c.plain(e)[:40]}" for e in events]
+            + [f"{verb} a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
                for h in new("handlers") if h.split(" ", 1)[0] not in events]
-            + [f"adds MCP server {c.plain(m)[:40]}" for m in new("mcp")]
+            + [f"{verb} MCP server {c.plain(m)[:40]}" for m in new("mcp")]
             + [f"changes MCP server {c.plain(m)[:40]}" for m in sorted(has) if m in had and had[m] != has[m]]
-            + [f"adds script {c.plain(s)[:80]}" for s in new("scripts")])
+            + [f"{verb} script {c.plain(s)[:80]}" for s in new("scripts")])
 
 
 ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")
