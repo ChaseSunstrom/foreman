@@ -111,7 +111,7 @@ class Worker(CodeCase):
         import fmcode
         import fmmodels
         run = types.SimpleNamespace(worker="claude", model_name="claude (plan, read-only)", root=self.repo,
-                                    worker_timeout=5, live_tools=lambda who: None, live_beat=lambda who: None)
+                                    worker_timeout=5, live_tools=lambda who, lean=False: None, live_beat=lambda who: None)
         with unittest.mock.patch.object(fmmodels, "resolve", side_effect=fmmodels.ModelError("no model profile")):
             self.assertEqual(fmcode.choose_profile(run, None)["kind"], "cli")
             with self.assertRaises(fmmodels.ModelError):
