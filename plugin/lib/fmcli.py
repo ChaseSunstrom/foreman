@@ -3322,6 +3322,28 @@ def capture_promises(p, text, sid=None):
     return made
 
 
+def capture_friction(p, text, sid=None):
+    """T-1332: the user's friction with an area queues a brainstorm-and-improve RESEARCH task for it, once per open
+    area; another complaint within 7 days of the last makes it urgent. Returns (area, id, urgent)."""
+    area = c.friction_area(text)
+    title = _title(f"Improve {area}: fm mission + fm ideas from the user's friction")
+    with c.lock(p.dir, timeout=1):  # the prompt hook: a busy lock loses this capture, not the turn
+        b = next((b for b in c.load_briefs(p) if b.status not in c.CLOSED and b.title.lower() == title.lower()), None)
+        if b is None:
+            b = _create(p, title, "RESEARCH", "M", "captured", source="self",
+                        raw=f"{c.fit(c.plain(c.redact(text)).strip(), 300)}\n(the user's friction with {area}: run fm "
+                            f"mission --request on it, then fm ideas, then a build round)")
+            c.log_event(p, "capture", task=b.id, data={"source": "friction", "area": area}, session=sid)
+        else:
+            age = c.age_days(b.meta.get("friction_at") or b.meta.get("created"))
+            if age is not None and age <= 7:
+                b.meta["priority"] = "urgent"
+        b.meta["friction_at"] = c.now()
+        c.save_brief(p, b, touch=False)
+        c.regen_views(p)
+    return area, b.id, b.priority == "urgent"
+
+
 def _research_items(p):
     """(name, path of the file to read, mtime) for each note and brainstorm folder, newest first (T-0802)."""
     folder = os.path.join(p.dir, "research")
