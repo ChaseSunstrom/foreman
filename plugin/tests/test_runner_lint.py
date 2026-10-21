@@ -131,8 +131,10 @@ class LinkLocal(unittest.TestCase):
                 self.assertIn("link-local", str(e.exception))
 
     def test_ordinary_hosts_pass_the_check(self):
-        for url in ("http://127.0.0.1:1/v1", "https://api.example.com/v1", "http://10.0.0.5/v1"):
-            fmmodels._check_url({"name": "x"}, url, None)
+        from unittest import mock  # T-1432: a hostname is now looked up; no real DNS in a test
+        with mock.patch("socket.getaddrinfo", return_value=[(2, 1, 6, "", ("93.184.215.14", 443))]):
+            for url in ("http://127.0.0.1:1/v1", "https://api.example.com/v1", "http://10.0.0.5/v1"):
+                fmmodels._check_url({"name": "x"}, url, None)
 
 
 if __name__ == "__main__":

@@ -54,7 +54,8 @@ def resolve(args, create=True):
         if not p:
             raise UsageError(f"unknown project {args.project!r} (see state/registry.md)")
         return p
-    p = c.find_project(os.getcwd(), create=create)
+    # T-1426: a worker of an fm code run only reads, so it never sets up a project either
+    p = c.find_project(os.getcwd(), create=create and not os.environ.get("FOREMAN_WORKER_OF"))
     if not p and os.environ.get("FOREMAN_PROJECT"):
         p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
     if not p:
