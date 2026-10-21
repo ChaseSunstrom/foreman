@@ -46,6 +46,8 @@ def _json(path, default=None):
 
 
 def _frontmatter(path):
+    if not os.path.isfile(path):  # a FIFO would block the open forever, a device never end
+        return {}
     try:
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read(4000)
@@ -140,15 +142,51 @@ def profile(path):
     return out
 
 
-def _plugin_spec(path, key):
-    """A plugin's hooks or mcpServers as a dict: plugin.json can inline them or name another file, else the default
-    file (hooks/hooks.json, .mcp.json); {} for anything malformed."""
-    manifest = _json(os.path.join(path, ".claude-plugin", "plugin.json"), {})
-    manifest = manifest if isinstance(manifest, dict) else {}
-    spec = manifest.get(key, {"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json"}[key])
-    data = spec if isinstance(spec, dict) else _json(os.path.join(path, spec), {}) if isinstance(spec, str) else {}
-    data = data.get(key, data) if isinstance(data, dict) else {}
-    return data if isinstance(data, dict) else {}
+_SPEC_CAP = 8_000_000  # over the supply hash's 4 MB per file, so a padded hooks file is still read (T-1392 review)
+
+
+def _plugin_spec(path, key, unread=None):
+    """A plugin's hooks or mcpServers as one dict: the default file (hooks/hooks.json, .mcp.json) plus whatever
+    plugin.json names (inline, a path or a list of paths). Both are read, the safe superset whichever way Claude Code
+    merges them (T-1392 review); hook events are concatenated. A named file outside the plugin root, not a regular
+    file or over 8 MB is skipped and its path appended to unread; malformed entries are skipped."""
+    manifest = _spec_file(path, ".claude-plugin/plugin.json", unread)
+    extra = manifest.get(key) if isinstance(manifest, dict) else None
+    out = {}
+    for spec in [{"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json"}[key]] + (
+            extra[:50] if isinstance(extra, list) else [extra]):  # ponytail: a manifest's first 50 paths
+        data = _spec_file(path, spec, unread) if isinstance(spec, str) else spec
+        data = data.get(key, data) if isinstance(data, dict) else None
+        for k, v in (data.items() if isinstance(data, dict) else ()):
+            if isinstance(v, list):
+                out[k] = (out[k] if isinstance(out.get(k), list) else []) + v
+            else:
+                out.setdefault(k, v)
+    return out
+
+
+def _spec_file(root, rel, unread):
+    """The JSON at rel under a plugin root, confined to it and capped in size (None when absent or malformed)."""
+    given = os.path.join(root, rel)
+    if not os.path.lexists(given):
+        return None
+    full, base = os.path.realpath(given), os.path.realpath(root)
+    try:
+        ok = full.startswith(base + os.sep) and os.path.isfile(full) and os.path.getsize(full) <= _SPEC_CAP
+        if ok:  # isfile first: a FIFO or device would block or never end
+            with open(full, "rb") as f:
+                raw = f.read(_SPEC_CAP + 1)
+            ok = len(raw) <= _SPEC_CAP
+    except OSError:
+        ok = False
+    if not ok:
+        if unread is not None:
+            unread.append(rel)
+        return None
+    try:
+        return json.loads(raw)
+    except (ValueError, RecursionError):
+        return None
 
 
 def _handlers(hooks):
@@ -163,14 +201,21 @@ def _handlers(hooks):
 _ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
 
 
-def capabilities(root):
+def capabilities(root, prof=None):
     """T-1392: what a plugin tree runs on its own (hook events, each hook handler as "event matcher: command", MCP
-    server names, scripts: bin/ and the files its hooks and MCP servers name under ${CLAUDE_PLUGIN_ROOT}) and what it
-    adds to the session (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to
-    the first four; ponytail: an existing handler's script edited in place is only the tree hash's note."""
-    prof = profile(root)
-    hooks, mcp = (_plugin_spec(root, k) if root and os.path.isdir(root) else {} for k in ("hooks", "mcpServers"))
-    handlers = {f"{e} {m}: {h.get('command') or h.get('url') or h.get('prompt') or ''}" for e, m, h in _handlers(hooks)}
+    server names and "name digest" of each server's spec, scripts: bin/ and the files its hooks and MCP servers name
+    under ${CLAUDE_PLUGIN_ROOT}, and spec files it names but Foreman won't read) and what it adds to the session
+    (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to the first group.
+    ponytail: an existing handler's script edited in place is only the tree hash's note, and hooks declared in skill,
+    agent or command frontmatter, .lsp.json servers and hooks inlined in a marketplace entry aren't read."""
+    prof = prof or profile(root)
+    unread = []
+    hooks, mcp = (_plugin_spec(root, k, unread) if root and os.path.isdir(root) else {} for k in ("hooks", "mcpServers"))
+    # a ": " in a matcher would read as the separator and push the command out of fm doctor's window
+    sep = lambda s: str(s).replace(": ", ":")
+    handlers = {f"{sep(e)} {sep(m)}: {h.get('command') or h.get('url') or h.get('prompt') or ''}"
+                for e, m, h in _handlers(hooks)}
+    digest = lambda spec: hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:16]
     scripts = {os.path.normpath(p) for p in _ROOT_PATH.findall(json.dumps([hooks, mcp]))}
     bindir = os.path.join(root or "", "bin")
     for d, dirs, files in os.walk(bindir) if root and os.path.isdir(bindir) else ():
@@ -180,7 +225,8 @@ def capabilities(root):
             break
     names = lambda kind: sorted({n for n, _ in prof[kind] if isinstance(n, str)})
     return {"hooks": sorted(map(str, hooks)), "handlers": sorted(handlers), "mcp": sorted(map(str, mcp)),
-            "scripts": sorted(scripts), "commands": names("commands"), "agents": names("agents"),
+            "mcp_specs": sorted(f"{k} {digest(v)}" for k, v in mcp.items()), "scripts": sorted(scripts),
+            "unread": sorted(set(unread)), "commands": names("commands"), "agents": names("agents"),
             "skills": names("skills")}
 
 
@@ -384,10 +430,11 @@ def find(need, n=10, skipped=None):
             trusted, why = trust(p, ledger)
             tree = p["local"] or have.get(p["id"], {}).get("path")
             # T-1392: what it runs and adds, read from a tree on disk; None for a remote entry not installed
-            needs = capabilities(tree) if tree and os.path.isdir(tree) else None
+            prof = profile(tree)
+            needs = capabilities(tree, prof) if tree and os.path.isdir(tree) else None
             hits.append(dict(p, score=score, installed=p["id"] in have, trusted=trusted, untrusted=why,
-                             enabled=have.get(p["id"], {}).get("enabled", False), tokens=profile(tree)["tokens"],
-                             needs=needs and {k: v for k, v in needs.items() if k != "handlers"}))
+                             enabled=have.get(p["id"], {}).get("enabled", False), tokens=prof["tokens"],
+                             needs=needs and {k: v for k, v in needs.items() if k not in ("handlers", "mcp_specs")}))
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
 
 
@@ -572,10 +619,16 @@ def install(pid):
 
 
 def _runs_line(needs):
-    """T-1392: what a find hit runs on its own, as one indented line ("" for none or a remote entry)."""
-    parts = [f"{label} {', '.join(c.plain(x)[:40] for x in needs[k][:6])}" + (" …" if len(needs[k]) > 6 else "")
-             for k, label in (("hooks", "hook"), ("mcp", "MCP"), ("scripts", "script")) if needs and needs[k]]
-    return f"\n    runs: {' · '.join(parts)}" if parts else ""
+    """T-1392: what a find hit runs on its own and adds to the session, as indented lines; a remote entry has no tree
+    to read until installed."""
+    if needs is None:
+        return "\n    runs: unknown until installed"
+    part = lambda keys: " · ".join(
+        f"{label} {', '.join(c.plain(x)[:40] for x in needs[k][:6])}" + (" …" if len(needs[k]) > 6 else "")
+        for k, label in keys if needs.get(k))
+    runs = part((("hooks", "hook"), ("mcp", "MCP"), ("scripts", "script")))
+    adds = part((("commands", "command"), ("agents", "agent"), ("skills", "skill")))
+    return f"\n    runs: {runs or 'nothing on its own'}" + (f"\n    adds: {adds}" if adds else "")
 
 
 def cmd_plugins(args):
