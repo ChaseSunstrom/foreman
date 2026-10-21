@@ -302,7 +302,7 @@ def session_start(pl):
             reaped = fmideas.sweep_orphans()
         except Exception:  # a sweep that fails must never cost the session its start
             log_error("SessionStart", _tb())
-    p = c.find_project(_cwd(pl), create=True)
+    p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
     if not p:
         return None
     if reaped:
@@ -1031,7 +1031,7 @@ def _last_stop(sid):
 
 def user_prompt_submit(pl):
     sid = pl.get("session_id")
-    p = c.find_project(_cwd(pl), create=True)
+    p = c.find_project(_cwd(pl), create=not os.environ.get("FOREMAN_WORKER_OF"))  # T-1438: a worker sets up nothing
     if not p:
         return None
     if _oneoff():  # T-0775: the prompt is a question, not intake
