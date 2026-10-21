@@ -5222,6 +5222,7 @@ def build_parser():
     s.add_argument("--ui", metavar="VERSION", help="foreman-ui's new version (required when mods/foreman-ui changed since the last release)")
     s.add_argument("--push", action="store_true", help="merge into origin's main and push; needs the active task's publish grant")
     s.add_argument("--resume", action="store_true", help="continue from the first unfinished step")
+    s.add_argument("--canary-status", action="store_true", help="print the last canary run's report (T-1362)")
     s.add_argument("--dry-run", action="store_true", help="print the plan, change nothing")
     s.add_argument("--no-check", action="store_true", help="skip fm check, fm release-check and the canary (recorded as skipped; such a release can't --push)")
     add("release-check", lazy("fmdemo", "cmd_release_check"), tier=("Project and settings", 910),
