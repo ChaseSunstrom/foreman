@@ -426,11 +426,15 @@ PAGES = [
           "harness's own events: the stations as a track, each check as a pass or fail chip, changed files as bars, "
           "where the time went, and tokens per model call. A guard refusal stands out in the activity log; the "
           "model's own words are one key away (<code>t</code>). <code>d</code> shows the diff, <code>h</code> past "
-          "runs, <code>m</code> picks the model or worker for the next request. Themes (night, paper, mono), layout "
+          "runs, <code>m</code> picks the model or worker for the next request. It moves: the working station pulses, "
+          "counters and bars ease to their values, a refusal flashes (<code>motion = reduced</code> or <code>off</code> stills it). "
+          "Themes (night, paper, signal for colour-blind eyes, mono), layout "
           "and keys come from <code>tui.toml</code>, and a Python file in Foreman's home folder can add a panel, a "
           "command or an event handler.</p>"),
-         ("raw", '<img class="shot" src="../assets/code-tui.svg" alt="fm code tui after a run: a track of six done '
-          'stations, two passing checks, three changed files as bars, a time chart and tokens per call">'),
+         ("raw", '<video class="shot" autoplay muted loop playsinline poster="../assets/code-tui.svg" '
+          'aria-label="fm code tui running a request: the track fills station by station, checks flip from red to pass, '
+          'change bars and token columns grow, a refused git push flashes, and the close plays a wave along the track">'
+          '<source src="../demo/code-tui.mp4" type="video/mp4"></video>'),
          ("text", "Any model, any CLI", "<ul><li><strong>Any OpenAI-compatible endpoint</strong>: Ollama, LM Studio, "
           "llama.cpp, vLLM, OpenRouter, Groq, OpenAI, Gemini's compatible endpoint, and Anthropic's API.</li><li>"
           "<strong>Other CLIs as workers.</strong> claude, codex, gemini or aider do a step; the harness "

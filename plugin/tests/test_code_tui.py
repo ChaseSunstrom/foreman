@@ -215,41 +215,46 @@ class Views(unittest.TestCase):
         self.assertEqual(started[0]["worker"], "claude")
 
 
-class FakeCurses:
-    A_BOLD, A_REVERSE, A_ITALIC, COLORS, COLOR_PAIRS = 1, 2, 4, 256, 256
-
-    def __init__(self, colors=256):
-        self.COLORS, self.pairs = colors, []
-
-    def has_colors(self):
-        return True
-
-    def use_default_colors(self):
-        pass
-
-    def init_pair(self, n, fg, bg):
-        self.pairs.append((fg, bg))
-
-    def color_pair(self, n):
-        return n << 8
-
-
 class Terminal(unittest.TestCase):
-    def test_no_color_draws_with_weight_and_reverse_only(self):
-        fake = FakeCurses()
-        with unittest.mock.patch.dict(os.environ, {"NO_COLOR": "1"}):
-            attrs = tui()._attrs(fake, tui().DEFAULTS)
-        self.assertEqual(fake.pairs, [])
-        self.assertTrue(attrs["chip_ok"] & fake.A_REVERSE and attrs["select"] & fake.A_REVERSE)
-        self.assertTrue(attrs["strong"] & fake.A_BOLD)
+    """T-1300: Foreman's own ANSI renderer (no curses): 24-bit colour where the terminal has it, the nearest of 256
+    or 8 elsewhere, none on NO_COLOR, and only the cells that changed are written again."""
 
-    def test_an_8_colour_terminal_gets_the_nearest_of_8(self):
-        fake = FakeCurses(colors=8)
-        with unittest.mock.patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("NO_COLOR", None)
-            tui()._attrs(fake, tui().DEFAULTS)
-        self.assertTrue(fake.pairs)
-        self.assertTrue(all(-1 <= c < 8 for pair in fake.pairs for c in pair), fake.pairs)
+    def canvas(self):
+        return tui().render(Core.state(self), 80, 24, tui().DEFAULTS)
+
+    def test_the_colour_depth_follows_the_terminal(self):
+        depth = tui().colour_depth
+        self.assertEqual(depth({"COLORTERM": "truecolor", "TERM": "xterm-256color"}), 24)
+        self.assertEqual(depth({"COLORTERM": "24bit"}), 24)
+        self.assertEqual(depth({"TERM": "xterm-256color"}), 256)
+        self.assertEqual(depth({"TERM": "xterm"}), 8)
+        self.assertEqual(depth({"NO_COLOR": "1", "COLORTERM": "truecolor"}), 0)
+
+    def test_each_depth_writes_its_own_colour_codes(self):
+        for d, has, hasnt in ((24, "38;2;", "38;5;"), (256, "38;5;", "38;2;"), (0, "\x1b[", "38;")):
+            out = tui().Term(d).frame(self.canvas(), tui().DEFAULTS)
+            self.assertIn(has, out, d)
+            if d:
+                self.assertNotIn(hasnt, out, d)
+            else:
+                self.assertNotIn(";2;", out)
+                self.assertNotIn("38;", out)
+        eight = tui().Term(8).frame(self.canvas(), tui().DEFAULTS)
+        self.assertNotIn("38;2;", eight)
+        self.assertNotIn("38;5;", eight)
+
+    def test_a_repeated_frame_writes_almost_nothing_and_a_change_only_its_cells(self):
+        term, cv = tui().Term(24), self.canvas()
+        first = term.frame(cv, tui().DEFAULTS)
+        self.assertGreater(len(first), 2000)
+        self.assertLess(len(term.frame(cv, tui().DEFAULTS)), 16)
+        cv.put(5, 5, "Z", "bad")
+        self.assertLess(len(term.frame(cv, tui().DEFAULTS)), 80)
+
+    def test_keys_arrive_with_the_names_the_app_binds(self):
+        self.assertEqual(tui().parse_keys("\x1b[A\x1b[6~q\x12\r\x7f\x1b[B\t"),
+                         ["KEY_UP", "KEY_NPAGE", "q", "^R", "\n", "KEY_BACKSPACE", "KEY_DOWN", "\t"])
+        self.assertEqual(tui().parse_keys("\x1b"), ["\x1b"])
 
     def test_any_size_draws_and_under_60_columns_is_one_panel(self):
         st = Core.state(self)
@@ -260,6 +265,288 @@ class Terminal(unittest.TestCase):
         small = tui().render(st, 59, 20, tui().DEFAULTS).text()
         self.assertEqual(small.count("╭"), 1, "just the activity log")
         self.assertIn("rm -rf ~", small)
+
+    def test_no_colour_reverses_chips_but_not_text_on_a_panel(self):
+        cv, term = self.canvas(), tui().Term(0)
+        rows, text = term.cells(cv, tui().DEFAULTS), cv.text().splitlines()
+        y = next(i for i, line in enumerate(text) if "rm -rf ~" in line)
+        self.assertNotIn(";7", rows[y][text[y].index("rm -rf ~")][1], "plain text inside a panel isn't inverted")
+        self.assertIn(";7", rows[y][text[y].index("GUARD")][1], "a chip still is")
+
+    def test_a_key_sequence_split_across_reads_waits_for_its_end(self):
+        split = tui().split_tail
+        self.assertEqual(split("ab\x1b["), ("ab", "\x1b["))
+        self.assertEqual(split("q\x1b[1;5"), ("q", "\x1b[1;5"))
+        self.assertEqual(split("q\x1b"), ("q", "\x1b"))
+        self.assertEqual(split("q\x1b[A"), ("q\x1b[A", ""))
+
+    def test_wide_and_combining_characters_keep_the_columns(self):
+        cv = tui().Canvas(10, 1)
+        cv.put(0, 0, "日本x")
+        self.assertEqual([ch for ch, _ in cv.cells[0][:5]], ["日", "", "本", "", "x"])
+        cv.put(0, 0, "éxy")
+        self.assertEqual([ch for ch, _ in cv.cells[0][:3]], ["é", "x", "y"])
+        self.assertEqual(len(cv.cells[0]), 10)
+
+    def test_a_closed_terminal_doesnt_hide_why_the_screen_ended(self):
+        import pty
+        master, slave = pty.openpty()
+
+        def gone(io):
+            os.close(master)
+            raise SystemExit(129)
+        with self.assertRaises(SystemExit):
+            tui().session(gone, slave, slave)
+        os.close(slave)
+
+    def test_wrap_is_off_so_the_last_cell_cant_scroll_the_screen(self):
+        import fmcodeterm
+        self.assertIn("\x1b[?7l", fmcodeterm.ENTER)
+        self.assertIn("\x1b[?7h", fmcodeterm.LEAVE)
+
+
+RUNNING = RUN[:10]  # step 2 just started, the checks not yet run
+
+
+def lum(spec):
+    import fmcodetui
+    r, g, b = fmcodetui._rgb(spec)
+    return r + g + b
+
+
+class Motion(unittest.TestCase):
+    """T-1300: motion is a pure function of state and time. Each test renders at two times and compares."""
+
+    def app(self, events, motion="full"):
+        cfg = dict(tui().DEFAULTS, motion=motion)
+        app = tui().App(cfg, spawn=lambda *a, **k: None)
+        for e in events:
+            app.feed(e)
+        return app, cfg
+
+    def frame(self, app, cfg, t, w=110, h=32):
+        return tui().render(app.state, w, h, cfg, app, t=t)
+
+    def cell(self, cv, needle, cfg, offset=0):
+        for y, row in enumerate(cv.cells):
+            i = "".join(ch for ch, _ in row).find(needle)
+            if i >= 0:
+                return tui().resolve(row[i + offset][1], cfg, cv.bg[y][i + offset])
+        self.fail(f"{needle!r} not drawn")
+
+    def test_the_station_being_worked_pulses_and_its_spinner_turns(self):
+        app, cfg = self.app(RUNNING)
+        a, b = self.frame(app, cfg, 100.0), self.frame(app, cfg, 100.8)
+        track_a, track_b = a.text().splitlines()[2], b.text().splitlines()[2]
+        self.assertNotEqual(track_a, track_b, "the spinner moved")
+        chip = lambda cv: next(tui().resolve(st, cfg)["bg"] for ch, st in cv.cells[2] if tui().resolve(st, cfg).get("bg")
+                               and isinstance(st, tuple))
+        self.assertNotEqual(chip(a), chip(b), "the pulse changed the chip's colour")
+
+    def test_a_light_travels_along_the_link_into_the_current_station(self):
+        app, cfg = self.app(RUNNING)
+        a, b = self.frame(app, cfg, 100.0), self.frame(app, cfg, 100.35)
+        link = lambda cv: [tui().resolve(st, cfg).get("fg") for ch, st in cv.cells[2] if ch == "━"]
+        self.assertNotEqual(link(a), link(b))
+
+    def test_counters_roll_up_to_new_values(self):
+        app, cfg = self.app(RUN[:6])
+        self.frame(app, cfg, 100.0)
+        app.feed({"event": "tokens", "text": "", "call_in": 9000, "call_out": 900, "total_in": 10200, "total_out": 980})
+        early, late = self.frame(app, cfg, 100.05).text(), self.frame(app, cfg, 103.0).text()
+        self.assertNotIn("10.2k in", early, "still rolling")
+        self.assertIn("10.2k in", late)
+
+    def test_a_check_that_flips_flashes_then_settles(self):
+        app, cfg = self.app(RUN[:12])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[12])  # the check passes
+        hot, cool = self.frame(app, cfg, 100.05), self.frame(app, cfg, 104.0)
+        self.assertGreater(lum(self.cell(hot, "PASS", cfg)["bg"]), lum(self.cell(cool, "PASS", cfg)["bg"]))
+        self.assertEqual(self.cell(cool, "PASS", cfg)["bg"], tui().resolve("chip_ok", cfg)["bg"])
+
+    def test_a_new_activity_line_fades_in(self):
+        app, cfg = self.app(RUN[:7])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[7])  # read calc.py
+        dim, full = self.frame(app, cfg, 100.03), self.frame(app, cfg, 103.0)
+        self.assertLess(lum(self.cell(dim, "read", cfg)["fg"]), lum(self.cell(full, "read", cfg)["fg"]))
+
+    def test_closing_sends_a_wave_along_the_track(self):
+        app, cfg = self.app(RUN[:-1])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[-1])
+        self.frame(app, cfg, 100.05)  # the frame that sees it close
+        during, after = self.frame(app, cfg, 100.45), self.frame(app, cfg, 105.0)
+        bright = lambda cv: max(lum(tui().resolve(st, cfg, cv.bg[2][x]).get("fg") or "#000000")
+                                for x, (ch, st) in enumerate(cv.cells[2]) if ch == "━")
+        self.assertGreater(bright(during), bright(after))
+
+    def test_a_guard_refusal_lands_with_a_flash(self):
+        app, cfg = self.app(RUN[:8])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[8])  # rm -rf ~ refused
+        self.frame(app, cfg, 100.02)
+        hot, cool = self.frame(app, cfg, 100.3), self.frame(app, cfg, 104.0)
+        self.assertGreater(lum(self.cell(hot, "GUARD", cfg, -1)["bg"]), lum(self.cell(cool, "GUARD", cfg, -1)["bg"]))
+        self.assertEqual(self.cell(cool, "GUARD", cfg, -1)["bg"], tui().resolve("chip_bad", cfg)["bg"])
+
+    def test_the_idle_screen_is_a_welcome_not_a_blank(self):
+        app, cfg = self.app([])
+        a, b = self.frame(app, cfg, 100.0), self.frame(app, cfg, 100.9)
+        text = a.text()
+        for words in ("Foreman Code", "new request", "past runs"):
+            self.assertIn(words, text)
+        self.assertNotEqual([r for r in a.cells], [r for r in b.cells], "its mark breathes")
+
+    def test_motion_off_draws_the_same_at_any_time(self):
+        app, cfg = self.app(RUNNING, motion="off")
+        a, b = self.frame(app, cfg, 100.0), self.frame(app, cfg, 101.37)
+        self.assertEqual(a.cells, b.cells)
+
+    def test_reduced_motion_keeps_colour_changes_but_nothing_moves(self):
+        app, cfg = self.app(RUN[:12], motion="reduced")
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[12])
+        a, b = self.frame(app, cfg, 100.05), self.frame(app, cfg, 100.55)
+        self.assertEqual(a.text(), b.text(), "no spinner, no rolling numbers")
+        self.assertGreater(lum(self.cell(a, "PASS", cfg)["bg"]), lum(tui().resolve("chip_ok", cfg)["bg"]))
+
+    def test_the_frame_rate_follows_what_moves(self):
+        app, cfg = self.app(RUNNING)
+        self.frame(app, cfg, 100.0)
+        self.assertLessEqual(app.fps(100.0), 30)
+        self.assertGreaterEqual(app.fps(100.0), 8, "live work animates")
+        done, cfg2 = self.app(RUN)
+        self.frame(done, cfg2, 100.0)
+        self.assertLessEqual(done.fps(110.0), 4, "a settled screen barely redraws")
+        off, cfg3 = self.app(RUNNING, motion="off")
+        self.assertLessEqual(off.fps(100.0), 4)
+
+    def test_gradients_colour_the_header_and_the_chart(self):
+        app, cfg = self.app(RUN)
+        cv = self.frame(app, cfg, 100.0)
+        brand = [tui().resolve(st, cfg).get("bg") for ch, st in cv.cells[0][:16]]
+        self.assertGreater(len(set(brand)), 3, "the brand chip is a ramp, not one colour")
+        rows = [y for y, row in enumerate(cv.cells) if "Tokens" in "".join(ch for ch, _ in row)]
+        cols = [tui().resolve(st, cfg).get("fg") for y in range(rows[0] + 1, cv.h - 3)
+                for ch, st in cv.cells[y] if ch in tui().BLOCKS]
+        self.assertGreater(len(set(cols)), 1, "the token columns are shaded")
+
+    def test_panels_sit_on_their_own_background(self):
+        cv = self.frame(*self.app(RUN), 100.0)
+        inside = cv.bg[5][3]
+        self.assertIsNotNone(inside, "a panel's inside has its own tint")
+        self.assertNotEqual(inside, tui().resolve("screen", tui().DEFAULTS)["bg"])
+
+    def test_the_svg_draws_bars_without_seams(self):
+        """Backgrounds first, then glyphs that overlap their neighbours: no hairline between a bar's cells."""
+        T, rgb = tui(), tui().rgb
+        cv = T.Canvas(4, 2)
+        cv.tint(0, 0, 2, 4, "#111B2B")
+        cv.put(0, 0, "▆", rgb(fg="#3366FF"))
+        cv.put(0, 1, "▆", rgb(fg="#4477FF"))
+        cv.put(1, 0, "█", rgb(fg="#5588FF"))
+        svg = T.to_svg(cv, T.DEFAULTS).splitlines()
+        rects = [s for s in svg if s.startswith("<rect x=")]
+        backs = [k for k, s in enumerate(rects) if 'fill="#111b2b"' in s.lower()]
+        bars = [k for k, s in enumerate(rects) if "#3366" in s.upper() or "#4477" in s.upper() or "#5588" in s.upper()]
+        self.assertEqual((len(bars), len(backs) > 0), (3, True), rects)
+        self.assertLess(max(backs), min(bars), "every background comes before every bar")
+        a, b = (float(rects[k].split('x="')[1].split('"')[0]) for k in bars[:2])
+        w = float(rects[bars[0]].split('width="')[1].split('"')[0])
+        self.assertGreater(a + w, b, "a bar cell overlaps the next one")
+
+    def row_of(self, cv, needle):
+        return next((y, "".join(ch for ch, _ in row).find(needle)) for y, row in enumerate(cv.cells)
+                    if needle in "".join(ch for ch, _ in row))
+
+    def test_the_newest_line_is_the_focal_line_while_running(self):
+        app, cfg = self.app(RUNNING)
+        cv = self.frame(app, cfg, 100.0)
+        y, x = self.row_of(cv, "2  fix calc.add")  # step 2 has just started: its header is the newest line
+        panel = tui().col(cfg, "panel", "bg")
+        self.assertNotEqual(tui().resolve(cv.cells[y][x + 4][1], cfg, cv.bg[y][x + 4]).get("bg"), panel, "the now line")
+        y2, x2 = self.row_of(cv, "rm -rf ~")
+        self.assertEqual(tui().resolve(cv.cells[y2][x2][1], cfg, cv.bg[y2][x2]).get("bg"), panel, "older lines")
+        app, cfg = self.app(RUN)
+        cv = self.frame(app, cfg, 100.0)
+        y, x = self.row_of(cv, "T-0001 closed")
+        self.assertEqual(tui().resolve(cv.cells[y][x][1], cfg, cv.bg[y][x]).get("bg"), panel, "a closed run has none")
+
+    def test_a_file_that_just_changed_glows_then_cools(self):
+        app, cfg = self.app(RUN[:11])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[11])  # calc.py changed
+        self.frame(app, cfg, 100.05)
+        def name(t):  # the Changed panel's calc.py (the Activity panel names it too, further left)
+            cv = self.frame(app, cfg, t)
+            y = next(y for y, row in enumerate(cv.cells) if " +0" in "".join(ch for ch, _ in row))
+            x = "".join(ch for ch, _ in cv.cells[y]).rfind("calc.py")
+            return tui().resolve(cv.cells[y][x][1], cfg, cv.bg[y][x])
+        hot, cold = name(100.3), name(105.0)
+        ink = tui().col(cfg, "screen")
+        self.assertGreater(lum(hot["fg"]), lum(cold.get("fg") or ink) + 20, "just changed: bright")
+        self.assertEqual(cold.get("fg") or ink, ink, "then plain text again")
+
+    def test_rolling_totals_hold_their_place(self):
+        app, cfg = self.app(RUN[:6])
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[6])
+        self.frame(app, cfg, 100.02)
+        places = {self.row_of(self.frame(app, cfg, t), " in ")[1] for t in (100.05, 100.4, 105.0)}
+        self.assertEqual(len(places), 1, "the labels don't slide while the numbers roll")
+
+    def test_an_empty_panel_shimmers_while_the_run_starts(self):
+        app, cfg = self.app(RUN[:1])
+        looks = {tuple(lum(self.cell(self.frame(app, cfg, t), "nothing changed yet", cfg, k)["fg"])
+                       for k in range(0, 18, 3))
+                 for t in (100.0, 100.5, 101.0)}
+        self.assertGreater(len(looks), 1, "a light passes over the words")
+        self.row_of(self.frame(app, cfg, 101.0), "planning the work")  # not the idle welcome
+        app, cfg = self.app(RUN[:1], motion="off")
+        self.assertEqual(self.cell(self.frame(app, cfg, 100.0), "nothing changed yet", cfg).get("fg"),
+                         tui().col(cfg, "dim"))
+
+    def test_a_theme_without_colours_keeps_its_chips_reversed_while_moving(self):
+        cfg = dict(tui().DEFAULTS, theme=tui().PRESETS["mono"](), preset="mono")
+        app = tui().App(cfg, spawn=lambda *a, **k: None)
+        for e in RUN[:8]:
+            app.feed(e)
+        self.frame(app, cfg, 100.0)
+        app.feed(RUN[8])  # the guard refuses
+        for t in (100.05, 100.3):
+            cv = self.frame(app, cfg, t)
+            self.assertTrue(self.cell(cv, "GUARD", cfg).get("reverse"), t)
+            self.assertTrue(self.cell(cv, "RUNNING", cfg).get("reverse"), t)
+
+    def test_no_state_is_shown_by_colour_alone(self):
+        """Mono theme: every verdict still reads as a word or a mark."""
+        cfg = dict(tui().DEFAULTS, theme=tui().PRESETS["mono"](), preset="mono")
+        for events, words in ((RUNNING, ("RED", "GUARD", "✓")), (RUN, ("PASS", "DONE", "GUARD"))):
+            app = tui().App(cfg, spawn=lambda *a, **k: None)
+            for e in events:
+                app.feed(e)
+            text = "\n".join("".join(ch for ch, _ in row) for row in self.frame(app, cfg, 100.0).cells)
+            for word in words:
+                self.assertIn(word, text)
+
+
+class Record(unittest.TestCase):
+    def test_a_run_records_to_a_video(self):
+        import shutil
+        import tempfile
+        if not (shutil.which("ffmpeg") and shutil.which("rsvg-convert")):
+            self.skipTest("needs ffmpeg and rsvg-convert")
+        out = os.path.join(tempfile.mkdtemp(), "run.mp4")
+        tui().record(RUN, out, size=(60, 20), fps=4, seconds=2)
+        self.assertGreater(os.path.getsize(out), 1000)
+
+    def test_without_ffmpeg_it_says_so(self):
+        with unittest.mock.patch("shutil.which", lambda name: None):
+            with self.assertRaises(RuntimeError) as e:
+                tui().record(RUN, "x.mp4")
+        self.assertIn("ffmpeg", str(e.exception))
 
 
 class Config(unittest.TestCase):
@@ -272,10 +559,10 @@ class Config(unittest.TestCase):
 
     def test_a_users_file_sets_theme_colours_layout_and_keys(self):
         cfg, errors = tui().load_config(self.write(
-            'theme = "paper"\nborder = "heavy"\n[colors]\nok = "#00FF00"\naccent = { fg = 33, bold = false }\n'
+            'theme = "paper"\nborder = "heavy"\n[colors]\nok = "#007A00"\naccent = { fg = 33, bold = false }\n'
             '[layout]\ncolumns = [["log", "files"]]\nwidths = [100]\n[keys]\nx = "stop"\nq = "none"\n"ctrl+r" = "resume"\n'))
         self.assertEqual(errors, [])
-        self.assertEqual(cfg["theme"]["ok"], {"fg": "#00FF00"})
+        self.assertEqual(cfg["theme"]["ok"], {"fg": "#007A00"})
         self.assertEqual(cfg["theme"]["accent"], {"fg": 33, "bold": False})
         self.assertEqual(cfg["theme"]["screen"]["bg"], tui().PALETTES["paper"]["bg"])
         self.assertEqual((cfg["keys"]["x"], cfg["keys"]["^R"]), ("stop", "resume"))
@@ -308,6 +595,23 @@ class Config(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertIn(path, errors[0])
         self.assertEqual(cfg, tui().DEFAULTS)
+
+    def test_signal_is_a_colour_blind_safe_theme(self):
+        import fmcodetui
+        cfg, errors = tui().load_config(self.write('theme = "signal"\n'))
+        self.assertEqual(errors, [])
+        ok, bad = (fmcodetui._rgb(cfg["theme"][n]["fg"]) for n in ("ok", "bad"))
+        self.assertGreater(ok[2], ok[0], "pass is blue, not green")
+        self.assertGreater(bad[0], bad[2], "fail is orange-red")
+        self.assertGreater(abs(ok[2] - bad[2]) + abs(ok[0] - bad[0]), 250, "far apart for red-green blindness")
+
+    def test_a_colour_too_faint_to_read_is_named_and_skipped(self):
+        cfg, errors = tui().load_config(self.write('[colors]\ndim = "#18202C"\nok = "#7CFC8A"\n'))
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("colors.dim", errors[0])
+        self.assertIn(":1", errors[0], "it says the contrast")
+        self.assertNotEqual(cfg["theme"]["dim"].get("fg"), "#18202C", "the theme's own dim stays")
+        self.assertEqual(cfg["theme"]["ok"]["fg"], "#7CFC8A", "a readable one applies")
 
     def test_mono_has_no_colours(self):
         cfg, _ = tui().load_config(self.write('theme = "mono"\n'))

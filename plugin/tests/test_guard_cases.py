@@ -28,8 +28,10 @@ class GuardCases(ForemanTestCase):
         self.assertGreaterEqual(len(cases), 6)
         # T-1284: a case in /tmp means "where Foreman's temp fallback lives" (tempfile's folder: /tmp on Linux, a
         # /var/folders/… one on macOS), so the corpus runs with the temp folder pinned to /tmp on every platform
-        with mock.patch.object(tempfile, "tempdir", "/tmp"):
+        # T-1291: drift itself pins it, so a different TMPDIR (macOS, /var/tmp) can't make the /tmp case drift
+        with mock.patch.object(tempfile, "tempdir", "/var/tmp"):
             self.assertEqual(fmreplay.drift(cases), [], "the guard disagrees with a labelled case")
+            self.assertEqual(tempfile.tempdir, "/var/tmp", "verdicts must restore tempfile's folder")
 
     def test_a_test_without_the_env_never_writes_the_real_corpus(self):
         # T-1197: a temp repo has no plugin/, so the corpus fell back to the real checkout's and tests wrote junk to it

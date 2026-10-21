@@ -90,3 +90,25 @@ class AuditRun(HookCase):
         self.assertIn("contract", p.stderr)
         self.assertEqual(self.calls(), [])
         self.assertEqual(self.audits(), [])
+
+    def test_prep_diff_holds_uncommitted_edits_beside_a_lane_branch_commit(self):  # T-1296
+        import subprocess
+        g = lambda *a: subprocess.run(["git", "-C", self.repo, *a], check=True, capture_output=True)  # noqa: E731
+        g("add", "a.py")
+        g("commit", "-qm", "a")
+        with open(os.path.join(self.repo, "a.py"), "w") as f:
+            f.write("x = 2\n")  # uncommitted edit
+        g("branch", "foreman/lane")
+        g("checkout", "-q", "foreman/lane")
+        with open(os.path.join(self.repo, "CHANGELOG.md"), "w") as f:
+            f.write("- a line\n")
+        g("add", "CHANGELOG.md")
+        g("commit", "-qm", "changelog")
+        g("checkout", "-q", "main")
+        b = next(x for x in c.load_briefs(self.project()) if x.id == self.tid)
+        b.meta["lane_branch"] = "foreman/lane"
+        c.save_brief(self.project(), b)
+        self.fm("audit", "prep", self.tid)
+        diff = open(os.path.join(self.project().dir, "audits", f"{self.tid}.diff")).read()
+        self.assertIn("CHANGELOG.md", diff)
+        self.assertIn("+x = 2", diff, "the uncommitted a.py edit is in the diff too")

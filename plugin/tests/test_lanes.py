@@ -307,17 +307,18 @@ class BuilderGates(unittest.TestCase):
         # reported load as red gates, and the merge re-ran the full gates anyway
         import fmlanes
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
-        for text in (fmlanes.CONTRACT, agent):
+        brief = fmlanes.contract("T-9", "abc", "/m")
+        for text in (brief, agent):
             self.assertIn("fm check --affected --evidence", text)
             self.assertIn("full gates run after the merge", text)
             self.assertNotRegex(text, r"`fm check --evidence")
-        self.assertIn("without `cd DIR &&` chains", fmlanes.CONTRACT)  # T-0808
+        self.assertIn("without `cd DIR &&` chains", brief)  # T-0808
 
     def test_builders_review_their_own_change_as_an_adversary_before_reporting(self):
         # T-1147: reviewers found real defects in almost every builder branch
         import fmlanes
         agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
-        for text in (fmlanes.CONTRACT, agent):
+        for text in (fmlanes.contract("T-9", "abc", "/m"), agent):
             for w in ("Self-review", "what input breaks it", "what outside text it trusts", "what is unbounded",
                       "what it writes and where", "a second run"):
                 self.assertIn(w, text)
@@ -325,14 +326,17 @@ class BuilderGates(unittest.TestCase):
 
 class BuilderContractOneSource(unittest.TestCase):
     def test_every_contract_rule_is_in_the_builder_agent(self):
-        # T-1151: the brief's CONTRACT and fm-builder.md repeat each other by hand; a rule in one must be in the other
+        # T-1290: the rules live once, in fm-builder.md; the brief carries each of them with the real ids
         import fmlanes
-        norm = lambda s: " ".join(s.split())
-        agent = norm(read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md")))
-        rules = fmlanes.CONTRACT.format(id="<ID>", base="<BASE>", main="<MAIN>").split("\n- ")[1:]
+        agent = read_text(os.path.join(os.path.dirname(__file__), "..", "agents", "fm-builder.md"))
+        self.assertFalse(hasattr(fmlanes, "CONTRACT"), "no second copy of the rules in fmlanes.py")
+        rules = agent.split("break none of it:\n")[1].split("\n\nReport in")[0].split("\n- ")
+        rules = [r.removeprefix("- ") for r in rules[1:]]
         self.assertGreater(len(rules), 8)
+        text = fmlanes.contract("T-9", "abc123", "/main")
         for r in rules:
-            self.assertIn(norm(r), agent, "rule missing from agents/fm-builder.md")
+            self.assertIn(r.replace("<ID>", "T-9").replace("<BASE>", "abc123").replace("<MAIN>", "/main"), text)
+        self.assertNotIn("<ID>", text)
 
 
 class BoardLanes(ForemanTestCase):

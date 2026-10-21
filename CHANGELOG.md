@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- macOS: the test suite passes there (CI's macOS job is green): fm code --worker judges a fix reached through a linked temp folder, the guard refuses a hard reset in a linked /tmp, Foreman's state fallbacks are judged at their folder's real path (never a planted leaf link), and the reaper, relate and context-tax tests work without /proc and with long temp paths (T-1284)
+- Guard: a refusal for a program it couldn't read (a script written earlier in the command, one fed through a pipe, a chain of scripts nested too deep, one too long to parse in time, a changed IFS) ends with the rewrite that makes it readable, not `--allow system`, which would lift every system check for the task (T-1298)
+- `fm audit prep`'s diff for a builder's branch also holds the checkout's uncommitted edits, so a reviewer sees every changed file, not only the CHANGELOG hunk (T-1296)
+- `fm code tui` moves and draws in full colour: its own ANSI renderer replaces curses (24-bit, 256, 8 or no colour on NO_COLOR; only changed cells are rewritten), the working station pulses with a spinner, a light runs along the track, counters and bars ease to their values, a flipped check and a guard refusal flash, new Activity lines fade in, the newest one sits on a band, a just-changed file glows then cools, empty panels shimmer while a run starts, and a close sweeps the track. Header, track, change bars and token columns are gradients. `motion = full | reduced | off` in tui.toml; a new `signal` theme for colour-blind eyes; a [colors] entry too faint to read is named and skipped; `fm code tui --record run.mp4 --events RUN.jsonl` films a run (ffmpeg and rsvg-convert); the site's fm code page plays the demo (T-1300)
+- The guard's saved verdict for a script is keyed on where Foreman's state lives (its folder and fallbacks), so it isn't reused after state moves (T-1293)
+- `fm night` and `fm replay --cases` judge the guard corpus with the temp folder it was labelled under (/tmp), so the /tmp hard-reset case no longer reports drift on macOS (T-1291)
+- The builder rules live once, in `plugin/agents/fm-builder.md`: `fm lane brief` reads them from there, and a test fails if a rule goes missing from the brief (T-1290)
 
 ## 1.2.44 — 2026-10-20
 - `fm research add NAME --file PATH --append` adds to a research note instead of replacing it, and the guard's hint for a direct write to state names it, so following the hint no longer erases an existing note (T-1288)
