@@ -590,9 +590,7 @@ def source_add(url, name=None, replace=False):
         index = _index_source(repo, name)
         meta = {"name": name, "url": url, "commit": _git_src(repo, "rev-parse", "HEAD").strip(),
                 "license": _license(repo), "added": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                "skills": sum(x["kind"] == "skill" and not x.get("quarantine") for x in index),
-                "agents": sum(x["kind"] == "agent" and not x.get("quarantine") for x in index),
-                "quarantined": sum(bool(x.get("quarantine")) for x in index)}
+                **_counts(index)}
         for fname, data in (("index.json", index), ("source.json", meta)):
             with open(os.path.join(tmp, fname), "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=1)
@@ -653,8 +651,32 @@ def sources():
                 index = json.load(f)
         except (OSError, ValueError):
             continue  # a temp dir, or a broken source: never the search
+        if isinstance(meta, dict) and "quarantined" not in meta:
+            index, meta = _reindex_old(os.path.join(base, n), meta, index)
         out.append((meta, index))
     return out
+
+
+def _counts(index):
+    return {"skills": sum(x["kind"] == "skill" and not x.get("quarantine") for x in index),
+            "agents": sum(x["kind"] == "agent" and not x.get("quarantine") for x in index),
+            "quarantined": sum(bool(x.get("quarantine")) for x in index)}
+
+
+def _reindex_old(src, meta, index):
+    """T-1415: an index written before T-1396 has no quarantine marks; its clone is on disk, so index it again here
+    (no network) and keep the result. ponytail: a source with no clone left stays as it was."""
+    repo = os.path.join(src, "repo")
+    if not os.path.isdir(repo):
+        return index, meta
+    try:
+        index = _index_source(repo, meta.get("name"))
+    except (OSError, ValueError):
+        return index, meta
+    meta = dict(meta, **_counts(index))
+    c.write_atomic(os.path.join(src, "index.json"), json.dumps(index, indent=1))
+    c.write_atomic(os.path.join(src, "source.json"), json.dumps(meta, indent=1))
+    return index, meta
 
 
 def source_skills():

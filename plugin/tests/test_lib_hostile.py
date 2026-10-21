@@ -89,6 +89,24 @@ class HostileCorpus(ForemanTestCase):
         self.assertGreaterEqual(meta["quarantined"], 25)
         self.assertIn("quarantined", self.fm("lib", "source", "list").stdout)
 
+    def test_a_source_indexed_before_quarantine_is_reindexed_from_its_clone(self):
+        # T-1415: an index written before T-1396 has no quarantine marks, so its hostile items stayed searchable until
+        # a network update; the clone is on disk, so the next read re-indexes it
+        self.fm("lib", "source", "add", self.zoo, "--name", "zoo")
+        src = os.path.join(c.state_dir(), "lib-sources", "zoo")
+        index = [{k: v for k, v in x.items() if k != "quarantine"} for x in read_json(os.path.join(src, "index.json"))]
+        meta = {k: v for k, v in read_json(os.path.join(src, "source.json")).items()
+                if k not in ("quarantined", "skills", "agents")}
+        for name, data in (("index.json", index), ("source.json", meta)):
+            with open(os.path.join(src, name), "w", encoding="utf-8") as f:
+                json.dump(data, f)
+        subprocess.run(["git", "-C", self.zoo, "remote", "add", "origin", "https://example.invalid/zoo.git"],
+                       capture_output=True)  # no network: a fetch would fail loudly
+        found = self.fm("lib", "search", "every", "task").stdout
+        self.assertNotIn("zoo:every-task", found)
+        self.assertIn("zoo:good-skill", self.fm("lib", "search", "tide", "tables").stdout)
+        self.assertGreaterEqual(read_json(os.path.join(src, "source.json"))["quarantined"], 25)
+
     def test_a_symlink_at_a_non_ascii_path_is_held_when_checked_out_as_a_file(self):
         # core.symlinks=false writes a link as a file holding its target, which the target's author chose; ls-tree
         # without -z quotes "agents/café/tool.md", so the link went unrecognised and indexed clean
