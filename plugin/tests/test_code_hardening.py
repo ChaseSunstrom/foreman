@@ -124,5 +124,54 @@ class WorkerReadCreatesNothing(ForemanTestCase):
         self.assertIsNotNone(fmcore.find_project(folder, create=False))
 
 
+class ReviewNits(ForemanTestCase):
+    """T-1438: the T-1432 review's nits."""
+
+    def test_a_stop_kills_the_group_once(self):
+        import fmcore
+        on_line = mock.Mock(return_value=fmmodels.STOP)
+        prof = {"name": "c", "kind": "cli", "stream": "claude", "on_line": on_line, "argv": "printf 'a\\nb\\nc\\n' {prompt}"}
+        with mock.patch.object(fmcore, "kill_group", wraps=fmcore.kill_group) as kill:
+            with self.assertRaises(fmmodels.ModelError):
+                fmmodels._cli(prof, [{"role": "user", "content": "x"}], 10)
+        self.assertEqual(kill.call_count, 1)
+        self.assertEqual(on_line.call_count, 1, "no line after the STOP reaches the caller's check")
+
+    def test_the_local_probe_refuses_a_metadata_address(self):
+        opener = mock.Mock(open=mock.Mock(side_effect=AssertionError("probed")))
+        with mock.patch.object(fmmodels, "_LOCAL_OPENER", opener), \
+                mock.patch.object(socket, "getaddrinfo", side_effect=AssertionError("no lookup for an address")):
+            for url in ("http://169.254.169.254/v1", "http://100.100.100.200/v1", "http://[fe80::1]:80/v1"):
+                with self.subTest(url=url):
+                    self.assertIsNone(fmmodels._probe("x", url))
+        opener.open.assert_not_called()
+
+    def test_more_approval_off_flags(self):
+        for tpl in ("aider --yes-always --message {prompt}", "q chat --trust-all-tools {prompt}",
+                    "cursor-agent --force -p {prompt}", "/usr/bin/cursor-agent -p {prompt} --force",
+                    "codex exec -anever {prompt}", "sh -c 'aider --yes-always -m {prompt}'"):
+            with self.subTest(tpl=tpl):
+                self.assertTrue(fmcode.dangerous_flags(tpl), tpl)
+        for tpl in ("mycli --force {prompt}", "aider --yes {prompt}", "q chat {prompt}", "codex exec -a on-request {prompt}"):
+            with self.subTest(tpl=tpl):
+                self.assertEqual(fmcode.dangerous_flags(tpl), [], tpl)
+
+    def test_hooks_inside_a_worker_create_no_project(self):
+        import fmcore
+        folder = git_repo(self.tmp, "other")
+        worker = {"FOREMAN_WORKER_OF": "fm-code-T-0001"}
+        self.hook("SessionStart", {"cwd": folder, "source": "startup"}, env=worker)
+        self.hook("UserPromptSubmit", {"cwd": folder, "prompt": "hi"}, env=worker)
+        self.assertIsNone(fmcore.find_project(folder, create=False))
+        self.hook("UserPromptSubmit", {"cwd": folder, "prompt": "hi"})  # outside a worker, as before
+        self.assertIsNotNone(fmcore.find_project(folder, create=False))
+
+    def test_resolve_inside_a_worker_says_it_cant_run_fm_init(self):
+        folder = git_repo(self.tmp, "other")
+        r = self.fm("state", cwd=folder, check=False, env={"FOREMAN_WORKER_OF": "fm-code-T-0001"})
+        self.assertIn("worker of an fm code run can't run `fm init`", r.stderr)
+        self.assertNotIn("run `fm init` here", r.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
