@@ -1190,7 +1190,7 @@ def _check_supply(claude, accept):
     sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
     caps = lambda v: v.get("caps") if isinstance(v, dict) else None
     skip = lambda v: v.get("skipped") if isinstance(v, dict) else None  # T-1434: None in an entry recorded before it
-    changed, added, held, upgraded = [], [], [], False
+    changed, added, held, upgraded, own = [], [], [], False, []
     for k in sorted(set(now) - set(errors)):
         was, cur = seen.get(k), now[k]
         if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)):
@@ -1201,6 +1201,10 @@ def _check_supply(claude, accept):
             if isinstance(new, dict) and (not isinstance(old, dict) or all(new.get(x) == v for x, v in old.items())):
                 seen[k], upgraded = cur, True
                 continue
+        if _matches_checkout(claude, k, cur):  # T-1441: Foreman's own release, installed from this checkout's HEAD
+            seen[k], upgraded = cur, True
+            own.append(k)
+            continue
         # review: the delta is read even when the hashes match (they skip the 4,001st file on, FIFOs, devices)
         (changed if k in seen else added).append(k)
         held += [f"{c.plain(k)[:60]} {d}" for d in _capability_delta(was, cur, k)]
@@ -1210,15 +1214,103 @@ def _check_supply(claude, accept):
     held += [f"{c.plain(k)[:60]} can't read {c.plain(u)[:80]} (outside the plugin, not a file or over 8 MB)"
              for k in sorted(now) for u in (caps(now[k]) or {}).get("unread") or []]
     gone = sorted(set(seen) - set(now))
+    mine = f"accepted {_ids(own, lambda k: ' matches this checkout')}" if own else ""
     note = "; ".join(x for x in (f"changed: {_ids(changed)}" if changed else "", f"new: {_ids(added)}" if added else "",
-                                 f"gone: {_ids(gone)}" if gone else "", unchecked) if x)
+                                 f"gone: {_ids(gone)}" if gone else "", mine, unchecked) if x)
     if held:  # T-1392: new code that runs on its own is held, named, until accepted
         return Result("supply chain", "FAIL", "; ".join(held[:12]) + (f"; and {len(held) - 12} more" if len(held) > 12
                       else "") + (f" ({note})" if note else "") + " — review what it runs, then fm doctor --accept-supply")
     if not (changed or added or gone):
         return Result("supply chain", "WARN" if errors else "PASS",
-                      f"{len(now)} plugin(s) and MCP server(s) unchanged" + (f"; {unchecked}" if errors else ""))
+                      f"{len(now)} plugin(s) and MCP server(s) unchanged" + (f"; {mine}" if own else "")
+                      + (f"; {unchecked}" if errors else ""))
     return Result("supply chain", "WARN", note + " — expected (an update you ran)? fm doctor --accept-supply")
+
+
+_OWN_PLUGINS = {"foreman@foreman": "plugin", "foreman-ui@foreman": "mods/foreman-ui"}
+
+
+def _matches_checkout(claude, pid, cur):
+    """T-1441: whether Foreman's own plugin pid is installed exactly as this checkout's HEAD ships it: every install
+    tree holds the tracked regular files of its source folder, file for file and byte for byte, and nothing else
+    (what _tree_hash skips aside). A link, a file it can't read, an extra or missing file, no checkout, or a tree
+    that changed since cur was hashed: False, so the hold stays."""
+    if pid not in _OWN_PLUGINS or not isinstance(cur, dict):
+        return False
+    try:
+        return _matches_checkout_at(claude, pid, cur)
+    except Exception:  # fail closed: whatever it can't prove keeps the hold
+        return False
+
+
+def _matches_checkout_at(claude, pid, cur):
+    import hashlib
+    import stat
+    sub = _OWN_PLUGINS[pid]
+    installs = _load_json(os.path.join(claude, "plugins", "installed_plugins.json"))["plugins"][pid]
+    roots = [i["installPath"] for i in (installs if isinstance(installs, list) else [installs])]
+    if not roots or not all(isinstance(r, str) and os.path.isabs(r) for r in roots):
+        return False
+    want = {}
+    for rec in c._git(c.foreman_home(), "ls-tree", "-r", "-l", "-z", "HEAD", "--", sub, timeout=10).split("\0"):
+        if not rec:
+            continue
+        meta, _, path = rec.partition("\t")
+        mode, kind, oid, size = (meta.split() + ["", "", "", ""])[:4]
+        if mode not in ("100644", "100755") or kind != "blob" or not path.startswith(sub + "/") or len(oid) not in (40, 64):
+            return False  # a link, submodule or odd entry in the source: no exact match to prove
+        want[path[len(sub) + 1:]] = (oid, int(size))
+    if not want:
+        return False
+    def raise_(e):
+        raise e
+    def read(path, size):  # a regular file's bytes, or None: a link, FIFO or other size never matches
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as fh:
+            st = os.fstat(fd)
+            return fh.read(size + 1) if stat.S_ISREG(st.st_mode) and st.st_size == size else None
+    extras = []
+    for root in roots:
+        if os.path.islink(root) or not os.path.isdir(root):
+            return False
+        found = set()
+        for d, dirs, files in os.walk(root, onerror=raise_):  # an unreadable folder raises: no file goes unseen
+            if any(os.path.islink(os.path.join(d, x)) for x in dirs):
+                return False
+            dirs[:] = [x for x in dirs if x not in _SUPPLY_SKIP]  # what the supply hash skips too (__pycache__)
+            for f in files:
+                rel = os.path.relpath(os.path.join(d, f), root)
+                if rel not in want:
+                    extras.append((rel, os.path.join(d, f)))
+                    if len(extras) > 200:
+                        return False
+                    continue
+                oid, size = want[rel]
+                data = read(os.path.join(d, f), size)
+                if data is None or hashlib.new("sha1" if len(oid) == 40 else "sha256",
+                                               b"blob %d\0" % len(data) + data).hexdigest() != oid:
+                    return False
+                found.add(rel)
+        if found != set(want):
+            return False
+    if extras:  # the directory marketplace copies ignored files too: each must be the checkout's own, byte for byte
+        home = os.path.realpath(c.foreman_home())
+        names = sorted({f"{sub}/{rel}" for rel, _ in extras})  # (-z needs --stdin: a name with a newline won't match)
+        if set(c._git(home, "check-ignore", "--", *names, timeout=10).split("\n")) - {""} != set(names):
+            return False
+        for rel, path in extras:
+            mine = os.path.join(home, sub, rel)
+            if os.path.realpath(mine) != mine:  # a linked folder on the way out of the checkout
+                return False
+            size = os.lstat(mine).st_size
+            theirs = read(mine, size)
+            if theirs is None or read(path, size) != theirs:  # read stops at size + 1: a longer copy differs
+                return False
+    # what was read is what cur hashed: a tree changed between the two reads stays held
+    h, skipped = hashlib.sha256(), hashlib.sha256()
+    for root in roots:
+        _tree_hash(root, h, skipped=skipped)
+    return cur.get("sha") == h.hexdigest() and cur.get("skipped") == skipped.hexdigest()
 
 
 def _ids(ids, extra=lambda k: ""):
