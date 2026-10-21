@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.2.48 — 2026-10-21
+- fm code's claude sessions run lean: the worker without your plugins, MCP servers or settings hooks (`--setting-sources project,local --strict-mcp-config`) and the planner in `--restricted` mode, each with Foreman's guard as `--settings`. A planner call here read 15,286 input tokens instead of 31,620, and the guard still refused a `.env` write (`plugin/tests/e2e/lean_probe.py`). `lean = false` in code.toml keeps the old launch (T-1354).
+- `fm code` on its own opens the app, like `claude`: a project's view (its active task, queue, inbox, blocked tasks and past runs) inside a project, and a home over every Foreman project on the machine (`Esc`, or `p` from a run). A task runs from there in its own project's folder with the runner `m` picks, and `n` starts a new request there. `fm code --task ID` works a planned task without a planner call, refusing one with no check to run, one that's done or dropped, and one another run is working (T-1330).
+- `fm code tui --events FILE` on its own replays that run: on the screen in a terminal, or as its Activity lines with `--plain` or no terminal (exit 0 for a closed run); a missing file says so and exits 2. Before, the file was silently ignored (T-1363).
+- `fm doctor` checks that `fm` works in any shell: it warns, naming the fix, when `~/.local/bin/fm` is missing (an install from before 1.2.x never made it), points at another copy, or sits in a folder that isn't on PATH (T-1324).
+- `fm task new --from ID` with `--ac` or `--step` replaces the capture's own criteria or steps instead of adding to them; before, a capture planned that way listed every step twice (T-1364).
+
 ## 1.2.47 — 2026-10-21
 - fm code shows what a coding CLI is doing as it happens: each file claude reads or edits and each command it runs is an Activity line (a `tool` event), for the worker and the read-only planner alike, and a turn with nothing to show sends a `working` heartbeat every 10 s, one ticking line in the TUI. Before, a run looked stuck for minutes (T-1329).
 - `fm code` works with no setup: with no model and no `--worker`, it uses the Claude Code CLI if installed and says so. `fm code runners` lists every coding CLI it knows (installed, can plan read-only, verified here, the default; `--check` runs each one's `--version`), `--use NAME` sets the default in `$FOREMAN_HOME/code.toml` (`--here`: this project only, by name), and `[runners.NAME]` in that file adds your own CLI; it also lists the models set up. A broken models.json is an error, never a quiet switch to a CLI. The guard now protects `code.toml`, `tui.toml`, `tui/` and `models.json` in Foreman's home: they become commands, run Python, or pick where code is sent (T-1328).

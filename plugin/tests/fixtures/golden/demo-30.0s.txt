@@ -31,4 +31,4 @@
 │                                                                   ││ ██████ ██████ ██████ ██████ ██████              │  ⟨209d03f120⟩
 │                                                                   ││ 18.3k in   2.1k out                             │  ⟨2407695dcc⟩
 ╰───────────────────────────────────────────────────────────────────╯╰─────────────────────────────────────────────────╯  ⟨5a3e511e1c⟩
- CLOSED   T-0042   step 3/3                                       n new  d diff  h history  t thoughts  ? keys  q quit  ⟨23970c0bd2⟩
+ CLOSED   T-0042   step 3/3                           n new  p projects  d diff  h history  t thoughts  ? keys  q quit  ⟨ff9e765351⟩
