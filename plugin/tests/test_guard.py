@@ -395,6 +395,26 @@ class System(GuardCase):
             ("echo hi > /dev/null 2>&1", None),
         ], self.bash)
 
+    def test_a_refusal_the_guard_couldnt_read_ends_with_the_rewrite_not_an_allow(self):
+        # T-1298: --allow system would lift every system check for the task (crontab, firewalls, systemctl) just
+        # to get past one program the guard couldn't read; the way through is to make it readable
+        for cmd, way in (("printf 'echo hi\\n' > s.sh && bash s.sh", "run it in the next command"),
+                         ("cat cmds.txt | bash", "heredoc")):
+            blk = self.bash(cmd)
+            self.assertBlocked(blk, "system", cmd)
+            out = g.message(blk, self.ctx())
+            self.assertIn(way, out, cmd)
+            self.assertNotIn("--allow", out, cmd)
+        for detail, way in (("script nests too deep to read", "directly"),
+                            ("a.sh line 3: rm -rf /x (rm outside; the script was too long to parse in time)", "shorter"),
+                            ("IFS may be changed on a line that splits words on it: the guard can't read how bash "
+                             "splits them", "IFS")):
+            out = g.message(g.Block("system", detail), self.ctx())
+            self.assertIn(way, out.split(detail)[1], detail)
+            self.assertNotIn("--allow", out, detail)
+        for cmd in ("crontab -e", "sudo iptables -F", "sudo systemctl restart nginx"):
+            self.assertIn("--allow system", g.message(self.bash(cmd), self.ctx()), cmd)
+
 
 class Publish(GuardCase):
     def test_table(self):
