@@ -102,7 +102,10 @@ EVENTS = {
     "answer": "text: the answer to a question about the code (no task, nothing changed)",
     "note": "text, worker: which runner the run uses and why, or a caution about it (T-1328)",
     "tool": "action (read|edit|run|search|…), target, worker: a CLI's tool use as it happens (T-1329)",
-    "working": "worker, secs: a CLI turn still running with nothing to show (each FM_HEARTBEAT s, default 10)",
+    "working": "worker, secs, silent (seconds since its last byte): a CLI turn still running with nothing to show "
+               "(each FM_HEARTBEAT s, default 10)",
+    "stalled": "worker, secs, cause (launch|prompt|limit|silent), last (its last line): a CLI turn with no output for "
+               "FM_STALL s (default 120), once per silence (T-1336)",
 }
 KEEP_MAX = 4 << 20  # a protected file up to this size is held before a worker turn, so a refused write can be put back
 
@@ -571,12 +574,23 @@ class Run:
         return on_line
 
     def live_beat(self, who):
-        """T-1329: a working event for a CLI turn that has shown nothing for a while."""
-        t0 = time.monotonic()
+        """T-1329: a working event for a CLI turn that has shown nothing for a while, with how long it has printed
+        nothing at all; T-1336: past FM_STALL s of that, one stalled event per silence naming its likely cause."""
+        t0, said = time.monotonic(), [object()]  # the last byte's time whose silence was said: none yet
 
-        def beat():
-            secs = round(time.monotonic() - t0)
-            self.emit("working", f"    {who} working ({secs} s)", worker=who, secs=secs)
+        def beat(heard=None, tail=b""):
+            now = time.monotonic()
+            secs, silent = round(now - t0), round(now - (heard or t0))
+            self.emit("working", f"    {who} working ({secs} s)", worker=who, secs=secs, silent=silent)
+            if now - (heard or t0) < m.stall() or said[0] == heard:
+                return
+            said[0] = heard
+            cause, last = stall_cause(None if heard is None else tail)
+            last = _one_line(self.redact(last), 200)
+            why = {"launch": f"no output since launch ({silent} s)", "prompt": f"waiting at a prompt: {last}",
+                   "limit": f"hit a rate or usage limit: {last}"}.get(
+                cause, f"silent {silent} s after: {last}" if last else f"silent {silent} s")
+            self.emit("stalled", f"    {who} stalled: {why}", worker=who, secs=silent, cause=cause, last=last)
         return beat
 
     def judge(self, b):
@@ -714,6 +728,29 @@ def trim(msgs, keep=KEEP_RESULTS):
     return out
 
 
+_ESCAPES = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?|\x1b.")
+_LIMITED = re.compile(r"rate.?limit|usage limit|too many requests|\b429\b|quota|limit reached", re.I)
+_ASKS = re.compile(r"\((?:y|yes)/(?:n|no)\)|\[(?:y|yes)/(?:n|no)\]|press (?:enter|return|any key)", re.I)
+
+
+def stall_cause(tail):
+    """T-1336: (cause, the line it rests on) for a CLI turn gone quiet, from the last bytes it printed (None: none at
+    all): launch; limit (a rate or usage limit in its last three lines); prompt (its last line asks: (y/n), press
+    enter, or a ? or : the cursor still sits after); else silent. ponytail: words, not the child's state; a CLI that
+    prints "quota" in passing reads as limited (reading /proc for a tty read or CPU use is the upgrade)."""
+    if tail is None:
+        return "launch", ""
+    text = _ESCAPES.sub("", tail.decode("utf-8", "replace"))
+    lines = [s for s in (m._shown(x) for x in text.splitlines()) if s]
+    if not lines:
+        return "silent", ""
+    for line in reversed(lines[-3:]):
+        if _LIMITED.search(line):
+            return "limit", line
+    asks = _ASKS.search(lines[-1]) or (not text.endswith(("\n", "\r")) and lines[-1].endswith(("?", ":")))
+    return ("prompt" if asks else "silent"), lines[-1]
+
+
 def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
@@ -732,7 +769,7 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
         del tail[:-cap]
     done = threading.Event()  # set once the turn is over: a line a leftover grandchild prints shows nothing
     live = (on_line and (lambda line: not done.is_set() and on_line(line)),
-            on_idle and (lambda: done.is_set() or on_idle()))
+            on_idle and (lambda *a: done.is_set() or on_idle(*a)))
     t = threading.Thread(target=fmcore.pump, args=(p.stdout, sink, live[0], on_idle and m.heartbeat(), live[1]),
                          daemon=True)
     t.start()

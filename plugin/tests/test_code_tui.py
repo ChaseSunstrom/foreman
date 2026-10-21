@@ -538,6 +538,23 @@ class Motion(unittest.TestCase):
         app.feed({"event": "tool", "action": "run", "target": "python3 test_calc.py", "ts": 3.0})
         self.assertNotIn("working (20 s)", self.frame(app, cfg, 101.0, w=110, h=32).text())
 
+    def test_a_stall_is_a_warning_line_and_the_status_bar_says_when_the_cli_was_last_heard(self):
+        # T-1336: a CLI silent past FM_STALL gets a stalled line in Activity; the bar says how long it has been quiet
+        beat = {"event": "working", "worker": "claude", "secs": 130, "silent": 125, "text": "claude working (130 s)",
+                "ts": 2.0}
+        stall = {"event": "stalled", "worker": "claude", "secs": 125, "cause": "prompt", "last": "Overwrite? (y/n)",
+                 "text": "claude stalled: waiting at a prompt: Overwrite? (y/n)", "ts": 2.5}
+        app, cfg = self.app(RUN[:1] + [beat, stall], motion="off")
+        cv = self.frame(app, cfg, 100.0, w=110, h=32)
+        self.assertIn("Overwrite? (y/n)", cv.text().splitlines()[self.row_of(cv, "waiting at a prompt")[0]])
+        self.assertEqual(self.cell(cv, "waiting at a prompt", cfg).get("fg"), tui().col(cfg, "warn"))
+        bar = cv.text().splitlines()[-1]
+        self.assertIn("last heard 2m05s ago", bar)
+        app.feed({"event": "tool", "action": "run", "target": "pytest", "ts": 3.0})
+        self.assertNotIn("last heard", self.frame(app, cfg, 101.0, w=110, h=32).text().splitlines()[-1],
+                         "heard again: nothing to say")
+        self.assertIn("waiting at a prompt", self.frame(app, cfg, 101.0, w=110, h=32).text(), "the warning stays")
+
     def test_an_answer_wraps_and_the_run_reads_as_finished(self):
         # T-1320: a question's answer is one long line; it wraps in Activity, and nothing reads as still running
         long = "parse_dates treats a date with no timezone as UTC " * 6

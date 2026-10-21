@@ -356,6 +356,14 @@ def heartbeat():
         return 10.0
 
 
+def stall():
+    """T-1336: seconds with no byte at all before a CLI turn gets a stalled event (FM_STALL, for tests; default 120)."""
+    try:
+        return max(0.1, float(os.environ.get("FM_STALL") or 120))
+    except ValueError:
+        return 120.0
+
+
 def stream_tools(line, root=""):
     """T-1329: the tool uses in one line of claude's stream-json as [(action, target)], each target one line of at
     most 200 characters, relative when it's in root; [] for any other line, a malformed one included."""
@@ -420,7 +428,7 @@ def _cli(profile, messages, timeout):
             found.append(res)
         return bool(shown and shown(line))
     live = profile.get("heartbeat") and profile["heartbeat"]()
-    beat = live and (lambda: done.is_set() or live())
+    beat = live and (lambda *a: done.is_set() or live(*a))
     with tempfile.TemporaryFile() as err:
         try:
             proc = subprocess.Popen(argv, cwd=profile.get("cwd"), env=profile.get("env"), stdin=subprocess.DEVNULL,
