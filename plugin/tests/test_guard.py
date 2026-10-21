@@ -1750,6 +1750,8 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
             ("cryptsetup luksFormat /dev/sdb", "system", "cryptsetup luksFormat"),
             ("fm approve-reads on", "self-authorize", "approve-reads on"),
             ("fm rule rm 3", "self-authorize", "fm rule rm"),
+            ("fm vetoes rm 2", "self-authorize", "fm vetoes rm is the user's to run"),  # T-1413
+            ("fm vetoes --json rm 2", "self-authorize", "fm vetoes rm"),
             ("fm rollback --yes", "self-authorize", "fm rollback --yes is the user's to run"),
             ("fm rollback --y", "self-authorize", "fm rollback --yes is the user's to run"),
             ("fm rollback --ye", "self-authorize", "fm rollback --yes is the user's to run"),
@@ -1767,7 +1769,7 @@ class UntestedRuleSites(GuardCase):  # T-1120: sites fm bench guard --mutate dro
                 self.assertIn(why, str(r.detail))
 
     def test_near_misses_stay_allowed(self):
-        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm rollback --list", "fm taste compile 1", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
+        for cmd in ("fm posture", "fm pause on", "fm approve-reads off", "fm rule list", "fm vetoes", "fm vetoes --json", "fm rollback --list", "fm taste compile 1", "eval \"$(echo hi)\"", "dd if=x of=./file.img", "ufw status", "firewall-cmd --list-all",
                     "cryptsetup --version", "git config core.hooksPath", "git config --get core.hooksPath"):
             with self.subTest(cmd=cmd):
                 self.assertIsNone(self.bash(cmd))
