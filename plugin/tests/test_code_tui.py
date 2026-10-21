@@ -520,6 +520,16 @@ class Motion(unittest.TestCase):
             self.assertTrue(self.cell(cv, "GUARD", cfg).get("reverse"), t)
             self.assertTrue(self.cell(cv, "RUNNING", cfg).get("reverse"), t)
 
+    def test_an_answer_wraps_and_the_run_reads_as_finished(self):
+        # T-1320: a question's answer is one long line; it wraps in Activity, and nothing reads as still running
+        long = "parse_dates treats a date with no timezone as UTC " * 6
+        app, cfg = self.app(RUN[:1] + [{"event": "answer", "text": long.strip(), "ts": 5.0}])
+        cv = self.frame(app, cfg, 100.0, w=110, h=32)
+        text = cv.text()
+        self.assertGreaterEqual(text.count("treats a date"), 4, "every part of the answer is on screen")
+        self.assertIn("ANSWERED", text)
+        self.assertNotIn("…", "".join(line for line in text.splitlines() if "treats a date" in line))
+
     def test_no_state_is_shown_by_colour_alone(self):
         """Mono theme: every verdict still reads as a word or a mark."""
         cfg = dict(tui().DEFAULTS, theme=tui().PRESETS["mono"](), preset="mono")
