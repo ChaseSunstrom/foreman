@@ -339,6 +339,12 @@ class Worker(CodeCase):
         self.assertTrue(any(a == "run" and t.startswith("pwd && git status") for a, t in tools), tools)
         self.assertTrue(all(len(t) <= 200 and "\n" not in t for _, t in tools))
 
+    def test_a_claude_worker_never_updates_itself_mid_turn(self):
+        # T-1417: an update rewrites ~/.local/bin/claude, which the judge now holds, and would block a healthy run
+        self.cli("claude", f'echo "$DISABLE_AUTOUPDATER" > {self.tmp}/au\nfix-calc\n')
+        self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY)
+        self.assertEqual(read_text(os.path.join(self.tmp, "au")).strip(), "1")
+
     def bug(self):
         with open(os.path.join(self.repo, "calc.py"), "w") as f:
             f.write("def add(a, b):\n    return a - b\n")
