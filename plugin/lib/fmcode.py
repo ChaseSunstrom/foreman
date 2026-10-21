@@ -522,7 +522,7 @@ class Run:
         before = _snapshot(self.root, self.verify_cmd)
         code, out, ended = None, "", False
         try:
-            env = dict(worker_env(), FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
+            env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")  # T-1294: its leases are ours
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True)
             ended = True
         finally:
@@ -1115,7 +1115,7 @@ def choose_profile(run, model):
     if run.worker in PLANNERS:
         planner = {"name": f"{run.worker} (plan, read-only)", "kind": "cli", "argv": PLANNERS[run.worker],
                    "cwd": run.root, "context": 200000, "timeout": run.worker_timeout,
-                   "env": dict(worker_env(), FOREMAN_WORKER_OF="fm-code-plan")}
+                   "env": dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF="fm-code-plan")}
         if not model and run.model_name == planner["name"]:
             return planner
     try:
