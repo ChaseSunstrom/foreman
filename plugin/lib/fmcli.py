@@ -1352,6 +1352,19 @@ def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
     # T-0837: a file untracked (git rm --cached) and deleted is on neither side: git add fails its pathspec, while
     # git commit -- <it> below takes the staged deletion as it is
     known = set(subprocess.run([*git, "ls-files", "--", *files], capture_output=True, text=True).stdout.splitlines())
+    # T-1320: an untracked build artefact (a check's __pycache__, node_modules) isn't the task's work; a path in neither
+    # the tree, the index nor HEAD (a .pyc gone by the close) would fail git commit's pathspec
+    head = set(subprocess.run([*git, "ls-tree", "-r", "--name-only", "HEAD", "--", *files], capture_output=True,
+                              text=True).stdout.splitlines())
+    junk = [f for f in files if f not in known and f not in head and c.ARTEFACT.search(f)]
+    if junk and not dry:
+        print(f"{b.id}: left out {len(junk)} build artefact(s) it never tracked: {', '.join(junk[:5])}"
+              f"{' …' if len(junk) > 5 else ''} (--with FILE commits one)")
+    files = [f for f in files if f in known or f in head or f not in junk and (
+        os.path.lexists(os.path.join(p.root, f)) or any(k.startswith(f.rstrip("/") + "/") for k in known))]
+    if not files:
+        print(f"{b.id}: nothing to commit.")
+        return
     addable = [f for f in files if f in known or os.path.lexists(os.path.join(p.root, f))
                or any(k.startswith(f.rstrip("/") + "/") for k in known)]
     add = subprocess.run([*git, "add", "-A", "--", *addable], capture_output=True, text=True) if addable else \

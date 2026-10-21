@@ -213,6 +213,11 @@ class State:
             self.tokens = [int(e["tokens"][0] or 0), int(e["tokens"][1] or 0)]
         self.note("closed", text=e.get("text", ""))
 
+    def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
+        self.status = "answered"
+        for line in str(e.get("text", "")).splitlines() or [""]:
+            self.note("answer", text=line)
+
     def _on_blocked(self, e):
         self.status, self.error = "blocked", e.get("reason") or e.get("text")
         self.note("blocked", text=e.get("text", ""))
@@ -680,7 +685,7 @@ def _time(st, w, h, app):
     for i, (label, s, e) in enumerate(sp):
         a = min(bw - 1, int(s * bw / total))
         b = max(a + 1, min(bw, round(e * bw / total)))
-        live = i == len(sp) - 1 and st.status != "closed"
+        live = i == len(sp) - 1 and st.status not in ("closed", "answered")
         cells = []
         for x in range(a, b):
             if not live:
@@ -732,6 +737,8 @@ def entry_segments(e, w, thoughts=True):
         return [("  ⚙ ", "accent"), (e["text"].strip(), "text")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
+    if k == "answer":
+        return [("  ", "text"), (e.get("text", ""), "text")]
     if k in ("blocked", "error"):
         return [(" STOP ", "chip_bad"), ("  " + e["text"], "bad")]
     return [("  ", "text"), (e.get("text", ""), "dim")]
@@ -750,6 +757,9 @@ def _log(st, w, h, app):
     out, thoughts, fx = [], app is None or app.thoughts, current()
     under, now = fx.c("panel", "bg"), None
     for i, e in enumerate(st.log):
+        if e.get("kind") == "answer":  # T-1320: an answer is read whole, wrapped to the panel
+            out += [[("  ", "text"), (part, "text")] for part in wrap(e.get("text", ""), max(10, w - 2), lines=200)]
+            continue
         segs = None if e.get("kind") in LOG_HIDES else entry_segments(e, w, thoughts)
         if segs is None:
             continue
@@ -839,6 +849,7 @@ def human(n):
 
 
 STATUS_CHIP = {"running": "chip_accent", "planning": "chip_warn", "fixing": "chip_warn", "closed": "chip_ok",
+               "answered": "chip_ok",
                "blocked": "chip_bad", "error": "chip_bad", "stopped": "chip_bad"}
 
 

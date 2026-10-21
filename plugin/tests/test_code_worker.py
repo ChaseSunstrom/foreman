@@ -32,6 +32,98 @@ class Worker(CodeCase):
     def work(self, *args, check=True):
         return self.code(*args, check=check, env={"PATH": self.bin + os.pathsep + os.environ["PATH"]})
 
+    def test_with_no_model_the_worker_cli_plans_too_read_only(self):
+        # T-1320: a Claude Code user with no API key or local model: fm code "<any request>" --worker claude plans
+        # with the CLI in its read-only mode, then works with it as usual
+        plan = {"type": "FIX", "tier": "S", "title": "make calc.add add",
+                "criteria": [{"text": "calc.add adds", "verify": VERIFY}], "steps": ["fix calc.add"]}
+        reply = json.dumps({"type": "result", "subtype": "success", "is_error": False, "result": json.dumps(plan),
+                            "usage": {"input_tokens": 10, "cache_read_input_tokens": 90, "output_tokens": 20}})
+        args = os.path.join(self.tmp, "plan-args")
+        with open(os.path.join(self.tmp, "reply.json"), "w") as f:
+            f.write(reply)
+        self.cli("claude", 'mode=; prev=\nfor a in "$@"; do [ "$prev" = "--permission-mode" ] && mode=$a; prev=$a; done\n'
+                           f'if [ "$mode" = plan ]; then printf "%s\\n" "$@" > {args}; cat {self.tmp}/reply.json\n'
+                           'else fix-calc; fi\n')
+        r = self.work("make calc.add add", "--worker", "claude", "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("return a + b", self.calc())
+        self.assertIn("make calc.add add", read_text(args), "the request reached the planner")
+        events = [json.loads(line) for line in r.stdout.splitlines() if line.startswith("{")]
+        self.assertIn(120, [e.get("total_in", 0) + e.get("total_out", 0) for e in events if e["event"] == "tokens"])
+
+    def test_the_change_report_leaves_out_build_artefacts(self):
+        # T-1320: the check's own python run leaves __pycache__/*.pyc; it isn't the task's change
+        self.cli("claude", "fix-calc\nmkdir -p __pycache__ node_modules/x\necho 1 > __pycache__/calc.cpython-314.pyc\n"
+                           "echo 1 > node_modules/x/i.js\n")
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json")
+        changed = [e for e in (json.loads(line) for line in r.stdout.splitlines() if line.startswith("{"))
+                   if e["event"] == "changed"]
+        self.assertTrue(changed, r.stdout)
+        for e in changed:
+            self.assertEqual(sorted(e["files"]), ["calc.py"], e)
+            self.assertEqual(sorted(e["stat"]), ["calc.py"], e)
+
+    def planner(self, result, extra=""):
+        """A fake claude whose plan-mode turn prints `result` as its JSON reply (after `extra` shell lines)."""
+        with open(os.path.join(self.tmp, "reply.json"), "w") as f:
+            f.write(json.dumps(result))
+        args = os.path.join(self.tmp, "plan-args")
+        self.cli("claude", 'mode=; prev=\nfor a in "$@"; do [ "$prev" = "--permission-mode" ] && mode=$a; prev=$a; done\n'
+                           f'if [ "$mode" = plan ]; then printf "%s\\n" "$@" > {args}; {extra}\ncat {self.tmp}/reply.json\n'
+                           'else fix-calc; fi\n')
+        return args
+
+    def test_the_cli_planner_answers_a_question_and_its_tools_are_read_only(self):
+        args = self.planner({"type": "result", "is_error": False, "usage": {},
+                             "result": json.dumps({"answer": "calc.add subtracts (calc.py line 2)\x1b[2J"})})
+        r = self.work("what does calc.add do?", "--worker", "claude", "--json", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        answer = [e for e in (json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")) if e["event"] == "answer"]
+        self.assertEqual(len(answer), 1)
+        self.assertIn("calc.py line 2", answer[0]["text"])
+        self.assertNotIn("\x1b", answer[0]["text"], "no terminal control from an answer")
+        self.assertIn("return a - b", self.calc())
+        self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0)
+        got = read_text(args).splitlines()
+        self.assertIn("--disallowedTools", got, "the planner can't run or edit, whatever its settings allow")
+
+    def test_a_planner_that_changes_files_is_stopped_before_any_task(self):
+        self.planner({"type": "result", "is_error": False, "usage": {}, "result": json.dumps(
+            {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}],
+             "steps": ["fix"]})}, extra="echo '# planner' >> calc.py")
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("calc.py", r.stderr)
+        self.assertIn("planning", r.stderr)
+        self.assertNotEqual(self.fm("task", "show", "T-0001", check=False).returncode, 0, "no task from that plan")
+
+    def test_a_cli_planner_error_is_said(self):
+        self.planner({"type": "result", "is_error": True, "result": "Not logged in · Please run /login"})
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Not logged in", r.stderr)
+
+    def test_a_cli_planned_run_resumes_with_the_same_planner(self):
+        # T-1320 review: the journal names the planner ("claude (plan, read-only)"), which isn't a model profile
+        import types
+        import unittest.mock
+        import fmcode
+        import fmmodels
+        run = types.SimpleNamespace(worker="claude", model_name="claude (plan, read-only)", root=self.repo,
+                                    worker_timeout=5)
+        with unittest.mock.patch.object(fmmodels, "resolve", side_effect=fmmodels.ModelError("no model profile")):
+            self.assertEqual(fmcode.choose_profile(run, None)["kind"], "cli")
+            with self.assertRaises(fmmodels.ModelError):
+                fmcode.choose_profile(run, "my-model")  # a model asked for by name is never swapped for the CLI
+
+    def test_with_no_model_a_cli_that_cant_plan_read_only_says_what_to_give(self):
+        r = self.work("make calc.add add", "--worker", "fix-calc {prompt}", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--verify", r.stderr)
+        r = self.work("make calc.add add", check=False)
+        self.assertIn("--worker claude", r.stderr, "a CLI you have can plan and work")
+
     def test_a_worker_that_fixes_the_bug_closes_the_task(self):
         # a table name: claude's unattended form, with the prompt as one argument
         args = os.path.join(self.tmp, "args")

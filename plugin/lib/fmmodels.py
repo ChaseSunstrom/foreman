@@ -42,6 +42,8 @@ import ipaddress
 import itertools
 import json
 import os
+import shlex
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -339,7 +341,46 @@ def _post(url, body, headers, timeout, key):
         return v
 
 
+def _cli(profile, messages, timeout):
+    """T-1320: a slot filled by a coding CLI run once in its read-only mode (claude -p … --permission-mode plan): the
+    conversation as one prompt, its reply as the text. Claude's --output-format json gives the token counts."""
+    prompt = "\n\n".join(f"{msg['role'].upper()}:\n{msg['content']}" for msg in messages
+                          if isinstance(msg.get("content"), str))
+    argv = [w.replace("{prompt}", prompt) for w in shlex.split(profile["argv"])]
+    limit = max(timeout, profile.get("timeout") or 0)
+    try:
+        proc = subprocess.Popen(argv, cwd=profile.get("cwd"), env=profile.get("env"), stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, errors="replace",
+                                start_new_session=True)
+    except OSError as e:
+        raise ModelError(f"{profile['name']}: {e}") from None
+    try:
+        out, err = proc.communicate(timeout=limit)
+    except subprocess.TimeoutExpired:  # it and everything it started: nothing keeps working after we give up
+        import fmcore
+        fmcore.kill_group(proc)
+        proc.communicate()
+        raise ModelError(f"{profile['name']}: no reply in {limit} s") from None
+    r = subprocess.CompletedProcess(argv, proc.returncode, out, err)
+    if r.returncode:
+        raise ModelError(f"{profile['name']}: exit {r.returncode}: {(r.stderr or r.stdout).strip()[-300:]}")
+    try:
+        got = json.loads(r.stdout)
+    except ValueError:
+        got = None
+    if not (isinstance(got, dict) and isinstance(got.get("result"), str)):
+        return {"text": r.stdout.strip(), "tool_calls": [], "usage": {"in": 0, "out": 0}, "stop": "end"}
+    if got.get("is_error"):
+        raise ModelError(f"{profile['name']}: {got['result'][:300]}")
+    u = _of(got.get("usage"), dict)
+    seen = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    return {"text": got["result"], "tool_calls": [], "usage": {"in": seen, "out": u.get("output_tokens") or 0},
+            "stop": "end"}
+
+
 def complete(profile, messages, tools=None, max_tokens=2048, timeout=120):
+    if profile.get("kind") == "cli":
+        return _cli(profile, messages, timeout)
     base = (profile.get("base_url") or "").rstrip("/")
     env, key = profile.get("key_env"), None
     if env:
