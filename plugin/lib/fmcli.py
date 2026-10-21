@@ -4657,6 +4657,16 @@ def cmd_complete(args):
     print("\n".join(found))
 
 
+class _OutputFormat(argparse.Action):
+    """T-1399: claude's --output-format json is fm code's --json; its text and stream-json mean nothing here."""
+
+    def __call__(self, parser, ns, value, option_string=None):
+        if value != "json":
+            parser.error(f"--output-format {value}: fm code takes only json, the same as --json (fm code's own "
+                         "events, not claude's stream-json); --plain prints one line per event")
+        ns.json = True
+
+
 def build_parser():
     ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
                  description="Foreman state CLI (the only writer of Foreman state).")
@@ -5713,8 +5723,16 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328)")
+                 "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
+                 "--output-format json work too (T-1399)",
+            conflict_handler="resolve")  # T-1399: -p after the verb is claude's --print; the project is --project
     s.add_argument("request", nargs="*", help="what to do (or: models, runners, bench, tui)")
+    s.add_argument("-p", "--print", dest="plain", action="store_true", help="claude's -p: the same as --plain (fm's "
+                   "own -p PROJECT goes before the verb, fm -p SLUG code …, or --project after it)")
+    s.add_argument("-c", "--continue", dest="resume", action="store_const", const="", help="claude's -c: the same "
+                   "as --resume with no ID (the newest unfinished run)")
+    s.add_argument("--output-format", action=_OutputFormat, metavar="json", help="claude's --output-format json: "
+                   "the same as --json (fm code's own events; text and stream-json are refused)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
     s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
