@@ -821,6 +821,116 @@ class Extensions(unittest.TestCase):
         self.assertNotIn("open", tui().PANELS)
 
 
+GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "golden")
+GOLDEN_AT = (0.0, 3.4, 9.1, 30.0)  # seconds into the demo's 30 s playback, from planning to closed
+
+
+def golden_frame(at, size=(120, 34)):
+    """The demo run played to `at` seconds: each row's text plus a digest of every cell's resolved look, so a change
+    to any panel's words or colours shows as a diff."""
+    import hashlib
+    T = tui()
+    root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    with open(os.path.join(root, "demo", "code-tui.jsonl"), encoding="utf-8") as f:
+        events = [json.loads(line) for line in f if line.strip()]
+    app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+    gap = 30.0 / max(1, len(events))
+    fed, out = 0, []
+    for k in range(int(at * 10) + 1):  # ten frames a second, so motion has the same history at every instant
+        t = k / 10
+        while fed < len(events) and fed * gap <= t:
+            app.feed(events[fed])
+            fed += 1
+        cv = T.render(app.state, size[0], size[1], T.DEFAULTS, app, t=1000.0 + t)
+    for y, row in enumerate(cv.cells):
+        looks = "|".join(repr(sorted(T.resolve(s, T.DEFAULTS, cv.bg[y][x]).items())) for x, (_, s) in enumerate(row))
+        out.append("".join(ch for ch, _ in row).rstrip() + "  ⟨" + hashlib.sha1(looks.encode()).hexdigest()[:10] + "⟩")
+    return "\n".join(out) + "\n"
+
+
+class Golden(unittest.TestCase):
+    """T-1306: the demo run at fixed instants, compared with plugin/tests/fixtures/golden. A deliberate change to the
+    screen rewrites them: FM_GOLDEN=regen python3 plugin/tests/run.py test_code_tui."""
+
+    def test_the_demo_run_draws_as_recorded(self):
+        for at in GOLDEN_AT:
+            path = os.path.join(GOLDEN, f"demo-{at:04.1f}s.txt")
+            got = golden_frame(at)
+            if os.environ.get("FM_GOLDEN") == "regen":
+                os.makedirs(GOLDEN, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(got)
+            with self.subTest(at=at):
+                with open(path, encoding="utf-8") as f:
+                    want = f.read()
+                self.assertEqual(got, want, f"the screen at {at}s changed: if that's meant, FM_GOLDEN=regen")
+
+
+class Fuzz(unittest.TestCase):
+    """T-1306: a newer fm code, a hand-edited events file or a bug can send any event; the screen never falls over."""
+    KINDS = ["start", "plan", "task", "step", "say", "tokens", "action", "worker", "revert", "fix", "verify", "changed",
+             "closed", "blocked", "error", "answer", "resume", "exit", "nonsense", "__init__", None, 5]
+    VALUES = [None, "", "x", "日本語テキスト", "é", "\x1b[31mred\x07", "a" * 3000, 0, -1, 10 ** 12, 3.5, [], {},
+              [1, 2], {"a": 1}, True, "\n\n\t", " \n ", float("nan"), float("inf"), float("-inf"), 1e300]
+    FIELDS = ["text", "plan", "step", "criterion", "label", "exit", "cmd", "output", "files", "stat", "total_in",
+              "total_out", "call_in", "call_out", "action", "target", "result", "detail", "tokens", "task", "worker",
+              "ts", "request", "model", "reason", "file", "round", "schema", "verify", "resume", "code", "stderr"]
+    SIZES = ((1, 1), (10, 5), (40, 12), (80, 24), (132, 34), (200, 60))
+
+    def event(self, r):
+        e = {"event": r.choice(self.KINDS)}
+        for k in r.sample(self.FIELDS, r.randint(0, 8)):
+            e[k] = r.choice(self.VALUES)
+        if r.random() < .3:
+            e["plan"] = {"type": r.choice(["FIX", None, 3]), "tier": r.choice(["S", "M", None]),
+                         "title": r.choice(self.VALUES), "steps": r.choice([[], ["a", "b"], None, [1, None], "s"]),
+                         "criteria": r.choice([[], [{"text": r.choice(self.VALUES), "verify": r.choice(self.VALUES)}],
+                                               "x", None, [None]])}
+        if r.random() < .3:
+            e["stat"] = r.choice([{"a.py": [1, 2]}, {"b": "x"}, {"c": [None, "x"]}, [], {1: [1, 1]}])
+        if r.random() < .5:  # mostly sane times, sometimes out of order
+            e["ts"] = 1000 + r.uniform(-50, 300)
+        return e
+
+    def test_any_event_stream_draws_at_any_size(self):
+        import random
+        T = tui()
+        for seed in range(300):
+            r = random.Random(seed)  # a failure names its seed; Random(seed) replays it
+            events = [self.event(r) for _ in range(r.randint(0, 40))]
+            app = T.App(T.DEFAULTS, spawn=lambda *a, **k: None)
+            for e in events:
+                app.feed(e)
+            for w, h in self.SIZES:
+                with self.subTest(seed=seed, size=(w, h)):
+                    for t in (100.0, 100.3, 101.7):
+                        cv = T.render(app.state, w, h, T.DEFAULTS, app, t=t)
+                    self.assertTrue(T.to_svg(cv, T.DEFAULTS).startswith("<svg"))
+                    self.assertEqual(len(cv.cells), h)
+
+    def test_a_malformed_event_changes_nothing(self):
+        T = tui()
+        st = Core.state(self)
+        before = repr(vars(st))
+        for e in ({"event": "tokens", "total_in": "lots"}, {"event": "step", "step": "two"},
+                  {"event": "verify", "criterion": [1]}, {"event": "changed", "files": 5},
+                  {"event": "closed", "tokens": ["a", 1]}, {"event": "exit", "code": 1, "stderr": " \n "}):
+            st.apply(e)
+            self.assertEqual(repr(vars(st)), before, e)
+        with self.assertRaises(ValueError, msg="a newer stream is still said, not skipped"):
+            st.apply({"event": "start", "schema": T.SCHEMA + 1})
+        self.assertEqual(repr(vars(st)), before)
+
+    def test_odd_values_that_are_kept_still_draw(self):
+        T = tui()
+        st = T.State()
+        for e in ({"event": "start", "request": ["a", 1], "model": 5, "worker": {"x": 1}, "task": 7, "ts": float("nan")},
+                  {"event": "say", "text": 3, "ts": float("inf")}, {"event": "step", "step": 1, "ts": float("-inf")}):
+            st.apply(e)
+        self.assertIsNone(st.first_ts, "a time that isn't a finite number isn't a time")
+        T.render(st, 80, 24, T.DEFAULTS, None, t=5.0)
+
+
 class Command(CodeCase):
     def test_fm_code_tui_draws_a_recorded_run(self):
         svg = os.path.join(self.home, "shot.svg")
@@ -889,7 +999,14 @@ class Command(CodeCase):
                         break
             self.assertIn(b"CLOSED", seen, seen[-2000:])
             self.assertIn(b"\x1b[", seen, "drawn with curses, not printed")
+            fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack("HHHH", 24, 80, 0, 0))  # T-1306: the child gets SIGWINCH
+            seen = b""
+            while b"\x1b[2J" not in seen and time.time() < deadline:
+                if select.select([fd], [], [], 0.5)[0]:
+                    seen += os.read(fd, 65536)
+            self.assertIn(b"\x1b[2J", seen, "a resize clears and draws again")
             os.write(fd, b"q")
+            after = b""
             while time.time() < deadline:
                 done, status = os.waitpid(pid, os.WNOHANG)
                 if done:
@@ -897,11 +1014,19 @@ class Command(CodeCase):
                     break
                 if select.select([fd], [], [], 0.2)[0]:
                     try:
-                        os.read(fd, 65536)
+                        after += os.read(fd, 65536)
                     except OSError:
                         pass
             else:
                 self.fail("q didn't quit")
+            while select.select([fd], [], [], 0.2)[0]:  # what it wrote just before it exited
+                try:
+                    after += os.read(fd, 65536)
+                except OSError:
+                    break
+            for mode, why in ((b"\x1b[?1049l", "the alternate screen is left"), (b"\x1b[?25h", "the cursor shown"),
+                              (b"\x1b[?7h", "wrap back on")):
+                self.assertIn(mode, after, why)
         finally:
             try:
                 os.kill(pid, 9)
