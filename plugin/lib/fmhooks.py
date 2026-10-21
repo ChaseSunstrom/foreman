@@ -1132,11 +1132,14 @@ def user_prompt_submit(pl):
                      "--lens approaches, or a capability list in the brief)")
     if not r.items and not r.overrides and c.is_friction(text):  # T-1332: friction starts a round unasked
         try:
-            import fmcli
-            area, tid, urgent = fmcli.capture_friction(p, text, sid)
-            parts.append(f"Friction with {area}: fix the cause now; {tid}" + (" (urgent: a second complaint this week)"
-                         if urgent else "") + " queues an improvement round on it (fm mission + fm ideas, then build), "
-                         "unasked")
+            if c.friction_area(text) == "this":  # nothing Foreman named: a bug in their project, not a round on Foreman
+                parts.append("Friction: fix the cause now")
+            else:
+                import fmcli
+                area, tid, urgent = fmcli.capture_friction(p, text, sid)
+                parts.append(f"Friction with {area}: fix the cause now; {tid}"
+                             + (" (urgent: a second complaint this week)" if urgent else "")
+                             + " queues an improvement round on it (fm mission + fm ideas, then build), unasked")
         except Exception:
             log_error("UserPromptSubmit", _tb())
     if c.is_sweep(text):

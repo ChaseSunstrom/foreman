@@ -295,6 +295,9 @@ class UserPromptSubmit(HookCase):
         self.assertEqual(b.priority, "urgent", "a second complaint about the same area within a week")
         self.hook("UserPromptSubmit", {"prompt": "the guard is confusing"})
         self.assertEqual(len(friction()), 2, "another area gets its own task")
+        ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": "the login page is broken"}))
+        self.assertIn("fix the cause", ctx, "the user's own app: the note only")
+        self.assertNotIn("improvement round", ctx)
         for prompt in ("why does the cache use LRU?", "add a --json flag", "how do I run the tests?",
                        "fix the test that keeps failing", "FIX: fm code is broken"):
             ctx = self.ctx_of(self.hook("UserPromptSubmit", {"prompt": prompt}))
