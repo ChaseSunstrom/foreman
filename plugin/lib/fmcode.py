@@ -3,7 +3,8 @@
     fm code "<request>" [--model NAME] [--escalate NAME] [--max-steps 40] [--dry-plan] [--no-commit] [--json]
     fm code --resume [ID]          continue a run that crashed or was killed, from its journal
     fm code models                 the model profiles (fmmodels) and where each comes from
-    fm code tui [REQUEST]          the same run in a terminal UI (fmcodetui, T-1283)
+    fm code tui [REQUEST]          the same run in a terminal UI (fmcodetui, T-1283); on a terminal, fm code "<request>"
+                                   is that too, unless --plain, --json or --dry-plan (T-1343)
     fm code bench [--model P | --worker CLI] [--seeds a,b]   grade a model or CLI on seeded tasks (fmcodebench, T-1215)
 
 The model never drives. It fills a PLAN slot ({type, tier S|M, title, criteria: [{text, verify}], steps}), checked
@@ -1121,7 +1122,10 @@ def cmd_code(args):
     if words[:1] == ["bench"]:
         import fmcodebench
         return fmcodebench.cmd(args, words[1:])
-    if getattr(args, "tui", False):
+    if getattr(args, "tui", False) or (  # T-1343: a request on a terminal runs in the app, like claude "<prompt>"
+            words and args.resume is None and not getattr(args, "task", None) and not getattr(args, "json", False)
+            and not getattr(args, "plain", False) and not getattr(args, "dry_plan", False)
+            and sys.stdin.isatty() and sys.stdout.isatty()):
         import fmcodetui
         return fmcodetui.main(args, words)
     p = fmcli.resolve(args)
