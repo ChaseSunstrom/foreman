@@ -336,8 +336,8 @@ class Resume(CodeCase):
         results = {m["tool_call_id"]: m["content"] for m in sent if m["role"] == "tool"}
         self.assertEqual(len(results), 3, sent)
         self.assertIn("return a - b", results["c2_0"])
-        self.assertTrue(results["c2_1"].startswith("not run (interrupted)"))
-        self.assertTrue(results["c2_2"].startswith("not run (interrupted)"))
+        self.assertIn("\nnot run (interrupted)", results["c2_1"])
+        self.assertIn("\nnot run (interrupted)", results["c2_2"])
         self.assertEqual(self.task()["status"], "done")
 
     def test_resume_with_nothing_to_resume_says_so(self):
