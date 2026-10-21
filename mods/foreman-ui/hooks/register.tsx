@@ -173,6 +173,7 @@ const waiting = (v: FmView | null) =>
 // Module variables start over on a reload; what a drawing reads lives in $.state.
 let fmPath: string | null = null
 let marks = ''
+let agentsShown = '' // T-1437: the running subagents' times as last drawn, when no mascot blink repaints them
 let isDirty = true
 let saidSeq = 0 // T-1090: one id per model step, for its narration entry
 let isBusy = false
@@ -286,9 +287,19 @@ async function refresh($: EngineInterface): Promise<boolean> {
 // Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
-  if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
+  if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
+  else {
+    // T-1437: no blink to repaint on, so a running subagent's time would freeze; repaint when what it shows changes
+    const t = await $.clock.now()
+    const shown = running.map(a => {
+      const quiet = t - (a.lastAt ?? a.startedAt)
+      return quiet >= QUIET_MS ? `quiet ${elapsed(quiet)} ${quiet >= STOP_MS}` : elapsed(t - a.startedAt)
+    }).join('|')
+    if (shown !== agentsShown) await update($, beat, n => n + 1)
+    agentsShown = shown
+  }
   const listed = running.length ? await $.agent.list().catch(() => null) : null
   if (listed) {
     // T-0121: one that ended without its turn.complete (killed, a compaction, a reload) is no longer running in the
@@ -1226,7 +1237,8 @@ export const register: Register = (on, options) => {
     const clockNow = await $.clock.now()
     const moving = live && cfg.motion !== 'off' // T-0912: motion off draws work still
     const f = moving || clockNow < flashUntil ? await read($, frame) : null // a fading step glow redraws too
-    const idleBeat = live || cfg.mascot === 'off' ? 0 : await read($, beat)
+    const beatNow = await read($, beat) // T-1437: read with the mascot off too, so the poll's repaint redraws times
+    const idleBeat = live || cfg.mascot === 'off' ? 0 : beatNow
     const term = e.surface === 'terminal'
     if (term) motion.clear() // this drawing registers what moves
     // the rasters' time: the blit's clock in full motion (so a redraw never jumps), the frame in calm, none when off
