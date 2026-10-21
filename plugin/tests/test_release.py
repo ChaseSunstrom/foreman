@@ -265,7 +265,7 @@ class Release(ForemanTestCase):
     def test_the_canary_runs_detached_and_its_failure_lands_in_the_inbox_and_the_notify_hook(self):
         note = os.path.join(self.tmp, "note.txt")
         self.fm("notify", f'echo "$1" > {note}')
-        self.env.update(STUB_SLEEP="3", STUB_FAIL="1")
+        self.env.update(STUB_SLEEP="3", STUB_FAIL="1", FOREMAN_NO_BACKGROUND="")  # detached for real; waited on below
         out = self.rel("9.9.9").stdout  # returns before the 3 s sentinel ends: the status below finds it unfinished
         self.assertIn("canary-9.9.9.txt", out)
         self.assertIn("--canary-status", out)
