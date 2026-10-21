@@ -4691,7 +4691,7 @@ def _build_parser():
     def add(name, fn, *, tier, **kw):
         tiered.append((tier[1], tier[0], name))
         s = sp.add_parser(name, **kw)
-        s.set_defaults(fn=fn)
+        s.set_defaults(fn=fn, verb=name)  # T-1388: args.cmd can be a subcommand's own `cmd` argument; verb can't
         s.add_argument("--json", action="store_true", help="machine-readable output")
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
@@ -5998,16 +5998,18 @@ def _task_shape(parser, argv):
 # T-1388: what a coding CLI fm code runs may still do with fm: read. Grants above all are the user's; codex's and
 # gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
 # ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
-WORKER_READS = {"state", "next", "queue", "help", "log", "recall", "map", "outline", "gates", "why", "show"}
+# T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
+WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"})}
 
 
 def _worker_may(args):
-    if args.cmd in WORKER_SUBREADS:
-        attr, ok = WORKER_SUBREADS[args.cmd]
+    verb = getattr(args, "verb", None)
+    if verb in WORKER_SUBREADS:
+        attr, ok = WORKER_SUBREADS[verb]
         return getattr(args, attr, None) in ok
-    return args.cmd in WORKER_READS
+    return verb in WORKER_READS and not getattr(args, "replan", False)
 
 
 def main(argv=None):

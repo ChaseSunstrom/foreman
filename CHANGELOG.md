@@ -15,6 +15,7 @@
 - `fm lease drop FILE` frees only the active task's leases, as a bare `fm lease drop` already did: a builder lane dropping a file no longer frees other parallel lanes' leases on it (they share the main session's id) (T-1416).
 - `fm page` loads nothing from another host either: its template's Google Fonts links are gone and its font stacks fall back to faces already on the reader's machine (T-1414).
 - fm code stops with "the model's server truncated the prompt at N tokens" when an API model reports reading under half the prompt fm code sent, instead of acting on a reply that never saw its instructions (T-1404).
+- A coding CLI that fm code runs only reads Foreman's state: under `FOREMAN_WORKER_OF`, `fm` refuses every command that changes it (grants, `fm ask`, `fm standing`, `fm autonomy`, `fm task done`, `fm vetoes rm`, capture, focus, …) and keeps the reads (state, task show/list, queue, next, lib search, vetoes). A lean claude worker whose session starts with an MCP server, an `mcp__` tool or a non-built-in plugin is stopped at that first line, before it acts, and the run blocks naming them (T-1388).
 - fm code's write and edit keep a file's line endings (LF text over a CRLF file stays CRLF), refuse a binary, non-UTF-8 or non-regular target instead of rewriting it, and refuse option-shaped paths like `-` and `--x` (T-1408).
 
 ## 1.2.48 — 2026-10-21

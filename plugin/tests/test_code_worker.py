@@ -339,6 +339,32 @@ class Worker(CodeCase):
         self.assertTrue(any(a == "run" and t.startswith("pwd && git status") for a, t in tools), tools)
         self.assertTrue(all(len(t) <= 200 and "\n" not in t for _, t in tools))
 
+    def bug(self):
+        with open(os.path.join(self.repo, "calc.py"), "w") as f:
+            f.write("def add(a, b):\n    return a - b\n")
+        subprocess.run(["git", "-C", self.repo, "commit", "-qam", "the bug again"], capture_output=True)
+
+    def test_a_lean_claude_worker_whose_session_loads_more_than_the_guard_is_stopped(self):
+        # T-1388: a lean worker starts with no MCP server and only built-in plugins (a live init line, 2026-10-21); one
+        # that lists more (a repo's .mcp.json or settings got past --strict-mcp-config) is stopped before it acts
+        base = {"type": "system", "subtype": "init", "mcp_servers": [], "tools": ["Bash", "Edit"],
+                "plugins": [{"name": "cc-plugin-telemetry", "path": "builtin"}]}
+        for extra, named in (({"mcp_servers": [{"name": "evil", "status": "connected"}]}, "MCP server evil"),
+                             ({"tools": ["Bash", "mcp__evil__run"]}, "tool mcp__evil__run"),
+                             ({"plugins": [{"name": "evil", "path": "/x/evil"}]}, "plugin evil")):
+            with self.subTest(named=named):
+                self.bug()
+                self.cli("claude", f"echo '{json.dumps(dict(base, **extra))}'\nsleep 5\nfix-calc\n")
+                r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False)
+                self.assertNotEqual(r.returncode, 0, r.stdout)
+                blocked = [e["reason"] for e in self.events(r) if e["event"] == "blocked"]
+                self.assertTrue(blocked and named in blocked[0], (blocked, r.stderr[-400:]))
+                self.assertIn("a - b", self.calc(), "stopped before it acted")
+        self.bug()
+        self.cli("claude", f"echo '{json.dumps(base)}'\nfix-calc\n")
+        self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json")
+        self.assertIn("a + b", self.calc(), "a lean session as launched goes on")
+
     def test_the_planner_reads_its_reply_from_the_streams_result_line(self):
         plan = {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}], "steps": ["s"]}
         lines = ['{"type":"system","subtype":"init"}', "not json at all",

@@ -610,13 +610,18 @@ class Run:
             # T-1327: quiet, so only Foreman's guard runs in that nested session; T-1294: its leases are ours
             env = dict(worker_env(), FOREMAN_QUIET="1", FOREMAN_WORKER_OF=f"fm-code-{self.tid or 'plan'}")
             streams = "stream-json" in (all_runners().get(self.worker, {}).get("work") or "")
+            self.unlean = None
             code, out = run_bounded(shlex.join(argv), self.root, self.worker_timeout, env, self.cap, reap=True,
-                                    on_line=self.live_tools(argv[0]) if streams else None,
+                                    on_line=self.live_tools(argv[0], "--strict-mcp-config" in argv) if streams else None,
                                     on_idle=self.live_beat(argv[0]))
             if streams:  # the journal keeps its reply, not the stream
                 res = next(filter(None, map(m.stream_result, reversed(out.splitlines()))), None)
                 out = res["result"] if res and isinstance(res.get("result"), str) else out
             ended = True
+            if self.unlean:  # T-1388: stopped at its first line, before it acted
+                raise Blocked(f"fm code: the worker's claude session started with {', '.join(self.unlean[:5])}, which "
+                              "a lean session never loads (a .mcp.json or .claude settings in the repo?); its turn was "
+                              "stopped before it acted: check the repo's Claude Code settings before going on")
         finally:
             reverts, lost, touched = self.judge(before)
             state = ("interrupted" if not ended else f"timed out after {self.worker_timeout} s" if code is None else
@@ -638,9 +643,14 @@ class Run:
         self.done.add(name)
         self.log(kind="phase_done", phase=name)
 
-    def live_tools(self, who):
-        """T-1329: a stream line's tool uses as tool events; whether it showed any."""
+    def live_tools(self, who, lean=False):
+        """T-1329: a stream line's tool uses as tool events; whether it showed any. T-1388: STOP, with self.unlean
+        set, when a lean session's init line shows it loaded more than Foreman's guard."""
         def on_line(line):
+            extra = lean and lean_extras(line)
+            if extra:
+                self.unlean = extra
+                return STOP
             shown = m.stream_tools(line, self.root)
             for action, target in shown:
                 target = self.redact(target)
@@ -855,6 +865,30 @@ def stall_cause(tail):
     return ("prompt" if asks else "silent"), lines[-1]
 
 
+STOP = object()  # T-1388: an on_line answer that ends the turn now
+
+
+def lean_extras(line):
+    """T-1388: what a lean claude session's init line loaded beyond Foreman's guard, as short names: MCP servers, mcp__
+    tools and plugins that aren't built in; [] for any other line. A live lean worker (2026-10-21) listed none."""
+    if '"init"' not in line:
+        return []
+    try:
+        e = json.loads(line)
+    except ValueError:
+        return []
+    if not isinstance(e, dict) or e.get("type") != "system" or e.get("subtype") != "init":
+        return []
+
+    def rows(k):
+        return e[k] if isinstance(e.get(k), list) else []
+    out = [f"MCP server {s.get('name') if isinstance(s, dict) else s}" for s in rows("mcp_servers")]
+    out += [f"tool {t}" for t in rows("tools") if str(t).startswith("mcp__")]
+    out += [f"plugin {p.get('name') if isinstance(p, dict) else p}" for p in rows("plugins")
+            if not isinstance(p, dict) or p.get("path") != "builtin"]
+    return [m._shown(str(x))[:80] for x in out]
+
+
 def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, on_idle=None):
     """(exit code or None on timeout, output cut to head and tail). Memory stays bounded whatever the command prints;
     its whole process group is killed at the end, and with reap (Linux) whatever it started outside that group too
@@ -872,8 +906,17 @@ def run_bounded(cmd, cwd, timeout, env=None, cap=CAP, reap=False, on_line=None, 
         tail.extend(chunk[len(take):])
         del tail[:-cap]
     done = threading.Event()  # set once the turn is over: a line a leftover grandchild prints shows nothing
-    live = (on_line and (lambda line: not done.is_set() and on_line(line)),
-            on_idle and (lambda *a: done.is_set() or on_idle(*a)))
+    def line_seen(line):
+        if done.is_set():
+            return False
+        shown = on_line(line)
+        if shown is STOP:  # T-1388: the turn ends now, whatever it would do next
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+        return bool(shown)
+    live = (on_line and line_seen, on_idle and (lambda *a: done.is_set() or on_idle(*a)))
     t = threading.Thread(target=fmcore.pump, args=(p.stdout, sink, live[0], on_idle and m.heartbeat(), live[1]),
                          daemon=True)
     t.start()
