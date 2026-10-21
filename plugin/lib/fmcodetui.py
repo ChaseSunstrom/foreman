@@ -112,6 +112,7 @@ class State:
         self.actions, self.log, self.verify, self.files, self.stat = [], [], [], {}, {}
         self.tokens, self.calls, self.status, self.closed = [0, 0], [], "idle", ""
         self.first_ts = self.last_ts = None
+        self.heard = None  # T-1336: seconds a quiet CLI turn has printed nothing, from its last working or stalled event
         self.marks = {}  # when each step (1, 2, …) and the final checks ("checks") began
         self.ext = {}  # extensions' own data for this run
 
@@ -158,6 +159,7 @@ class State:
         if self.log and self.log[-1].get("kind") == "working":  # T-1329: the ticking line goes at the next one
             self.log.pop()
         self.log.append(dict(fields, kind=kind))
+        self.heard = None  # anything else said: the CLI was heard, or the turn is over
 
     def _on_start(self, e):
         if int(e.get("schema") or 1) > SCHEMA:
@@ -252,6 +254,11 @@ class State:
 
     def _on_working(self, e):  # T-1329: a quiet CLI turn's heartbeat, one line that ticks
         self.note("working", text=str(e.get("text") or "working"))
+        self.heard = _secs(e.get("silent"))
+
+    def _on_stalled(self, e):  # T-1336: a CLI turn silent past FM_STALL, with its likely cause: a warning that stays
+        self.note("stalled", text=str(e.get("text") or "stalled"))
+        self.heard = _secs(e.get("secs"))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
@@ -271,6 +278,11 @@ class State:
             self.status = "stopped"
             if e.get("stderr"):
                 self.note("error", text=e["stderr"].strip().splitlines()[-1])
+
+
+def _secs(v):
+    """A count of seconds from an event, or None for anything else (a bool, a string, NaN, a negative)."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 else None
 
 
 def duration(s):
@@ -781,6 +793,8 @@ def entry_segments(e, w, thoughts=True):
         return [("  · ", "dim"), (f"{e.get('action', '')[:7]:<7}", "dim"), (e["text"], "text")]
     if k == "working":
         return [("  … ", "accent"), (e["text"].strip(), "dim")]
+    if k == "stalled":
+        return [("  ⚠ ", "warn"), (e["text"].strip(), "warn")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":
@@ -937,6 +951,8 @@ def _status(cv, st, app):
         segs += [("  ", "bar"), (st.task, "bar")]
     if st.steps:
         segs += [("   ", "bar"), (f"step {st.step}/{len(st.steps)}", "bar_dim")]
+    if live and st.heard is not None:  # T-1336
+        segs += [("   ", "bar"), (f"last heard {duration(st.heard)} ago", "bar_dim")]
     if app is not None and app.message:
         segs += [("   ", "bar"), (app.message, "key")]
     hints = [seg for k, word in HINTS for seg in ((f" {k} ", "key"), (f"{word} ", "bar_dim"))]
