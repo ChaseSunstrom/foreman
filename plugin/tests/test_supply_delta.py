@@ -514,6 +514,40 @@ class OwnPlugins(ForemanTestCase):
         self.assertIn("foreman-ui@foreman matches this checkout", r.detail)
         self.assertEqual(fmdoctor.check_supply(self.claude).status, "FAIL", "the third party stays held")
 
+    def ignored(self, rel, checkout, installed):
+        write(os.path.join(self.home, ".gitignore"), "mods/*/tsconfig.json\nmods/*/.claude-plugin/types/\n")
+        if checkout is not None:
+            write(os.path.join(self.home, "mods", "foreman-ui", rel), checkout)
+        write(os.path.join(self.ui, rel), installed)
+
+    def test_an_ignored_file_equal_to_the_checkouts_is_accepted(self):
+        # the directory marketplace copies the whole folder, gitignored files too
+        self.ignored("tsconfig.json", '{"extends": "x"}\n', '{"extends": "x"}\n')
+        self.ignored(".claude-plugin/types/claude-code/index.d.ts", "export {}\n", "export {}\n")
+        self.assertIn("foreman-ui@foreman matches this checkout", fmdoctor.check_supply(self.claude).detail)
+
+    def test_an_ignored_file_that_differs_or_is_absent_keeps_the_hold(self):
+        self.ignored("tsconfig.json", '{"extends": "x"}\n', '{"extends": "evil"}\n')
+        self.held("an ignored file that differs")
+        os.remove(os.path.join(self.home, "mods", "foreman-ui", "tsconfig.json"))
+        self.held("an ignored path the checkout doesn't have")
+
+    def test_an_untracked_file_that_isnt_ignored_keeps_the_hold(self):
+        write(os.path.join(self.home, "mods", "foreman-ui", "hooks", "new.ts"), "x\n")  # in the checkout, not HEAD
+        write(os.path.join(self.ui, "hooks", "new.ts"), "x\n")
+        self.held("an untracked, unignored file")
+
+    def test_an_ignored_file_linked_in_the_checkout_keeps_the_hold(self):
+        self.ignored("tsconfig.json", None, "{}\n")
+        write(os.path.join(self.tmp, "elsewhere.json"), "{}\n")
+        os.symlink(os.path.join(self.tmp, "elsewhere.json"), os.path.join(self.home, "mods", "foreman-ui", "tsconfig.json"))
+        self.held("the checkout's copy is a link")
+
+    def test_a_working_tree_edit_to_a_tracked_file_keeps_the_hold(self):
+        write(os.path.join(self.home, "mods", "foreman-ui", "hooks", "register.tsx"), "export {}\n// local\n")
+        write(os.path.join(self.ui, "hooks", "register.tsx"), "export {}\n// local\n")
+        self.held("tracked files must equal HEAD, not the working tree")
+
     def test_foremans_own_id_pointing_at_another_tree_is_held(self):
         self.install({"foreman@foreman": self.ui})  # foreman-ui's files under foreman's id: not plugin/ at HEAD
         r = fmdoctor.check_supply(self.claude)
