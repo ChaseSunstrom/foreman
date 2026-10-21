@@ -1264,6 +1264,12 @@ def _matches_checkout_at(claude, pid, cur):
         return False
     def raise_(e):
         raise e
+    def read(path, size):  # a regular file's bytes, or None: a link, FIFO or other size never matches
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(fd, "rb") as fh:
+            st = os.fstat(fd)
+            return fh.read(size + 1) if stat.S_ISREG(st.st_mode) and st.st_size == size else None
+    extras = []
     for root in roots:
         if os.path.islink(root) or not os.path.isdir(root):
             return False
@@ -1275,19 +1281,31 @@ def _matches_checkout_at(claude, pid, cur):
             for f in files:
                 rel = os.path.relpath(os.path.join(d, f), root)
                 if rel not in want:
-                    return False
-                oid, size = want[rel]
-                fd = os.open(os.path.join(d, f), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)  # a link raises
-                with os.fdopen(fd, "rb") as fh:
-                    st = os.fstat(fd)
-                    if not stat.S_ISREG(st.st_mode) or st.st_size != size:
+                    extras.append((rel, os.path.join(d, f)))
+                    if len(extras) > 200:
                         return False
-                    data = fh.read(size + 1)
-                if hashlib.new("sha1" if len(oid) == 40 else "sha256", b"blob %d\0" % len(data) + data).hexdigest() != oid:
+                    continue
+                oid, size = want[rel]
+                data = read(os.path.join(d, f), size)
+                if data is None or hashlib.new("sha1" if len(oid) == 40 else "sha256",
+                                               b"blob %d\0" % len(data) + data).hexdigest() != oid:
                     return False
                 found.add(rel)
         if found != set(want):
             return False
+    if extras:  # the directory marketplace copies ignored files too: each must be the checkout's own, byte for byte
+        home = os.path.realpath(c.foreman_home())
+        names = sorted({f"{sub}/{rel}" for rel, _ in extras})  # (-z needs --stdin: a name with a newline won't match)
+        if set(c._git(home, "check-ignore", "--", *names, timeout=10).split("\n")) - {""} != set(names):
+            return False
+        for rel, path in extras:
+            mine = os.path.join(home, sub, rel)
+            if os.path.realpath(mine) != mine:  # a linked folder on the way out of the checkout
+                return False
+            size = os.lstat(mine).st_size
+            theirs = read(mine, size)
+            if theirs is None or read(path, size) != theirs:  # read stops at size + 1: a longer copy differs
+                return False
     # what was read is what cur hashed: a tree changed between the two reads stays held
     h, skipped = hashlib.sha256(), hashlib.sha256()
     for root in roots:
