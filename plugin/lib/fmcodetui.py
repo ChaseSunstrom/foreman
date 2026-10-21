@@ -1593,7 +1593,12 @@ class App:
         import fmcode
         import fmmodels
         out = [("model", p.get("name")) for p in fmmodels.profiles() if p.get("name")]
-        return out + [("worker", w) for w, r in fmcode.all_runners().items()  # T-1330: code.toml's runners too
+        try:
+            runners = fmcode.all_runners()
+        except fmcode.CodeError as e:  # T-1395: the models still list, with what's wrong in code.toml
+            self.message = str(e)
+            return out
+        return out + [("worker", w) for w, r in runners.items()  # T-1330: code.toml's runners too
                       if r.get("work") and fmcode._installed(w, r)]
 
     # -- the child
