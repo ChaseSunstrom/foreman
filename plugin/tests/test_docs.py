@@ -260,6 +260,19 @@ class Site(unittest.TestCase):
         self.assertNotIn("<b>x</b>", html)
         self.assertIn("&lt;b&gt;x&lt;/b&gt; &amp; y", html)
 
+    def test_the_fm_code_page_shows_each_real_example(self):
+        # T-1320: each card is a recorded fm code run (its own events, every one timed), not a made-up one
+        build = self._site("build")
+        html = build.examples_html()
+        self.assertGreaterEqual(len(build.EXAMPLES), 6)
+        for name, _ in build.EXAMPLES:
+            ex = build.load_example(os.path.join(self.ROOT, "demo", "examples", name + ".jsonl"))
+            self.assertEqual(ex["events"][0].get("event"), "start", name)
+            self.assertTrue(all(isinstance(e.get("ts"), (int, float)) for e in ex["events"]), name)
+            self.assertIn(ex["end"], ("closed", "answer"), f"{name} ended {ex['end']}: {ex['end_text'][:200]}")
+            self.assertIn(f'id="ex-{name}"', html)
+            self.assertIn(build.esc(ex["request"]), html)
+
     def test_the_build_refuses_to_wipe_the_repo_its_source_or_home(self):
         # site review: build.py OUT ran shutil.rmtree on whatever it was given (python3 site/build.py . wiped the repo)
         build = self._site("build")
