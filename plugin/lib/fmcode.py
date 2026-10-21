@@ -1010,7 +1010,7 @@ def code_config():
         raise CodeError(f"{path}: {e}")
 
 
-def dangerous_flags(tpl):
+def dangerous_flags(tpl, depth=0):
     """T-1395: the flags in a template that turn a CLI's own approvals or sandbox off, read from its words as the shell
     joins them (--dangerously"-skip-permissions" is the real flag), --flag=value too. ponytail: a flag set in a wrapper
     script, an alias or the CLI's own config isn't seen; this catches the template, which is what fm code runs."""
@@ -1027,7 +1027,8 @@ def dangerous_flags(tpl):
                 or (flag == "--approval-mode" and val == "yolo") or (flag in ("-a", "--ask-for-approval") and val == "never")
                 or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")):
             hits.append(f"{flag} {val}" if not eq and val in ("yolo", "never") else w)
-    return hits
+    # T-1432 review: a shell wrapper's script (sh -c '…') is one word; read the words inside it too
+    return hits + [h for w in words if depth < 3 and len(w.split()) > 1 for h in dangerous_flags(w, depth + 1)]
 
 
 def _lint_runner(name, r, ack):
