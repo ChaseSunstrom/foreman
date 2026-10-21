@@ -2,6 +2,7 @@
 
 ## Unreleased
 - A library source indexed before 1.2.49's quarantine is indexed again from its local clone the next time fm reads it (no network), so its hostile skills and agents leave `fm lib search` without a `fm lib source update` (T-1415).
+- `fm lib search` finds a description's last word: "tidewater." no longer keeps its full stop, while node.js and c# stay one word (T-1420).
 
 ## 1.2.49 — 2026-10-21
 - fm code names a stall: a CLI turn with no output for FM_STALL s (default 120) gets one `stalled` event per silence naming its likely cause (no output since launch, a prompt, a rate or usage limit, or silent since its last line), a warning line in the TUI, and the status bar says how long since the CLI was last heard. Before, a stuck turn just looked busy (T-1336).
