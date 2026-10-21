@@ -184,7 +184,7 @@ class JudgeHome(CodeCase):
         self.assertIn(os.path.join(auto, "x.desktop"), got, r.stdout)
         self.assertNotIn("kept at", got[os.path.join(auto, "x.desktop")])
         self.assertTrue(os.path.exists(shim), "nothing in ~/.local/bin goes without a full copy kept")
-        self.assertIn("no full copy", got[shim])
+        self.assertIn("couldn't be moved aside", got[shim])
         self.assertIn("can't be put back", r.stdout + r.stderr)
 
     def test_a_kept_copy_never_writes_through_a_hard_link_the_worker_made(self):
@@ -202,22 +202,26 @@ class JudgeHome(CodeCase):
 
     def test_more_planting_places_are_held_and_autostart_even_with_xdg_config_home_elsewhere(self):
         h = self.fake_home
-        for f in (".ssh/rc", ".ssh/config", ".xprofile", ".xinitrc"):
+        mine = (".ssh/rc", ".ssh/config", ".xprofile", ".xinitrc", ".xsession", ".xsessionrc",
+                ".config/fish/config.fish", ".config/git/config")
+        for f in mine:
             self.put(os.path.join(h, f), "# mine\n")
         self.cli("sneak", FIX + 'mkdir -p "$HOME/.config/autostart" "$HOME/.local/share/systemd/user" '
-                               '"$HOME/.config/environment.d"\n'
+                               '"$HOME/.config/environment.d" "$HOME/.config/fish/conf.d"\n'
                                'echo "[Desktop Entry]" > "$HOME/.config/autostart/x.desktop"\n'
                                'echo "[Service]" > "$HOME/.local/share/systemd/user/x.service"\n'
                                'echo "PATH=/evil" > "$HOME/.config/environment.d/x.conf"\n'
-                               'for f in .ssh/rc .ssh/config .xprofile .xinitrc; do echo evil >> "$HOME/$f"; done\n')
+                               'echo evil > "$HOME/.config/fish/conf.d/x.fish"\n'
+                               f'for f in {" ".join(mine)}; do echo evil >> "$HOME/$f"; done\n')
         r = self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY,
                       env={"XDG_CONFIG_HOME": os.path.join(self.tmp, "xdg"),
                            "XDG_DATA_HOME": os.path.join(self.tmp, "data")})
         got = self.reverts()
-        for f in (".config/autostart/x.desktop", ".local/share/systemd/user/x.service", ".config/environment.d/x.conf"):
+        for f in (".config/autostart/x.desktop", ".local/share/systemd/user/x.service", ".config/environment.d/x.conf",
+                  ".config/fish/conf.d/x.fish"):
             self.assertFalse(os.path.lexists(os.path.join(h, f)), f)
             self.assertIn(os.path.join(h, f), got, r.stdout)
-        for f in (".ssh/rc", ".ssh/config", ".xprofile", ".xinitrc"):
+        for f in mine:
             self.assertEqual(read_text(os.path.join(h, f)), "# mine\n", f)
             self.assertIn(os.path.join(h, f), got)
 
@@ -241,21 +245,30 @@ class JudgeHome(CodeCase):
         self.assertNotIn(target, held)
         self.assertIn(mine, held, "a dotfiles link the user owns is still held")
 
-    def test_local_bin_files_over_the_copy_cap_are_reported_never_deleted_or_blocking(self):
-        """An updater (uv self update in another terminal) writing ~/.local/bin mid-turn looks like the worker: a file
-        too big to keep a full copy of is reported and left, and the run goes on."""
+    def test_a_new_shim_padded_past_the_copy_cap_is_moved_aside_whole(self):
+        """Fail closed: a worker padding a planted shim past 1 MB doesn't get to leave it on PATH."""
         b = os.path.join(self.fake_home, ".local", "bin")
-        self.put(os.path.join(b, "uv"), "x" * 1500000)
-        os.chmod(os.path.join(b, "uv"), 0o755)
-        self.cli("sneak", FIX + 'head -c 1500000 /dev/zero > "$HOME/.local/bin/new" && chmod +x "$HOME/.local/bin/new"\n'
-                               'echo more >> "$HOME/.local/bin/uv"\n')
+        self.cli("sneak", FIX + 'mkdir -p "$HOME/.local/bin" && { printf "#!/bin/sh\\nevil\\n"; '
+                               'head -c 2000000 /dev/zero; } > "$HOME/.local/bin/git" && chmod +x "$HOME/.local/bin/git"\n')
         r = self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY)
-        got = self.reverts()
-        self.assertEqual(os.path.getsize(os.path.join(b, "new")), 1500000)
-        self.assertEqual(os.path.getsize(os.path.join(b, "uv")), 1500005)
-        for n in ("new", "uv"):
-            self.assertIn("over 1 MB", got[os.path.join(b, n)], r.stdout)
-        self.assertEqual(self.calc(), "def add(a, b):\n    return a + b\n")
+        shim = os.path.join(b, "git")
+        self.assertFalse(os.path.lexists(shim), r.stdout)
+        moved = re.search(r"kept at (\S+)\)", self.reverts()[shim]).group(1)
+        jdir = os.path.dirname(os.path.dirname(self.task()["path"]))
+        self.assertTrue(moved.startswith(os.path.join(jdir, "code", "reverted") + os.sep), moved)
+        self.assertEqual(os.path.getsize(moved), 2000000 + len("#!/bin/sh\nevil\n"))
+        self.assertEqual(os.stat(moved).st_mode & 0o777, 0o600)
+
+    def test_a_changed_executable_whose_old_version_wasnt_kept_stops_the_run(self):
+        """An updater writing ~/.local/bin mid-turn is the rare case; stopping is the safe one."""
+        uv = os.path.join(self.fake_home, ".local", "bin", "uv")
+        self.put(uv, "x" * 1500000)
+        os.chmod(uv, 0o755)
+        self.cli("sneak", FIX + 'echo more >> "$HOME/.local/bin/uv"\n')
+        r = self.work("make calc.add add", "--worker", "sneak {prompt}", "--verify", VERIFY, check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("changed and couldn't be put back", self.reverts()[uv], r.stdout)
+        self.assertIn("can't be put back", r.stdout + r.stderr)
 
     def test_a_turn_that_changes_nothing_is_reported_as_no_effect(self):
         self.cli("idle", 'echo "All done"\n')

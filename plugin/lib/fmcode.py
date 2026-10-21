@@ -742,12 +742,16 @@ class Run:
             if s == was.get(r) or not (stat.S_ISLNK(s[4]) or s[4] & 0o111) or r in held and _read(f) == held[r]:
                 continue
             shim = "a worker never plants a command in ~/.local/bin"
-            if s[1] > KEEP_ASIDE and not stat.S_ISLNK(s[4]):  # an updater's binary as likely as a worker's: no block
-                out.append((f, f"{shim} (left as it is, run not stopped: over 1 MB, too big to keep a copy of; "
-                               "check it)"))
-            elif r in was and r not in held:
+            if r not in was and not stat.S_ISLNK(s[4]):  # new: moved aside whole, any size (a padded shim goes too)
+                moved = _keep_aside(self.jreal, f, move=True)
+                if not moved:
+                    lost.append(f)
+                out.append((f, f"{shim} " + (f"(the worker's version kept at {moved})" if moved else
+                                             "(not removed: it couldn't be moved aside whole into the journal folder)")))
+            elif r in was and r not in held:  # an updater mid-turn is the rare case: stopping is the safe one
                 lost.append(f)
-                out.append((f, f"{shim} (not put back: its old version was over 1 MB, not held)"))
+                out.append((f, f"{shim} (it changed and couldn't be put back: its old version was over 1 MB, not "
+                               "kept)"))
             else:
                 back(f, held.get(r), shim, whole=True)
         claude, now = os.path.join(home, ".claude.json"), _mcp(os.path.join(home, ".claude.json"))
@@ -1221,12 +1225,14 @@ def _restore(path, saved):
     return False
 
 
-def _keep_aside(jdir, path, whole=False):
+def _keep_aside(jdir, path, whole=False, move=False):
     """T-1417: the worker's version of a file outside the repo, about to be put back, kept (its first KEEP_ASIDE bytes)
-    as <jdir>/reverted/<hash>-<name>, readable by the user only; None for a link, folder or anything unreadable, for
-    one over KEEP_ASIDE when whole, and when a folder on the way is a link or not the user's own (the worker can write
-    the journal folder: a reverted/ linked into ~/.config/autostart would have the judge plant its file there). jdir is
-    a realpath taken before any worker ran, so no link is expected anywhere on it."""
+    as <jdir>/reverted/<hash>-<name>, readable by the user only; with move, the file itself is renamed there, whole
+    whatever its size (a new ~/.local/bin shim padded past the cap goes too). None for a link, folder or anything
+    unreadable, for one over KEEP_ASIDE when whole, for a move across filesystems, and when a folder on the way is a
+    link or not the user's own (the worker can write the journal folder: a reverted/ linked into ~/.config/autostart
+    would have the judge plant its file there). jdir is a realpath taken before any worker ran, so no link is expected
+    anywhere on it."""
     fds = []
     try:
         if not jdir or not stat.S_ISREG(os.lstat(path).st_mode):
@@ -1235,7 +1241,7 @@ def _keep_aside(jdir, path, whole=False):
         with os.fdopen(fd, "rb") as f:
             data = f.read(KEEP_ASIDE + 1)
         if len(data) > KEEP_ASIDE:
-            if whole:
+            if whole and not move:
                 return None
             data = data[:KEEP_ASIDE]
         fds.append(os.open("/", os.O_RDONLY | os.O_DIRECTORY))
@@ -1255,6 +1261,15 @@ def _keep_aside(jdir, path, whole=False):
             os.unlink(name, dir_fd=fds[-1])
         except FileNotFoundError:
             pass
+        if move:
+            os.rename(path, name, dst_dir_fd=fds[-1])
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fds[-1])
+            try:
+                if os.fstat(fd).st_nlink == 1:  # a hard link to one of the user's own files keeps its mode
+                    os.fchmod(fd, 0o600)
+            finally:
+                os.close(fd)
+            return os.path.join(jdir, "reverted", name)
         fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=fds[-1])
         with os.fdopen(fd, "wb") as f:
             f.write(data)
@@ -1368,8 +1383,7 @@ def _snapshot(root, verify=None):
     hooks, home = os.path.join(cd, "hooks"), os.path.expanduser("~")
     own = {os.path.join(cd, "config"), os.path.join(cd, "config.worktree"), os.path.join(gd, "config.worktree"),
            os.path.join(cd, "info", "exclude"),  # an exclude line would hide a planted file from git status
-           os.path.join(home, ".gitconfig"), os.path.join(os.environ.get("XDG_CONFIG_HOME") or
-                                                          os.path.join(home, ".config"), "git", "config")}
+           os.path.join(home, ".gitconfig"), *(os.path.join(c, "git", "config") for c in _cfgs(home))}
     own |= {x for x in (os.environ.get("GIT_CONFIG_GLOBAL"), os.path.join(root, ".git")) if x and os.path.isfile(x)}
     stats, strict = _stats(root), _strict(root)
     kept = {r: _read(os.path.join(root, r)) for r, s in stats.items() if s[1] <= KEEP_MAX and (
@@ -1379,7 +1393,7 @@ def _snapshot(root, verify=None):
     held = _home_held(home)
     held |= {r for r in (os.path.realpath(f) for f in held if os.path.islink(f)) if _users(r)}  # T-1393: a dotfiles
     # link is written through; T-1417: not a root-owned unit a .wants link names, which an upgrade may change
-    dirs = {d for f in held | {os.path.join(x, "_") for x in [os.path.join(_fish(home), "conf.d")] +
+    dirs = {d for f in held | {os.path.join(x, "_") for x in [os.path.join(y, "conf.d") for y in _fish(home)] +
                                  _home_folders(home)} for d in _parents(f, home)}
     bin_ = _home_folders(home)[-1]
     bins = _stats(bin_)
@@ -1394,8 +1408,14 @@ def _snapshot(root, verify=None):
 WATCHED = (".claude", ".foreman")  # also judged by the guard when git doesn't show them
 
 
+def _cfgs(home):
+    """T-1417: XDG_CONFIG_HOME and ~/.config, once each: a login reads both, whatever this shell sets."""
+    return list(dict.fromkeys([os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"),
+                               os.path.join(home, ".config")]))
+
+
 def _fish(home):
-    return os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "fish")
+    return [os.path.join(c, "fish") for c in _cfgs(home)]
 
 
 def _home_held(home):
@@ -1406,23 +1426,22 @@ def _home_held(home):
                                            ".profile")}
     out |= {os.path.join(z, f) for z in {home, env("ZDOTDIR") or home}
             for f in (".zshenv", ".zshrc", ".zprofile", ".zlogin", ".zlogout")}
-    out |= {os.path.join(_fish(home), "config.fish"),
-            os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
+    out |= {os.path.join(f, "config.fish") for f in _fish(home)}
+    out |= {            os.path.join(env("CODEX_HOME") or os.path.join(home, ".codex"), "config.toml"),
             os.path.join(home, ".gemini", "settings.json"), os.path.join(home, ".claude", "settings.json"),
             os.path.join(home, ".claude", "settings.local.json"),
             os.path.join(home, ".ssh", "authorized_keys"), os.path.join(home, ".ssh", "authorized_keys2"),  # T-1417
             os.path.join(home, ".ssh", "rc"), os.path.join(home, ".ssh", "config"),  # a ProxyCommand runs
-            os.path.join(home, ".xprofile"), os.path.join(home, ".xinitrc")}
+            *(os.path.join(home, f) for f in (".xprofile", ".xinitrc", ".xsession", ".xsessionrc"))}
     out |= {os.path.join(d, r) for d in _home_folders(home)[:-1] for r in _stats(d)}  # T-1417: every file in them
-    return out | set(glob.glob(os.path.join(glob.escape(_fish(home)), "conf.d", "*.fish")))
+    return out | {g for f in _fish(home) for g in glob.glob(os.path.join(glob.escape(f), "conf.d", "*.fish"))}
 
 
 def _home_folders(home):
     """T-1417: folders whose every file runs later (a login's autostart entries and user units, ~/.bashrc.d
     snippets) and, last, ~/.local/bin, where only a new or changed executable is judged (a shim that shadows a
     real command). Under both the XDG_* folder and its default, as a login reads both, whatever this shell sets."""
-    env = os.environ.get
-    cfgs = dict.fromkeys([env("XDG_CONFIG_HOME") or os.path.join(home, ".config"), os.path.join(home, ".config")])
+    env, cfgs = os.environ.get, _cfgs(home)
     data = dict.fromkeys([env("XDG_DATA_HOME") or os.path.join(home, ".local", "share"),
                           os.path.join(home, ".local", "share")])
     return ([os.path.join(c, d) for c in cfgs for d in ("autostart", os.path.join("systemd", "user"), "environment.d")]
