@@ -144,8 +144,10 @@ def _canary(ctx):
     log = _canary_log(ctx["p"], ctx["version"])
     os.makedirs(os.path.dirname(log), exist_ok=True)
     with open(log, "wb") as f:
-        subprocess.Popen([sys.executable, os.path.abspath(__file__), "--canary-worker", ctx["version"], ctx["root"]],
-                         stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+        proc = subprocess.Popen([sys.executable, os.path.abspath(__file__), "--canary-worker", ctx["version"], ctx["root"]],
+                                stdin=subprocess.DEVNULL, stdout=f, stderr=subprocess.STDOUT, start_new_session=True)
+    if os.environ.get("FOREMAN_NO_BACKGROUND"):  # tests: a detached child writing into a test's folder races its cleanup
+        proc.wait()
     print(f"  canary (fm sentinel in every local project) started in the background; its report: {log} (fm release --canary-status)")
 
 

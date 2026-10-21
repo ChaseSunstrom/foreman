@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm release starts its canary detached: `--push` returns once pushed, the report lands in the project's logs/canary-VERSION.txt, a project whose past check now fails gets an inbox item and an `fm notify` message, and `fm release --canary-status` prints the last run (T-1362).
 - fm code tui: an extension's panel, handler or command that fails or runs slow (a panel over 50 ms on 3 frames running, a handler over 50 ms, a command over 2 s) is switched off with a note in Activity, never taking the screen down; built-in panels are never switched off (T-1315).
 - "Stop asking me if you can release", "don't stop until it's done" and the like no longer record a veto: they tell Foreman to go ahead (T-1323).
 - fm code tui has a test net: golden frames of the demo run (FM_GOLDEN=regen rewrites them), a seeded fuzz of 300 malformed event streams at six sizes, and a pty test that resizes and quits; a malformed event now changes nothing instead of crashing the screen (14 crash classes found and fixed) (T-1306)
