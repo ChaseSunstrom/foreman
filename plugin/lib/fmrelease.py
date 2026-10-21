@@ -157,11 +157,15 @@ def _canary(ctx):
             print(line, flush=True)
 
 
+_NEED_GRANT = ("--push needs the active task's publish grant: fm ask ID publish (the user's yes), or, where the user "
+               "has given standing permission to release, fm task set ID --allow publish")
+
+
 def _push(ctx):
     root, v, p, remote = ctx["root"], ctx["version"], ctx["p"], ctx["remote"]
     b = _grant(p)
     if not b:
-        _err("--push needs the active task's publish grant (fm ask ID publish)")
+        _err(_NEED_GRANT)
     sha = ctx["state"].get("sha") or _err(f"no release commit recorded for {v}: fm release --abandon, then release again")
     _git(root, "fetch", "-q", remote, "main")
     _spend(p, b.id)  # the yes covers this one push: spent before it, as fm pr train does
@@ -258,7 +262,7 @@ def run(p, args):
         if state["no_check"] or state["skipped"]:
             _err("a release with skipped gates (--no-check) can't --push; nothing was changed")
         if not _grant(p):
-            _err("--push needs the active task's publish grant (fm ask ID publish); nothing was changed")
+            _err(_NEED_GRANT + "; nothing was changed")
         url = _git(root, "remote", "get-url", state["remote"], ok=True).strip() or state["remote"]
         if os.environ.get("FOREMAN_RELEASE_FM") and not os.path.isdir(url):
             _err("FOREMAN_RELEASE_FM (a stub fm for the gates, for tests) can't --push to a real remote; nothing was changed")

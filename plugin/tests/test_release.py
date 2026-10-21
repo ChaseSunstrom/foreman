@@ -149,7 +149,10 @@ class Release(ForemanTestCase):
     def test_push_without_the_publish_grant_refuses_before_any_change(self):
         r = self.rel("9.9.9", "--push", check=False)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("publish", r.stderr + r.stdout)
+        out = r.stderr + r.stdout
+        self.assertIn("fm ask ID publish", out)  # T-1322: both ways, the ask first
+        self.assertIn("fm task set ID --allow publish", out)
+        self.assertLess(out.index("fm ask ID publish"), out.index("--allow publish"))
         self.assertEqual(sh(self.repo, "status", "--porcelain"), "")
         self.assertEqual(self.subject(), "Foreman 1.0.0")
 
