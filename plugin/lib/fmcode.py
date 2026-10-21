@@ -1018,14 +1018,17 @@ def dangerous_flags(tpl, depth=0):
         words = shlex.split(tpl)
     except ValueError:
         words = tpl.split()
-    gemini = any(os.path.basename(w) == "gemini" for w in words)
+    names = {os.path.basename(w) for w in words}
+    gemini, cursor = "gemini" in names, "cursor-agent" in names
     hits = []
     for i, w in enumerate(words):
         flag, eq, val = w.partition("=")
         val = val if eq else (words[i + 1] if i + 1 < len(words) else "")
-        if (flag == "--yolo" or flag.startswith("--dangerously-") or "danger-full-access" in w or "bypassPermissions" in w
+        if (flag in ("--yolo", "--yes-always", "--trust-all-tools", "-anever") or flag.startswith("--dangerously-")
+                or "danger-full-access" in w or "bypassPermissions" in w
                 or (flag == "--approval-mode" and val == "yolo") or (flag in ("-a", "--ask-for-approval") and val == "never")
-                or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")):
+                or (flag.strip("'\" ") == "approval_policy" and val.strip("'\" ") == "never") or (gemini and w == "-y")
+                or (cursor and flag in ("--force", "-f"))):
             hits.append(f"{flag} {val}" if not eq and val in ("yolo", "never") else w)
     # T-1432 review: a shell wrapper's script (sh -c '…') is one word; read the words inside it too
     return hits + [h for w in words if depth < 3 and len(w.split()) > 1 for h in dangerous_flags(w, depth + 1)]
