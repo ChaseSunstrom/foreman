@@ -4657,7 +4657,19 @@ def cmd_complete(args):
     print("\n".join(found))
 
 
+_PARSER = None
+
+
 def build_parser():
+    """fm's parser, built once per process (T-1378): building it takes ~0.07 s, and the hook's in-process fm calls
+    and fmrecall's command search each asked for it again."""
+    global _PARSER
+    if _PARSER is None:
+        _PARSER = _build_parser()
+    return _PARSER
+
+
+def _build_parser():
     ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
                  description="Foreman state CLI (the only writer of Foreman state).")
     ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
@@ -5965,6 +5977,21 @@ def _task_shape(parser, argv):
     return argv[:lead + 2] + rest
 
 
+# T-1388: what a coding CLI fm code runs may still do with fm: read. Grants above all are the user's; codex's and
+# gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
+# ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
+WORKER_READS = {"state", "next", "queue", "help", "log", "recall", "map", "outline", "gates", "why", "show"}
+WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
+                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"})}
+
+
+def _worker_may(args):
+    if args.cmd in WORKER_SUBREADS:
+        attr, ok = WORKER_SUBREADS[args.cmd]
+        return getattr(args, attr, None) in ok
+    return args.cmd in WORKER_READS
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
@@ -5979,6 +6006,11 @@ def main(argv=None):
         print("fm help: every command")
         return main(["next"])
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
+    if os.environ.get("FOREMAN_WORKER_OF") and not _worker_may(args):
+        print(f"fm: refused: this is a worker of an fm code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
+              f"Foreman's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "
+              "own harness's)", file=sys.stderr)
+        return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
         _sync_in(args)
     try:
