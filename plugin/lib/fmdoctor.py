@@ -1112,18 +1112,22 @@ def _tree_hash(root, h, cap=4000):
 
 
 def _supply(claude):
-    """{id: sha256} of every enabled plugin's install tree and each MCP server's spec (user-wide and per project)."""
+    """{id: {"sha": sha256, "caps": fmplugins.capabilities}} of every installed plugin's install tree (T-1392: the
+    capability set beside the hash) and {"mcp:…": sha256} of each MCP server's spec (user-wide and per project)."""
     import hashlib
+    import fmplugins
     out = {}
     plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
-        h = hashlib.sha256()
+        h, caps = hashlib.sha256(), {}
         for inst in installs if isinstance(installs, list) else [installs]:
             root = inst.get("installPath") if isinstance(inst, dict) else None
             if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
                 _tree_hash(root, h)
-        out[pid] = h.hexdigest()
+                for k, v in fmplugins.capabilities(root).items():
+                    caps[k] = sorted(set(caps.get(k, [])) | set(v))
+        out[pid] = {"sha": h.hexdigest(), "caps": caps}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
     scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
@@ -1153,13 +1157,36 @@ def _check_supply(claude, accept):
         c.write_atomic(path, json.dumps(now, sort_keys=True, indent=1))
         return Result("supply chain", "PASS", f"{'accepted' if accept and seen is not None else 'baseline of'} "
                                               f"{len(now)} plugin(s) and MCP server(s)")
-    changed = sorted(k for k in now if seen.get(k) not in (None, now[k]))
+    sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
+    changed = sorted(k for k in now if k in seen and sha(seen[k]) != sha(now[k]))
     added, gone = sorted(set(now) - set(seen)), sorted(set(seen) - set(now))
     if not (changed or added or gone):
         return Result("supply chain", "PASS", f"{len(now)} plugin(s) and MCP server(s) unchanged")
-    return Result("supply chain", "WARN", "; ".join(x for x in (
+    held = [f"{k} {d}" for k in changed for d in _capability_delta(seen[k], now[k])]
+    note = "; ".join(x for x in (
         f"changed: {', '.join(changed)}" if changed else "", f"new: {', '.join(added)}" if added else "",
-        f"gone: {', '.join(gone)}" if gone else "") if x) + " — expected (an update you ran)? fm doctor --accept-supply")
+        f"gone: {', '.join(gone)}" if gone else "") if x)
+    if held:  # T-1392: new code that runs on its own is held, named, until accepted
+        return Result("supply chain", "FAIL", "; ".join(held) + f" ({note}) — review what it runs, then "
+                                                                 "fm doctor --accept-supply")
+    return Result("supply chain", "WARN", note + " — expected (an update you ran)? fm doctor --accept-supply")
+
+
+def _capability_delta(was, now):
+    """T-1392: what an update adds that runs on its own: hook events, hook handlers on an existing event, MCP servers
+    and scripts, as "adds …" phrases ([] when the baseline recorded no capability set)."""
+    was, now = (v.get("caps") if isinstance(v, dict) else None for v in (was, now))
+    if not isinstance(was, dict) or not isinstance(now, dict):
+        return []
+    def new(k):
+        had = set(was.get(k) or [])
+        return [x for x in now.get(k) or [] if x not in had]
+    events = new("hooks")
+    return ([f"adds hook {c.plain(e)[:40]}" for e in events]
+            + [f"adds a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
+               for h in new("handlers") if h.split(" ", 1)[0] not in events]
+            + [f"adds MCP server {c.plain(m)[:40]}" for m in new("mcp")]
+            + [f"adds script {c.plain(s)[:80]}" for s in new("scripts")])
 
 
 ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")
