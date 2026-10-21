@@ -256,6 +256,11 @@ def check_frontmatter(plugin=PLUGIN):
         meta = _frontmatter(os.path.join(skills, name, "SKILL.md"))
         if meta is None or not meta.get("name") or not meta.get("description"):
             bad.append(f"skill {name}: missing frontmatter name/description")
+            continue
+        import fmplugins  # T-1396: the Agent Skills spec, as fm lib's source indexer checks it
+        why = fmplugins.spec_problems(fmplugins._frontmatter(os.path.join(skills, name, "SKILL.md")), name)
+        if why:
+            bad.append(f"skill {name}: {'; '.join(why)}")
     agents = os.path.join(plugin, "agents")
     for f in sorted(os.listdir(agents)) if os.path.isdir(agents) else []:
         meta = _frontmatter(os.path.join(agents, f))
