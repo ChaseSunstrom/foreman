@@ -23,6 +23,7 @@
 - fm code's screen measures text by the columns it fills: wide (CJK, emoji) titles are cut with their ellipsis, and the history and project rows stay aligned with the box border intact (T-1301).
 - fm code hardening: an inline `--worker` template that turns its CLI's approvals off is refused (a shell wrapper like `sh -c '…'` included), pointing to a code.toml runner with an `[ack]`; Alibaba and Azure metadata addresses and hostnames resolving to any metadata address are refused as model endpoints; a model server's string or null token counts count as 0 instead of crashing; a lean claude planner whose session loads MCP servers or plugins is stopped naming them; and a read from inside a worker no longer creates a project (T-1432).
 - `fm bench gate` shows passes and cost per case with a ± noise band from repeated runs; a loss inside it reads "within noise" and doesn't fail the gate, one outside it still does (T-1260).
+- Foreman UI: with the mascot off, a running subagent's time still counts up (its row was redrawn only by the mascot's blink); the subagent-row test no longer times out on a busy machine (T-1437, T-1427).
 - fm code's write and edit keep a file's line endings (LF text over a CRLF file stays CRLF), refuse a binary, non-UTF-8 or non-regular target instead of rewriting it, and refuse option-shaped paths like `-` and `--x` (T-1408).
 
 ## 1.2.48 — 2026-10-21

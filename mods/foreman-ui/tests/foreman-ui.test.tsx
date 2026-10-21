@@ -938,14 +938,15 @@ test('the band tallies what closed since the person last wrote, until they write
   await ui.unmount()
 })
 
-test('a subagent the engine no longer lists leaves; a quiet one shows how long and can be stopped', async ($, on) => {
-  // T-0121: one stale entry read as a subagent 'running for almost 10 hours'
+test('a subagent the engine no longer lists leaves; a quiet one shows how long and can be stopped', { options: { motion: 'off' } }, async ($, on) => {
+  // T-0121: one stale entry read as a subagent 'running for almost 10 hours'. T-1427: the pane mounts after the 11
+  // fake minutes; mounted through them it redrew ~5,500 frames and 330 blinks and outran the 5 s budget under load
   const { clock, agentStatus, tools } = world(on, [CALM])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
   const inSubagent = { tool: 'Read' as const, file_path: '/repo/a.py', agentId: 'ag2' }
   await $.tool.call(inSubagent)
-  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   await clock.advance(11 * 60 * 1000)
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
   expect(await pane.find({ type: 'Text', text: /quiet 11m/ })).toBeDefined()
   await pane.press({ key: 'stop-ag2' })
   expect(tools).toContain('TaskStop ag2')
@@ -953,6 +954,19 @@ test('a subagent the engine no longer lists leaves; a quiet one shows how long a
   await clock.advance(2000)
   expect(await pane.find({ type: 'Text', text: /▐▛█▜▌/ })).toBeUndefined()
   expect(await pane.find({ key: 'stop-ag2' })).toBeUndefined()
+  await pane.unmount()
+})
+
+test('with the mascot off a quiet subagent row still counts up (T-1437)', { options: { motion: 'off', mascot: 'off' } }, async ($, on) => {
+  // T-1437: the mascot's blink was the only repaint between full refreshes, so with it off the time froze
+  const { clock } = world(on, [CALM])
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  await $.tool.call({ tool: 'Read' as const, file_path: '/repo/a.py', agentId: 'ag2' })
+  await clock.advance(2 * 60 * 1000 + 1000)
+  const pane = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  expect(await pane.find({ type: 'Text', text: /quiet 2m/ })).toBeDefined()
+  await clock.advance(20 * 1000)
+  expect(await pane.find({ type: 'Text', text: /quiet 2m 2\ds/ })).toBeDefined()
   await pane.unmount()
 })
 
