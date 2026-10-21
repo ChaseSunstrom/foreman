@@ -4285,13 +4285,22 @@ def cmd_audit(args):
     if branch and not args.base and c._git(p.root, "rev-parse", "--verify", "-q", f"refs/heads/{branch}", fail=None):
         # T-0718: a builder's work is on its branch: from where it left main, not main's own commits since
         base, tree, upto = c._git(p.root, "merge-base", "HEAD", branch).strip() or base, branch, f"branch {branch}"
-    try:
-        r = subprocess.run(["git", "-C", p.root, "diff", base, tree], capture_output=True, text=True, errors="replace",
-                           timeout=300)
-    except subprocess.TimeoutExpired:
-        raise UsageError(f"git diff {base[:12]} took over 5 minutes; narrow it with --base <a later rev>")
-    if r.returncode:
-        raise UsageError(f"git diff {base} failed: {r.stderr.strip()[:200]}")
+    pairs = [(base, tree)]
+    if tree == branch:  # T-1296: edits not yet committed in this checkout belong to the task as well
+        now = c.worktree_tree(p.root)
+        if now:
+            pairs.append(("HEAD", now))
+    stdout = ""
+    for a, z in pairs:
+        try:
+            r = subprocess.run(["git", "-C", p.root, "diff", a, z], capture_output=True, text=True, errors="replace",
+                               timeout=300)
+        except subprocess.TimeoutExpired:
+            raise UsageError(f"git diff {a[:12]} took over 5 minutes; narrow it with --base <a later rev>")
+        if r.returncode:
+            raise UsageError(f"git diff {a} failed: {r.stderr.strip()[:200]}")
+        stdout += r.stdout
+    r.stdout = stdout
     path = os.path.join(p.dir, "audits", f"{b.id}.diff")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     shown = _compact_diff(_without_secrets(p.root, r.stdout))  # the pre-audit reads the raw diff (T-0723)
