@@ -226,7 +226,7 @@ def check_truncated(profile, messages, r):
     if not isinstance(got, int) or isinstance(got, bool):
         return
     sent = sum(len(str(x.get("content") or "")) for x in messages) // 4  # ponytail: chars/4, a tokenizer if it misfires
-    if sent > 2000 and 0 < got < 0.7 * sent:
+    if sent > 2000 and 0 < got < 0.5 * sent:  # half: a whitespace-heavy read can pack ~6 characters a token
         raise CodeError(f"{profile['name']}: the model's server truncated the prompt at {got} tokens (about {sent} "
                         "sent): use a model with a longer context or a smaller request")
 
