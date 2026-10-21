@@ -759,6 +759,10 @@ def check_hook_errors():
 
 # ---------------------------------------------------------------- orchestration
 
+class _NoBench(Exception):
+    pass
+
+
 def _bench_and_injection(runs=5):
     import tempfile
     sys.path.insert(0, os.path.join(PLUGIN, "tests"))
@@ -1261,10 +1265,15 @@ def run_all(full=False, accept_supply=False):
                check_supply(claude, accept_supply), check_worktree_base(settings), check_fm_link(),
                check_invisible_text(instruction_files())]
     try:
+        if os.environ.get("FOREMAN_DOCTOR_BENCH") == "0":  # T-1379: the tests' fm doctor runs, which read no timings
+            raise _NoBench
         load = busy()
         bench, sizes = _bench_and_injection(bench_runs(load))
         load = load or busy()  # T-1219: a burst that began during the bench made its timings, not the hooks, slow
         results += [check_hook_latency(bench, load), check_hook_exit_codes(bench), check_injection_budgets(sizes)]
+    except _NoBench:
+        results += [Result(n, "WARN", "not measured (FOREMAN_DOCTOR_BENCH=0)")
+                    for n in ("hook latency", "hook exit codes", "injection budgets")]
     except Exception as e:  # the bench itself failing is a finding, not a crash
         results += [Result(n, "FAIL", f"bench failed: {e}") for n in ("hook latency", "hook exit codes", "injection budgets")]
     results += [check_hook_errors(), check_hook_slo(), check_hook_writers(settings, home), check_name_collisions(settings),

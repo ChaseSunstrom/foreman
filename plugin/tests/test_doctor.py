@@ -452,6 +452,16 @@ class Command(ForemanTestCase):
         self.assertIn("fm doctor:", quiet)
         self.assertIn("pass", quiet.splitlines()[-1], "the summary still counts them")
 
+    def test_the_tests_skip_the_hook_bench_and_doctor_says_so(self):
+        # T-1379: the bench is ~100 hook runs (13 of doctor's 18 s at load 44, past 30 s at 60), and the tests that run
+        # fm doctor for its other checks waited on it inside a 30 s limit; FOREMAN_DOCTOR_BENCH=0 (set for every test)
+        self.fm("init")
+        rs = {r["name"]: r for r in json.loads(self.fm("doctor", "--json", check=False, env={"HOME": self.tmp}).stdout)
+              ["results"]}
+        for n in ("hook latency", "hook exit codes", "injection budgets"):
+            self.assertEqual(rs[n]["status"], "WARN", rs[n])
+            self.assertIn("FOREMAN_DOCTOR_BENCH=0", rs[n]["detail"])
+
 
 if __name__ == "__main__":
     unittest.main()
