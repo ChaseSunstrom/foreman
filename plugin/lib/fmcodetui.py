@@ -99,6 +99,10 @@ SINGLE_BELOW = 60  # columns: a terminal narrower than this shows the activity l
 
 # ---------------------------------------------------------------- state: what the events say happened
 
+class NewerStream(ValueError):
+    """A stream from a newer fm code: said on the screen, not skipped like a malformed event."""
+
+
 class State:
     def __init__(self):
         self.request = self.task = self.model = self.worker = self.error = None
@@ -114,8 +118,22 @@ class State:
         kind = e.get("event") if isinstance(e, dict) else None
         fn = getattr(self, f"_on_{kind}", None) if isinstance(kind, str) and kind.isidentifier() else None
         if fn:
-            fn(e)
-            if isinstance(e.get("ts"), (int, float)):
+            ts = e.get("ts")
+            if "ts" in e and not (isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts)):
+                e = {k: v for k, v in e.items() if k != "ts"}  # T-1306: a time that isn't a finite number isn't one
+            # T-1306: a handler that trips on a bad field leaves the state as it was. One level of copies covers the
+            # handlers here: each validates before it changes anything nested. ponytail: the copy grows with the log
+            # (quadratic over a run); fine at hundreds of events, validate per handler if runs reach tens of thousands.
+            before = {k: v.copy() if isinstance(v, (list, dict)) else v for k, v in vars(self).items()}
+            try:
+                fn(e)
+            except Exception as x:
+                vars(self).clear()
+                vars(self).update(before)
+                if isinstance(x, NewerStream):
+                    raise
+                return self
+            if "ts" in e:
                 self.first_ts = self.first_ts or e["ts"]
                 self.last_ts = e["ts"]
         for h in (HANDLERS.get(kind, []) + HANDLERS.get("*", [])) if isinstance(kind, str) else []:
@@ -133,12 +151,14 @@ class State:
 
     def _on_start(self, e):
         if int(e.get("schema") or 1) > SCHEMA:
-            raise ValueError(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Foreman")
+            raise NewerStream(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Foreman")
         if e.get("resume") and self.plan:  # fm code --resume sends no plan again: the screen keeps the run's
             self.task, self.status = e.get("task") or self.task, "running"
             return
         self.__init__()
-        self.request, self.model, self.worker, self.task = (e.get(k) for k in ("request", "model", "worker", "task"))
+        self.request, self.model, self.worker = (None if e.get(k) is None else str(e[k])  # the header joins them
+                                                 for k in ("request", "model", "worker"))
+        self.task = e.get("task")
         self.status = "planning"
 
     def _on_plan(self, e):
@@ -203,14 +223,15 @@ class State:
     def _on_changed(self, e):
         self.files[int(e.get("step") or self.step)] = [str(f) for f in e.get("files") or []]
         if isinstance(e.get("stat"), dict):
-            self.stat = {str(k): v for k, v in e["stat"].items() if isinstance(v, list) and len(v) == 2}
+            self.stat = {str(k): v for k, v in e["stat"].items() if isinstance(v, list) and len(v) == 2
+                         and all(type(n) is int for n in v)}  # the Changed title sums them
 
     def _on_closed(self, e):
+        if isinstance(e.get("tokens"), list) and len(e["tokens"]) == 2:  # first: a bad count changes nothing
+            self.tokens = [int(e["tokens"][0] or 0), int(e["tokens"][1] or 0)]
         self.status, self.closed = "closed", e.get("text", "")
         for s in self.steps:
             s["state"] = "done"
-        if isinstance(e.get("tokens"), list) and len(e["tokens"]) == 2:
-            self.tokens = [int(e["tokens"][0] or 0), int(e["tokens"][1] or 0)]
         self.note("closed", text=e.get("text", ""))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
