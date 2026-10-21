@@ -111,7 +111,7 @@ class Worker(CodeCase):
         import fmcode
         import fmmodels
         run = types.SimpleNamespace(worker="claude", model_name="claude (plan, read-only)", root=self.repo,
-                                    worker_timeout=5)
+                                    worker_timeout=5, live_tools=lambda who: None, live_beat=lambda who: None)
         with unittest.mock.patch.object(fmmodels, "resolve", side_effect=fmmodels.ModelError("no model profile")):
             self.assertEqual(fmcode.choose_profile(run, None)["kind"], "cli")
             with self.assertRaises(fmmodels.ModelError):
@@ -160,8 +160,220 @@ class Worker(CodeCase):
         r = self.work("make calc.add add", "--worker", "fix-calc {prompt}", check=False)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("--verify", r.stderr)
+        tools = os.path.join(self.tmp, "tools")  # git and python3 only: no CLI that can plan, the real claude least
+        os.makedirs(tools)
+        for t in ("git", "python3"):
+            os.symlink(shutil.which(t), os.path.join(tools, t))
+        r = self.code("make calc.add add", check=False, env={"PATH": self.bin + os.pathsep + tools})
+        self.assertIn("--worker claude", r.stderr, "no CLI that can plan is installed: say which would")
+
+    # T-1328: runners
+    def runners(self, *args, config=None):
+        if config is not None:
+            with open(os.path.join(self.home, "code.toml"), "w") as f:
+                f.write(config)
+        r = self.work("runners", *args, "--json", check=False)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return json.loads(r.stdout)
+
+    def test_runners_lists_every_cli_and_what_it_can_do(self):
+        for name in ("claude", "codex"):
+            self.cli(name, "echo hi\n")
+        got = {r["name"]: r for r in self.runners()["runners"]}
+        self.assertTrue(got["claude"]["installed"] and got["claude"]["plans"] and got["claude"]["verified"])
+        self.assertTrue(got["codex"]["installed"] and got["codex"]["works"])
+        self.assertFalse(got["codex"]["verified"], "a read-only mode not run here isn't claimed")
+        self.assertIn("opencode", got)
+        self.assertFalse(got["opencode"]["works"], "no preset that confines its shell commands")
+        self.assertEqual(self.runners()["default"], "claude", "the verified planner, with nothing configured")
+
+    def test_no_model_and_no_flag_uses_the_verified_planner_and_says_so(self):
+        self.planner({"type": "result", "is_error": False, "usage": {}, "result": json.dumps(
+            {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}],
+             "steps": ["fix"]})})
+        r = self.work("make calc.add add", "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        self.assertEqual(next(e for e in events if e["event"] == "start")["worker"], "claude")
+        self.assertTrue(any(e["event"] == "note" and "claude" in e["text"] for e in events), "it says which runner")
+
+    def test_the_config_picks_the_default_and_defines_a_custom_cli(self):
+        self.cli("mycli", "fix-calc\n")
+        self.assertEqual(self.runners(config='runner = "mine"\n[runners.mine]\nwork = "mycli {prompt}"\n')["default"],
+                         "mine")
+        r = self.work("FIX: make calc.add add", "--verify", VERIFY, "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        events = [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+        self.assertEqual(next(e for e in events if e["event"] == "start")["worker"], "mine")
+        self.work("runners", "--use", "claude")
+        self.assertIn('runner = "claude"', read_text(os.path.join(self.home, "code.toml")))
+        self.assertIn("[runners.mine]", read_text(os.path.join(self.home, "code.toml")), "the rest of the file stays")
+
+    def test_a_project_picks_a_runner_by_name_only(self):
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        self.assertEqual(self.runners()["default"], "codex")
+        r = self.work("runners", "--use", "rm -rf ~ {prompt}", "--here", check=False)
+        self.assertNotEqual(r.returncode, 0, "a project's choice names a runner; it can't be a command")
+        self.assertIn("codex", r.stderr + r.stdout, "it lists the names it takes")
+
+    def test_a_broken_config_is_named_and_the_list_still_shows(self):
+        got = self.runners(config="runner =\n")
+        self.assertIn("code.toml", got["problem"])
+        self.assertIn("claude", [r["name"] for r in got["runners"]])
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('[runners.mine]\nwork = "mycli"\n')
+        r = self.work("runners", check=False)
+        self.assertIn("{prompt}", r.stdout + r.stderr, "a template without {prompt} says what it lacks")
+
+    def test_a_hand_edited_project_runner_never_becomes_a_command(self):
+        import glob
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        [meta] = [f for f in glob.glob(os.path.join(self.home, "**", "meta.json"), recursive=True)
+                  if '"code_runner"' in read_text(f)]
+        text = read_text(meta).replace('"codex"', '"touch pwned {prompt}"')
+        with open(meta, "w") as f:
+            f.write(text)
         r = self.work("make calc.add add", check=False)
-        self.assertIn("--worker claude", r.stderr, "a CLI you have can plan and work")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("isn't one fm code can run", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.repo, "pwned")))
+
+    def test_a_broken_model_setup_is_an_error_not_a_fallback_to_claude(self):
+        self.cli("claude", f"touch {self.tmp}/claude-ran\n")
+        with open(os.path.join(self.home, "models.json"), "w") as f:
+            f.write('{"default": "local-typo", "profiles": {}}')
+        r = self.work("make calc.add add", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("local-typo", r.stderr)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp, "claude-ran")))
+
+    def test_runners_lists_the_models_too_and_a_model_does_the_work(self):
+        self.serve("openai")
+        got = self.runners()
+        self.assertIn("fake", [x["name"] for x in got["models"]])
+        self.assertIsNone(got["default"], "a model is set up: it does the work, as before")
+
+    def test_a_project_pin_clears_and_here_alone_is_refused(self):
+        self.cli("codex", "fix-calc\n")
+        self.work("runners", "--use", "codex", "--here")
+        self.work("runners", "--use", "", "--here")
+        self.assertEqual(self.runners()["default"], "claude")
+        self.assertNotEqual(self.work("runners", "--here", check=False).returncode, 0)
+
+    def test_use_sets_the_top_level_key_only(self):
+        self.runners(config='[runners.mine]\nwork = "mycli {prompt}"\nrunner = "x"\n')
+        self.work("runners", "--use", "claude")
+        import tomllib
+        with open(os.path.join(self.home, "code.toml"), "rb") as f:
+            conf = tomllib.load(f)
+        self.assertEqual(conf["runner"], "claude")
+        self.assertEqual(conf["runners"]["mine"]["runner"], "x", "a key inside a table is left alone")
+
+    # T-1329: live progress from a streaming CLI, replayed from a real claude stream (this machine's paths removed)
+    STREAM = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "claude-worker-stream.jsonl")
+
+    def events(self, r):
+        return [json.loads(x) for x in r.stdout.splitlines() if x.startswith("{")]
+
+    def planner_stream(self, path):
+        """A fake claude whose plan-mode turn prints the stream at `path`; its work turn fixes calc."""
+        self.cli("claude", 'mode=; prev=\nfor a in "$@"; do [ "$prev" = "--permission-mode" ] && mode=$a; prev=$a; done\n'
+                           f'if [ "$mode" = plan ]; then cat {path}; else fix-calc; fi\n')
+
+    def test_a_claude_worker_turn_shows_each_tool_use_as_it_happens(self):
+        self.cli("claude", f'fix-calc\nsed "s#/work/repo#$PWD#g" {self.STREAM}\n')
+        r = self.work("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        tools = [(e["action"], e["target"]) for e in self.events(r) if e["event"] == "tool"]
+        self.assertIn(("edit", "calc.py"), tools, "a path in the repo shows relative")
+        self.assertIn(("run", "python3 test_calc.py"), tools)
+        self.assertTrue(any(a == "run" and t.startswith("pwd && git status") for a, t in tools), tools)
+        self.assertTrue(all(len(t) <= 200 and "\n" not in t for _, t in tools))
+
+    def test_the_planner_reads_its_reply_from_the_streams_result_line(self):
+        plan = {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}], "steps": ["s"]}
+        lines = ['{"type":"system","subtype":"init"}', "not json at all",
+                 json.dumps({"type": "assistant", "message": {"content": [
+                     {"type": "tool_use", "name": "Read", "input": {"file_path": os.path.join(self.repo, "calc.py")}}]}}),
+                 json.dumps({"type": "result", "is_error": False, "result": json.dumps(plan),
+                             "usage": {"input_tokens": 10, "cache_read_input_tokens": 90, "output_tokens": 20}})]
+        with open(os.path.join(self.tmp, "stream.jsonl"), "w") as f:
+            f.write("\n".join(lines) + "\n")
+        self.planner_stream(os.path.join(self.tmp, "stream.jsonl"))
+        r = self.work("make calc.add add", "--worker", "claude", "--json", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        ev = self.events(r)
+        self.assertIn(("read", "calc.py"), [(e["action"], e["target"]) for e in ev if e["event"] == "tool"])
+        self.assertIn(120, [e.get("total_in", 0) + e.get("total_out", 0) for e in ev if e["event"] == "tokens"])
+
+    def test_a_planner_stream_with_no_result_line_is_an_error(self):
+        with open(os.path.join(self.tmp, "stream.jsonl"), "w") as f:
+            f.write('{"type":"system","subtype":"init"}\n{"type":"assistant","message":{"content":[]}}\n')
+        self.planner_stream(os.path.join(self.tmp, "stream.jsonl"))
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("no result", r.stderr)
+
+    def test_the_reader_keeps_draining_when_a_callback_fails(self):
+        import fmcore
+        r, w = os.pipe()
+        data = b"x" * 300000 + b"\nlast\n"
+        got = bytearray()
+
+        def boom(line):
+            raise UnicodeEncodeError("utf-8", "\ud800", 0, 1, "surrogate")
+        writer = subprocess.Popen([sys.executable, "-c", "import os,sys; os.write(1, sys.stdin.buffer.read())"],
+                                  stdin=subprocess.PIPE, stdout=w)
+        os.close(w)
+        writer.stdin.write(data)
+        writer.stdin.close()
+        with os.fdopen(r, "rb") as f:
+            fmcore.pump(f, got.extend, boom, 0.05, lambda: 1 / 0)
+        writer.wait(10)
+        self.assertEqual(bytes(got), data, "every byte drained though both callbacks raised")
+
+    def test_stream_targets_carry_no_control_characters(self):
+        import fmmodels
+        line = json.dumps({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Bash", "input": {"command": "echo \x1b]52;c;aGk=\x07 \x9b2J"}},
+            {"type": "tool_use", "name": "Odd\x1bTool", "input": {}}]}})
+        for action, target in fmmodels.stream_tools(line):
+            self.assertTrue((action + target).isprintable(), (action, target))
+
+    def test_a_result_line_with_no_reply_text_is_an_error(self):
+        with open(os.path.join(self.tmp, "stream.jsonl"), "w") as f:
+            f.write('{"type":"result","subtype":"error_max_turns","is_error":true,"usage":{}}\n')
+        self.planner_stream(os.path.join(self.tmp, "stream.jsonl"))
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("error_max_turns", r.stderr)
+        self.assertLess(len(r.stderr), 2000, "not the whole stream")
+
+    def test_a_claude_plan_override_without_stream_json_plans_from_plain_output(self):
+        plan = {"type": "FIX", "tier": "S", "title": "t", "criteria": [{"text": "adds", "verify": VERIFY}], "steps": ["s"]}
+        with open(os.path.join(self.tmp, "plain.json"), "w") as f:
+            f.write(json.dumps(plan))
+        self.planner_stream(os.path.join(self.tmp, "plain.json"))
+        with open(os.path.join(self.home, "code.toml"), "w") as f:
+            f.write('[runners.claude]\nplan = "claude -p {prompt} --permission-mode plan"\n')
+        r = self.work("make calc.add add", "--worker", "claude", check=False)
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+
+    def test_a_quiet_turn_sends_a_heartbeat(self):
+        self.cli("claude", "sleep 2\nfix-calc\n")
+        r = self.code("FIX: make calc.add add", "--worker", "claude", "--verify", VERIFY, "--json", check=False,
+                      env={"PATH": self.bin + os.pathsep + os.environ["PATH"], "FM_HEARTBEAT": "0.5"})
+        beats = [e for e in self.events(r) if e["event"] == "working"]
+        self.assertGreaterEqual(len(beats), 2, r.stdout)
+        self.assertEqual(beats[0]["worker"], "claude")
+
+    def test_a_named_planner_not_verified_here_warns(self):
+        self.cli("codex", "printf '%s' '" + json.dumps({"type": "FIX", "tier": "S", "title": "t", "criteria": [
+            {"text": "adds", "verify": VERIFY}], "steps": ["s"]}) + "'\n")
+        r = self.work("make calc.add add", "--worker", "codex", "--json", check=False)
+        self.assertIn("not verified", r.stdout + r.stderr)
 
     def test_a_worker_that_fixes_the_bug_closes_the_task(self):
         # a table name: claude's unattended form, with the prompt as one argument
@@ -310,6 +522,20 @@ class Worker(CodeCase):
         self.work("make calc.add add", "--worker", "envr {prompt}", "--verify", VERIFY)
         with open(out) as f:
             self.assertIn("FOREMAN_WORKER_OF=fm-code-T-0001", f.read())
+
+    def test_a_worker_turn_runs_its_hooks_quiet(self):
+        """T-1327: Foreman's hooks in the nested session run only the guard."""
+        out = os.path.join(self.tmp, "quiet")
+        self.cli("quietw", f'printf "%s" "$FOREMAN_QUIET" > {out}\nfix-calc\n')
+        self.work("make calc.add add", "--worker", "quietw {prompt}", "--verify", VERIFY)
+        self.assertEqual(read_text(out), "1")
+
+    def test_the_planner_cli_runs_its_hooks_quiet(self):
+        out = os.path.join(self.tmp, "quiet")
+        self.planner({"type": "result", "is_error": False, "usage": {}, "result": json.dumps({"answer": "ok"})},
+                     extra=f'printf "%s" "$FOREMAN_QUIET" > {out}')
+        self.work("what does calc.add do?", "--worker", "claude", check=False)
+        self.assertEqual(read_text(out), "1")
 
     def test_a_worker_gets_no_forge_cloud_or_registry_credentials(self):
         out = os.path.join(self.tmp, "env")

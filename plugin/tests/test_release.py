@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 
 from helpers import ForemanTestCase, read_json, read_text
 
@@ -27,7 +28,9 @@ elif verb == "sentinel":
         time.sleep(0.5)
         with open(log, "a") as f:
             f.write("end\\n")
+    time.sleep(float(os.environ.get("STUB_SLEEP", "0")))
     print("1 proof fails now")
+    sys.exit(1 if os.environ.get("STUB_FAIL") else 0)
 '''
 
 
@@ -149,7 +152,10 @@ class Release(ForemanTestCase):
     def test_push_without_the_publish_grant_refuses_before_any_change(self):
         r = self.rel("9.9.9", "--push", check=False)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("publish", r.stderr + r.stdout)
+        out = r.stderr + r.stdout
+        self.assertIn("fm ask ID publish", out)  # T-1322: both ways, the ask first
+        self.assertIn("fm task set ID --allow publish", out)
+        self.assertLess(out.index("fm ask ID publish"), out.index("--allow publish"))
         self.assertEqual(sh(self.repo, "status", "--porcelain"), "")
         self.assertEqual(self.subject(), "Foreman 1.0.0")
 
@@ -247,22 +253,55 @@ class Release(ForemanTestCase):
         self.assertEqual(sh(origin, "log", "-1", "--format=%s", "main").strip(), "Foreman 9.9.9")
         self.assertEqual(sh(self.repo, "tag", "--list").split().count("round-1"), 1, "no second round")
 
+    def canary_report(self, v):
+        """The detached canary's report once it has finished."""
+        path = os.path.join(c.find_project(self.repo).dir, "logs", f"canary-{v}.txt")
+        for _ in range(100):
+            if os.path.isfile(path) and "canary done" in read_text(path):
+                return read_text(path)
+            time.sleep(0.2)
+        self.fail("the canary never finished")
+
+    def test_the_canary_runs_detached_and_its_failure_lands_in_the_inbox_and_the_notify_hook(self):
+        note = os.path.join(self.tmp, "note.txt")
+        self.fm("notify", f'echo "$1" > {note}')
+        self.env.update(STUB_SLEEP="3", STUB_FAIL="1", FOREMAN_NO_BACKGROUND="")  # detached for real; waited on below
+        out = self.rel("9.9.9").stdout  # returns before the 3 s sentinel ends: the status below finds it unfinished
+        self.assertIn("canary-9.9.9.txt", out)
+        self.assertIn("--canary-status", out)
+        self.assertNotIn("canary done", self.rel("--canary-status").stdout)
+        report = self.canary_report("9.9.9")
+        self.assertIn("app: 1 proof fails now", report)
+        titles = [b.title for b in c.load_briefs(c.find_project(self.repo))]
+        self.assertTrue(any("canary" in t.lower() and "app" in t for t in titles), titles)
+        for _ in range(50):
+            if os.path.isfile(note):
+                break
+            time.sleep(0.2)
+        self.assertIn("app", read_text(note))
+        self.assertIn("app: 1 proof fails now", self.rel("--canary-status").stdout)
+
+    def test_canary_status_without_a_run_says_so(self):
+        self.assertIn("no canary", self.rel("--canary-status").stdout)
+
     def test_the_canary_runs_for_real_and_is_never_fatal(self):
-        out = self.rel("9.9.9").stdout
-        self.assertIn("canary: fm sentinel in 1 project", out)
-        self.assertIn("app: 1 proof fails now", out)
+        self.rel("9.9.9")
+        report = self.canary_report("9.9.9")
+        self.assertIn("canary: fm sentinel in 1 project", report)
+        self.assertIn("app: 1 proof fails now", report)
         put(self.tmp, "gone", "")
         self.env["STUB_ROOT"] = os.path.join(self.tmp, "no-such-dir")  # sentinel can't start there: OSError
         sh(self.repo, "checkout", "-q", "-b", "second")
         put(self.repo, "CHANGELOG.md", read_text(os.path.join(self.repo, "CHANGELOG.md")).replace("## Unreleased", "## Unreleased\n- more", 1))
         sh(self.repo, "commit", "-qam", "more")
-        r = self.rel("9.9.10")
-        self.assertIn("couldn't run", r.stdout)
+        self.rel("9.9.10")
+        self.assertIn("couldn't run", self.canary_report("9.9.10"))
 
     def test_the_canary_runs_sentinels_side_by_side_and_reports_in_project_order(self):
         log = os.path.join(self.tmp, "sentinels.log")
         self.env.update(STUB_N="4", STUB_LOG=log)
-        out = self.rel("9.9.9").stdout
+        self.rel("9.9.9")
+        out = self.canary_report("9.9.9")
         self.assertGreaterEqual(read_text(log).split("end")[0].count("start"), 2, "two sentinels ran at once")
         lines = [ln.strip() for ln in out.splitlines() if ": 1 proof fails now" in ln]
         self.assertEqual([ln.split(":")[0][2:] for ln in lines], ["app0", "app1", "app2", "app3"])

@@ -99,6 +99,10 @@ SINGLE_BELOW = 60  # columns: a terminal narrower than this shows the activity l
 
 # ---------------------------------------------------------------- state: what the events say happened
 
+class NewerStream(ValueError):
+    """A stream from a newer fm code: said on the screen, not skipped like a malformed event."""
+
+
 class State:
     def __init__(self):
         self.request = self.task = self.model = self.worker = self.error = None
@@ -114,31 +118,55 @@ class State:
         kind = e.get("event") if isinstance(e, dict) else None
         fn = getattr(self, f"_on_{kind}", None) if isinstance(kind, str) and kind.isidentifier() else None
         if fn:
-            fn(e)
-            if isinstance(e.get("ts"), (int, float)):
+            ts = e.get("ts")
+            if "ts" in e and not (isinstance(ts, (int, float)) and not isinstance(ts, bool) and math.isfinite(ts)):
+                e = {k: v for k, v in e.items() if k != "ts"}  # T-1306: a time that isn't a finite number isn't one
+            # T-1306: a handler that trips on a bad field leaves the state as it was. One level of copies covers the
+            # handlers here: each validates before it changes anything nested. ponytail: the copy grows with the log
+            # (quadratic over a run); fine at hundreds of events, validate per handler if runs reach tens of thousands.
+            before = {k: v.copy() if isinstance(v, (list, dict)) else v for k, v in vars(self).items()}
+            try:
+                fn(e)
+            except Exception as x:
+                vars(self).clear()
+                vars(self).update(before)
+                if isinstance(x, NewerStream):
+                    raise
+                return self
+            if "ts" in e:
                 self.first_ts = self.first_ts or e["ts"]
                 self.last_ts = e["ts"]
         for h in (HANDLERS.get(kind, []) + HANDLERS.get("*", [])) if isinstance(kind, str) else []:
+            t0, why = time.monotonic(), None
             try:
                 h(self, e)
             except Exception as x:  # an extension's handler that throws is said once and dropped
+                why = f"{type(x).__name__}: {x}; switched off"
+            took = time.monotonic() - t0
+            if why is None and took > HANDLER_BUDGET:  # T-1315: one over its budget too
+                why = f"handler {getattr(h, '__qualname__', '?')} took {took * 1000:.0f} ms; switched off"
+            if why:
                 for hs in HANDLERS.values():
                     if h in hs:
                         hs.remove(h)
-                self.note("error", text=f"extension {getattr(h, '__module__', '?')}: {type(x).__name__}: {x}")
+                self.note("error", text=f"extension {getattr(h, '__module__', '?')}: {why}")
         return self
 
     def note(self, kind, **fields):
+        if self.log and self.log[-1].get("kind") == "working":  # T-1329: the ticking line goes at the next one
+            self.log.pop()
         self.log.append(dict(fields, kind=kind))
 
     def _on_start(self, e):
         if int(e.get("schema") or 1) > SCHEMA:
-            raise ValueError(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Foreman")
+            raise NewerStream(f"fm code's event stream is schema {e.get('schema')}; this TUI reads {SCHEMA}: update Foreman")
         if e.get("resume") and self.plan:  # fm code --resume sends no plan again: the screen keeps the run's
             self.task, self.status = e.get("task") or self.task, "running"
             return
         self.__init__()
-        self.request, self.model, self.worker, self.task = (e.get(k) for k in ("request", "model", "worker", "task"))
+        self.request, self.model, self.worker = (None if e.get(k) is None else str(e[k])  # the header joins them
+                                                 for k in ("request", "model", "worker"))
+        self.task = e.get("task")
         self.status = "planning"
 
     def _on_plan(self, e):
@@ -203,15 +231,25 @@ class State:
     def _on_changed(self, e):
         self.files[int(e.get("step") or self.step)] = [str(f) for f in e.get("files") or []]
         if isinstance(e.get("stat"), dict):
-            self.stat = {str(k): v for k, v in e["stat"].items() if isinstance(v, list) and len(v) == 2}
+            self.stat = {str(k): v for k, v in e["stat"].items() if isinstance(v, list) and len(v) == 2
+                         and all(type(n) is int for n in v)}  # the Changed title sums them
 
     def _on_closed(self, e):
+        if isinstance(e.get("tokens"), list) and len(e["tokens"]) == 2:  # first: a bad count changes nothing
+            self.tokens = [int(e["tokens"][0] or 0), int(e["tokens"][1] or 0)]
         self.status, self.closed = "closed", e.get("text", "")
         for s in self.steps:
             s["state"] = "done"
-        if isinstance(e.get("tokens"), list) and len(e["tokens"]) == 2:
-            self.tokens = [int(e["tokens"][0] or 0), int(e["tokens"][1] or 0)]
         self.note("closed", text=e.get("text", ""))
+
+    def _on_note(self, e):  # T-1328: which runner the run uses and why, or a caution about it
+        self.note("note", text=str(e.get("text", "")))
+
+    def _on_tool(self, e):  # T-1329: a worker or planner CLI's tool use, as it happens
+        self.note("tool", action=str(e.get("action") or ""), text=str(e.get("target") or ""))
+
+    def _on_working(self, e):  # T-1329: a quiet CLI turn's heartbeat, one line that ticks
+        self.note("working", text=str(e.get("text") or "working"))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
@@ -735,6 +773,12 @@ def entry_segments(e, w, thoughts=True):
         return [("  ↻ ", "warn"), (e["text"], "warn")]
     if k == "worker":
         return [("  ⚙ ", "accent"), (e["text"].strip(), "text")]
+    if k == "note":
+        return [("  i ", "accent"), (e["text"], "text")]
+    if k == "tool":
+        return [("  · ", "dim"), (f"{e.get('action', '')[:7]:<7}", "dim"), (e["text"], "text")]
+    if k == "working":
+        return [("  … ", "accent"), (e["text"].strip(), "dim")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":
@@ -840,6 +884,7 @@ def _title(st, name):
 PANELS = {"track": ("Run", _track), "log": ("Activity", _log), "checks": ("Checks", _checks),
           "files": ("Changed", _files), "time": ("Time", _time), "tokens": ("Tokens", _tokens),
           "plan": ("Plan", _plan), "verify": ("Check output", _verify)}
+BUILTIN_PANELS = {name: fn for name, (_, fn) in PANELS.items()}  # T-1315: never switched off (an extension's are)
 
 
 # ---------------------------------------------------------------- render
@@ -901,11 +946,25 @@ def _status(cv, st, app):
 
 
 def _draw(name, st, w, h, app):
+    fn = PANELS[name][1]
+    ext = app is not None and BUILTIN_PANELS.get(name) is not fn
+    if ext and name in app.panels_off:
+        return [[(app.panels_off[name], "bad")]]
+    t0 = time.monotonic()
     try:
-        return [[(str(t), s if isinstance(s, tuple) else str(s)) for t, s in line]
-                for line in PANELS[name][1](st, w, h, app)]
+        return [[(str(t), s if isinstance(s, tuple) else str(s)) for t, s in line] for line in fn(st, w, h, app)]
     except Exception as e:  # an extension's panel that fails, or returns something else than lines, says why
         return [[(f"panel {name} failed: {type(e).__name__}: {e}", "bad")]]
+    finally:  # T-1315: an extension's panel over its budget PANEL_STRIKES frames running is switched off
+        took = time.monotonic() - t0
+        if ext:  # counted once a frame: a panel can be drawn twice in one (measured, then drawn)
+            frame, strikes = app.panel_strikes.get(name, (None, 0))
+            if frame != app.motion.frames:
+                strikes = strikes + 1 if took > PANEL_BUDGET else 0
+            app.panel_strikes[name] = (app.motion.frames, strikes)
+            if strikes >= PANEL_STRIKES:
+                app.panels_off[name] = f"panel {name} took {took * 1000:.0f} ms; switched off"
+                app.state.note("error", text=app.panels_off[name])
 
 
 def _panel(cv, st, app, cfg, name, y, x, h, w, lines):
@@ -1151,6 +1210,7 @@ class App:
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.extra_labels, self.ext = list(EXT_LABELS), {}
+        self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1172,11 +1232,19 @@ class App:
         return 12 if live and mode == "full" else 1
 
     def _ext_command(self, name, fn):
-        def run():
+        def run():  # T-1315: one that raises or runs over COMMAND_BUDGET is said in Activity and switched off
+            t0, why = time.monotonic(), None
             try:
                 fn(self)
             except Exception as e:  # an extension's bug shows in the status bar; the screen stays up
-                self.message = f"{name} failed: {type(e).__name__}: {e}"
+                why = f"failed: {type(e).__name__}: {e}"
+            took = time.monotonic() - t0
+            if why is None and took > COMMAND_BUDGET:
+                why = f"took {took * 1000:.0f} ms"
+            if why:
+                self.commands.pop(name, None)
+                self.message = f"command {name} {why}; switched off"
+                self.state.note("error", text=self.message)
         return run
 
     # -- keys
@@ -1424,6 +1492,10 @@ def history(folder):
 HANDLERS = {}      # an fm code event kind, or "*" → [fn(state, event)]
 EXT_COMMANDS = {}  # a command's name → fn(app)
 EXT_LABELS = []    # (command, what it does) for the keys view
+# T-1315: an extension's time budgets, in seconds; past one it's switched off for the session with a note in Activity.
+PANEL_BUDGET, PANEL_STRIKES = 0.05, 3  # a panel over 50 ms on 3 frames running
+HANDLER_BUDGET = 0.05                  # an event handler over 50 ms once
+COMMAND_BUDGET = 2.0                   # a command over 2 s once
 
 
 class API:
