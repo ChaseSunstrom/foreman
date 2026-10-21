@@ -15,7 +15,7 @@ HANG = object()
 
 
 class Fake:
-    """Answers each POST with the next scripted reply (a dict: text and/or calls) in the profile's wire shape; HANG
+    """Answers each POST with the next scripted reply (a dict: text and/or calls; in: the prompt tokens it reports, 5 unless given) in the profile's wire shape; HANG
     holds the request until release(); past the script it answers 400. Records every request body."""
 
     def __init__(self, kind, script):
@@ -51,14 +51,14 @@ class Fake:
             content = ([{"type": "text", "text": step["text"]}] if step.get("text") else []) + [
                 {"type": "tool_use", "id": i, "name": n, "input": a} for i, n, a in calls]
             stop = "max_tokens" if step.get("cut") else "tool_use" if calls else "end_turn"
-            return {"content": content, "stop_reason": stop, "usage": {"input_tokens": 5, "output_tokens": 2}}
+            return {"content": content, "stop_reason": stop, "usage": {"input_tokens": step.get("in", 5), "output_tokens": 2}}
         msg = {"role": "assistant", "content": step.get("text")}
         if calls:
             msg["tool_calls"] = [{"id": i, "type": "function", "function": {"name": n, "arguments": json.dumps(a)}}
                                  for i, n, a in calls]
         stop = "length" if step.get("cut") else "tool_calls" if calls else "stop"
         return {"choices": [{"message": msg, "finish_reason": stop}],
-                "usage": {"prompt_tokens": 5, "completion_tokens": 2}}
+                "usage": {"prompt_tokens": step.get("in", 5), "completion_tokens": 2}}
 
     def close(self):
         self.release_.set()
@@ -292,7 +292,7 @@ class AnyRequest(CodeCase):
 
 
 class Resume(CodeCase):
-    def test_resume_after_a_killed_run_finishes_the_task(self):
+    def kill_mid_run(self):
         first = self.serve("openai", plan(), call("read", path="calc.py"), HANG)
         p = subprocess.Popen([sys.executable, FM, "code", "fix add", "--model", "fake"], cwd=self.repo, env=self.env(),
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -302,6 +302,9 @@ class Resume(CodeCase):
         finally:
             p.communicate(timeout=30)
         self.assertEqual(self.task()["status"], "active")
+
+    def test_resume_after_a_killed_run_finishes_the_task(self):
+        self.kill_mid_run()
         second = self.serve("openai", call("edit", file="calc.py", old="a - b", new="a + b"),
                             call("done", summary="fixed"))
         r = self.code("--resume", "--model", "fake")
@@ -333,14 +336,57 @@ class Resume(CodeCase):
         results = {m["tool_call_id"]: m["content"] for m in sent if m["role"] == "tool"}
         self.assertEqual(len(results), 3, sent)
         self.assertIn("return a - b", results["c2_0"])
-        self.assertTrue(results["c2_1"].startswith("not run (interrupted)"))
-        self.assertTrue(results["c2_2"].startswith("not run (interrupted)"))
+        self.assertIn("\nnot run (interrupted)", results["c2_1"])
+        self.assertIn("\nnot run (interrupted)", results["c2_2"])
         self.assertEqual(self.task()["status"], "done")
 
     def test_resume_with_nothing_to_resume_says_so(self):
         r = self.code("--resume", check=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("nothing to resume", r.stderr)
+
+    def test_claudes_continue_resumes_the_newest_unfinished_run(self):  # T-1399: claude -c
+        self.kill_mid_run()
+        self.serve("openai", *FIX)
+        r = self.code("-c", "--model", "fake")
+        self.assertEqual(self.task()["status"], "done", r.stdout + r.stderr)
+        self.assertIn("resuming T-0001", r.stdout)
+
+
+class ClaudeFlags(CodeCase):
+    """T-1399: claude's own flags where the meaning matches: -p/--print is --plain, -c/--continue is --resume with no
+    id, --output-format json is --json. fm's -p PROJECT still works before the verb (and --project after it)."""
+
+    def test_print_is_plain_and_a_project_before_the_verb_stays_the_project(self):
+        import fmcli
+        parse = fmcli.build_parser().parse_args
+        for flag in ("-p", "--print"):
+            a = parse(["code", flag, "x", "--dry-plan"])
+            self.assertEqual((a.plain, a.request, a.project, a.dry_plan), (True, ["x"], None, True), flag)
+        for flag in ("-c", "--continue"):
+            self.assertEqual(parse(["code", flag]).resume, "", flag)
+        a = parse(["-p", "SLUG", "code", "x"])
+        self.assertEqual((a.project, a.plain), ("SLUG", False))
+        self.assertEqual(parse(["code", "--project", "SLUG", "x"]).project, "SLUG")
+        slug = self.fm("init").stdout.strip()
+        elsewhere = os.path.join(self.tmp, "elsewhere")
+        os.makedirs(elsewhere)
+        self.serve("openai", plan())
+        r = subprocess.run([sys.executable, FM, "-p", slug, "code", "-p", "fix add", "--model", "fake", "--dry-plan"],
+                           cwd=elsewhere, env=self.env(), capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("Make calc.add add", r.stdout)
+        self.assertEqual(self.status(), "")
+
+    def test_output_format_json_is_json_and_any_other_is_refused(self):
+        self.serve("openai", plan())
+        r = self.code("fix add", "--model", "fake", "--output-format", "json", "--dry-plan")
+        events = [json.loads(line) for line in r.stdout.splitlines()]
+        self.assertEqual(events[-1]["event"], "plan", r.stdout)
+        for value in ("stream-json", "text"):
+            r = self.code("fix add", "--output-format", value, check=False)
+            self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+            self.assertIn("--json", r.stderr)
 
 
 def journal_text(case, tid="T-0001"):

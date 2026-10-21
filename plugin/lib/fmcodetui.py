@@ -112,6 +112,7 @@ class State:
         self.actions, self.log, self.verify, self.files, self.stat = [], [], [], {}, {}
         self.tokens, self.calls, self.status, self.closed = [0, 0], [], "idle", ""
         self.first_ts = self.last_ts = None
+        self.heard = None  # T-1336: seconds a quiet CLI turn has printed nothing, from its last working or stalled event
         self.marks = {}  # when each step (1, 2, …) and the final checks ("checks") began
         self.ext = {}  # extensions' own data for this run
 
@@ -158,6 +159,7 @@ class State:
         if self.log and self.log[-1].get("kind") == "working":  # T-1329: the ticking line goes at the next one
             self.log.pop()
         self.log.append(dict(fields, kind=kind))
+        self.heard = None  # anything else said: the CLI was heard, or the turn is over
 
     def _on_start(self, e):
         if int(e.get("schema") or 1) > SCHEMA:
@@ -252,6 +254,11 @@ class State:
 
     def _on_working(self, e):  # T-1329: a quiet CLI turn's heartbeat, one line that ticks
         self.note("working", text=str(e.get("text") or "working"))
+        self.heard = _secs(e.get("silent"))
+
+    def _on_stalled(self, e):  # T-1336: a CLI turn silent past FM_STALL, with its likely cause: a warning that stays
+        self.note("stalled", text=str(e.get("text") or "stalled"))
+        self.heard = _secs(e.get("secs"))
 
     def _on_answer(self, e):  # T-1320: a question answered: no task, nothing changed
         self.status = "answered"
@@ -271,6 +278,11 @@ class State:
             self.status = "stopped"
             if e.get("stderr"):
                 self.note("error", text=e["stderr"].strip().splitlines()[-1])
+
+
+def _secs(v):
+    """A count of seconds from an event, or None for anything else (a bool, a string, NaN, a negative)."""
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) and v >= 0 else None
 
 
 def duration(s):
@@ -360,21 +372,55 @@ class Canvas:
         return None
 
 
+def _cells(ch):
+    """The columns ch fills, by the rule put draws by: an accent none, a wide (CJK, emoji) character two.
+    ponytail: an emoji ZWJ sequence counts by its parts; wcwidth-style tables if that ever matters."""
+    return 0 if unicodedata.combining(ch) else 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+
+
+def width(s):
+    """The columns s fills on a terminal."""
+    return sum(map(_cells, str(s)))
+
+
+def _take(chars, n):
+    """The longest run from the front of chars that fills at most n columns."""
+    out, used = [], 0
+    for ch in chars:
+        used += _cells(ch)
+        if used > n:
+            break
+        out.append(ch)
+    return out
+
+
+def pad(s, n):
+    """s padded with spaces to n columns (an f-string's :<n counts characters, not columns)."""
+    s = str(s)
+    return s + " " * max(0, n - width(s))
+
+
 def fit(s, n, strip=True):
     s = " ".join(str(s).split()) if strip else str(s).replace("\n", " ")
-    return s if len(s) <= n else s[:max(n - 1, 0)] + "…" if n > 0 else ""
+    if len(_take(s, n)) == len(s):  # _take stops at n columns, so a huge log line costs no more than a short one
+        return s
+    return "".join(_take(s, n - 1)) + "…" if n > 0 else ""
 
 
 def tail(s, n):
     """A path in n columns, keeping its end (the file name)."""
-    return s if len(s) <= n else "…" + s[-(n - 1):] if n > 1 else s[-n:]
+    if len(_take(reversed(s), n)) == len(s):
+        return s
+    end = "".join(reversed(_take(reversed(s), n - 1 if n > 1 else max(n, 0))))
+    end = end.lstrip("".join(c for c in end if unicodedata.combining(c)))  # an accent whose letter was cut
+    return "…" + end if n > 1 else end
 
 
 def wrap(s, n, lines=2):
     """s in at most `lines` lines of n columns, broken at spaces; the last one ends in … when it's cut."""
     out, cur = [], ""
     for word in " ".join(str(s).split()).split(" "):
-        if cur and len(cur) + 1 + len(word) > n:
+        if cur and width(cur) + 1 + width(word) > n:
             out.append(cur)
             cur = word
         else:
@@ -662,7 +708,7 @@ def _files(st, w, h, app):
     rows = sorted(stat.items(), key=lambda kv: (-(kv[1][0] + kv[1][1]), kv[0]))
     top = max(1, max(a + d for _, (a, d) in rows))
     nums = max(len(f" +{a} −{d}") for _, (a, d) in rows)
-    nw = max(6, min(max(len(p) for p, _ in rows), w - nums - 8))
+    nw = max(6, min(max(width(p) for p, _ in rows), w - nums - 8))
     bw = max(2, w - nw - nums - 1)
     ok, ok2, bad, bad2 = fx.c("ok"), fx.c("ok2"), fx.c("bad"), fx.c("bad2")
     out = []
@@ -675,7 +721,7 @@ def _files(st, w, h, app):
         heat = fx.since(f"heat:{path}", (a, d))  # a file that just changed glows, then cools to plain text
         name = "text" if heat >= 3 or not fx.colour else rgb(fg=mix(fx.c("glow"), fx.c("screen"), ease_out(heat / 3)),
                                                              bold=True)
-        out.append([(tail(path, nw).ljust(nw), name), (" ", "text")] + _segments(bar) + [
+        out.append([(pad(tail(path, nw), nw), name), (" ", "text")] + _segments(bar) + [
             (" " * max(0, bw - plus - minus), "text"), (f" +{shown_a}".ljust(len(f" +{a}")), "ok"),
             (f" −{shown_d}".ljust(len(f" −{d}")) if d else "", "bad")])
     return out
@@ -781,6 +827,8 @@ def entry_segments(e, w, thoughts=True):
         return [("  · ", "dim"), (f"{e.get('action', '')[:7]:<7}", "dim"), (e["text"], "text")]
     if k == "working":
         return [("  … ", "accent"), (e["text"].strip(), "dim")]
+    if k == "stalled":
+        return [("  ⚠ ", "warn"), (e["text"].strip(), "warn")]
     if k == "closed":
         return [(" DONE ", "chip_ok"), ("  " + e["text"], "ok")]
     if k == "answer":
@@ -937,6 +985,8 @@ def _status(cv, st, app):
         segs += [("  ", "bar"), (st.task, "bar")]
     if st.steps:
         segs += [("   ", "bar"), (f"step {st.step}/{len(st.steps)}", "bar_dim")]
+    if live and st.heard is not None:  # T-1336
+        segs += [("   ", "bar"), (f"last heard {duration(st.heard)} ago", "bar_dim")]
     if app is not None and app.message:
         segs += [("   ", "bar"), (app.message, "key")]
     hints = [seg for k, word in HINTS for seg in ((f" {k} ", "key"), (f"{word} ", "bar_dim"))]
@@ -1087,7 +1137,7 @@ def _list_view(title, note, row):
         for r, item in enumerate(app.items[first:first + ih - 1]):
             segs = row(item)
             if first + r == app.item_index:
-                segs = [("".join(t for t, _ in segs).ljust(iw), "select")]
+                segs = [(pad("".join(t for t, _ in segs), iw), "select")]
             cv.line(iy + 1 + r, ix, segs, ix + iw)
     return view
 
@@ -1096,7 +1146,8 @@ def _history_row(item):
     chip = {"closed": (" DONE ", "chip_ok"), "blocked": (" STOP ", "chip_bad"), "error": (" STOP ", "chip_bad")}.get(
         item["status"], (" ···· ", "chip_todo"))
     when = time.strftime("%b %d %H:%M", time.localtime(item["ts"])) if item.get("ts") else ""
-    return [chip, (f"  {item['task'] or '—':<8}", "strong"), (f"  {when:<12}", "dim"), ("  " + item["request"], "text")]
+    return [chip, ("  " + pad(item["task"] or "—", 8), "strong"), ("  " + pad(when, 12), "dim"),
+            ("  " + item["request"], "text")]
 
 
 def _picker_row(item):
@@ -1113,12 +1164,12 @@ def _project_row(p):
     """T-1330: one Foreman project on the home: what's active, its counts, or why it can't be shown."""
     name = str(p.get("project") or "?")
     if p.get("error"):
-        return [(" ERROR ", "chip_bad"), (f"  {name:<24}", "strong"), ("  " + str(p["error"]), "bad")]
+        return [(" ERROR ", "chip_bad"), ("  " + pad(name, 24), "strong"), ("  " + str(p["error"]), "bad")]
     if p.get("exists") is False:
-        return [(" GONE  ", "chip_bad"), (f"  {name:<24}", "strong"), (f"  folder missing: {p.get('root')}", "dim")]
+        return [(" GONE  ", "chip_bad"), ("  " + pad(name, 24), "strong"), (f"  folder missing: {p.get('root')}", "dim")]
     a = p.get("active") if isinstance(p.get("active"), dict) else None
     counts = f"queue {_num(p.get('queue'))}  inbox {_num(p.get('inbox'))}  blocked {_num(p.get('blocked'))}"
-    return [(" ACTIVE " if a else " IDLE   ", "chip_accent" if a else "chip_todo"), (f"  {name:<24}", "strong"),
+    return [(" ACTIVE " if a else " IDLE   ", "chip_accent" if a else "chip_todo"), ("  " + pad(name, 24), "strong"),
             (f"  {counts:<34}", "dim"), ("  " + (f"{a.get('id')} {a.get('title') or ''}" if a else "nothing active"),
                                          "text")]
 
@@ -1135,7 +1186,7 @@ def _work_row(it):
         return _history_row(it)
     t = it.get("task") or {}
     why = f"  ({t['reason']})" if t.get("reason") else ""
-    return [_SECTION.get(it.get("section"), (" TASK    ", "chip_todo")), (f"  {str(t.get('id') or '?'):<7}", "strong"),
+    return [_SECTION.get(it.get("section"), (" TASK    ", "chip_todo")), ("  " + pad(t.get("id") or "?", 7), "strong"),
             (f"  {str(t.get('type') or '')[:4]:<4} {str(t.get('tier') or '')}", "dim"),
             ("  " + str(t.get("title") or "") + why, "text")]
 
@@ -1577,7 +1628,12 @@ class App:
         import fmcode
         import fmmodels
         out = [("model", p.get("name")) for p in fmmodels.profiles() if p.get("name")]
-        return out + [("worker", w) for w, r in fmcode.all_runners().items()  # T-1330: code.toml's runners too
+        try:
+            runners = fmcode.all_runners()
+        except fmcode.CodeError as e:  # T-1395: the models still list, with what's wrong in code.toml
+            self.message = str(e)
+            return out
+        return out + [("worker", w) for w, r in runners.items()  # T-1330: code.toml's runners too
                       if r.get("work") and fmcode._installed(w, r)]
 
     # -- the child

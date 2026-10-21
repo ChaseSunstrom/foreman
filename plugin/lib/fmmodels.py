@@ -43,8 +43,10 @@ import itertools
 import json
 import os
 import shlex
+import socket
 import subprocess
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -67,9 +69,72 @@ CLOUD = [
 LOCAL = [("ollama", "http://127.0.0.1:11434/v1"), ("lmstudio", "http://127.0.0.1:1234/v1"),
          ("llamacpp", "http://127.0.0.1:8080/v1"), ("vllm", "http://127.0.0.1:8000/v1")]
 LOCAL_CONTEXT = 8192
+
+# T-1409: model ids the provider no longer serves, read off each provider's deprecation page on RETIRED_AS_OF
+# (research T-1409-retired-models). Only dates already past then; text/chat models only; Google's are its "earliest
+# possible" dates. ponytail: static and dated, so a stale table reads as stale; a "retiring soon" warning is the
+# upgrade.
+RETIRED_AS_OF = "2026-10-21"
+_PAGES = {"anthropic": "https://platform.claude.com/docs/en/about-claude/model-deprecations",
+          "openai": "https://developers.openai.com/api/docs/deprecations",
+          "gemini": "https://ai.google.dev/gemini-api/docs/deprecations"}
+_RETIRED_ROWS = [  # provider, retired on, replacement, ids
+    ("anthropic", "2026-08-05", "claude-opus-4-8", "claude-opus-4-1-20250805"),
+    ("anthropic", "2026-06-15", "claude-opus-4-8", "claude-opus-4-20250514"),
+    ("anthropic", "2026-06-15", "claude-sonnet-5-5", "claude-sonnet-4-20250514"),
+    ("anthropic", "2026-04-20", "claude-haiku-4-5-20251001", "claude-3-haiku-20240307"),
+    ("anthropic", "2026-02-19", "claude-haiku-4-5-20251001", "claude-3-5-haiku-20241022"),
+    ("anthropic", "2026-02-19", "claude-sonnet-5-5", "claude-3-7-sonnet-20250219"),
+    ("anthropic", "2026-01-05", "claude-opus-4-8", "claude-3-opus-20240229"),
+    ("anthropic", "2025-10-28", "claude-sonnet-5-5", "claude-3-5-sonnet-20240620 claude-3-5-sonnet-20241022"),
+    ("anthropic", "2025-07-21", "claude-opus-4-8", "claude-2.0 claude-2.1"),
+    ("anthropic", "2025-07-21", "claude-sonnet-5-5", "claude-3-sonnet-20240229"),
+    ("anthropic", "2024-11-06", "claude-haiku-4-5-20251001",
+     "claude-1.0 claude-1.1 claude-1.2 claude-1.3 claude-instant-1.0 claude-instant-1.1 claude-instant-1.2"),
+    ("openai", "2026-10-01", "the most capable cyber model available to you", "gpt-5.4-cyber"),
+    ("openai", "2026-09-28", "gpt-5.6-terra", "gpt-3.5-turbo-instruct babbage-002 davinci-002 gpt-3.5-turbo-1106"),
+    ("openai", "2026-08-10", "gpt-5.6-sol", "gpt-5.2-chat-latest gpt-5.3-chat-latest"),
+    ("openai", "2026-07-23", "gpt-5.6-sol",
+     "gpt-5-chat-latest gpt-5-codex gpt-5.1-chat-latest gpt-5.1-codex gpt-5.1-codex-max gpt-5.2-codex"),
+    ("openai", "2026-07-23", "gpt-5.6-terra", "gpt-5.1-codex-mini"),
+    ("openai", "2026-03-26", "gpt-5 or gpt-4.1", "gpt-4-0314 gpt-4-0125-preview gpt-4-turbo-preview"),
+    ("openai", "2026-02-17", "gpt-5.1-chat-latest", "chatgpt-4o-latest"),
+    ("openai", "2026-02-12", "gpt-5-codex-mini", "codex-mini-latest"),
+    ("openai", "2025-07-28", "o3", "o1-preview"),
+    ("openai", "2025-10-27", "o4-mini", "o1-mini"),
+    ("openai", "2025-07-14", "gpt-4.1", "gpt-4.5-preview"),
+    ("openai", "2025-06-06", "gpt-4o", "gpt-4-32k gpt-4-32k-0613 gpt-4-32k-0314"),
+    ("openai", "2024-09-13", "gpt-3.5-turbo", "gpt-3.5-turbo-0613 gpt-3.5-turbo-16k-0613"),
+    ("gemini", "2026-06-01", "gemini-3.6-flash", "gemini-2.0-flash gemini-2.0-flash-001"),
+    ("gemini", "2026-06-01", "gemini-3.1-flash-lite", "gemini-2.0-flash-lite gemini-2.0-flash-lite-001"),
+    ("gemini", "2026-07-28", "gemini-3.8-flash", "gemini-2.5-computer-use-preview-10-2025"),
+    ("gemini", "2026-05-25", "gemini-3.1-flash-lite", "gemini-3.1-flash-lite-preview"),
+    ("gemini", "2026-03-31", "gemini-3.1-flash-lite", "gemini-2.5-flash-lite-preview-09-2025"),
+    ("gemini", "2026-03-09", "gemini-3.1-pro-preview", "gemini-3-pro-preview"),
+    ("gemini", "2026-02-17", "gemini-3.6-flash", "gemini-2.5-flash-preview-09-25"),
+    ("gemini", "2025-11-18", "gemini-3.6-flash", "gemini-2.5-flash-preview-05-20"),
+    ("gemini", "2025-12-02", "gemini-3.1-pro-preview",
+     "gemini-2.5-pro-preview-03-25 gemini-2.5-pro-preview-05-06 gemini-2.5-pro-preview-06-05"),
+    ("gemini", "2025-12-09", "gemini-3.1-flash-lite",
+     "gemini-2.0-flash-lite-preview gemini-2.0-flash-lite-preview-02-05"),
+]
+RETIRED = {i: (day, repl, _PAGES[prov]) for prov, day, repl, ids in _RETIRED_ROWS for i in ids.split()}
+
+
+def retired(model_id):
+    """{"date", "replacement", "source"} when model_id (a provider prefix like openai/ or models/ is ignored) is on
+    RETIRED, else None."""
+    if not isinstance(model_id, str):
+        return None
+    hit = RETIRED.get(model_id.strip().lower().rsplit("/", 1)[-1])
+    return hit and {"date": hit[0], "replacement": hit[1], "source": hit[2]}
+
+
 STOPS = {"stop": "end", "end_turn": "end", "stop_sequence": "end", "tool_calls": "tool_calls",
          "function_call": "tool_calls", "tool_use": "tool_calls", "length": "length", "max_tokens": "length"}
 
+STOP = object()  # T-1388: an on_line answer that ends the call now (fmcode.STOP is this one)
+RESOLVE_TIMEOUT = 2  # T-1421: seconds a base_url's host may take to resolve before it's let through unchecked
 _sleep = time.sleep  # tests swap it out
 _ids = itertools.count(1)
 _TRANSPORT = (urllib.error.URLError, OSError, http.client.HTTPException)
@@ -285,6 +350,36 @@ def is_loopback(host):
     return _loopback(host)
 
 
+def _link_local(host):
+    """T-1395: 169.254.0.0/16 or fe80::/10, in any spelling the resolver takes (2852039166, 0xa9.0xfe.0xa9.0xfe,
+    ::ffff:169.254.169.254, fullwidth digits or ideographic dots, which IDNA folds to ASCII), and AWS's IPv6 metadata
+    fd00:ec2::254; T-1421: Alibaba's 100.100.100.200 and Azure's wireserver 168.63.129.16 too, and a hostname any of
+    whose addresses is one of these (looked up for at most RESOLVE_TIMEOUT s). ponytail: the request resolves the name
+    again, so a name that answers differently the second time (DNS rebinding) or that times out here isn't caught; pin
+    the checked address on the connection if that matters."""
+    import threading
+    host = unicodedata.normalize("NFKC", host).replace("。", ".")  # what the IDNA encoder sends
+    try:
+        ips = [ipaddress.ip_address(host)]
+    except ValueError:
+        try:  # the legacy IPv4 forms urllib's resolver also accepts, read without any lookup
+            ips = [ipaddress.IPv4Address(socket.inet_aton(host))]
+        except (OSError, ValueError):
+            found = []
+
+            def look():
+                try:
+                    found.extend(ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(host, None))
+                except (OSError, ValueError, UnicodeError):
+                    pass
+            t = threading.Thread(target=look, daemon=True)  # getaddrinfo has no timeout of its own
+            t.start()
+            t.join(RESOLVE_TIMEOUT)
+            ips = list(found)  # a copy: a lookup still running past the timeout changes nothing here
+    bad = {ipaddress.ip_address(a) for a in ("fd00:ec2::254", "100.100.100.200", "168.63.129.16")}
+    return any(ip.is_link_local or ip in bad for ip in (getattr(x, "ipv4_mapped", None) or x for x in ips))
+
+
 def _check_url(profile, base, key):
     """Refuse a base_url the key mustn't go to; the messages never echo base_url (it may hold a password)."""
     who = f"profile {profile.get('name')!r}"
@@ -297,6 +392,9 @@ def _check_url(profile, base, key):
         raise ModelError(f"{who}: base_url must be an http(s) URL")
     if "@" in u.netloc:
         raise ModelError(f"{who}: base_url must not carry a user or password (put the key in key_env)")
+    if _link_local(host):
+        raise ModelError(f"{who}: base_url is, or resolves to, a link-local or cloud metadata address "
+                         "(169.254.0.0/16, fe80::/10, fd00:ec2::254, 100.100.100.200, 168.63.129.16); refused")
     if key and u.scheme == "http" and not _loopback(host):
         raise ModelError(f"{who}: refusing to send {profile.get('key_env')} over plain http to {host}; use https")
 
@@ -356,6 +454,14 @@ def heartbeat():
         return 10.0
 
 
+def stall():
+    """T-1336: seconds with no byte at all before a CLI turn gets a stalled event (FM_STALL, for tests; default 120)."""
+    try:
+        return max(0.1, float(os.environ.get("FM_STALL") or 120))
+    except ValueError:
+        return 120.0
+
+
 def stream_tools(line, root=""):
     """T-1329: the tool uses in one line of claude's stream-json as [(action, target)], each target one line of at
     most 200 characters, relative when it's in root; [] for any other line, a malformed one included."""
@@ -405,7 +511,7 @@ def _cli(profile, messages, timeout):
                           if isinstance(msg.get("content"), str))
     argv = [w.replace("{prompt}", prompt) for w in shlex.split(profile["argv"])]
     limit = max(timeout, profile.get("timeout") or 0)
-    stream, shown, found, out = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray()
+    stream, shown, found, out, stopped = profile.get("stream") == "claude", profile.get("on_line"), [], bytearray(), []
     done = threading.Event()  # set once the call returns: a line a leftover grandchild prints shows nothing
 
     def sink(chunk):
@@ -418,9 +524,13 @@ def _cli(profile, messages, timeout):
         res = stream_result(line)
         if res:
             found.append(res)
-        return bool(shown and shown(line))
+        got = shown and shown(line)
+        if got is STOP:  # T-1426: the caller's check stopped the call (a lean planner's init loaded too much)
+            stopped.append(line)
+            fmcore.kill_group(proc)
+        return bool(got)
     live = profile.get("heartbeat") and profile["heartbeat"]()
-    beat = live and (lambda: done.is_set() or live())
+    beat = live and (lambda *a: done.is_set() or live(*a))
     with tempfile.TemporaryFile() as err:
         try:
             proc = subprocess.Popen(argv, cwd=profile.get("cwd"), env=profile.get("env"), stdin=subprocess.DEVNULL,
@@ -444,6 +554,8 @@ def _cli(profile, messages, timeout):
         err.seek(0)
         stderr = err.read().decode("utf-8", "replace")
     stdout = out.decode("utf-8", "replace")
+    if stopped:
+        raise ModelError(f"{profile['name']}: stopped at a line its caller refused")
     if proc.returncode:
         raise ModelError(f"{profile['name']}: exit {proc.returncode}: {(stderr or stdout).strip()[-300:]}")
     if stream and not found:
@@ -459,7 +571,8 @@ def _cli(profile, messages, timeout):
     if got.get("is_error"):
         raise ModelError(f"{profile['name']}: {got['result'][:300]}")
     u = _of(got.get("usage"), dict)
-    seen = sum(u.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    seen = sum(v for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+               if type(v := u.get(k)) is int)  # T-1423: a "10" or null isn't added (Run.usage zeroes the rest)
     return {"text": got["result"], "tool_calls": [], "usage": {"in": seen, "out": u.get("output_tokens") or 0},
             "stop": "end"}
 

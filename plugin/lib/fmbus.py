@@ -574,16 +574,16 @@ def cmd_lease(args):
     with c.lock(_dir()):
         data = _leases()
         before = len(data)
+        act = c.active_brief(c.load_briefs(p), p.lane) if args.action in ("take", "drop") else None
+
+        def mine(v):  # T-1216, T-1416: the active task's only: builder lanes share their main session's id
+            return v["project"] == p.slug and v["session"] == me and (act is None or v.get("task") in (act.id, None))
         if args.action == "drop" and not args.target:  # T-1134: bare drop releases what this session holds here
-            # T-1216: for the active task only: builder lanes share their main session's id
-            act = c.active_brief(c.load_briefs(p), p.lane)
-            data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["session"] == me
-                                                           and (act is None or v.get("task") in (act.id, None)))}
+            data = {k: v for k, v in data.items() if not mine(v)}
             _write_leases(data)
         elif args.action in ("take", "drop"):
             if not args.target:
                 raise fmcli.UsageError(f"fm lease {args.action} FILE[::SYMBOL]...")
-            act = c.active_brief(c.load_briefs(p), p.lane)
             todo = []
             for t in args.target:
                 rel, _, sym = t.partition("::")
@@ -603,9 +603,8 @@ def cmd_lease(args):
                 print(f"warning: {t} overlaps {_who(v)}", file=sys.stderr)
             for rel, sym in todo:
                 if args.action == "drop":  # T-1216: a file named alone drops each of its symbol leases too
-                    data = {k: v for k, v in data.items() if not (v["project"] == p.slug and v["file"] == rel
-                                                                   and (sym == "*" or v["symbol"] == sym)
-                                                                   and v["session"] == me)}
+                    data = {k: v for k, v in data.items() if not (mine(v) and v["file"] == rel
+                                                                   and (sym == "*" or v["symbol"] == sym))}
                 else:
                     _claim(data, p, me, act.id if act else None, rel, sym, args.minutes * 60,
                            advisory=bool(claim_overlaps(p, rel, sym, me, act, data)))

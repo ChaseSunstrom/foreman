@@ -54,7 +54,8 @@ def resolve(args, create=True):
         if not p:
             raise UsageError(f"unknown project {args.project!r} (see state/registry.md)")
         return p
-    p = c.find_project(os.getcwd(), create=create)
+    # T-1426: a worker of an fm code run only reads, so it never sets up a project either
+    p = c.find_project(os.getcwd(), create=create and not os.environ.get("FOREMAN_WORKER_OF"))
     if not p and os.environ.get("FOREMAN_PROJECT"):
         p = c.project_by_slug(os.environ["FOREMAN_PROJECT"])
     if not p:
@@ -409,9 +410,9 @@ def cmd_vetoes(args):
         if args.n is None or not c.drop_veto(p, args.n):
             raise UsageError("fm vetoes rm N (N from fm vetoes)")
         return out(args, {"removed": args.n}, f"Veto {args.n} removed.")
-    v = c.vetoes(p)
+    v = [dict(x, retract=f"fm vetoes rm {i}") for i, x in enumerate(c.vetoes(p), 1)]  # T-1410: N counts oldest first
     out(args, v, "\n".join(f"{i}. {x.get('said', '')} — key words: {' '.join(x['words'])} ({str(x.get('at', ''))[:10]})"
-                           for i, x in enumerate(v, 1)) or "No vetoes recorded.")
+                           f" — retract: {x['retract']}" for i, x in enumerate(v, 1)) or "No vetoes recorded.")
 
 
 def cmd_rule(args):
@@ -4657,7 +4658,29 @@ def cmd_complete(args):
     print("\n".join(found))
 
 
+class _OutputFormat(argparse.Action):
+    """T-1399: claude's --output-format json is fm code's --json; its text and stream-json mean nothing here."""
+
+    def __call__(self, parser, ns, value, option_string=None):
+        if value != "json":
+            parser.error(f"--output-format {value}: fm code takes only json, the same as --json (fm code's own "
+                         "events, not claude's stream-json); --plain prints one line per event")
+        ns.json = True
+
+
+_PARSER = None
+
+
 def build_parser():
+    """fm's parser, built once per process (T-1378): building it takes ~0.07 s, and the hook's in-process fm calls
+    and fmrecall's command search each asked for it again."""
+    global _PARSER
+    if _PARSER is None:
+        _PARSER = _build_parser()
+    return _PARSER
+
+
+def _build_parser():
     ap = _Parser(prog="fm", usage="fm [-p PROJECT] <command> [options]",
                  description="Foreman state CLI (the only writer of Foreman state).")
     ap.format_help = lambda: START_HERE  # only the root: subparsers keep argparse's own help
@@ -4669,7 +4692,7 @@ def build_parser():
     def add(name, fn, *, tier, **kw):
         tiered.append((tier[1], tier[0], name))
         s = sp.add_parser(name, **kw)
-        s.set_defaults(fn=fn)
+        s.set_defaults(fn=fn, verb=name)  # T-1388: args.cmd can be a subcommand's own `cmd` argument; verb can't
         s.add_argument("--json", action="store_true", help="machine-readable output")
         s.add_argument("-p", "--project", default=argparse.SUPPRESS)
         return s
@@ -5713,8 +5736,16 @@ def build_parser():
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
-                 "closes. fm code models lists the profiles (T-1212); fm code tui [REQUEST] runs it in a terminal UI (T-1283); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328)")
+                 "closes. fm code models lists the profiles (T-1212); on a terminal a request runs in the app, as fm code tui [REQUEST] does (--plain, --json or piped: lines; T-1283, T-1343); fm code bench grades a model or worker on seeded tasks (T-1215); fm code runners lists every coding CLI and model it can use (T-1328); claude's -p, -c and "
+                 "--output-format json work too (T-1399)",
+            conflict_handler="resolve")  # T-1399: -p after the verb is claude's --print; the project is --project
     s.add_argument("request", nargs="*", help="what to do (or: models, runners, bench, tui)")
+    s.add_argument("-p", "--print", dest="plain", action="store_true", help="claude's -p: the same as --plain (fm's "
+                   "own -p PROJECT goes before the verb, fm -p SLUG code …, or --project after it)")
+    s.add_argument("-c", "--continue", dest="resume", action="store_const", const="", help="claude's -c: the same "
+                   "as --resume with no ID (the newest unfinished run)")
+    s.add_argument("--output-format", action=_OutputFormat, metavar="json", help="claude's --output-format json: "
+                   "the same as --json (fm code's own events; text and stream-json are refused)")
     s.add_argument("--model", help="the model profile (default: models.json's, a local server, then a keyed cloud)")
     s.add_argument("--escalate", metavar="MODEL", help="after 3 failed fix rounds, 3 more on this profile")
     s.add_argument("--max-steps", type=int, help="model turns for the whole run (default 40; a resume keeps the "
@@ -5739,7 +5770,7 @@ def build_parser():
     s.add_argument("--tui", action="store_true", help=argparse.SUPPRESS)  # what `fm code tui` becomes
     s.add_argument("--seeds", metavar="A,B", help="fm code bench: only these seeds (default: all)")
     s.add_argument("--seed-timeout", type=int, metavar="SECONDS", help="fm code bench: each seed's limit (default 600)")
-    s.add_argument("--plain", action="store_true", help="fm code tui: one line per event, no screen (T-1283)")
+    s.add_argument("--plain", action="store_true", help="one line per event, no screen, even on a terminal (T-1283, T-1343)")
     s.add_argument("--snapshot", metavar="SVG", help="fm code tui: draw the screen after --events FILE's run to SVG")
     s.add_argument("--events", metavar="FILE", help="fm code tui --snapshot: a run's events (fm code … --json > FILE)")
     s.add_argument("--size", metavar="WxH", help="fm code tui --snapshot: the screen's columns x rows (default 120x34)")
@@ -5965,6 +5996,23 @@ def _task_shape(parser, argv):
     return argv[:lead + 2] + rest
 
 
+# T-1388: what a coding CLI fm code runs may still do with fm: read. Grants above all are the user's; codex's and
+# gemini's shells don't pass Foreman's guard, so fm refuses the rest itself when FOREMAN_WORKER_OF names a run.
+# ponytail: a worker that unsets the variable gets past this; the judge and the CLI's own sandbox stay the outer walls.
+# T-1388 review: log appends ledger events (a forged check_run passes a gate); recall and map write with some flags.
+WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show"}
+WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
+                   "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"})}
+
+
+def _worker_may(args):
+    verb = getattr(args, "verb", None)
+    if verb in WORKER_SUBREADS:
+        attr, ok = WORKER_SUBREADS[verb]
+        return getattr(args, attr, None) in ok
+    return verb in WORKER_READS and not getattr(args, "replan", False)
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
     argv, aliased = _alias(list(argv))
@@ -5979,6 +6027,11 @@ def main(argv=None):
         print("fm help: every command")
         return main(["next"])
     args = parser.parse_args(_options_first(parser, argv) or ["help"])  # bare fm elsewhere: the tiers, not a usage error
+    if os.environ.get("FOREMAN_WORKER_OF") and not _worker_may(args):
+        print(f"fm: refused: this is a worker of an fm code run ({os.environ['FOREMAN_WORKER_OF']}), which only reads "
+              f"Foreman's state; `fm {' '.join(argv[:2])}` would change it, and that is the user's to do (or fm code's "
+              "own harness's)", file=sys.stderr)
+        return 2
     if args.cmd != "complete":  # a TAB press reads the briefs, never syncs or locks (round-7 review)
         _sync_in(args)
     try:
