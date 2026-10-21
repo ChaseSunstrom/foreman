@@ -3,6 +3,10 @@
 ## Unreleased
 - A library source indexed before 1.2.49's quarantine is indexed again from its local clone the next time fm reads it (no network), so its hostile skills and agents leave `fm lib search` without a `fm lib source update` (T-1415).
 - `fm lib search` finds a description's last word: "tidewater." no longer keeps its full stop, while node.js and c# stay one word (T-1420).
+- fm code's judge also holds `~/.ssh/authorized_keys`, login autostart entries, systemd user units, `~/.bashrc.d` and new or changed commands in `~/.local/bin`, and keeps the worker's version of each file it puts back under the run journal's `reverted/` folder (user-only, 1 MB each); worker and planner sessions don't self-update mid-turn (T-1417).
+- `fm doctor`'s supply check also reads hooks in skill, agent and command frontmatter, `.lsp.json` servers and a hooks module list (foreman-ui's reads as "hooks module register.tsx"), and sees symlink retargets and large-file changes; an older baseline compares as before (T-1434).
+- fm code hardening: a STOP kills the CLI's group once, the local-server probe refuses metadata addresses, aider `--yes-always`, q `--trust-all-tools`, cursor-agent `--force` and `-anever` are linted, and hooks inside a worker never create a project (T-1438).
+- fm code looks a model host's addresses up once a minute instead of on every model call (the metadata-address check); a failed or slow lookup is tried again (T-1436).
 
 ## 1.2.49 — 2026-10-21
 - fm code names a stall: a CLI turn with no output for FM_STALL s (default 120) gets one `stalled` event per silence naming its likely cause (no output since launch, a prompt, a rate or usage limit, or silent since its last line), a warning line in the TUI, and the status bar says how long since the CLI was last heard. Before, a stuck turn just looked busy (T-1336).

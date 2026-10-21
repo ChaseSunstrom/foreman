@@ -38,6 +38,25 @@ def model(url):
 
 
 class MetadataEndpoints(unittest.TestCase):
+    def setUp(self):
+        getattr(fmmodels, "_RESOLVED", {}).clear()  # T-1436: each test resolves afresh
+
+    def test_a_host_is_looked_up_once_a_minute_and_a_failed_lookup_isnt_kept(self):
+        # T-1436: _check_url runs on every model call; each looked the host up again (up to 2 s on a slow resolver)
+        calls = []
+
+        def answer(host, *a, **k):
+            calls.append(host)
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 443))]
+        with mock.patch.object(socket, "getaddrinfo", answer):
+            self.assertFalse(fmmodels._link_local("models.example.com"))
+            self.assertFalse(fmmodels._link_local("models.example.com"))
+        self.assertEqual(calls, ["models.example.com"])
+        with mock.patch.object(socket, "getaddrinfo", side_effect=OSError("no answer")) as failing:
+            fmmodels._link_local("down.example.com")
+            fmmodels._link_local("down.example.com")
+        self.assertEqual(failing.call_count, 2, "a failed lookup is tried again")
+
     def addrs(self, *ips):
         return lambda host, *a, **k: [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, 443)) for ip in ips]
 

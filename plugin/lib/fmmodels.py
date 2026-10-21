@@ -135,6 +135,8 @@ STOPS = {"stop": "end", "end_turn": "end", "stop_sequence": "end", "tool_calls":
 
 STOP = object()  # T-1388: an on_line answer that ends the call now (fmcode.STOP is this one)
 RESOLVE_TIMEOUT = 2  # T-1421: seconds a base_url's host may take to resolve before it's let through unchecked
+_RESOLVED = {}  # T-1436: host -> (when, addresses) of a lookup that answered, kept RESOLVED_FOR s
+RESOLVED_FOR = 60
 _sleep = time.sleep  # tests swap it out
 _ids = itertools.count(1)
 _TRANSPORT = (urllib.error.URLError, OSError, http.client.HTTPException)
@@ -366,16 +368,20 @@ def _link_local(host):
         try:  # the legacy IPv4 forms urllib's resolver also accepts, read without any lookup
             ips = [ipaddress.IPv4Address(socket.inet_aton(host))]
         except (OSError, ValueError):
-            found = []
+            when, kept = _RESOLVED.get(host, (0, None))
+            found = list(kept) if kept and time.monotonic() - when < RESOLVED_FOR else []
 
             def look():
                 try:
                     found.extend(ipaddress.ip_address(a[4][0].split("%")[0]) for a in socket.getaddrinfo(host, None))
                 except (OSError, ValueError, UnicodeError):
                     pass
-            t = threading.Thread(target=look, daemon=True)  # getaddrinfo has no timeout of its own
-            t.start()
-            t.join(RESOLVE_TIMEOUT)
+            if not found:
+                t = threading.Thread(target=look, daemon=True)  # getaddrinfo has no timeout of its own
+                t.start()
+                t.join(RESOLVE_TIMEOUT)
+                if found:  # only an answer is kept: a failed or slow lookup is tried again next call
+                    _RESOLVED[host] = (time.monotonic(), list(found))
             ips = list(found)  # a copy: a lookup still running past the timeout changes nothing here
     bad = {ipaddress.ip_address(a) for a in ("fd00:ec2::254", "100.100.100.200", "168.63.129.16")}
     return any(ip.is_link_local or ip in bad for ip in (getattr(x, "ipv4_mapped", None) or x for x in ips))
