@@ -236,6 +236,8 @@ def check_state_size(projects, budget=STATE_BUDGET):
 
 
 def _frontmatter(path):
+    if not os.path.isfile(path):  # T-1434: a FIFO would block the open forever, a device never end
+        return None
     m = re.match(r"^---\n(.*?)\n---\n", _read(path) or "", re.S)
     if not m:
         return None
@@ -1100,17 +1102,30 @@ def repair(roots):
 _SUPPLY_SKIP = {".git", "node_modules", "__pycache__", ".venv", ".pytest_cache"}
 
 
-def _tree_hash(root, h, cap=4000):
-    """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order."""
-    n = 0
+def _tree_hash(root, h, cap=4000, skipped=None):
+    """Every file under an install dir (its hooks, scripts and code, not just its manifest), path and bytes, in order.
+    T-1434: what h only names goes into skipped by a cheap stand-in: a symlink's target path (a linked folder's too,
+    which the walk never enters) and a large file's size and mtime. A separate hash, so a baseline recorded before it
+    still compares its sha as before."""
+    n, stand = 0, (skipped.update if skipped is not None else lambda b: None)
     for d, dirs, files in os.walk(root):
+        for x in sorted(dirs):
+            link = os.path.join(d, x)
+            if os.path.islink(link):
+                stand(os.path.relpath(link, root).encode() + b"\0->" + os.fsencode(os.readlink(link)) + b"\0")
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
         for f in sorted(files):
             full = os.path.join(d, f)
             n += 1
+            rel = os.path.relpath(full, root).encode()
             # not a regular file (a FIFO would block the open forever): named, never read
             if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
-                h.update(os.path.relpath(full, root).encode() + b"\0skipped\0")
+                h.update(rel + b"\0skipped\0")
+                if n <= cap and os.path.islink(full):
+                    stand(rel + b"\0->" + os.fsencode(os.readlink(full)) + b"\0")
+                elif n <= cap and os.path.isfile(full):
+                    st = os.stat(full)
+                    stand(rel + f"\0{st.st_size} {st.st_mtime_ns}\0".encode())
                 continue
             with open(full, "rb") as fh:
                 h.update(os.path.relpath(full, root).encode() + b"\0" + fh.read())
@@ -1126,18 +1141,19 @@ def _supply(claude):
     plugins = (_load_json(os.path.join(claude, "plugins", "installed_plugins.json")) or {})
     plugins = plugins.get("plugins") if isinstance(plugins, dict) else None
     for pid, installs in sorted((plugins if isinstance(plugins, dict) else {}).items()):
-        h, caps = hashlib.sha256(), {}
+        h, skipped, caps = hashlib.sha256(), hashlib.sha256(), {}
         try:
             for inst in installs if isinstance(installs, list) else [installs]:
                 root = inst.get("installPath") if isinstance(inst, dict) else None
                 if isinstance(root, str) and root and os.path.isdir(root):  # review: never "" (the cwd)
-                    _tree_hash(root, h)
+                    _tree_hash(root, h, skipped=skipped)
                     for k, v in fmplugins.capabilities(root).items():
                         caps[k] = sorted(set(caps.get(k, [])) | set(v))
         except Exception as e:
             errors[pid] = f"{type(e).__name__}: {e}"
             continue
-        out[pid] = {"sha": h.hexdigest(), "caps": caps}
+        # T-1434: skipped, the stand-ins for what sha only names, beside it (an older entry lacks it, see _check_supply)
+        out[pid] = {"sha": h.hexdigest(), "skipped": skipped.hexdigest(), "caps": caps}
     conf = _load_json(os.path.join(os.path.dirname(claude), ".claude.json"))
     conf = conf if isinstance(conf, dict) else {}
     scopes = [("", conf.get("mcpServers"))] + [(f"{k}:", v.get("mcpServers")) for k, v in
@@ -1173,17 +1189,19 @@ def _check_supply(claude, accept):
                       f"{len(now)} plugin(s) and MCP server(s)" + (f"; {unchecked}" if errors else ""))
     sha = lambda v: v.get("sha") if isinstance(v, dict) else v  # a baseline before T-1392 holds bare hashes
     caps = lambda v: v.get("caps") if isinstance(v, dict) else None
+    skip = lambda v: v.get("skipped") if isinstance(v, dict) else None  # T-1434: None in an entry recorded before it
     changed, added, held, upgraded = [], [], [], False
     for k in sorted(set(now) - set(errors)):
         was, cur = seen.get(k), now[k]
-        if k in seen and sha(was) == sha(cur):
+        if k in seen and sha(was) == sha(cur) and skip(was) in (None, skip(cur)):
+            if was == cur:
+                continue
             old, new = caps(was), caps(cur)
-            if old == new:
-                continue
+            # an unchanged tree's entry gains what this version records (review), the fields its version had equal
             if isinstance(new, dict) and (not isinstance(old, dict) or all(new.get(x) == v for x, v in old.items())):
-                seen[k], upgraded = cur, True  # an unchanged tree's entry gains what this version records (review)
+                seen[k], upgraded = cur, True
                 continue
-        # review: the delta is read even when the sha matches (the hash skips big files, symlinks, the 4,001st)
+        # review: the delta is read even when the hashes match (they skip the 4,001st file on, FIFOs, devices)
         (changed if k in seen else added).append(k)
         held += [f"{c.plain(k)[:60]} {d}" for d in _capability_delta(was, cur, k)]
     if upgraded:
@@ -1212,25 +1230,38 @@ def _ids(ids, extra=lambda k: ""):
 def _capability_delta(was, now, key=""):
     """T-1392: what an update or a new entry adds that runs on its own: hook events, hook handlers on an existing
     event, MCP servers (new, or one whose spec changed) and scripts, as phrases. A plugin with no recorded set (new,
-    or a baseline before T-1392) is diffed against nothing (review)."""
+    or a baseline before T-1392) is diffed against nothing (review). T-1434: also frontmatter hooks, LSP servers and
+    hooks modules; a field the recorded set's version didn't have reads "has", like a hash-only baseline."""
     if key.startswith("mcp:"):  # a user or project MCP server: its spec's hash
         return [f"{'changes' if was is not None else 'adds'} MCP server {c.plain(key[4:])[:60]}"]
     legacy = isinstance(was, str)  # a baseline from before T-1392 holds only the hash: what runs was never recorded
-    verb = "has" if legacy else "adds"
     was, now = (v.get("caps") if isinstance(v, dict) else None for v in (was, now))
+    recorded = isinstance(was, dict)  # a new plugin has no set: what it brings is news
     was, now = (v if isinstance(v, dict) else {} for v in (was, now))
+    verb = lambda k: "has" if legacy or (recorded and k not in was) else "adds"
     def new(k):
         had = set(was.get(k) or [])
         return [x for x in now.get(k) or [] if x not in had]
-    split = lambda specs: dict(s.rsplit(" ", 1) for s in specs or [] if isinstance(s, str) and " " in s)
-    had, has = split(was.get("mcp_specs")), split(now.get("mcp_specs"))
+    def split(specs):  # {name: {digest, …}}: two components may share a name (review), so digests compare as sets
+        out = {}
+        for s in specs or []:
+            if isinstance(s, str) and " " in s:
+                out.setdefault(s.rsplit(" ", 1)[0], set()).add(s.rsplit(" ", 1)[1])
+        return out
+    changes = lambda k: [m for m, d in sorted(split(now.get(k)).items()) if m in split(was.get(k))
+                         and d - split(was.get(k))[m]]
     events = new("hooks")
-    return ([f"{verb} hook {c.plain(e)[:40]}" for e in events]
-            + [f"{verb} a {c.plain(h.split(' ', 1)[0])[:40]} hook handler ({c.plain(h.split(': ', 1)[-1])[:60]})"
-               for h in new("handlers") if h.split(" ", 1)[0] not in events]
-            + [f"{verb} MCP server {c.plain(m)[:40]}" for m in new("mcp")]
-            + [f"changes MCP server {c.plain(m)[:40]}" for m in sorted(has) if m in had and had[m] != has[m]]
-            + [f"{verb} script {c.plain(s)[:80]}" for s in new("scripts")])
+    return ([f"{verb('hooks')} hook {c.plain(e)[:40]}" for e in events]
+            + [f"{verb('handlers')} a {c.plain(h.split(' ', 1)[0])[:40]} hook handler "
+               f"({c.plain(h.split(': ', 1)[-1])[:60]})" for h in new("handlers") if h.split(" ", 1)[0] not in events]
+            + [f"{verb('fm_hooks')} hook {c.plain(e)[:80]}" for e in new("fm_hooks")]
+            + [f"changes the hooks of {c.plain(w)[:60]}" for w in changes("fm_hook_specs")]
+            + [f"runs hooks module {c.plain(m)[:80]}" for m in new("modules")]
+            + [f"{verb('mcp')} MCP server {c.plain(m)[:40]}" for m in new("mcp")]
+            + [f"changes MCP server {c.plain(m)[:40]}" for m in changes("mcp_specs")]
+            + [f"{verb('lsp')} LSP server {c.plain(m)[:40]}" for m in new("lsp")]
+            + [f"changes LSP server {c.plain(m)[:40]}" for m in changes("lsp_specs")]
+            + [f"{verb('scripts')} script {c.plain(s)[:80]}" for s in new("scripts")])
 
 
 ENFORCE_KINDS = ("validator_block", "merge_refused", "lane_unverified", "card_injected")

@@ -154,13 +154,18 @@ def generation(p, repo, target, plugin_dir="plugin", drop=False, cases=None, liv
 
 
 def _better(a, b):
-    """More passes on the shared cases, or mean cost per case down by IMPROVED or more."""
-    shared = {x["id"] for x in a["cases"]} & {x["id"] for x in b["cases"]}
+    """More passes on the shared cases, or mean cost per case down by IMPROVED or more, in each case by more than the
+    bench's noise band when runs were repeated (T-1435: a win inside it is noise, not a measured gain)."""
+    shared = sorted({x["id"] for x in a["cases"]} & {x["id"] for x in b["cases"]})
     A, B = ({x["id"]: x for x in r["cases"] if x["id"] in shared} for r in (a, b))
-    if sum(map(fmbench._rate, B.values())) > sum(map(fmbench._rate, A.values())):
+    gain = sum(map(fmbench._rate, B.values())) - sum(map(fmbench._rate, A.values()))
+    if gain > (fmbench.pass_band(A, B, shared) or 0):
         return True
     ca, cb = ([x["cost_usd"] for x in r.values() if x.get("cost_usd") is not None] for r in (A, B))
-    return bool(ca and cb) and sum(cb) / len(cb) <= (1 - IMPROVED) * sum(ca) / len(ca)
+    if not (ca and cb):
+        return False
+    ma, mb = sum(ca) / len(ca), sum(cb) / len(cb)
+    return mb <= (1 - IMPROVED) * ma and ma - mb > (fmbench.cost_band(A, B, shared) or 0)
 
 
 def cmd_evolve(args):

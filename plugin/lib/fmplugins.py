@@ -136,6 +136,7 @@ def profile(path):
             out[kind].append((name, fm.get("description", "")))
             out["tokens"] += (len(name) + len(fm.get("description", ""))) // 4 + 5
     hooks, out["mcp"] = _plugin_spec(path, "hooks"), _plugin_spec(path, "mcpServers")
+    hooks.pop("modules", None)  # T-1434: a hooks module list, not an event
     out["hooks"] = set(hooks)
     # async/asyncRewake Stop hooks run after the turn ends and can't hold it open
     out["sync_stop"] = any(not (h.get("async") or h.get("asyncRewake")) for e, _, h in _handlers(hooks) if e == "Stop")
@@ -146,17 +147,20 @@ _SPEC_CAP = 8_000_000  # over the supply hash's 4 MB per file, so a padded hooks
 
 
 def _plugin_spec(path, key, unread=None):
-    """A plugin's hooks or mcpServers as one dict: the default file (hooks/hooks.json, .mcp.json) plus whatever
-    plugin.json names (inline, a path or a list of paths). Both are read, the safe superset whichever way Claude Code
-    merges them (T-1392 review); hook events are concatenated. A named file outside the plugin root, not a regular
-    file or over 8 MB is skipped and its path appended to unread; malformed entries are skipped."""
+    """A plugin's hooks, mcpServers or lspServers as one dict: the default file (hooks/hooks.json, .mcp.json,
+    .lsp.json) plus whatever plugin.json names (inline, a path or a list of paths). Both are read, the safe superset
+    whichever way Claude Code merges them (T-1392 review); hook events are concatenated, and a hooks file's module
+    list comes back as "modules" (T-1434: a mod's {"modules": [...]}). A named file outside the plugin root, not a
+    regular file or over 8 MB is skipped and its path appended to unread; malformed entries are skipped."""
     manifest = _spec_file(path, ".claude-plugin/plugin.json", unread)
     extra = manifest.get(key) if isinstance(manifest, dict) else None
     out = {}
-    for spec in [{"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json"}[key]] + (
+    for spec in [{"hooks": "hooks/hooks.json", "mcpServers": ".mcp.json", "lspServers": ".lsp.json"}[key]] + (
             extra[:50] if isinstance(extra, list) else [extra]):  # ponytail: a manifest's first 50 paths
-        data = _spec_file(path, spec, unread) if isinstance(spec, str) else spec
-        data = data.get(key, data) if isinstance(data, dict) else None
+        raw = _spec_file(path, spec, unread) if isinstance(spec, str) else spec
+        data = raw.get(key, raw) if isinstance(raw, dict) else None
+        if key == "hooks" and isinstance(raw, dict) and data is not raw and "modules" in raw:
+            data = dict(data if isinstance(data, dict) else {}, modules=raw["modules"])  # {"hooks", "modules"}: both run
         for k, v in (data.items() if isinstance(data, dict) else ()):
             if isinstance(v, list):
                 out[k] = (out[k] if isinstance(out.get(k), list) else []) + v
@@ -199,6 +203,105 @@ def _handlers(hooks):
 
 
 _ROOT_PATH = re.compile(r"\$\{?CLAUDE_PLUGIN_ROOT\}?/([\w./-]+)")
+_FM_CAP = 256_000  # a frontmatter not closed by here is the event "?" (ponytail: Claude Code reads the whole file)
+_FM_FILES, _FM_DIRS = 2000, 5000  # past these a component folder is the event "?" (a hostile tree stays bounded)
+# a top-level hooks key, quoted or spaced (review), and its block: indented lines, blank lines, column-0 comments
+_FM_BLOCK = re.compile(r"""^["']?hooks["']?[ \t]*:[ \t]*(.*)\n?((?:[ \t]+.*\n?|[ \t\r]*\n|#.*\n?)*)""", re.M)
+# anything else that may be a hooks key (a flow-style frontmatter, an indented root, a "? hooks" key): unknown
+_FM_MENTION = re.compile(r"""\bhooks\b["']?[ \t]*:|\?[ \t]*["']?hooks\b""")
+
+
+def _component_files(root):
+    """T-1434 review: (kind, path or None, label) of each skill, command and agent file Claude Code may read hooks
+    from: the default folders and the paths plugin.json's skills, commands and agents name, folders walked whole
+    (nested command folders too). A named path that isn't a string, lies outside the plugin root or holds more than
+    the caps comes back with path None: unknown, never "no hooks"."""
+    manifest = _spec_file(root, ".claude-plugin/plugin.json", None)
+    base = os.path.realpath(root)
+    out, dirs_seen = [], set()
+    for kind, key in (("skill", "skills"), ("command", "commands"), ("agent", "agents")):
+        extra = manifest.get(key) if isinstance(manifest, dict) else None
+        for i, rel in enumerate([key] + (extra[:50] if isinstance(extra, list) else [] if extra is None else [extra])):
+            label = c.plain(str(rel))[:60]
+            full = os.path.realpath(os.path.join(root, rel)) if isinstance(rel, str) and "\0" not in rel else None
+            # the default folder is followed wherever it links (as before); a named path must stay in the root
+            if full is None or i and full != base and not full.startswith(base + os.sep):
+                out.append((kind, None, label))
+                continue
+            if os.path.isfile(full):
+                out.append((kind, full, label))
+                continue
+            # a folder it can't list is unknown; one that isn't there (no agents/) is nothing
+            unlisted = lambda e, kind=kind, label=label: os.path.lexists(e.filename or "") and out.append(
+                (kind, None, label))
+            for d, subs, files in os.walk(full, onerror=unlisted, followlinks=True):
+                real = (kind, os.path.realpath(d))
+                if real in dirs_seen:  # a link loop, or a folder two paths name, is walked once
+                    subs[:] = []
+                    continue
+                dirs_seen.add(real)
+                subs.sort()
+                out += [(kind, os.path.join(d, f), label) for f in sorted(files)
+                        if (f == "SKILL.md" if kind == "skill" else f.endswith(".md"))]
+                if len(dirs_seen) > _FM_DIRS or len(out) > _FM_FILES:
+                    del out[_FM_FILES:]
+                    out.append((kind, None, label))
+                    break
+    return out
+
+
+def _frontmatter_hooks(root):
+    """T-1434: hooks declared in skill, agent and command frontmatter: (["Event (skill name)", …], ["skill name
+    digest", …], the blocks' text, for the scripts they name). A block's events are its least-indented keys, or a
+    flow mapping's top-level keys. Review: anything that may declare hooks but can't be read for sure (no events
+    found, a frontmatter not closed in the read window, a hooks key outside a block, a path it won't walk) is the
+    event "?", still held when it appears."""
+    events, specs, text = set(), set(), []
+    for kind, f, label in _component_files(root):
+        if f is None:
+            events.add(f"? ({kind} {label})")
+            continue
+        try:
+            if not os.path.isfile(f):  # a FIFO would block the open, a device never end
+                raise OSError
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                raw = fh.read(_FM_CAP).lstrip("﻿")
+        except OSError:  # it may hold hooks Foreman can't see
+            events.add(f"? ({kind} {c.plain(os.path.relpath(f, root))[:60]})")
+            continue
+        m = re.match(r"---[ \t]*\r?\n(.*?)^---", raw, re.S | re.M)
+        # less the newline before the close, as T-1434 first read it, so recorded digests still match
+        fm = re.sub(r"\r?\n\Z", "", m.group(1)) if m else raw if re.match(r"---[ \t]*\r?\n", raw) else ""
+        name = re.search(r"""^["']?name["']?[ \t]*:[ \t]*(.+)$""", fm, re.M)
+        name = _unquote(name.group(1).strip()) if name else (
+            os.path.basename(os.path.dirname(f)) if kind == "skill" else os.path.basename(f)[:-3])
+        where = f"{kind} {c.plain(str(name))[:60]}"
+        if fm and not m:  # opened but not closed in the window: whatever follows may be hooks
+            events.add(f"? ({where})")
+            continue
+        blocks = list(_FM_BLOCK.finditer(fm))
+        rest = "".join(fm[a:b] for a, b in zip([0] + [x.end() for x in blocks], [x.start() for x in blocks] + [len(fm)]))
+        if _FM_MENTION.search(rest):
+            events.add(f"? ({where})")
+        for block in blocks:
+            inline, body = block.group(1).strip(), block.group(2)
+            inline = "" if inline.startswith("#") else inline  # "hooks:  # comment" then a block
+            if inline:  # flow style: {Stop: [...], PreToolUse: [...]}, keys at depth one, over as many lines as it takes
+                keys, depth, tok = [], 0, ""
+                for ch in inline + "\n" + body:
+                    depth += (ch in "{[") - (ch in "}]")
+                    tok = "" if ch in "{[,}]" else tok + ch
+                    if ch == ":" and depth == 1:
+                        keys.append(_unquote(tok[:-1].strip()))
+            else:
+                lines = [l for l in body.splitlines() if l.strip() and not l.lstrip().startswith("#")]
+                indent = min((len(l) - len(l.lstrip()) for l in lines), default=0)
+                keys = [_unquote(l.split(":", 1)[0].strip()) for l in lines
+                        if len(l) - len(l.lstrip()) == indent and ":" in l and not l.lstrip().startswith("-")]
+            events.update(f"{k or '?'} ({where})" for k in keys or ["?"])
+            specs.add(f"{where} {hashlib.sha256((inline + body).encode()).hexdigest()[:16]}")
+            text.append(inline + body)
+    return sorted(events), sorted(specs), "\n".join(text)
 
 
 def capabilities(root, prof=None):
@@ -206,17 +309,25 @@ def capabilities(root, prof=None):
     server names and "name digest" of each server's spec, scripts: bin/ and the files its hooks and MCP servers name
     under ${CLAUDE_PLUGIN_ROOT}, and spec files it names but Foreman won't read) and what it adds to the session
     (command, agent and skill names), each a sorted list. fm doctor holds an update that adds to the first group.
-    ponytail: an existing handler's script edited in place is only the tree hash's note, and hooks declared in skill,
-    agent or command frontmatter, .lsp.json servers and hooks inlined in a marketplace entry aren't read."""
+    T-1434: also hooks in skill, agent and command frontmatter (fm_hooks "Event (skill s)", fm_hook_specs "skill s
+    digest"), LSP servers (lsp, lsp_specs, like MCP) and a hooks file's modules (paths as written, normalised).
+    ponytail: an existing handler's script edited in place is only the tree hash's note, and hooks inlined in a
+    marketplace entry aren't read (they apply at install, where fm plugins find shows needs)."""
     prof = prof or profile(root)
     unread = []
-    hooks, mcp = (_plugin_spec(root, k, unread) if root and os.path.isdir(root) else {} for k in ("hooks", "mcpServers"))
+    hooks, mcp, lsp = (_plugin_spec(root, k, unread) if root and os.path.isdir(root) else {}
+                       for k in ("hooks", "mcpServers", "lspServers"))
+    mods = hooks.pop("modules", None)
+    # review: an entry that isn't a path (an object, a number) is the module "?", never dropped
+    modules = sorted({os.path.normpath(m) if isinstance(m, str) and m else "?"
+                      for m in (mods if isinstance(mods, list) else [] if mods is None else [mods])})
+    fm_hooks, fm_specs, fm_text = _frontmatter_hooks(root) if root and os.path.isdir(root) else ([], [], "")
     # a ": " in a matcher would read as the separator and push the command out of fm doctor's window
     sep = lambda s: str(s).replace(": ", ":")
     handlers = {f"{sep(e)} {sep(m)}: {h.get('command') or h.get('url') or h.get('prompt') or ''}"
                 for e, m, h in _handlers(hooks)}
     digest = lambda spec: hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()[:16]
-    scripts = {os.path.normpath(p) for p in _ROOT_PATH.findall(json.dumps([hooks, mcp]))}
+    scripts = {os.path.normpath(p) for p in _ROOT_PATH.findall(json.dumps([hooks, mcp, lsp]) + fm_text)}
     bindir = os.path.join(root or "", "bin")
     for d, dirs, files in os.walk(bindir) if root and os.path.isdir(bindir) else ():
         dirs.sort()
@@ -227,7 +338,9 @@ def capabilities(root, prof=None):
     return {"hooks": sorted(map(str, hooks)), "handlers": sorted(handlers), "mcp": sorted(map(str, mcp)),
             "mcp_specs": sorted(f"{k} {digest(v)}" for k, v in mcp.items()), "scripts": sorted(scripts),
             "unread": sorted(set(unread)), "commands": names("commands"), "agents": names("agents"),
-            "skills": names("skills")}
+            "skills": names("skills"), "fm_hooks": fm_hooks, "fm_hook_specs": fm_specs,
+            "lsp": sorted(map(str, lsp)), "lsp_specs": sorted(f"{k} {digest(v)}" for k, v in lsp.items()),
+            "modules": modules}
 
 
 def _marketplace_files():
@@ -434,7 +547,8 @@ def find(need, n=10, skipped=None):
             needs = capabilities(tree, prof) if tree and os.path.isdir(tree) else None
             hits.append(dict(p, score=score, installed=p["id"] in have, trusted=trusted, untrusted=why,
                              enabled=have.get(p["id"], {}).get("enabled", False), tokens=prof["tokens"],
-                             needs=needs and {k: v for k, v in needs.items() if k not in ("handlers", "mcp_specs")}))
+                             needs=needs and {k: v for k, v in needs.items() if k not in ("handlers", "mcp_specs", "lsp_specs",
+                                                                              "fm_hook_specs")}))
     return sorted(hits, key=lambda h: (-h["score"], h["id"]))[:n]
 
 
@@ -626,7 +740,8 @@ def _runs_line(needs):
     part = lambda keys: " · ".join(
         f"{label} {', '.join(c.plain(x)[:40] for x in needs[k][:6])}" + (" …" if len(needs[k]) > 6 else "")
         for k, label in keys if needs.get(k))
-    runs = part((("hooks", "hook"), ("mcp", "MCP"), ("scripts", "script")))
+    runs = part((("hooks", "hook"), ("fm_hooks", "hook"), ("modules", "hooks module"), ("mcp", "MCP"),
+                 ("lsp", "LSP"), ("scripts", "script")))
     adds = part((("commands", "command"), ("agents", "agent"), ("skills", "skill")))
     return f"\n    runs: {runs or 'nothing on its own'}" + (f"\n    adds: {adds}" if adds else "")
 

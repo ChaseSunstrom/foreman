@@ -137,6 +137,12 @@ class LibraryAreas(ForemanTestCase):
 
 
 class LibrarySearch(ForemanTestCase):
+    def test_a_descriptions_last_word_is_found_despite_its_full_stop(self):
+        # T-1420: "tidewater." was one word with its dot, so a search for tidewater missed the description's last word
+        words = fmlib._words("Charts the tidewater. Built on node.js, for c# and .net users...")
+        for w in ("tidewater", "node.js", "c#", "net", "users"):
+            self.assertIn(w, words)
+
     def test_search_ranks_cards_and_installed_plugins_skills_together(self):
         cfg = os.path.join(self.tmp, "claude")
         plug = os.path.join(self.tmp, "plug")
