@@ -162,6 +162,12 @@ def _hint(detail, cat=""):
                 "files, or a redirect, as its own command or after python's pipeline (; git log).")
     if "is written earlier in this command and run here" in detail:  # T-1289
         return " Write the script in one command, run it in the next command (Edit/Write tool or cat > f <<'EOF')."
+    if detail == "script nests too deep to read":  # T-1298
+        return " Run the innermost script directly, or fold the chain into fewer scripts, so the guard reads each one."
+    if detail.endswith("the script was too long to parse in time)"):
+        return " Run a shorter script (split it, or run the part you need directly): a shorter one is read in full."
+    if detail.startswith("IFS") and "can't read" in detail:
+        return " Leave IFS at its default on a line that splits words, or set it inside a script file the guard reads."
     if detail.endswith(_FOCUS_LATE):
         return " Run the fm focus (or fm task new … --focus) as its own command, then this one."
     if detail.endswith("; git merge)"):
@@ -171,6 +177,12 @@ def _hint(detail, cat=""):
         return (" If the script only writes other files, keep it to builtin open() on literal paths with no import but "
                 "re, json, textwrap or sys, so only those count, or use the Edit tool.") + research
     return research
+
+
+def _unread(detail):
+    """A system refusal for a program the guard couldn't read (not for what a program does)."""
+    return "can't read" in detail or detail == "script nests too deep to read" or detail.endswith(
+        "the script was too long to parse in time)")
 
 
 def message(block, ctx):
@@ -200,6 +212,8 @@ def _message(block, ctx):
         return (f"Foreman guard: blocked state-direct: {detail} is Foreman state. Change it through fm "
                 f"(fm task …, fm capture, fm checkpoint{f'; fm audit prep {diff[1]} rewrites it' if diff else ''}); "
                 f"direct writes are never authorized.")
+    if cat == "system" and _unread(detail):  # T-1298: the way through is a program the guard can read (the hint),
+        return f"Foreman guard: blocked system: {detail}."  # not --allow system, which lifts every system check
     if ctx.task_id:
         how = f"fm task set {ctx.task_id} --allow {cat} (records it in the brief), then retry"
     else:
@@ -3433,7 +3447,7 @@ def _script_verdict(script, cwd, kind, ctx, depth):
     key = None
     if len(data) <= _SCRIPT_LIMIT:  # over it: refused below, nothing to cache
         key = "|".join((p, digest, hashlib.sha256(repr(
-            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.confine,
+            (ctx.home, ctx.foreman_home, ctx.project_root, ctx.cwd, cwd, depth, tuple(ctx.scratch), ctx.state_dir, tuple(ctx.state_fallbacks), ctx.confine,
              ctx.unbriefed, kind, _guard_hash())).encode()).hexdigest()[:16]))
     path = _script_cache_path(ctx)
     hit = None if nested or key is None else _cache_load(path).get(key)

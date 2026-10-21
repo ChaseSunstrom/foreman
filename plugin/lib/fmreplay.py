@@ -204,15 +204,19 @@ def verdicts(cmds, g=None):
         import fmguard as g
     import warnings
     warnings.simplefilter("ignore", SyntaxWarning)  # the guard parses Python inside commands; their escapes aren't ours
-    home, out = os.path.expanduser("~"), {}
-    for cmd, cwd in cmds:
-        cwd = cwd or home
-        ctx = _ctx(cwd, g)
-        try:
-            b = g.check("Bash", {"command": cmd}, ctx)
-            out[_key(cmd, cwd)] = b.category if b else "allow"
-        except Exception as e:  # the guard fails closed in the hook; here it is a finding of its own
-            out[_key(cmd, cwd)] = f"error: {type(e).__name__}"
+    import tempfile
+    home, out, was = os.path.expanduser("~"), {}, tempfile.tempdir
+    tempfile.tempdir = "/tmp"  # T-1291: the corpus is labelled on Linux's layout; macOS's /var/folders/… must judge the same
+    try:
+        for cmd, cwd in cmds:
+            cwd = cwd or home
+            try:
+                b = g.check("Bash", {"command": cmd}, _ctx(cwd, g))
+                out[_key(cmd, cwd)] = b.category if b else "allow"
+            except Exception as e:  # the guard fails closed in the hook; here it is a finding of its own
+                out[_key(cmd, cwd)] = f"error: {type(e).__name__}"
+    finally:
+        tempfile.tempdir = was
     return out
 
 
