@@ -813,6 +813,99 @@ class Extensions(unittest.TestCase):
         self.assertEqual(st.status, "closed", "a handler that throws doesn't stop the run's view")
         self.assertEqual(sum("ZeroDivisionError" in str(n.get("text")) for n in st.log), 1, "said once, then dropped")
 
+    def budgets(self, **values):
+        """T-1315: tiny budgets so a short sleep is over them."""
+        for name, value in values.items():
+            p = unittest.mock.patch.object(tui(), name, value)
+            p.start()
+            self.addCleanup(p.stop)
+
+    def app(self, panel="slow"):
+        cfg, errors = tui().load_config(Config.write(self, f'[layout]\ncolumns = [["log"], ["{panel}"]]\nwidths = [60, 40]\n'))
+        self.assertEqual(errors, [])
+        return tui().App(cfg, spawn=lambda *a, **k: None), cfg
+
+    def notes(self, app):
+        return [str(n.get("text")) for n in app.state.log if n.get("kind") == "error"]
+
+    def test_a_command_that_raises_is_said_in_activity_and_switched_off(self):
+        calls = []
+
+        def bad(app):
+            calls.append(1)
+            raise RuntimeError("kaboom")
+        tui().API().command("bad_cmd", bad, key="b")
+        app, _ = self.app("checks")
+        app.key("b")
+        app.key("b")
+        self.assertEqual(len(calls), 1, "switched off after the first failure")
+        self.assertEqual(len(self.notes(app)), 1, self.notes(app))
+        self.assertIn("command bad_cmd failed: RuntimeError: kaboom; switched off", self.notes(app)[0])
+        app.key("?")  # the screen keeps running: a built-in still works
+        self.assertEqual(app.mode, "help")
+
+    def test_a_slow_command_is_switched_off_with_how_long_it_took(self):
+        self.budgets(COMMAND_BUDGET=0.001)
+        calls = []
+        tui().API().command("slow_cmd", lambda app: (calls.append(1), time.sleep(0.01)), key="b")
+        app, _ = self.app("checks")
+        app.key("b")
+        app.key("b")
+        self.assertEqual(len(calls), 1)
+        note = self.notes(app)[0]
+        self.assertIn("command slow_cmd took", note)
+        self.assertIn("ms; switched off", note)
+
+    def test_a_slow_handler_is_switched_off_once(self):
+        self.budgets(HANDLER_BUDGET=0.001)
+        calls = []
+        tui().API().on("*", lambda st, e: (calls.append(1), time.sleep(0.01)))
+        st = tui().State()
+        for e in RUN:
+            st.apply(e)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(st.status, "closed")
+        notes = [str(n.get("text")) for n in st.log if n.get("kind") == "error"]
+        self.assertEqual(len(notes), 1, notes)
+        self.assertIn("ms; switched off", notes[0])
+
+    def test_a_slow_panel_is_switched_off_after_three_frames_running(self):
+        self.budgets(PANEL_BUDGET=0.001)
+        calls, slow = [], [True]
+
+        def panel(st, w, h, app):
+            calls.append(1)
+            if slow[0]:
+                time.sleep(0.01)
+            return [[("tick", "ok")]]
+        tui().API().panel("slow", "Slow", panel)
+        app, cfg = self.app()
+        tui().render(app.state, 110, 32, cfg, app)
+        tui().render(app.state, 110, 32, cfg, app)
+        slow[0] = False
+        tui().render(app.state, 110, 32, cfg, app)  # a fast frame resets the count
+        slow[0] = True
+        for _ in range(2):
+            tui().render(app.state, 110, 32, cfg, app)
+        self.assertEqual(self.notes(app), [], "not three frames running yet")
+        tui().render(app.state, 110, 32, cfg, app)
+        self.assertEqual(len(calls), 6)
+        text = tui().render(app.state, 110, 32, cfg, app).text()
+        self.assertEqual(len(calls), 6, "switched off: not called again")
+        self.assertIn("switched off", text)
+        self.assertEqual(len(self.notes(app)), 1)
+        self.assertIn("panel slow took", self.notes(app)[0])
+
+    def test_a_slow_built_in_panel_is_never_switched_off(self):
+        self.budgets(PANEL_BUDGET=-1.0)  # every frame is over it
+        app, cfg = self.app("checks")
+        for e in RUN:
+            app.feed(e)
+        for _ in range(5):
+            text = tui().render(app.state, 110, 32, cfg, app).text()
+        self.assertNotIn("switched off", text)
+        self.assertEqual(self.notes(app), [])
+
     def test_a_file_others_can_change_is_skipped(self):
         d = self.folder(**{"open.py": "def setup(api):\n    api.panel('open', 'Open', lambda st, w, h, app: [])\n"})
         os.chmod(os.path.join(d, "open.py"), 0o666)

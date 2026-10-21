@@ -8,7 +8,9 @@ An extension is a Python file with setup(api). The API is three calls (fmcodetui
   api.command(name, fn, key=, label=)     fn(app); key binds it unless that key is taken; label shows under ?
   api.on(event, fn)                       fn(state, event) after each fm code event of that kind ("*": every one)
 state.ext and app.ext are dicts for an extension's own data. Styles: text, strong, dim, accent, ok, bad, warn, chart,
-chip_ok, chip_bad, chip_warn, chip_accent. Only Foreman's home folder is read: a project can't add an extension."""
+chip_ok, chip_bad, chip_warn, chip_accent. Only Foreman's home folder is read: a project can't add an extension.
+Keep them quick: a panel over 50 ms on 3 frames running, a handler over 50 ms, or a command over 2 s or one that
+raises is switched off for the session, with a note in Activity."""
 
 # Example prices in dollars per million tokens (in, out): put your provider's here.
 PRICES = [("small model", 1.0, 5.0), ("mid model", 3.0, 15.0), ("large model", 15.0, 75.0)]

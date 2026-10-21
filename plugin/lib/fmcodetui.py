@@ -137,13 +137,19 @@ class State:
                 self.first_ts = self.first_ts or e["ts"]
                 self.last_ts = e["ts"]
         for h in (HANDLERS.get(kind, []) + HANDLERS.get("*", [])) if isinstance(kind, str) else []:
+            t0, why = time.monotonic(), None
             try:
                 h(self, e)
             except Exception as x:  # an extension's handler that throws is said once and dropped
+                why = f"{type(x).__name__}: {x}; switched off"
+            took = time.monotonic() - t0
+            if why is None and took > HANDLER_BUDGET:  # T-1315: one over its budget too
+                why = f"handler {getattr(h, '__qualname__', '?')} took {took * 1000:.0f} ms; switched off"
+            if why:
                 for hs in HANDLERS.values():
                     if h in hs:
                         hs.remove(h)
-                self.note("error", text=f"extension {getattr(h, '__module__', '?')}: {type(x).__name__}: {x}")
+                self.note("error", text=f"extension {getattr(h, '__module__', '?')}: {why}")
         return self
 
     def note(self, kind, **fields):
@@ -861,6 +867,7 @@ def _title(st, name):
 PANELS = {"track": ("Run", _track), "log": ("Activity", _log), "checks": ("Checks", _checks),
           "files": ("Changed", _files), "time": ("Time", _time), "tokens": ("Tokens", _tokens),
           "plan": ("Plan", _plan), "verify": ("Check output", _verify)}
+BUILTIN_PANELS = {name: fn for name, (_, fn) in PANELS.items()}  # T-1315: never switched off (an extension's are)
 
 
 # ---------------------------------------------------------------- render
@@ -922,11 +929,25 @@ def _status(cv, st, app):
 
 
 def _draw(name, st, w, h, app):
+    fn = PANELS[name][1]
+    ext = app is not None and BUILTIN_PANELS.get(name) is not fn
+    if ext and name in app.panels_off:
+        return [[(app.panels_off[name], "bad")]]
+    t0 = time.monotonic()
     try:
-        return [[(str(t), s if isinstance(s, tuple) else str(s)) for t, s in line]
-                for line in PANELS[name][1](st, w, h, app)]
+        return [[(str(t), s if isinstance(s, tuple) else str(s)) for t, s in line] for line in fn(st, w, h, app)]
     except Exception as e:  # an extension's panel that fails, or returns something else than lines, says why
         return [[(f"panel {name} failed: {type(e).__name__}: {e}", "bad")]]
+    finally:  # T-1315: an extension's panel over its budget PANEL_STRIKES frames running is switched off
+        took = time.monotonic() - t0
+        if ext:  # counted once a frame: a panel can be drawn twice in one (measured, then drawn)
+            frame, strikes = app.panel_strikes.get(name, (None, 0))
+            if frame != app.motion.frames:
+                strikes = strikes + 1 if took > PANEL_BUDGET else 0
+            app.panel_strikes[name] = (app.motion.frames, strikes)
+            if strikes >= PANEL_STRIKES:
+                app.panels_off[name] = f"panel {name} took {took * 1000:.0f} ms; switched off"
+                app.state.note("error", text=app.panels_off[name])
 
 
 def _panel(cv, st, app, cfg, name, y, x, h, w, lines):
@@ -1172,6 +1193,7 @@ class App:
         self.selected, self.expanded = None, set()
         self.view_lines, self.view_scroll, self.items, self.item_index = [], 0, [], 0
         self.extra_labels, self.ext = list(EXT_LABELS), {}
+        self.panel_strikes, self.panels_off = {}, {}  # T-1315: an extension panel's (frame, slow frames running); off
         self.motion, self.clock = Motion(), time.monotonic  # T-1300: what moves, and the time it moves by
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1193,11 +1215,19 @@ class App:
         return 12 if live and mode == "full" else 1
 
     def _ext_command(self, name, fn):
-        def run():
+        def run():  # T-1315: one that raises or runs over COMMAND_BUDGET is said in Activity and switched off
+            t0, why = time.monotonic(), None
             try:
                 fn(self)
             except Exception as e:  # an extension's bug shows in the status bar; the screen stays up
-                self.message = f"{name} failed: {type(e).__name__}: {e}"
+                why = f"failed: {type(e).__name__}: {e}"
+            took = time.monotonic() - t0
+            if why is None and took > COMMAND_BUDGET:
+                why = f"took {took * 1000:.0f} ms"
+            if why:
+                self.commands.pop(name, None)
+                self.message = f"command {name} {why}; switched off"
+                self.state.note("error", text=self.message)
         return run
 
     # -- keys
@@ -1445,6 +1475,10 @@ def history(folder):
 HANDLERS = {}      # an fm code event kind, or "*" → [fn(state, event)]
 EXT_COMMANDS = {}  # a command's name → fn(app)
 EXT_LABELS = []    # (command, what it does) for the keys view
+# T-1315: an extension's time budgets, in seconds; past one it's switched off for the session with a note in Activity.
+PANEL_BUDGET, PANEL_STRIKES = 0.05, 3  # a panel over 50 ms on 3 frames running
+HANDLER_BUDGET = 0.05                  # an event handler over 50 ms once
+COMMAND_BUDGET = 2.0                   # a command over 2 s once
 
 
 class API:
