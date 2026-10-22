@@ -17,9 +17,14 @@ and formats), `fm lib show changelogs` (writing the notice), `fm lib show featur
 3. **Shim the old path onto the new one.** The old entry point becomes a thin wrapper that converts its
    arguments and calls the replacement, so there is one implementation, not two. Pass: the old path's own tests
    still pass unchanged.
-4. **Warn where the caller will see it,** once per process, naming the replacement and the removal version or
-   date: a `DeprecationWarning` pointing at the caller's line, a stderr line for a CLI flag, a `Deprecation` or
-   `Sunset` response header for HTTP. Never warn on a path the caller can't change.
+4. **Warn where the caller will see it,** naming the replacement and the removal version or date. Never warn
+   on a path the caller can't change.
+   - Python library: `DeprecationWarning` with `stacklevel=2`, so it points at the caller's line. By default
+     Python shows it only when that line is in `__main__`; elsewhere it is hidden unless tests (pytest) or
+     `-W` turn it on, and once shown it repeats once per calling location. If end users of an application must
+     see it, use `FutureWarning`, which is shown by default.
+   - CLI flag or config key: one stderr line per run.
+   - HTTP: headers on every response from the old endpoint (example below), not once.
 5. **Announce** in the changelog under a Deprecated heading and in the docs for the old surface, with a
    before/after example. Pass: the changelog line names old, new and removal version.
 6. **Wait the stated window.** Removal goes in a major version (semver) or after the announced date, never in a
@@ -48,3 +53,15 @@ assert w[0].category is DeprecationWarning and "use total()" in str(w[0].message
 ```
 
 Run the suite with `python -W error::DeprecationWarning` to prove nothing in this repo still calls the old path.
+
+## Headers for a deprecated endpoint
+
+`Deprecation` (RFC 9745) takes a structured date, `@` and Unix seconds, for when deprecation began; `Sunset`
+(RFC 8594) takes an HTTP-date, for when the endpoint stops working; `Link` names the notice and the replacement.
+
+```http
+Deprecation: @1798761600
+Sunset: Thu, 01 Jul 2027 00:00:00 GMT
+Link: <https://example.com/docs/deprecations/v1-orders>; rel="deprecation"
+Link: <https://api.example.com/v2/orders>; rel="successor-version"
+```
