@@ -1,0 +1,697 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Looks · Foreman</title>
+<style>
+/* fm page looks (T-1649): one plate per look card, each in the card's own palette roles and type pair (the
+   per-look block below is written from the cards), on a quiet page that follows the reader's light or dark setting.
+   Nothing loads from another host: the type pairs fall back to faces already on the device. */
+:root {
+  color-scheme: light dark;
+  --g-bg: #F3F2EE; --g-ink: #1C1C1A; --g-muted: #5E5D58; --g-rule: #D6D4CC; --g-focus: #1F5FBF;
+  --g-sans: Inter, "Adwaita Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --g-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, "Adwaita Mono", monospace;
+  --dur-small: 150ms; --dur-enter: 220ms; --dur-exit: 150ms; --dur-move: 300ms; --dur-stage: 500ms;
+  --ease-enter: cubic-bezier(0.05, 0.7, 0.1, 1); --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-move: cubic-bezier(0.45, 0, 0.2, 1);
+  --travel: 1; --stagger: 40ms;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --g-bg: #141413; --g-ink: #ECEBE6; --g-muted: #A3A19A; --g-rule: #302F2C; --g-focus: #8AB8FF; }
+}
+/* reduced motion keeps every fade and drops the travel: keyframes multiply distance and scale by --travel */
+@media (prefers-reduced-motion: reduce) { :root { --travel: 0; --stagger: 0ms; } }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--g-bg); color: var(--g-ink); font: 1rem/1.55 var(--g-sans); }
+a { color: inherit; }
+:focus-visible { outline: 2px solid var(--g-focus); outline-offset: 2px; }
+.page { max-width: 80rem; margin: 0 auto; padding: clamp(2.5rem, 7vw, 5rem) max(1rem, env(safe-area-inset-right, 0px)) 5rem max(1rem, env(safe-area-inset-left, 0px)); }
+.top { display: grid; gap: .75rem; max-width: 44rem; }
+.eyebrow { margin: 0; font: 500 .75rem/1 var(--g-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--g-muted); }
+h1 { margin: 0; font: 600 clamp(2.75rem, 8vw, 5rem)/.95 var(--g-sans); letter-spacing: -.035em; }
+.lede { margin: .5rem 0 0; color: var(--g-muted); max-width: 60ch; text-wrap: pretty; }
+.index { margin: 2.5rem 0 1rem; }
+.index ol { list-style: none; margin: 0; padding: 0; columns: 3 14rem; column-gap: 2rem; border-top: 1px solid var(--g-rule); }
+.index li { break-inside: avoid; border-bottom: 1px solid var(--g-rule); }
+.index a { display: flex; gap: .75rem; align-items: center; padding: .6rem 0; text-decoration: none; font-size: .9375rem; min-height: 2.75rem; }
+.index a:hover { text-decoration: underline; text-underline-offset: .2em; }
+.dots { flex: none; width: 1.75rem; height: .875rem; background: linear-gradient(90deg, var(--s) 50%, var(--a) 50%); outline: 1px solid var(--g-rule); }
+
+.specimen { display: grid; gap: 1.25rem; padding-block: 3rem 1rem; border-top: 1px solid var(--g-rule); scroll-margin-top: 1rem; }
+main > .specimen:first-child { border-top: 0; }
+.caption { display: grid; align-content: start; }
+.caption .no { margin: 0; font: .75rem/1 var(--g-mono); color: var(--g-muted); font-variant-numeric: tabular-nums; }
+.caption h2 { margin: .4rem 0 .4rem; font: 600 1.5rem/1.15 var(--g-sans); letter-spacing: -.015em; }
+.caption .line { margin: 0; color: var(--g-muted); font-size: .9375rem; max-width: 52ch; text-wrap: pretty; }
+.caption dl { margin: 1.25rem 0 1.25rem; font-size: .875rem; max-width: 52ch; }
+.caption dt { margin-top: .8rem; font: 500 .6875rem/1 var(--g-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--g-muted); }
+.caption dt:first-child { margin-top: 0; }
+.caption dd { margin: .3rem 0 0; text-wrap: pretty; }
+.caption .face { font-size: 1.0625rem; }
+code { font: .85em var(--g-mono); }
+.caption code { white-space: nowrap; }
+.replay { justify-self: start; font: 500 .8125rem/1 var(--g-sans); color: var(--g-ink); background: none; border: 1px solid var(--g-rule); border-radius: 999px; padding: 0 1rem; min-height: 2.5rem; cursor: pointer; transition: border-color var(--dur-small) var(--ease-move); }
+.replay:hover { border-color: var(--g-muted); }
+.swatches { display: flex; flex-wrap: wrap; gap: .4rem 1.1rem; list-style: none; margin: 0; padding: 0; font-size: .75rem; color: var(--g-muted); }
+.swatches li { display: flex; gap: .4rem; align-items: center; }
+.swatches code { font-size: 1em; }
+.swatches code + code { color: var(--g-ink); }
+.chip { width: .875rem; height: .875rem; outline: 1px solid var(--g-rule); }
+footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--g-rule); color: var(--g-muted); font-size: .875rem; max-width: 70ch; }
+@media (min-width: 62rem) {
+  .specimen { grid-template-columns: 15rem minmax(0, 1fr); grid-template-rows: auto 1fr; column-gap: 3rem; padding-block: 4rem 1.5rem; }
+  .swatches { align-self: start; }
+  .caption { grid-row: span 2; position: sticky; top: 2rem; align-self: start; }
+}
+
+/* every plate: the card's surface, text and accent; each motion plays once, when it first comes into view */
+.plate { color-scheme: light; container-type: inline-size; position: relative; overflow: hidden; background: var(--surface); color: var(--text); font-family: var(--f1); line-height: 1.5; outline: 1px solid var(--g-rule); --focus: var(--accent); }
+.plate :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.plate h3, .plate h4, .plate p, .plate ol, .plate ul, .plate dl, .plate dd, .plate figure { margin: 0; }
+.plate button { font: inherit; color: inherit; }
+@keyframes arrive { from { opacity: 0; transform: translateY(calc(var(--travel) * var(--from, 8px))); } }
+@keyframes fade { from { opacity: 0; } }
+.plate[data-plate="fallback"] { padding: 2rem; display: grid; gap: 1rem; }
+.plain-a { font: 600 5rem/1 var(--f1); color: var(--accent); }
+.plain-b { font: 1.125rem/1.5 var(--f2); max-width: 40ch; animation: fade var(--dur-enter) var(--ease-enter) backwards; }
+
+/* Archive ledger: the table is the page; blue ruling, a double rule under totals, losses in parentheses */
+.ledger { padding: 1.5rem clamp(1rem, 4cqi, 2.5rem) 2rem; }
+.ledger .folio { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .25rem 1rem; padding-bottom: .6rem; border-bottom: 1px solid var(--text); }
+.ledger h3 { font: 600 1.5rem/1.2 var(--f1); }
+.ledger .folio p { display: flex; gap: 1.25rem; font: .8125rem/1.4 var(--f2); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.ledger .scroll { overflow-x: auto; }
+.ledger table { width: 100%; min-width: 34rem; border-collapse: collapse; font: 1rem/1.45 var(--f1); }
+.ledger th, .ledger td { padding: .45rem .6rem; border-bottom: 1px solid var(--hairline); text-align: left; vertical-align: baseline; }
+.ledger th + th, .ledger td + td, .ledger th + td { border-left: 1px solid var(--hairline); }
+.ledger thead th { font: 600 .875rem/1.3 var(--f1); font-variant-caps: all-small-caps; letter-spacing: .04em; color: var(--text-muted); background: var(--sunken); }
+.ledger .m { font: .875rem/1.45 var(--f2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ledger .n { text-align: right; }
+.ledger tbody tr { transition: background-color var(--dur-small) var(--ease-move); }
+.ledger tbody tr:hover, .ledger tbody .sel { background: var(--sunken); }
+.ledger .new { animation: fade var(--dur-enter) var(--ease-enter) 120ms backwards; }
+.ledger tfoot th, .ledger tfoot td { border-top: 3px double var(--text); border-bottom: 0; font-weight: 600; }
+
+/* Broadcast graphics: straps wipe in, the score flashes lime once, a ticker runs one lap and pauses on request */
+.bc { display: grid; grid-template-columns: minmax(0, 1fr); font-family: var(--f2); --focus: var(--text); }
+@keyframes wipe { from { clip-path: inset(0 calc(var(--travel) * 100%) 0 0); opacity: var(--travel); } }
+.bc .strap { display: flex; align-items: stretch; background: var(--strap); color: var(--on-strap); animation: wipe var(--dur-enter) var(--ease-enter) backwards; }
+.bc .tab { display: flex; align-items: center; padding: 0 .85rem; background: var(--accent); color: var(--on-accent); font: 700 .8125rem/1 var(--f1); letter-spacing: .1em; text-transform: uppercase; font-stretch: condensed; }
+.bc .strap h3 { padding: .65rem 1rem; font: 700 clamp(1.25rem, 4cqi, 2rem)/1.05 var(--f1); text-transform: uppercase; letter-spacing: .01em; font-stretch: condensed; }
+.bc .media { position: relative; min-height: clamp(14rem, 44cqi, 23rem); background: repeating-linear-gradient(90deg, var(--text-muted) 0 12.5%, color-mix(in oklab, var(--text-muted), var(--border) 30%) 12.5% 25%); }
+.bc .media::before { content: ""; position: absolute; left: 50%; top: 50%; width: 30%; aspect-ratio: 1; border: 2px solid color-mix(in oklab, var(--on-strap) 40%, transparent); border-radius: 50%; translate: -50% -50%; }
+.bc .media::after { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; border-left: 2px solid color-mix(in oklab, var(--on-strap) 40%, transparent); }
+.bc .bug { position: absolute; z-index: 1; top: clamp(.6rem, 3cqi, 1.25rem); right: clamp(.6rem, 3cqi, 1.25rem); display: flex; background: var(--strap); color: var(--on-strap); font: 700 1rem/1 var(--f1); font-variant-numeric: tabular-nums; font-stretch: condensed; animation: wipe var(--dur-enter) var(--ease-enter) 60ms backwards; }
+.bc .bug > * { padding: .5rem .55rem; }
+.bc .bug b { display: inline-block; min-width: 1.4ch; text-align: center; }
+.bc .bug .clock { border-left: 1px solid var(--text-muted); font-weight: 400; }
+.bc .flash { animation: flash var(--dur-stage) linear var(--dur-enter) backwards; }
+@keyframes flash { 0%, 30% { background: var(--accent); color: var(--on-accent); } }
+.bc .lower { position: absolute; z-index: 1; left: clamp(.75rem, 4cqi, 2rem); bottom: clamp(.75rem, 4cqi, 1.75rem); right: clamp(.75rem, 4cqi, 2rem); display: grid; justify-items: start; animation: wipe var(--dur-enter) var(--ease-enter) 120ms backwards; }
+.bc .name { padding: .5rem .9rem .45rem; background: var(--strap); color: var(--on-strap); font: 700 clamp(1.375rem, 4.5cqi, 2rem)/1 var(--f1); text-transform: uppercase; font-stretch: condensed; letter-spacing: .01em; }
+.bc .role { display: flex; align-items: stretch; background: var(--on-strap); color: var(--text); font-size: .9375rem; line-height: 1.2; }
+.bc .role span { padding: .4rem .9rem; }
+.bc .role .club { background: var(--accent); color: var(--on-accent); font: 700 .8125rem/1.6 var(--f1); text-transform: uppercase; letter-spacing: .08em; font-stretch: condensed; }
+.bc .ticker { display: flex; background: var(--strap); color: var(--on-strap); }
+.bc .pause { flex: none; min-height: 2.75rem; padding: 0 .9rem; border: 0; background: var(--accent); color: var(--on-accent); font: 700 .75rem/1 var(--f1); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; transition: background-color var(--dur-small) var(--ease-move), color var(--dur-small) var(--ease-move); }
+.bc .pause[aria-pressed="true"] { background: var(--on-strap); color: var(--text); }
+.bc .window { overflow: hidden; min-width: 0; flex: 1; }
+.bc .track { display: flex; width: max-content; animation: lap 40s linear var(--dur-stage) backwards; }
+@keyframes lap { to { transform: translateX(calc(var(--travel) * -50%)); } }
+.bc .ticker:hover .track, .bc .ticker:focus-within .track, .bc .pause[aria-pressed="true"] + .window .track { animation-play-state: paused; }
+.bc .track span { padding-right: 2.5rem; line-height: 2.75rem; white-space: nowrap; font-size: .9375rem; }
+.bc .track span::before { content: ""; display: inline-block; width: .5rem; height: .5rem; margin-right: .7rem; background: var(--accent); vertical-align: .1em; }
+/* reduced motion: the ticker never moves (its lap rides --travel), so it scrolls by hand instead: no pause button
+   with nothing to pause, and no second copy of the items (that copy only makes the lap seamless) */
+@media (prefers-reduced-motion: reduce) {
+  .bc .pause, .bc .track span[aria-hidden="true"] { display: none; }
+  .bc .window { overflow-x: auto; }
+}
+
+/* Card catalogue: index cards on a drawer, call number first, a teal top rule, "see also" onward */
+.cat { padding: 1.25rem clamp(1rem, 4cqi, 2rem) 2rem; background: var(--sunken); }
+.cat .tabs { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: 1rem; }
+.cat .tabs button { min-height: 2.5rem; padding: 0 .75rem; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); font: 700 .8125rem/1 var(--f1); cursor: pointer; transition: background-color var(--dur-small) var(--ease-move), color var(--dur-small) var(--ease-move); }
+.cat .tabs [aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.cat .drawer { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr)); animation: arrive var(--dur-move) var(--ease-move) backwards; --from: -14px; }
+.cat .card { display: grid; gap: .45rem; align-content: start; padding: .85rem 1.1rem 1.1rem; background: var(--surface); border-top: 3px solid var(--accent); border-radius: 3px; box-shadow: 0 1px 0 var(--border); font: .9375rem/1.45 var(--f1); animation: arrive var(--dur-enter) var(--ease-enter) backwards; animation-delay: calc(200ms + var(--i, 0) * var(--stagger)); transition: transform var(--dur-small) var(--ease-move); --from: 6px; }
+.cat .card + .card { --i: 1; }
+.cat .card:hover, .cat .card.sel { transform: translateY(calc(var(--travel) * -2px)); }
+.cat .card header { display: flex; justify-content: space-between; gap: 1rem; align-items: baseline; }
+.cat .call { font-weight: 700; }
+.cat .subj { font-size: .75rem; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); text-align: right; }
+.cat h3 { font: 700 1rem/1.35 var(--f1); }
+.cat .by { color: var(--text-muted); font-size: .875rem; }
+.cat .desc { font: 1rem/1.5 var(--f2); }
+.cat .see { font-size: .8125rem; }
+.cat .xref { color: var(--accent); text-decoration: underline; text-underline-offset: .2em; }
+
+/* Cartographer: a sheet inside a neat line, grid references on the frame, a boxed legend, an inset on a leader */
+.map { padding: 1.25rem clamp(1rem, 4cqi, 2rem) 1.5rem; }
+.map .mh { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .25rem 1rem; margin-bottom: .9rem; }
+.map .lbl, .map .legend h4 { font: 600 .75rem/1.2 var(--f1); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.map h3 { font: 600 1.375rem/1.25 var(--f1); }
+.map i { font-family: var(--f2); }
+.map .neat { position: relative; border: 1px solid var(--text); padding: 4px; }
+.map .inner { display: grid; grid-template-columns: 1.25rem minmax(0, 1fr); grid-template-rows: 1.25rem auto; border: 1px solid var(--text); }
+.map .rx { grid-column: 2; display: grid; grid-template-columns: repeat(8, 1fr); }
+.map .ry { grid-row: 2; display: grid; grid-template-rows: repeat(5, 1fr); align-items: center; }
+.map .rx span, .map .ry span { font: 600 .6875rem/1.25rem var(--f1); color: var(--text-muted); text-align: center; }
+.map .field { grid-column: 2; grid-row: 2; position: relative; aspect-ratio: 8 / 5; overflow: hidden; border-top: 1px solid var(--border); border-left: 1px solid var(--border); }
+.map svg { display: block; width: 100%; height: 100%; }
+.map .terrain { position: absolute; inset: 0; }
+.map .contour { fill: none; stroke: var(--hairline); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map .river { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.map .trail { fill: none; stroke: var(--text); stroke-width: 1.25; stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.map .summit { fill: var(--text); }
+.map .leader { fill: none; stroke: var(--text); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.map .target { fill: var(--surface); stroke: var(--text); stroke-width: 1.25; vector-effect: non-scaling-stroke; }
+.map .place { position: absolute; translate: -50% -50%; font-size: .875rem; white-space: nowrap; }
+.map .water { color: var(--accent); }
+.map .inset { position: absolute; right: 2.5%; top: 5%; width: 26%; aspect-ratio: 4 / 3; background: var(--surface); border: 1px solid var(--text); transform-origin: 0 100%; animation: zoom var(--dur-move) var(--ease-move) 80ms backwards; }
+@keyframes zoom { from { opacity: 0; transform: scale(calc(1 - var(--travel) * .12)); } }
+.map .inset .river { stroke-width: 9; stroke-linecap: butt; }
+.map .inset .weir { stroke: var(--text); stroke-width: 2.5; }
+.map .inset p { position: absolute; left: .35rem; bottom: .2rem; font-size: .6875rem; line-height: 1.2; background: var(--surface); padding-right: .2rem; }
+.map .tip { position: absolute; left: 29.7%; top: 43.75%; translate: -50% calc(-100% - .7rem); padding: .3rem .55rem; background: var(--surface); border: 1px solid var(--text); font-size: .8125rem; white-space: nowrap; font-variant-numeric: tabular-nums; animation: arrive var(--dur-enter) var(--ease-enter) 300ms backwards; --from: 4px; }
+.map .legend { position: absolute; left: calc(1.25rem + 4px + 3%); bottom: calc(4px + 5%); display: grid; gap: .3rem; padding: .5rem .7rem .6rem; background: var(--surface); border: 1px solid var(--text); font-size: .75rem; }
+.map .legend ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .2rem; }
+.map .legend li { display: flex; gap: .5rem; align-items: center; }
+.map .legend svg { width: 1.5rem; height: .75rem; flex: none; }
+.map .bar { display: flex; width: 7.5rem; height: 6px; margin-top: .3rem; border: 1px solid var(--text); }
+.map .bar i { flex: 1; }
+.map .bar i:nth-child(odd) { background: var(--text); }
+.map .nums { display: flex; justify-content: space-between; width: 7.5rem; font-size: .6875rem; font-variant-numeric: tabular-nums; }
+@container (max-width: 36rem) {
+  .map .legend { position: static; margin-top: 4px; grid-template-columns: 1fr auto; align-items: end; }
+  .map .legend h4 { grid-column: 1 / -1; }
+  .map .place { font-size: .6875rem; }
+}
+
+/* Ceramic studio: test tiles on bisque with a clay grain, one cobalt glaze, captions like samples */
+.kiln { display: grid; gap: 1.75rem; padding: clamp(1.25rem, 5cqi, 2.75rem); background-color: var(--surface); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23g)' opacity='.04'/%3E%3C/svg%3E"); font-family: var(--f2); }
+@container (min-width: 40rem) { .kiln { grid-template-columns: minmax(11rem, 15rem) minmax(0, 1fr); column-gap: clamp(1.5rem, 5cqi, 3.5rem); align-items: start; } }
+.kiln .intro { display: grid; gap: .75rem; justify-items: start; }
+.kiln .kicker { font-size: .8rem; color: var(--text-muted); }
+.kiln h3 { font: 600 1.95rem/1.15 var(--f1); letter-spacing: -.01em; text-wrap: balance; }
+.kiln .intro p:not(.kicker) { color: var(--text); }
+.kiln .cta { margin-top: .5rem; min-height: 2.75rem; padding: 0 1.1rem; border: 0; border-radius: 12px; background: var(--accent); color: var(--on-accent); font: 600 .9375rem/1 var(--f2); cursor: pointer; }
+.kiln .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.75rem 1.25rem; }
+@container (min-width: 40rem) { .kiln .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem 1.75rem; } }
+.kiln .tile { animation: arrive var(--dur-enter) var(--ease-enter) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); --from: 10px; }
+.kiln .tile:nth-child(2) { --i: 1; } .kiln .tile:nth-child(3) { --i: 2; }
+.kiln .pot { position: relative; aspect-ratio: 1; overflow: hidden; background: var(--body); --body: color-mix(in oklab, var(--surface), var(--text-muted) 28%); --glaze: var(--accent); }
+.kiln .tile:nth-child(3n+1) .pot { border-radius: 10px; }
+.kiln .tile:nth-child(3n+2) .pot { border-radius: 14px; --body: color-mix(in oklab, var(--surface), var(--border) 55%); --glaze: color-mix(in oklab, var(--accent) 72%, var(--raised)); }
+.kiln .tile:nth-child(3n) .pot { border-radius: 12px; --body: var(--raised); --glaze: color-mix(in oklab, var(--accent) 48%, var(--raised)); }
+.kiln .pot::after { content: ""; position: absolute; inset: 44% 0 0; background: var(--glaze); border-radius: 48% 52% 0 0 / 10% 14% 0 0; }
+.kiln .pot::before { content: ""; position: absolute; z-index: 1; left: 0; bottom: 0; width: 46%; height: 34%; background: color-mix(in oklab, var(--glaze), var(--text) 16%); border-radius: 0 40% 0 0 / 0 12% 0 0; }
+.kiln figcaption { display: grid; gap: .1rem; margin-top: .65rem; padding: .15rem 0; background: var(--surface); font-size: .8rem; line-height: 1.4; }
+.kiln figcaption span { display: flex; gap: .4rem; align-items: baseline; color: var(--text-muted); }
+.kiln .mark { flex: none; width: .55rem; height: .55rem; border-radius: 12px; background: color-mix(in oklab, var(--accent) 50%, var(--surface)); transition: background-color var(--dur-small) var(--ease-move); }
+.kiln .tile:hover .mark { background: var(--accent); }
+
+/* Lab notebook: dated entries in ballpoint blue on a quad grid, a margin column, printouts taped in */
+.nb { --g: 1.25rem; display: grid; gap: var(--g); padding: var(--g); background-color: var(--surface); background-image: repeating-linear-gradient(0deg, var(--hairline) 0 1px, transparent 1px var(--g)), repeating-linear-gradient(90deg, var(--hairline) 0 1px, transparent 1px var(--g)); }
+.nb .entry { display: grid; grid-template-columns: 10ch minmax(0, 1fr); gap: .5rem 1.25rem; padding: 1rem 1.25rem 1.1rem; background: var(--surface); border-radius: 2px; border-bottom: 1px solid var(--border); }
+.nb .margin { display: flex; flex-direction: column; font: .8125rem/1.5 var(--f2); color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.nb .body { display: grid; gap: .6rem; max-width: 68ch; color: var(--accent); }
+.nb h3 { font: 600 1.25rem/1.3 var(--f1); }
+.nb .printout { padding: .7rem .8rem; background: var(--sunken); border: 1px solid var(--border); border-radius: 2px; color: var(--text); overflow-x: auto; }
+.nb pre { margin: 0; font: .8125rem/1.5 var(--f2); font-variant-numeric: tabular-nums; }
+.nb figcaption { margin-top: .35rem; font: .75rem/1.4 var(--f2); color: var(--text-muted); }
+.nb .by { font-size: .875rem; color: var(--text-muted); }
+.nb .new { animation: arrive var(--dur-enter) var(--ease-enter) 100ms backwards; --from: 2px; }
+@container (max-width: 30rem) { .nb .entry { grid-template-columns: minmax(0, 1fr); } .nb .margin { flex-direction: row; gap: 1rem; } }
+
+/* Lido: lanes split by a lane rope, painted depth numerals, slots you can tap from the water */
+.lido { display: grid; font-family: var(--f2); }
+.lido .lane { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: .25rem 1rem; align-items: start; padding: 1.4rem clamp(1rem, 4cqi, 2rem); }
+.lido .hero { background-image: linear-gradient(var(--sunken) 1px, transparent 1px), linear-gradient(90deg, var(--sunken) 1px, transparent 1px); background-size: 1.5rem 1.5rem; }
+.lido .num { font: 700 clamp(3.25rem, 10cqi, 4.75rem)/.82 var(--f1); color: var(--accent); font-variant-numeric: tabular-nums; min-width: 1.1ch; }
+.lido h3 { font: 700 1.5rem/1.2 var(--f1); letter-spacing: -.01em; }
+.lido .lane p { margin-top: .35rem; max-width: 46ch; }
+.lido .rope { height: 12px; margin: 0 clamp(1rem, 4cqi, 2rem); background: radial-gradient(circle, var(--accent) 0 4px, transparent 4.5px) 0 50% / 28px 12px repeat-x, radial-gradient(circle, var(--border) 0 4px, transparent 4.5px) 14px 50% / 28px 12px repeat-x; }
+.lido .row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: .75rem; align-items: center; padding-block: .7rem; border-top: 1px solid var(--sunken); }
+.lido .row:first-of-type { margin-top: .6rem; }
+.lido .ln { font-weight: 600; line-height: 1.2; }
+.lido .ln small { display: block; font-weight: 400; color: var(--text-muted); font-size: .8125rem; }
+.lido .slots { display: flex; flex-wrap: wrap; gap: .5rem; }
+.lido .slots button { min-width: 4.5rem; min-height: 44px; padding: 0 .75rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font: 600 1rem/1 var(--f2); font-variant-numeric: tabular-nums; cursor: pointer; transition: background-color var(--dur-small) var(--ease-move), color var(--dur-small) var(--ease-move), border-color var(--dur-small) var(--ease-move); }
+.lido .slots [aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.lido .slots button:disabled { background: var(--sunken); color: var(--text-muted); border-style: dashed; cursor: not-allowed; }
+.lido .booking { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: .75rem 1.5rem; margin: 0 clamp(1rem, 4cqi, 2rem) 1.5rem; padding: 1rem 1.25rem; border-radius: 6px; background: var(--sunken); animation: arrive var(--dur-enter) var(--ease-enter) 160ms backwards; --from: 12px; }
+.lido .booking b { font-family: var(--f1); }
+.lido .book { min-height: 44px; padding: 0 1.25rem; border: 0; border-radius: 6px; background: var(--accent); color: var(--on-accent); font: 700 1rem/1 var(--f1); cursor: pointer; }
+@container (max-width: 30rem) { .lido .row { grid-template-columns: minmax(0, 1fr); } }
+
+/* Night market: warm dark, stalls headed by painted boards, a string of lights, one dragon-fruit pink */
+.nm, .obs, .tr { color-scheme: dark; }
+.nm { padding-bottom: 1.75rem; font-family: var(--f2); }
+.nm .glow { padding: 2.25rem clamp(1rem, 4cqi, 2rem) 1.25rem; background: radial-gradient(ellipse 70% 130% at 50% 0%, color-mix(in oklch, var(--surface), var(--text) 4%), var(--surface) 72%); }
+.nm h3 { font: 700 clamp(1.75rem, 5.5cqi, 2.6rem)/1.08 var(--f1); }
+.nm .glow p { margin-top: .45rem; color: var(--text-muted); }
+.nm .chips { display: flex; flex-wrap: wrap; gap: .5rem; padding: 0 clamp(1rem, 4cqi, 2rem); }
+.nm .chips button { min-height: 2.5rem; padding: 0 1rem; border: 1px solid var(--border); border-radius: 999px; background: transparent; font-size: .9375rem; cursor: pointer; transition: background-color var(--dur-small) var(--ease-move), color var(--dur-small) var(--ease-move), border-color var(--dur-small) var(--ease-move); }
+.nm .chips [aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.nm .lights { height: 14px; margin: 1.25rem clamp(1rem, 4cqi, 2rem); background: radial-gradient(circle, var(--text-muted) 0 2.5px, transparent 3px) 0 50% / 22px 14px repeat-x, linear-gradient(var(--border), var(--border)) 0 2px / 100% 1px no-repeat; }
+.nm .stalls { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); padding: 0 clamp(1rem, 4cqi, 2rem); }
+.nm .stall { position: relative; display: grid; gap: .5rem; align-content: start; padding: 1rem 1.1rem 1.15rem; background: var(--raised); border-radius: 8px; animation: arrive var(--dur-enter) var(--ease-enter) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); }
+.nm .stall:nth-child(2) { --i: 1; } .nm .stall:nth-child(3) { --i: 2; }
+.nm .stall::before { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: 0 0 0 1px color-mix(in oklab, var(--accent) 45%, transparent), 0 12px 40px -10px color-mix(in oklab, var(--accent) 55%, transparent); opacity: 0; transition: opacity var(--dur-small) var(--ease-move); pointer-events: none; }
+.nm .stall:hover::before, .nm .stall:focus-within::before { opacity: 1; }
+.nm .board { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding-bottom: .55rem; border-bottom: 1px solid var(--border); }
+.nm h4 { font: 700 1.2rem/1.15 var(--f1); }
+.nm .price { font: 700 1.6rem/1 var(--f1); color: var(--accent); font-variant-numeric: tabular-nums; }
+.nm .meta { color: var(--text-muted); font-size: .875rem; }
+
+/* Observatory: a still field of view with reticle and scale, coordinates in mono, a log newest first */
+.obs { display: grid; gap: 2rem; padding: clamp(1.5rem, 6cqi, 3.5rem); background-color: var(--surface); background-image:
+  radial-gradient(circle at 7% 12%, color-mix(in oklab, var(--text) 35%, transparent) 0 1px, transparent 1.5px),
+  radial-gradient(circle at 23% 81%, color-mix(in oklab, var(--text) 25%, transparent) 0 1px, transparent 1.5px),
+  radial-gradient(circle at 38% 6%, color-mix(in oklab, var(--text) 30%, transparent) 0 .8px, transparent 1.3px),
+  radial-gradient(circle at 52% 93%, color-mix(in oklab, var(--text) 40%, transparent) 0 1.2px, transparent 1.7px),
+  radial-gradient(circle at 64% 18%, color-mix(in oklab, var(--text) 20%, transparent) 0 1px, transparent 1.5px),
+  radial-gradient(circle at 79% 7%, color-mix(in oklab, var(--text) 35%, transparent) 0 1px, transparent 1.5px),
+  radial-gradient(circle at 93% 32%, color-mix(in oklab, var(--text) 25%, transparent) 0 .8px, transparent 1.3px),
+  radial-gradient(circle at 96% 74%, color-mix(in oklab, var(--text) 30%, transparent) 0 1px, transparent 1.5px),
+  radial-gradient(circle at 3% 58%, color-mix(in oklab, var(--text) 25%, transparent) 0 .8px, transparent 1.3px),
+  radial-gradient(circle at 47% 48%, color-mix(in oklab, var(--text) 20%, transparent) 0 .8px, transparent 1.3px),
+  radial-gradient(circle at 85% 95%, color-mix(in oklab, var(--text) 35%, transparent) 0 1px, transparent 1.5px);
+  font-family: var(--f1); }
+@container (min-width: 44rem) { .obs { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); align-items: center; column-gap: clamp(2rem, 6cqi, 4rem); } }
+.obs .fov { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1.25rem; }
+.obs .field { flex: 1 1 12rem; max-width: 22rem; animation: resolve var(--dur-stage) var(--ease-enter) backwards; }
+@keyframes resolve { from { opacity: 0; transform: scale(calc(1 + var(--travel) * .04)); } }
+.obs svg { display: block; width: 100%; height: auto; }
+.obs .frame { fill: color-mix(in oklab, var(--raised), var(--surface) 35%); stroke: var(--border); stroke-width: 1; }
+.obs .ret { stroke: var(--border); stroke-width: .6; fill: none; }
+.obs .ticks { stroke: var(--border); stroke-width: 1; }
+.obs .centre { stroke: var(--accent); stroke-width: 1; fill: none; }
+.obs .stars circle { fill: var(--text); }
+.obs .scale { display: flex; align-items: center; gap: .5rem; margin-top: .6rem; font: .75rem/1 var(--f2); color: var(--text-muted); }
+.obs .scale span { width: 24%; height: 5px; border: 1px solid var(--accent); border-top: 0; }
+.obs dl { display: grid; grid-template-columns: auto auto; gap: .3rem .9rem; font-size: .875rem; }
+.obs dt { font: 600 .6875rem/1.6 var(--f1); letter-spacing: .08em; text-transform: uppercase; color: var(--text-muted); }
+.obs dd { font: .875rem/1.6 var(--f2); font-variant-numeric: tabular-nums; }
+.obs .upd { animation: reading var(--dur-small) var(--ease-move) var(--dur-stage) backwards; }
+@keyframes reading { from { opacity: .3; } }
+.obs h3 { font: 600 1.25rem/1.25 var(--f1); margin-bottom: .75rem; }
+.obs ol { list-style: none; padding: 0; }
+.obs li { display: grid; grid-template-columns: 3.5rem minmax(0, 1fr); gap: .75rem; padding: .7rem 0; border-top: 1px solid var(--border); }
+.obs time { font: .875rem/1.5 var(--f2); color: var(--accent); font-variant-numeric: tabular-nums; }
+.obs li p { color: var(--text); }
+
+/* Sewing pattern: a yardage chart, a dashed cut line with scissors, lettered pieces keyed to numbered steps */
+.sew { display: grid; gap: 1.25rem; padding: 1.5rem clamp(1rem, 4cqi, 2rem) 2rem; font-family: var(--f2); }
+.sew .yard { overflow-x: auto; }
+.sew table { border-collapse: collapse; min-width: 22rem; font-size: .9375rem; font-variant-numeric: tabular-nums; }
+.sew caption, .sew h3, .sew .tick, .sew .n, .sew th { font-family: var(--f1); font-stretch: condensed; text-transform: uppercase; }
+.sew caption { text-align: left; padding-bottom: .6rem; font-weight: 700; font-size: .8125rem; letter-spacing: .08em; }
+.sew th, .sew td { padding: .4rem .75rem; border: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.sew th { background: var(--sunken); font-weight: 700; font-size: .8125rem; letter-spacing: .06em; }
+.sew tbody th, .sew thead th:first-child { text-align: left; }
+.sew .cut { position: relative; height: .75rem; margin-top: .5rem; border-top: 1px dashed var(--hairline); }
+.sew .cut svg { position: absolute; left: 0; top: -.7rem; width: 1.4rem; height: 1.4rem; padding-right: .3rem; background: var(--surface); color: var(--text-muted); }
+.sew .cut::before, .sew .cut::after { content: ""; position: absolute; top: 0; border: 6px solid transparent; border-top-color: var(--hairline); }
+.sew .cut::before { left: 38%; } .sew .cut::after { right: 22%; }
+.sew .steps { display: grid; gap: .75rem; list-style: none; padding: 0; }
+.sew .step { position: relative; isolation: isolate; display: grid; gap: 1rem 1.5rem; padding: 1rem; }
+@container (min-width: 36rem) { .sew .step { grid-template-columns: 11rem minmax(0, 1fr); align-items: start; } }
+.sew .dia { padding: .5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 2px; }
+.sew .dia svg { display: block; width: 100%; height: auto; max-width: 14rem; }
+.sew .piece { fill: none; stroke: var(--text); stroke-width: 1.25; }
+.sew .seam, .sew .fold { fill: none; stroke: var(--hairline); stroke-width: 1; stroke-dasharray: 4 3; }
+.sew .fold { stroke: var(--accent); }
+.sew .notch, .sew .dot { fill: var(--text); }
+.sew .grain { fill: none; stroke: var(--text-muted); stroke-width: 1; }
+.sew .dia text { font: 700 22px var(--f1); fill: var(--accent); font-stretch: condensed; }
+.sew .n { font-weight: 700; font-size: 1.95rem; line-height: 1; color: var(--accent); }
+.sew h3 { margin: .3rem 0 .4rem; font-weight: 700; font-size: 1rem; letter-spacing: .06em; }
+.sew .pc { padding: .05rem .35rem; border-radius: 2px; background: var(--accent); color: var(--on-accent); font: 700 .8125rem/1.2 var(--f1); font-stretch: condensed; }
+.sew .tick { display: flex; align-items: center; gap: .35rem; margin-top: .55rem; color: var(--accent); font-weight: 700; font-size: .8125rem; letter-spacing: .08em; animation: ticked var(--dur-small) var(--ease-enter) 100ms backwards; }
+.sew .tick svg { width: 1rem; height: 1rem; }
+@keyframes ticked { from { opacity: 0; transform: scale(calc(1 + var(--travel) * .25)); } }
+.sew .now::before { content: ""; position: absolute; inset: 0; z-index: -1; background: var(--sunken); border-left: 3px solid var(--accent); border-radius: 2px; animation: fade var(--dur-move) var(--ease-move) 200ms backwards; }
+
+/* Shipping manifest: kraft, boxed fields with tiny capital labels, a stamp that lands, a perforated edge */
+.mf { display: grid; gap: 1.25rem; padding: 1.5rem clamp(1rem, 4cqi, 2rem); }
+.mf .sheet { display: grid; gap: 1rem; padding: 1.25rem; background: var(--raised); }
+.mf .mfh { display: flex; justify-content: space-between; align-items: start; gap: 1rem; }
+.mf h3, .mf dt, .mf th, .mf .stamp, .mf .ink { font-stretch: condensed; text-transform: uppercase; }
+.mf h3 { font: 700 1.6rem/1.05 var(--f1); letter-spacing: .02em; font-stretch: condensed; }
+.mf .stamp { flex: none; display: inline-flex; align-items: center; gap: .4rem; padding: .35rem .6rem; border: 2px solid var(--text); font: 700 .9375rem/1 var(--f1); letter-spacing: .14em; font-stretch: condensed; transform: rotate(-3deg); animation: stamp var(--dur-small) var(--ease-enter) 280ms backwards; }
+.mf .stamp svg { width: 1rem; height: 1rem; }
+@keyframes stamp { from { opacity: 0; transform: rotate(-3deg) scale(calc(1 + var(--travel) * .04)); } }
+.mf .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr)); gap: 2px; margin: 0; background: var(--text); border: 2px solid var(--text); }
+.mf .fields div { padding: .4rem .6rem .55rem; background: var(--raised); }
+.mf dt, .mf th { font-size: .6875rem; font-weight: 700; letter-spacing: .08em; color: var(--text-muted); }
+.mf dd { margin-top: .15rem; font-size: .9375rem; line-height: 1.35; }
+.mf .code { font: .875rem/1.35 var(--f2); white-space: nowrap; }
+.mf table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+.mf th { padding: .4rem .5rem; text-align: left; border-bottom: 2px solid var(--text); }
+.mf td { padding: .45rem .5rem; border-bottom: 1px solid var(--border); }
+.mf .n { text-align: right; font-family: var(--f2); font-variant-numeric: tabular-nums; }
+.mf th.n { font-family: var(--f1); }
+.mf tbody tr { animation: arrive var(--dur-enter) var(--ease-enter) backwards; animation-delay: calc(var(--i, 0) * var(--stagger)); --from: 6px; }
+.mf tbody tr:nth-child(2) { --i: 1; } .mf tbody tr:nth-child(3) { --i: 2; }
+.mf tfoot th, .mf tfoot td { border-top: 2px solid var(--text); border-bottom: 0; font-weight: 700; color: var(--text); }
+.mf .perf { height: 8px; background: radial-gradient(circle, var(--border) 0 2.5px, transparent 3px) 0 50% / 12px 8px repeat-x; }
+.mf .act { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 1rem 1.5rem; }
+.mf .act a { color: var(--text); font-weight: 600; text-decoration: underline; text-underline-offset: .2em; }
+.mf .ink { min-height: 44px; padding: 0 1.25rem; border: 0; border-radius: 0; background: var(--accent); color: var(--on-accent); font: 700 .875rem/1 var(--f1); letter-spacing: .1em; font-stretch: condensed; cursor: pointer; }
+@container (max-width: 26rem) { .mf .mfh { flex-direction: column-reverse; } }
+
+/* Transit signage: dark enamel, destination first, a line-colour bar and code badge on every row, real arrows */
+.tr { font-family: var(--f1); }
+.tr .band { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; padding: 1.25rem clamp(1rem, 4cqi, 1.75rem); background: var(--raised); border-bottom: 1px solid var(--border); }
+.tr h3 { font: 600 clamp(1.777rem, 6.5cqi, 3.16rem)/1.05 var(--f1); letter-spacing: -.01em; }
+.tr .clock { font: 600 clamp(1.333rem, 4cqi, 2.37rem)/1 var(--f1); font-variant-numeric: tabular-nums; }
+.tr .deps { list-style: none; padding: 0; }
+.tr .dep { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: .35rem 1rem; align-items: center; min-height: 48px; padding: .65rem clamp(1rem, 4cqi, 1.75rem) .65rem 1rem; border-left: 6px solid var(--accent); border-bottom: 1px solid var(--border); }
+.tr .code { display: grid; place-content: center; width: 2.25rem; height: 2.25rem; border-radius: 4px; background: var(--accent); color: var(--on-accent); font: 600 .9375rem/1 var(--f1); font-variant-numeric: tabular-nums; }
+.tr .to { font-weight: 600; font-size: 1.333rem; line-height: 1.2; }
+.tr .plat { display: inline-flex; align-items: center; gap: .4rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tr .plat svg { width: 1.25rem; height: 1.25rem; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.tr .when { font: 600 1.333rem/1 var(--f1); font-variant-numeric: tabular-nums; text-align: right; }
+.tr .when s { margin-right: .35rem; color: var(--text-muted); font-size: 1rem; font-weight: 400; }
+.tr .upd .when { animation: recolour var(--dur-small) var(--ease-move) 320ms backwards; }
+@keyframes recolour { from { color: var(--text-muted); } }
+.tr .new { animation: arrive var(--dur-enter) var(--ease-enter) 120ms backwards; }
+@container (max-width: 30rem) { .tr .dep { grid-template-columns: auto minmax(0, 1fr) auto; } .tr .plat { grid-column: 2 / -1; grid-row: 2; font-size: .875rem; } .tr .to { font-size: 1.125rem; } }
+</style>
+<style>
+__STYLES__
+</style>
+</head>
+<body>
+<div class="page">
+<header class="top">
+  <p class="eyebrow">Foreman · Look cards</p>
+  <h1>Looks</h1>
+  <p class="lede">__COUNT__ looks from the library, each drawn in its own palette and type pair around a working piece of interface. Motion plays once as a plate comes into view; Replay runs it again. Everything is in this one file, so the type uses faces already on your device.</p>
+</header>
+<nav class="index" aria-label="Looks"><ol>
+__INDEX__
+</ol></nav>
+<main>
+__SPECIMENS__
+</main>
+<footer>Written by <code>fm page looks</code> from the look cards in <code>plugin/skills/library/cards/looks</code>. Keep one with <code>fm looks keep LOOK</code>.</footer>
+</div>
+
+<!--look look-archive-ledger-->
+<div class="ledger">
+  <header class="folio"><h3>Cash book</h3><p><span>October 1931</span><span>fo. 47</span></p></header>
+  <div class="scroll" tabindex="0" role="region" aria-label="Cash book entries">
+    <table>
+      <thead><tr><th scope="col">Date</th><th scope="col">Particulars</th><th scope="col">Ref.</th><th scope="col" class="n">Debit</th><th scope="col" class="n">Credit</th><th scope="col" class="n">Balance</th></tr></thead>
+      <tbody>
+        <tr><td class="m">03 Oct</td><td>Balance brought forward</td><td class="m">b/f</td><td class="m n"></td><td class="m n"></td><td class="m n">4,812.50</td></tr>
+        <tr><td class="m">07 Oct</td><td>Freight, Hallam &amp; Sons</td><td class="m">L 112</td><td class="m n"></td><td class="m n">1,250.00</td><td class="m n">3,562.50</td></tr>
+        <tr class="sel"><td class="m">12 Oct</td><td>Rents received, Mill Lane</td><td class="m">R 31</td><td class="m n">640.00</td><td class="m n"></td><td class="m n">4,202.50</td></tr>
+        <tr><td class="m">19 Oct</td><td>Exchange on the Lisbon draft</td><td class="m">X 4</td><td class="m n">(85.20)</td><td class="m n"></td><td class="m n">4,117.30</td></tr>
+        <tr class="new"><td class="m">24 Oct</td><td>Subscriptions, quarter day</td><td class="m">S 9</td><td class="m n">212.00</td><td class="m n"></td><td class="m n">4,329.30</td></tr>
+      </tbody>
+      <tfoot><tr><th scope="row" colspan="3">Carried forward</th><td class="m n">766.80</td><td class="m n">1,250.00</td><td class="m n">4,329.30</td></tr></tfoot>
+    </table>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-broadcast-graphics-->
+<div class="bc">
+  <div class="strap"><span class="tab">Live</span><h3>Regional cup · Semi&#8209;final</h3></div>
+  <div class="media">
+    <p class="bug"><span>HAR</span><span><b class="flash">2</b>–<b>1</b></span><span>NTH</span><span class="clock">78:12</span></p>
+    <div class="lower"><p class="name">Ama Mensah</p><p class="role"><span class="club">Harbour</span><span>Captain · 2 goals tonight</span></p></div>
+  </div>
+  <div class="ticker">
+    <button type="button" class="pause" aria-pressed="false">Pause</button>
+    <div class="window" tabindex="0" role="region" aria-label="Latest"><p class="track"><span>Eastgate 0–3 Millbrook, full time</span><span>Kick-off at Riverside moved to 19:45</span><span>Harbour change: Osei on for Lund</span><span>Draw for the final: Sunday at 12:00</span><span aria-hidden="true">Eastgate 0–3 Millbrook, full time</span><span aria-hidden="true">Kick-off at Riverside moved to 19:45</span><span aria-hidden="true">Harbour change: Osei on for Lund</span><span aria-hidden="true">Draw for the final: Sunday at 12:00</span></p></div>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-card-catalogue-->
+<div class="cat">
+  <div class="tabs" role="group" aria-label="Drawer" data-pick>
+    <button type="button" aria-pressed="false">A–C</button><button type="button" aria-pressed="false">D–F</button><button type="button" aria-pressed="false">G–I</button><button type="button" aria-pressed="false">J–L</button><button type="button" aria-pressed="true">M–O</button><button type="button" aria-pressed="false">P–S</button><button type="button" aria-pressed="false">T–Z</button>
+  </div>
+  <div class="drawer">
+    <article class="card">
+      <header><span class="call">551.46 MER</span><span class="subj">Ocean currents</span></header>
+      <h3>Meridian drift: the northern gyres</h3>
+      <p class="by">Okonkwo, Adaeze. 1978. 312 p., charts.</p>
+      <p class="desc">Ten seasons of drift-bottle returns, plotted against the wind records, argue that the gyre's eastern edge moves with the herring.</p>
+      <p class="see">See also <span class="xref">Fisheries — North Atlantic</span>; <span class="xref">Winds — Records</span></p>
+    </article>
+    <article class="card sel">
+      <header><span class="call">551.47 MOR</span><span class="subj">Tides</span></header>
+      <h3>Moon pull and harbour mouths</h3>
+      <p class="by">Morrow, Ellis. 1964. 188 p., plates.</p>
+      <p class="desc">A harbour master's tables of spring and neap tides at eleven river mouths, with notes on silting after each storm.</p>
+      <p class="see">See also <span class="xref">Harbours — Maintenance</span></p>
+    </article>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-cartographer-->
+<div class="map">
+  <header class="mh"><h3><i>Harrow Fell</i> and the Coldwater valley</h3><p class="lbl">Sheet 47 · 1:25 000</p></header>
+  <div class="neat">
+    <div class="inner">
+      <div class="rx" aria-hidden="true"><span>A</span><span>B</span><span>C</span><span>D</span><span>E</span><span>F</span><span>G</span><span>H</span></div>
+      <div class="ry" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+      <div class="field">
+        <svg class="terrain" viewBox="0 0 640 400" role="img" aria-label="Contour map: Harrow Fell at C3, Brant Moss at G4, the Coldwater river between them, a footpath over both">
+          <path class="contour" d="M226 175C226 180 221 187 217 190C212 194 205 194 198 196C192 197 186 200 180 199C174 199 165 196 161 192C157 188 155 180 156 175C156 170 161 164 165 160C169 156 175 152 180 151C186 150 193 151 199 152C205 153 213 155 217 159C222 163 226 170 226 175Z M257 175C257 185 248 197 239 204C231 210 217 210 205 213C194 216 183 221 172 220C160 219 144 213 137 206C129 199 125 185 126 175C127 165 136 155 144 148C151 141 162 134 172 131C183 128 196 130 207 133C219 135 232 139 241 146C249 153 257 165 257 175Z M289 175C288 189 275 208 262 217C249 226 229 226 212 230C196 234 180 242 163 240C147 239 123 231 112 220C101 210 95 189 97 175C98 161 111 146 123 136C134 125 149 115 164 111C179 107 198 110 215 114C232 117 252 122 264 132C276 142 289 161 289 175Z M320 175C320 194 301 218 285 230C268 242 241 241 219 246C197 251 177 263 155 261C133 259 101 249 87 235C72 221 64 194 67 175C69 156 87 138 102 124C116 110 136 96 156 91C176 86 201 90 222 95C244 100 271 105 288 118C304 132 321 156 320 175Z M352 175C352 198 328 229 307 243C286 258 252 256 225 262C199 269 174 283 147 281C120 279 80 268 61 250C43 232 34 198 37 175C40 152 62 129 81 111C99 94 123 77 148 71C173 65 203 71 230 76C257 82 291 88 311 105C332 121 353 152 352 175Z M544 300C543 304 540 306 537 309C534 312 531 315 527 316C523 318 517 319 512 318C507 317 502 314 499 311C496 308 494 304 494 300C494 296 498 293 502 290C505 288 509 286 514 285C518 284 523 282 528 283C533 283 541 285 543 287C546 290 545 296 544 300Z M574 300C572 308 564 314 558 320C551 326 545 333 536 336C527 339 513 342 502 340C492 339 481 331 474 325C467 318 462 308 462 300C463 292 472 283 479 278C486 272 496 270 506 267C515 264 526 261 537 261C548 262 566 266 572 272C578 278 577 292 574 300Z M604 300C600 312 588 322 579 332C569 341 559 351 544 356C530 361 508 366 493 363C477 360 459 349 449 338C439 328 429 312 431 300C432 288 445 274 456 266C468 257 483 253 498 249C513 245 529 239 546 240C563 241 591 247 601 257C610 267 608 288 604 300Z M634 300C629 317 613 330 599 343C586 355 573 368 553 376C534 383 504 389 483 385C461 381 438 366 424 352C410 338 397 316 399 300C401 284 419 265 434 254C449 242 469 237 490 231C510 225 532 217 556 219C579 221 616 228 629 241C642 255 639 283 634 300Z"/>
+          <path class="river" d="M432 0C440 50 446 110 425 165S382 255 362 305S300 372 262 400"/>
+          <path class="trail" d="M40 400C70 340 120 300 150 260S180 200 190 175C250 210 330 250 375 272S470 300 520 300"/>
+          <path class="summit" d="M190 165l8 14h-16zM520 290l8 14h-16z"/>
+          <path class="leader" d="M425 165L457.6 144.8"/>
+          <circle class="target" cx="425" cy="165" r="5"/>
+        </svg>
+        <span class="place" style="left: 17.5%; top: 53%"><i>Harrow Fell</i></span>
+        <span class="place water" style="left: 76%; top: 47%"><i>Coldwater</i></span>
+        <span class="place" style="left: 81%; top: 83%"><i>Brant Moss</i></span>
+        <div class="inset">
+          <svg viewBox="0 0 120 90" aria-hidden="true"><path class="contour" d="M-5 20C30 10 50 30 70 20S110 0 130 10M-5 44C25 34 55 56 80 44S115 29 130 34M-5 72C30 64 60 82 90 68S118 60 130 62"/><path class="river" d="M44 -5C52 25 62 45 54 95"/><path class="weir" d="M40 42 70 50"/></svg>
+          <p>Weir · F3</p>
+        </div>
+        <p class="tip">Harrow Fell · 612 m · C3</p>
+      </div>
+    </div>
+    <div class="legend">
+      <h4>Legend</h4>
+      <ul>
+        <li><svg viewBox="0 0 24 12" aria-hidden="true"><path class="river" d="M1 6h22"/></svg>River</li>
+        <li><svg viewBox="0 0 24 12" aria-hidden="true"><path class="trail" d="M1 6h22"/></svg>Footpath</li>
+        <li><svg viewBox="0 0 24 12" aria-hidden="true"><path class="summit" d="M12 1l6 10H6z"/></svg>Summit</li>
+        <li><svg viewBox="0 0 24 12" aria-hidden="true"><path class="contour" d="M1 9C8 1 16 1 23 9"/></svg>Contour, 20 m</li>
+      </ul>
+      <div><div class="bar" aria-hidden="true"><i></i><i></i><i></i><i></i></div><p class="nums"><span>0</span><span>1</span><span>2 km</span></p></div>
+    </div>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-ceramic-studio-->
+<div class="kiln">
+  <div class="intro">
+    <p class="kicker">Autumn firing</p>
+    <h3>Test tiles from the cobalt bucket</h3>
+    <p>Three clays through one glaze, fired together on the top shelf. Each tile carries its recipe on the back.</p>
+    <button type="button" class="cta">Book a glaze afternoon</button>
+  </div>
+  <div class="tiles">
+    <figure class="tile"><div class="pot" role="img" aria-label="Grey stoneware tile dipped in cobalt glaze"></div><figcaption><b>Tile 14</b><span><i class="mark"></i>Grey stoneware · cobalt 2% · cone 6</span></figcaption></figure>
+    <figure class="tile"><div class="pot" role="img" aria-label="Buff stoneware tile with a thin cobalt glaze"></div><figcaption><b>Tile 15</b><span><i class="mark"></i>Buff stoneware · cobalt 1%, thin · cone 6</span></figcaption></figure>
+    <figure class="tile"><div class="pot" role="img" aria-label="Porcelain tile with a pale cobalt wash over slip"></div><figcaption><b>Tile 16</b><span><i class="mark"></i>Porcelain · cobalt wash over slip · cone 10</span></figcaption></figure>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-lab-notebook-->
+<div class="nb">
+  <article class="entry">
+    <p class="margin"><time datetime="2026-10-14">14 Oct 26</time><span>No. 0412</span></p>
+    <div class="body">
+      <h3>Buffer pH drift at 4 °C</h3>
+      <p>Phosphate buffer B held in the cold room overnight. pH fell by 0.05 by morning; probe calibrated at 7.00 and 10.01 before each reading.</p>
+      <figure class="printout"><pre>t (h)   pH      T (°C)
+ 0.0    7.412   4.1
+ 6.0    7.388   4.0
+12.0    7.361   4.0</pre><figcaption>Fig. 1. Meter log, probe B</figcaption></figure>
+      <p class="by">Recorded by J. Okafor · witnessed by R. Lind</p>
+    </div>
+  </article>
+  <article class="entry new">
+    <p class="margin"><time datetime="2026-10-15">15 Oct 26</time><span>No. 0413</span></p>
+    <div class="body">
+      <h3>Repeat with fresh stock</h3>
+      <p>Same protocol, stock made this morning. First reading 7.409 at 09:12; next at 15:00.</p>
+      <p class="by">Recorded by J. Okafor</p>
+    </div>
+  </article>
+</div>
+<!--/look-->
+
+<!--look look-lido-->
+<div class="lido">
+  <div class="lane hero"><span class="num">1</span><div><h3>Open-air lane swim</h3><p>Fifty metres, heated to 26&nbsp;°C. Book a lane by the slot; the deep end is 3.8&nbsp;m.</p></div></div>
+  <div class="rope" aria-hidden="true"></div>
+  <div class="lane"><span class="num">2</span><div>
+    <h3>Saturday timetable</h3>
+    <div class="row"><p class="ln">Lane 1<small>Fast</small></p><div class="slots" role="group" aria-label="Lane 1 slots"><button type="button" aria-pressed="false" data-say="Lane 1 · 07:00">07:00</button><button type="button" aria-pressed="true" data-say="Lane 1 · 07:45">07:45</button><button type="button" aria-pressed="false" data-say="Lane 1 · 08:30">08:30</button><button type="button" disabled>09:15 full</button></div></div>
+    <div class="row"><p class="ln">Lane 2<small>Steady</small></p><div class="slots" role="group" aria-label="Lane 2 slots"><button type="button" aria-pressed="false" data-say="Lane 2 · 07:00">07:00</button><button type="button" aria-pressed="false" data-say="Lane 2 · 07:45">07:45</button><button type="button" disabled>08:30 full</button><button type="button" aria-pressed="false" data-say="Lane 2 · 09:15">09:15</button></div></div>
+  </div></div>
+  <div class="booking"><p><b data-echo>Lane 1 · 07:45</b> · 45 min · £4.20</p><button type="button" class="book">Book this swim</button></div>
+</div>
+<!--/look-->
+
+<!--look look-night-market-->
+<div class="nm">
+  <header class="glow"><h3>Saturday night market</h3><p>Car park B behind the station · 6 pm till late · 14 stalls</p></header>
+  <div class="chips" role="group" aria-label="Show stalls" data-pick><button type="button" aria-pressed="true">All</button><button type="button" aria-pressed="false">Noodles</button><button type="button" aria-pressed="false">Grill</button><button type="button" aria-pressed="false">Sweet</button><button type="button" aria-pressed="false">Meat-free</button></div>
+  <div class="lights" aria-hidden="true"></div>
+  <div class="stalls">
+    <article class="stall"><div class="board"><h4>Auntie Lim's laksa</h4><p class="price">$12</p></div><p>Coconut curry broth, rice noodles, tofu puffs and a soft egg.</p><p class="meta">Stall 4 · hot · about 8 min</p></article>
+    <article class="stall"><div class="board"><h4>Charcoal skewers</h4><p class="price">$9</p></div><p>Lemongrass chicken and pork belly over coals, three to a stick.</p><p class="meta">Stall 7 · about 5 min</p></article>
+    <article class="stall"><div class="board"><h4>Mango sticky rice</h4><p class="price">$7</p></div><p>Sweet coconut rice, ripe mango and toasted mung beans.</p><p class="meta">Stall 11 · meat-free</p></article>
+  </div>
+</div>
+<!--/look-->
+
+<!--look look-observatory-->
+<div class="obs">
+  <figure class="fov">
+    <div class="field">
+      <svg viewBox="0 0 200 200" role="img" aria-label="Field of view, two degrees across, fifteen stars brighter than magnitude 11">
+        <circle class="frame" cx="100" cy="100" r="96"/>
+        <g class="stars"><circle cx="62" cy="54" r="1.6"/><circle cx="131" cy="48" r="1.1"/><circle cx="88" cy="77" r=".9"/><circle cx="146" cy="92" r="2.2"/><circle cx="54" cy="118" r="1.2"/><circle cx="112" cy="131" r="1.5"/><circle cx="77" cy="152" r=".8"/><circle cx="150" cy="141" r="1"/><circle cx="104" cy="63" r=".7"/><circle cx="40" cy="88" r=".8"/><circle cx="125" cy="165" r="1.3"/><circle cx="70" cy="104" r=".6"/><circle cx="160" cy="118" r=".7"/><circle cx="95" cy="178" r=".9"/><circle cx="118" cy="104" r=".6"/></g>
+        <path class="ret" d="M100 16V86M100 114V184M16 100H86M114 100H184"/>
+        <g class="ticks"><path d="M100 4v10M196 100h-10M100 196v-10M4 100h10"/><path d="M148 16.9l-2.5 4.3M183.1 52l-4.3 2.5M183.1 148l-4.3-2.5M148 183.1l-2.5-4.3M52 183.1l2.5-4.3M16.9 148l4.3-2.5M16.9 52l4.3 2.5M52 16.9l2.5 4.3"/></g>
+        <path class="centre" d="M92 96v-4h4M104 92h4v4M108 104v4h-4M96 108h-4v-4"/>
+      </svg>
+      <p class="scale"><span aria-hidden="true"></span>30′</p>
+    </div>
+    <figcaption><dl><dt>RA</dt><dd>20h 58m 47s</dd><dt>Dec</dt><dd>+44° 19′ 48″</dd><dt>Field</dt><dd>2.0°</dd><dt>Limit</dt><dd>mag 11.2</dd><dt>Seeing</dt><dd class="upd">2.1″</dd></dl></figcaption>
+  </figure>
+  <section class="log"><h3>Observing log</h3><ol>
+    <li><time>02:41</time><p>Seeing steadied at 2.1″; guiding resumed on the field's brightest star.</p></li>
+    <li><time>02:17</time><p>Cloud bank from the west; exposures paused.</p></li>
+    <li><time>01:52</time><p>Field centred; twelve 300 s frames queued.</p></li>
+  </ol></section>
+</div>
+<!--/look-->
+
+<!--look look-sewing-pattern-->
+<div class="sew">
+  <div class="yard"><table>
+    <caption>Materials · View A</caption>
+    <thead><tr><th scope="col">Fabric width</th><th scope="col">8</th><th scope="col">10</th><th scope="col">12</th><th scope="col">14</th></tr></thead>
+    <tbody><tr><th scope="row">115 cm</th><td>2.10 m</td><td>2.20 m</td><td>2.30 m</td><td>2.50 m</td></tr><tr><th scope="row">150 cm</th><td>1.60 m</td><td>1.70 m</td><td>1.70 m</td><td>1.90 m</td></tr></tbody>
+  </table></div>
+  <div class="cut" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="6" cy="7" r="3"/><circle cx="6" cy="17" r="3"/><path d="M8.6 8.6 20 18M8.6 15.4 20 6"/></svg></div>
+  <ol class="steps" role="list">
+    <li class="step">
+      <figure class="dia"><svg viewBox="0 0 160 120" role="img" aria-label="Pieces A and B side by side, notches facing">
+        <path class="piece" d="M20 10H70L76 110H14Z"/><path class="seam" d="M27 17H64L69 103H21Z"/>
+        <path class="piece" d="M84 10L130 14L146 110H90Z"/><path class="seam" d="M91 17L124 20L138 103H96Z"/>
+        <path class="notch" d="M73 56l6 4-6 4zM87 56l-6 4 6 4z"/>
+        <path class="grain" d="M45 24v26M41 28l4-4 4 4M41 46l4 4 4-4M116 24v26M112 28l4-4 4 4M112 46l4 4 4-4"/>
+        <text x="36" y="84">A</text><text x="107" y="84">B</text>
+      </svg></figure>
+      <div><p class="n" aria-hidden="true">1</p><h3>Join the front panels</h3><p>Pin front <b class="pc">A</b> to side front <b class="pc">B</b> with the notches matched. Stitch at 1.5 cm and press the seam toward <b class="pc">B</b>.</p><p class="tick"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5"/></svg>Done</p></div>
+    </li>
+    <li class="step now">
+      <figure class="dia"><svg viewBox="0 0 160 120" role="img" aria-label="Pocket C folded on its dashed line">
+        <path class="piece" d="M40 14H120V106H40Z"/><path class="fold" d="M34 60H126"/>
+        <circle class="dot" cx="48" cy="98" r="2.5"/><circle class="dot" cx="112" cy="98" r="2.5"/>
+        <text x="73" y="44">C</text>
+      </svg></figure>
+      <div><p class="n" aria-hidden="true">2</p><h3>Set in the pocket</h3><p>Fold pocket <b class="pc">C</b> on the dashed line, right sides together, and baste it to <b class="pc">A</b> at the dots.</p></div>
+    </li>
+  </ol>
+</div>
+<!--/look-->
+
+<!--look look-shipping-manifest-->
+<div class="mf">
+  <div class="sheet">
+    <header class="mfh"><h3>Freight manifest</h3><p class="stamp"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 5 8 2l6 3v6l-6 3-6-3zM2 5l6 3 6-3M8 8v6"/></svg>Shipped</p></header>
+    <dl class="fields">
+      <div><dt>From</dt><dd>Norrland Tool Co.<br>Luleå, SE</dd></div>
+      <div><dt>To</dt><dd>Brightwater Supply<br>Leith, UK</dd></div>
+      <div><dt>Ref</dt><dd class="code">MNF-20417-B</dd></div>
+      <div><dt>Date</dt><dd class="code">2026-10-21</dd></div>
+    </dl>
+    <table>
+      <thead><tr><th scope="col">Item</th><th scope="col">Code</th><th scope="col" class="n">Qty</th><th scope="col" class="n">Kg</th></tr></thead>
+      <tbody>
+        <tr><td>Cold chisel, 25 mm</td><td class="code">CH-025</td><td class="n">120</td><td class="n">48.0</td></tr>
+        <tr><td>Bench vice, 4 in</td><td class="code">BV-104</td><td class="n">12</td><td class="n">86.4</td></tr>
+        <tr><td>Rivet set, assorted</td><td class="code">RS-300</td><td class="n">40</td><td class="n">22.6</td></tr>
+      </tbody>
+      <tfoot><tr><th scope="row" colspan="2">3 lines</th><td class="n">172</td><td class="n">157.0</td></tr></tfoot>
+    </table>
+  </div>
+  <div class="perf" aria-hidden="true"></div>
+  <div class="act"><a href="#look-shipping-manifest">Track consignment</a><button type="button" class="ink">Print labels</button></div>
+</div>
+<!--/look-->
+
+<!--look look-transit-signage-->
+<div class="tr">
+  <header class="band"><h3>Central</h3><p class="clock"><time>21:47</time></p></header>
+  <ol class="deps">
+    <li class="dep"><span class="code">H2</span><span class="to">Harbourfront</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Platform 3</span><span class="when">21:49</span></li>
+    <li class="dep"><span class="code">H5</span><span class="to">Old Town via Quayside</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>Platform 1</span><span class="when">21:54</span></li>
+    <li class="dep upd"><span class="code">X1</span><span class="to">Airport</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>Platform 4</span><span class="when"><s>21:58</s>22:03</span></li>
+    <li class="dep new"><span class="code">H2</span><span class="to">Harbourfront</span><span class="plat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>Platform 3</span><span class="when">22:04</span></li>
+  </ol>
+</div>
+<!--/look-->
+
+<script>
+// T-1649: motion plays once. What starts in view plays on load; what starts below the fold is put straight to rest
+// (finished, so fully visible) and plays once when it scrolls into view. Nothing ever waits hidden on a script.
+(() => {
+  const css = a => typeof CSSAnimation === 'undefined' || a instanceof CSSAnimation;
+  const replay = list => list.forEach(a => { a.cancel(); a.play(); });
+  if ('IntersectionObserver' in window && document.getAnimations) {
+    const later = new Map();
+    document.getAnimations().filter(css).forEach(a => {
+      const el = a.effect && a.effect.target;
+      if (!el || !el.closest('.plate') || el.getBoundingClientRect().top <= innerHeight) return;
+      a.finish();
+      later.set(el, (later.get(el) || []).concat(a));
+    });
+    const io = new IntersectionObserver(es => es.forEach(e => {
+      if (e.isIntersecting) { replay(later.get(e.target) || []); io.unobserve(e.target); }
+    }));
+    later.forEach((_, el) => io.observe(el));
+  }
+  document.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.matches('[data-replay]')) {
+      replay(b.closest('.specimen').querySelector('.plate').getAnimations({ subtree: true }).filter(css));
+    } else if (b.matches('.pause')) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true'));
+    } else if (b.hasAttribute('aria-pressed')) {
+      const group = b.closest('[data-pick]') || b.closest('.plate');
+      group.querySelectorAll('button[aria-pressed]:not(.pause)').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      const echo = b.dataset.say && b.closest('.plate').querySelector('[data-echo]');
+      if (echo) echo.textContent = b.dataset.say;
+    }
+  });
+})();
+</script>
+</body>
+</html>

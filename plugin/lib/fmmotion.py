@@ -12,11 +12,14 @@ motion the UI uses, so timing and the reduced-motion path are decided once and c
                                          #   fade: opacity only, over the same duration, in place of any travel
                                          #   instant: the change happens at once (0 ms) to its end state
 
-check(path) lists its problems; fm motion check [PATH] prints them (exit 1 on any). Compilers to CSS, WAAPI and
-three.js read the same resolved motions and must keep those three meanings."""
+check(path) lists its problems; fm motion check [PATH] prints them (exit 1 on any). compile_score(path, to) (T-1625,
+fm motion compile [PATH] --to css|waapi|three [--out FILE]) emits a clean score as CSS custom properties and
+@keyframes, a WAAPI options module or three.js tween parameters: every target carries the score's own durations and
+easings, and each motion's reduced form keeps the three meanings above."""
 import json
 import os
 import re
+import textwrap
 import tomllib
 
 import fmdesign
@@ -27,8 +30,8 @@ MAX_MS = 2000
 KEYWORDS = {"linear", "ease", "ease-in", "ease-out", "ease-in-out", "step-start", "step-end"}
 CURVES = {"ease-enter": "cubic-bezier(0.05, 0.7, 0.1, 1)", "ease-exit": "cubic-bezier(0.3, 0, 0.8, 0.15)",
           "ease-move": "cubic-bezier(0.45, 0, 0.2, 1)"}  # motion.md's defaults; DESIGN.md's tokens of the name win
-NAME = re.compile(r"[A-Za-z][\w-]{0,63}")
-PROP = re.compile(r"(?:--|-[a-z]+-)?[A-Za-z][\w-]{0,63}")
+NAME = re.compile(r"[A-Za-z][\w-]{0,63}", re.ASCII)  # T-1625 review: ASCII, as the messages say
+PROP = re.compile(r"(?:--|-[a-z]+-)?[A-Za-z][\w-]{0,63}", re.ASCII)
 NUM = r"-?(?:\d{1,9}(?:\.\d{0,9})?|\.\d{1,9})"  # bounded: no input makes these regexes backtrack for long
 TIME = re.compile(r"(" + NUM + r")\s*(ms|s)")
 _N = r"\s*(" + NUM + r")\s*"
@@ -269,25 +272,212 @@ def check(path):
     return {"score": path, "design": design, "motions": motions, "problems": problems}
 
 
+TARGETS = ("css", "waapi", "three")
+NAMED = {"linear": "linear(0, 1)", "ease": "cubic-bezier(0.25, 0.1, 0.25, 1)", "ease-in": "cubic-bezier(0.42, 0, 1, 1)",
+         "ease-out": "cubic-bezier(0, 0, 0.58, 1)", "ease-in-out": "cubic-bezier(0.42, 0, 0.58, 1)",
+         "step-start": "steps(1, jump-start)", "step-end": "steps(1, jump-end)"}  # CSS Easing's own definitions
+REDUCED_NOTE = ('form "none" plays nothing (it stays in its rest state), "instant" goes to the end state at once '
+                '(duration 0), "fade" animates opacity only over the same duration')
+
+
+def curve_data(curve):
+    """A resolved curve as data for three.js, which has no CSS easings: ["bezier", x1, y1, x2, y2], ["steps", n,
+    "jump-…"] or ["linear", [[x, y], …]] with every x filled in as CSS Easing 2's linear() does."""
+    curve = NAMED.get(curve, curve)
+    m = BEZIER.fullmatch(curve)
+    if m:
+        return ["bezier", *map(float, m.groups())]
+    m = STEPS.fullmatch(curve)
+    if m:
+        pos = m.group(2) or "end"
+        return ["steps", int(m.group(1)), pos if pos.startswith("jump-") else "jump-" + pos]
+    stops = LINEAR.fullmatch(curve).group(1).split(",")
+    pts, top = [], float("-inf")
+    for i, stop in enumerate(stops):  # a missing x: 0 first, max(1, the largest so far) last, else spaced evenly
+        y, *xs = stop.split()
+        bare = 0.0 if i == 0 else max(1.0, top) if i == len(stops) - 1 else None
+        for x in [float(x[:-1]) / 100 for x in xs] or [bare]:
+            if x is not None:
+                x = top = max(top, x)  # an x below an earlier one is raised to it
+            pts.append([x, float(y)])
+    known = [i for i, p in enumerate(pts) if p[0] is not None]
+    for a, b in zip(known, known[1:]):
+        for k in range(a + 1, b):
+            pts[k][0] = pts[a][0] + (pts[b][0] - pts[a][0]) * (k - a) / (b - a)
+    return ["linear", pts]
+
+
+def _variants(m):
+    """(a motion's parameters, its reduced form's), each {duration ms, easing, properties}; the reduced one names its
+    form too."""
+    form = m["reduced"]
+    return ({"duration": m["ms"], "easing": m["curve"], "properties": m["properties"]},
+            {"form": form, "duration": m["ms"] if form == "fade" else 0, "easing": m["curve"],
+             "properties": ["opacity"] if form == "fade" else m["properties"] if form == "instant" else []})
+
+
+def _label(name):
+    """The score's file name for a header comment: quoted, ASCII, and unable to end a /* */ comment or a <script>."""
+    return json.dumps(name).replace("*/", "*\\/").replace("</", "<\\/")
+
+
+def _css(motions, label):
+    root, reduced, frames = [], [], []
+    for m in motions:
+        n, full, red = m["name"], *_variants(m)
+        for v, into, ind in ((full, root, "  "), (red, reduced, "    ")):
+            ms, curve = f"{json.dumps(v['duration'])}ms", v["easing"]
+            frame = f"reduced-motion-{n}" if v.get("form") == "fade" else f"motion-{n}"
+            tr, an = ("all 0s", "none") if v.get("form") == "none" else \
+                (", ".join(f"{p} {ms} {curve}" for p in v["properties"]), f"{frame} {ms} {curve} backwards")
+            # all 0s, not none: none is only valid alone, so it would void a comma list holding other motions
+            into += [f"{ind}--motion-{n}-duration: {ms};", f"{ind}--motion-{n}-easing: {curve};",
+                     f"{ind}--motion-{n}-transition: {tr};", f"{ind}--motion-{n}-animation: {an};"]
+        starts = " ".join(f"{p}: var(--motion-{n}-from-{p});" for p in full["properties"])
+        frames.append(f"@keyframes motion-{n} {{\n  from {{ {starts} }}\n}}")
+        if red["form"] == "fade":
+            frames.append(f"@keyframes reduced-motion-{n} {{\n  from {{ opacity: var(--motion-{n}-from-opacity, 0); }}"
+                          "\n}")
+    plain = "\n".join(ln[2:] for ln in reduced)
+    return "\n".join([
+        f"/* fm motion compile --to css (T-1625): {len(motions)} motion(s) from {label}.",
+        "   Each motion NAME sets --motion-NAME-duration, -easing, -transition (for transition:) and -animation (for",
+        "   animation:, which starts from var(--motion-NAME-from-PROPERTY), set where it plays, and ends at the",
+        "   element's own style). Under prefers-reduced-motion, unless <html data-motion=\"full\">, or with",
+        "   <html data-motion=\"reduce\">, each motion takes its reduced form: none plays nothing (the element sits in",
+        "   its rest state; transition all 0s, animation none), instant jumps to the end state (0ms), fade animates",
+        "   opacity only over the same duration.",
+        "*/", ":root {", *root, "}", *frames, "@media (prefers-reduced-motion: reduce) {",
+        '  :root:not([data-motion="full"]) {', *reduced, "  }", "}", ':root[data-motion="reduce"] {', plain, "}", ""])
+
+
+THREE_EASE = """\
+const bezier = (x1, y1, x2, y2) => {
+  const at = (a, b, t) => 3 * a * t * (1 - t) ** 2 + 3 * b * t * t * (1 - t) + t ** 3;
+  return (p) => {
+    if (p <= 0 || p >= 1) return p <= 0 ? 0 : 1;
+    let lo = 0, hi = 1;  // x(t) rises with t when x1 and x2 lie in 0-1, as fm motion check makes sure
+    for (let i = 0; i < 40; i++) { const t = (lo + hi) / 2; if (at(x1, x2, t) < p) lo = t; else hi = t; }
+    return at(y1, y2, (lo + hi) / 2);
+  };
+};
+const steps = (n, pos) => {
+  const jumps = pos === "jump-none" ? n - 1 : pos === "jump-both" ? n + 1 : n;
+  const lead = pos === "jump-start" || pos === "jump-both" ? 1 : 0;
+  return (p) => Math.min(Math.max(Math.floor(p * n) + lead, 0), jumps) / jumps;
+};
+const linear = (pts) => (p) => {
+  let i = 1;
+  while (i < pts.length - 1 && pts[i][0] <= p) i++;
+  const [[x0, y0], [x1, y1]] = [pts[i - 1], pts[i]];
+  return x1 === x0 ? y1 : y0 + ((y1 - y0) * (p - x0)) / (x1 - x0);
+};
+const ease = ([kind, ...a]) => (kind === "steps" ? steps(...a) : kind === "linear" ? linear(a[0]) : bezier(...a));
+for (const m of Object.values(motion)) for (const v of [m, m.reduced]) v.ease = ease(v.curve);
+"""
+PICK = """\
+// as the CSS: reduced under the system's prefers-reduced-motion unless <html data-motion="full">, and always with
+// data-motion="reduce" (the motion playbook's app setting)
+export const reduced = () => {
+  const set = typeof document === "object" ? document.documentElement.dataset.motion : undefined;
+  const system = typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return set === "reduce" || (set !== "full" && system);
+};
+export const pick = (name) => (reduced() ? motion[name].reduced : motion[name]);
+"""
+PLAY = """\
+// play(el, NAME, frames): el.animate() in whichever form applies, keeping only the properties that form lists (a fade
+// needs opacity in the frames); null for "none", which plays nothing: play(...)?.finished
+export const play = (el, name, frames) => {
+  const m = pick(name);
+  if (m.form === "none") return null;
+  const camel = (p) => (p === "float" ? "cssFloat" : p.startsWith("--") ? p : p.replace(/-([a-z])/g, (_, c) => c.toUpperCase()));
+  const keep = new Set([...m.properties.map(camel), "offset", "easing", "composite"]);
+  const only = (f) => Object.fromEntries(Object.entries(f).filter(([k]) => keep.has(k)));
+  return el.animate(Array.isArray(frames) ? frames.map(only) : only(frames), { duration: m.duration, easing: m.easing });
+};
+"""
+
+
+def _module(motions, label, to):
+    data = {}
+    for m in motions:
+        full, red = _variants(m)
+        if to == "three":
+            full["curve"] = red["curve"] = curve_data(m["curve"])
+        data[m["name"]] = {**full, "reduced": red}
+    head = (f"fm motion compile --to {to} (T-1625): {len(motions)} motion(s) from {label}. " + (
+        "motion[NAME] is el.animate()'s options: duration in ms, easing as CSS writes it, and properties, what its "
+        "keyframes may animate." if to == "waapi" else
+        "three.js has no tweens or easings of its own, so motion[NAME] holds tween parameters: duration in ms (the "
+        "same numbers as CSS and WAAPI; / 1000 for an AnimationClip's seconds), easing as CSS writes it, curve as data, "
+        "and ease(p), that curve as a function from progress 0-1 to 0-1 (tween.js: .easing(m.ease)); steps() and "
+        "linear() map exactly; a fade is material.opacity with transparent: true.")
+        + f" motion[NAME].reduced is its reduced form: {REDUCED_NOTE}. pick(NAME) gives whichever applies now"
+        + (", play(el, NAME, frames) runs it." if to == "waapi" else "."))
+    rows = ",\n".join(f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in data.items())  # one motion a line: diffable
+    body = [f"export const motion = {{\n{rows}\n}};"] + ([THREE_EASE] if to == "three" else [])
+    return "\n".join(["// " + ln for ln in textwrap.wrap(head, 114)] + body + [PICK + (PLAY if to == "waapi" else "")])
+
+
+def compile_score(path, to):
+    """(the score at path compiled for to, one of TARGETS, [] ) or (None, check's problems) when it isn't clean.
+    ValueError when it can't be read."""
+    if to not in TARGETS:
+        raise ValueError(f"--to {_show(to)}: one of {', '.join(TARGETS)}")
+    got = check(path)
+    if got["problems"]:
+        return None, got["problems"]
+    label = _label(os.path.basename(path))
+    return (_css(got["motions"], label) if to == "css" else _module(got["motions"], label, to)), []
+
+
+def _report(problems, label):
+    return [f"{p['motion'] or label}: {p['problem']}" for p in problems]
+
+
 def cmd_motion(args):
     import sys
     import fmcli
     import fmcore
-    path = args.path
+    act, path = args.action, args.path
+    for flag, v in (("--to", args.to), ("--out", args.out)):
+        if act == "check" and v is not None:
+            print(f"fm: motion check: {flag} is for compile (fm motion compile [PATH] {flag} …)", file=sys.stderr)
+            return 2
     if not path:
         root = fmcore.git_root(os.getcwd()) or os.getcwd()
         path = os.path.join(root, "motion.toml")
         if not os.path.lexists(path):
-            print(f"fm: motion check: no motion.toml at {root} (fm motion check PATH names another)", file=sys.stderr)
+            print(f"fm: motion {act}: no motion.toml at {root} (fm motion {act} PATH names another)", file=sys.stderr)
             return 2
-    try:
-        got = check(path)
-    except (ValueError, RecursionError) as e:
-        print(f"fm: motion check: {e or 'nested too deep'}", file=sys.stderr)
-        return 2
     label = os.path.basename(path)
+    try:
+        if act == "compile":
+            to = args.to or "css"
+            text, problems = compile_score(path, to)
+            out = os.path.abspath(args.out) if args.out else None  # write_atomic makes dirname(path): "" if bare
+            if problems:  # stdout stays for the compiled text; --json puts {problems} there, as check does
+                if getattr(args, "json", False):
+                    fmcli.out(args, {"problems": problems}, None)
+                else:
+                    print("\n".join(_report(problems, label) + [f"motion compile: {len(problems)} problem(s), "
+                                                                f"nothing compiled ({path})"]), file=sys.stderr)
+                return 1
+            if out and os.path.exists(out) and os.path.samefile(out, path):
+                raise ValueError(f"--out {args.out} is the score it compiles")
+            if out:
+                fmcore.write_atomic(out, text)  # via a temp file: a symlink at out is replaced, never written through
+                fmcli.out(args, {"out": args.out, "to": to, "bytes": len(text.encode())}, f"wrote {args.out}")
+            else:
+                fmcli.out(args, {"to": to, "text": text}, text.rstrip("\n"))
+            return 0
+        got = check(path)
+    except (OSError, ValueError, RecursionError) as e:
+        print(f"fm: motion {act}: {e or 'nested too deep'}", file=sys.stderr)
+        return 2
     n, m = len(got["problems"]), len(got["motions"])
-    text = "\n".join([f"{p['motion'] or label}: {p['problem']}" for p in got["problems"]]
+    text = "\n".join(_report(got["problems"], label)
                      + [f"motion check: {n} problem(s) in {m} motion(s) ({path})" if n else
                         f"motion check: clean, {m} motion(s) ({path})"])
     fmcli.out(args, got, text)

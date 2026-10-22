@@ -4745,9 +4745,10 @@ def cmd_next(args):
         beliefs = [f"A{n} {t.split(' — kill: ')[0]} (dead if {t.split(' — kill: ')[1]})"
                    for n, tag, _, t in b.assumptions() if tag in (None, "assumed") and " — kill: " in t]
         over += f" · open beliefs: {'; '.join(c.fit(x, 120) for x in beliefs[:3])}" if beliefs else ""
-    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual},
-        f"Next: {action}" + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "")
-        + over)
+    skill = c.skill_for(b, st)  # T-1697
+    out(args, {"task": b.id if b else None, "stage": st, "action": action, "usual_minutes": usual, "skill": skill or None},
+        f"Next: {action}" + (f" ({skill})" if skill else "")
+        + (f" · a {b.type} {b.tier} usually takes {usual:g} min here" if usual is not None else "") + over)
 
 
 def cmd_autonomy(args):
@@ -6057,9 +6058,13 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
     s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
             "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
-            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
-    s.add_argument("action", choices=["check"])
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems); compile [PATH] --to css|waapi|three: a clean "
+            "score as CSS custom properties and @keyframes, WAAPI options or three.js tween parameters, the same "
+            "durations and easings in each, reduced forms included (T-1625)")
+    s.add_argument("action", choices=["check", "compile"])
     s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
+    s.add_argument("--to", choices=["css", "waapi", "three"], help="compile: the target (default css)")
+    s.add_argument("--out", metavar="FILE", help="compile: write here, replacing the file whole, not print it")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
     s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
@@ -6091,6 +6096,8 @@ def _build_parser():
     s.add_argument("--out", metavar="PATH", help="write here instead of the project's page.html")
     s.add_argument("--picks", metavar="FILE", help="store the page's picks ({cluster id: add|veto} JSON, - for stdin) "
                                                    "in state picks.json; needs --catalogue (T-0962)")
+    s.add_argument("what", nargs="?", choices=["looks"], help="looks: the looks gallery instead, one living specimen "
+                   "per look card in one file that loads nothing from another host (looks.html; T-1649)")
     s = add("code", lazy("fmcode", "cmd_code"), tier=("Running elsewhere", 1135),
             help="Foreman Code: run a request through Foreman's loop on any model (local server, models.json or an API "
                  "key); the model fills the plan and picks one action at a time, the harness guards, verifies and "
