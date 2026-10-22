@@ -10,6 +10,19 @@ from test_code import HANG, CodeCase, call, plan
 FIX = (plan(), call("edit", file="calc.py", old="a - b", new="a + b"), call("done", summary="adds now"))
 
 
+def orphans():
+    """Processes still running in a bench seed's deleted temp folder (Linux /proc: the cwd link ends '(deleted)')."""
+    out = []
+    for d in os.listdir("/proc") if os.path.isdir("/proc") else ():
+        try:
+            cwd = os.readlink(f"/proc/{d}/cwd")
+        except OSError:
+            continue
+        if "/fm-bench-" in cwd and cwd.endswith(" (deleted)"):
+            out.append(int(d))
+    return out
+
+
 class Bench(CodeCase):
     def bench(self, *args, env=None):
         r = self.code("bench", *args, "--json", check=False, env=env)
@@ -88,10 +101,12 @@ class Bench(CodeCase):
     def test_a_check_that_never_ends_is_reported_and_the_run_still_kept(self):
         self.serve("openai", plan(), call("edit", file="calc.py", old="return a - b", new="while True: pass"),
                    call("done", summary="done"))
+        before = set(orphans())  # earlier runs' stragglers aren't this run's
         seed = self.bench("--model", "fake", "--seeds", "operator", "--seed-timeout", "3")["results"][0]
         self.assertFalse(seed["closed"])
         self.assertIn(seed["reason"], ("timeout", "verify timeout"))
         self.assertEqual(len(self.results()), 1)
+        self.assertEqual(set(orphans()) - before, set(), "T-1485: a run's spinning test_calc.py dies with its folder")
 
     def test_a_worker_skips_the_dangerous_seed_and_says_why(self):
         run = self.bench("--worker", "true {prompt}", "--seeds", "danger")
