@@ -22,6 +22,7 @@ def write(path, text):
         f.write(text if isinstance(text, str) else json.dumps(text))
 
 
+PINNED = "1f536b0041e5c192944bbce64a84f64e7b0d528b52813f0375ff581477a67260"  # test_a_utf8_trees_sha_is_unchanged
 STOP = {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop.sh"}]}]}}
 
 
@@ -592,6 +593,32 @@ class SupplyDelta(ForemanTestCase):
         self.assertIn("deps", json.load(open(path))["p@m"], "the matching run records it")
         write(os.path.join(self.plugin, "node_modules", "dep", "new.js"), "")
         self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN")
+
+    def test_a_file_name_that_isnt_utf8_is_named_and_the_plugin_still_compared(self):
+        before = fmdoctor._supply(self.claude)[0]["p@m"]
+        for sub in (b"hooks", b"bin", b"node_modules"):  # T-1459 review: an odd name raised, keeping the old baseline
+            os.makedirs(os.path.join(os.fsencode(self.plugin), sub), exist_ok=True)
+            with open(os.path.join(os.fsencode(self.plugin), sub, b"bad\xff.js"), "wb") as f:
+                f.write(b"x")
+        now, errors = fmdoctor._supply(self.claude)
+        self.assertEqual(errors, {})
+        self.assertNotEqual(now["p@m"]["sha"], before["sha"], "the odd file itself is named")
+        self.assertNotEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        fmdoctor.check_supply(self.claude, accept=True)
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "PASS")
+        write(os.path.join(self.plugin, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\nedit\n")
+        self.assertEqual(fmdoctor.check_supply(self.claude).status, "WARN", "a later change still shows")
+
+    def test_a_utf8_trees_sha_is_unchanged(self):
+        """The sha of an all-UTF-8 tree, pinned from the code before T-1459's fsencode: old baselines still match."""
+        tree = os.path.join(self.tmp, "tree")
+        write(os.path.join(tree, "hooks", "é.sh"), "x")
+        write(os.path.join(tree, "a", "b.txt"), "y")
+        write(os.path.join(tree, "big"), " " * 4_000_001)
+        os.symlink("a", os.path.join(tree, "link"))
+        h = hashlib.sha256()
+        fmdoctor._tree_hash(tree, h)
+        self.assertEqual(h.hexdigest(), PINNED)
 
     def test_a_file_vanishing_mid_walk_doesnt_end_the_check(self):
         gone = os.path.join(self.plugin, "bin", "tool")

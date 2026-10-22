@@ -1260,13 +1260,13 @@ def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None):
     n, stand = 0, (skipped.update if skipped is not None else lambda b: None)
     budget = _budget() if budget is None else budget
     def unlisted(e):  # T-1444: a folder the walk can't list is named, and its mode and times stand in for its files
-        h.update(os.path.relpath(e.filename or root, root).encode() + b"\0!unlisted\0")
+        h.update(os.fsencode(os.path.relpath(e.filename or root, root)) + b"\0!unlisted\0")
         _unlisted_stand(root, e, stand)
     for d, dirs, files in os.walk(root, onerror=unlisted):
         for x in sorted(dirs):
             link = os.path.join(d, x)
             if os.path.islink(link):
-                stand(os.path.relpath(link, root).encode() + b"\0->" + os.fsencode(os.readlink(link)) + b"\0")
+                stand(os.fsencode(os.path.relpath(link, root)) + b"\0->" + os.fsencode(os.readlink(link)) + b"\0")
             elif deps is not None and x in _SUPPLY_SKIP and x != ".git":
                 _stand_skipped(root, link, deps.update, budget)
         dirs[:] = sorted(x for x in dirs if x not in _SUPPLY_SKIP)
@@ -1275,7 +1275,7 @@ def _tree_hash(root, h, cap=4000, skipped=None, deps=None, budget=None):
             if _in_use_marker(root, d, f, full):
                 continue
             n += 1
-            rel = os.path.relpath(full, root).encode()
+            rel = os.fsencode(os.path.relpath(full, root))  # T-1459: a name that isn't UTF-8 is named, never raises
             try:
                 # not a regular file (a FIFO would block the open forever): named, never read
                 if n > cap or os.path.islink(full) or not os.path.isfile(full) or os.path.getsize(full) > 4_000_000:
