@@ -250,6 +250,27 @@ def _frontmatter(path):
     return meta
 
 
+def _description_problems(skills):
+    """T-1698: the model sees only each model-invocable skill's name and description; flag Foreman jargon in place of
+    task words, and two descriptions sharing over 60% of the shorter one's words."""
+    words, bad = {}, []
+    for name in sorted(os.listdir(skills)) if os.path.isdir(skills) else []:
+        meta = _frontmatter(os.path.join(skills, name, "SKILL.md")) or {}
+        desc = meta.get("description", "")
+        if not desc or meta.get("disable-model-invocation") == "true":
+            continue
+        if jargon := sorted(set(re.findall(r"\b(?:STATE|STATUS|RESUME|briefs?)\b", desc))):
+            bad.append(f"skill {name}: Foreman jargon in the description ({', '.join(jargon)}); say what the person is doing")
+        words[name] = set(re.findall(r"[a-z]{3,}", desc.lower()))
+    names = sorted(words)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            shared = len(words[a] & words[b]) / (min(len(words[a]), len(words[b])) or 1)
+            if shared > 0.6:
+                bad.append(f"skills {a}/{b}: descriptions overlap {shared:.0%} of their words")
+    return bad
+
+
 def check_frontmatter(plugin=PLUGIN):
     bad = []
     skills = os.path.join(plugin, "skills")
@@ -264,6 +285,7 @@ def check_frontmatter(plugin=PLUGIN):
         why = fmplugins.spec_problems(fmplugins._frontmatter(os.path.join(skills, name, "SKILL.md")), name)
         if why:
             bad.append(f"skill {name}: {'; '.join(why)}")
+    bad += _description_problems(skills)
     agents = os.path.join(plugin, "agents")
     for f in sorted(os.listdir(agents)) if os.path.isdir(agents) else []:
         meta = _frontmatter(os.path.join(agents, f))
