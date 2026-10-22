@@ -1385,14 +1385,14 @@ HOSTILE = {  # T-1516: what a terminal draws in an odd number of columns, or non
     "control": "a\x00b\x07c\x1b[31md\x7fe\x85f\r\n\tg", "variation": "x️y︎ ❤️", "mix": "日́本🚀‍🔥 שׁ",
     "long": "日本語🚀" * 60,
 }
+CRASH_MAX = 50
 CRASHES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "crashes")
 
 
 def column_width(cell):
     """Columns a terminal gives one canvas cell, by its own rule (not fmcodetui's): wide 2, marks and format 0."""
     import unicodedata
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 0 if unicodedata.category(c) in ("Mn", "Me", "Cf", "Cc")
-               else 1 for c in cell)
+    return 2 if unicodedata.east_asian_width(cell[0]) in "WF" or ("\ufe0f" in cell and unicodedata.category(cell[0]) == "So") else 1
 
 
 class HostileWidth(unittest.TestCase):
@@ -1429,9 +1429,19 @@ class HostileWidth(unittest.TestCase):
                                                                       "reason": s}}]),
                  "diff": dict(view_lines=["+" + s, "-" + s, "@@ " + s, s]),
                  "looks": dict(look_answers=[], look_pairs=[(s, s)], items=[(s, s)]),
-                 "help": {}}
+                 "help": {},
+                 "settings": dict(set_rows=[1, 2], set_query=s, set_note=(s, "warn"), items=[
+                     {"head": s, "count": 1, "surface": "app"},
+                     {"key": s, "value": s, "default": s, "group": "colors", "surface": "app", "help": s, "choices": [s]}]),
+                 "layout": dict(set_note=(s, "warn")),
+                 "runners": dict(set_note=(s, "warn"), items=[{"name": s, "installed": True, "work": s,
+                                                     "result": {"ok": False, "said": s}}])}
+        self.assertEqual(set(extra), set(T.VIEWS), "a new view must join the sweep")
         for mode, attrs in extra.items():
             out.append((f"view {mode}", T.DEFAULTS, mode, attrs))
+        lay = dict(T.DEFAULTS, layout={"columns": [[s, "log"], ["track"]], "widths": [1, 1], "heights": [[1, 1], [1]]})
+        out.append(("view layout", lay, "layout", extra["layout"]))
+        out.append(("prompt", T.DEFAULTS, "prompt", dict(input=s)))
         return out
 
     def rows_of(self, cv):
@@ -1441,7 +1451,7 @@ class HostileWidth(unittest.TestCase):
             if cols != cv.w:
                 bad.append((y, cols))
             for x, (c, _) in enumerate(row):  # a wide character is followed by its empty half, and only then
-                if c == "" and not (x and column_width(row[x - 1][0]) == 2):
+                if c == "" and not (x and row[x - 1][0] and column_width(row[x - 1][0]) == 2):
                     bad.append((y, f"orphan half at {x}"))
         return bad
 
@@ -1456,31 +1466,47 @@ class HostileWidth(unittest.TestCase):
             app.mode = mode
             cv = T.render(app.state, size[0], size[1], cfg, app, t=100.0)
         except Exception as ex:
-            os.makedirs(CRASHES, exist_ok=True)  # the crash replays: test_a_saved_crash_replays
             import hashlib
             blob = {"label": label, "text": s, "size": list(size), "mode": mode, "error": f"{type(ex).__name__}: {ex}"}
-            name = hashlib.sha1(json.dumps(blob, sort_keys=True).encode()).hexdigest()[:10]
-            with open(os.path.join(CRASHES, f"{name}.json"), "w", encoding="utf-8") as f:
-                json.dump(blob, f, ensure_ascii=False, indent=1)
+            # the name keys on what crashed, not on the message or the text: one bug is one file, and at most CRASH_MAX
+            key = json.dumps([label, list(size), mode, type(ex).__name__])
+            name = hashlib.sha1(key.encode()).hexdigest()[:10]
+            os.makedirs(CRASHES, exist_ok=True)  # the crash replays: test_a_saved_crash_replays
+            if len([f for f in os.listdir(CRASHES) if f.endswith(".json")]) < CRASH_MAX:
+                with open(os.path.join(CRASHES, f"{name}.json"), "w", encoding="utf-8") as f:
+                    json.dump(blob, f, ensure_ascii=False, indent=1)
             raise
-        return self.rows_of(cv)
+        return cv
+
+    # what a screen must show of each string at the widest size (a hostile string that never reached the output
+    # proves nothing), and the screens that never show a run's text
+    PROBE = {"cjk": "日", "emoji": "🚀", "combining": "lead", "rtl": "ש", "zerowidth": "a b c d", "control": "a b c",
+             "variation": "y︎", "mix": "🚀", "long": "日本語🚀"}
+    NO_TEXT = {"panel tokens", "panel time", "view help"}
 
     def test_every_panel_and_view_fills_its_width_for_each_hostile_string(self):
+        seen = 0
         for key, s in HOSTILE.items():
             for label, cfg, mode, attrs in self.screens(s):
                 for size in self.SIZES:
                     with self.subTest(string=key, screen=label, size=size):
-                        self.assertEqual(self.sweep(label, s, size, cfg, mode, attrs), [])
+                        cv = self.sweep(label, s, size, cfg, mode, attrs)
+                        self.assertEqual(self.rows_of(cv), [])
+                        if size == self.SIZES[-1] and label not in self.NO_TEXT:
+                            seen += 1
+                            self.assertIn(self.PROBE[key], cv.text(), "the string never reached the screen")
+        self.assertGreater(seen, 100)
 
     def test_a_saved_crash_replays(self):
         saved = sorted(f for f in (os.listdir(CRASHES) if os.path.isdir(CRASHES) else []) if f.endswith(".json"))
         for f in saved:  # each file is a bug not yet fixed: it fails here until it renders
             with open(os.path.join(CRASHES, f), encoding="utf-8") as fh:
                 c = json.load(fh)
-            for label, cfg, mode, attrs in self.screens(c["text"]):
-                if label == c["label"]:
-                    with self.subTest(crash=f):
-                        self.assertEqual(self.sweep(label, c["text"], tuple(c["size"]), cfg, mode, attrs), [])
+            screens = {x[0]: x for x in self.screens(c["text"])}
+            with self.subTest(crash=f):
+                self.assertIn(c["label"], screens, f"{f}: no screen is called {c['label']} any more: delete or rename it")
+                label, cfg, mode, attrs = screens[c["label"]]
+                self.assertEqual(self.rows_of(self.sweep(label, c["text"], tuple(c["size"]), cfg, mode, attrs)), [])
 
     def test_a_crash_writes_a_fixture(self):
         import shutil
@@ -1499,6 +1525,60 @@ class HostileWidth(unittest.TestCase):
         finally:
             shutil.rmtree(CRASHES)
             CRASHES = old
+
+
+class Columns(unittest.TestCase):
+    """T-1516: widths as kitty, WezTerm, iTerm2 and Windows Terminal draw them, and Canvas.put over a wide cell."""
+    TABLE = [("日", 2), ("é", 1), ("👍🏽", 2), ("❤️", 2), ("❤", 1), ("1️", 1), ("a​b", 3),
+             ("́", 0), ("日本語", 6), ("שׁ", 1), ("x️", 1), ("⃝", 0)]
+
+    def test_width_matches_real_terminals(self):
+        T = tui()
+        for s, want in self.TABLE:
+            with self.subTest(s=s):
+                self.assertEqual(T.width(s), want)
+
+    def test_fit_and_tail_keep_to_their_columns_with_vs16(self):
+        T = tui()
+        for s in ("❤️" * 5, "a❤️b❤️"):
+            for n in range(0, 12):
+                with self.subTest(s=s, n=n):
+                    self.assertLessEqual(T.width(T.fit(s, n)), n)
+                    self.assertLessEqual(T.width(T.tail(s, n)), n)
+
+    def row(self, cv):
+        return [c for c, _ in cv.cells[0]]
+
+    def test_put_over_half_a_wide_character_blanks_the_other_half(self):
+        T = tui()
+        cv = T.Canvas(4, 1)
+        cv.put(0, 0, "日本")
+        cv.put(0, 1, "x")
+        self.assertEqual(self.row(cv), [" ", "x", "本", ""])
+        cv = T.Canvas(4, 1)
+        cv.put(0, 0, "日本")
+        cv.put(0, 2, "y")
+        self.assertEqual(self.row(cv), ["日", "", "y", " "])
+        cv = T.Canvas(4, 1)
+        cv.put(0, 0, "日本")
+        cv.put(0, 1, "語")
+        self.assertEqual(self.row(cv), [" ", "語", "", " "])
+
+    def test_a_wide_character_that_does_not_fit_leaves_no_orphan(self):
+        T = tui()
+        cv = T.Canvas(4, 1)
+        cv.put(0, 0, "日本")
+        cv.put(0, 1, "語", right=2)
+        self.assertEqual(self.row(cv), [" ", " ", "本", ""])
+
+    def test_vs16_widens_an_emoji_base_and_not_a_digit(self):
+        T = tui()
+        cv = T.Canvas(4, 1)
+        cv.put(0, 0, "❤️a1️")
+        self.assertEqual(self.row(cv), ["❤️", "", "a", "1️"])
+        cv = T.Canvas(3, 1)
+        self.assertEqual(cv.put(0, 0, "ab❤️"), 3)  # no room for the second column: the heart is dropped
+        self.assertEqual(self.row(cv), ["a", "b", " "])
 
 
 class Home(unittest.TestCase):
