@@ -1,6 +1,6 @@
 ---
 name: resume
-description: Use after /compact, /clear, a crash or a new session, or on RESUME or "where were we": restores the Foreman resume point and continues.
+description: Use after /compact, /clear, a crash or a new session, or on RESUME or "where were we": restores the Foreman resume point, continues.
 ---
 
 # Foreman: resume

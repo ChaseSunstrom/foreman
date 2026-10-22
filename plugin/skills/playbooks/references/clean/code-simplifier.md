@@ -1,5 +1,5 @@
 <!-- Ported from ECC (https://github.com/affaan-m/ECC) `agents/code-simplifier.md` — MIT License, Copyright (c) 2026 Affaan Mustafa. Adapted for Foreman: frontmatter and ECC runtime boilerplate removed. See plugin/THIRD_PARTY_LICENSES.md. -->
-> **Playbook** (source: ECC `agents/code-simplifier.md`). Simplifies and refines code for clarity, consistency, and maintainability while preserving behavior. Focus on recently modified code unless instructed otherwise.
+> **Playbook** (source: ECC `agents/code-simplifier.md`). Simplifies and refines code for clarity, consistency, and maintainability while preserving behavior. Focus on recently modified code unless instructed otherwise. Use when working code reads harder than it should: after it lands, before review.
 > Foreman note: ECC-only agents, commands, hooks, scripts and cross-referenced ECC skills don't exist here; the playbook index (`skills/playbooks/SKILL.md`) lists the Foreman equivalents.
 
 # Code Simplifier Agent

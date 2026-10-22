@@ -1,6 +1,6 @@
 ---
 name: intake
-description: Use for any new work request before editing (FIX:/FEATURE:/... lines or plain words): turns it into ordered Foreman briefs and starts the first.
+description: Use for any new work request before editing (FIX:/FEATURE:/... lines or plain words): makes ordered Foreman briefs, starts the first.
 ---
 
 # Foreman intake

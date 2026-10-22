@@ -1,6 +1,6 @@
 # Whole-repo cleanup sweep (Foreman's own, T-0364)
 
-For "clean up the repo / docs / code / briefs / dead code / unused or replaced functionality". A dead-code tool that
+Use when asked to "clean up the repo / docs / code / briefs / dead code / unused or replaced functionality". A dead-code tool that
 finds nothing is one row of evidence, never the verdict: a sweep is done when every area has been checked by a stated
 method, not when a gate stays green.
 
