@@ -1297,7 +1297,15 @@ def _fm_json(*args):
 _GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Keys", "pane": "Claude Code pane"}
 _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
                                                                 "applies within seconds"}
-_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("Esc", "close"))
+_SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("b", "bind a key"),
+              ("l", "layout"), ("r", "runners"), ("Esc", "close"))
+# T-1511: keys b never binds: the ones the app keeps for itself, and what each does; a key tui.toml moved one of KEPT
+# to is kept too, and the last key for one of LAST isn't bound away
+RESERVED = {"q": "quit", "\x1b": "back", "^C": "quit", "?": "help", "z": "hush"}
+KEPT, LAST = ("quit", "help", "hush", "settings"), ("up", "down", "expand", "focus")
+# in a list the arrows, PgUp/PgDn and Enter always move and open, whatever tui.toml binds them to (none locked out)
+LIST_KEYS = {"KEY_UP": "up", "KEY_DOWN": "down", "KEY_PPAGE": "page_up", "KEY_NPAGE": "page_down", "\n": "expand",
+             "\r": "expand", "KEY_ENTER": "expand"}
 PREVIEW_KEYS, PREVIEW_SECONDS = ("theme", "palette", "motion"), 10  # T-1573: shown at once, written only when kept
 
 
@@ -1381,6 +1389,8 @@ def _settings_foot(app, iw):
         left = max(0, math.ceil(p["until"] - app.clock()))
         note, style = f"{p['key']} = {_shown(p['value'], 'app')}: a preview, not written · reverts in {left} s", "warn"
         last = [(" any key ", "key"), (" keeps it", "dim")]
+    elif app.set_typing == "bind":  # T-1511: the next key is the one bound
+        last = [(f" press the key for {r['value'] if r else '?'} ", "key"), ("  Esc cancels", "dim")]
     elif app.set_typing:
         text = tail(app.set_query if app.set_typing == "search" else app.set_line, max(1, iw - 4))
         last = [(" /" if app.set_typing == "search" else " :", "key"), (text, "input"), ("▏", "key"),
@@ -1396,6 +1406,43 @@ def _settings_note(app):
                       + ([f"/{app.set_query}"] if app.set_query else []))
 
 
+def _layout_view(cv, st, app, cfg):
+    """T-1511: the columns side by side as the screen has them, the picked panel highlighted; the screen behind (in
+    shade) already draws each move."""
+    cols = cfg["layout"]["columns"]
+    at, below = app._lay_pos(), max(int(cfg["layout"].get("narrow_below", 80)), SINGLE_BELOW)
+    narrow = cv.w < below  # the screen shows layout.narrow (or the log alone): a move here shows only when wider
+    iy, ix, ih, iw = _overlay(cv, cfg, "Layout", "Esc back", max(48, 20 * len(cols) + 4),
+                              max(map(len, cols)) + 7 + 3 * narrow)
+    say = f"below {below} columns the screen draws layout.narrow; a move shows once it is wider"
+    for n, line in enumerate(wrap(say, max(1, iw))[:2] if narrow else []):
+        cv.line(iy + ih - 4 + n, ix, [(line, "warn")], ix + iw)
+    cw = max(1, iw // len(cols))
+    for n, names in enumerate(cols):
+        x = ix + n * cw
+        cv.line(iy + 1, x, [(f" COLUMN {n + 1}", "title")], x + cw)
+        for r, name in enumerate(names[:max(0, ih - 4)]):
+            cv.line(iy + 3 + r, x, [(pad(" " + name, cw - 1), "select" if (n, r) == at else "text")], x + cw)
+    note, style = app.set_note or ("←↑↓→ pick a panel · H J K L move it", "dim")
+    cv.line(iy + ih - 1, ix, [(note, style)], ix + iw)
+
+
+def _runner_row(r):
+    """T-1511: a runner of the registry or code.toml, and its last test's result."""
+    got = r.get("result")
+    chip = ((" ✓ ", "chip_ok") if got["ok"] else (" ✖ ", "chip_bad")) if got else (" … ", "chip_accent") if \
+        r.get("testing") else ("   ", "chip_todo")
+    what = got["said"] if got else "testing…" if r.get("testing") else "Enter tests it" if r["work"] else \
+        "no command: define [runners.NAME] work in code.toml"
+    return [chip, ("  " + pad(r["name"], 14), "strong"), (pad("installed" if r["installed"] else "—", 11), "dim"),
+            (what, "bad" if got and not got["ok"] else "text")]
+
+
+def _runners_foot(app, iw):
+    note, style = app.set_note or ("", "dim")
+    return [[("─" * iw, "border")]] + [[(x, style)] for x in (wrap(note, iw) + [""])[:2]]
+
+
 VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past runs", "Enter opens one", _history_row),
          "picker": _list_view("Run the next request with", "Enter picks", _picker_row),
          "home": _list_view("Foreman projects",
@@ -1406,7 +1453,10 @@ VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past run
                                "Esc projects",
                                _work_row),
          "settings": _list_view("Settings", _settings_note, _setting_row, _settings_head, _settings_foot,
-                                "no setting matches", sized=True)}
+                                "no setting matches", sized=True),
+         "layout": _layout_view,
+         "runners": _list_view("Runners", "Enter tests one (asks its CLI for --version) · Esc back", _runner_row,
+                               foot=_runners_foot)}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1525,6 +1575,9 @@ class App:
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
         self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
         self.set_pending = None  # T-1573: a previewed look: key, value, surface, the cfg before it, until when
+        # T-1511: the layout editor's picked panel (column, row); the runner test going and whether one just ended
+        self.lay_at, self.runner_test, self.runner_done, self.set_back = (0, 0), None, False, None
+        self.runner_proc = None  # the CLI a runner test started: stop() ends its process group with the app
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1571,6 +1624,8 @@ class App:
             if self.mode == "prompt" and k[0] == "paste":
                 text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
                 self.input = (self.input + text)[:PASTE_CAP]
+            elif self.mode == "settings" and self.set_typing == "bind":  # T-1511: a paste is no key to bind
+                self._settings_bind(k)
             elif self.mode == "settings" and self.set_typing and k[0] == "paste":  # a colour, a list: one line
                 for ch in " ".join(k[1].split())[:PASTE_CAP]:
                     if ch.isprintable():  # never Esc, Delete or Enter: a paste is text, not keys (T-1316)
@@ -1580,6 +1635,10 @@ class App:
             return self._prompt_key(k)
         if self.mode == "settings":
             return self._settings_key(k)
+        if self.mode == "layout":
+            return self._layout_key(k)
+        if self.mode == "runners":
+            return self._runners_key(k)
         if self.cfg["keys"].get(k) == "hush":  # T-1512: the run, its views, home and the keys poster (which it
             return self.hush()  # closes); the prompt and the settings list (above) keep their own keys
         if self.mode == "help":
@@ -1592,8 +1651,12 @@ class App:
         fn = self.commands.get(self.cfg["keys"].get(k))
         return fn() if fn else None
 
+    def _list_cmd(self, k):
+        """What a key runs in a list: LIST_KEYS first, then tui.toml's binding."""
+        return LIST_KEYS.get(k) or self.cfg["keys"].get(k)
+
     def _view_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if k in ("\x1b", "q") or cmd == {"diff": "diff", "history": "history", "picker": "model"}[self.mode]:
             self._back()
@@ -1688,6 +1751,12 @@ class App:
         self.follow, self.selected = True, None
 
     def stop(self):
+        p = self.runner_proc  # T-1511: a runner test's CLI (its own session) ends with the app: q, a crash, a hangup
+        if p is not None and p.poll() is None:
+            try:
+                os.killpg(p.pid, signal.SIGKILL)
+            except OSError:
+                pass
         if self.running():
             try:
                 os.killpg(self.child.pid, signal.SIGTERM)
@@ -1749,7 +1818,7 @@ class App:
         self.items, self.item_index, self.mode = rows, 0, "project"
 
     def _home_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         item = self.items[self.item_index] if self.items else None
         if step:
@@ -1871,7 +1940,9 @@ class App:
             self.item_index = min(rows, key=lambda i: (abs(i - want), (i - want) * n < 0))
 
     def _settings_key(self, k):
-        cmd = self.cfg["keys"].get(k)
+        if self.set_typing == "bind":  # T-1511: whatever key comes next is the one bound, an arrow too
+            return self._settings_bind(k)
+        cmd = self._list_cmd(k)
         moves = {"KEY_UP": -1, "KEY_DOWN": 1, "KEY_PPAGE": -10, "KEY_NPAGE": 10}
         step = moves.get(k) if self.set_typing else {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
         if step:
@@ -1905,6 +1976,15 @@ class App:
             self._settings_filter()
         elif k == ":":
             self.set_typing, self.set_line = "set", ""
+        elif k == "b":  # T-1511: the next key pressed runs this row's command
+            if r and r["group"] == "keys" and r["value"] in COMMANDS:
+                self.set_typing, self.set_note = "bind", None
+            else:
+                self.set_note = ("b binds a key to a command: pick a row under KEYS that runs one", "bad")
+        elif k == "l":
+            self.set_note, self.lay_at, self.mode = None, (0, 0), "layout"
+        elif k == "r":
+            self.show_runners()
         elif cmd == "expand" and r:  # the :set line for this setting, its value ready to change
             both = sum(x["key"] == r["key"] for x in self.set_rows) > 1
             where = "--surface " + r["surface"] + " " if both else ""
@@ -1987,6 +2067,140 @@ class App:
     def _settings_reload(self):
         cfg, _ = load_config()
         self.cfg = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg
+
+    # -- T-1511: the settings screen's editors: a key captured, panels moved by keys, a runner tested
+    def _settings_bind(self, k):
+        """The key pressed after b, bound to the selected row's command through fm settings' writer (undo covers it);
+        Esc cancels, and a key the app keeps for itself or one tui.toml can't name is refused, with why."""
+        r, self.set_typing = self._settings_row(), ""
+        name = key_name(k) if isinstance(k, str) and k else None
+        if k == "\x1b" or not r:
+            self.set_note = ("nothing bound", "dim")
+        elif not name or k not in (parse_key(name) or ()):
+            self.set_note = (f"{'a paste' if isinstance(k, tuple) else _escaped(str(k))} can't be named in tui.toml "
+                             f"(a letter, ctrl+x, f1-f12, {', '.join(KEY_ALIASES)}): nothing bound", "bad")
+        elif self._kept(k):
+            self.set_note = (f"{name} is the app's own key ({self._kept(k)}): nothing bound; pick another", "bad")
+        elif self._last(k, name) not in (None, r["value"]):
+            self.set_note = (f"{name} is the last key for {self._last(k, name)}: bind another key to it first; "
+                             "nothing bound", "bad")
+        else:
+            was = self.cfg["keys"].get(k)
+            self._settings_write(f"keys.{name}", r["value"], "app")
+            if was and was != r["value"] and self.set_note[1] == "ok":
+                self.set_note = (f"{self.set_note[0]}; it ran {was} before", "ok")
+
+    def _kept(self, k):
+        """What a key the app keeps for itself does (RESERVED, or a KEPT command tui.toml bound it to), or None."""
+        cmd = self.cfg["keys"].get(k)
+        return RESERVED.get(k) or (cmd if cmd in KEPT else None)
+
+    def _last(self, k, name):
+        """The LAST command no key but `k` runs (enter's two keys are one name: neither counts for the other), or
+        None."""
+        cmd, mine = self.cfg["keys"].get(k), parse_key(name)
+        return cmd if cmd in LAST and not any(c == cmd for x, c in self.cfg["keys"].items() if x not in mine) else None
+
+    def _lay_pos(self):
+        """The picked panel, kept inside the columns as they are now (an undo elsewhere can shorten them)."""
+        cols = self.cfg["layout"]["columns"]
+        c = max(0, min(self.lay_at[0], len(cols) - 1))
+        return c, max(0, min(self.lay_at[1], len(cols[c]) - 1))
+
+    def _layout_key(self, k):
+        """←↑↓→ (or h j k l) pick a panel; H and L move it a column left or right, K and J a row up or down."""
+        cols, (c, i) = self.cfg["layout"]["columns"], self._lay_pos()
+        pick = {"h": (-1, 0), "KEY_LEFT": (-1, 0), "l": (1, 0), "KEY_RIGHT": (1, 0), "k": (0, -1), "KEY_UP": (0, -1),
+                "j": (0, 1), "KEY_DOWN": (0, 1)}.get(k)
+        move = {"H": (-1, 0), "L": (1, 0), "K": (0, -1), "J": (0, 1)}.get(k)
+        if k in ("\x1b", "q"):
+            self._settings_back(("app", "layout.columns"))
+        elif pick:
+            c = max(0, min(len(cols) - 1, c + pick[0]))
+            self.lay_at = (c, max(0, min(len(cols[c]) - 1, i + pick[1])))
+        elif move:
+            self._layout_move(c, i, *move)
+
+    def _layout_move(self, c, i, dc, di):
+        """The panel at column c, row i moved; layout.columns and layout.heights (each panel keeps its own) written as
+        one change, so one fm settings undo puts the move back. A column keeps one panel at least."""
+        import fmsettings
+        lay = self.cfg["layout"]
+        cols = [list(x) for x in lay["columns"]]
+        hts = [((list(lay["heights"][n]) if n < len(lay["heights"]) else []) + [1] * len(x))[:len(x)]
+               for n, x in enumerate(cols)]  # as render reads them: a missing height is 1
+        to, at = c + dc, i + di
+        if not 0 <= to < len(cols) or not dc and not 0 <= at < len(cols[c]):
+            return None  # the edge: nowhere to go
+        if dc and len(cols[c]) == 1:
+            self.set_note = (f"{cols[c][0]} is its column's only panel: a column keeps one (:set layout.columns to "
+                             "drop a column)", "bad")
+            return None
+        at = min(i, len(cols[to])) if dc else at  # across: to the same row there, or its end
+        name = cols[c].pop(i)
+        cols[to].insert(at, name)
+        hts[to].insert(at, hts[c].pop(i))
+        try:  # one write: both or neither
+            done = fmsettings.set_apps([("layout.columns", cols), ("layout.heights", hts)])
+            self.lay_at = (to, at)
+            self.set_note = (f"{name} moved: column {to + 1}, row {at + 1}" + "".join(
+                f"; now skipped: {w}" for _, _, warn in done for w in warn), "ok")
+        except Exception as e:  # the guard, a value refused, a lock or a write that failed: nothing written
+            self.set_note = (f"app: {e}" if isinstance(e, fmsettings.SettingError) else
+                             f"not written ({type(e).__name__}: {e})", "bad")
+        finally:  # the screen as the file is, whatever happened
+            self._settings_reload()
+        return None
+
+    def _settings_back(self, keep=None):
+        """From an editor back to the settings list, its values read again, the setting it was opened from selected;
+        the editor's note goes with it."""
+        self.mode, self.set_note = "settings_loading", None  # the runners' list isn't a selection to keep
+        self._settings_load(keep)
+        self.mode = "settings"
+
+    def show_runners(self):
+        """Every runner of the registry and code.toml (only those: a test never takes a typed command)."""
+        import fmcode
+        self.set_back, note = self._settings_row(), None
+        try:
+            rs = fmcode.all_runners()
+        except fmcode.CodeError as e:  # the built-ins still list, with what's wrong in code.toml
+            rs, note = {n: dict(r) for n, r in fmcode.RUNNERS.items()}, (str(e), "bad")
+        self.items = [{"name": n, "work": bool(r.get("work")), "installed": bool(fmcode._installed(n, r))}
+                      for n, r in rs.items()]
+        self.item_index, self.set_note, self.mode = 0, note, "runners"
+
+    def _runners_key(self, k):
+        cmd = self._list_cmd(k)
+        step = {"up": -1, "down": 1, "page_up": -10, "page_down": 10}.get(cmd)
+        if k in ("\x1b", "q"):
+            self._settings_back(self.set_back and (self.set_back["surface"], self.set_back["key"]))
+        elif step:
+            self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
+        elif cmd == "expand" and self.items:
+            self._runner_test(self.items[self.item_index])
+
+    def _runner_test(self, item):
+        """fmcode.test_runner on a thread (it waits up to RUNNER_TEST_SECONDS): the screen keeps drawing, and poll
+        redraws when the result is in. One test at a time."""
+        import fmcode
+        if self.runner_test is not None and self.runner_test.is_alive():
+            self.set_note = ("a test is running: its result comes first", "warn")
+            return
+
+        def run():
+            try:
+                got = fmcode.test_runner(item["name"], cwd=self.root,
+                                         on_spawn=lambda p: setattr(self, "runner_proc", p))
+            except Exception as e:  # not a runner with a command (CodeError), or anything else: its result
+                got = {"ok": False, "said": str(e) if isinstance(e, fmcode.CodeError) else f"{type(e).__name__}: {e}"}
+            item.update(result=got, testing=False)
+            self.runner_done = True
+        item.update(testing=True, result=None)
+        self.set_note = None
+        self.runner_test = threading.Thread(target=run, daemon=True)
+        self.runner_test.start()
 
     def replay(self, path):
         st = State()
@@ -2091,6 +2305,8 @@ class App:
         """Take the events that arrived, and put back a previewed look not kept in time; whether any did (so the
         driver redraws)."""
         got = self._settings_expire()
+        if self.runner_done:  # T-1511: a runner test's result came in
+            got, self.runner_done = True, False
         while True:
             try:
                 self.feed(self.events.get_nowait())

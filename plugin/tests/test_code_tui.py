@@ -2192,6 +2192,266 @@ class SettingsPreview(unittest.TestCase):
         self.assertEqual((app.cfg["preset"], app.cfg["motion"]), ("mono", "off"))
 
 
+class Editors(unittest.TestCase):
+    """T-1511: three editors inside the settings screen, each writing through fm settings' writer (the guard, the lock,
+    the history fm settings undo walks back): b binds a pressed key to the selected key row's command, l moves panels
+    between and within columns with keys, r tests a runner of the registry or code.toml where it is."""
+    setUp, write, text = SettingsScreen.setUp, SettingsScreen.write, SettingsScreen.text
+
+    def app(self):
+        return SettingsScreen.app(self)
+
+    def pick(self, app, key):
+        app.item_index = next(i for i, r in enumerate(app.items) if r.get("key") == key)
+
+    def file(self):
+        with open(self.toml, encoding="utf-8") as f:
+            return f.read()
+
+    def test_a_captured_key_binds_to_the_rows_command_and_persists(self):
+        import fmsettings
+        self.write("# mine\n")
+        app = self.app()
+        self.pick(app, "keys.d")
+        app.key("b")
+        self.assertIn("press the key for diff", self.text(app))
+        app.key("x")
+        self.assertIn('[keys]\nx = "diff"', self.file(), "written in place by fm settings' writer")
+        self.assertEqual(app.cfg["keys"]["x"], "diff", "the app takes it now")
+        self.assertEqual(tui().load_config()[0]["keys"]["x"], "diff", "persists: the next run reads it")
+        self.assertEqual((app.mode, app.set_typing, app.set_note[1]), ("settings", "", "ok"))
+        self.assertEqual(app.items[app.item_index]["key"], "keys.x", "the selection on the new binding")
+        fmsettings.undo()
+        self.assertNotIn("x =", self.file(), "fm settings undo puts it back")
+
+    def test_capture_refuses_a_reserved_key_and_shows_the_conflict(self):
+        app = self.app()
+        for k, why in (("q", "quit"), ("^C", "quit"), ("?", "help"), ("z", "hush"), (",", "settings"),
+                       ("KEY_DC", "can't be named"), (("paste", "x"), "can't be named")):
+            with self.subTest(key=k):
+                self.pick(app, "keys.d")
+                app.key("b")
+                app.key(k)
+                self.assertEqual(app.set_note[1], "bad", app.set_note)
+                self.assertIn(why, app.set_note[0])
+                self.assertEqual((app.mode, app.set_typing), ("settings", ""))
+        self.assertFalse(os.path.exists(self.toml), "nothing written")
+        self.pick(app, "keys.d")
+        app.key("b")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.set_typing, os.path.exists(self.toml)), ("settings", "", False), "Esc cancels")
+        self.pick(app, "keys.d")
+        app.key("b")
+        app.key("h")  # not reserved, but taken: bound, and what it ran is said
+        self.assertIn('h = "diff"', self.file())
+        self.assertIn("history", app.set_note[0])
+
+    def test_a_panel_moved_by_keys_changes_the_layout_and_one_undo_puts_a_move_back(self):
+        import fmsettings
+        app = self.app()
+        app.key("l")
+        self.assertEqual(app.mode, "layout")
+        self.assertIn("checks", self.text(app))
+        app.key("L")  # log is its column's only panel: a column keeps one
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertFalse(os.path.exists(self.toml))
+        for k in ("KEY_RIGHT", "j", "H"):  # to checks, down to files, files moved to the left column
+            app.key(k)
+        cols = [["log", "files"], ["checks", "time", "tokens"]]
+        self.assertEqual(tui().load_config()[0]["layout"]["columns"], cols, "written to tui.toml")
+        self.assertEqual(tui().load_config()[0]["layout"]["heights"], [[1, "auto"], ["auto", "auto", 1]],
+                         "each panel keeps its height")
+        self.assertEqual(app.cfg["layout"]["columns"], cols, "the screen behind takes it now")
+        tui().render(app.state, 120, 40, app.cfg, app)
+        self.assertEqual(app.order[:3], ["log", "files", "checks"], "drawn in its new place")
+        app.key("K")
+        self.assertEqual(tui().load_config()[0]["layout"]["columns"][0], ["files", "log"])
+        fmsettings.undo()
+        self.assertEqual(tui().load_config()[0]["layout"]["columns"], cols, "one undo: one move")
+        self.assertEqual(tui().load_config()[0]["layout"]["heights"], [[1, "auto"], ["auto", "auto", 1]])
+        app.key("\x1b")
+        self.assertEqual(app.mode, "settings")
+
+    def runner(self, script):
+        import stat
+        cli = os.path.join(self.home, "fakecli")
+        with open(cli, "w", encoding="utf-8") as f:
+            f.write("#!/bin/sh\n" + script + "\n")
+        os.chmod(cli, os.stat(cli).st_mode | stat.S_IEXEC)
+        with open(os.path.join(self.home, "code.toml"), "w", encoding="utf-8") as f:
+            f.write(f'[runners.fake]\nwork = "{cli} {{prompt}}"\n')
+        return cli
+
+    def test_a_runner_test_reports_its_result(self):
+        self.runner('echo "fake 1.2.3"')
+        with open(os.path.join(self.home, "code.toml"), encoding="utf-8") as f:
+            before = f.read()
+        app = self.app()
+        app.key("r")
+        self.assertEqual(app.mode, "runners")
+        names = [r["name"] for r in app.items]
+        self.assertIn("fake", names)
+        self.assertIn("claude", names, "the built-in registry's too")
+        app.item_index = names.index("fake")
+        app.key("\n")
+        app.runner_test.join(10)
+        self.assertTrue(app.poll(), "a result in: the screen redraws")
+        text = self.text(app)
+        self.assertIn("fake 1.2.3", text)
+        self.assertIn("✓", text)
+        with open(os.path.join(self.home, "code.toml"), encoding="utf-8") as f:
+            self.assertEqual(f.read(), before, "a test adds no command")
+        app.key("\x1b")
+        self.assertEqual(app.mode, "settings")
+
+    def test_a_runner_that_hangs_is_cut_off_at_the_timeout(self):
+        import fmcode
+        self.runner("sleep 30")
+        t0 = time.monotonic()
+        got = fmcode.test_runner("fake", timeout=0.5)
+        self.assertLess(time.monotonic() - t0, 10)
+        self.assertFalse(got["ok"])
+        self.assertIn("0.5 s", got["said"])
+
+    def test_arrows_pages_and_enter_always_move_and_open_a_list(self):
+        """Review: tui.toml can bind them away; in a list they still move and open, so none can be locked out."""
+        self.write('[keys]\nup = "diff"\ndown = "diff"\npgup = "diff"\npgdn = "diff"\nenter = "history"\nj = "none"\n'
+                   'k = "none"\n')
+        app = self.app()
+        start = app.item_index
+        app.key("KEY_DOWN")
+        self.assertGreater(app.item_index, start)
+        app.key("KEY_UP")
+        self.assertEqual(app.item_index, start)
+        app.key("KEY_NPAGE")
+        self.assertGreater(app.item_index, start + 5)
+        app.key("KEY_PPAGE")
+        self.assertEqual(app.item_index, start)
+        app.key("\n")
+        self.assertEqual(app.set_typing, "set", "Enter opens the row's :set line")
+        app.key("\x1b")
+        app.key("r")
+        app.key("KEY_DOWN")
+        self.assertEqual((app.mode, app.item_index), ("runners", 1))
+        app.key("\x1b")
+        app.key("\x1b")
+        app.projects_source = lambda: [{"project": n, "root": self.home} for n in "ab"]
+        app.state_source = lambda p: {"queue": [{"id": "T-0001", "title": "x"}]}
+        app.show_home()
+        app.key("KEY_DOWN")
+        app.key("KEY_ENTER")
+        self.assertEqual((app.mode, app.project["project"]), ("project", "b"))
+        app.mode, app.choices_source = "main", lambda: [("model", "a"), ("model", "b")]
+        app.show_picker()
+        app.key("KEY_DOWN")
+        app.key("\n")
+        self.assertEqual(app.opts.get("model"), "b")
+
+    def test_the_last_key_that_moves_or_opens_is_never_bound_away(self):
+        self.write('[keys]\nj = "none"\nk = "none"\n')
+        app = self.app()
+        for k, cmd in (("KEY_DOWN", "down"), ("KEY_UP", "up"), ("\n", "expand"), ("\t", "focus")):
+            with self.subTest(key=k):
+                self.pick(app, "keys.d")
+                app.key("b")
+                app.key(k)
+                self.assertEqual(app.set_note[1], "bad", app.set_note)
+                self.assertIn(f"last key for {cmd}", app.set_note[0])
+        self.assertEqual(self.file(), '[keys]\nj = "none"\nk = "none"\n', "nothing written")
+        self.write("")
+        app = self.app()
+        self.pick(app, "keys.d")
+        app.key("b")
+        app.key("KEY_DOWN")  # j still moves down: this one may go
+        self.assertIn('down = "diff"', self.file())
+
+    def test_a_quit_help_hush_or_settings_key_moved_elsewhere_is_kept_too(self):
+        self.write('[keys]\nQ = "quit"\nH = "help"\nZ = "hush"\nS = "settings"\n')
+        app = self.app()
+        for k, why in (("Q", "quit"), ("H", "help"), ("Z", "hush"), ("S", "settings")):
+            with self.subTest(key=k):
+                self.pick(app, "keys.d")
+                app.key("b")
+                app.key(k)
+                self.assertEqual(app.set_note[1], "bad", app.set_note)
+                self.assertIn(why, app.set_note[0])
+        self.assertNotIn("diff", self.file())
+
+    def test_quitting_mid_runner_test_stops_its_cli(self):
+        pidfile = os.path.join(self.home, "pid")
+        self.runner(f"echo $$ > {pidfile}; exec sleep 30")
+        app = self.app()
+        app.key("r")
+        app.item_index = [r["name"] for r in app.items].index("fake")
+        app.key("\n")
+        for _ in range(250):
+            if os.path.exists(pidfile) and os.path.getsize(pidfile):
+                break
+            time.sleep(0.02)
+        with open(pidfile) as f:
+            pid = int(f.read())
+
+        def alive():
+            try:
+                with open(f"/proc/{pid}/stat") as f:
+                    return f.read().rsplit(")", 1)[1].split()[0] != "Z"
+            except OSError:
+                return False
+        self.assertTrue(alive())
+        app.quit()
+        app.runner_test.join(5)
+        self.assertFalse(app.runner_test.is_alive(), "the test ends with the app, not at its 10 s timeout")
+        for _ in range(100):
+            if not alive():
+                break
+            time.sleep(0.02)
+        self.assertFalse(alive(), "its CLI is gone too")
+
+    def test_a_failure_between_the_two_layout_keys_writes_nothing_and_the_screen_shows_the_file(self):
+        import fmsettings
+        real = fmsettings._plan_app
+
+        def plan(key, *a, **k):
+            if key == "layout.heights":
+                raise RuntimeError("disk on fire")
+            return real(key, *a, **k)
+        app = self.app()
+        app.key("l")
+        for k in ("KEY_RIGHT", "j"):
+            app.key(k)
+        with unittest.mock.patch("fmsettings._plan_app", side_effect=plan):
+            app.key("H")
+        self.assertFalse(os.path.exists(self.toml), "never new columns with old heights")
+        self.assertEqual(app.set_note[1], "bad")
+        self.assertIn("disk on fire", app.set_note[0])
+        self.assertEqual(app.cfg["layout"], tui().load_config()[0]["layout"], "the screen as the file is")
+        with self.assertRaises(fmsettings.SettingError):
+            fmsettings.undo()  # nothing in the history
+        os.environ["CLAUDECODE"] = "1"  # the guard refuses the first key: the second isn't written either
+        app.key("H")
+        self.assertIn("guard", app.set_note[0])
+        self.assertFalse(os.path.exists(self.toml))
+
+    def test_the_layout_editor_says_a_narrow_screen_hides_a_move_and_leaving_clears_its_note(self):
+        app = self.app()
+        app.key("l")
+        self.assertIn("narrow", self.text(app, 70, 30))
+        self.assertNotIn("narrow", self.text(app, 120, 30))
+        app.key("L")
+        self.assertEqual(app.set_note[1], "bad")
+        app.key("\x1b")
+        self.assertEqual((app.mode, app.set_note), ("settings", None))
+
+    def test_only_a_runner_of_the_registry_or_code_toml_is_tested(self):
+        import fmcode
+        mark = os.path.join(self.home, "ran")
+        for name in (f"touch {mark}", "nope", "opencode"):  # opencode: known, but no command to run
+            with self.subTest(name=name), self.assertRaises(fmcode.CodeError):
+                fmcode.test_runner(name)
+        self.assertFalse(os.path.exists(mark), "never taken as a command")
+        self.assertFalse(os.path.exists(os.path.join(self.home, "code.toml")))
+
+
 class MotionVisuals(unittest.TestCase):
     """T-1512: the hush key cycles motion full → reduced → off through fm settings' writer (tui.toml, and the pane's
     option of the same name, which the pane takes on its next poll); the spinner's tempo says what the agent is doing;

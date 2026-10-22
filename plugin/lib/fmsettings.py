@@ -527,12 +527,44 @@ def set_key(key, value, surface=None, p=None):
         return _set_key(key, value, surface, p, changes, written())
 
 
+def set_apps(pairs, path=None, p=None):
+    """T-1511: several tui.toml settings [(key, value)] in one write: each checked as set_app checks one (the guard
+    too) and placed on the text the one before left, the file written once under its lock, all one entry of the
+    history (one undo puts them all back). SettingError, or whatever failed, and nothing written: a panel the fm code
+    app moves never leaves new columns with old heights. [(key, value written, warnings)]"""
+    import fmcore
+    path = path or app_path()
+    with _recorded("set") as changes:
+        now = written()
+        planned = [(key, *_app_change(key, value, path, p)[1:]) for key, value in pairs]
+        real = os.path.realpath(path)
+        with fmcore.lock(os.path.dirname(real)):
+            text, done = None, []
+            for key, value, table, name in planned:
+                text, _, warn = _plan_app(key, value, path, table, name, text=text)
+                done.append((key, value, warn))
+            fmcore.write_atomic(real, text)
+        for key, value, _ in done:
+            _change(changes, now, "app", key, value)
+    return done
+
+
+def _change(changes, now, s, key, new):
+    """A write added to `changes` with the value it replaced (None: unset, or one the schema refuses, so an undo leaves
+    the default rather than a value it can't write); a skipped one kept as `skipped`, for undo to say it isn't put
+    back. A value written again as it was isn't a change."""
+    k = _norm(key)
+    old, _, ok = now.get((s, k), (None, None, False))
+    if new != old or not ok:
+        changes.append({"surface": s, "key": k, "old": old if ok else None, "new": new,
+                        **({"skipped": old} if (s, k) in now and not ok else {})})
+
+
 def _set_key(key, value, surface, p, changes, now):
-    """set_key's writes; each that changed a value is added to `changes` with the value it replaced (None: unset, or
-    one the schema refuses, so an undo leaves the default rather than a value it can't write)."""
+    """set_key's writes; each that changed a value is added to `changes` (_change)."""
     done, refused = [], []
     for e in find(key, surface):
-        s, k = e["surface"], _norm(key)
+        s = e["surface"]
         try:
             if s == "app":
                 done.append(("app", *set_app(key, value, p=p)))
@@ -541,10 +573,7 @@ def _set_key(key, value, surface, p, changes, now):
         except SettingError as x:
             refused.append(f"{s}: {x}")
             continue
-        old, _, ok = now.get((s, k), (None, None, False))
-        if done[-1][1] != old or not ok:  # a skipped one is kept as `skipped`, for undo to say it isn't put back
-            changes.append({"surface": s, "key": k, "old": old if ok else None, "new": done[-1][1],
-                            **({"skipped": old} if (s, k) in now and not ok else {})})
+        _change(changes, now, s, key, done[-1][1])
     return done, refused
 
 
@@ -827,9 +856,11 @@ def _text(r, width=22):
 def cmd_settings(args):
     import fmcli
     import fmcodetui as T
-    if args.action == "list":
-        problems = []
-        got = rows(problems=problems)
+    if args.action == "list":  # T-1511: fm settings list keys (or layout, …): that group alone
+        problems, groups = [], list(dict.fromkeys(e["group"] for e in schema()))
+        if args.key and args.key not in groups:
+            raise fmcli.UsageError(f"fm settings list [{' | '.join(groups)}]: {_safe(args.key)!r} isn't one")
+        got = [r for r in rows(problems=problems) if args.key in (None, r["group"])]
         if args.json:
             return fmcli.out(args, got, None)
         lines = []
