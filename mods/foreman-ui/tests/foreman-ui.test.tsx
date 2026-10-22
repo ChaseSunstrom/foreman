@@ -1549,6 +1549,35 @@ test("palette 'cb' swaps the ok/err colours and the error still carries a glyph 
   await ui.unmount()
 })
 
+test('a motion or palette changed in the settings applies on the next poll, no restart (T-1574)', async ($, on) => {
+  const { clock, answer, blits } = world(on, [{ ...CALM, history: HIST }])
+  const opts: Record<string, string> = { palette: 'default', motion: 'full' } // what /config or fm settings set holds
+  on('config.list', async () => ({
+    value: Object.entries(opts).map(([k, value]) => ({ key: `foreman-ui.${k}`, label: k, kind: 'choice', value, provider: { plugin: 'foreman-ui', tier: 'user' }, isLocked: false })),
+  }))
+  await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  const failedColor = async () => (await ui.find({ type: 'Text', text: 'step 1 failed' }))?.props.color
+  await clock.advance(2000)
+  expect(await failedColor()).toBe(hex(0xff6b6b))
+  opts.palette = 'cb'
+  opts.motion = 'off'
+  await clock.advance(2000) // one poll
+  expect(await failedColor()).toBe(hex(0xe69f00))
+  await ui.unmount()
+  answer.hold = 2000 // live work: with motion off nothing is blitted
+  void $.tool.call({ tool: 'Bash', command: 'make build', description: 'build' })
+  await clock.advance(50)
+  const live = await $.ui.mount({ plugin: 'foreman-ui', surface: 'terminal', ...PANE })
+  for (let i = 0; i < 8; i++) {
+    await live.findAll({ type: 'Raster' })
+    await clock.advance(40)
+  }
+  expect(blits.length).toBe(0)
+  await clock.advance(3000)
+  await live.unmount()
+})
+
 test('the scrubber steps the pane back through history and live returns to now (T-1081)', async ($, on) => {
   world(on, [{ ...CALM, history: HIST }])
   await $.session.start({ cwd: '/repo', surface: 'terminal', isInteractive: true })

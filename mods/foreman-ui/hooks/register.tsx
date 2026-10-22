@@ -284,9 +284,30 @@ async function refresh($: EngineInterface): Promise<boolean> {
   }
 }
 
-// Cheap in-process checks every 2 s: the context meter, and the paths fm names (fm runs only when one moved).
+// T-1574: the options the mod started with; the poll applies the engine's current ones over them when they change
+let startOptions: Record<string, unknown> = {}
+let seenOptions = ''
+
+// Cheap in-process checks every 2 s: the context meter, the options, and the paths fm names (fm runs only when one moved).
 async function tick($: EngineInterface) {
   await gauge($).catch(() => undefined)
+  // T-1574: /config or fm settings set (settings.json) changed an option: it applies now, no restart
+  const rows = await $.config.list().catch(() => null)
+  if (Array.isArray(rows)) {
+    const now: Record<string, unknown> = {}
+    for (const r of rows) {
+      const m = /^foreman-ui(?:@[^.]+)?\.(.+)$/.exec(r.key)
+      if (m) now[m[1]!] = r.value
+    }
+    const seen = JSON.stringify(now)
+    if (seen !== seenOptions) {
+      if (seenOptions) {
+        applyOptions({ ...startOptions, ...now })
+        await update($, frame, n => n + 1) // redrawn in the new palette and motion
+      }
+      seenOptions = seen
+    }
+  }
   if ((await read($, shells)).length) await noteShells($, list => list) // ages out lost ones; a reload re-arms bgLive
   const running = (await read($, agents)).filter(a => !a.done)
   if (cfg.mascot !== 'off') await update($, beat, n => n + 1) // the mascot's idle blink, at the poll's pace
@@ -426,7 +447,7 @@ const SWEEP_MS = 900
 let painting = false
 async function repaint($: EngineInterface) {
   if (painting) return // a slow blit: skip a tick rather than pile them up
-  if (!turns.size && !starts.size) {
+  if ((!turns.size && !starts.size) || cfg.motion !== 'full') { // T-1574: or motion was turned down mid-work
     motionClock?.cancel() // live work ended: everything settles on the next redraw
     motionClock = null
     return
@@ -542,7 +563,7 @@ function captureBox($: EngineInterface, e: ResolveInput) {
   )
 }
 
-export const register: Register = (on, options) => {
+function applyOptions(options: Record<string, unknown>) {
   cfg.freshAt = typeof options.freshAt === 'number' ? options.freshAt : 40
   cfg.freshTokens = typeof options.freshTokens === 'number' ? options.freshTokens : 200000
   cfg.mascot = typeof options.mascot === 'string' && (options.mascot === 'off' || options.mascot in MASCOT_COLORS) ? options.mascot : 'blue'
@@ -552,6 +573,12 @@ export const register: Register = (on, options) => {
   cfg.chat = options.chat === 'full' ? 'full' : 'tree' // T-1040
   cfg.palette = options.palette === 'cb' ? 'cb' : 'default' // T-1081
   setPalette(cfg.palette)
+}
+
+export const register: Register = (on, options) => {
+  startOptions = options
+  seenOptions = ''
+  applyOptions(options)
   on('session.start', async ($, e, next) => {
     cfg.root = typeof e.cwd === 'string' ? e.cwd : ''
     feed.length = 0 // T-1033 review: a new session's tree starts empty
