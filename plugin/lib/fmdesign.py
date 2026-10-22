@@ -46,7 +46,8 @@ NOT_COVERED = ("not read: computed style and the cascade; .js/.ts files; tailwin
 EXTS = {".css", ".scss", ".html", ".htm", ".jsx", ".tsx", ".vue", ".svelte"}
 MARKUP = {".html", ".htm", ".vue", ".svelte"}
 LINE_COMMENTS = {".scss", ".jsx", ".tsx", ".vue", ".svelte"}
-SKIP_DIRS = {"node_modules", "bower_components", "vendor", "dist", "build", "out", "target", "venv"}
+SKIP_DIRS = {"node_modules", "bower_components", "vendor", "dist", "build", "out", "target", "venv",
+             "htmlcov", "lcov-report"}  # built, vendored or generated (coverage reports): also fmcore.ui_paths
 MAX_BYTES = 1_000_000  # bigger is generated or minified: skipped, and listed as skipped
 MAX_FILES = 5000
 
