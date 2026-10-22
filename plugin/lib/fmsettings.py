@@ -1091,46 +1091,75 @@ WHEN = {"ssh": (lambda v: isinstance(v, bool), "true or false: an ssh session"),
 
 def facts(env=None):
     """The terminal a profile's when clause is matched against: {ssh, tmux, term, width, colors} from `env` (the
-    environment by default): the width is COLUMNS, else the terminal's own (80 with none, as in Claude Code)."""
-    import shutil
+    environment by default). The width is COLUMNS (0 is none), else the terminal's on stdout or stderr, else None:
+    unknown (no terminal, as in Claude Code), which no width_below meets."""
     from fmcodeterm import colour_depth
     env = os.environ if env is None else env
-    cols = str(env.get("COLUMNS") or "")
-    width = int(cols) if cols.isascii() and cols.isdigit() and len(cols) <= 6 else shutil.get_terminal_size().columns
+    cols, width = str(env.get("COLUMNS") or ""), None
+    if cols.isascii() and cols.isdigit() and len(cols) <= 6 and int(cols):
+        width = int(cols)
+    else:
+        for fd in (1, 2):
+            try:
+                width = os.get_terminal_size(fd).columns or None
+                break
+            except (OSError, ValueError):
+                continue
     return {"ssh": any(env.get(k) for k in ("SSH_CONNECTION", "SSH_CLIENT", "SSH_TTY")), "tmux": bool(env.get("TMUX")),
             "term": str(env.get("TERM") or ""), "width": width, "colors": colour_depth(env)}
 
 
 def _meets(k, v, f):
     import fnmatch
-    return fnmatch.fnmatchcase(f["term"], v) if k == "term" else f["width"] < v if k == "width_below" else f[k] == v
+    if k == "width_below":
+        return f["width"] is not None and f["width"] < v
+    return fnmatch.fnmatchcase(f["term"], v) if k == "term" else f[k] == v
 
 
 def profile_list(table, f):
-    """tui.toml's [profile] table (`table`, as parsed) in the file's order against the facts `f`: [{name, when, sets,
-    matches, problem}]. A profile with no when clause, or a wrong one, never matches; its problem says why."""
+    """tui.toml's [profile] table (`table`, as parsed) in the file's order against the facts `f`: [{name, when,
+    settings (its table without when; None when it isn't one), sets (their names), matches, problem}]. A profile with no
+    when clause, an empty one or a wrong one never matches; its problem says why, ending "passed over"."""
     if table is None:
         return []
     if not isinstance(table, dict):
-        return [{"name": "", "when": {}, "sets": [], "matches": False,
-                 "problem": "profile: a [profile.NAME] table per profile"}]
+        return [{"name": "", "when": {}, "settings": None, "sets": [], "matches": False,
+                 "problem": "profile: a [profile.NAME] table per profile: passed over"}]
     out, facts_ = [], ", ".join(WHEN)
     for name, p in table.items():
         when = p.get("when") if isinstance(p, dict) else None
         if not isinstance(p, dict):
             why = f"profile.{name}: a table of settings with a when clause"
         elif when is None:
-            why = f"profile.{name}: no when clause (when = {{ {facts_} }}): passed over"
+            why = f"profile.{name}: no when clause (when = {{ {facts_} }})"
         elif not isinstance(when, dict):
             why = f"profile.{name}.when: a table of terminal facts ({facts_})"
+        elif not when:  # a profile for every terminal is the file's own settings
+            why = f"profile.{name}.when: empty: name at least one fact ({facts_})"
         else:
             why = next((f"profile.{name}.when.{k}" + (f" = {repr(v)[:60]}: {WHEN[k][1]}" if k in WHEN else
                                                       f": not a fact ({facts_})")
                         for k, v in when.items() if k not in WHEN or not WHEN[k][0](v)), None)
-        out.append({"name": name, "when": when if isinstance(when, dict) else {},
-                    "sets": list(_flatten({k: v for k, v in p.items() if k != "when"})) if isinstance(p, dict) else [],
-                    "matches": not why and all(_meets(k, v, f) for k, v in when.items()), "problem": why})
+        mine = {k: v for k, v in p.items() if k != "when"} if isinstance(p, dict) else None
+        out.append({"name": name, "when": when if isinstance(when, dict) else {}, "settings": mine,
+                    "sets": list(_flatten(mine or {})), "problem": why and f"{why}: passed over",
+                    "matches": not why and all(_meets(k, v, f) for k, v in when.items())})
     return out
+
+
+def _lines(lines):
+    """Lines for the terminal, each a file's text made inert: a line break, a control or a bidi character in a profile's
+    name (or anything tui.toml holds) shows as its escape, never as a line or a reordering of its own."""
+    import fmcodetui as T
+    return "\n".join(T._escaped(str(x)) for x in lines)
+
+
+def overrides(key, path=None):
+    """T-1656: after a set of an app `key`: a line per profile in tui.toml (one that can apply) that sets it too."""
+    import fmcodetui as T
+    k = _norm(key)
+    return [f"profile {p['name']} also sets {key}: it overrides on terminals where {T._toml(p['when'])} holds"
+            for p in profiles(path)["profiles"] if not p["problem"] and k in p["sets"]]
 
 
 def profiles(path=None, env=None):
@@ -1158,19 +1187,20 @@ def _cmd_profile(args):
     got = profiles()
     f, on, path = got["facts"], got["active"], got["path"]
     yes = lambda b: "yes" if b else "no"
-    lines = [f"this terminal: ssh {yes(f['ssh'])} · tmux {yes(f['tmux'])} · TERM {f['term'] or 'unset'} · "
-             f"{f['width']} columns · colors {f['colors']}"] + [f"! {x}" for x in got["problems"]]
+    width = f"{f['width']} columns" if f["width"] is not None else "columns unknown (no terminal)"
+    lines = [f"this terminal: ssh {yes(f['ssh'])} · tmux {yes(f['tmux'])} · TERM {f['term'] or 'unset'} · {width} · "
+             f"colors {f['colors']}"] + [f"! {x}" for x in got["problems"]]
     if not got["profiles"]:
         lines.append(f"no profiles in {path}: add [profile.NAME] with when = {{ {', '.join(WHEN)} }} and the settings "
                      "it changes")
-        return fmcli.out(args, got, _safe("\n".join(lines)))
+        return fmcli.out(args, got, _lines(lines))
     lines.append(f"profiles in {path} (the first that matches applies):")
     for p in got["profiles"]:
         lines.append(f"  {p['name']}  when {T._toml(p['when'])}  sets {', '.join(p['sets']) or 'nothing'}"
                      + ("  ← applies" if p["name"] == on and p["matches"] else ""))
     lines.append(f"{on} applies: the fm code app starts with its settings over the file's" if on is not None else
                  "none applies: the fm code app starts with the file's own settings")
-    return fmcli.out(args, got, _safe("\n".join(lines)))
+    return fmcli.out(args, got, _lines(lines))
 
 
 # ---------------------------------------------------------------- reading both, and the command
@@ -1214,6 +1244,16 @@ def rows(entries=None, problems=None):
                  f"{e['key']}", **mine(e)) for e in entries]
 
 
+def skip_note(x, path=None):
+    """How a list says what the app does with a bad setting load_config named (`x`, its line): the default shows for
+    the file's own; a profile's value skipped leaves the value without it; a profile passed over says so itself."""
+    path = path or app_path()
+    msg = x[len(path) + 2:] if x.startswith(f"{path}: ") else x
+    if not msg.startswith("profile"):
+        return " (skipped: the default shows)"
+    return "" if x.endswith("passed over") else " (skipped: the value without the profile shows)"
+
+
 def _text(r, width=22):
     import fmcodetui as T
     show = lambda v: T._toml(v) if r["surface"] == "app" else json.dumps(v, ensure_ascii=False)
@@ -1239,9 +1279,9 @@ def cmd_settings(args):
                 where = mine[0]["where"] if surface == "app" else mine[0]["where"].rsplit(".", 1)[0]
                 on = next((r["profile"] for r in mine if r.get("profile") is not None), None)
                 where += f" · profile {on} applies here (fm settings profile)" if on is not None else ""
-                lines += [f"{title}: {where}"] + [f"  ! {x} (skipped: the default shows)" for s, x in problems
+                lines += [f"{title}: {where}"] + [f"  ! {x}{skip_note(x)}" for s, x in problems
                                                   if s == surface] + ["  " + _text(r) for r in mine]
-        return fmcli.out(args, got, _safe("\n".join(lines)) or "no settings found")  # a profile's name is the file's
+        return fmcli.out(args, got, _lines(lines) or "no settings found")  # a profile's name is the file's
     if args.action == "profile":  # T-1656
         return _cmd_profile(args)
     if args.action in ("diff", "export", "import", "undo", "bisect"):
@@ -1256,7 +1296,7 @@ def cmd_settings(args):
         got = rows(find(args.key, args.surface))
         if not got:
             raise fmcli.UsageError(f"{args.key}: no such setting (fm settings list shows them)")
-        return fmcli.out(args, got, _safe("\n".join(f"{r['surface']}: {_text(r, 0)}  [{r['where']}]" for r in got)))
+        return fmcli.out(args, got, _lines(f"{r['surface']}: {_text(r, 0)}  [{r['where']}]" for r in got))
     if args.value is None:
         raise fmcli.UsageError("fm settings set KEY VALUE")
     entries = find(args.key, args.surface)
@@ -1264,16 +1304,20 @@ def cmd_settings(args):
         raise fmcli.UsageError(f"{args.key}: no such setting{f' in the {args.surface}' if args.surface else ''} "
                                "(fm settings list shows them)")
     got, refused = set_key(args.key, args.value, args.surface, _project(args))
-    done = []
+    done, lines = [], []
     for surface, v, warn in got:
-        if surface == "app":
+        if surface == "app":  # T-1656: a profile that sets the key too wins where it applies: said, never silent
+            over = overrides(args.key)
+            mine = [f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"]
+            mine += [f"  now skipped: {w}" for w in warn] + [f"  {o}" for o in over]
+            lines += mine
             done.append({"surface": "app", "key": args.key, "value": v, "where": app_path(), "warnings": warn,
-                         "line": f"app: {args.key} = {T._toml(v)} in {app_path()} (the next fm code run reads it)"
-                                 + "".join(f"\n  now skipped: {w}" for w in warn)})
+                         "overrides": over, "line": "\n".join(mine)})
         else:
-            done.append({"surface": "plugin", "key": args.key, "value": v,
-                         "line": f"plugin: {args.key} = {json.dumps(v)} (the pane reads it within seconds)"})
-    fmcli.out(args, {"set": done, "refused": refused}, _safe("\n".join([d["line"] for d in done] + refused)))
+            lines.append(f"plugin: {args.key} = {json.dumps(v)} (the pane reads it within seconds)")
+            done.append({"surface": "plugin", "key": args.key, "value": v, "line": lines[-1]})
+    said = ([_lines(lines)] if lines else []) + [_safe(x) for x in refused]  # a refusal as before (the guard's words)
+    fmcli.out(args, {"set": done, "refused": refused}, "\n".join(said))
     if refused:
         import fmcore
         raise fmcore.PolicyError(f"{len(refused)} of {len(entries)} not written (above)")
