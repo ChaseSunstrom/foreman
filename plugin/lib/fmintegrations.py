@@ -45,7 +45,7 @@ def model(tid, title, run, private):
     """spans [{name, start, end, track, args, error}] and marks [{name, at, track, args}]: the task (track None) with
     its steps laid end to end inside it, each check of a check_run (on its session's track, laid end to end and
     ending at the event), and every event as a mark. private (a sensitive project): timings and kinds, no words."""
-    t0, t1 = run[0][0], run[-1][0]
+    t0, t1 = min(t for t, _ in run), max(t for t, _ in run)  # a line can land after a later one
     spans = [{"name": tid if private or not title else f"{tid} {c.redact(title)}", "start": t0, "end": t1,
               "track": None, "args": {"task": tid}, "error": False}]
     ends, marks, floor = {}, [], {}
@@ -53,7 +53,7 @@ def model(tid, title, run, private):
         d = e.get("data") if isinstance(e.get("data"), dict) else {}
         track = c.redact(str(e.get("session_id") or "no session"))
         if e.get("event") in ("evidence", "step_done") and isinstance(d.get("step"), int):
-            ends[d["step"]] = t
+            ends[d["step"]] = max(t, ends.get(d["step"], t))
         if e.get("event") == "check_run" and isinstance(d.get("results"), list):
             end = t  # gates run one after another; ts is cut to the second, so a run never starts before the last one
             for r in reversed([r for r in d["results"] if isinstance(r, dict)]):  # ended (Perfetto drops overlaps)
@@ -136,7 +136,7 @@ def cmd_timeline(args):
         raise fmcli.UsageError(f"no ledger events for {tid} in {p.slug}")
     spans, marks = model(tid, b.title if b else "", run, bool(c.read_meta(p).get("sensitive")))
     doc = otlp(p.slug, tid, spans, marks) if args.otlp else perfetto(p.slug, spans, marks)
-    text = json.dumps(doc, ensure_ascii=False)
+    text = json.dumps(doc, ensure_ascii=True)  # escaped: no C1 control or stray surrogate reaches a terminal
     if not args.out:
         return print(text)
     path = os.path.realpath(args.out)  # through a symlink, not over it
@@ -154,12 +154,13 @@ def glance(p):
     a = sd["active"]
     step = (f"{a['step']['n']}/{a['step']['of']}" if a["step"] else f"{a['steps_done']}/{a['steps_total']}") if a else None
     paused = bool(sd["paused"] or sd["panic"])
-    title = c.redact(a["title"]) if a else None
+    private = bool(c.read_meta(p).get("sensitive"))  # a sensitive project: ids and counts, no words
+    title = c.redact(a["title"]) if a and not private else None
     return {"v": 1, "project": p.slug, "task": a and a["id"], "type": a and a["type"], "tier": a and a["tier"],
             "title": title, "step": step, "queue": len(sd["queue"]), "inbox": len(sd["inbox"]),
             "blocked": len(sd["blocked"]), "lanes": len(sd["lanes"]), "paused": paused, "drive": bool(sd["drive"]),
             "autonomy": sd["autonomy"], "text": c.state_line(sd),
-            "tooltip": f"{p.slug}: " + (f"{a['id']} {title}" if a else "no active task"),
+            "tooltip": f"{p.slug}: " + (f"{a['id']} {title or ''}".rstrip() if a else "no active task"),
             "class": "paused" if paused else "active" if a else "blocked" if sd["blocked"] else "idle"}
 
 
@@ -172,17 +173,23 @@ def cmd_glance(args):
             raise
         return print(json.dumps({"v": 1, "project": None, "text": "", "tooltip": "not in a Foreman project",
                                  "class": "none"}))
-    print(json.dumps(glance(p), ensure_ascii=True))  # escaped: no U+2028 a line reader could split on
+    try:
+        line = glance(p)
+    except Exception as e:  # a bar shows the error, never a trace
+        line = {"v": 1, "project": p.slug, "text": "fm: error", "class": "error",
+                "tooltip": c.redact(f"state unreadable ({type(e).__name__}: {e}); run fm doctor")[:300]}
+    print(json.dumps(line, ensure_ascii=True))  # escaped: no U+2028 a line reader could split on
 
 
 # ---------------------------------------------------------------- fm lsp
 
 MAX_BODY = 32 << 20  # a frame bigger than this ends the session (no client sends a 32 MB brief)
+LINE_MAX = 2000  # characters of a line gaps() matches
 WARNING, INFO = 2, 3
 
 
 def _u16(text):
-    return len(text.encode("utf-16-le")) // 2  # LSP columns count UTF-16 code units
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2  # LSP columns count UTF-16 code units
 
 
 def gaps(text):
@@ -199,7 +206,9 @@ def gaps(text):
     proven = {(m.group(1), int(m.group(2))) for x in b.evidence() if (m := c._EV_RE.match(x))}  # has_evidence, once
     lines = text.split("\n")
     for i in range(text[:text.find("\n---\n", 4) + 5].count("\n"), len(lines)):
-        line, hit = lines[i], None
+        # ponytail: fmcore's step and criterion patterns backtrack quadratically on a long line, so only its first
+        # LINE_MAX characters are read (a verify command past them reads as missing) until they are fixed there
+        line, hit = lines[i][:LINE_MAX], None
         if line.startswith("## "):
             section = line[3:].strip()
         elif section == "Acceptance criteria" and (m := c._AC_RE.match(line)):
@@ -214,7 +223,7 @@ def gaps(text):
             hit = (WARNING, f"step {n} is ticked but has no evidence: no test run recorded for it") if m.group(2) in "xX" \
                 else (INFO, f"step {n} has no evidence yet: fm task evidence {tid} --step {n} --run \"<test>\"")
         if hit:
-            out.append({"range": {"start": {"line": i, "character": 0}, "end": {"line": i, "character": _u16(line)}},
+            out.append({"range": {"start": {"line": i, "character": 0}, "end": {"line": i, "character": _u16(lines[i])}},
                         "severity": hit[0], "source": "foreman", "message": hit[1]})
     return out
 
@@ -233,7 +242,7 @@ def _frames(inp):
                 continue  # blank lines between frames
             seen = True
             k, _, v = line.partition(b":")
-            if k.strip().lower() == b"content-length" and v.strip().isdigit():
+            if k.strip().lower() == b"content-length" and v.strip().isdigit() and len(v.strip()) <= 10:
                 n = int(v)
         if n is None:
             yield None
@@ -250,7 +259,7 @@ def serve(inp, out):
     """The stub: initialize, shutdown and exit; didOpen, didChange, didSave (with text) and didClose publish the
     document's proof gaps. Full sync, so no document is kept. Exit code 0 only after a shutdown."""
     def send(msg):
-        body = json.dumps(dict(msg, jsonrpc="2.0"), ensure_ascii=False).encode("utf-8")
+        body = json.dumps(dict(msg, jsonrpc="2.0")).encode()  # ASCII: a client's lone surrogate can't fail the encode
         out.write(b"Content-Length: %d\r\n\r\n" % len(body) + body)
         out.flush()
 
