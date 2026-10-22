@@ -2,11 +2,14 @@
 """T-1537: the taste ledger for looks: a kept look, a reverted one and 'not like that' move its rank; a 12-pair
 calibration picker records twelve answers; learning reads only the local files the user names."""
 import builtins
+import importlib.util
 import io
 import json
 import os
 import socket
+import struct
 import unittest
+import zlib
 from unittest import mock
 
 from helpers import PLUGIN, ForemanTestCase, read_text  # puts plugin/lib on sys.path
@@ -46,6 +49,15 @@ class Opens:
         return [x for x in self.paths if not any(x == a or x.startswith(a + os.sep) for a in allowed)]
 
 
+def png(w, h, rgb=(0, 0, 0), rows=True):
+    """A PNG built with the stdlib: w×h of one colour, or (rows=False) only its header and an empty image stream."""
+    def chunk(kind, data):
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    raw = b"".join(b"\0" + bytes(rgb) * w for _ in range(h)) if rows else b""
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+
+
 class Ledger(ForemanTestCase):
     def test_a_kept_and_a_reverted_look_update_the_ledger(self):
         self.fm("looks", "keep", "look-lido")
@@ -77,6 +89,11 @@ class Ledger(ForemanTestCase):
         self.assertFalse(os.path.exists(os.path.join(c.state_dir(), "taste", "looks.json")))
         with self.assertRaises(ValueError):
             fmtaste.record("loved", "look-lido")
+        p = self.fm("looks", "lido", check=False)  # a look where the verb goes: the verbs named, and the fix
+        self.assertNotEqual(p.returncode, 0)
+        self.assertNotIn("invalid choice", p.stderr)
+        for word in ("rank, keep, revert, not, calibrate, learn", "fm looks keep lido"):
+            self.assertIn(word, p.stderr)
 
     def test_the_ledger_stays_bounded_and_survives_a_corrupt_file(self):
         path = fmtaste.ledger_path()
@@ -85,6 +102,7 @@ class Ledger(ForemanTestCase):
             f.write("{not json")
         fmtaste.record("kept", "look-lido")  # a broken ledger starts over rather than failing every call
         self.assertEqual(len(fmtaste.load()["events"]), 1)
+        self.assertEqual(read_text(path + ".bak"), "{not json", "the broken file is kept beside it first")
         odd = [{"signal": "kept", "look": ["x"]}, {"signal": "calibration", "pairs": [[1, {}]], "answers": "a"},
                {"signal": "calibration", "pairs": "ab"}, "junk", None]
         self.assertEqual(fmtaste.scores(odd), {}, "a hand-edited ledger's odd rows are skipped, not a crash")
@@ -94,6 +112,23 @@ class Ledger(ForemanTestCase):
             events = fmtaste.load()["events"]
         self.assertEqual(len(events), 5)
         self.assertLessEqual(max(len(e.get("why", "")) for e in events), fmtaste.WHY_CAP)
+
+    def test_learned_matches_never_outweigh_what_the_user_kept(self):
+        fmtaste.record("kept", "look-observatory")
+        for n in range(6):  # a glob of stylesheets, each matching Lido, one of them twice
+            fmtaste.record("learned", "look-lido", source=f"s{n}.css")
+        fmtaste.record("learned", "look-lido", source="s0.css")
+        events = fmtaste.load()["events"]
+        self.assertEqual(sum(e["signal"] == "learned" for e in events), 6, "one learned per file name and look")
+        rank = {r["look"]: r for r in fmtaste.rank()}
+        self.assertEqual(rank["look-lido"]["score"], fmtaste.LEARNED_CAP)
+        self.assertLessEqual(rank["look-lido"]["score"], rank["look-observatory"]["score"])
+        self.assertEqual([r["look"] for r in fmtaste.rank()][:2], ["look-observatory", "look-lido"], "kept wins a tie")
+        with mock.patch.object(fmtaste, "EVENTS_KEEP", 4):
+            fmtaste.record("not", "look-cartographer")
+            kept = [e["signal"] for e in fmtaste.load()["events"]]
+        self.assertEqual(len(kept), 4)
+        self.assertEqual([s for s in kept if s != "learned"], ["kept", "not"], "learned events are trimmed first")
 
 
 class Calibration(ForemanTestCase):
@@ -130,6 +165,12 @@ class Calibration(ForemanTestCase):
         out = io.StringIO()
         self.assertEqual(fmtaste.pick(pairs, lambda: next(keys), out.write), list("a" + "b" * 10 + "n"))
         self.assertIn("12/12", out.getvalue())
+        # arrows, Shift+arrows, Home/End and F-keys send escape sequences, some with digits: none is an answer
+        noise = "\x1b[A\x1b[1;2A\x1b[1~\x1b[15~\x1bOP\x1b[2;5B\x1ba"
+        keys = iter(noise + "2" + noise + "1" * 11)
+        self.assertEqual(fmtaste.pick(pairs, lambda: next(keys), io.StringIO().write), list("b" + "a" * 11))
+        keys = iter("\x1b[1;2")  # a sequence cut off by the end of input stops, it answers nothing
+        self.assertIsNone(fmtaste.pick(pairs, lambda: next(keys, ""), io.StringIO().write))
         keys = iter("12q")
         self.assertIsNone(fmtaste.pick(pairs, lambda: next(keys), io.StringIO().write))
         self.assertIsNone(fmtaste.pick(pairs, lambda: "", io.StringIO().write), "end of input stops it too")
@@ -194,8 +235,31 @@ class Sources(ForemanTestCase):
         with mock.patch.object(fmtaste, "LEARN_MAX", 1):
             got = fmtaste.learn([page, page])
         self.assertEqual((len(got["learned"]), len(got["skipped"])), (1, 1), "a run reads LEARN_MAX files at most")
+        link = os.path.join(self.tmp, "link.html")
+        os.symlink(page, link)
+        got = fmtaste.learn([link])
+        self.assertEqual(got["learned"], [], "a symlink is refused: the user names the file itself")
+        self.assertIn("symlink", got["skipped"][0]["why"])
         p = self.fm("looks", "learn", check=False)
         self.assertNotEqual(p.returncode, 0, "learn needs a path the user names")
+        p = self.fm("looks", "learn", os.path.join(site, "missing"), check=False)
+        self.assertEqual(p.returncode, 1, "every file skipped: nothing learned is a failure")
+        self.assertIn("Skipped: missing", p.stdout)
+        self.assertEqual(self.fm("looks", "learn", page).returncode, 0)
+
+    @unittest.skipUnless(importlib.util.find_spec("PIL"), "Pillow isn't installed: photos are skipped, said so above")
+    def test_a_photo_teaches_its_colours_and_a_bomb_is_never_decoded(self):
+        lido = os.path.join(self.tmp, "pool.png")
+        with open(lido, "wb") as f:
+            f.write(png(8, 8, rgb=(0x07, 0x6E, 0x87)))
+        self.assertEqual(fmtaste.learn([lido])["learned"][0]["look"], "look-lido")
+        bomb = os.path.join(self.tmp, "bomb.png")
+        with open(bomb, "wb") as f:  # a small file that declares 10000x10000: the size is checked before decoding
+            f.write(png(10000, 10000, rows=False))
+        with mock.patch("PIL.Image.Image.convert", side_effect=AssertionError("decoded")):
+            got = fmtaste.learn([bomb])
+        self.assertEqual(got["learned"], [])
+        self.assertIn("megapixels", got["skipped"][0]["why"])
 
     def test_a_photo_needs_an_installed_reader_and_says_so(self):
         photo = os.path.join(self.tmp, "shot.png")
@@ -224,8 +288,17 @@ class CodeApp(ForemanTestCase):
         self.assertEqual(app.mode, "main")
         self.assertEqual(fmtaste.load()["events"], [])
         app.key("L")
+        screen = tui.render(app.state, 120, 40, app.cfg, app)
+        self.assertNotEqual(screen.style_of(first), "select", "no row is highlighted until the user moves")
+        app.key("\n")  # so Enter alone answers nothing
+        self.assertEqual(app.look_answers, [])
+        app.key("KEY_DOWN")
         app.key("KEY_DOWN")
         app.key("\n")  # Enter takes the highlighted one: the second look
+        app.key("1")
+        app.key("KEY_BACKSPACE")  # back one answer: pair 2 is asked again
+        self.assertEqual(app.look_answers, ["b"])
+        self.assertIn("2/12", tui.render(app.state, 120, 40, app.cfg, app).text())
         for k in "x" + "12n" * 3 + "1":  # x answers nothing
             app.key(k)
         self.assertEqual(app.mode, "looks")
@@ -246,8 +319,13 @@ class Surfaces(unittest.TestCase):
         for word in ("AskUserQuestion", "fm looks calibrate", "--answers", "--round", "fm looks learn"):
             self.assertIn(word, cmd)
         skill = read_text(os.path.join(PLUGIN, "skills", "directions", "SKILL.md"))
-        for word in ("fm looks", "fm looks keep", "fm looks not", "fm looks revert"):
+        for word in ("fm looks", "fm looks keep", "fm looks not", "fm looks revert", "the least negative",
+                     "Record nothing in `fm looks`: it holds the user's choices only.",
+                     "run `fm looks keep` or `fm looks revert` yourself"):
             self.assertIn(word, skill)
+        for word in ("--why '", "a quote", "AskUserQuestion is denied", "record nothing",
+                     "run `fm looks keep` or `fm looks revert` yourself"):
+            self.assertIn(word, cmd)
 
 
 if __name__ == "__main__":

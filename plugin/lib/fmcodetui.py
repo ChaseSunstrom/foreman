@@ -1458,8 +1458,9 @@ VIEWS = {"help": _help_view, "diff": _diff_view, "history": _list_view("Past run
          "layout": _layout_view,
          "runners": _list_view("Runners", "Enter tests one (asks its CLI for --version) · Esc back", _runner_row,
                                foot=_runners_foot),
-         "looks": _list_view(lambda app: f"Which is more like you? {len(app.look_answers) + 1}/{len(app.look_pairs)}",
-                             "1 · 2 · n neither · Enter picks · Esc stops, nothing kept", lambda item: [(item[0], "text")])}
+         "looks": _list_view(lambda app: f"{len(app.look_answers) + 1}/{len(app.look_pairs)} Which is more like you?",
+                             "1 · 2 · n neither · Backspace back · Esc stops, nothing kept",
+                             lambda item: [(item[0], "text")])}
 
 
 # ---------------------------------------------------------------- colours and the SVG snapshot
@@ -1900,16 +1901,22 @@ class App:
         self.mode = "looks"
 
     def _look_items(self):
+        """The pair now, no row highlighted (-1): Enter answers only once the user has moved to one."""
         k, (a, b) = self.look_known, self.look_pairs[len(self.look_answers)]
         self.items, self.item_index = [(f"1  {k[a]['title']}: {k[a]['line']}", "a"),
-                                       (f"2  {k[b]['title']}: {k[b]['line']}", "b"), ("n  Neither", "n")], 0
+                                       (f"2  {k[b]['title']}: {k[b]['line']}", "b"), ("n  Neither", "n")], -1
 
     def _looks_key(self, k):
         cmd = self._list_cmd(k)
         step = {"up": -1, "down": 1}.get(cmd)
-        ans = {"1": "a", "2": "b", "n": "n"}.get(k) or (self.items[self.item_index][1] if cmd == "expand" else None)
+        ans = {"1": "a", "2": "b", "n": "n"}.get(k) or (
+            self.items[self.item_index][1] if cmd == "expand" and self.item_index >= 0 else None)
         if k in ("\x1b", "q"):
             self.mode, self.message = "main", "taste: calibration stopped, nothing recorded"
+        elif k in ("KEY_BACKSPACE", "\x7f", "\b"):  # back one answer: its pair is asked again
+            if self.look_answers:
+                self.look_answers.pop()
+                self._look_items()
         elif step:
             self.item_index = max(0, min(len(self.items) - 1, self.item_index + step))
         elif ans:

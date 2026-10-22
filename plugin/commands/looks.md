@@ -12,11 +12,19 @@ Arguments (may be empty): $ARGUMENTS
    a one-line picture. Ask them in three AskUserQuestion calls of four questions each, in order. Each question:
    header `Pair N`, question "Which is more like you?", options A (`title: line` of the first look), B (the second),
    and "Neither". Then record all twelve at once: `fm looks calibrate --round R --answers a,b,n,…` (a for A, b for B,
-   n for Neither or an answer that fits neither, in pair order). Stopped before twelve: record nothing, say so.
+   n for Neither or an answer that fits neither, in pair order). Stopped before twelve, or AskUserQuestion is denied:
+   record nothing, and say so.
 3. `keep`, `revert` or `not` and a look: run `fm looks keep LOOK`, `fm looks revert LOOK` or
-   `fm looks not LOOK --why "<their words>"`; the look is its card name (`look-lido`), short name or title.
-4. `learn` and paths: run `fm looks learn PATH…` with exactly the paths the user typed, quoted, nothing added. It
-   reads only those local files (a page, a stylesheet, a photo when Pillow is installed), read-only and capped, never
-   a URL or a folder, and keeps only the file's name and the look it matched. Never pass a path the user didn't type.
+   `fm looks not LOOK --why '<their words>'`; the look is its card name (`look-lido`), short name or title. The
+   words go in single quotes, so they must hold no quote character (' " `) and no line break: if they do, refuse in
+   one line ("say the reason without quotes") and run nothing.
+4. `learn` and paths: run `fm looks learn 'PATH'…` with exactly the paths the user typed, each in single quotes,
+   nothing added; a path holding a quote character is refused the same way. It reads only those local files (a page,
+   a stylesheet, a photo when Pillow is installed), read-only and capped, never a URL, a folder or a symlink, and
+   keeps only the file's name and the look it matched. Never pass a path the user didn't type.
+
+Kept and reverted are never detected on their own: nothing reads DESIGN.md or git history for them. Whenever the user
+keeps a look (picks it, ships it, says it's the one) or reverts or replaces one, in this command or anywhere else,
+run `fm looks keep` or `fm looks revert` yourself; otherwise the ledger never hears of it.
 
 Reply in at most 8 lines: what fm printed, then that `/foreman:directions` drafts from the top of this ranking.
