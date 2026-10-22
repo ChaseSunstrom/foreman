@@ -3341,7 +3341,28 @@ def ui_paths(files):
     return out
 
 
-_BUILTINS = {"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
+_ENTRY = re.compile(r"(?i)(?:^|/)(?:index|main|app|page|layout|routes?|router|server|cli|__main__|_app|_document)\.\w+$")
+_STYLE = (".css", ".scss", ".sass", ".less")
+
+
+def reading_order(files):
+    """T-1518: a reviewer's order for a task's changed files, `files`' own order (fm tour's: a file before the files
+    that name it) kept within each group: the code the UI builds on, styles, components and markup, entry points
+    (index, main, App, page, layout…), tests, then docs and data."""
+    ui = set(ui_paths(files))
+
+    def rank(f):
+        if TESTISH.search(f):
+            return 4
+        if _ENTRY.search(f) and (f in ui or CODE.search(f)) and not f.lower().endswith(_STYLE):  # layout.css: a style
+            return 3
+        if f in ui:
+            return 1 if f.lower().endswith(_STYLE) else 2
+        return 0 if CODE.search(f) else 5
+    return sorted(files, key=rank)
+
+
+_BUILTINS ={"cd", "test", "[", "[[", "true", "false", "echo", "printf", "export", "set", "source", ".", "exit",
              "!", "(", "{", "env", "command", "timeout", "time", "xargs", "sh", "bash"}
 
 
