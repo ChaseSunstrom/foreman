@@ -1313,30 +1313,47 @@ def _rel(p, f):
     return os.path.normpath(os.path.relpath(os.path.join(p.root, f), p.root))
 
 
-def _live_gits(root):
-    """Pids of running git processes whose cwd is root or under it (Linux /proc). One whose cwd we may not read counts:
-    it might be in root; one gone meanwhile doesn't."""
-    root, pids = os.path.realpath(root), []
+def _lock_holders(root, st):
+    """T-1405: what may hold the lock whose os.stat is st (Linux /proc), one line each: a process with it open (any name
+    or cwd: libgit2, JGit, GIT_DIR from elsewhere, a container's git), or a git whose cwd is in root. A git of ours we
+    may not inspect counts; a non-git one we can't read (a non-dumpable browser) doesn't, nor does another user's (it
+    can't write our .git). Known gap: under hidepid=2 another user's processes don't show at all."""
+    root, me, out = os.path.realpath(root), os.getuid(), []
     for d in os.listdir("/proc"):
         if not d.isdigit():
             continue
+        base = f"/proc/{d}"
         try:
-            with open(f"/proc/{d}/comm") as f:
-                if f.read().strip() != "git":
-                    continue
-            cwd = os.readlink(f"/proc/{d}/cwd")
-        except PermissionError:
-            cwd = root
+            ours = os.stat(base).st_uid == me
+            with open(f"{base}/comm") as f:
+                name = f.read().strip()
         except OSError:
             continue  # exited meanwhile
-        if cwd == root or cwd.startswith(root.rstrip("/") + "/"):
-            pids.append(int(d))
-    return pids
+        try:
+            cwd = os.readlink(f"{base}/cwd") if name == "git" else ""
+            if cwd == root or cwd.startswith(root.rstrip("/") + "/"):
+                out.append(f"git runs in the repo (pid {d})")
+                continue
+            for fd in os.listdir(f"{base}/fd"):
+                try:
+                    s = os.stat(f"{base}/fd/{fd}")
+                except OSError:
+                    continue
+                if (s.st_dev, s.st_ino) == (st.st_dev, st.st_ino):
+                    out.append(f"pid {d} ({name}) has it open")
+                    break
+        except PermissionError:
+            if ours and name == "git":
+                out.append(f"couldn't inspect pid {d} (git)")
+        except OSError:
+            continue
+    return out
 
 
 def _stale_index_lock(root, age=600):
     """T-1405: a git that crashed leaves index.lock and every later commit fails. (removed?, what was done): removed only
-    when older than age seconds and no live git runs in the repo; off Linux (no /proc to look in) it's only named."""
+    when older than age seconds, nothing may hold it (_lock_holders) and it's still the same file; off Linux (no /proc
+    to look in) it's only named."""
     import subprocess
     try:
         rel = subprocess.run(["git", "-C", root, "rev-parse", "--git-path", "index.lock"], capture_output=True,
@@ -1345,21 +1362,25 @@ def _stale_index_lock(root, age=600):
         return False, "couldn't find the repo's index.lock"
     lock = os.path.join(root, rel) if rel else ""
     try:
-        old = time.time() - os.path.getmtime(lock)
+        st = os.stat(lock)
     except OSError:
         return False, f"{lock or 'index.lock'} is gone now"
+    old = time.time() - st.st_mtime
     if old < age:
         return False, f"{lock} is {int(old)}s old, so a git may still be using it: kept (remove it once no git runs)"
     if not os.path.isdir("/proc"):
         return False, f"{lock} is {int(old // 60)} min old; no /proc here to check for a live git: kept (remove it by hand)"
-    live = _live_gits(root)
-    if live:
-        return False, f"{lock} kept: git is still running in the repo (pid {', '.join(map(str, live[:5]))})"
-    try:
+    holders = _lock_holders(root, st)
+    if holders:
+        return False, f"{lock} kept: {'; '.join(holders[:5])}"
+    try:  # ponytail: a re-stat narrows the race with a git starting now to microseconds; it doesn't close it
+        now = os.stat(lock)
+        if (now.st_ino, now.st_mtime_ns) != (st.st_ino, st.st_mtime_ns):
+            return False, f"{lock} changed while it was checked: kept"
         os.remove(lock)
     except OSError as e:
         return False, f"{lock} is stale but couldn't be removed: {e.strerror}"
-    return True, f"removed a stale {lock} ({int(old // 60)} min old, no git running in the repo)"
+    return True, f"removed a stale {lock} ({int(old // 60)} min old, nothing holding it)"
 
 
 def _commit_task(p, b, message, dry=False, stack=False, check=None, with_=None):
@@ -6112,15 +6133,26 @@ LONG_VERBS = {"check", "code", "release", "bench", "sentinel"}
 
 def _stack_dumps(verb):
     """T-1405: a long verb that hangs leaves a clue: every thread's stack goes to state/logs/stacks/<verb>-<pid>.txt on
-    SIGUSR1 and once after FOREMAN_STACK_AFTER seconds (15 min). Returns what stops it (an empty file is removed)."""
+    SIGUSR1 and once after FOREMAN_STACK_AFTER seconds (30 min: full gates under load take 25). Returns what stops it
+    (an empty file is removed); a killed verb's empty file goes at the next one's start, fm tidy prunes old dumps."""
     import faulthandler
     import signal
     try:
-        after = float(os.environ.get("FOREMAN_STACK_AFTER") or 900)
+        after = float(os.environ.get("FOREMAN_STACK_AFTER") or 1800)
         if not 0 < after < 1e7:
             raise ValueError(after)
         d = os.path.join(c.state_dir(), "logs", "stacks")
         os.makedirs(d, exist_ok=True)
+        for name in os.listdir(d):
+            m, path = re.fullmatch(r"[\w-]+-([1-9]\d*)\.txt", name), os.path.join(d, name)
+            try:
+                if m and not os.path.getsize(path):
+                    try:
+                        os.kill(int(m[1]), 0)
+                    except ProcessLookupError:
+                        os.remove(path)
+            except (OSError, OverflowError):
+                pass  # alive (another user's), or gone meanwhile
         f = open(os.path.join(d, f"{verb}-{os.getpid()}.txt"), "w")
     except (OSError, ValueError):
         return None  # no dump is better than a verb that won't start

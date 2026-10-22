@@ -926,7 +926,8 @@ def _fs_type(path):
 
 def check_lock_probe(state):
     """T-1405: every Foreman lock is an flock under state/; on a filesystem where flock doesn't exclude (NFS, some FUSE)
-    they all silently protect nothing. A child holds an flock on a probe file; this process's LOCK_NB must be refused."""
+    they all silently protect nothing. A child holds an flock on a probe file; this process's LOCK_NB must be refused.
+    That proves exclusion between processes on this host only, not across hosts sharing the filesystem."""
     try:
         import fcntl
         import select
@@ -937,20 +938,29 @@ def check_lock_probe(state):
             "sys.stdin.read()\n")
     try:
         os.makedirs(state, exist_ok=True)
-        child = subprocess.Popen([sys.executable, "-c", held, probe], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                 stderr=subprocess.DEVNULL, text=True)
     except OSError as e:
         return Result("lock probe", "WARN", f"not probed: {e}")
     try:
-        if not select.select([child.stdout], [], [], 10)[0] or child.stdout.readline().strip() != "held":
-            return Result("lock probe", "WARN", f"the probe's child couldn't take a lock in {state} in 10s: not probed")
+        child = subprocess.Popen([sys.executable, "-c", held, probe], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                 stderr=subprocess.DEVNULL, text=True)
+    except OSError as e:
+        return Result("lock probe", "WARN", f"couldn't start the probe child: {e}; not probed")
+    try:
+        if not select.select([child.stdout], [], [], 10)[0]:
+            return Result("lock probe", "WARN", f"the probe child didn't take its lock in {state} within 10 s "
+                          "(flock may hang there); not probed")
+        if child.stdout.readline().strip() != "held":
+            return Result("lock probe", "WARN", f"couldn't start the probe child (it ended before taking its lock in "
+                          f"{state}); not probed")
+        fs = _fs_type(state)
         with open(probe, "a") as f:
             try:
                 fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except OSError:
-                return Result("lock probe", "PASS", f"flock excludes on {state} ({_fs_type(state)})")
-            return Result("lock probe", "FAIL", f"flock doesn't exclude on {state} ({_fs_type(state)} filesystem): "
-                          "Foreman's locks protect nothing there; move state to a local disk (FOREMAN_STATE)")
+                return Result("lock probe", "PASS", f"flock excludes between processes on this host in {state} ({fs})")
+            return Result("lock probe", "FAIL", f"a second process here took an flock the probe child held on {state} "
+                          f"({fs} filesystem): Foreman's locks may protect nothing there; move state to a local disk "
+                          "(FOREMAN_STATE)")
     finally:
         child.stdin.close()
         try:
