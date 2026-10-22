@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- /foreman:settings lists, gets and sets the fm code app's and the foreman-ui pane's settings through fm settings; the pane applies a changed motion or palette on its next 2-second poll, no restart, and turning motion off mid-work stops its clocks (T-1574).
 - Seven engineering playbooks: SQL query review, live migrations (lock budget first, unique and NOT NULL recipes), text/time/bytes/money, dependency admission without running install scripts, characterisation tests, deprecation (warnings, Deprecation/Sunset/Link headers) and decision memos (T-1503).
 - Guard: an escaped \$IFS in prose (fm task log "… \$IFS …", echo literal \$IFS) is literal text, not an expansion, so it no longer refuses as "IFS may be changed"; an unescaped $IFS, \\$IFS and a real $'…' still refuse, and so does \$IFS in text that runs again in the same shell: eval or source after any keyword, !, a case ) or prefix assignments, trap, mapfile -C and alias (T-1473).
 - Build playbooks for Go, JVM (Gradle and Maven, Java and Kotlin), Swift, C# and shell: reading the first error, common causes with fixes, the verify command and linked library cards; the Swift, C# and shell advice was checked against real failing builds. Build playbooks now have their own index (references/build/INDEX.md) (T-1502).
