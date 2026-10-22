@@ -142,7 +142,7 @@ The limits are rounded toward the safe side. Tinted neutrals land within a few h
 
 **The proof is a script, not an eyeball.** Keep the pairs in the repo and run them in CI, so a token change that breaks contrast fails a build instead of a person. This one reads the token file (ramp values in `oklch()`, roles as `var()` or `light-dark()`), checks each pair in both themes, warns on out-of-gamut values and exits 1 on any failure:
 
-```python
+```python no-run
 #!/usr/bin/env python3
 """Contrast proof: python3 contrast_proof.py tokens.css text/surface:4.5 border/surface:3 ...
 Reads --name: oklch(L C h) | var(--other) | light-dark(A, B); checks each pair in light and dark."""

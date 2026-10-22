@@ -16,6 +16,11 @@ Invoke this skill:
 
 ## Verification Phases
 
+1. Build, then type check, then lint: stop at the first that fails and fix it.
+2. Run the tests with coverage.
+3. Scan for secrets and debug output, then review the diff.
+4. Write the report in the output format below.
+
 ### Phase 1: Build Verification
 ```bash
 # Check if project builds
