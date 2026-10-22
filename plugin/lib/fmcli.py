@@ -5256,6 +5256,11 @@ def _build_parser():
                                                      "repeatable")
     s.add_argument("--name", help="source add: the source's short name (default: the repo's)")
     s.add_argument("--dry", action="store_true", help="source defaults: list them with depth and licence class; add none")
+    s = add("playbooks", lazy("fmplaybooks", "cmd_show"), tier=("Finding your way", 382), help="show NAME: a playbook "
+            "as the skill loads it, {{fact}}s (test, language, entry…) filled in from fm map and this project's "
+            ".claude/playbooks/<stage>/<name>.md appended (T-1621)")
+    s.add_argument("action", choices=["show"])
+    s.add_argument("name", help="fix/sql, references/fix/sql.md, or sql when only one playbook has that name")
     s = add("scout", lazy("fmscout", "cmd_scout"), tier=("Running elsewhere", 1210), help="find work nobody asked for yet: a newer Claude Code, stack cards "
             "your projects lack, doctor failures, stale skill sources, a brainstorm when the queue is dry (T-0950)")
     s.add_argument("--slow", action="store_true", help="every probe, with the network and project scans (fm night's)")
@@ -6030,8 +6035,13 @@ def _build_parser():
     s.add_argument("action", choices=["info", "diff"])
     s.add_argument("paths", nargs="+", metavar="PATH", help="info: one PNG; diff: two, A then B")
     s.add_argument("--out", metavar="PATH", help="diff: write a PNG of A faded with each changed pixel in red")
+    s = add("motion", lazy("fmmotion", "cmd_motion"), tier=("Every task", 94), help="motion check [PATH]: the Motion "
+            "Score (motion.toml at the repo root, or a .json): each motion's duration, easing, properties and reduced "
+            "form, with DESIGN.md's tokens resolved (exit 1 on problems)")
+    s.add_argument("action", choices=["check"])
+    s.add_argument("path", nargs="?", help="the score (default: motion.toml at the repo root)")
     import fmscene  # T-1633: stdlib only and small; its schema is the help's epilog
-    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 94), epilog=fmscene.SCHEMA,
+    s = add("scene", lazy("fmscene", "cmd_scene"), tier=("Every task", 95), epilog=fmscene.SCHEMA,
             formatter_class=argparse.RawDescriptionHelpFormatter, help="scene.json, a 3D scene as plain data: compile "
             "FILE checks it and prints an ES module building it with three.js that survives as templates/scene.html")
     s.add_argument("action", choices=["compile"])
@@ -6342,9 +6352,11 @@ def _task_shape(parser, argv):
 WORKER_READS = {"state", "next", "queue", "help", "outline", "gates", "why", "show", "glance"}
 WORKER_SUBREADS = {"task": ("task_cmd", {"show", "list"}), "lib": ("action", {"search", "show", "list", "suggest"}),
                    "timeline": ("out", {None}),  # printed only: --out would write past the run's own write guard
+                   "playbooks": ("action", {"show"}),  # T-1621: prints, but can rebuild fm map's map.json cache
                    "vetoes": ("action", {"list"}), "research": ("research_cmd", {"list", "show"}),
                    "design": ("action", {"lint", "palette", "contrast"}),  # T-1506, T-1507: these only read
-                   "img": ("out", {None})}  # T-1630: info and diff read; --out writes
+                   "img": ("out", {None}),  # T-1630: info and diff read; --out writes
+                   "motion": ("action", {"check"})}
 
 
 def _worker_may(args):
