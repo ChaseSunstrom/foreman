@@ -1252,6 +1252,7 @@ _GROUPS = {"look": "Look", "colors": "Colours", "layout": "Layout", "keys": "Key
 _WHERE = {"app": "this app · tui.toml · applies now", "plugin": "the foreman-ui pane · Claude Code's settings.json · "
                                                                 "applies within seconds"}
 _SET_HINTS = (("/", "search"), ("m", "changed only"), (":", "set"), ("Enter", "edit"), ("Esc", "close"))
+PREVIEW_KEYS, PREVIEW_SECONDS = ("theme", "palette", "motion"), 10  # T-1573: shown at once, written only when kept
 
 
 def preset_theme(preset, palette="default"):
@@ -1328,7 +1329,12 @@ def _settings_foot(app, iw):
         [("   " + " · ".join(map(str, r["choices"])), "accent2")] if r.get("choices") else [])
     note, style = app.set_note or ((f"! {app.set_problems[0][1]} (skipped: the default shows)", "warn")
                                    if app.set_problems else ("", "dim"))
-    if app.set_typing:
+    p = app.set_pending
+    if p:  # T-1573: a look shown, not written: the countdown to going back
+        left = max(0, math.ceil(p["until"] - app.clock()))
+        note, style = f"{p['key']} = {_shown(p['value'], 'app')}: a preview, not written · reverts in {left} s", "warn"
+        last = [(" any key ", "key"), (" keeps it", "dim")]
+    elif app.set_typing:
         text = tail(app.set_query if app.set_typing == "search" else app.set_line, max(1, iw - 4))
         last = [(" /" if app.set_typing == "search" else " :", "key"), (text, "input"), ("▏", "key"),
                 (" " * max(0, iw - 3 - width(text)), "input")]
@@ -1470,6 +1476,7 @@ class App:
         # T-1572: the settings screen: every setting, its search, changed-only, the :set line and what it last did
         self.set_rows, self.set_problems, self.set_query, self.set_line = [], [], "", ""
         self.set_typing, self.set_modified, self.set_note, self.no_colour = "", False, None, False
+        self.set_pending = None  # T-1573: a previewed look: key, value, surface, the cfg before it, until when
         self.home_items, self.home_index = None, 0  # the home list a view over it goes back to
         self.commands = {"quit": self.quit, "new": self.new, "stop": self.stop, "resume": self.resume,
                          "help": self.help, "focus": self.next_focus, "up": lambda: self.move(-1),
@@ -1509,6 +1516,9 @@ class App:
 
     # -- keys
     def key(self, k):
+        self._settings_expire()
+        if self.set_pending:  # T-1573: any key, a paste too, keeps a previewed look, and does only that
+            return self._settings_keep()
         if isinstance(k, tuple):  # T-1316: a paste: the prompt takes it whole, newlines kept; anywhere else nothing
             if self.mode == "prompt" and k[0] == "paste":
                 text = "".join(c for c in k[1].replace("\t", " ") if c == "\n" or c.isprintable())
@@ -1857,6 +1867,43 @@ class App:
         if not fmsettings.find(key, surface):
             self.set_note = (f"{key}: no such setting{f' in the {surface}' if surface else ''}", "bad")
             return None
+        if key in PREVIEW_KEYS and surface in (None, "app"):
+            return self._settings_preview(key, value, surface)
+        return self._settings_write(key, value, surface)
+
+    def _settings_preview(self, key, value, surface):
+        """T-1573: a look shown at once on the live config, so the screen behind the overlay repaints; written (on
+        every surface the :set names) only when kept: any key within PREVIEW_SECONDS, else the screen goes back."""
+        import fmsettings
+        try:  # the write's checks, the guard's too: what it would refuse is refused now, not after the keep
+            value, cfg = fmsettings.preview_app(key, value)
+        except Exception as e:
+            self.set_note = (f"app: {e}" if isinstance(e, fmsettings.SettingError) else
+                             f"app: {key}: can't show it ({type(e).__name__}: {e})", "bad")
+            return None
+        # time.monotonic doesn't count a suspend: a sleep holds the preview longer (safe: nothing is written)
+        self.set_pending = {"key": key, "value": value, "surface": surface, "cfg": self.cfg,
+                            "until": self.clock() + PREVIEW_SECONDS}
+        self.cfg, self.set_note = dict(cfg, theme=_mono(), preset="mono") if self.no_colour else cfg, None
+        return None
+
+    def _settings_keep(self):
+        p, self.set_pending = self.set_pending, None
+        self.cfg = p["cfg"]  # the look before it, unless the write takes (a guard's refusal leaves the file as it was)
+        return self._settings_write(p["key"], p["value"], p["surface"])
+
+    def _settings_expire(self):
+        """A preview not kept in time: the look before it (nothing was written); whether one went back."""
+        p = self.set_pending
+        if not p or self.clock() < p["until"]:
+            return False
+        self.cfg, self.set_pending = p["cfg"], None
+        self.set_note = (f"{p['key']} = {_shown(p['value'], 'app')} not kept: no key within {PREVIEW_SECONDS} s; "
+                         "nothing written", "warn")
+        return True
+
+    def _settings_write(self, key, value, surface):
+        import fmsettings
         try:
             done, refused = fmsettings.set_key(key, value, surface)
         except Exception as e:  # a lock or a write that failed: said, the screen stays
@@ -1973,8 +2020,9 @@ class App:
             self.state.note("error", text=str(x))
 
     def poll(self):
-        """Take the events that arrived; whether any did (so the driver redraws)."""
-        got = False
+        """Take the events that arrived, and put back a previewed look not kept in time; whether any did (so the
+        driver redraws)."""
+        got = self._settings_expire()
         while True:
             try:
                 self.feed(self.events.get_nowait())
