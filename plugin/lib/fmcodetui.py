@@ -1418,7 +1418,8 @@ def _setting_row(r, iw):
                  "chip_warn"), (f"  {r['count']} · {_WHERE[r['surface']]}", "dim")]
     kw, vw, dw, bw = _set_cols(iw)
     changed = r["value"] != r["default"]
-    segs = [("● " if changed else "  ", "warn"), (pad(fit(r["key"], kw), kw) + "  ", "strong" if changed else "text")]
+    mark = ("◆ ", "accent2") if r.get("profile") is not None else ("● " if changed else "  ", "warn")  # T-1656
+    segs = [mark, (pad(fit(r["key"], kw), kw) + "  ", "strong" if changed else "text")]
     style = r["group"] == "colors"
     show = lambda v: _style_text(v) if style and isinstance(v, dict) else _shown(v, r["surface"])
     spec = r["value"] if style and isinstance(r["value"], dict) else {}
@@ -1442,11 +1443,14 @@ def _settings_head(app, iw):
 def _settings_foot(app, iw):
     """A rule; the selected setting's help and choices; what the last :set did (or a setting the app skipped); the
     search or :set line, else the screen's keys."""
+    import fmsettings
     r = app.items[app.item_index] if 0 <= app.item_index < len(app.items) else None
-    about = [] if not r or "head" in r else [(r["help"], "dim")] + (
+    mine = [(f"◆ set by profile {_escaped(r['profile'])} here · ", "accent2")] if r and r.get("profile") is not None \
+        else []  # T-1656: a :set writes the file's own value, which this terminal doesn't show
+    about = [] if not r or "head" in r else mine + [(r["help"], "dim")] + (
         [("   " + " · ".join(map(str, r["choices"])), "accent2")] if r.get("choices") else [])
-    note, style = app.set_note or ((f"! {app.set_problems[0][1]} (skipped: the default shows)", "warn")
-                                   if app.set_problems else ("", "dim"))
+    first = app.set_problems[0][1] if app.set_problems else ""
+    note, style = app.set_note or ((f"! {first}{fmsettings.skip_note(first)}", "warn") if first else ("", "dim"))
     p = app.set_pending
     if p:  # T-1573: a look shown, not written: the countdown to going back
         left = max(0, math.ceil(p["until"] - app.clock()))
@@ -2180,7 +2184,8 @@ class App:
             self._watch_tui(now=True)
         said = [f"{s}: {key} = {_shown(v, s)} ({'now' if s == 'app' else 'the pane reads it within seconds'})"
                 + "".join(f"; now skipped: {w}" for w in warn) for s, v, warn in done]
-        self.set_note = ("; ".join(said + refused), "bad" if refused else "ok")
+        over = fmsettings.overrides(key) if any(s == "app" for s, _, _ in done) else []  # T-1656: never silent
+        self.set_note = (_escaped("; ".join(said + over + refused)), "bad" if refused else "warn" if over else "ok")
         self._settings_load(keep=(done[0][0] if done else surface or "app", key))
         return None
 
@@ -2681,10 +2686,11 @@ def _escaped(s):
     return "".join(c if c.isprintable() else repr(c)[1:-1] for c in s)
 
 
-def load_config(path=None, env=None):
+def load_config(path=None, env=None, profile=True):
     """DEFAULTS with the user's tui.toml over them: (config, [one line per bad setting]). A bad setting is skipped, the
     rest apply. T-1656: then the first [profile.NAME] whose when clause the terminal meets (fmsettings.facts of `env`,
-    the environment by default), its settings through the same checks; cfg["profile"] = {name, sets: what it set}."""
+    the environment by default), its settings through the same checks; cfg["profile"] = {name, sets: what it set}.
+    profile=False: the file's own settings alone (--print-config prints the profiles as tables)."""
     import copy
     import tomllib
     import fmsettings
@@ -2707,14 +2713,17 @@ def load_config(path=None, env=None):
     for p in found:
         if p["problem"]:
             bad(p["problem"])
-    on = next((p for p in found if p["matches"]), None)
+    on = next((p for p in found if p["matches"]), None) if profile else None
     if on:
-        at, own = f"profile.{on['name']}.", []
-        _apply(cfg, {k: v for k, v in table[on["name"]].items() if k != "when"}, lambda msg: own.append(at + msg))
+        at, own, mine = f"profile.{on['name']}.", [], on["settings"]
+        _apply(cfg, mine, lambda msg: own.append(at + msg))
         for msg in own:
             bad(msg)
-        cfg["profile"] = {"name": on["name"], "sets": [k for k in on["sets"] if not any(
-            m.startswith((f"{at}{k}:", f"{at}{k} =")) for m in own)]}  # a value it skipped isn't the profile's
+        # each key as the file spells it (a message names it so), kept by the key it means: a value skipped isn't set
+        raw = [f"{k}.{n}" for k, v in mine.items() if isinstance(v, dict) for n in v]
+        raw += [k for k, v in mine.items() if not isinstance(v, dict)]
+        cfg["profile"] = {"name": on["name"], "sets": list(dict.fromkeys(fmsettings._norm(k) for k in raw if not any(
+            m.startswith((f"{at}{k}:", f"{at}{k} =", f"{at}{k.split('.')[0]}:")) for m in own)))}  # foo: not a setting
     return cfg, errors
 
 
@@ -2794,8 +2803,9 @@ def _toml_key(k):
     return k if k and all(c.isascii() and (c.isalnum() or c in "_-") for c in k) else json.dumps(k, ensure_ascii=False)
 
 
-def print_config(cfg, path=None):
-    """The config as tui.toml text that loads back the same: a starting point to edit."""
+def print_config(cfg, path=None, profiles=()):
+    """The config as tui.toml text that loads back the same: a starting point to edit. T-1656: `profiles`
+    (fmsettings.profile_list) follow as [profile.NAME] tables, as written."""
     out = [f"# fm code tui's settings{f': {path}' if path else ''}. Delete what you don't change.",
            f"theme = {_toml(cfg.get('preset', 'night'))}  # {', '.join(PRESETS)}; [colors] changes single styles",
            f"motion = {_toml(cfg.get('motion', 'full'))}  # full; reduced: colours change, nothing moves; off",
@@ -2811,6 +2821,15 @@ def print_config(cfg, path=None):
         if key_name(k) not in seen:
             seen.add(key_name(k))
             out.append(f"{_toml_key(key_name(k))} = {_toml(cmd)}")
+    for p in profiles:
+        if p["settings"] is None:  # not a table: nothing to print
+            continue
+        head, mine = f"profile.{_toml_key(p['name'])}", p["settings"]
+        out += ["", f"[{head}]", f"when = {_toml(p['when'])}"]
+        out += [f"{_toml_key(k)} = {_toml(v)}" for k, v in mine.items() if not isinstance(v, dict)]
+        for k, v in mine.items():
+            if isinstance(v, dict):
+                out += [f"[{head}.{_toml_key(k)}]"] + [f"{_toml_key(n)} = {_toml(x)}" for n, x in v.items()]
     return "\n".join(out) + "\n"
 
 
@@ -2940,12 +2959,12 @@ def main(args, words, home=False):
     import fmsettings
     ext_errors = load_extensions()
     if getattr(args, "print_config", False):  # what tui.toml says, whether the app can draw with it or not
-        (cfg, errors), booted, seen = load_config(), None, None
+        (cfg, errors), booted, seen = load_config(profile=False), None, None  # T-1656: its profiles as tables
     else:  # T-1543: one the app can't draw with starts the last good settings, and says so
         cfg, errors, booted, seen = fmsettings.boot()
     problems = [f"extension {e}" for e in ext_errors] + ([booted] if booted else []) + errors
     if getattr(args, "print_config", False):
-        print(print_config(cfg, config_path()), end="")
+        print(print_config(cfg, config_path(), fmsettings.profiles()["profiles"]), end="")
     for e in problems:
         print(f"fm code tui: {e}", file=sys.stderr)
     if getattr(args, "print_config", False):

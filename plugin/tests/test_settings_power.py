@@ -2,8 +2,11 @@
 session, inside tmux, TERM, the width, the colour depth) and settings; the fm code app applies the first one it meets
 over the file's own settings, each value through the same checks, read through the same bounded reader. fm settings
 profile lists them and names the one that applies here."""
+import contextlib
+import io
 import json
 import os
+import types
 import unittest.mock as mock
 
 from helpers import ForemanTestCase, read_text
@@ -57,6 +60,14 @@ class Profile(ForemanTestCase):
 
     def load(self, **env):
         return T.load_config(self.toml, env=dict(BARE, **env))
+
+    def set(self, key, value):
+        """fm settings set KEY VALUE --surface app in this process (a subprocess has no terminal: the guard decides)."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            fmsettings.cmd_settings(types.SimpleNamespace(action="set", key=key, value=value, surface="app",
+                                                          json=False, project=None))
+        return out.getvalue()
 
     def test_the_first_profile_the_terminal_meets_applies_over_the_file(self):
         self.write(PROFILES)
@@ -152,3 +163,73 @@ class Profile(ForemanTestCase):
             self.assertIn("profile tmux", T._settings_note(app))
             row = next(r for r in app.set_rows if r["key"] == "border")
             self.assertEqual((row["value"], row.get("profile")), ("double", "tmux"))
+            self.assertEqual(T._setting_row(row, 100)[0][0], "◆ ", "a glyph in the first column")
+            app.item_index = app.items.index(row)
+            about = "".join(t for t, _ in T._settings_foot(app, 100)[1])
+            self.assertIn("set by profile tmux here", about)
+
+    def test_a_name_from_the_file_never_forges_a_line(self):
+        name = "x\\n  evil \\u202e ← applies"  # TOML escapes: a line break and a right-to-left override
+        self.write(f'[profile."{name}"]\nwhen = {{ tmux = true }}\nmotion = "off"\n')
+        here = dict(self.env, TMUX="/tmp/t")
+        outs = [self.fm("settings", *a, env=here).stdout for a in (("profile",), ("list", "look"), ("get", "motion"))]
+        with mock.patch.dict(os.environ, {"TMUX": "/tmp/t"}):
+            outs.append(self.set("motion", "reduced"))
+        for out in outs:
+            self.assertNotIn("‮", out)
+            self.assertFalse([x for x in out.splitlines() if x.startswith("  evil")], out)
+            self.assertIn("\\n", out)
+
+    def test_with_no_terminal_and_no_columns_the_width_is_unknown(self):
+        self.write(PROFILES)
+        here = dict(self.env, SSH_CONNECTION="10.0.0.2 5000 10.0.0.1 22", COLUMNS="0")  # 0: not a width
+        got = json.loads(self.fm("settings", "profile", "--json", env=here).stdout)
+        self.assertEqual((got["facts"]["width"], got["active"]), (None, None), "width_below never meets no width")
+        self.assertIn("columns unknown (no terminal)", self.fm("settings", "profile", env=here).stdout)
+
+    def test_a_set_names_each_profile_that_overrides_the_key(self):
+        self.write(PROFILES)
+        out = self.set("motion", "reduced")
+        self.assertIn("profile phone also sets motion: it overrides on terminals where "
+                      "{ ssh = true, width_below = 100 } holds", out)
+        self.assertIn("profile kitty also sets motion", out)
+        self.assertNotIn("also sets", self.set("palette", "cb"))
+        app = T.App(T.load_config(self.toml, env=BARE)[0], spawn=lambda *a, **k: None)
+        app.show_settings()
+        app._settings_set("set layout.narrow_below 90")
+        self.assertIn("profile phone also sets layout.narrow_below", app.set_note[0])
+
+    def test_an_empty_when_is_refused(self):
+        self.write('[profile.e]\nwhen = {}\nmotion = "off"\n')
+        cfg, errors = self.load()
+        self.assertEqual((cfg["motion"], cfg.get("profile")), (T.DEFAULTS["motion"], None))
+        self.assertIn("profile.e.when: empty", errors[0])
+
+    def test_the_profile_sets_only_what_landed_by_the_key_it_means(self):
+        self.write('[profile.t]\nwhen = { tmux = true }\n[profile.t.keys]\nENTER = "nope"\nq = "none"\n')
+        self.assertEqual(self.load(TMUX="/tmp/t")[0]["profile"]["sets"], ["keys.q"])
+
+    def test_print_config_prints_the_profile_tables_not_their_values_baked_in(self):
+        import tomllib
+        self.write(PROFILES)
+        here = dict(self.env, TMUX="/tmp/t")
+        out = self.fm("code", "tui", "--print-config", env=here).stdout
+        self.assertIn('border = "heavy"', out, "the file's own value, not tmux's")
+        self.assertIn("[profile.phone]", out)
+        got = tomllib.loads(out)
+        self.assertEqual(got["profile"]["phone"]["when"], {"ssh": True, "width_below": 100})
+        self.assertEqual(got["profile"]["phone"]["layout"], {"narrow_below": 200})
+        with open(self.toml, "w", encoding="utf-8") as f:
+            f.write(out)
+        self.assertEqual(self.load(TMUX="/tmp/t")[0]["border"], "double", "it loads back with its profiles")
+
+    def test_a_profile_problem_isnt_said_as_the_default_showing(self):
+        self.write('[profile.c]\nwhen = { tmux = true }\nmotion = "fast"\n[profile.d]\nmotion = "off"\n')
+        out = self.fm("settings", "list", "look", env=dict(self.env, TMUX="/tmp/t")).stdout
+        lines = [x for x in out.splitlines() if "profile." in x]
+        self.assertEqual(len(lines), 2, out)
+        self.assertFalse([x for x in lines if "the default shows" in x], lines)
+        self.assertEqual(sorted("passed over" in x for x in lines), [False, True], lines)
+
+    def test_export_says_profiles_arent_carried(self):
+        self.assertIn("[profile] tables aren't in it", " ".join(self.fm("settings", "--help").stdout.split()))
