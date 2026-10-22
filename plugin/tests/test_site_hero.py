@@ -7,12 +7,13 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
 import unittest
 
-from helpers import PLUGIN, read_json, read_text
+from helpers import PLUGIN, headless_chrome, read_json, read_text
 
 ROOT = os.path.dirname(PLUGIN)
 KEYS = ("tasks_done", "evidence", "proofs", "commits")
@@ -125,6 +126,159 @@ class Hero(unittest.TestCase):
             r = build_copy(tmp, edit_index=lambda page: page.replace(build.POSTER_MARK, ""))
         self.assertNotEqual(r.returncode, 0, r.stdout)
         self.assertIn("site/index.html lost the poster mark", r.stderr)
+
+
+def hero_scene(page):
+    """T-1610: the hero's scene box (both posters and the canvas) and its inline script, or ('', '')."""
+    start = page.index('class="wrap hero"')
+    hero = page[start:page.index("<section", start)]
+    box = re.search(r'<div class="hero-scene"[^>]*>.*?</div>', hero, re.S)
+    script = re.search(r"<script type=\"module\">(.*?)</script>", hero, re.S)
+    return (box.group(0) if box else ""), (script.group(1) if script else "")
+
+
+# Run after the scene's module script: wait for the first frame, read the canvas, lose the context and get it back.
+PROBE = """<script>(async () => {
+  const box = document.querySelector(".hero-scene"), c = box.querySelector("canvas");
+  const wait = s => new Promise(r => { let n = 300; const t = setInterval(() => {
+    if (box.dataset.state === s || !n--) { clearInterval(t); r(box.dataset.state); } }, 10); });
+  const got = { first: await wait("live"), hidden: c.getAttribute("aria-hidden"), dpr: c.width / c.clientWidth };
+  const lose = c.getContext("webgl2").getExtension("WEBGL_lose_context");
+  lose.loseContext(); got.lost = await wait("lost");
+  lose.restoreContext(); got.back = await wait("live");
+  document.body.insertAdjacentHTML("beforeend", "<pre id=probe>" + JSON.stringify(got) + "</pre>");
+})();</script>"""
+
+
+class Scene(unittest.TestCase):
+    """T-1610: a single-file WebGL2 scene over the poster; the poster stays without WebGL2 or with reduced motion."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.mkdtemp()
+        cls.page = built_index(cls.tmp)
+        cls.out = os.path.join(cls.tmp, "out")
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_the_built_hero_carries_the_scene_inline_over_the_poster(self):
+        box, script = hero_scene(self.page)
+        self.assertTrue(box, 'no <div class="hero-scene"> in the built hero')
+        self.assertIn('data-state="poster"', box[:box.index(">")], "the poster is the first paint")
+        canvas = re.search(r"<canvas[^>]*>", box)
+        self.assertTrue(canvas, "no canvas in the scene box")
+        self.assertLess(box.index('<svg class="poster"'), canvas.start(), "the canvas sits over the poster")
+        self.assertLess(box.index('<svg class="poster compact"'), canvas.start())
+        tag = canvas.group(0)
+        self.assertRegex(tag, r'\brole="img"')
+        self.assertRegex(tag, r'\baria-label="[^"]{20,}"')
+        self.assertRegex(tag, r'\baria-hidden="true"', "hidden from screen readers while the poster shows")
+        self.assertTrue(script.strip(), "no inline module script in the hero")
+        for need in ('getContext("webgl2"', "prefers-reduced-motion: reduce", "webglcontextlost",
+                     "webglcontextrestored", "preventDefault", "devicePixelRatio", "IntersectionObserver",
+                     "visibilitychange"):
+            self.assertIn(need, script)
+        self.assertNotRegex(self.page, r"<script[^>]*\bsrc=[\"'](?!site\.js)", "no other script file")
+        self.assertEqual(build_module().outside_loads(self.page, ".html"), [])
+        self.assertFalse(os.path.exists(os.path.join(self.out, "hero-scene.js")), "inlined, not shipped twice")
+        css = read_text(os.path.join(ROOT, "site", "style.css"))
+        self.assertRegex(css, r"\.hero-scene canvas \{[^}]*opacity: 0", "the canvas is invisible until live")
+        self.assertRegex(css, r'\.hero-scene\[data-state="live"\] canvas \{[^}]*opacity: 1')
+        if shutil.which("node"):  # the scene parses as a module
+            js = os.path.join(self.tmp, "scene.mjs")
+            with open(js, "w", encoding="utf-8") as f:
+                f.write(script)
+            r = subprocess.run(["node", "--check", js], capture_output=True, text=True, timeout=60)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def browse(self, *flags, page=None, shot=None):
+        """The built index (or `page`) in a headless Chromium at 1280x1100, 12 s of virtual time (a whole pass): the
+        dumped DOM, the box's data-state and the page's console lines; with `shot`, a screenshot there instead."""
+        browser = headless_chrome()
+        if not browser:
+            self.skipTest("no headless Chromium (FOREMAN_CHROME, chrome-headless-shell or Playwright's download)")
+        try:  # its own process group: a timeout kills the GPU and renderer children too
+            p = subprocess.Popen([browser, "--headless", "--use-angle=swiftshader", "--enable-unsafe-swiftshader",
+                                  "--window-size=1280,1100", "--hide-scrollbars", "--virtual-time-budget=12000",
+                                  "--enable-logging=stderr", "--v=0", *flags,
+                                  "--user-data-dir=" + tempfile.mkdtemp(dir=self.tmp),
+                                  "--screenshot=" + shot if shot else "--dump-dom",
+                                  "file://" + (page or os.path.join(self.out, "index.html"))],
+                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, start_new_session=True)
+            out, err = p.communicate(timeout=120)
+        except OSError as e:
+            self.skipTest(f"{browser} didn't run: {e}")
+        except subprocess.TimeoutExpired:
+            os.killpg(p.pid, signal.SIGKILL)
+            p.communicate()
+            self.fail("headless Chromium timed out after 120 s")
+        if not (os.path.isfile(shot) if shot else 'class="wrap hero"' in out):  # a root sandbox, no display libs
+            self.skipTest(f"{browser} printed no page: {err[-300:]}")
+        state = re.search(r'<div class="hero-scene" data-state="([^"]*)"', out)
+        return out, (state.group(1) if state else ""), [ln for ln in err.splitlines() if ":CONSOLE" in ln]
+
+    def test_reduced_motion_and_no_webgl2_keep_the_poster_still(self):
+        for flags, want in ((["--force-prefers-reduced-motion"], "still"), (["--disable-3d-apis"], "no-webgl2")):
+            with self.subTest(flags=flags):
+                out, state, console = self.browse(*flags)
+                self.assertEqual(state, want)
+                self.assertEqual(console, [], "nothing logged, nothing thrown")
+                self.assertRegex(re.search(r"<canvas[^>]*>", out).group(0), r'aria-hidden="true"')
+
+    def test_with_webgl2_the_scene_goes_live_survives_a_lost_context_and_caps_the_pixel_ratio(self):
+        page = os.path.join(self.out, "probe.html")  # beside style.css, so it is styled
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(self.page.replace("</body>", PROBE + "</body>"))
+        out, _, console = self.browse("--force-device-scale-factor=3", page=page)
+        got = re.search(r"<pre id=\"probe\">(.*?)</pre>", out)
+        self.assertTrue(got, "the probe never finished")
+        got = json.loads(html.unescape(got.group(1)))
+        self.assertEqual((got["first"], got["lost"], got["back"]), ("live", "lost", "live"), got)
+        self.assertIsNone(got["hidden"], "live, the canvas is named to screen readers")
+        self.assertLessEqual(got["dpr"], 2.01, "the device pixel ratio is capped at 2")
+        self.assertEqual([ln for ln in console if "scene" in ln.lower() or "Uncaught" in ln], [], console)
+
+    def test_after_its_pass_the_scene_is_the_poster_lit(self):
+        # the first build drew the track black (a NaN in a uniform) and every DOM check still passed: look at it.
+        # At rest, the track keeps the poster's --rule and each diamond is a lit form: its upper-left facet
+        # brighter than its lower-right, both the signal's amber, where the poster's flat diamond is one colour
+        import fmimg
+        page = os.path.join(self.out, "where.html")
+        with open(page, "w", encoding="utf-8") as f:
+            f.write(self.page.replace("</body>", WHERE + "</body>"))
+        where = re.search(r'<pre id="where">(.*?)</pre>', self.browse(page=page)[0])
+        self.assertTrue(where, "the geometry probe never finished")
+        where = json.loads(html.unescape(where.group(1)))
+        shot, still = os.path.join(self.tmp, "rest.png"), os.path.join(self.out, "rest.html")
+        with open(still, "w", encoding="utf-8") as f:  # the fade runs in real time, not virtual: catch it mid-way and
+            f.write(self.page.replace("</head>", NO_FADE + "</head>"))  # the poster shows through
+        self.browse(page=still, shot=shot)
+        img = fmimg.load(shot)
+        px = lambda x, y: img.rgba[(round(y) * img.width + round(x)) * 4:][:3]
+        lum = lambda c: 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+        rule = bytes.fromhex(re.search(r"--rule: #(\w{6})", read_text(os.path.join(ROOT, "site", "style.css")))[1])
+        (x0, _, h0), (x1, _, h1) = where["st"][:2]
+        track = px((x0 + h0 + x1 - h1) / 2, where["y"])
+        self.assertLessEqual(max(abs(a - b) for a, b in zip(track, rule)), 16, f"track {tuple(track)}, --rule {tuple(rule)}, {where}")
+        for i, (x, y, h) in enumerate(where["st"]):
+            lit, shade = px(x - h / 4, y - h / 4), px(x + h / 4, y + h / 4)
+            with self.subTest(station=i, lit=tuple(lit), shade=tuple(shade)):
+                self.assertGreater(lum(lit), lum(shade) + 25, "faceted and lit, not the flat poster")
+                self.assertGreater(lum(shade), 60, "not black")
+                for c in (lit, shade):
+                    self.assertGreater(c[0] - c[2], 80, "the signal's amber")
+
+
+NO_FADE = "<style>.hero-scene * { transition: none !important; }</style>"
+# Where the wide poster draws its stations and track, in CSS pixels: [centre x, centre y, half-diagonal] each.
+WHERE = """<script>addEventListener("load", () => {
+  const svg = document.querySelector("svg.poster:not(.compact)"), box = r => r.getBoundingClientRect();
+  const st = [...svg.querySelectorAll(".st")].map(e => { const b = box(e); return [b.x + b.width / 2, b.y + b.height / 2, b.width / 2]; });
+  const t = box(svg.querySelector(".track"));
+  document.body.insertAdjacentHTML("beforeend", "<pre id=where>" + JSON.stringify({ st, y: t.y + t.height / 2 }) + "</pre>");
+});</script>"""
 
 
 if __name__ == "__main__":

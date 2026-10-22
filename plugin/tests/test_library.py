@@ -6,7 +6,7 @@ import re
 import subprocess
 import time
 
-from helpers import ForemanTestCase
+from helpers import ForemanTestCase, headless_chrome
 
 import fmcore as c
 import fmlib
@@ -648,15 +648,7 @@ def _section(text, name):
     return m.group(1) if m else ""
 
 
-def _browser():
-    """A headless Chromium for compiling shaders: FOREMAN_CHROME, one on PATH, or Playwright's download."""
-    import glob
-    import shutil
-    found = [os.environ.get("FOREMAN_CHROME")] + [shutil.which(n) for n in (
-        "chrome-headless-shell", "chromium", "chromium-browser", "google-chrome")] + sorted(glob.glob(os.path.expanduser(
-            "~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-*/chrome-headless-shell")))
-    return next((p for p in found if p and os.access(p, os.X_OK)), None)
-
+_browser = headless_chrome  # a headless Chromium for compiling shaders
 
 class ShaderLooks(ForemanTestCase):
     """T-1499: eight shader looks, a light-and-material recipe card and an SVG icon system, beside the looks."""
