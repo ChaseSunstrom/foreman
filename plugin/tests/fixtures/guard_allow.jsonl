@@ -1,0 +1,102 @@
+{"id": "9748fc8d7f55aa394421", "cmd": "ls", "cwd": ".", "should": "allow", "why": "plain read"}
+{"id": "3069bfeb200a2c7e3f4d", "cmd": "S=/tmp/zz; mkdir -p $S/a", "cwd": ".", "should": "allow", "why": "scratch dir through a variable"}
+{"id": "2bedfe473782909f1ab2", "cmd": "cat >> tests/test_x.py <<'EOF'\nimport fmcore\nfmcore.write_meta(p, {})\nEOF", "cwd": "plugin", "should": "allow", "why": "quoted heredoc written with cat, nothing run"}
+{"id": "1322dba08d3e84b29465", "cmd": "tar -I zstd -cf a.tar.zst x", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "892a389dc0c682110f1e", "cmd": "ssh host", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "d3e6ed98602990d4e208", "cmd": "rsync -av a host:b", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "b3b2429187d5f4c27aef", "cmd": "sed -e 's/a/b/' file", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "97a170d9139087517344", "cmd": "vim file", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "b783c2ba222f39bfd750", "cmd": "NODE_OPTIONS=--max-old-space-size=4096 node a.js", "cwd": ".", "should": "allow", "why": "T-0275 look-alike"}
+{"id": "da03864f46aa5d50db44", "cmd": "python3 -c \"import re; t = open('plugin/lib/fmguard.py').read(); print(t.count('import fmcore'), t.count('write_meta('))\"", "cwd": ".", "should": "allow", "why": "T-1194: a -c read helper that names fm modules only in its strings"}
+{"id": "823f8de3e44bbb819fb1", "cmd": "python3 -c \"s = 'import fmcore\\nfmcore.write_meta(p, {})'; print(s.splitlines())\"", "cwd": ".", "should": "allow", "why": "T-1194: -c code whose fm import and writer are only a string literal"}
+{"id": "70a087b68825c9a052bb", "cmd": "cat ~/.ssh/id_ed25519.pub", "cwd": ".", "should": "allow", "why": "a public key is not a secret"}
+{"id": "26a65e40a51e038f7da1", "cmd": "cat ~/.ssh/known_hosts", "cwd": ".", "should": "allow", "why": "known hosts are public"}
+{"id": "1b4762e88126c52ee438", "cmd": "ssh host", "cwd": ".", "should": "allow", "why": "ssh using its key is not a read of it"}
+{"id": "22a1ef0233c5bc761e2c", "cmd": "curl -d '{}' https://example.com", "cwd": ".", "should": "allow", "why": "inline data, no file"}
+{"id": "13d1a43bca1dc2bca501", "cmd": "chmod +x script.sh", "cwd": ".", "should": "allow", "why": "everyday mode change"}
+{"id": "d640e0a3afa919264526", "cmd": "chmod -R 755 build/", "cwd": ".", "should": "allow", "why": "recursive mode change in the project"}
+{"id": "f22d6df558c8f450fdf1", "cmd": "git status --short", "cwd": ".", "should": "allow", "why": "git: status"}
+{"id": "7daeeb6b9720455c676d", "cmd": "git diff --stat HEAD~1", "cwd": ".", "should": "allow", "why": "git: diff"}
+{"id": "834151d194887f37716e", "cmd": "git log --oneline -20 -- plugin/lib/fmreplay.py", "cwd": ".", "should": "allow", "why": "git: history of a file"}
+{"id": "3c3638b669412d7fb94a", "cmd": "git add README.md plugin/tests/test_guard_cases.py", "cwd": ".", "should": "allow", "why": "git: stage files"}
+{"id": "2c0fc36271d31b0cc9f6", "cmd": "git commit -m \"guard: allow-corpus (T-0001)\"", "cwd": ".", "should": "allow", "why": "git: commit"}
+{"id": "da2049517d05552fdfe9", "cmd": "d=$(mktemp -d) && cd \"$d\" && git init -q && git checkout -b fix/login && git stash push -u -m wip", "cwd": ".", "should": "allow", "why": "git: branch and stash in a throwaway repo (in Foreman's own checkout they rewrite protected core)"}
+{"id": "5ad64115560e3d0eca53", "cmd": "git fetch origin", "cwd": ".", "should": "allow", "why": "git: fetch"}
+{"id": "d02071a0acd1e6af0dee", "cmd": "git rev-parse HEAD && git merge-base --is-ancestor HEAD origin/main", "cwd": ".", "should": "allow", "why": "git: plumbing reads"}
+{"id": "9dff8326a20f7c013c35", "cmd": "git show HEAD:plugin/lib/fmguard.py | head -40", "cwd": ".", "should": "allow", "why": "git: read a committed file"}
+{"id": "bbe4f85d95bd7990af66", "cmd": "git -C plugin/tests status", "cwd": ".", "should": "allow", "why": "git -C a project subfolder"}
+{"id": "1db71e2ae5dbe7b10489", "cmd": "git worktree list", "cwd": ".", "should": "allow", "why": "git: list worktrees"}
+{"id": "b7fd4361dd98ec2a0abc", "cmd": "git blame -L 10,20 README.md", "cwd": ".", "should": "allow", "why": "git: blame a range"}
+{"id": "2909cc7634728e507a44", "cmd": "python3 plugin/tests/run.py test_guard_cases", "cwd": ".", "should": "allow", "why": "test run from the root"}
+{"id": "a93861f32d5f99ed4272", "cmd": "python3 -m unittest test_guard_cases", "cwd": "plugin/tests", "should": "allow", "why": "unittest in the tests folder"}
+{"id": "7ac4f7eac71d3f478d12", "cmd": "cd plugin/tests && python3 -m unittest test_guard_cases.GuardCases", "cwd": ".", "should": "allow", "why": "a cd-and-test verify chain"}
+{"id": "b71c54b0b33b2b8b9c86", "cmd": "env -i PATH=/usr/bin:/bin HOME=/tmp/fm-home python3 plugin/tests/run.py", "cwd": ".", "should": "allow", "why": "a clean-env test run"}
+{"id": "d2ab13cff0f6fefdedd5", "cmd": "env -i PATH=\"$PATH\" python3 plugin/tests/run.py test_replay", "cwd": ".", "should": "allow", "why": "a clean-env test run keeping PATH"}
+{"id": "1fd18dbe20b6ed713125", "cmd": "python3 -m pytest -q -x tests/", "cwd": ".", "should": "allow", "why": "pytest"}
+{"id": "e8945441dac89ab2e920", "cmd": "npm test", "cwd": ".", "should": "allow", "why": "node tests"}
+{"id": "eff3c6e8ff608a943426", "cmd": "npm run build", "cwd": ".", "should": "allow", "why": "node build"}
+{"id": "57a10d006eeedd91a6dc", "cmd": "cargo build --release", "cwd": ".", "should": "allow", "why": "rust build"}
+{"id": "964d67cbfff9e2af7b92", "cmd": "go test ./...", "cwd": ".", "should": "allow", "why": "go tests"}
+{"id": "a07c5256f220c4bd5048", "cmd": "make -j4", "cwd": ".", "should": "allow", "why": "make"}
+{"id": "2462b7560fb14c220c8c", "cmd": "python3 -m py_compile plugin/lib/fmreplay.py", "cwd": ".", "should": "allow", "why": "syntax check"}
+{"id": "6306b625bfbfe5d088de", "cmd": "for f in plugin/tests/test_guard*.py; do python3 -m py_compile \"$f\"; done", "cwd": ".", "should": "allow", "why": "a loop of syntax checks"}
+{"id": "8b20fc8301dc56fc7b97", "cmd": "timeout 60 python3 plugin/tests/run.py test_evolve 2>&1 | tail -20", "cwd": ".", "should": "allow", "why": "a bounded test run, tail of output"}
+{"id": "7ab6f2d655b7820e75c1", "cmd": "fm next", "cwd": ".", "should": "allow", "why": "fm: next action"}
+{"id": "f9b6e5bcf31126f2f53a", "cmd": "fm check --affected --evidence T-0001", "cwd": ".", "should": "allow", "why": "fm: affected gates"}
+{"id": "83c7174cc952714b2e92", "cmd": "fm task evidence T-0001 --step 1 --run \"python3 plugin/tests/run.py test_guard_cases\"", "cwd": ".", "should": "allow", "why": "fm: record evidence"}
+{"id": "c1d1b5374f5b8ec50807", "cmd": "fm lease take plugin/lib/fmreplay.py plugin/lib/fmevolve.py", "cwd": ".", "should": "allow", "why": "fm: claim files"}
+{"id": "a7952989445a292749aa", "cmd": "fm edit --file edits.json", "cwd": ".", "should": "allow", "why": "fm: a batch edit from a file"}
+{"id": "240a40b22072f95e42ab", "cmd": "fm edit <<'EOF'\n[{\"file\": \"README.md\", \"old\": \"teh\", \"new\": \"the\"}]\nEOF", "cwd": ".", "should": "allow", "why": "fm: a heredoc fed to fm edit"}
+{"id": "d788262844ba2a874afe", "cmd": "fm capture \"guard: a second corpus\" --source discovered", "cwd": ".", "should": "allow", "why": "fm: capture"}
+{"id": "f272f7729568bb206635", "cmd": "fm replay --cases", "cwd": ".", "should": "allow", "why": "fm: replay the labelled cases"}
+{"id": "15c3d63c92fa7d3eb8e0", "cmd": "python3 -c \"import pathlib; p = pathlib.Path('README.md'); p.write_text(p.read_text().replace('teh', 'the'))\"", "cwd": ".", "should": "allow", "why": "a python edit script on a project file"}
+{"id": "b49bdc7d7a722417a69d", "cmd": "python3 scripts/fix_imports.py src/", "cwd": ".", "should": "allow", "why": "a project python script"}
+{"id": "737f538d0b4bc6f7d45b", "cmd": "python3 -c \"import json, sys; print(len(json.load(open('package.json'))))\"", "cwd": ".", "should": "allow", "why": "a python -c read"}
+{"id": "41c383faf2e495f5007f", "cmd": "python3 -m json.tool plugin/hooks/hooks.json", "cwd": ".", "should": "allow", "why": "pretty-print JSON"}
+{"id": "3501a6f8a8cb95ce8f51", "cmd": "awk '{print $1}' access.log | sort | uniq -c | sort -rn | head", "cwd": ".", "should": "allow", "why": "awk one-liner in a pipeline"}
+{"id": "dea2db857dc2672e85de", "cmd": "awk -F, 'NR > 1 {s += $3} END {print s}' data.csv", "cwd": ".", "should": "allow", "why": "awk sum"}
+{"id": "768cc532a91de5a2cb01", "cmd": "awk 'NR>=10 && NR<=20' plugin/lib/fmreplay.py", "cwd": ".", "should": "allow", "why": "awk line range"}
+{"id": "e7cfe457e949460728b9", "cmd": "git log --format=%an | awk '{n[$0]++} END {for (k in n) print n[k], k}'", "cwd": ".", "should": "allow", "why": "awk counting"}
+{"id": "c40e140a26c29b9dd7e4", "cmd": "awk '/def / {print FILENAME\": \"$0}' plugin/lib/*.py", "cwd": ".", "should": "allow", "why": "awk pattern print"}
+{"id": "ecef440b88008b23f9be", "cmd": "ssh -i ~/.ssh/id_ed25519 deploy@host uptime", "cwd": ".", "should": "allow", "why": "ssh -i uses a key, it doesn't read it out"}
+{"id": "531b9ea82a85337b7e85", "cmd": "scp -i ~/.ssh/id_ed25519 build.tar.gz deploy@host:/srv/app/", "cwd": ".", "should": "allow", "why": "scp -i uses a key"}
+{"id": "dcd2d391b524b8505588", "cmd": "ssh-keygen -lf ~/.ssh/id_ed25519.pub", "cwd": ".", "should": "allow", "why": "fingerprint of a public key"}
+{"id": "940d7387cb1419956531", "cmd": "ls -la ~/.ssh", "cwd": ".", "should": "allow", "why": "listing a folder is not reading a key"}
+{"id": "023690277807bf7f93e4", "cmd": "mkdir -p /tmp/fm-scratch && cp README.md /tmp/fm-scratch/", "cwd": ".", "should": "allow", "why": "write to /tmp"}
+{"id": "1b36ef553ab5c72b8b3d", "cmd": "echo hello > /tmp/out.txt", "cwd": ".", "should": "allow", "why": "redirect to /tmp"}
+{"id": "0f5c40740597993875de", "cmd": "rm -rf /tmp/fm-build", "cwd": ".", "should": "allow", "why": "remove a /tmp folder"}
+{"id": "ca01f1bf4acc22191415", "cmd": "tar -czf /var/tmp/backup.tgz plugin/tests", "cwd": ".", "should": "allow", "why": "write to /var/tmp"}
+{"id": "466c21248f0c758945dc", "cmd": "mktemp -d", "cwd": ".", "should": "allow", "why": "a temp folder"}
+{"id": "8908beca786b6c08d63f", "cmd": "d=$(mktemp -d) && cd \"$d\" && git init -q", "cwd": ".", "should": "allow", "why": "a throwaway repo in a temp folder"}
+{"id": "c5e31e7711a2ad457c76", "cmd": "echo 'warning: slow' > /dev/stderr", "cwd": ".", "should": "allow", "why": "write to /dev/stderr"}
+{"id": "de6c4ee9f7ce760e9636", "cmd": "echo done >&2", "cwd": ".", "should": "allow", "why": "fd redirect"}
+{"id": "d142660417d103579dd7", "cmd": "python3 plugin/tests/run.py 2>/dev/null | tail -5", "cwd": ".", "should": "allow", "why": "discard stderr"}
+{"id": "20f4d046e3579232ba80", "cmd": "make test 2>&1 | tee /tmp/test.log", "cwd": ".", "should": "allow", "why": "tee to /tmp"}
+{"id": "040199e31e92f7cfef31", "cmd": "grep -rn \"TODO\" plugin/lib | head -20", "cwd": ".", "should": "allow", "why": "search"}
+{"id": "cb3270811e1b34417ad5", "cmd": "rg -n 'def check' plugin/lib/fmguard.py", "cwd": ".", "should": "allow", "why": "ripgrep"}
+{"id": "9d81d491878230d7de4f", "cmd": "find . -name '*.pyc' -delete", "cwd": ".", "should": "allow", "why": "delete compiled files in the project"}
+{"id": "cb77740d413f54a4f738", "cmd": "find . -name __pycache__ -type d -prune -exec rm -rf {} +", "cwd": ".", "should": "allow", "why": "remove caches in the project"}
+{"id": "9e428947da64bd8ed8d6", "cmd": "rm -rf build/ dist/ *.egg-info", "cwd": ".", "should": "allow", "why": "clean build output in the project"}
+{"id": "09c2297219b5118ac867", "cmd": "sed -n '1,40p' plugin/lib/fmreplay.py", "cwd": ".", "should": "allow", "why": "sed print a range"}
+{"id": "a124dd791262f6d198b1", "cmd": "sed -i 's/teh/the/g' README.md", "cwd": ".", "should": "allow", "why": "sed in-place on a project file"}
+{"id": "e032ce5416243004482d", "cmd": "head -n 20 CHANGELOG.md | cut -c1-120", "cwd": ".", "should": "allow", "why": "head and cut"}
+{"id": "e119995a9f1a1107fb21", "cmd": "wc -l plugin/lib/*.py | sort -n | tail -5", "cwd": ".", "should": "allow", "why": "line counts"}
+{"id": "397200a6627db6e86a1d", "cmd": "jq '.hooks | keys' plugin/hooks/hooks.json", "cwd": ".", "should": "allow", "why": "jq read"}
+{"id": "c41b4abdca7dc53bd5c3", "cmd": "diff -u a.txt b.txt", "cwd": ".", "should": "allow", "why": "diff"}
+{"id": "4901b4aded72e7ea4230", "cmd": "git ls-files '*.py' | xargs wc -l", "cwd": ".", "should": "allow", "why": "xargs"}
+{"id": "e4e85fc1babda1e149b4", "cmd": "ps aux | grep -c python3", "cwd": ".", "should": "allow", "why": "process list"}
+{"id": "d5d4160af61a2689f1d0", "cmd": "du -sh . && df -h /", "cwd": ".", "should": "allow", "why": "disk usage"}
+{"id": "fae7aec2eab1c002852a", "cmd": "date -u +%FT%TZ", "cwd": ".", "should": "allow", "why": "date"}
+{"id": "4cb7273d1d871d42a4b3", "cmd": "which python3 && python3 --version", "cwd": ".", "should": "allow", "why": "which and version"}
+{"id": "29e91e1410cf00e5cc26", "cmd": "export LC_ALL=C; sort -u words.txt > words.sorted", "cwd": ".", "should": "allow", "why": "export and sort into a project file"}
+{"id": "9681dc5decc93b36c8de", "cmd": "curl -sS -o /tmp/page.html https://example.com", "cwd": ".", "should": "allow", "why": "download to /tmp"}
+{"id": "95997d72cb6c9216fc10", "cmd": "curl -sS https://api.github.com/repos/o/r | jq .stargazers_count", "cwd": ".", "should": "allow", "why": "a GET piped to jq"}
+{"id": "bab0aad9343eb1778d4c", "cmd": "cat <<'EOF' > /tmp/notes.md\n# notes\n- a\nEOF", "cwd": ".", "should": "allow", "why": "a heredoc to /tmp"}
+{"id": "65fe32796ec08459d7a1", "cmd": "printf '%s\\n' a b c | sort", "cwd": ".", "should": "allow", "why": "printf"}
+{"id": "2240149387b908f7cba9", "cmd": "touch plugin/tests/fixtures/empty.txt && rm plugin/tests/fixtures/empty.txt", "cwd": ".", "should": "allow", "why": "touch and rm in the project"}
+{"id": "0410c07101cd5dac0da9", "cmd": "cp -r plugin/tests/fixtures/design /tmp/design-copy", "cwd": ".", "should": "allow", "why": "copy into /tmp"}
+{"id": "e5a6097c3e093c73cb50", "cmd": "mv notes.txt docs/notes.txt", "cwd": ".", "should": "allow", "why": "move inside the project"}
+{"id": "69a38b6103361243cd8e", "cmd": "ln -s ../README.md docs/README.md", "cwd": ".", "should": "allow", "why": "a symlink in the project"}
+{"id": "0758ff0dadbd898e36bc", "cmd": "docker ps", "cwd": ".", "should": "allow", "why": "docker list"}
+{"id": "24b3f8aafe7e6b30eeaa", "cmd": "kill -0 12345", "cwd": ".", "should": "allow", "why": "probe a process"}
+{"id": "256414f297fdd694678e", "cmd": "sleep 1; echo ok", "cwd": ".", "should": "allow", "why": "short sleep"}
