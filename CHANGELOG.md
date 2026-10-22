@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- The guard no longer refuses `cd <scratch> && python3 - <<'EOF' … EOF` writing a relative file there just because another line follows the heredoc: lines after the last Python block run after it and can't move where it wrote. A `cd` before it, or a second Python block after a `cd` back, still counts (T-1458).
 - The guard's refusal of a CHANGELOG.md edit with no active task says the line belongs to its task: add it before `fm task finish`, or `fm focus` that task again (T-1452).
 - The builder rules (and every lane brief) say that reads or writes outside the worktree, such as another session's task output files or the main thread's scratchpad, are refused by Claude Code too, so builders stop retrying them (T-1454).
 - Foreman's state fallback refuses a `/tmp/foreman-state-<uid>` link another local user planted, even one pointing at a private folder of yours such as `~/.ssh`; before, state would be copied into it when the usual state folder wasn't writable. A link you made yourself still works (T-1317).
