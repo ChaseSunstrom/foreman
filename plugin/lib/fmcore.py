@@ -890,7 +890,12 @@ def log_event(p, event, task=None, data=None, session=None):
             size = os.fstat(f.fileno()).st_size
             f.seek(max(0, size - 1))
             cut = size and f.read(1) != b"\n"  # a line cut short (a crash, a hand edit) stays its own line
-            prev = ledger_hash(_last_line(f) if size else _archived_last(p))
+            last = _last_line(f) if size else _archived_last(p)
+            prev = ledger_hash(last)
+            if cut and last.endswith(b"\0"):  # T-1456: a crash zeroed the tail; pin the line before it (it holds no prev)
+                f.seek(0)
+                before = f.read(size - len(last))[:-1]
+                rec["after_damage"] = ledger_hash(before.rsplit(b"\n", 1)[-1] if before else _archived_last(p))
         except OSError:  # no flock here (NFS) or an unreadable archive: the event lands unchained, a gap
             pass  # fm verify-ledger reports; it is never lost
         rec["ts"] = now()  # in landing order, so fm tidy's monthly roll never reorders the chain
