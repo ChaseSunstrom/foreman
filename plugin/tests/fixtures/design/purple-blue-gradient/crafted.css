@@ -1,0 +1,5 @@
+.hero { color: #1b1206; }
+.hero {
+  background: linear-gradient(180deg, #f6d365 0%, #fda085 100%);
+}
+.rule { border-image: linear-gradient(90deg, hsl(210 60% 40%), hsl(200 60% 55%)) 1; }

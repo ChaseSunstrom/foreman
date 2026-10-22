@@ -1,0 +1,4 @@
+.hero { background: linear-gradient(90deg, #3b82f6, hsl(300 80% 50%)); }
+.cta {
+  @apply bg-gradient-to-r from-sky-500 to-cyan-400;
+}
