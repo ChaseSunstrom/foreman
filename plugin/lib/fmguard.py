@@ -1040,38 +1040,77 @@ def _ansi_c_body(text, i):
 
 def _decode_ansi_c(text):
     """T-1480: every $'…' outside quotes as the '…' literal bash makes of it ($'c\\x61t' is 'cat'; shlex read $'cat' as
-    the computed name $cat). Quotes, escapes and comments as _strip_comments reads them; unchanged under a heredoc
-    (its body's quoting isn't the line's) and from an unclosed $'… on."""
-    if "$'" not in text or re.search(r"(?<!<)<<(?!<)", text):
+    the computed name $cat). Quoting as _inner_quote reads it (each $( … ) and `…` opens a fresh context; review: a
+    flat scan lost its place in "$(echo 'a"b')"), comments skipped, and heredoc bodies kept as written: bash doesn't
+    decode $'…' there, and a body runs (bash <<EOF) only as a script of its own, which check_bash reads and decodes.
+    An unclosed $'… is left as it stands from there on."""
+    if "$'" not in text:
         return text
-    out, q, i = [], None, 0
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\" and q != "'" or not q and text.startswith("$$", i):  # $$'x' is the pid, then 'x'
-            out.append(text[i:i + 2])
+    st, esc, i, n, res, cur, seen = [["", None, 0]], False, 0, len(text), [], [], []  # st: [kind, quote, paren depth]
+    while i < n:
+        ch, top = text[i], st[-1]
+        if esc:
+            esc = False
+        elif ch == "\\" and top[1] != "'":
+            esc = True
+        elif top[1] == "'":
+            top[1] = None if ch == "'" else "'"
+        elif top[1] is None and text.startswith("$$", i):  # $$'x' is the pid, then 'x'
+            cur.append("$$")
             i += 2
             continue
-        if q:
-            q = None if ch == q else q
-        elif text.startswith("$'", i):
+        elif top[1] is None and text.startswith("$'", i):
             body = _ansi_c_body(text, i + 2)
             if body is None:
-                out.append(text[i:])
+                cur.append(text[i:])
                 break
             val, i = body
-            out.append("'" + val.replace("'", "'\\''") + "'")
+            cur.append("'" + val.replace("'", "'\\''") + "'")
             continue
-        elif ch in "'\"":
-            q = ch
-        elif ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):
+        elif top[1] is None and ch == "#" and (i == 0 or text[i - 1] in " \t\n;&|(<>"):
             end = text.find("\n", i)
-            end = len(text) if end < 0 else end
-            out.append(text[i:end])
+            end = n if end < 0 else end
+            cur.append(text[i:end])
             i = end
             continue
-        out.append(ch)
+        elif ch == "`":
+            if top[0] == "`" and top[1] is None:
+                st.pop()
+            else:
+                st.append(["`", None, 0])
+        elif ch == "$" and text[i + 1:i + 2] == "(":
+            st.append(["$(", None, 0])
+            cur.append("$(")
+            i += 2
+            continue
+        elif top[1] == '"':
+            top[1] = None if ch == '"' else '"'
+        elif ch == "\n":  # a line ends outside quotes: the bodies of the heredocs it starts follow, kept as written
+            line = "".join(cur)
+            res.append(line + "\n")
+            cur, i = [], i + 1
+            for _, delim in _heredoc_starts(seen, line) if "<<" in line else []:
+                while i < n:
+                    end = text.find("\n", i)
+                    end = n if end < 0 else end + 1
+                    res.append(text[i:end])
+                    i, body_line = end, text[i:end].rstrip("\n")
+                    if _ends_body(body_line, delim, line):
+                        break
+            seen.append(line)
+            continue
+        elif ch in "'\"":
+            top[1] = ch
+        elif ch == "(" and top[0] == "$(":
+            top[2] += 1
+        elif ch == ")" and top[0] == "$(":
+            if top[2]:
+                top[2] -= 1
+            else:
+                st.pop()
+        cur.append(ch)
         i += 1
-    return "".join(out)
+    return "".join(res) + "".join(cur)
 
 
 def _tokens(cmd):
