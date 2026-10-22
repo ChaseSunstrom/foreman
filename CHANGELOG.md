@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fm lease take keeps tasks apart within one session: builder lanes share their main session's id, so another task's lease now refuses the take (naming that task) instead of being handed over; --warn keeps both claims, a task retakes its own, and a removed lane releases its task's leases (T-1588).
 - fm --json output prints any value as text (fm settings list --json no longer crashes on a TOML datetime) and escapes DEL and C1 control characters (T-1589).
 - Guard: git checkout -b NAME and git switch -c/--create NAME with no start point make a branch at HEAD and change no file, so they pass in Foreman's checkout and the home folder; with a start point, a pathspec, -B or -C they stay tree writes, and a hooks path set on the line still refuses (T-1598).
 - fm code app: z hushes motion (full, reduced, off) for the app and the Claude Code pane alike; the spinner turns by what the agent is doing; a riso theme and palette on both surfaces (the pane's lane and type colours follow the palette now); a half-block rail once the terminal confirms the glyph's width; ? shows the keys as a poster; tui.toml messages never carry raw terminal escapes (T-1512).
