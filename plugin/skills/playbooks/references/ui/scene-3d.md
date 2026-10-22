@@ -3,7 +3,7 @@
 
 Use when a page gets a WebGL scene: a hero object, a product viewer, a data sculpture, an ambient background. Applies to three.js, React Three Fiber and raw WebGL alike. The API lives in the cards (`fm lib show three-js`, `fm lib show react-three-fiber`, `fm lib show postprocessing`, `fm lib show webgl`, `fm lib show glsl`, `fm lib show shader-performance`); this playbook holds the decisions, the numbers and the failure handling.
 
-The one rule: **the page works without the scene, and the scene earns its cost.** Every rule below is written so a reviewer can say pass or fail.
+The one rule: **the page works without the scene, and the scene earns its cost.** Every rule below is written so a reviewer can say pass or fail. The scene's colours (clear colour, fog, lights' tint) come from the project's `DESIGN.md` tokens (`design-direction.md`), and its reduced-motion path is `motion.md`'s.
 
 ## Before the first mesh: the scene's job
 
@@ -17,7 +17,7 @@ Write one sentence: what does the 3D show that a still picture or a 3-second vid
 One subject, one camera, one idea. Compose like a photographer, then lock it so no viewport and no drag can ruin it.
 
 1. **One subject wins the squint test.** Downscale a screenshot to 64 px wide (or blur it 8 px): the subject is still the highest-contrast, most saturated region. Backgrounds, particles and floors lose that test on purpose.
-2. **Choose the lens on purpose.** Vertical field of view 20–35° for an object you look at (product, logo, sculpture: long lens, little distortion); 45–65° for a space you are inside (room, landscape). Above 75° only as a deliberate effect. The three.js default of 50° is a placeholder, not a choice.
+2. **Choose the lens on purpose.** Vertical field of view 20–35° for an object you look at (product, logo, sculpture: long lens, little distortion); 45–65° for a space you are inside (room, landscape). Above 75° only as a deliberate effect. The defaults (50° for a bare three.js `PerspectiveCamera`, 75° for React Three Fiber's default camera) are placeholders, not choices.
 3. **Fit the subject from its bounds, not by eye.** Distance = r / sin(fov/2) for a bounding sphere of radius r, using the smaller of the vertical FOV and the horizontal FOV (2·atan(tan(vfov/2)·aspect)). Recompute on every resize. Pass: the whole subject is in frame at 360×640 portrait and at 1920×1080.
 4. **Fill 40–70% of the frame's short side.** Smaller reads as lost, bigger crowds the copy. When text sits beside the scene, offset the subject to the third away from the text (shift the camera's view offset or the subject, never squash the canvas) so empty space faces the words.
 5. **Look slightly down.** A 5–15° downward camera tilt grounds an object; dead-level reads as a technical drawing, and below the subject reads as heroic, which a product rarely wants. Keep the horizon off the exact middle.
@@ -56,14 +56,14 @@ Signature looks that are cheap when built right. Each one has an intensity unifo
 - **Fresnel rim:** `rim = pow(1.0 - max(dot(N, V), 0.0), 3.0)` added to emissive; the cheapest way to separate a silhouette. Exponent 2–5; a lower exponent turns it into a halo.
 - **Toon ramp:** quantize `dot(N, L)` through a tiny ramp texture (4–8 texels, nearest filtering) rather than branches; the ramp is the art direction and can change without a shader edit.
 - **Gradient map:** compute luminance, then look up a 256×1 gradient texture. One texture gives a whole scene a brand palette.
-- **Dissolve / reveal:** a noise texture against a threshold uniform, with a thin emissive edge band. Use alpha testing in a separate pass, not `discard` in the main opaque pass (it disables early depth rejection).
+- **Dissolve / reveal:** a noise texture against a threshold uniform, with a thin emissive edge band. Keep `discard` materials small and off large opaque surfaces: a shader that can discard loses early depth rejection for everything it covers.
 - **Dither every gradient:** add ±0.5/255 of screen-space noise before output. Dark smooth gradients band in 8 bits on every display; this removes it for one hash.
 - **Fog that is the page:** fog color equals the page background (after the color conversion above), so distance fades into the page instead of into grey.
 
 Two traps that only show up later:
 
 - **Time loses precision.** A `uTime` uniform that grows forever stutters: in `mediump` (half floats, common on phones) the step between representable values passes 1/60 s after about 32 seconds, and in `highp` it still grows with every hour. Wrap time on the CPU (JavaScript numbers are doubles) with a period that is a multiple of every loop in the shader, and declare the uniform `highp` where the device supports it. Pass: the scene left open for an hour animates as smoothly as at second one (fake it by starting the clock at 3,600).
-- **NaN spreads.** `normalize(vec3(0))`, `pow` of a negative base, or a divide by zero makes a NaN pixel; bloom and blur smear it into a black or white blot. Guard the denominators; probe with `if (any(isnan(c))) c = vec3(1, 0, 1);`.
+- **NaN spreads.** `normalize(vec3(0))`, `pow` of a negative base, or a divide by zero makes a NaN pixel; bloom and blur smear it into a black or white blot. Guard the denominators; probe with `if (any(isnan(c))) c = vec3(1, 0, 1);` (WebGL2 / GLSL ES 3.00 only, and some drivers fold `isnan` away under fast math: if the probe never fires, test the suspect denominators directly).
 
 Post-processing: at most three passes, merged where the library allows (the `postprocessing` library combines several effects in one pass). Bloom, vignette and grain together is the budget's ceiling, not its floor.
 
@@ -91,21 +91,21 @@ Arithmetic worth remembering:
 
 Loading: the 3D code and assets load after the page's main content has painted (dynamic import, triggered when the scene's container nears the viewport). Geometry compressed (Draco or meshopt), textures KTX2. Shaders are compiled before the canvas fades in (three.js `renderer.compile` or `compileAsync`).
 
-**Quality ladder.** When p95 frame time stays over budget for ~2 s, step down in this order and never up again in the same session (oscillating is worse than either level): DPR → post-processing → shadow map size → shadows off → particle and instance counts → the poster. Never drop the subject's own geometry first; it is the reason the scene exists. React Three Fiber users get most of this from drei's performance monitor and adaptive DPR helpers.
+**Quality ladder.** When p95 frame time stays over budget for ~2 s, step down in this order and never up again in the same session (oscillating is worse than either level; with drei's `PerformanceMonitor` use `onDecline` only and ignore `onIncline`, and treat `AdaptiveDpr` as a drop during interaction, not a step on this ladder): DPR → post-processing → shadow map size → shadows off → particle and instance counts → the poster. Never drop the subject's own geometry first; it is the reason the scene exists. React Three Fiber users get most of this from drei's performance monitor and adaptive DPR helpers.
 
 ## Survival contract
 
 The scene is an enhancement. Each clause below has a probe; a scene that fails one doesn't ship.
 
-1. **No WebGL, no problem.** When `getContext("webgl2")` (and the WebGL1 fallback, if you have one) returns null, the poster and the text twin show and nothing throws. Decorative scenes also pass `failIfMajorPerformanceCaveat: true`, so a software renderer gets the poster instead of a 5 fps slideshow. Probe: an init script that replaces `HTMLCanvasElement.prototype.getContext` with one returning null; the page has no console errors and shows the poster.
+1. **No WebGL, no problem.** When `getContext("webgl2")` (and the WebGL1 fallback, if you have one) returns null, the poster and the text twin show and nothing throws. Check before constructing the renderer: three.js's `WebGLRenderer` and an R3F `Canvas` throw when there is no context, so test `getContext` first, or wrap the construction in try/catch (an error boundary for R3F). Decorative scenes also pass `failIfMajorPerformanceCaveat: true`, so a software renderer gets the poster instead of a 5 fps slideshow. Probe: an init script that replaces `HTMLCanvasElement.prototype.getContext` with one returning null; the page has no console errors and shows the poster.
 2. **The poster is there first.** A still image rendered from the same scene, same framing, same aspect ratio, sits where the canvas will be from the first paint; the canvas fades in over it only after its first frame has drawn. Pass: layout shift from the scene is 0, and with JavaScript disabled the poster shows.
 3. **Context loss is survived.** On `webglcontextlost`: call `preventDefault()` (without it the browser never restores the context), stop the loop, show the poster. On `webglcontextrestored`: rebuild every GPU resource you created yourself, resume the loop, hide the poster. three.js resets its own state on restore; buffers, textures and programs you made through raw `gl` calls are yours to rebuild. Probe: `gl.getExtension("WEBGL_lose_context").loseContext()`, then `restoreContext()` a second later: the poster covers the gap, the scene returns, no console errors.
-4. **One context per page.** Browsers cap live WebGL contexts (Chrome keeps about 16 on desktop, fewer on phones) and silently kill the oldest. Several views share one renderer through viewports and scissor rectangles; a route change disposes its renderer. Pass: navigating through every route twice never logs a lost context.
+4. **One context per page.** Browsers cap live WebGL contexts (Chrome keeps about 16 on desktop, fewer on phones; the exact numbers vary by browser and version) and lose the oldest, with a console warning and a `webglcontextlost` event on it. Several views share one renderer through viewports and scissor rectangles; a route change disposes its renderer and releases its context (raw three.js: `renderer.dispose()` then `renderer.forceContextLoss()`; R3F does both on unmount). Pass: navigating through every route twice never logs a lost context.
 5. **Reduced motion is honored.** Under `prefers-reduced-motion: reduce`: no auto-rotate, no camera drift, no scroll-driven flight, no parallax; render one still frame and then only on user input. Probe: emulate the media feature, take two screenshots a second apart: they are identical.
 6. **It has a name and a text twin.** A non-interactive canvas has `role="img"` and an `aria-label` naming what it depicts. Whatever the scene communicates (product colors, the data in a sculpture, a step in a process) also exists as DOM text: a caption, a list, a table. Pass: remove the canvas from the page and no information is lost.
 7. **Interaction is keyboard-reachable.** An interactive scene is focusable, shows a visible focus ring, rotates or steps with arrow keys, says so in its label, and never traps focus. Pass: tab in, operate it, tab out, without a pointer.
 8. **Failure is contained.** A shader that fails to compile, an asset that 404s or a loader that throws ends at the poster, logged once, never at a blank or black box. Pass: block the model's URL in the network panel and reload.
-9. **It sleeps.** Offscreen (an intersection observer) or in a hidden tab, the loop stops; a scene with nothing moving renders on demand (React Three Fiber: `frameloop="demand"` with `invalidate()`). On unmount, the loop is cancelled, listeners removed, and geometries, materials, textures and the renderer disposed. Pass: `renderer.info.memory` returns to its starting counts after ten mount/unmount cycles.
+9. **It sleeps.** Offscreen (an intersection observer) or in a hidden tab, the loop stops; a scene with nothing moving renders on demand (React Three Fiber: `frameloop="demand"` with `invalidate()`). On unmount, the loop is cancelled, listeners removed, and geometries, materials, textures and the renderer disposed, and the context released (`renderer.forceContextLoss()` in raw three.js). Pass: `renderer.info.memory` returns to its starting counts after ten mount/unmount cycles.
 
 ## Black screen triage
 
