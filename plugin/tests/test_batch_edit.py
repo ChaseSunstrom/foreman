@@ -84,6 +84,22 @@ class BatchEdit(_Files):
         with open(os.path.join(self.repo, "a.py"), newline="") as f:
             self.assertEqual(f.read(), "x = 9\r\ny = 2\r\n")
 
+    def test_nul_files_are_refused_and_lf_old_text_matches_crlf(self):
+        # T-1424: fm code refused a NUL file and matched LF text in a CRLF file; plain fm edit did neither
+        with open(os.path.join(self.repo, "c.py"), "w") as f:
+            f.write("z = 3\n")
+        with open(os.path.join(self.repo, "a.py"), "w", newline="") as f:
+            f.write("x = 1\r\ny = 2\r\n")
+        with open(os.path.join(self.repo, "b.py"), "w") as f:
+            f.write("x = 1\0\n")
+        p = self.edit([{"file": "b.py", "old": "x = 1", "new": "x = 2"}], check=False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("NUL", p.stdout + p.stderr)
+        self.assertEqual(self.read("b.py"), "x = 1\0\n")
+        self.edit([{"file": "a.py", "old": "x = 1\ny = 2\n", "new": "x = 9\ny = 8\n"}])
+        with open(os.path.join(self.repo, "a.py"), newline="") as f:
+            self.assertEqual(f.read(), "x = 9\r\ny = 8\r\n")
+
     def test_review_glob_scope_matches(self):
         os.makedirs(os.path.join(self.repo, "lib"))
         with open(os.path.join(self.repo, "lib", "m.py"), "w") as f:
